@@ -1,0 +1,128 @@
+'use client'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+interface Article {
+  id: string
+  title_zh: string
+  title_en: string
+  summary_zh: string
+  summary_en: string
+  analysis_zh: string | null
+  analysis_en: string | null
+  tags: string | null
+  status: string
+  source_url?: string
+  source_name?: string
+  created_at: string
+}
+
+export function ArticleEditor({ article }: { article: Article }) {
+  const router = useRouter()
+  const [form, setForm] = useState(article)
+  const [saving, setSaving] = useState(false)
+
+  const update = (field: string, value: string) => setForm(prev => ({ ...prev, [field]: value }))
+
+  async function save() {
+    setSaving(true)
+    await fetch(`/api/articles/${article.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    })
+    setSaving(false)
+    router.refresh()
+  }
+
+  async function setStatus(status: string) {
+    await fetch(`/api/articles/${article.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+    router.refresh()
+    router.push('/dashboard')
+  }
+
+  async function publish() {
+    await fetch(`/api/articles/${article.id}/publish`, { method: 'POST' })
+    router.refresh()
+    router.push('/dashboard')
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Meta info */}
+      <div className="flex items-center gap-4 text-sm text-gray-500">
+        <span className="px-2 py-0.5 bg-gray-100 rounded">{form.status}</span>
+        {article.source_name && <span>Source: {article.source_name}</span>}
+        {article.source_url && <a href={article.source_url} target="_blank" className="text-blue-500 hover:underline">Original</a>}
+        <span>{new Date(article.created_at).toLocaleString()}</span>
+      </div>
+
+      {/* Bilingual editor — side by side */}
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <label className="block text-sm font-medium mb-1">Title (ZH)</label>
+          <input className="w-full border rounded px-3 py-2" value={form.title_zh} onChange={e => update('title_zh', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Title (EN)</label>
+          <input className="w-full border rounded px-3 py-2" value={form.title_en} onChange={e => update('title_en', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Summary (ZH)</label>
+          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.summary_zh} onChange={e => update('summary_zh', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Summary (EN)</label>
+          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.summary_en} onChange={e => update('summary_en', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Analysis (ZH)</label>
+          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.analysis_zh ?? ''} onChange={e => update('analysis_zh', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Analysis (EN)</label>
+          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.analysis_en ?? ''} onChange={e => update('analysis_en', e.target.value)} />
+        </div>
+      </div>
+
+      {/* Tags */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Tags (comma separated)</label>
+        <input
+          className="w-full border rounded px-3 py-2"
+          value={form.tags ? JSON.parse(form.tags).join(', ') : ''}
+          onChange={e => update('tags', JSON.stringify(e.target.value.split(',').map(t => t.trim()).filter(Boolean)))}
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-3 pt-4 border-t">
+        <button onClick={save} disabled={saving} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50">
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+        {form.status === 'draft' && (
+          <button onClick={() => setStatus('reviewed')} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500">
+            Approve
+          </button>
+        )}
+        {(form.status === 'draft' || form.status === 'reviewed') && (
+          <button onClick={publish} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-500">
+            Publish to TG
+          </button>
+        )}
+        {form.status === 'draft' && (
+          <button onClick={() => setStatus('rejected')} className="px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">
+            Reject
+          </button>
+        )}
+        <button onClick={() => router.push('/dashboard')} className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+          Back
+        </button>
+      </div>
+    </div>
+  )
+}
