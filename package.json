@@ -1,0 +1,31 @@
+{
+  "name": "clawnews",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:init": "tsx src/db/init.ts",
+    "collect": "tsx src/collector/run.ts",
+    "produce": "tsx src/producer/run.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "better-sqlite3": "^11.0.0",
+    "grammy": "^1.30.0",
+    "node-cron": "^3.0.3",
+    "rss-parser": "^3.13.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
