@@ -49,4 +49,11 @@ CREATE INDEX IF NOT EXISTS idx_raw_items_status ON raw_items(status);
 CREATE INDEX IF NOT EXISTS idx_raw_items_score ON raw_items(score DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_members_tg_id ON members(tg_id);
+
+CREATE TABLE IF NOT EXISTS invite_codes (
+  code       TEXT PRIMARY KEY,
+  created_at TEXT DEFAULT (datetime('now')),
+  used_by    TEXT,
+  active     INTEGER DEFAULT 1
+);
 `;
