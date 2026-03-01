@@ -16,22 +16,33 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   const token = process.env.TG_BOT_TOKEN
   const channelId = process.env.TG_CHANNEL_ID
 
-  let messageId: string | null = null
+  if (!token || !channelId) {
+    return NextResponse.json(
+      { error: 'TG_BOT_TOKEN or TG_CHANNEL_ID not configured' },
+      { status: 500 }
+    )
+  }
 
-  if (token && channelId) {
-    const text = formatArticle({
-      title_zh: article.title_zh,
-      title_en: article.title_en,
-      summary_zh: article.summary_zh,
-      summary_en: article.summary_en,
-      analysis_zh: article.analysis_zh ?? null,
-      tags: article.tags ?? null,
-      source_url: raw?.url ?? '',
-    })
+  const text = formatArticle({
+    title_zh: article.title_zh,
+    title_en: article.title_en,
+    summary_zh: article.summary_zh,
+    summary_en: article.summary_en,
+    analysis_zh: article.analysis_zh ?? null,
+    tags: article.tags ?? null,
+    source_url: raw?.url ?? '',
+  })
 
+  let messageId: string
+  try {
     const bot = new Bot(token)
     const sent = await bot.api.sendMessage(channelId, text)
     messageId = String(sent.message_id)
+  } catch (err) {
+    return NextResponse.json(
+      { error: `TG send failed: ${err instanceof Error ? err.message : err}` },
+      { status: 502 }
+    )
   }
 
   db.prepare("UPDATE articles SET status = 'published' WHERE id = ?").run(id)

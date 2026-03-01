@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import path from 'path'
 import { createDb } from './db/database.js'
 import { createAnthropicAdapter } from './producer/llm.js'

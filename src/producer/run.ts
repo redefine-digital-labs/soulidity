@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { createDb } from '../db/database.js'
 import { createAnthropicAdapter } from './llm.js'
 import { produceArticles } from './produce.js'
