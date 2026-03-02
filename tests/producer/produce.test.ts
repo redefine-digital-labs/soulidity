@@ -1,17 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import Database from 'better-sqlite3'
-import { createDb, insertRawItem, getRawItemsByStatus, getArticlesByStatus } from '../../src/db/database.js'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { createMockPrisma } from '../helpers/mock-prisma.js'
+import { insertRawItem, getRawItemsByStatus, getArticlesByStatus } from '../../src/db/database.js'
 import { produceArticles, parseResponse } from '../../src/producer/produce.js'
 import { createMockLLM } from './llm.test.js'
 
-let db: Database.Database
+let prisma: ReturnType<typeof createMockPrisma>['prisma']
 
 beforeEach(() => {
-  db = createDb(':memory:')
-})
-
-afterEach(() => {
-  db.close()
+  const mock = createMockPrisma()
+  prisma = mock.prisma
 })
 
 describe('parseResponse', () => {
@@ -37,9 +34,10 @@ describe('parseResponse', () => {
 
 describe('produceArticles', () => {
   it('produces articles from raw items', async () => {
-    insertRawItem(db, {
+    await insertRawItem(prisma, {
       source_type: 'rss', source_name: 'coindesk', title: 'Test',
-      url: 'https://test.com/1', content: 'AI agent news', language: 'en', score: 5, raw_data: null,
+      url: 'https://test.com/1', title_hash: null, content: 'AI agent news',
+      language: 'en', score: 5, raw_data: null,
     })
 
     const mockLLM = createMockLLM({
@@ -49,30 +47,31 @@ describe('produceArticles', () => {
       tags: ['ai', 'web3'],
     })
 
-    const result = await produceArticles(db, mockLLM)
+    const result = await produceArticles(prisma, mockLLM)
     expect(result.succeeded).toBe(1)
     expect(result.failed).toBe(0)
 
-    expect(getRawItemsByStatus(db, 'produced')).toHaveLength(1)
-    expect(getRawItemsByStatus(db, 'new')).toHaveLength(0)
+    expect(await getRawItemsByStatus(prisma, 'produced')).toHaveLength(1)
+    expect(await getRawItemsByStatus(prisma, 'new')).toHaveLength(0)
 
-    const articles = getArticlesByStatus(db, 'draft')
+    const articles = await getArticlesByStatus(prisma, 'draft')
     expect(articles).toHaveLength(1)
     expect(articles[0].title_zh).toBe('测试标题')
   })
 
   it('marks item as rejected on LLM failure', async () => {
-    insertRawItem(db, {
+    await insertRawItem(prisma, {
       source_type: 'rss', source_name: 'test', title: 'Bad',
-      url: 'https://test.com/bad', content: '', language: 'en', score: 1, raw_data: null,
+      url: 'https://test.com/bad', title_hash: null, content: '',
+      language: 'en', score: 1, raw_data: null,
     })
 
     const failingLLM = {
       async generate(): Promise<string> { throw new Error('API error') },
     }
 
-    const result = await produceArticles(db, failingLLM)
+    const result = await produceArticles(prisma, failingLLM)
     expect(result.failed).toBe(1)
-    expect(getRawItemsByStatus(db, 'rejected')).toHaveLength(1)
+    expect(await getRawItemsByStatus(prisma, 'rejected')).toHaveLength(1)
   })
 })
