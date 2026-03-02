@@ -1,90 +1,165 @@
-import Database from 'better-sqlite3'
-import { SCHEMA } from './schema.js'
-import type { RawItem, Article, Publication, RawItemStatus, ArticleStatus } from '../shared/types.js'
-import { v4 as uuid } from 'uuid'
+import { PrismaClient } from '../../generated/prisma/client.js'
+import { PrismaPg } from '@prisma/adapter-pg'
+import type { RawItem, Article, RawItemStatus, ArticleStatus } from '../shared/types.js'
 
-export function createDb(dbPath: string): Database.Database {
-  const db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  db.exec(SCHEMA)
-  return db
+export type { PrismaClient }
+
+export function createPrisma(): PrismaClient {
+  const connectionString = process.env.DATABASE_URL
+  if (!connectionString) throw new Error('DATABASE_URL is not set')
+  const adapter = new PrismaPg({ connectionString })
+  return new PrismaClient({ adapter })
 }
 
 // --- raw_items ---
 
-export function insertRawItem(
-  db: Database.Database,
+export async function insertRawItem(
+  prisma: PrismaClient,
   item: Omit<RawItem, 'id' | 'created_at' | 'status'>
-): string | null {
-  const id = uuid()
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO raw_items (id, source_type, source_name, title, url, title_hash, content, language, score, raw_data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-  const result = stmt.run(id, item.source_type, item.source_name, item.title, item.url, item.title_hash ?? null, item.content, item.language, item.score, item.raw_data)
-  return result.changes > 0 ? id : null
+): Promise<string | null> {
+  try {
+    const row = await prisma.rawItem.create({
+      data: {
+        sourceType: item.source_type,
+        sourceName: item.source_name,
+        title: item.title,
+        url: item.url,
+        titleHash: item.title_hash ?? null,
+        content: item.content,
+        language: item.language,
+        score: item.score,
+        rawData: item.raw_data,
+      },
+    })
+    return row.id
+  } catch (err: any) {
+    if (err?.code === 'P2002') return null  // Unique constraint (URL duplicate)
+    throw err
+  }
 }
 
-export function getRawItemsByStatus(db: Database.Database, status: RawItemStatus, limit = 10): RawItem[] {
-  return db.prepare('SELECT * FROM raw_items WHERE status = ? ORDER BY score DESC LIMIT ?').all(status, limit) as RawItem[]
+export async function getRawItemsByStatus(prisma: PrismaClient, status: RawItemStatus, limit = 10): Promise<RawItem[]> {
+  const rows = await prisma.rawItem.findMany({
+    where: { status },
+    orderBy: { score: 'desc' },
+    take: limit,
+  })
+  return rows.map(toRawItem)
 }
 
-export function updateRawItemStatus(db: Database.Database, id: string, status: RawItemStatus): void {
-  db.prepare('UPDATE raw_items SET status = ? WHERE id = ?').run(status, id)
+export async function updateRawItemStatus(prisma: PrismaClient, id: string, status: RawItemStatus): Promise<void> {
+  await prisma.rawItem.update({ where: { id }, data: { status } })
 }
 
 // --- articles ---
 
-export function insertArticle(
-  db: Database.Database,
+export async function insertArticle(
+  prisma: PrismaClient,
   article: Omit<Article, 'id' | 'created_at' | 'status'>
-): string {
-  const id = uuid()
-  db.prepare(`
-    INSERT INTO articles (id, raw_item_id, title_zh, title_en, summary_zh, summary_en, analysis_zh, analysis_en, tags)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, article.raw_item_id, article.title_zh, article.title_en, article.summary_zh, article.summary_en, article.analysis_zh, article.analysis_en, article.tags)
-  return id
+): Promise<string> {
+  const row = await prisma.article.create({
+    data: {
+      rawItemId: article.raw_item_id,
+      titleZh: article.title_zh,
+      titleEn: article.title_en,
+      summaryZh: article.summary_zh,
+      summaryEn: article.summary_en,
+      analysisZh: article.analysis_zh,
+      analysisEn: article.analysis_en,
+      tags: article.tags,
+    },
+  })
+  return row.id
 }
 
-export function getArticlesByStatus(db: Database.Database, status: ArticleStatus, limit = 20): Article[] {
-  return db.prepare('SELECT * FROM articles WHERE status = ? ORDER BY created_at DESC LIMIT ?').all(status, limit) as Article[]
+export async function getArticlesByStatus(prisma: PrismaClient, status: ArticleStatus, limit = 20): Promise<Article[]> {
+  const rows = await prisma.article.findMany({
+    where: { status },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  })
+  return rows.map(toArticle)
 }
 
-export function getArticleById(db: Database.Database, id: string): Article | undefined {
-  return db.prepare('SELECT * FROM articles WHERE id = ?').get(id) as Article | undefined
+export async function getArticleById(prisma: PrismaClient, id: string): Promise<Article | undefined> {
+  const row = await prisma.article.findUnique({ where: { id } })
+  return row ? toArticle(row) : undefined
 }
 
-export function updateArticle(db: Database.Database, id: string, fields: Partial<Pick<Article, 'title_zh' | 'title_en' | 'summary_zh' | 'summary_en' | 'analysis_zh' | 'analysis_en' | 'tags' | 'status'>>): void {
-  const sets: string[] = []
-  const values: unknown[] = []
-  for (const [key, value] of Object.entries(fields)) {
-    sets.push(`${key} = ?`)
-    values.push(value)
-  }
-  if (sets.length === 0) return
-  values.push(id)
-  db.prepare(`UPDATE articles SET ${sets.join(', ')} WHERE id = ?`).run(...values)
+export async function updateArticle(
+  prisma: PrismaClient,
+  id: string,
+  fields: Partial<Pick<Article, 'title_zh' | 'title_en' | 'summary_zh' | 'summary_en' | 'analysis_zh' | 'analysis_en' | 'tags' | 'status'>>
+): Promise<void> {
+  if (Object.keys(fields).length === 0) return
+  // Map snake_case keys from Article type to camelCase Prisma fields
+  const data: Record<string, unknown> = {}
+  if ('title_zh' in fields) data.titleZh = fields.title_zh
+  if ('title_en' in fields) data.titleEn = fields.title_en
+  if ('summary_zh' in fields) data.summaryZh = fields.summary_zh
+  if ('summary_en' in fields) data.summaryEn = fields.summary_en
+  if ('analysis_zh' in fields) data.analysisZh = fields.analysis_zh
+  if ('analysis_en' in fields) data.analysisEn = fields.analysis_en
+  if ('tags' in fields) data.tags = fields.tags
+  if ('status' in fields) data.status = fields.status
+  await prisma.article.update({ where: { id }, data })
 }
 
 // --- publications ---
 
-export function insertPublication(db: Database.Database, articleId: string, channel: string, messageId: string): string {
-  const id = uuid()
-  db.prepare(`
-    INSERT INTO publications (id, article_id, channel, message_id, published_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
-  `).run(id, articleId, channel, messageId)
-  return id
+export async function insertPublication(prisma: PrismaClient, articleId: string, channel: string, messageId: string): Promise<string> {
+  const row = await prisma.publication.create({
+    data: { articleId, channel, messageId, publishedAt: new Date() },
+  })
+  return row.id
 }
 
 // --- stats ---
 
-export function getStats(db: Database.Database): { raw_new: number; articles_draft: number; articles_reviewed: number; published_today: number } {
-  const raw_new = (db.prepare('SELECT COUNT(*) as c FROM raw_items WHERE status = ?').get('new') as { c: number }).c
-  const articles_draft = (db.prepare('SELECT COUNT(*) as c FROM articles WHERE status = ?').get('draft') as { c: number }).c
-  const articles_reviewed = (db.prepare('SELECT COUNT(*) as c FROM articles WHERE status = ?').get('reviewed') as { c: number }).c
-  const published_today = (db.prepare("SELECT COUNT(*) as c FROM publications WHERE published_at >= date('now')").get() as { c: number }).c
+export async function getStats(prisma: PrismaClient): Promise<{ raw_new: number; articles_draft: number; articles_reviewed: number; published_today: number }> {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const [raw_new, articles_draft, articles_reviewed, published_today] = await Promise.all([
+    prisma.rawItem.count({ where: { status: 'new' } }),
+    prisma.article.count({ where: { status: 'draft' } }),
+    prisma.article.count({ where: { status: 'reviewed' } }),
+    prisma.publication.count({ where: { publishedAt: { gte: today } } }),
+  ])
   return { raw_new, articles_draft, articles_reviewed, published_today }
+}
+
+// --- Mappers: Prisma model → legacy snake_case types ---
+
+function toRawItem(row: any): RawItem {
+  return {
+    id: row.id,
+    source_type: row.sourceType,
+    source_name: row.sourceName,
+    title: row.title,
+    url: row.url,
+    title_hash: row.titleHash,
+    content: row.content,
+    language: row.language,
+    score: row.score,
+    status: row.status,
+    raw_data: row.rawData,
+    created_at: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+  }
+}
+
+function toArticle(row: any): Article {
+  return {
+    id: row.id,
+    raw_item_id: row.rawItemId,
+    title_zh: row.titleZh,
+    title_en: row.titleEn,
+    summary_zh: row.summaryZh,
+    summary_en: row.summaryEn,
+    analysis_zh: row.analysisZh,
+    analysis_en: row.analysisEn,
+    tags: row.tags,
+    status: row.status,
+    created_at: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+  }
 }
