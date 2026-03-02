@@ -1,14 +1,15 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { createSupabaseBrowser } from '@web/lib/supabase/client'
 
 interface Article {
   id: string
-  title_zh: string
-  title_en: string
+  titleZh: string
+  titleEn: string
   status: string
   tags: string | null
-  created_at: string
+  createdAt: string
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -21,10 +22,28 @@ export function ArticleList() {
   const [articles, setArticles] = useState<Article[]>([])
   const [filter, setFilter] = useState<string>('')
 
-  useEffect(() => {
+  const fetchArticles = useCallback(() => {
     const url = filter ? `/api/articles?status=${filter}` : '/api/articles'
     fetch(url).then(r => r.json()).then(setArticles)
   }, [filter])
+
+  useEffect(() => {
+    fetchArticles()
+  }, [fetchArticles])
+
+  // Real-time subscription
+  useEffect(() => {
+    const supabase = createSupabaseBrowser()
+    const channel = supabase
+      .channel('articles-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'articles' },
+        () => { fetchArticles() }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [fetchArticles])
 
   const filters = ['', 'draft', 'reviewed', 'published']
 
@@ -51,15 +70,15 @@ export function ArticleList() {
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="font-medium text-gray-900 truncate">{article.title_zh}</div>
-                <div className="text-sm text-gray-500 truncate">{article.title_en}</div>
+                <div className="font-medium text-gray-900 truncate">{article.titleZh}</div>
+                <div className="text-sm text-gray-500 truncate">{article.titleEn}</div>
               </div>
               <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ${STATUS_COLORS[article.status] ?? 'bg-gray-100'}`}>
                 {article.status}
               </span>
             </div>
             <div className="mt-2 text-xs text-gray-400">
-              {new Date(article.created_at).toLocaleString()}
+              {new Date(article.createdAt).toLocaleString()}
               {article.tags && ` \u00b7 ${JSON.parse(article.tags).join(', ')}`}
             </div>
           </Link>
