@@ -1,37 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@web/lib/db'
+import { prisma } from '@web/lib/prisma'
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const db = getDb()
-  const article = db.prepare('SELECT * FROM articles WHERE id = ?').get(id)
+  const article = await prisma.article.findUnique({
+    where: { id },
+    include: { rawItem: { select: { url: true, sourceName: true } } },
+  })
   if (!article) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const raw = db.prepare('SELECT url, source_name FROM raw_items WHERE id = ?').get((article as { raw_item_id: string }).raw_item_id)
-  return NextResponse.json({ ...article as object, source_url: (raw as { url: string })?.url, source_name: (raw as { source_name: string })?.source_name })
+  return NextResponse.json({
+    ...article,
+    source_url: article.rawItem?.url,
+    source_name: article.rawItem?.sourceName,
+    rawItem: undefined,
+  })
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const db = getDb()
   const body = await request.json()
 
-  const allowed = ['title_zh', 'title_en', 'summary_zh', 'summary_en', 'analysis_zh', 'analysis_en', 'tags', 'status']
-  const sets: string[] = []
-  const values: unknown[] = []
-
+  // Map both snake_case and camelCase keys to Prisma camelCase fields
+  const keyMap: Record<string, string> = {
+    title_zh: 'titleZh', title_en: 'titleEn',
+    summary_zh: 'summaryZh', summary_en: 'summaryEn',
+    analysis_zh: 'analysisZh', analysis_en: 'analysisEn',
+    tags: 'tags', status: 'status',
+    // Also accept camelCase directly
+    titleZh: 'titleZh', titleEn: 'titleEn',
+    summaryZh: 'summaryZh', summaryEn: 'summaryEn',
+    analysisZh: 'analysisZh', analysisEn: 'analysisEn',
+  }
+  const data: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(body)) {
-    if (allowed.includes(key)) {
-      sets.push(`${key} = ?`)
-      values.push(value)
-    }
+    const mapped = keyMap[key]
+    if (mapped) data[mapped] = value
   }
 
-  if (sets.length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 })
+  if (Object.keys(data).length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 })
 
-  values.push(id)
-  db.prepare(`UPDATE articles SET ${sets.join(', ')} WHERE id = ?`).run(...values)
-
-  const updated = db.prepare('SELECT * FROM articles WHERE id = ?').get(id)
+  const updated = await prisma.article.update({ where: { id }, data })
   return NextResponse.json(updated)
 }

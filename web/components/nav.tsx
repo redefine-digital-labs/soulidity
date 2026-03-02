@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { createSupabaseBrowser } from '@web/lib/supabase/client'
 
 const links = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -11,12 +12,14 @@ const links = [
 export function Nav() {
   const pathname = usePathname()
   const router = useRouter()
+  const supabase = createSupabaseBrowser()
 
   if (pathname === '/login') return null
 
   async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await supabase.auth.signOut()
     router.push('/login')
+    router.refresh()
   }
 
   return (

@@ -2,12 +2,15 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createSupabaseBrowser } from '@web/lib/supabase/client'
 
 export default function LoginPage() {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const supabase = createSupabaseBrowser()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -15,16 +18,12 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      })
-
-      if (res.ok) {
-        router.push('/dashboard')
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        setError(error.message)
       } else {
-        setError('密码错误')
+        router.push('/dashboard')
+        router.refresh()
       }
     } catch {
       setError('网络错误，请重试')
@@ -39,19 +38,27 @@ export default function LoginPage() {
         <h1 className="text-xl font-bold mb-6 text-center">ClawNews</h1>
 
         <input
+          type="email"
+          placeholder="邮箱"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full px-3 py-2 border rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-gray-900"
+          autoFocus
+        />
+
+        <input
           type="password"
-          placeholder="管理密码"
+          placeholder="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="w-full px-3 py-2 border rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-gray-900"
-          autoFocus
         />
 
         {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
         <button
           type="submit"
-          disabled={loading || !password}
+          disabled={loading || !email || !password}
           className="w-full py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50"
         >
           {loading ? '登录中...' : '登录'}

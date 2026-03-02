@@ -1,41 +1,50 @@
+import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
-import { COOKIE_NAME, hmacSign } from '@web/lib/auth'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Public paths that don't need auth
+  // Public paths
   if (
     pathname === '/login' ||
-    pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico'
   ) {
     return NextResponse.next()
   }
 
-  const token = request.cookies.get(COOKIE_NAME)?.value
-  const password = process.env.ADMIN_PASSWORD
-  const secret = process.env.AUTH_SECRET
+  let supabaseResponse = NextResponse.next({ request })
 
-  if (!password || !secret) {
-    // Auth not configured — allow access (dev mode)
-    return NextResponse.next()
+  const supabase = createServerClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          for (const { name, value } of cookiesToSet) {
+            request.cookies.set(name, value)
+          }
+          supabaseResponse = NextResponse.next({ request })
+          for (const { name, value, options } of cookiesToSet) {
+            supabaseResponse.cookies.set(name, value, options)
+          }
+        },
+      },
+    }
+  )
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
   }
 
-  if (!token) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  const expected = await hmacSign(password, secret)
-  if (token !== expected) {
-    // Invalid token — clear cookie and redirect
-    const response = NextResponse.redirect(new URL('/login', request.url))
-    response.cookies.delete(COOKIE_NAME)
-    return response
-  }
-
-  return NextResponse.next()
+  return supabaseResponse
 }
 
 export const config = {

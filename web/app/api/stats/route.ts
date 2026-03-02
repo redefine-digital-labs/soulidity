@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server'
-import { getDb } from '@web/lib/db'
+import { prisma } from '@web/lib/prisma'
 
 export async function GET() {
-  const db = getDb()
-  const raw_new = (db.prepare("SELECT COUNT(*) as c FROM raw_items WHERE status = 'new'").get() as { c: number }).c
-  const articles_draft = (db.prepare("SELECT COUNT(*) as c FROM articles WHERE status = 'draft'").get() as { c: number }).c
-  const articles_reviewed = (db.prepare("SELECT COUNT(*) as c FROM articles WHERE status = 'reviewed'").get() as { c: number }).c
-  const published_today = (db.prepare("SELECT COUNT(*) as c FROM publications WHERE published_at >= date('now')").get() as { c: number }).c
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const [raw_new, articles_draft, articles_reviewed, published_today] = await Promise.all([
+    prisma.rawItem.count({ where: { status: 'new' } }),
+    prisma.article.count({ where: { status: 'draft' } }),
+    prisma.article.count({ where: { status: 'reviewed' } }),
+    prisma.publication.count({ where: { publishedAt: { gte: today } } }),
+  ])
 
   return NextResponse.json({ raw_new, articles_draft, articles_reviewed, published_today })
 }
