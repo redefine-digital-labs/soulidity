@@ -1,37 +1,47 @@
-import type Database from 'better-sqlite3'
-import { v4 as uuid } from 'uuid'
+import type { PrismaClient } from './database.js'
+import crypto from 'crypto'
 
-export const MEMBERS_SCHEMA = `
-CREATE TABLE IF NOT EXISTS invite_codes (
-  code       TEXT PRIMARY KEY,
-  created_at TEXT DEFAULT (datetime('now')),
-  used_by    TEXT,
-  active     INTEGER DEFAULT 1
-);
-`
-
-export function createInviteCode(db: Database.Database): string {
-  const code = uuid().slice(0, 8).toUpperCase()
-  db.prepare('INSERT INTO invite_codes (code) VALUES (?)').run(code)
+export async function createInviteCode(prisma: PrismaClient): Promise<string> {
+  const code = crypto.randomUUID().slice(0, 8).toUpperCase()
+  await prisma.inviteCode.create({ data: { code } })
   return code
 }
 
-export function validateInviteCode(db: Database.Database, code: string): boolean {
-  const row = db.prepare('SELECT * FROM invite_codes WHERE code = ? AND active = 1 AND used_by IS NULL').get(code)
+export async function validateInviteCode(prisma: PrismaClient, code: string): Promise<boolean> {
+  const row = await prisma.inviteCode.findFirst({
+    where: { code, active: 1, usedBy: null },
+  })
   return !!row
 }
 
-export function useInviteCode(db: Database.Database, code: string, tgId: string): boolean {
-  const result = db.prepare('UPDATE invite_codes SET used_by = ?, active = 0 WHERE code = ? AND active = 1 AND used_by IS NULL').run(tgId, code)
-  return result.changes > 0
+export async function useInviteCode(prisma: PrismaClient, code: string, tgId: string): Promise<boolean> {
+  try {
+    await prisma.inviteCode.update({
+      where: { code, active: 1, usedBy: null },
+      data: { usedBy: tgId, active: 0 },
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
-export function insertMember(db: Database.Database, tgId: string, tgName: string | null, inviteCode: string): string {
-  const id = uuid()
-  db.prepare('INSERT OR IGNORE INTO members (id, tg_id, tg_name, invite_code) VALUES (?, ?, ?, ?)').run(id, tgId, tgName, inviteCode)
-  return id
+export async function insertMember(prisma: PrismaClient, tgId: string, tgName: string | null, inviteCode: string): Promise<string> {
+  const row = await prisma.member.upsert({
+    where: { tgId },
+    create: { tgId, tgName, inviteCode },
+    update: {},
+  })
+  return row.id
 }
 
-export function getMembers(db: Database.Database): Array<{ id: string; tg_id: string; tg_name: string | null; level: number; joined_at: string }> {
-  return db.prepare('SELECT id, tg_id, tg_name, level, joined_at FROM members ORDER BY joined_at DESC').all() as Array<{ id: string; tg_id: string; tg_name: string | null; level: number; joined_at: string }>
+export async function getMembers(prisma: PrismaClient): Promise<Array<{ id: string; tg_id: string; tg_name: string | null; level: number; joined_at: string }>> {
+  const rows = await prisma.member.findMany({ orderBy: { joinedAt: 'desc' } })
+  return rows.map(r => ({
+    id: r.id,
+    tg_id: r.tgId,
+    tg_name: r.tgName,
+    level: r.level,
+    joined_at: r.joinedAt instanceof Date ? r.joinedAt.toISOString() : r.joinedAt,
+  }))
 }

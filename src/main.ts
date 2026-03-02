@@ -1,6 +1,5 @@
 import 'dotenv/config'
-import path from 'path'
-import { createDb } from './db/database.js'
+import { createPrisma } from './db/database.js'
 import { createAnthropicAdapter } from './producer/llm.js'
 import { startScheduler } from './scheduler.js'
 
@@ -10,18 +9,17 @@ if (!apiKey) {
   process.exit(1)
 }
 
-const dbPath = path.join(process.cwd(), 'data', 'clawnews.db')
-const db = createDb(dbPath)
+const prisma = createPrisma()
 const llm = createAnthropicAdapter(apiKey)
 
 console.log('ClawNews engine starting...')
-console.log(`Database: ${dbPath}`)
+console.log(`Database: ${process.env.DATABASE_URL?.replace(/\/\/.*@/, '//***@')}`)
 
-startScheduler(db, llm)
+startScheduler(prisma, llm)
 
 // Keep process alive
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\nShutting down...')
-  db.close()
+  await prisma.$disconnect()
   process.exit(0)
 })

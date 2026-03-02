@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { PrismaClient } from '../db/database.js'
 import type { LLMAdapter } from './llm.js'
 import { getRawItemsByStatus, updateRawItemStatus, insertArticle } from '../db/database.js'
 
@@ -45,19 +45,19 @@ function parseResponse(text: string): ProducedArticle {
   return parsed as ProducedArticle
 }
 
-export async function produceArticles(db: Database.Database, llm: LLMAdapter, limit = 10): Promise<{ processed: number; succeeded: number; failed: number }> {
-  const items = getRawItemsByStatus(db, 'new', limit)
+export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, limit = 10): Promise<{ processed: number; succeeded: number; failed: number }> {
+  const items = await getRawItemsByStatus(prisma, 'new', limit)
   let succeeded = 0
   let failed = 0
 
   for (const item of items) {
-    updateRawItemStatus(db, item.id, 'processing')
+    await updateRawItemStatus(prisma, item.id, 'processing')
     try {
       const prompt = buildUserPrompt(item.title, item.content ?? '', item.url, item.source_name)
       const response = await llm.generate(SYSTEM_PROMPT, prompt)
       const article = parseResponse(response)
 
-      insertArticle(db, {
+      await insertArticle(prisma, {
         raw_item_id: item.id,
         title_zh: article.title_zh,
         title_en: article.title_en,
@@ -68,11 +68,11 @@ export async function produceArticles(db: Database.Database, llm: LLMAdapter, li
         tags: JSON.stringify(article.tags),
       })
 
-      updateRawItemStatus(db, item.id, 'produced')
+      await updateRawItemStatus(prisma, item.id, 'produced')
       succeeded++
     } catch (err) {
       console.error(`Failed to produce article for ${item.id}:`, err)
-      updateRawItemStatus(db, item.id, 'rejected')
+      await updateRawItemStatus(prisma, item.id, 'rejected')
       failed++
     }
   }

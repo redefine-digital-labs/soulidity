@@ -1,30 +1,27 @@
 import cron from 'node-cron'
-import type Database from 'better-sqlite3'
+import type { PrismaClient } from './db/database.js'
 import { runCollectors } from './collector/run.js'
 import { collectRss } from './collector/rss.js'
 import { collectGithub } from './collector/github.js'
 import { produceArticles } from './producer/produce.js'
 import type { LLMAdapter } from './producer/llm.js'
 
-export function startScheduler(db: Database.Database, llm: LLMAdapter) {
-  // RSS collection — every hour
+export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
   cron.schedule('0 * * * *', async () => {
     console.log(`[${new Date().toISOString()}] Running RSS collection...`)
-    const result = await runCollectors(db, [collectRss])
+    const result = await runCollectors(prisma, [collectRss])
     console.log(`RSS: fetched ${result.total}, inserted ${result.inserted}`)
   })
 
-  // GitHub collection — daily at 6:00
   cron.schedule('0 6 * * *', async () => {
     console.log(`[${new Date().toISOString()}] Running GitHub collection...`)
-    const result = await runCollectors(db, [collectGithub])
+    const result = await runCollectors(prisma, [collectGithub])
     console.log(`GitHub: fetched ${result.total}, inserted ${result.inserted}`)
   })
 
-  // Content production — every hour at :30 (after collection)
   cron.schedule('30 * * * *', async () => {
     console.log(`[${new Date().toISOString()}] Running content production...`)
-    const result = await produceArticles(db, llm)
+    const result = await produceArticles(prisma, llm)
     console.log(`Producer: processed ${result.processed}, succeeded ${result.succeeded}, failed ${result.failed}`)
   })
 

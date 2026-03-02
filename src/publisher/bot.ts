@@ -1,8 +1,6 @@
 import { Bot } from 'grammy'
-import type Database from 'better-sqlite3'
+import type { PrismaClient } from '../db/database.js'
 import { formatArticle } from './formatter.js'
-import type { Article } from '../shared/types.js'
-import { v4 as uuid } from 'uuid'
 
 export function createBot(token: string) {
   return new Bot(token)
@@ -11,20 +9,23 @@ export function createBot(token: string) {
 export async function publishToChannel(
   bot: Bot,
   channelId: string,
-  db: Database.Database,
+  prisma: PrismaClient,
   articleId: string,
 ): Promise<string> {
-  const article = db.prepare('SELECT * FROM articles WHERE id = ?').get(articleId) as Article | undefined
+  const article = await prisma.article.findUnique({ where: { id: articleId } })
   if (!article) throw new Error(`Article not found: ${articleId}`)
 
-  const raw = db.prepare('SELECT url FROM raw_items WHERE id = ?').get(article.raw_item_id) as { url: string } | undefined
+  const raw = await prisma.rawItem.findUnique({
+    where: { id: article.rawItemId },
+    select: { url: true },
+  })
 
   const text = formatArticle({
-    title_zh: article.title_zh,
-    title_en: article.title_en,
-    summary_zh: article.summary_zh,
-    summary_en: article.summary_en,
-    analysis_zh: article.analysis_zh,
+    title_zh: article.titleZh,
+    title_en: article.titleEn,
+    summary_zh: article.summaryZh,
+    summary_en: article.summaryEn,
+    analysis_zh: article.analysisZh,
     tags: article.tags,
     source_url: raw?.url ?? '',
   })
@@ -32,12 +33,13 @@ export async function publishToChannel(
   const sent = await bot.api.sendMessage(channelId, text)
   const messageId = String(sent.message_id)
 
-  // Update article status and record publication
-  db.prepare("UPDATE articles SET status = 'published' WHERE id = ?").run(articleId)
-  db.prepare(`
-    INSERT INTO publications (id, article_id, channel, message_id, published_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
-  `).run(uuid(), articleId, channelId, messageId)
+  // Update article status
+  await prisma.article.update({ where: { id: articleId }, data: { status: 'published' } })
+
+  // Record publication
+  await prisma.publication.create({
+    data: { articleId, channel: channelId, messageId, publishedAt: new Date() },
+  })
 
   return messageId
 }

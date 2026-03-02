@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { PrismaClient } from '../db/database.js'
 import { collectRss } from './rss.js'
 import { collectGithub } from './github.js'
 import { scoreItem } from './score.js'
@@ -6,7 +6,7 @@ import { isDuplicate } from './dedup.js'
 import { insertRawItem } from '../db/database.js'
 import type { CollectedItem } from './types.js'
 
-export async function runCollectors(db: Database.Database, collectors: Array<() => Promise<CollectedItem[]>>): Promise<{ total: number; inserted: number; skipped: number }> {
+export async function runCollectors(prisma: PrismaClient, collectors: Array<() => Promise<CollectedItem[]>>): Promise<{ total: number; inserted: number; skipped: number }> {
   let total = 0
   let inserted = 0
   let skipped = 0
@@ -16,7 +16,7 @@ export async function runCollectors(db: Database.Database, collectors: Array<() 
     total += items.length
 
     for (const item of items) {
-      const dedup = isDuplicate(db, item.title)
+      const dedup = await isDuplicate(prisma, item.title)
       if (dedup.duplicate) {
         console.log(`  skipped (similar to ${dedup.matchedId}): ${item.title}`)
         skipped++
@@ -24,7 +24,7 @@ export async function runCollectors(db: Database.Database, collectors: Array<() 
       }
 
       const score = scoreItem(item.title, item.content)
-      const id = insertRawItem(db, {
+      const id = await insertRawItem(prisma, {
         source_type: item.source_type,
         source_name: item.source_name,
         title: item.title,
@@ -44,12 +44,11 @@ export async function runCollectors(db: Database.Database, collectors: Array<() 
 
 // CLI entry point
 if (process.argv[1]?.endsWith('run.ts') || process.argv[1]?.endsWith('run.js')) {
-  const { createDb } = await import('../db/database.js')
-  const path = await import('path')
-  const db = createDb(path.join(process.cwd(), 'data', 'clawnews.db'))
+  const { createPrisma } = await import('../db/database.js')
+  const prisma = createPrisma()
 
   console.log('Running collectors...')
-  const result = await runCollectors(db, [collectRss, collectGithub])
+  const result = await runCollectors(prisma, [collectRss, collectGithub])
   console.log(`Done. Fetched ${result.total} items, inserted ${result.inserted} new, skipped ${result.skipped} duplicates.`)
-  db.close()
+  await prisma.$disconnect()
 }

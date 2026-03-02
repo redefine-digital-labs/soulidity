@@ -1,8 +1,7 @@
 import 'dotenv/config'
-import { createDb } from '../db/database.js'
+import { createPrisma } from '../db/database.js'
 import { createAnthropicAdapter } from './llm.js'
 import { produceArticles } from './produce.js'
-import path from 'path'
 
 const apiKey = process.env.ANTHROPIC_API_KEY
 if (!apiKey) {
@@ -10,10 +9,10 @@ if (!apiKey) {
   process.exit(1)
 }
 
-const db = createDb(path.join(process.cwd(), 'data', 'clawnews.db'))
+const prisma = createPrisma()
 const llm = createAnthropicAdapter(apiKey)
 
 console.log('Producing articles...')
-const result = await produceArticles(db, llm)
+const result = await produceArticles(prisma, llm)
 console.log(`Done. Processed ${result.processed}, succeeded ${result.succeeded}, failed ${result.failed}.`)
-db.close()
+await prisma.$disconnect()
