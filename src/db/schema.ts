@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS raw_items (
   source_name TEXT NOT NULL,
   title       TEXT NOT NULL,
   url         TEXT NOT NULL UNIQUE,
+  title_hash  TEXT,
   content     TEXT,
   language    TEXT DEFAULT 'en',
   score       REAL DEFAULT 0,
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS members (
 
 CREATE INDEX IF NOT EXISTS idx_raw_items_status ON raw_items(status);
 CREATE INDEX IF NOT EXISTS idx_raw_items_score ON raw_items(score DESC);
+CREATE INDEX IF NOT EXISTS idx_raw_items_created_at ON raw_items(created_at);
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_members_tg_id ON members(tg_id);
 

@@ -19,10 +19,10 @@ export function insertRawItem(
 ): string | null {
   const id = uuid()
   const stmt = db.prepare(`
-    INSERT OR IGNORE INTO raw_items (id, source_type, source_name, title, url, content, language, score, raw_data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO raw_items (id, source_type, source_name, title, url, title_hash, content, language, score, raw_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
-  const result = stmt.run(id, item.source_type, item.source_name, item.title, item.url, item.content, item.language, item.score, item.raw_data)
+  const result = stmt.run(id, item.source_type, item.source_name, item.title, item.url, item.title_hash ?? null, item.content, item.language, item.score, item.raw_data)
   return result.changes > 0 ? id : null
 }
 

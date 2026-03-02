@@ -32,9 +32,27 @@ describe('runCollectors', () => {
     expect(items[0].score).toBeGreaterThan(items[1].score)
   })
 
-  it('deduplicates on second run', async () => {
+  it('skips field returned', async () => {
+    const result = await runCollectors(db, [mockCollector])
+    expect(result.skipped).toBe(0)
+  })
+
+  it('deduplicates on second run via URL', async () => {
     await runCollectors(db, [mockCollector])
     const result2 = await runCollectors(db, [mockCollector])
     expect(result2.inserted).toBe(0)
+  })
+
+  it('deduplicates similar titles from different URLs', async () => {
+    const collector1 = (): Promise<CollectedItem[]> => Promise.resolve([
+      { source_type: 'rss', source_name: 'source-a', title: 'Bitcoin surges past $100K milestone', url: 'https://a.com/1', content: '', language: 'en', raw_data: {} },
+    ])
+    const collector2 = (): Promise<CollectedItem[]> => Promise.resolve([
+      { source_type: 'rss', source_name: 'source-b', title: 'Bitcoin surges above $100K milestone', url: 'https://b.com/1', content: '', language: 'en', raw_data: {} },
+    ])
+    await runCollectors(db, [collector1])
+    const result = await runCollectors(db, [collector2])
+    expect(result.skipped).toBe(1)
+    expect(result.inserted).toBe(0)
   })
 })

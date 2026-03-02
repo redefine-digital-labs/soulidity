@@ -8,6 +8,7 @@ export interface RawItem {
   source_name: string
   title: string
   url: string
+  title_hash: string | null
   content: string | null
   language: string
   score: number
