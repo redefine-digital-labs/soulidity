@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model RawItem {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceType String    @map("source_type")
+  sourceName String    @map("source_name")
+  title      String
+  url        String    @unique
+  titleHash  String?   @map("title_hash")
+  content    String?
+  language   String    @default("en")
+  score      Float     @default(0)
+  status     String    @default("new")
+  rawData    String?   @map("raw_data")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  articles   Article[]
+
+  @@index([status])
+  @@index([score(sort: Desc)])
+  @@index([createdAt])
+  @@map("raw_items")
+}
+
+model Article {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rawItemId    String        @map("raw_item_id") @db.Uuid
+  rawItem      RawItem       @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
+  titleZh      String        @map("title_zh")
+  titleEn      String        @map("title_en")
+  summaryZh    String        @map("summary_zh")
+  summaryEn    String        @map("summary_en")
+  analysisZh   String?       @map("analysis_zh")
+  analysisEn   String?       @map("analysis_en")
+  tags         String?
+  status       String        @default("draft")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  publications Publication[]
+
+  @@index([status])
+  @@map("articles")
+}
+
+model Publication {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  articleId   String    @map("article_id") @db.Uuid
+  article     Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  channel     String
+  messageId   String?   @map("message_id")
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+
+  @@map("publications")
+}
+
+model Member {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tgId       String   @unique @map("tg_id")
+  tgName     String?  @map("tg_name")
+  wallet     String?
+  level      Int      @default(1)
+  inviteCode String?  @map("invite_code")
+  joinedAt   DateTime @default(now()) @map("joined_at") @db.Timestamptz
+
+  @@index([tgId])
+  @@map("members")
+}
+
+model InviteCode {
+  code      String   @id
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  usedBy    String?  @map("used_by")
+  active    Int      @default(1)
+
+  @@map("invite_codes")
+}
