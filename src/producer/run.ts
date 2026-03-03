@@ -1,16 +1,16 @@
 import 'dotenv/config'
 import { createPrisma } from '../db/database.js'
-import { createAnthropicAdapter } from './llm.js'
+import { createZaiAdapter } from './llm.js'
 import { produceArticles } from './produce.js'
 
-const apiKey = process.env.ANTHROPIC_API_KEY
+const apiKey = process.env.ZAI_API_KEY
 if (!apiKey) {
-  console.error('ANTHROPIC_API_KEY is required')
+  console.error('ZAI_API_KEY is required')
   process.exit(1)
 }
 
 const prisma = createPrisma()
-const llm = createAnthropicAdapter(apiKey)
+const llm = createZaiAdapter(apiKey)
 
 console.log('Producing articles...')
 const result = await produceArticles(prisma, llm)
