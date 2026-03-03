@@ -8,6 +8,8 @@ import { produceArticles } from './producer/produce.js'
 import type { LLMAdapter } from './producer/llm.js'
 
 export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
+  let producing = false
+
   cron.schedule('0 * * * *', async () => {
     console.log(`[${new Date().toISOString()}] Running RSS collection...`)
     const result = await runCollectors(prisma, [collectRss])
@@ -21,20 +23,36 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
   })
 
   cron.schedule('25 * * * *', async () => {
-    console.log(`[${new Date().toISOString()}] Running deduplication...`)
-    const result = await runDedup(prisma)
-    console.log(`Dedup: total ${result.total}, kept ${result.kept}, duplicates ${result.duplicates}`)
-  })
+    if (producing) {
+      console.log(`[${new Date().toISOString()}] Skipping — previous produce still running`)
+      return
+    }
+    producing = true
+    try {
+      // Step 1: Dedup
+      console.log(`[${new Date().toISOString()}] Running deduplication...`)
+      const dedupResult = await runDedup(prisma)
+      console.log(`Dedup: total ${dedupResult.total}, kept ${dedupResult.kept}, duplicates ${dedupResult.duplicates}`)
 
-  cron.schedule('30 * * * *', async () => {
-    console.log(`[${new Date().toISOString()}] Running content production...`)
-    const result = await produceArticles(prisma, llm)
-    console.log(`Producer: processed ${result.processed}, succeeded ${result.succeeded}, failed ${result.failed}`)
+      // Step 2: Produce all deduped items continuously
+      console.log(`[${new Date().toISOString()}] Running content production...`)
+      let totalSucceeded = 0, totalFailed = 0
+      while (true) {
+        const result = await produceArticles(prisma, llm)
+        if (result.processed === 0) break
+        totalSucceeded += result.succeeded
+        totalFailed += result.failed
+        // Fatal API error stopped the batch early — stop looping
+        if (result.succeeded + result.failed < result.processed) break
+      }
+      console.log(`Producer done: succeeded ${totalSucceeded}, failed ${totalFailed}`)
+    } finally {
+      producing = false
+    }
   })
 
   console.log('Scheduler started. Cron jobs:')
   console.log('  RSS collection:      every hour at :00')
   console.log('  GitHub collection:   daily at 06:00')
-  console.log('  Deduplication:       every hour at :25')
-  console.log('  Content production:  every hour at :30')
+  console.log('  Dedup + Produce:     every hour at :25')
 }
