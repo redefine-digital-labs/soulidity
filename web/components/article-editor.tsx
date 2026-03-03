@@ -2,12 +2,20 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+interface Company {
+  id: string
+  name: string
+  slug: string
+  category: string
+}
+
 interface Article {
   id: string
   titleZh: string
   summaryZh: string
   analysisZh: string | null
   tags: string | null
+  companies?: Company[]
   status: string
   source_url?: string
   source_name?: string
@@ -83,6 +91,21 @@ export function ArticleEditor({ article }: { article: Article }) {
           onChange={e => update('tags', JSON.stringify(e.target.value.split(',').map(t => t.trim()).filter(Boolean)))}
         />
       </div>
+
+      {/* Companies */}
+      {article.companies && article.companies.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium mb-2">关联公司</label>
+          <div className="flex flex-wrap gap-2">
+            {article.companies.map(c => (
+              <span key={c.id} className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm">
+                {c.name}
+                <span className="text-indigo-400 text-xs">({c.category})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3 pt-4 border-t">

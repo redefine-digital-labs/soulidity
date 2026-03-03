@@ -5,7 +5,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
   const article = await prisma.article.findUnique({
     where: { id },
-    include: { rawItem: { select: { url: true, sourceName: true } } },
+    include: {
+      rawItem: { select: { url: true, sourceName: true } },
+      companies: { include: { company: true } },
+    },
   })
   if (!article) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -13,6 +16,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     ...article,
     source_url: article.rawItem?.url,
     source_name: article.rawItem?.sourceName,
+    companies: article.companies.map(ac => ac.company),
     rawItem: undefined,
   })
 }

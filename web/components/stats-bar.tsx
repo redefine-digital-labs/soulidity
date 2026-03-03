@@ -6,6 +6,7 @@ interface Stats {
   articles_draft: number
   articles_reviewed: number
   published_today: number
+  companies_total: number
 }
 
 export function StatsBar() {
@@ -22,10 +23,11 @@ export function StatsBar() {
     { label: 'Draft', value: stats.articles_draft, color: 'text-blue-600' },
     { label: 'Reviewed', value: stats.articles_reviewed, color: 'text-green-600' },
     { label: 'Published Today', value: stats.published_today, color: 'text-purple-600' },
+    { label: 'Companies', value: stats.companies_total, color: 'text-indigo-600' },
   ]
 
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-5 gap-4">
       {items.map(item => (
         <div key={item.label} className="bg-white rounded-lg p-4 shadow-sm border">
           <div className={`text-2xl font-bold ${item.color}`}>{item.value}</div>
