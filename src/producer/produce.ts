@@ -2,43 +2,37 @@ import type { PrismaClient } from '../db/database.js'
 import type { LLMAdapter } from './llm.js'
 import { getRawItemsByStatus, updateRawItemStatus, insertArticle } from '../db/database.js'
 
-const SYSTEM_PROMPT = `You are a professional AI×Web3 content editor.
-Given raw source material, produce structured bilingual (Chinese + English) content.
-Always respond with valid JSON only, no markdown fences.`
+const SYSTEM_PROMPT = `你是一名专业的 AI×Web3 内容编辑。
+根据原始素材，产出结构化的中文新闻内容。
+必须只返回合法 JSON，不要 markdown 代码块。`
 
 function buildUserPrompt(title: string, content: string, url: string, sourceName: string): string {
-  return `Raw material:
-Title: ${title}
-Source: ${sourceName}
-Content: ${content}
-URL: ${url}
+  return `原始素材：
+标题：${title}
+来源：${sourceName}
+内容：${content}
+链接：${url}
 
-Output JSON with these exact fields:
+输出 JSON，字段如下：
 {
-  "title_zh": "Chinese title (one sentence summary)",
-  "title_en": "English title",
-  "summary_zh": "3-5 sentence Chinese summary, professional and accurate",
-  "summary_en": "3-5 sentence English summary",
-  "analysis_zh": "Deep analysis: what this means for AI×Web3",
-  "analysis_en": "Deep analysis in English",
+  "title_zh": "中文标题，一句话概括",
+  "summary_zh": "3-5句中文摘要，专业准确",
+  "analysis_zh": "深度解读：这对 AI×Web3 意味着什么",
   "tags": ["tag1", "tag2", "tag3"]
 }`
 }
 
 interface ProducedArticle {
   title_zh: string
-  title_en: string
   summary_zh: string
-  summary_en: string
-  analysis_zh: string
-  analysis_en: string
+  analysis_zh: string | null
   tags: string[]
 }
 
 function parseResponse(text: string): ProducedArticle {
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
   const parsed = JSON.parse(cleaned)
-  const required = ['title_zh', 'title_en', 'summary_zh', 'summary_en']
+  const required = ['title_zh', 'summary_zh']
   for (const field of required) {
     if (!parsed[field]) throw new Error(`Missing required field: ${field}`)
   }
@@ -60,11 +54,11 @@ export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, lim
       await insertArticle(prisma, {
         raw_item_id: item.id,
         title_zh: article.title_zh,
-        title_en: article.title_en,
+        title_en: article.title_zh,
         summary_zh: article.summary_zh,
-        summary_en: article.summary_en,
-        analysis_zh: article.analysis_zh,
-        analysis_en: article.analysis_en,
+        summary_en: article.summary_zh,
+        analysis_zh: article.analysis_zh ?? null,
+        analysis_en: null,
         tags: JSON.stringify(article.tags),
       })
 

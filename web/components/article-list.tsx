@@ -6,7 +6,6 @@ import { createSupabaseBrowser } from '@web/lib/supabase/client'
 interface Article {
   id: string
   titleZh: string
-  titleEn: string
   status: string
   tags: string | null
   createdAt: string
@@ -71,7 +70,6 @@ export function ArticleList() {
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="font-medium text-gray-900 truncate">{article.titleZh}</div>
-                <div className="text-sm text-gray-500 truncate">{article.titleEn}</div>
               </div>
               <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ${STATUS_COLORS[article.status] ?? 'bg-gray-100'}`}>
                 {article.status}

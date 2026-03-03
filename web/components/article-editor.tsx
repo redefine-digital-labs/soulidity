@@ -5,11 +5,8 @@ import { useRouter } from 'next/navigation'
 interface Article {
   id: string
   titleZh: string
-  titleEn: string
   summaryZh: string
-  summaryEn: string
   analysisZh: string | null
-  analysisEn: string | null
   tags: string | null
   status: string
   source_url?: string
@@ -61,31 +58,19 @@ export function ArticleEditor({ article }: { article: Article }) {
         <span>{new Date(article.createdAt).toLocaleString()}</span>
       </div>
 
-      {/* Bilingual editor — side by side */}
-      <div className="grid grid-cols-2 gap-6">
+      {/* Editor */}
+      <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Title (ZH)</label>
+          <label className="block text-sm font-medium mb-1">标题</label>
           <input className="w-full border rounded px-3 py-2" value={form.titleZh} onChange={e => update('titleZh', e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Title (EN)</label>
-          <input className="w-full border rounded px-3 py-2" value={form.titleEn} onChange={e => update('titleEn', e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Summary (ZH)</label>
+          <label className="block text-sm font-medium mb-1">摘要</label>
           <textarea className="w-full border rounded px-3 py-2 h-32" value={form.summaryZh} onChange={e => update('summaryZh', e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Summary (EN)</label>
-          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.summaryEn} onChange={e => update('summaryEn', e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Analysis (ZH)</label>
+          <label className="block text-sm font-medium mb-1">解读</label>
           <textarea className="w-full border rounded px-3 py-2 h-32" value={form.analysisZh ?? ''} onChange={e => update('analysisZh', e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Analysis (EN)</label>
-          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.analysisEn ?? ''} onChange={e => update('analysisEn', e.target.value)} />
         </div>
       </div>
 

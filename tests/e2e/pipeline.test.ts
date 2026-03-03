@@ -41,11 +41,8 @@ describe('full pipeline', () => {
       async generate(_system: string, _user: string): Promise<string> {
         return JSON.stringify({
           title_zh: 'AI Agent 在 Sui 链上启动',
-          title_en: 'AI Agent Launches on Sui',
           summary_zh: '一个新的 AI Agent 框架在 Sui 区块链上推出。',
-          summary_en: 'A new AI agent framework launches on Sui blockchain.',
           analysis_zh: '这表明 AI 与区块链的结合正在加速。',
-          analysis_en: 'This signals accelerating convergence of AI and blockchain.',
           tags: ['ai-agent', 'sui', 'defi'],
         })
       },

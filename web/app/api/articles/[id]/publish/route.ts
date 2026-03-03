@@ -22,9 +22,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
 
   const text = formatArticle({
     title_zh: article.titleZh,
-    title_en: article.titleEn,
     summary_zh: article.summaryZh,
-    summary_en: article.summaryEn,
     analysis_zh: article.analysisZh ?? null,
     tags: article.tags ?? null,
     source_url: raw?.url ?? '',

@@ -14,16 +14,16 @@ beforeEach(() => {
 describe('parseResponse', () => {
   it('parses valid JSON', () => {
     const result = parseResponse(JSON.stringify({
-      title_zh: '标题', title_en: 'Title',
-      summary_zh: '摘要', summary_en: 'Summary',
-      analysis_zh: '解读', analysis_en: 'Analysis',
+      title_zh: '标题',
+      summary_zh: '摘要',
+      analysis_zh: '解读',
       tags: ['ai'],
     }))
     expect(result.title_zh).toBe('标题')
   })
 
   it('strips markdown fences', () => {
-    const result = parseResponse('```json\n{"title_zh":"标题","title_en":"T","summary_zh":"s","summary_en":"s","analysis_zh":"a","analysis_en":"a","tags":[]}\n```')
+    const result = parseResponse('```json\n{"title_zh":"标题","summary_zh":"s","analysis_zh":"a","tags":[]}\n```')
     expect(result.title_zh).toBe('标题')
   })
 
@@ -42,9 +42,9 @@ describe('produceArticles', () => {
     await updateRawItemStatus(prisma, id!, 'deduped')
 
     const mockLLM = createMockLLM({
-      title_zh: '测试标题', title_en: 'Test Title',
-      summary_zh: '中文摘要', summary_en: 'English summary',
-      analysis_zh: '中文解读', analysis_en: 'English analysis',
+      title_zh: '测试标题',
+      summary_zh: '中文摘要',
+      analysis_zh: '中文解读',
       tags: ['ai', 'web3'],
     })
 

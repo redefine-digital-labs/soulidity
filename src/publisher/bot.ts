@@ -22,9 +22,7 @@ export async function publishToChannel(
 
   const text = formatArticle({
     title_zh: article.titleZh,
-    title_en: article.titleEn,
     summary_zh: article.summaryZh,
-    summary_en: article.summaryEn,
     analysis_zh: article.analysisZh,
     tags: article.tags,
     source_url: raw?.url ?? '',
