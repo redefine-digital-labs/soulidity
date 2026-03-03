@@ -4,9 +4,12 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Public paths
+  // Public paths — no auth required
   if (
+    pathname === '/' ||
     pathname === '/login' ||
+    pathname === '/verify' ||
+    pathname.startsWith('/companies') ||
     pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico'
   ) {

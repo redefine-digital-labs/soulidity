@@ -64,7 +64,7 @@ export function ArticleList() {
         {articles.map(article => (
           <Link
             key={article.id}
-            href={`/articles/${article.id}`}
+            href={`/admin/articles/${article.id}`}
             className="block bg-white rounded-lg p-4 shadow-sm border hover:border-gray-300 transition"
           >
             <div className="flex items-start justify-between gap-4">

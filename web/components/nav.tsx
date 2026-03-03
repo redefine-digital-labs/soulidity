@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createSupabaseBrowser } from '@web/lib/supabase/client'
 
 const links = [
-  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/admin', label: 'Dashboard' },
   { href: '/companies', label: 'Companies' },
   { href: '/admin/invites', label: 'Invites' },
   { href: '/admin/members', label: 'Members' },
@@ -15,8 +15,6 @@ export function Nav() {
   const router = useRouter()
   const supabase = createSupabaseBrowser()
 
-  if (pathname === '/login') return null
-
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -26,7 +24,7 @@ export function Nav() {
   return (
     <nav className="border-b bg-white">
       <div className="max-w-4xl mx-auto px-6 flex items-center h-14 gap-6">
-        <Link href="/dashboard" className="font-bold text-lg">ClawNews</Link>
+        <Link href="/admin" className="font-bold text-lg">ClawNews</Link>
         <div className="flex gap-4">
           {links.map(link => (
             <Link

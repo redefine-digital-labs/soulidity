@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import { PublicNav } from '@web/components/public-nav'
 
 interface Company {
   id: string
@@ -39,7 +40,9 @@ export default function CompaniesPage() {
   const categories = ['', 'AI', 'DeFi', 'Infrastructure', 'L1/L2', 'Exchange', 'Other']
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="min-h-screen bg-gray-50">
+      <PublicNav />
+      <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Companies</h1>
 
       <div className="flex gap-2 mb-4 flex-wrap">
@@ -80,6 +83,7 @@ export default function CompaniesPage() {
         {companies.length === 0 && (
           <div className="text-center text-gray-400 py-8">No companies</div>
         )}
+      </div>
       </div>
     </div>
   )

@@ -47,13 +47,13 @@ export function ArticleEditor({ article }: { article: Article }) {
       body: JSON.stringify({ status }),
     })
     router.refresh()
-    router.push('/dashboard')
+    router.push('/admin')
   }
 
   async function publish() {
     await fetch(`/api/articles/${article.id}/publish`, { method: 'POST' })
     router.refresh()
-    router.push('/dashboard')
+    router.push('/admin')
   }
 
   return (
@@ -112,11 +112,6 @@ export function ArticleEditor({ article }: { article: Article }) {
         <button onClick={save} disabled={saving} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50">
           {saving ? 'Saving...' : 'Save'}
         </button>
-        {form.status === 'draft' && (
-          <button onClick={() => setStatus('reviewed')} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500">
-            Approve
-          </button>
-        )}
         {(form.status === 'draft' || form.status === 'reviewed') && (
           <button onClick={publish} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-500">
             Publish to TG
@@ -127,7 +122,7 @@ export function ArticleEditor({ article }: { article: Article }) {
             Reject
           </button>
         )}
-        <button onClick={() => router.push('/dashboard')} className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+        <button onClick={() => router.push('/admin')} className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
           Back
         </button>
       </div>

@@ -6,13 +6,14 @@ import { formatArticle } from '@web/lib/formatter'
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  const article = await prisma.article.findUnique({ where: { id } })
-  if (!article) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-
-  const raw = await prisma.rawItem.findUnique({
-    where: { id: article.rawItemId },
-    select: { url: true },
+  const article = await prisma.article.findUnique({
+    where: { id },
+    include: {
+      rawItem: { select: { url: true } },
+      companies: { include: { company: { select: { name: true } } } },
+    },
   })
+  if (!article) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const token = process.env.TG_BOT_TOKEN
   const channelId = process.env.TG_CHANNEL_ID
@@ -25,7 +26,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     summary_zh: article.summaryZh,
     analysis_zh: article.analysisZh ?? null,
     tags: article.tags ?? null,
-    source_url: raw?.url ?? '',
+    companies: article.companies.map(ac => ac.company.name),
+    source_url: article.rawItem?.url ?? '',
   })
 
   let messageId: string
