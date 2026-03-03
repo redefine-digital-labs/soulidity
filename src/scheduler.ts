@@ -42,8 +42,7 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
         if (result.processed === 0) break
         totalSucceeded += result.succeeded
         totalFailed += result.failed
-        // Fatal API error stopped the batch early — stop looping
-        if (result.succeeded + result.failed < result.processed) break
+        if (result.fatalError) break
       }
       console.log(`Producer done: succeeded ${totalSucceeded}, failed ${totalFailed}`)
     } finally {

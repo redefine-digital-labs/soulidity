@@ -1,3 +1,4 @@
+import pLimit from 'p-limit'
 import type { PrismaClient } from '../db/database.js'
 import type { LLMAdapter } from './llm.js'
 import { getRawItemsByStatus, updateRawItemStatus, insertArticle, upsertCompany, linkArticleCompany } from '../db/database.js'
@@ -55,13 +56,21 @@ function parseResponse(text: string): ProducedArticle {
   return parsed as ProducedArticle
 }
 
-export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, limit = 10): Promise<{ processed: number; succeeded: number; failed: number }> {
+export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, limit = 10, concurrency = 10): Promise<{ processed: number; succeeded: number; failed: number; fatalError: boolean }> {
   const items = await getRawItemsByStatus(prisma, 'deduped', limit)
   let succeeded = 0
   let failed = 0
+  let fatalError = false
 
-  for (const item of items) {
-    await updateRawItemStatus(prisma, item.id, 'processing')
+  // Mark all as processing upfront
+  await Promise.all(items.map(item => updateRawItemStatus(prisma, item.id, 'processing')))
+
+  const limit_ = pLimit(concurrency)
+  await Promise.all(items.map(item => limit_(async () => {
+    if (fatalError) {
+      await updateRawItemStatus(prisma, item.id, 'deduped')
+      return
+    }
     try {
       const prompt = buildUserPrompt(item.title, item.content ?? '', item.url, item.source_name)
       const response = await llm.generate(SYSTEM_PROMPT, prompt)
@@ -97,15 +106,16 @@ export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, lim
       if (status === 402 || status === 401 || status === 429) {
         console.error(`Fatal API error (${status}), stopping producer:`, err.message)
         await updateRawItemStatus(prisma, item.id, 'deduped')
-        break
+        fatalError = true
+        return
       }
       console.error(`Failed to produce article for ${item.id}:`, err)
       await updateRawItemStatus(prisma, item.id, 'rejected')
       failed++
     }
-  }
+  })))
 
-  return { processed: items.length, succeeded, failed }
+  return { processed: items.length, succeeded, failed, fatalError }
 }
 
 export { parseResponse, buildUserPrompt }
