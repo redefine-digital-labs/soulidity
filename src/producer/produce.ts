@@ -46,7 +46,7 @@ function parseResponse(text: string): ProducedArticle {
 }
 
 export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, limit = 10): Promise<{ processed: number; succeeded: number; failed: number }> {
-  const items = await getRawItemsByStatus(prisma, 'new', limit)
+  const items = await getRawItemsByStatus(prisma, 'deduped', limit)
   let succeeded = 0
   let failed = 0
 
@@ -70,7 +70,13 @@ export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, lim
 
       await updateRawItemStatus(prisma, item.id, 'produced')
       succeeded++
-    } catch (err) {
+    } catch (err: any) {
+      const status = err?.status
+      if (status === 402 || status === 401 || status === 429) {
+        console.error(`Fatal API error (${status}), stopping producer:`, err.message)
+        await updateRawItemStatus(prisma, item.id, 'deduped')
+        break
+      }
       console.error(`Failed to produce article for ${item.id}:`, err)
       await updateRawItemStatus(prisma, item.id, 'rejected')
       failed++

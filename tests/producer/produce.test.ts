@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createMockPrisma } from '../helpers/mock-prisma.js'
-import { insertRawItem, getRawItemsByStatus, getArticlesByStatus } from '../../src/db/database.js'
+import { insertRawItem, getRawItemsByStatus, updateRawItemStatus, getArticlesByStatus } from '../../src/db/database.js'
 import { produceArticles, parseResponse } from '../../src/producer/produce.js'
 import { createMockLLM } from './llm.test.js'
 
@@ -34,11 +34,12 @@ describe('parseResponse', () => {
 
 describe('produceArticles', () => {
   it('produces articles from raw items', async () => {
-    await insertRawItem(prisma, {
+    const id = await insertRawItem(prisma, {
       source_type: 'rss', source_name: 'coindesk', title: 'Test',
       url: 'https://test.com/1', title_hash: null, content: 'AI agent news',
       language: 'en', score: 5, raw_data: null,
     })
+    await updateRawItemStatus(prisma, id!, 'deduped')
 
     const mockLLM = createMockLLM({
       title_zh: '测试标题', title_en: 'Test Title',
@@ -52,7 +53,7 @@ describe('produceArticles', () => {
     expect(result.failed).toBe(0)
 
     expect(await getRawItemsByStatus(prisma, 'produced')).toHaveLength(1)
-    expect(await getRawItemsByStatus(prisma, 'new')).toHaveLength(0)
+    expect(await getRawItemsByStatus(prisma, 'deduped')).toHaveLength(0)
 
     const articles = await getArticlesByStatus(prisma, 'draft')
     expect(articles).toHaveLength(1)
@@ -60,11 +61,12 @@ describe('produceArticles', () => {
   })
 
   it('marks item as rejected on LLM failure', async () => {
-    await insertRawItem(prisma, {
+    const id = await insertRawItem(prisma, {
       source_type: 'rss', source_name: 'test', title: 'Bad',
       url: 'https://test.com/bad', title_hash: null, content: '',
       language: 'en', score: 1, raw_data: null,
     })
+    await updateRawItemStatus(prisma, id!, 'deduped')
 
     const failingLLM = {
       async generate(): Promise<string> { throw new Error('API error') },
