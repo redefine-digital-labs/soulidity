@@ -44,6 +44,9 @@ describe('full pipeline', () => {
           summary_zh: '一个新的 AI Agent 框架在 Sui 区块链上推出。',
           analysis_zh: '这表明 AI 与区块链的结合正在加速。',
           tags: ['ai-agent', 'sui', 'defi'],
+          companies: [
+            { name: 'Sui', category: 'L1/L2', description: '高性能 Layer1 区块链' },
+          ],
         })
       },
     }
@@ -58,5 +61,10 @@ describe('full pipeline', () => {
     expect(drafts).toHaveLength(1)
     expect(drafts[0].title_zh).toBe('AI Agent 在 Sui 链上启动')
     expect(JSON.parse(drafts[0].tags!)).toContain('ai-agent')
+
+    // Verify company was created
+    const companies = await prisma.company.findMany({})
+    expect(companies).toHaveLength(1)
+    expect(companies[0].name).toBe('Sui')
   })
 })

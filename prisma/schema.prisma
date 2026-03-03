@@ -29,22 +29,50 @@ model RawItem {
 }
 
 model Article {
-  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  rawItemId    String        @map("raw_item_id") @db.Uuid
-  rawItem      RawItem       @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
-  titleZh      String        @map("title_zh")
-  titleEn      String        @map("title_en")
-  summaryZh    String        @map("summary_zh")
-  summaryEn    String        @map("summary_en")
-  analysisZh   String?       @map("analysis_zh")
-  analysisEn   String?       @map("analysis_en")
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rawItemId    String           @map("raw_item_id") @db.Uuid
+  rawItem      RawItem          @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
+  titleZh      String           @map("title_zh")
+  titleEn      String           @map("title_en")
+  summaryZh    String           @map("summary_zh")
+  summaryEn    String           @map("summary_en")
+  analysisZh   String?          @map("analysis_zh")
+  analysisEn   String?          @map("analysis_en")
   tags         String?
-  status       String        @default("draft")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  status       String           @default("draft")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
   publications Publication[]
+  companies    ArticleCompany[]
 
   @@index([status])
   @@map("articles")
+}
+
+model Company {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  slug         String           @unique
+  description  String?
+  website      String?
+  logoUrl      String?          @map("logo_url")
+  category     String           @default("Other")
+  mentionCount Int              @default(0) @map("mention_count")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  articles     ArticleCompany[]
+
+  @@index([category])
+  @@index([mentionCount(sort: Desc)])
+  @@map("companies")
+}
+
+model ArticleCompany {
+  articleId String  @map("article_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, companyId])
+  @@map("article_companies")
 }
 
 model Publication {

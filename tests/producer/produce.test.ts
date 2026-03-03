@@ -46,6 +46,9 @@ describe('produceArticles', () => {
       summary_zh: '中文摘要',
       analysis_zh: '中文解读',
       tags: ['ai', 'web3'],
+      companies: [
+        { name: 'OpenAI', category: 'AI', description: '领先的人工智能研究公司' },
+      ],
     })
 
     const result = await produceArticles(prisma, mockLLM)
@@ -58,6 +61,16 @@ describe('produceArticles', () => {
     const articles = await getArticlesByStatus(prisma, 'draft')
     expect(articles).toHaveLength(1)
     expect(articles[0].title_zh).toBe('测试标题')
+
+    // Verify company was created and linked
+    const companies = await prisma.company.findMany({})
+    expect(companies).toHaveLength(1)
+    expect(companies[0].name).toBe('OpenAI')
+    expect(companies[0].slug).toBe('openai')
+    expect(companies[0].mentionCount).toBe(1)
+
+    const links = await prisma.articleCompany.findMany({})
+    expect(links).toHaveLength(1)
   })
 
   it('marks item as rejected on LLM failure', async () => {

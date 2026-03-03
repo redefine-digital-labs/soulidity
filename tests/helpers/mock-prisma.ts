@@ -6,6 +6,8 @@ interface MockStore {
   publications: any[]
   members: any[]
   inviteCodes: any[]
+  companies: any[]
+  articleCompanies: any[]
 }
 
 function matchWhere(row: any, where: any): boolean {
@@ -70,7 +72,13 @@ function createModel(collection: any[], defaults: Record<string, any> = {}) {
     upsert: vi.fn(async ({ where, create, update }: any) => {
       const existing = collection.find(r => matchWhere(r, where))
       if (existing) {
-        Object.assign(existing, update)
+        for (const [k, v] of Object.entries(update)) {
+          if (v && typeof v === 'object' && 'increment' in (v as any)) {
+            existing[k] = (existing[k] ?? 0) + (v as any).increment
+          } else {
+            existing[k] = v
+          }
+        }
         return existing
       }
       const row = { id: crypto.randomUUID(), createdAt: new Date(), ...defaults, ...create }
@@ -91,6 +99,8 @@ export function createMockPrisma() {
     publications: [],
     members: [],
     inviteCodes: [],
+    companies: [],
+    articleCompanies: [],
   }
 
   const prisma = {
@@ -99,6 +109,8 @@ export function createMockPrisma() {
     publication: createModel(store.publications),
     member: createModel(store.members, { level: 1 }),
     inviteCode: createModel(store.inviteCodes, { active: 1 }),
+    company: createModel(store.companies, { mentionCount: 0 }),
+    articleCompany: createModel(store.articleCompanies),
     $disconnect: vi.fn(),
   }
 

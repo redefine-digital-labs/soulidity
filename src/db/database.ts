@@ -105,6 +105,46 @@ export async function updateArticle(
   await prisma.article.update({ where: { id }, data })
 }
 
+// --- companies ---
+
+export function toSlug(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
+export async function upsertCompany(
+  prisma: PrismaClient,
+  company: { name: string; category: string; description?: string }
+): Promise<string> {
+  const slug = toSlug(company.name)
+  const row = await prisma.company.upsert({
+    where: { slug },
+    create: {
+      name: company.name,
+      slug,
+      category: company.category,
+      description: company.description ?? null,
+      mentionCount: 1,
+    },
+    update: {
+      mentionCount: { increment: 1 },
+    },
+  })
+  return row.id
+}
+
+export async function linkArticleCompany(
+  prisma: PrismaClient,
+  articleId: string,
+  companyId: string
+): Promise<void> {
+  await prisma.articleCompany.create({
+    data: { articleId, companyId },
+  }).catch((err: any) => {
+    if (err?.code === 'P2002') return // already linked
+    throw err
+  })
+}
+
 // --- publications ---
 
 export async function insertPublication(prisma: PrismaClient, articleId: string, channel: string, messageId: string): Promise<string> {
