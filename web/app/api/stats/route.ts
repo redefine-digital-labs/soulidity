@@ -5,13 +5,13 @@ export async function GET() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const [raw_new, articles_draft, articles_reviewed, published_today, companies_total] = await Promise.all([
+  const [raw_new, articles_draft, articles_rejected, published_today, companies_total] = await Promise.all([
     prisma.rawItem.count({ where: { status: 'new' } }),
     prisma.article.count({ where: { status: 'draft' } }),
-    prisma.article.count({ where: { status: 'reviewed' } }),
+    prisma.article.count({ where: { status: 'rejected' } }),
     prisma.publication.count({ where: { publishedAt: { gte: today } } }),
     prisma.company.count(),
   ])
 
-  return NextResponse.json({ raw_new, articles_draft, articles_reviewed, published_today, companies_total })
+  return NextResponse.json({ raw_new, articles_draft, articles_rejected, published_today, companies_total })
 }

@@ -1,6 +1,6 @@
 export type SourceType = 'rss' | 'github'
 export type RawItemStatus = 'new' | 'deduped' | 'duplicate' | 'processing' | 'produced' | 'published' | 'rejected'
-export type ArticleStatus = 'draft' | 'reviewed' | 'published'
+export type ArticleStatus = 'draft' | 'published' | 'rejected'
 
 export interface RawItem {
   id: string

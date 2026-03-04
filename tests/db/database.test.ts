@@ -76,10 +76,10 @@ describe('articles', () => {
       summary_zh: '摘要', summary_en: 'Summary',
       analysis_zh: null, analysis_en: null, tags: null,
     })
-    await updateArticle(prisma, id, { title_zh: '新标题', status: 'reviewed' })
+    await updateArticle(prisma, id, { title_zh: '新标题', status: 'published' })
     const article = await getArticleById(prisma, id)
     expect(article!.title_zh).toBe('新标题')
-    expect(article!.status).toBe('reviewed')
+    expect(article!.status).toBe('published')
   })
 
   it('lists articles by status', async () => {
@@ -88,7 +88,7 @@ describe('articles', () => {
     await insertArticle(prisma, { raw_item_id: r1!, title_zh: 'A', title_en: 'A', summary_zh: 's', summary_en: 's', analysis_zh: null, analysis_en: null, tags: null })
     await insertArticle(prisma, { raw_item_id: r2!, title_zh: 'B', title_en: 'B', summary_zh: 's', summary_en: 's', analysis_zh: null, analysis_en: null, tags: null })
     expect(await getArticlesByStatus(prisma, 'draft')).toHaveLength(2)
-    expect(await getArticlesByStatus(prisma, 'reviewed')).toHaveLength(0)
+    expect(await getArticlesByStatus(prisma, 'published')).toHaveLength(0)
   })
 })
 
@@ -99,6 +99,6 @@ describe('stats', () => {
     const stats = await getStats(prisma)
     expect(stats.raw_new).toBe(1)
     expect(stats.articles_draft).toBe(1)
-    expect(stats.articles_reviewed).toBe(0)
+    expect(stats.articles_rejected).toBe(0)
   })
 })

@@ -5,6 +5,7 @@ import { collectRss } from './collector/rss.js'
 import { collectGithub } from './collector/github.js'
 import { runDedup } from './producer/dedup.js'
 import { produceArticles } from './producer/produce.js'
+import { autoPublish } from './publisher/publish.js'
 import type { LLMAdapter } from './producer/llm.js'
 
 export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
@@ -45,8 +46,23 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
         if (result.fatalError) break
       }
       console.log(`Producer done: succeeded ${totalSucceeded}, failed ${totalFailed}`)
+
+      // Step 3: Auto-publish drafts older than 10 minutes
+      const pubResult = await autoPublish(prisma)
+      if (pubResult.published > 0 || pubResult.failed > 0) {
+        console.log(`Auto-publish: published ${pubResult.published}, failed ${pubResult.failed}`)
+      }
     } finally {
       producing = false
+    }
+  })
+
+  // Auto-publish: drafts older than 10 minutes → publish to TG
+  cron.schedule('*/5 * * * *', async () => {
+    console.log(`[${new Date().toISOString()}] Running auto-publish...`)
+    const result = await autoPublish(prisma)
+    if (result.published > 0 || result.failed > 0) {
+      console.log(`Auto-publish: published ${result.published}, failed ${result.failed}`)
     }
   })
 
@@ -54,4 +70,5 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
   console.log('  RSS collection:      every hour at :00')
   console.log('  GitHub collection:   daily at 06:00')
   console.log('  Dedup + Produce:     every hour at :25')
+  console.log('  Auto-publish:        every 5 minutes')
 }

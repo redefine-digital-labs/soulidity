@@ -13,8 +13,8 @@ interface Article {
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-blue-100 text-blue-700',
-  reviewed: 'bg-green-100 text-green-700',
   published: 'bg-purple-100 text-purple-700',
+  rejected: 'bg-red-100 text-red-700',
 }
 
 export function ArticleList() {
@@ -44,7 +44,7 @@ export function ArticleList() {
     return () => { supabase.removeChannel(channel) }
   }, [fetchArticles])
 
-  const filters = ['', 'draft', 'reviewed', 'published']
+  const filters = ['', 'draft', 'published', 'rejected']
 
   return (
     <div>

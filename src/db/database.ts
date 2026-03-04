@@ -158,20 +158,20 @@ export async function insertPublication(prisma: PrismaClient, articleId: string,
 
 export async function getStats(prisma: PrismaClient): Promise<{
   raw_new: number; raw_deduped: number; raw_duplicate: number;
-  articles_draft: number; articles_reviewed: number; published_today: number
+  articles_draft: number; articles_rejected: number; published_today: number
 }> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const [raw_new, raw_deduped, raw_duplicate, articles_draft, articles_reviewed, published_today] = await Promise.all([
+  const [raw_new, raw_deduped, raw_duplicate, articles_draft, articles_rejected, published_today] = await Promise.all([
     prisma.rawItem.count({ where: { status: 'new' } }),
     prisma.rawItem.count({ where: { status: 'deduped' } }),
     prisma.rawItem.count({ where: { status: 'duplicate' } }),
     prisma.article.count({ where: { status: 'draft' } }),
-    prisma.article.count({ where: { status: 'reviewed' } }),
+    prisma.article.count({ where: { status: 'rejected' } }),
     prisma.publication.count({ where: { publishedAt: { gte: today } } }),
   ])
-  return { raw_new, raw_deduped, raw_duplicate, articles_draft, articles_reviewed, published_today }
+  return { raw_new, raw_deduped, raw_duplicate, articles_draft, articles_rejected, published_today }
 }
 
 // --- Mappers: Prisma model → legacy snake_case types ---
