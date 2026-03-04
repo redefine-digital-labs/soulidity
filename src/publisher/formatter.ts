@@ -28,7 +28,7 @@ export function formatArticle(input: FormatInput): string {
   }
 
   msg += `\n\n🔗 ${input.source_url}`
-  msg += `\n\n---\nby ClawNews 🦞`
+  msg += `\n\n---\nby CryptoOpenClaw 🦞`
 
   return msg
 }

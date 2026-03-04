@@ -12,7 +12,7 @@ if (!apiKey) {
 const prisma = createPrisma()
 const llm = createZaiAdapter(apiKey)
 
-console.log('ClawNews engine starting...')
+console.log('CryptoOpenClaw engine starting...')
 console.log(`Database: ${process.env.DATABASE_URL?.replace(/\/\/.*@/, '//***@')}`)
 
 startScheduler(prisma, llm)

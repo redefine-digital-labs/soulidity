@@ -34,7 +34,7 @@ export async function collectGithub(): Promise<CollectedItem[]> {
         {
           headers: {
             'Accept': 'application/vnd.github+json',
-            'User-Agent': 'ClawNews/0.1',
+            'User-Agent': 'CryptoOpenClaw/0.1',
           },
         }
       )

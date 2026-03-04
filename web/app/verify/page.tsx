@@ -20,7 +20,7 @@ function VerifyForm() {
 
   return (
     <div className="max-w-md mx-auto p-6 mt-20">
-      <h1 className="text-2xl font-bold mb-4">ClawNews Verification</h1>
+      <h1 className="text-2xl font-bold mb-4">CryptoOpenClaw Verification</h1>
       <p className="text-gray-500 mb-6">Enter your invite code to join the community.</p>
       <input
         className="w-full border rounded px-3 py-2 mb-4"

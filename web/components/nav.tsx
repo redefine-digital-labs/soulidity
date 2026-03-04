@@ -25,7 +25,7 @@ export function Nav() {
   return (
     <nav className="border-b bg-white">
       <div className="max-w-4xl mx-auto px-6 flex items-center h-14 gap-6">
-        <Link href="/admin" className="font-bold text-lg">ClawNews</Link>
+        <Link href="/admin" className="font-bold text-lg">CryptoOpenClaw</Link>
         <div className="flex gap-4">
           {links.map(link => (
             <Link

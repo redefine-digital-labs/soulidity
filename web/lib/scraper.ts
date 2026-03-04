@@ -8,7 +8,7 @@ export async function scrapeUrl(url: string): Promise<{ title: string; content: 
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ClawNews/1.0)',
+        'User-Agent': 'Mozilla/5.0 (compatible; CryptoOpenClaw/1.0)',
         'Accept': 'text/html',
       },
     })

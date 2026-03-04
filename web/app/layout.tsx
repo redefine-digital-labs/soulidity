@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ClawNews",
-  description: "ClawNews editorial dashboard",
+  title: "CryptoOpenClaw",
+  description: "CryptoOpenClaw editorial dashboard",
 };
 
 export default function RootLayout({
