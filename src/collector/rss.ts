@@ -9,14 +9,19 @@ export const RSS_FEEDS = [
 
 const parser = new Parser({ timeout: 10000 })
 
+const MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 export async function collectRss(): Promise<CollectedItem[]> {
   const items: CollectedItem[] = []
+  const cutoff = Date.now() - MAX_AGE_MS
 
   for (const feed of RSS_FEEDS) {
     try {
       const result = await parser.parseURL(feed.url)
       for (const entry of result.items ?? []) {
         if (!entry.title || !entry.link) continue
+        if (!entry.isoDate) continue
+        if (new Date(entry.isoDate).getTime() < cutoff) continue
         items.push({
           source_type: 'rss',
           source_name: feed.name,
