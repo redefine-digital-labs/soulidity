@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { createPrisma } from './db/database.js'
 import { createZaiAdapter } from './producer/llm.js'
+import { seedAgentRoles } from './db/agent-roles.js'
 import { startScheduler } from './scheduler.js'
 
 const apiKey = process.env.ZAI_API_KEY
@@ -13,6 +14,8 @@ const prisma = createPrisma()
 const llm = createZaiAdapter(apiKey)
 
 console.log('CryptoOpenClaw engine starting...')
+await seedAgentRoles(prisma)
+console.log('Agent roles seeded.')
 console.log(`Database: ${process.env.DATABASE_URL?.replace(/\/\/.*@/, '//***@')}`)
 
 startScheduler(prisma, llm)
