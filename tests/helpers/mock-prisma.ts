@@ -8,6 +8,8 @@ interface MockStore {
   inviteCodes: any[]
   companies: any[]
   articleCompanies: any[]
+  agentRoles: any[]
+  agentProcessLogs: any[]
 }
 
 function matchWhere(row: any, where: any): boolean {
@@ -101,6 +103,8 @@ export function createMockPrisma() {
     inviteCodes: [],
     companies: [],
     articleCompanies: [],
+    agentRoles: [],
+    agentProcessLogs: [],
   }
 
   const prisma = {
@@ -111,6 +115,8 @@ export function createMockPrisma() {
     inviteCode: createModel(store.inviteCodes, { active: 1 }),
     company: createModel(store.companies, { mentionCount: 0 }),
     articleCompany: createModel(store.articleCompanies),
+    agentRole: createModel(store.agentRoles),
+    agentProcessLog: createModel(store.agentProcessLogs, { status: 'pending' }),
     $disconnect: vi.fn(),
   }
 
