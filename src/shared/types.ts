@@ -66,3 +66,29 @@ export interface AgentProcessLog {
   completed_at: string | null
   created_at: string
 }
+
+export interface Category {
+  id: string
+  name: string
+  name_zh: string
+  icon: string
+  sort_order: number
+  created_at: string
+}
+
+export interface Direction {
+  id: string
+  category_id: string
+  name: string
+  name_zh: string
+  slug: string
+  description: string | null
+  description_zh: string | null
+  icon: string
+  user_count: number
+  rating: number
+  featured: boolean
+  status: string
+  created_at: string
+  updated_at: string
+}

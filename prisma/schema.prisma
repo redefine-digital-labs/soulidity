@@ -138,3 +138,39 @@ model InviteCode {
 
   @@map("invite_codes")
 }
+
+model Category {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String      @unique
+  nameZh      String      @map("name_zh")
+  icon        String      @default("📦")
+  sortOrder   Int         @default(0) @map("sort_order")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  directions  Direction[]
+
+  @@map("categories")
+}
+
+model Direction {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  categoryId    String   @map("category_id") @db.Uuid
+  category      Category @relation(fields: [categoryId], references: [id])
+  name          String
+  nameZh        String   @map("name_zh")
+  slug          String   @unique
+  description   String?
+  descriptionZh String?  @map("description_zh")
+  icon          String   @default("🔧")
+  userCount     Int      @default(0) @map("user_count")
+  rating        Float    @default(0)
+  featured      Boolean  @default(false)
+  status        String   @default("active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([categoryId])
+  @@index([userCount(sort: Desc)])
+  @@index([rating(sort: Desc)])
+  @@index([featured])
+  @@map("directions")
+}
