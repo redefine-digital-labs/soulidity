@@ -30,7 +30,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   let messageId: string
   try {
     const bot = new Bot(token)
-    const sent = await bot.api.sendMessage(channelId, text)
+    const sent = await bot.api.sendMessage(channelId, text, { parse_mode: 'HTML' })
     messageId = String(sent.message_id)
   } catch (err) {
     return NextResponse.json({ error: `TG send failed: ${err instanceof Error ? err.message : err}` }, { status: 502 })

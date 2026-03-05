@@ -10,7 +10,7 @@ describe('formatArticle', () => {
       source_url: 'https://example.com/article',
     })
 
-    expect(msg).toContain('测试标题')
+    expect(msg).toContain('<b>测试标题</b>')
     expect(msg).toContain('CryptoOpenClaw 消息，')
     expect(msg).toContain('据 TheBlock 报道，某项目完成融资。')
     expect(msg).toContain('详细正文段落内容。')
@@ -25,7 +25,7 @@ describe('formatArticle', () => {
       source_url: 'https://example.com',
     })
 
-    expect(msg).toContain('标题')
+    expect(msg).toContain('<b>标题</b>')
     expect(msg).toContain('CryptoOpenClaw 消息，')
     expect(msg).not.toContain('null')
   })

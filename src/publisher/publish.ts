@@ -40,7 +40,7 @@ export async function autoPublish(
         source_url: article.rawItem?.url ?? '',
       })
 
-      const sent = await bot.api.sendMessage(channelId, text)
+      const sent = await bot.api.sendMessage(channelId, text, { parse_mode: 'HTML' })
       const messageId = String(sent.message_id)
 
       await prisma.article.update({ where: { id: article.id }, data: { status: 'published' } })

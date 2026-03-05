@@ -24,11 +24,10 @@ export async function publishToChannel(
     title_zh: article.titleZh,
     summary_zh: article.summaryZh,
     analysis_zh: article.analysisZh,
-    tags: article.tags,
     source_url: raw?.url ?? '',
   })
 
-  const sent = await bot.api.sendMessage(channelId, text)
+  const sent = await bot.api.sendMessage(channelId, text, { parse_mode: 'HTML' })
   const messageId = String(sent.message_id)
 
   // Update article status
