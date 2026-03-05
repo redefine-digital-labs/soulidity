@@ -9,7 +9,8 @@
     "test:watch": "vitest",
     "collect": "tsx src/collector/run.ts",
     "produce": "tsx src/producer/run.ts",
-    "publish": "tsx src/publisher/run.ts"
+    "publish": "tsx src/publisher/run.ts",
+    "seed:directions": "tsx src/db/seed-directions.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
