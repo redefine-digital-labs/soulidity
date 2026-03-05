@@ -218,6 +218,7 @@ function toArticle(row: any): Article {
     analysis_en: row.analysisEn,
     tags: row.tags,
     status: row.status,
+    pipeline_status: row.pipelineStatus ?? 'pending',
     created_at: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
   }
 }

@@ -28,6 +28,7 @@ export interface Article {
   analysis_en: string | null
   tags: string | null
   status: ArticleStatus
+  pipeline_status: PipelineStatus
   created_at: string
 }
 
