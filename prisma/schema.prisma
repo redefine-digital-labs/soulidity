@@ -124,7 +124,14 @@ model Member {
   wallet     String?
   level      Int      @default(1)
   inviteCode String?  @map("invite_code")
+  avatar     String?
+  bio        String?
+  exp        Int      @default(0)
   joinedAt   DateTime @default(now()) @map("joined_at") @db.Timestamptz
+
+  posts        Post[]
+  comments     Comment[]
+  achievements MemberAchievement[]
 
   @@index([tgId])
   @@map("members")
@@ -167,10 +174,69 @@ model Direction {
   status        String   @default("active")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  posts         Post[]
 
   @@index([categoryId])
   @@index([userCount(sort: Desc)])
   @@index([rating(sort: Desc)])
   @@index([featured])
   @@map("directions")
+}
+
+model Post {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId     String     @map("member_id") @db.Uuid
+  member       Member     @relation(fields: [memberId], references: [id])
+  directionId  String?    @map("direction_id") @db.Uuid
+  direction    Direction? @relation(fields: [directionId], references: [id])
+  title        String
+  content      String
+  tags         String?
+  likeCount    Int        @default(0) @map("like_count")
+  commentCount Int        @default(0) @map("comment_count")
+  status       String     @default("published")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  comments     Comment[]
+
+  @@index([memberId])
+  @@index([directionId])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model Comment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  memberId  String   @map("member_id") @db.Uuid
+  member    Member   @relation(fields: [memberId], references: [id])
+  content   String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([postId])
+  @@map("comments")
+}
+
+model Achievement {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String              @unique
+  nameZh      String              @map("name_zh")
+  description String?
+  icon        String              @default("🏆")
+  condition   String?
+  members     MemberAchievement[]
+
+  @@map("achievements")
+}
+
+model MemberAchievement {
+  memberId      String      @map("member_id") @db.Uuid
+  member        Member      @relation(fields: [memberId], references: [id])
+  achievementId String      @map("achievement_id") @db.Uuid
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  earnedAt      DateTime    @default(now()) @map("earned_at") @db.Timestamptz
+
+  @@id([memberId, achievementId])
+  @@map("member_achievements")
 }

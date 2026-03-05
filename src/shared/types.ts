@@ -47,6 +47,9 @@ export interface Member {
   wallet: string | null
   level: number
   invite_code: string | null
+  avatar: string | null
+  bio: string | null
+  exp: number
   joined_at: string
 }
 
@@ -91,4 +94,35 @@ export interface Direction {
   status: string
   created_at: string
   updated_at: string
+}
+
+export interface Post {
+  id: string
+  member_id: string
+  direction_id: string | null
+  title: string
+  content: string
+  tags: string | null
+  like_count: number
+  comment_count: number
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Comment {
+  id: string
+  post_id: string
+  member_id: string
+  content: string
+  created_at: string
+}
+
+export interface Achievement {
+  id: string
+  name: string
+  name_zh: string
+  description: string | null
+  icon: string
+  condition: string | null
 }

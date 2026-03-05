@@ -12,6 +12,10 @@ interface MockStore {
   agentProcessLogs: any[]
   categories: any[]
   directions: any[]
+  posts: any[]
+  comments: any[]
+  achievements: any[]
+  memberAchievements: any[]
 }
 
 function matchWhere(row: any, where: any): boolean {
@@ -109,6 +113,10 @@ export function createMockPrisma() {
     agentProcessLogs: [],
     categories: [],
     directions: [],
+    posts: [],
+    comments: [],
+    achievements: [],
+    memberAchievements: [],
   }
 
   const prisma = {
@@ -123,6 +131,10 @@ export function createMockPrisma() {
     agentProcessLog: createModel(store.agentProcessLogs, { status: 'pending' }),
     category: createModel(store.categories),
     direction: createModel(store.directions, { status: 'active', userCount: 0, rating: 0, featured: false }),
+    post: createModel(store.posts, { status: 'published', likeCount: 0, commentCount: 0 }),
+    comment: createModel(store.comments),
+    achievement: createModel(store.achievements),
+    memberAchievement: createModel(store.memberAchievements),
     $disconnect: vi.fn(),
   }
 
