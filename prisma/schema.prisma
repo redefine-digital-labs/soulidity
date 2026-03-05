@@ -39,13 +39,44 @@ model Article {
   analysisZh   String?          @map("analysis_zh")
   analysisEn   String?          @map("analysis_en")
   tags         String?
-  status       String           @default("draft")
-  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
-  publications Publication[]
-  companies    ArticleCompany[]
+  status         String           @default("draft")
+  pipelineStatus String           @default("pending") @map("pipeline_status")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  publications   Publication[]
+  companies      ArticleCompany[]
+  processLogs    AgentProcessLog[]
 
   @@index([status])
   @@map("articles")
+}
+
+model AgentRole {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String            @unique
+  label       String
+  description String?
+  sortOrder   Int               @default(0) @map("sort_order")
+  logs        AgentProcessLog[]
+
+  @@map("agent_roles")
+}
+
+model AgentProcessLog {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  articleId   String    @map("article_id") @db.Uuid
+  article     Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  roleId      String    @map("role_id") @db.Uuid
+  role        AgentRole @relation(fields: [roleId], references: [id])
+  status      String    @default("pending")
+  input       String?
+  output      String?
+  startedAt   DateTime? @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([articleId])
+  @@index([status])
+  @@map("agent_process_logs")
 }
 
 model Company {
