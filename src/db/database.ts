@@ -39,12 +39,25 @@ export async function insertRawItem(
 }
 
 export async function getRawItemsByStatus(prisma: PrismaClient, status: RawItemStatus, limit = 10): Promise<RawItem[]> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const rows = await prisma.rawItem.findMany({
-    where: { status },
+    where: { status, createdAt: { gte: cutoff } },
     orderBy: { score: 'desc' },
     take: limit,
   })
   return rows.map(toRawItem)
+}
+
+export async function expireOldRawItems(prisma: PrismaClient): Promise<number> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const result = await prisma.rawItem.updateMany({
+    where: {
+      status: { in: ['new', 'deduped'] },
+      createdAt: { lt: cutoff },
+    },
+    data: { status: 'expired' },
+  })
+  return result.count
 }
 
 export async function updateRawItemStatus(prisma: PrismaClient, id: string, status: RawItemStatus): Promise<void> {

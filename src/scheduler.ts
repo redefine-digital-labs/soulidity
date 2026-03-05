@@ -1,5 +1,6 @@
 import cron from 'node-cron'
 import type { PrismaClient } from './db/database.js'
+import { expireOldRawItems } from './db/database.js'
 import { runCollectors } from './collector/run.js'
 import { collectRss } from './collector/rss.js'
 import { collectGithub } from './collector/github.js'
@@ -30,6 +31,10 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
     }
     producing = true
     try {
+      // Step 0: Expire old items (>24h) still in new/deduped
+      const expired = await expireOldRawItems(prisma)
+      if (expired > 0) console.log(`Expired ${expired} old raw items`)
+
       // Step 1: Dedup
       console.log(`[${new Date().toISOString()}] Running deduplication...`)
       const dedupResult = await runDedup(prisma)
