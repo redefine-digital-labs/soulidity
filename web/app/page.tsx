@@ -1,5 +1,6 @@
 import { prisma } from '@web/lib/prisma'
 import { PublicNav } from '@web/components/public-nav'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,9 @@ export default async function HomePage() {
             const tags: string[] = article.tags ? JSON.parse(article.tags) : []
             return (
               <div key={article.id} className="bg-white rounded-lg p-4 shadow-sm border">
-                <div className="font-medium text-gray-900">{article.titleZh}</div>
+                <Link href={`/news/${article.id}`} className="font-medium text-gray-900 hover:text-blue-600">
+                  {article.titleZh}
+                </Link>
                 <div className="mt-1 text-sm text-gray-600 line-clamp-2">{article.summaryZh}</div>
                 <div className="mt-2 flex items-center gap-2 flex-wrap text-xs text-gray-400">
                   <span>{new Date(article.createdAt).toLocaleDateString()}</span>
