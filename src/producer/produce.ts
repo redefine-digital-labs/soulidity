@@ -1,74 +1,8 @@
 import pLimit from 'p-limit'
 import type { PrismaClient } from '../db/database.js'
 import type { LLMAdapter } from './llm.js'
-import { getRawItemsByStatus, updateRawItemStatus, insertArticle, upsertCompany, linkArticleCompany } from '../db/database.js'
-
-const SYSTEM_PROMPT = `你是一名专业的加密货币与 AI 新闻编辑，风格类似 BlockBeats 快讯。
-根据原始素材，产出结构化的中文新闻内容。
-必须只返回合法 JSON，不要 markdown 代码块。`
-
-function buildUserPrompt(title: string, content: string, url: string, sourceName: string): string {
-  return `原始素材：
-标题：${title}
-来源：${sourceName}
-内容：${content}
-链接：${url}
-
-输出 JSON，字段如下：
-{
-  "title_zh": "简洁有力的中文新闻标题",
-  "lead_zh": "以'据 ${sourceName} 报道/消息'开头的一句话核心事实，简明扼要",
-  "body_zh": "详细正文，2-4段，专业客观的新闻报道风格，包含关键数据和背景信息。段落之间用换行分隔。",
-  "tags": ["tag1", "tag2", "tag3"],
-  "companies": [
-    {"name": "公司官方英文名称", "category": "赛道分类", "description": "一句中文简介"}
-  ]
-}
-
-写作要求：
-- title_zh：简洁概括核心新闻，不加标点
-- lead_zh：一句话点明最重要的事实，以"据 来源 报道/消息"开头
-- body_zh：展开报道细节、数据、背景和影响，段落之间用 \\n\\n 分隔
-
-companies 规则：
-- 只提取新闻中明确提及的公司或项目，不要推测
-- name 必须是公司官方名称（如 "OpenAI" 而非 "Open AI"）
-- category 只能是：AI、DeFi、Infrastructure、L1/L2、Gaming、NFT、DAO、Exchange、Wallet、Other
-- 没有提及公司则返回空数组 []`
-}
-
-interface CompanyMention {
-  name: string
-  category: string
-  description?: string
-}
-
-interface ProducedArticle {
-  title_zh: string
-  summary_zh: string
-  analysis_zh: string | null
-  tags: string[]
-  companies?: CompanyMention[]
-}
-
-function parseResponse(text: string): ProducedArticle {
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  const parsed = JSON.parse(cleaned)
-  // Support both new format (lead_zh/body_zh) and legacy (summary_zh/analysis_zh)
-  const title_zh = parsed.title_zh
-  const summary_zh = parsed.lead_zh ?? parsed.summary_zh
-  const analysis_zh = parsed.body_zh ?? parsed.analysis_zh ?? null
-  if (!title_zh || !summary_zh) throw new Error('Missing required field: title_zh or lead_zh/summary_zh')
-  return {
-    title_zh,
-    summary_zh,
-    analysis_zh,
-    tags: parsed.tags ?? [],
-    companies: parsed.companies,
-  }
-}
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+import { getRawItemsByStatus } from '../db/database.js'
+import { runAgentPipeline } from './pipeline.js'
 
 export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, limit = 10, concurrency = 1): Promise<{ processed: number; succeeded: number; failed: number; fatalError: boolean }> {
   const items = await getRawItemsByStatus(prisma, 'deduped', limit)
@@ -76,66 +10,18 @@ export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, lim
   let failed = 0
   let fatalError = false
 
-  // Mark all as processing upfront
-  await Promise.all(items.map(item => updateRawItemStatus(prisma, item.id, 'processing')))
-
   const limit_ = pLimit(concurrency)
   await Promise.all(items.map(item => limit_(async () => {
-    if (fatalError) {
-      await updateRawItemStatus(prisma, item.id, 'deduped')
-      return
-    }
-    try {
-      const prompt = buildUserPrompt(item.title, item.content ?? '', item.url, item.source_name)
-      const response = await llm.generate(SYSTEM_PROMPT, prompt)
-      const article = parseResponse(response)
-
-      const articleId = await insertArticle(prisma, {
-        raw_item_id: item.id,
-        title_zh: article.title_zh,
-        title_en: article.title_zh,
-        summary_zh: article.summary_zh,
-        summary_en: article.summary_zh,
-        analysis_zh: article.analysis_zh ?? null,
-        analysis_en: null,
-        tags: JSON.stringify(article.tags),
-      })
-
-      // Link companies (best-effort, don't fail the article)
-      if (article.companies?.length) {
-        try {
-          for (const c of article.companies) {
-            const companyId = await upsertCompany(prisma, c)
-            await linkArticleCompany(prisma, articleId, companyId)
-          }
-        } catch (err) {
-          console.error(`Failed to link companies for article ${articleId}:`, err)
-        }
-      }
-
-      await updateRawItemStatus(prisma, item.id, 'produced')
+    if (fatalError) return
+    const result = await runAgentPipeline(prisma, llm, item.id)
+    if (result.success) {
       succeeded++
-    } catch (err: any) {
-      const status = err?.status
-      if (status === 402 || status === 401) {
-        console.error(`Fatal API error (${status}), stopping producer:`, err.message)
-        await updateRawItemStatus(prisma, item.id, 'deduped')
-        fatalError = true
-        return
-      }
-      if (status === 429) {
-        console.warn(`Rate limited (429), will retry later. Pausing producer.`)
-        await updateRawItemStatus(prisma, item.id, 'deduped')
-        fatalError = true
-        return
-      }
-      console.error(`Failed to produce article for ${item.id}:`, err)
-      await updateRawItemStatus(prisma, item.id, 'rejected')
+    } else if (result.error?.includes('API error')) {
+      fatalError = true
+    } else {
       failed++
     }
   })))
 
   return { processed: items.length, succeeded, failed, fatalError }
 }
-
-export { parseResponse, buildUserPrompt }
