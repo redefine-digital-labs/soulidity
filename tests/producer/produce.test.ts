@@ -12,7 +12,19 @@ beforeEach(() => {
 })
 
 describe('parseResponse', () => {
-  it('parses valid JSON', () => {
+  it('parses new format (lead_zh/body_zh)', () => {
+    const result = parseResponse(JSON.stringify({
+      title_zh: '标题',
+      lead_zh: '据消息报道，核心事实。',
+      body_zh: '详细正文。',
+      tags: ['ai'],
+    }))
+    expect(result.title_zh).toBe('标题')
+    expect(result.summary_zh).toBe('据消息报道，核心事实。')
+    expect(result.analysis_zh).toBe('详细正文。')
+  })
+
+  it('parses legacy format (summary_zh/analysis_zh)', () => {
     const result = parseResponse(JSON.stringify({
       title_zh: '标题',
       summary_zh: '摘要',
@@ -20,10 +32,11 @@ describe('parseResponse', () => {
       tags: ['ai'],
     }))
     expect(result.title_zh).toBe('标题')
+    expect(result.summary_zh).toBe('摘要')
   })
 
   it('strips markdown fences', () => {
-    const result = parseResponse('```json\n{"title_zh":"标题","summary_zh":"s","analysis_zh":"a","tags":[]}\n```')
+    const result = parseResponse('```json\n{"title_zh":"标题","lead_zh":"s","body_zh":"a","tags":[]}\n```')
     expect(result.title_zh).toBe('标题')
   })
 
@@ -43,8 +56,8 @@ describe('produceArticles', () => {
 
     const mockLLM = createMockLLM({
       title_zh: '测试标题',
-      summary_zh: '中文摘要',
-      analysis_zh: '中文解读',
+      lead_zh: '据 coindesk 报道，AI agent 新闻。',
+      body_zh: '详细正文内容。',
       tags: ['ai', 'web3'],
       companies: [
         { name: 'OpenAI', category: 'AI', description: '领先的人工智能研究公司' },

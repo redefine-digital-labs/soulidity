@@ -10,7 +10,6 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     where: { id },
     include: {
       rawItem: { select: { url: true } },
-      companies: { include: { company: { select: { name: true } } } },
     },
   })
   if (!article) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -25,8 +24,6 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     title_zh: article.titleZh,
     summary_zh: article.summaryZh,
     analysis_zh: article.analysisZh ?? null,
-    tags: article.tags ?? null,
-    companies: article.companies.map(ac => ac.company.name),
     source_url: article.rawItem?.url ?? '',
   })
 

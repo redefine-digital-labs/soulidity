@@ -3,7 +3,7 @@ import type { PrismaClient } from '../db/database.js'
 import type { LLMAdapter } from './llm.js'
 import { getRawItemsByStatus, updateRawItemStatus, insertArticle, upsertCompany, linkArticleCompany } from '../db/database.js'
 
-const SYSTEM_PROMPT = `你是一名专业的 AI×Web3 内容编辑。
+const SYSTEM_PROMPT = `你是一名专业的加密货币与 AI 新闻编辑，风格类似 BlockBeats 快讯。
 根据原始素材，产出结构化的中文新闻内容。
 必须只返回合法 JSON，不要 markdown 代码块。`
 
@@ -16,14 +16,19 @@ function buildUserPrompt(title: string, content: string, url: string, sourceName
 
 输出 JSON，字段如下：
 {
-  "title_zh": "中文标题，一句话概括",
-  "summary_zh": "3-5句中文摘要，专业准确",
-  "analysis_zh": "深度解读：这对 AI×Web3 意味着什么",
+  "title_zh": "简洁有力的中文新闻标题",
+  "lead_zh": "以'据 ${sourceName} 报道/消息'开头的一句话核心事实，简明扼要",
+  "body_zh": "详细正文，2-4段，专业客观的新闻报道风格，包含关键数据和背景信息。段落之间用换行分隔。",
   "tags": ["tag1", "tag2", "tag3"],
   "companies": [
     {"name": "公司官方英文名称", "category": "赛道分类", "description": "一句中文简介"}
   ]
 }
+
+写作要求：
+- title_zh：简洁概括核心新闻，不加标点
+- lead_zh：一句话点明最重要的事实，以"据 来源 报道/消息"开头
+- body_zh：展开报道细节、数据、背景和影响，段落之间用 \\n\\n 分隔
 
 companies 规则：
 - 只提取新闻中明确提及的公司或项目，不要推测
@@ -49,11 +54,18 @@ interface ProducedArticle {
 function parseResponse(text: string): ProducedArticle {
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
   const parsed = JSON.parse(cleaned)
-  const required = ['title_zh', 'summary_zh']
-  for (const field of required) {
-    if (!parsed[field]) throw new Error(`Missing required field: ${field}`)
+  // Support both new format (lead_zh/body_zh) and legacy (summary_zh/analysis_zh)
+  const title_zh = parsed.title_zh
+  const summary_zh = parsed.lead_zh ?? parsed.summary_zh
+  const analysis_zh = parsed.body_zh ?? parsed.analysis_zh ?? null
+  if (!title_zh || !summary_zh) throw new Error('Missing required field: title_zh or lead_zh/summary_zh')
+  return {
+    title_zh,
+    summary_zh,
+    analysis_zh,
+    tags: parsed.tags ?? [],
+    companies: parsed.companies,
   }
-  return parsed as ProducedArticle
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))

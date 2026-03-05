@@ -21,7 +21,6 @@ export async function autoPublish(
     where: { status: 'draft', createdAt: { lte: cutoff } },
     include: {
       rawItem: { select: { url: true } },
-      companies: { include: { company: { select: { name: true } } } },
     },
     orderBy: { createdAt: 'asc' },
   })
@@ -38,8 +37,6 @@ export async function autoPublish(
         title_zh: article.titleZh,
         summary_zh: article.summaryZh,
         analysis_zh: article.analysisZh ?? null,
-        tags: article.tags ?? null,
-        companies: article.companies.map(ac => ac.company.name),
         source_url: article.rawItem?.url ?? '',
       })
 
