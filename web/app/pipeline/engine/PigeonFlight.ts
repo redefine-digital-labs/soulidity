@@ -1,11 +1,5 @@
 import { Container, Graphics } from 'pixi.js'
-
-// TODO: Import from NewsroomScene once constants are exported there
-// import { WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H } from './NewsroomScene'
-const WINDOW_X = 700
-const WINDOW_Y = 40
-const WINDOW_W = 80
-const WINDOW_H = 60
+import { WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H } from './NewsroomScene'
 
 /** A trail particle: tiny yellow rect that fades and shrinks. */
 interface TrailParticle {
