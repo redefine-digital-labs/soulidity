@@ -7,3 +7,4 @@ web/.next/
 web/node_modules/
 
 /generated/prisma
+.worktrees/
