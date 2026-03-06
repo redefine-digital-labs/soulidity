@@ -1,4 +1,10 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js'
+import { PipelineLane } from './PipelineLane'
+import { NewsScroll } from './NewsScroll'
+import { PigeonFlight } from './PigeonFlight'
+import { RoleParticles } from './particles'
+import { ROLE_DEFS } from './RoleStation'
+import type { SceneEvent, PipelineArticle } from '../store/pipeline-store'
 
 // ── Scene dimensions ────────────────────────────────────────────────
 export const SCENE_W = 1200
@@ -167,4 +173,297 @@ function drawInbox(): Container {
   c.addChild(label)
 
   return c
+}
+
+// ── Scene Manager ────────────────────────────────────────────────────
+
+const MAX_LANES = 3
+
+export class NewsroomSceneManager {
+  readonly root: Container
+
+  private readonly roomBg: Container
+  private readonly lanesContainer: Container
+  private readonly scrollsContainer: Container
+  private readonly effectsContainer: Container
+
+  private readonly lanes: PipelineLane[] = []
+  private readonly scrolls = new Map<string, NewsScroll>()
+  private readonly pigeons: PigeonFlight[] = []
+  private readonly particles = new Map<string, RoleParticles>()
+
+  private readonly inboxBadge: Text
+
+  constructor() {
+    this.root = new Container()
+
+    // Background layer
+    this.roomBg = createRoomBackground()
+    this.root.addChild(this.roomBg)
+
+    // Lanes layer
+    this.lanesContainer = new Container()
+    this.lanesContainer.x = LANE_START_X
+    this.root.addChild(this.lanesContainer)
+
+    // Scrolls layer
+    this.scrollsContainer = new Container()
+    this.scrollsContainer.x = LANE_START_X
+    this.root.addChild(this.scrollsContainer)
+
+    // Effects layer (on top)
+    this.effectsContainer = new Container()
+    this.root.addChild(this.effectsContainer)
+
+    // Create first lane
+    this.addLane()
+
+    // Inbox badge
+    this.inboxBadge = new Text({
+      text: '0',
+      style: new TextStyle({
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: 12,
+        fill: 0xff3333,
+      }),
+    })
+    this.inboxBadge.x = INBOX_X + INBOX_W - 8
+    this.inboxBadge.y = INBOX_Y - 14
+    this.inboxBadge.visible = false
+    this.root.addChild(this.inboxBadge)
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Lane management                                                  */
+  /* ---------------------------------------------------------------- */
+
+  addLane(): PipelineLane | null {
+    if (this.lanes.length >= MAX_LANES) return null
+
+    const index = this.lanes.length
+    const lane = new PipelineLane(index)
+    lane.y = LANE_Y_BASE + index * LANE_Y_GAP
+    this.lanesContainer.addChild(lane)
+    this.lanes.push(lane)
+
+    // Create RoleParticles for each station in the lane
+    for (const station of lane.stations) {
+      const key = `${index}-${station.roleName}`
+      const rp = new RoleParticles(station.roleName)
+      // Position relative to lane: station.x + 32 centers horizontally,
+      // station.y + 20 centers vertically on the character
+      rp.x = LANE_START_X + station.x + 32
+      rp.y = lane.y + station.y + 20
+      this.effectsContainer.addChild(rp)
+      this.particles.set(key, rp)
+    }
+
+    return lane
+  }
+
+  removeLane(): void {
+    if (this.lanes.length <= 1) return
+    const lane = this.lanes[this.lanes.length - 1]
+
+    // Only remove if lane is empty
+    if (lane.articleId) return
+
+    // Clean up particles for this lane
+    const laneIndex = this.lanes.length - 1
+    for (const station of lane.stations) {
+      const key = `${laneIndex}-${station.roleName}`
+      const rp = this.particles.get(key)
+      if (rp) {
+        rp.clear()
+        this.effectsContainer.removeChild(rp)
+        rp.destroy()
+        this.particles.delete(key)
+      }
+    }
+
+    this.lanesContainer.removeChild(lane)
+    lane.destroy()
+    this.lanes.pop()
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Inbox badge                                                      */
+  /* ---------------------------------------------------------------- */
+
+  setInboxCount(count: number): void {
+    if (count <= 0) {
+      this.inboxBadge.visible = false
+    } else {
+      this.inboxBadge.text = String(count)
+      this.inboxBadge.visible = true
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Event processing                                                 */
+  /* ---------------------------------------------------------------- */
+
+  processEvents(events: SceneEvent[], articles: PipelineArticle[]): void {
+    for (const ev of events) {
+      switch (ev.type) {
+        case 'article_enter_lane': {
+          if (!ev.articleId) break
+          // Find a free lane
+          const lane = this.lanes.find((l) => !l.articleId)
+          if (!lane) break
+          lane.articleId = ev.articleId
+
+          // Find article data for the title
+          const article = articles.find((a) => a.id === ev.articleId)
+          const titleZh = article?.titleZh ?? '...'
+
+          // Create scroll at left edge, then move to first station
+          const scroll = new NewsScroll(ev.articleId, titleZh)
+          scroll.x = -60
+          scroll.y = lane.y + 30
+          this.scrollsContainer.addChild(scroll)
+          this.scrolls.set(ev.articleId, scroll)
+
+          // Move to first station
+          scroll.moveTo(lane.getStationX(0))
+          break
+        }
+
+        case 'role_start_working': {
+          if (!ev.articleId || !ev.roleName) break
+          const key = this.findLaneKey(ev.articleId, ev.roleName)
+          if (!key) break
+          const rp = this.particles.get(key)
+          rp?.start()
+          break
+        }
+
+        case 'role_complete': {
+          if (!ev.articleId || !ev.roleName) break
+          // Stop particles
+          const completeKey = this.findLaneKey(ev.articleId, ev.roleName)
+          if (completeKey) {
+            const rp = this.particles.get(completeKey)
+            rp?.stop()
+          }
+
+          // Flash scroll glow
+          const scroll = this.scrolls.get(ev.articleId)
+          scroll?.flashGlow()
+
+          // Move scroll to next station
+          const lane = this.lanes.find((l) => l.articleId === ev.articleId)
+          if (lane && scroll) {
+            const roleIndex = ROLE_DEFS.findIndex((r) => r.name === ev.roleName)
+            if (roleIndex >= 0 && roleIndex < ROLE_DEFS.length - 1) {
+              scroll.moveTo(lane.getStationX(roleIndex + 1))
+            }
+          }
+          break
+        }
+
+        case 'role_failed': {
+          if (!ev.articleId || !ev.roleName) break
+          const failKey = this.findLaneKey(ev.articleId, ev.roleName)
+          if (failKey) {
+            const rp = this.particles.get(failKey)
+            rp?.stop()
+          }
+          break
+        }
+
+        case 'article_published': {
+          if (!ev.articleId) break
+          const scroll = this.scrolls.get(ev.articleId)
+          if (scroll) {
+            // Spawn pigeon from scroll position
+            const pigeon = new PigeonFlight(
+              LANE_START_X + scroll.x,
+              scroll.y,
+            )
+            this.effectsContainer.addChild(pigeon)
+            this.pigeons.push(pigeon)
+
+            // Remove scroll
+            this.scrollsContainer.removeChild(scroll)
+            scroll.destroy()
+            this.scrolls.delete(ev.articleId)
+          }
+
+          // Free the lane
+          const lane = this.lanes.find((l) => l.articleId === ev.articleId)
+          if (lane) {
+            lane.clear()
+          }
+          break
+        }
+
+        case 'lane_opened': {
+          this.addLane()
+          break
+        }
+
+        case 'lane_closed': {
+          this.removeLane()
+          break
+        }
+      }
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Sync article state to lanes                                      */
+  /* ---------------------------------------------------------------- */
+
+  syncArticles(articles: PipelineArticle[]): void {
+    for (const lane of this.lanes) {
+      if (!lane.articleId) continue
+      const article = articles.find((a) => a.id === lane.articleId)
+      if (article) {
+        lane.syncFromArticle(article.processLogs)
+      }
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Per-frame update                                                 */
+  /* ---------------------------------------------------------------- */
+
+  update(delta: number): void {
+    // Update lanes (and their stations)
+    for (const lane of this.lanes) {
+      lane.update(delta)
+    }
+
+    // Update scrolls
+    for (const scroll of this.scrolls.values()) {
+      scroll.update(delta)
+    }
+
+    // Update pigeons, remove completed
+    for (let i = this.pigeons.length - 1; i >= 0; i--) {
+      const pigeon = this.pigeons[i]
+      pigeon.update(delta)
+      if (pigeon.isComplete) {
+        this.effectsContainer.removeChild(pigeon)
+        pigeon.destroy()
+        this.pigeons.splice(i, 1)
+      }
+    }
+
+    // Update particles
+    for (const rp of this.particles.values()) {
+      rp.update(delta)
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Helper: find particle map key for an article + role              */
+  /* ---------------------------------------------------------------- */
+
+  private findLaneKey(articleId: string, roleName: string): string | null {
+    const laneIndex = this.lanes.findIndex((l) => l.articleId === articleId)
+    if (laneIndex < 0) return null
+    return `${laneIndex}-${roleName}`
+  }
 }
