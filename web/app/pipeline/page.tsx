@@ -36,7 +36,7 @@ export default function PipelinePage() {
       <PublicNav />
 
       {/* Header */}
-      <div className="mx-auto max-w-4xl px-4 py-4">
+      <div className="mx-auto max-w-5xl px-4 py-4">
         <h1 className="text-2xl font-bold text-[#aaffaa]">PIXEL NEWSROOM</h1>
         <div className="mt-1 flex gap-4 text-sm text-[#888]">
           <span>INBOX {pendingArticles.length}</span>
@@ -47,7 +47,7 @@ export default function PipelinePage() {
 
       {/* Error banner */}
       {error && (
-        <div className="mx-auto max-w-4xl px-4">
+        <div className="mx-auto max-w-5xl px-4">
           <div className="mb-4 border border-red-700 bg-red-900/50 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
@@ -55,7 +55,7 @@ export default function PipelinePage() {
       )}
 
       {/* Canvas + overlays */}
-      <div className="mx-auto max-w-4xl px-4">
+      <div className="mx-auto max-w-5xl px-4">
         <div className="relative">
           <NewsroomCanvas />
           <AdminPanel />
