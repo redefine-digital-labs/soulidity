@@ -21,55 +21,19 @@ export async function runAgentPipeline(
   if (!item) return { success: false, articleId: null, error: 'Raw item not found' }
 
   try {
-    // --- Scout phase (already done by collector, just log it) ---
-    const scoutRole = await getRoleByName(prisma, 'scout')
-    if (scoutRole) {
-      const logId = await createProcessLog(prisma, { articleId: rawItemId, roleId: scoutRole.id })
-      await updateProcessLog(prisma, logId, {
-        status: 'completed',
-        output: JSON.stringify({ title: item.title, score: item.score, source: item.sourceName }),
-        startedAt: item.createdAt,
-        completedAt: new Date(),
-      })
-    }
-
     await updateRawItemStatus(prisma, rawItemId, 'processing')
 
     // --- Reporter phase ---
-    const reporterRole = await getRoleByName(prisma, 'reporter')
-    const reporterLogId = reporterRole ? await createProcessLog(prisma, { articleId: rawItemId, roleId: reporterRole.id }) : null
-    if (reporterLogId) await updateProcessLog(prisma, reporterLogId, { status: 'running', startedAt: new Date() })
-
     const reporterPrompt = buildReporterPrompt(item.title, item.content ?? '', item.sourceName)
     const reporterRaw = await llm.generate(REPORTER_SYSTEM_PROMPT, reporterPrompt)
     const reporterOutput = parseReporterResponse(reporterRaw)
 
-    if (reporterLogId) await updateProcessLog(prisma, reporterLogId, {
-      status: 'completed',
-      output: JSON.stringify(reporterOutput),
-      completedAt: new Date(),
-    })
-
     // --- Analyst phase ---
-    const analystRole = await getRoleByName(prisma, 'analyst')
-    const analystLogId = analystRole ? await createProcessLog(prisma, { articleId: rawItemId, roleId: analystRole.id }) : null
-    if (analystLogId) await updateProcessLog(prisma, analystLogId, { status: 'running', startedAt: new Date() })
-
     const analystPrompt = buildAnalystPrompt(reporterOutput.title_zh, reporterOutput.lead_zh, item.sourceName)
     const analystRaw = await llm.generate(ANALYST_SYSTEM_PROMPT, analystPrompt)
     const analystOutput = parseAnalystResponse(analystRaw)
 
-    if (analystLogId) await updateProcessLog(prisma, analystLogId, {
-      status: 'completed',
-      output: JSON.stringify(analystOutput),
-      completedAt: new Date(),
-    })
-
     // --- Editor phase ---
-    const editorRole = await getRoleByName(prisma, 'editor')
-    const editorLogId = editorRole ? await createProcessLog(prisma, { articleId: rawItemId, roleId: editorRole.id }) : null
-    if (editorLogId) await updateProcessLog(prisma, editorLogId, { status: 'running', startedAt: new Date() })
-
     const editorPrompt = buildEditorPrompt(
       reporterOutput.title_zh,
       reporterOutput.lead_zh,
@@ -77,12 +41,6 @@ export async function runAgentPipeline(
     )
     const editorRaw = await llm.generate(EDITOR_SYSTEM_PROMPT, editorPrompt)
     const editorOutput = parseEditorResponse(editorRaw)
-
-    if (editorLogId) await updateProcessLog(prisma, editorLogId, {
-      status: 'completed',
-      output: JSON.stringify(editorOutput),
-      completedAt: new Date(),
-    })
 
     // --- Save article ---
     const status = editorOutput.approved ? 'draft' : 'rejected'
@@ -103,6 +61,41 @@ export async function runAgentPipeline(
       data: { status, pipelineStatus: 'completed' },
     })
 
+    // --- Write process logs (best-effort, after article exists) ---
+    try {
+      const [scoutRole, reporterRole, analystRole, editorRole] = await Promise.all([
+        getRoleByName(prisma, 'scout'),
+        getRoleByName(prisma, 'reporter'),
+        getRoleByName(prisma, 'analyst'),
+        getRoleByName(prisma, 'editor'),
+      ])
+      const now = new Date()
+
+      if (scoutRole) {
+        const logId = await createProcessLog(prisma, { articleId, roleId: scoutRole.id })
+        await updateProcessLog(prisma, logId, {
+          status: 'completed',
+          output: JSON.stringify({ title: item.title, score: item.score, source: item.sourceName }),
+          startedAt: item.createdAt,
+          completedAt: now,
+        })
+      }
+      if (reporterRole) {
+        const logId = await createProcessLog(prisma, { articleId, roleId: reporterRole.id })
+        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(reporterOutput), completedAt: now })
+      }
+      if (analystRole) {
+        const logId = await createProcessLog(prisma, { articleId, roleId: analystRole.id })
+        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(analystOutput), completedAt: now })
+      }
+      if (editorRole) {
+        const logId = await createProcessLog(prisma, { articleId, roleId: editorRole.id })
+        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(editorOutput), completedAt: now })
+      }
+    } catch (logErr) {
+      console.error('Failed to write process logs:', logErr)
+    }
+
     // Link companies
     if (analystOutput.companies.length) {
       for (const c of analystOutput.companies) {
@@ -119,13 +112,20 @@ export async function runAgentPipeline(
 
     return { success: true, articleId }
   } catch (err: any) {
+    // Retryable: LLM API errors
     const status = err?.status
     if (status === 402 || status === 401 || status === 429) {
-      await updateRawItemStatus(prisma, rawItemId, 'deduped')
+      await updateRawItemStatus(prisma, rawItemId, 'deduped').catch(() => {})
       return { success: false, articleId: null, error: `API error ${status}` }
     }
+    // Retryable: transient DB connection errors
+    const pgCode = err?.cause?.code ?? err?.code
+    if (pgCode === '08006' || pgCode === '08003' || pgCode === '08001' || pgCode === '57P01') {
+      console.warn(`Pipeline transient DB error for ${rawItemId}, will retry:`, err.message)
+      return { success: false, articleId: null, error: `DB connection error ${pgCode}` }
+    }
     console.error(`Pipeline failed for ${rawItemId}:`, err)
-    await updateRawItemStatus(prisma, rawItemId, 'rejected')
+    await updateRawItemStatus(prisma, rawItemId, 'rejected').catch(() => {})
     return { success: false, articleId: null, error: err.message }
   }
 }
