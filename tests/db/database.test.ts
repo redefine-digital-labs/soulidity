@@ -43,6 +43,17 @@ describe('raw_items', () => {
     expect(items[0].title).toBe('High')
     expect(items[1].title).toBe('Low')
   })
+
+  it('normalizes URLs before persisting raw items', async () => {
+    await insertRawItem(prisma, {
+      source_type: 'rss', source_name: 'coindesk', title: 'Tracked URL',
+      url: 'https://example.com/story/?utm_source=rss&id=42#fragment', title_hash: null, content: null,
+      language: 'en', score: 1, raw_data: null,
+    })
+
+    const items = await getRawItemsByStatus(prisma, 'new')
+    expect(items[0].url).toBe('https://example.com/story?id=42')
+  })
 })
 
 describe('articles', () => {

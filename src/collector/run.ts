@@ -16,7 +16,7 @@ export async function runCollectors(prisma: PrismaClient, collectors: Array<() =
     total += items.length
 
     for (const item of items) {
-      const dedup = await isDuplicate(prisma, item.title)
+      const dedup = await isDuplicate(prisma, item)
       if (dedup.duplicate) {
         console.log(`  skipped (similar to ${dedup.matchedId}): ${item.title}`)
         skipped++
@@ -35,7 +35,12 @@ export async function runCollectors(prisma: PrismaClient, collectors: Array<() =
         score,
         raw_data: JSON.stringify(item.raw_data),
       })
-      if (id) inserted++
+      if (id) {
+        inserted++
+      } else {
+        skipped++
+        console.log(`  skipped (same url): ${item.title}`)
+      }
     }
   }
 

@@ -54,9 +54,14 @@ function applySelect(row: any, select: any): any {
   return result
 }
 
-function createModel(collection: any[], defaults: Record<string, any> = {}) {
+function createModel(collection: any[], defaults: Record<string, any> = {}, uniqueKeys: string[] = []) {
   return {
     create: vi.fn(async ({ data }: any) => {
+      if (uniqueKeys.some((key) => collection.some((row) => row[key] === data[key]))) {
+        const err: any = new Error('Unique constraint failed')
+        err.code = 'P2002'
+        throw err
+      }
       const row = { id: crypto.randomUUID(), createdAt: new Date(), ...defaults, ...data }
       collection.push(row)
       return row
@@ -135,7 +140,7 @@ export function createMockPrisma() {
   }
 
   const prisma = {
-    rawItem: createModel(store.rawItems, { status: 'new' }),
+    rawItem: createModel(store.rawItems, { status: 'new' }, ['url']),
     article: createModel(store.articles, { status: 'draft' }),
     publication: createModel(store.publications),
     member: createModel(store.members, { level: 1 }),

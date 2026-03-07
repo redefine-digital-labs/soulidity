@@ -1,6 +1,7 @@
 import { PrismaClient } from '../../generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
 import type { RawItem, Article, RawItemStatus, ArticleStatus } from '../shared/types.js'
+import { normalizeUrl } from '../shared/dedup.js'
 
 export type { PrismaClient }
 
@@ -17,13 +18,15 @@ export async function insertRawItem(
   prisma: PrismaClient,
   item: Omit<RawItem, 'id' | 'created_at' | 'status'>
 ): Promise<string | null> {
+  const normalizedUrl = normalizeUrl(item.url)
+
   try {
     const row = await prisma.rawItem.create({
       data: {
         sourceType: item.source_type,
         sourceName: item.source_name,
         title: item.title,
-        url: item.url,
+        url: normalizedUrl,
         titleHash: item.title_hash ?? null,
         content: item.content,
         language: item.language,
@@ -68,7 +71,7 @@ export async function updateRawItemStatus(prisma: PrismaClient, id: string, stat
 
 export async function insertArticle(
   prisma: PrismaClient,
-  article: Omit<Article, 'id' | 'created_at' | 'status'>
+  article: Omit<Article, 'id' | 'created_at' | 'status' | 'pipeline_status'>
 ): Promise<string> {
   const row = await prisma.article.create({
     data: {

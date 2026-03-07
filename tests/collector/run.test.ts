@@ -33,4 +33,21 @@ describe('runCollectors', () => {
     const result = await runCollectors(prisma, [mockCollector])
     expect(result.skipped).toBe(0)
   })
+
+  it('skips items that collapse to the same canonical URL', async () => {
+    const collector = (): Promise<CollectedItem[]> => Promise.resolve([
+      { source_type: 'rss', source_name: 'test', title: 'Story A', url: 'https://test.com/story?id=1&utm_source=rss', content: 'Body A', language: 'en', raw_data: {} },
+      { source_type: 'rss', source_name: 'test', title: 'Story A mirror', url: 'https://test.com/story?utm_medium=social&id=1', content: 'Body A', language: 'en', raw_data: {} },
+    ])
+
+    const result = await runCollectors(prisma, [collector])
+
+    expect(result.total).toBe(2)
+    expect(result.inserted).toBe(1)
+    expect(result.skipped).toBe(1)
+
+    const items = await getRawItemsByStatus(prisma, 'new')
+    expect(items).toHaveLength(1)
+    expect(items[0].url).toBe('https://test.com/story?id=1')
+  })
 })
