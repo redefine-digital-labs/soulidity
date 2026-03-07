@@ -36,8 +36,11 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
       if (expired > 0) console.log(`Expired ${expired} old raw items`)
 
       // Step 1: Dedup
-      console.log(`[${new Date().toISOString()}] Running deduplication...`)
       const dedupResult = await runDedup(prisma)
+      if (dedupResult.total === 0) {
+        console.log(`[${new Date().toISOString()}] No new items to process, skipping dedup/produce cycle`)
+        return
+      }
       console.log(`Dedup: total ${dedupResult.total}, kept ${dedupResult.kept}, duplicates ${dedupResult.duplicates}`)
 
       // Step 2: Produce all deduped items continuously
