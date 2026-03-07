@@ -56,6 +56,7 @@ describe('runAgentPipeline', () => {
     expect(llm.generate).toHaveBeenCalledTimes(3) // reporter, analyst, editor
     expect(store.articles.length).toBe(1)
     expect(store.articles[0].titleZh).toBe('最终标题')
+    expect(store.agentProcessLogs.every(log => log.articleId === result.articleId)).toBe(true)
     expect(store.agentProcessLogs.length).toBeGreaterThanOrEqual(3)
   })
 

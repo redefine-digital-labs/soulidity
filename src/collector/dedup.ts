@@ -2,6 +2,7 @@ import type { PrismaClient } from '../db/database.js'
 import { titleHash, jaccardSimilarity, SIMILARITY_THRESHOLD } from './simhash.js'
 
 const WINDOW_HOURS = 72
+const DEDUP_REFERENCE_STATUSES = ['new', 'deduped', 'processing', 'produced', 'published']
 
 export async function isDuplicate(
   prisma: PrismaClient,
@@ -13,7 +14,8 @@ export async function isDuplicate(
 
   // Fast path: exact hash match
   const exactMatch = await prisma.rawItem.findFirst({
-    where: { titleHash: hash, createdAt: { gte: since } },
+    // Ignore expired/rejected rows so transient failures do not poison future collection.
+    where: { titleHash: hash, status: { in: DEDUP_REFERENCE_STATUSES }, createdAt: { gte: since } },
     select: { id: true },
   })
 
@@ -23,7 +25,7 @@ export async function isDuplicate(
 
   // Slow path: Jaccard similarity on recent titles
   const rows = await prisma.rawItem.findMany({
-    where: { createdAt: { gte: since } },
+    where: { status: { in: DEDUP_REFERENCE_STATUSES }, createdAt: { gte: since } },
     select: { id: true, title: true },
     orderBy: { createdAt: 'desc' },
   })

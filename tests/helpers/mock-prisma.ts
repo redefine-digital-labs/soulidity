@@ -23,8 +23,23 @@ function matchWhere(row: any, where: any): boolean {
     if (v === null || v === undefined) {
       return row[k] === null || row[k] === undefined
     }
-    if (v && typeof v === 'object' && 'gte' in v) {
-      return row[k] >= v.gte
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      if ('in' in v) {
+        return Array.isArray(v.in) && v.in.includes(row[k])
+      }
+      if ('gte' in v && row[k] < v.gte) {
+        return false
+      }
+      if ('gt' in v && row[k] <= v.gt) {
+        return false
+      }
+      if ('lte' in v && row[k] > v.lte) {
+        return false
+      }
+      if ('lt' in v && row[k] >= v.lt) {
+        return false
+      }
+      return true
     }
     return row[k] === v
   })
