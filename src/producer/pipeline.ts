@@ -10,6 +10,13 @@ interface PipelineResult {
   success: boolean
   articleId: string | null
   error?: string
+  retryLater?: boolean
+}
+
+const TRANSIENT_DB_ERROR_CODES = new Set(['08006', '08003', '08001', '57P01'])
+
+async function requeueRawItem(prisma: PrismaClient, rawItemId: string): Promise<void> {
+  await updateRawItemStatus(prisma, rawItemId, 'deduped').catch(() => {})
 }
 
 export async function runAgentPipeline(
@@ -115,15 +122,18 @@ export async function runAgentPipeline(
     // Retryable: LLM API errors
     const status = err?.status
     if (status === 402 || status === 401 || status === 429) {
-      await updateRawItemStatus(prisma, rawItemId, 'deduped').catch(() => {})
-      return { success: false, articleId: null, error: `API error ${status}` }
+      await requeueRawItem(prisma, rawItemId)
+      return { success: false, articleId: null, error: `API error ${status}`, retryLater: true }
     }
+
     // Retryable: transient DB connection errors
     const pgCode = err?.cause?.code ?? err?.code
-    if (pgCode === '08006' || pgCode === '08003' || pgCode === '08001' || pgCode === '57P01') {
+    if (TRANSIENT_DB_ERROR_CODES.has(pgCode)) {
       console.warn(`Pipeline transient DB error for ${rawItemId}, will retry:`, err.message)
-      return { success: false, articleId: null, error: `DB connection error ${pgCode}` }
+      await requeueRawItem(prisma, rawItemId)
+      return { success: false, articleId: null, error: `DB connection error ${pgCode}`, retryLater: true }
     }
+
     console.error(`Pipeline failed for ${rawItemId}:`, err)
     await updateRawItemStatus(prisma, rawItemId, 'rejected').catch(() => {})
     return { success: false, articleId: null, error: err.message }

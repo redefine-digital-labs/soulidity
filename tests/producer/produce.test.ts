@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createMockPrisma } from '../helpers/mock-prisma.js'
 import { insertRawItem, getRawItemsByStatus, updateRawItemStatus, getArticlesByStatus } from '../../src/db/database.js'
 import { produceArticles } from '../../src/producer/produce.js'
@@ -151,5 +151,35 @@ describe('produceArticles', () => {
     const result = await produceArticles(prisma, failingLLM)
     expect(result.failed).toBe(1)
     expect(await getRawItemsByStatus(prisma, 'rejected')).toHaveLength(1)
+  })
+
+  it('requeues transient DB failures and stops the current production cycle', async () => {
+    const id = await insertRawItem(prisma, {
+      source_type: 'rss', source_name: 'test', title: 'Retry later',
+      url: 'https://test.com/retry-later', title_hash: null, content: 'Body',
+      language: 'en', score: 1, raw_data: null,
+    })
+    await updateRawItemStatus(prisma, id!, 'deduped')
+
+    prisma.rawItem.update.mockImplementationOnce(async () => {
+      const err: any = new Error('connection lost')
+      err.code = '08006'
+      throw err
+    })
+
+    const llm = {
+      generate: vi.fn(async (): Promise<string> => {
+        throw new Error('LLM should not be called when processing claim fails')
+      }),
+    }
+
+    const result = await produceArticles(prisma, llm)
+
+    expect(result.processed).toBe(1)
+    expect(result.succeeded).toBe(0)
+    expect(result.failed).toBe(0)
+    expect(result.fatalError).toBe(true)
+    expect(llm.generate).not.toHaveBeenCalled()
+    expect(await getRawItemsByStatus(prisma, 'deduped')).toHaveLength(1)
   })
 })

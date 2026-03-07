@@ -16,7 +16,7 @@ export async function produceArticles(prisma: PrismaClient, llm: LLMAdapter, lim
     const result = await runAgentPipeline(prisma, llm, item.id)
     if (result.success) {
       succeeded++
-    } else if (result.error?.includes('API error')) {
+    } else if (result.retryLater) {
       fatalError = true
     } else {
       failed++
