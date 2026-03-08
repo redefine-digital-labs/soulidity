@@ -1,5 +1,5 @@
 export interface CollectedItem {
-  source_type: 'rss' | 'github'
+  source_type: 'rss' | 'github' | 'x'
   source_name: string
   title: string
   url: string
