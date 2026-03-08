@@ -68,6 +68,9 @@ describe('handleMark', () => {
       from: { id: 111 },
       message: {},
     })
+    const getChatMember = vi.fn().mockResolvedValue({ status: 'administrator' })
+    ctx.api = { getChatMember } as any
+
     await handleMark(ctx as any, prisma)
     expect(store.rawItems).toHaveLength(0)
     expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('回复'))

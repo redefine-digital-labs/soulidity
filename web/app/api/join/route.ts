@@ -4,7 +4,14 @@ import { Bot } from 'grammy'
 import { processJoinRequest } from '../../../../src/bot/gateway.js'
 
 export async function POST(request: NextRequest) {
-  const { tg_id, invite_code } = await request.json()
+  let body: any
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const { tg_id, invite_code } = body
 
   if (!tg_id || !invite_code) {
     return NextResponse.json({ success: false, error: 'tg_id and invite_code required' }, { status: 400 })
@@ -31,7 +38,7 @@ export async function POST(request: NextRequest) {
   })
 
   if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error })
+    return NextResponse.json({ success: false, error: result.error }, { status: 422 })
   }
 
   return NextResponse.json({ success: true, invite_link: result.invite_link })

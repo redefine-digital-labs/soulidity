@@ -2,6 +2,7 @@ import type { Bot, Context } from 'grammy'
 import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
 
+// TODO: Update to actual hosted URL once repo/file is published
 const SKILL_URL = 'https://raw.githubusercontent.com/anthropics/claude-code/main/data/join-skill.md'
 
 function buildJoinPrompt(tgId: number): string {
@@ -43,15 +44,15 @@ export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<vo
   const fromId = ctx.from?.id
   if (!chatId || !fromId) return
 
-  const replyMsg = (ctx.message as any)?.reply_to_message
-  if (!replyMsg?.text) {
-    await ctx.reply('请回复一条消息后使用 /mark')
+  // Check admin status first to avoid leaking command behavior to non-admins
+  const member = await ctx.api.getChatMember(chatId, fromId)
+  if (member.status !== 'administrator' && member.status !== 'creator') {
     return
   }
 
-  // Check admin status
-  const member = await ctx.api.getChatMember(chatId, fromId)
-  if (member.status !== 'administrator' && member.status !== 'creator') {
+  const replyMsg = (ctx.message as any)?.reply_to_message
+  if (!replyMsg?.text) {
+    await ctx.reply('请回复一条消息后使用 /mark')
     return
   }
 
