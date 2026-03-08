@@ -1,4 +1,4 @@
-export type SourceType = 'rss' | 'github' | 'x'
+export type SourceType = 'rss' | 'github' | 'x' | 'community'
 export type RawItemStatus = 'new' | 'deduped' | 'duplicate' | 'processing' | 'produced' | 'published' | 'rejected' | 'expired' | 'pending_review'
 export type ArticleStatus = 'draft' | 'published' | 'rejected'
 
