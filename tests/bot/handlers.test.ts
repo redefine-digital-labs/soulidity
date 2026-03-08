@@ -18,7 +18,7 @@ describe('handleJoin', () => {
     expect(ctx.reply).toHaveBeenCalledTimes(1)
     const msg = ctx.reply.mock.calls[0][0] as string
     expect(msg).toContain('123456789')
-    expect(msg).toContain('/api/join')
+    expect(msg).toContain('join-skill.md')
   })
 
   it('ignores non-private chats', async () => {
@@ -108,7 +108,7 @@ describe('handleStart', () => {
     await handleStart(ctx as any)
     expect(ctx.reply).toHaveBeenCalledTimes(1)
     const msg = ctx.reply.mock.calls[0][0] as string
-    expect(msg).toContain('/api/join')
+    expect(msg).toContain('join-skill.md')
     expect(msg).toContain('123456789')
   })
 })

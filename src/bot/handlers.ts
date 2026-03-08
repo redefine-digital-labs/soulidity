@@ -2,26 +2,20 @@ import type { Bot, Context } from 'grammy'
 import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
 
+const SKILL_URL = 'https://clawnews-mu.vercel.app/join-skill.md'
+
 function buildJoinPrompt(tgId: number): string {
   return `🦞 欢迎加入 OpenClaw 社群！
 
 请将以下内容复制发送给你的 OpenClaw Agent：
 
 ---
-帮我加入 OpenClaw TG 社群。
+请执行以下 skill 帮我加入 OpenClaw 社群：
+${SKILL_URL}
 
-我的 tg_id: ${tgId}
-请向我索要邀请码，然后调用以下 API：
-
-POST https://clawnews-mu.vercel.app/api/join
-Content-Type: application/json
-
-{
-  "tg_id": "${tgId}",
-  "invite_code": "<我提供的邀请码>"
-}
-
-成功后把返回的 invite_link 发给我，链接 10 分钟内有效。
+我的验证信息：
+- tg_id: ${tgId}
+- 请向我索要邀请码
 ---`
 }
 
