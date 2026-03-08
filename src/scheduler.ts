@@ -1,4 +1,5 @@
 import cron from 'node-cron'
+import type { Bot } from 'grammy'
 import type { PrismaClient } from './db/database.js'
 import { expireOldRawItems } from './db/database.js'
 import { runCollectors } from './collector/run.js'
@@ -10,7 +11,7 @@ import { produceArticles } from './producer/produce.js'
 import { autoPublish } from './publisher/publish.js'
 import type { LLMAdapter } from './producer/llm.js'
 
-export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
+export function startScheduler(prisma: PrismaClient, llm: LLMAdapter, bot?: Bot) {
   let producing = false
 
   cron.schedule('0 * * * *', async () => {
@@ -67,7 +68,7 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
       console.log(`Producer done: succeeded ${totalSucceeded}, failed ${totalFailed}`)
 
       // Step 3: Auto-publish drafts older than 10 minutes
-      const pubResult = await autoPublish(prisma)
+      const pubResult = await autoPublish(prisma, { bot })
       if (pubResult.published > 0 || pubResult.failed > 0) {
         console.log(`Auto-publish: published ${pubResult.published}, failed ${pubResult.failed}`)
       }
@@ -79,7 +80,7 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
   // Auto-publish: drafts older than 10 minutes → publish to TG
   cron.schedule('*/5 * * * *', async () => {
     console.log(`[${new Date().toISOString()}] Running auto-publish...`)
-    const result = await autoPublish(prisma)
+    const result = await autoPublish(prisma, { bot })
     if (result.published > 0 || result.failed > 0) {
       console.log(`Auto-publish: published ${result.published}, failed ${result.failed}`)
     }
