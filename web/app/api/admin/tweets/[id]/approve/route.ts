@@ -47,7 +47,7 @@ export async function POST(
 
     const response = await client.chat.completions.create({
       model: 'glm-4.7',
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: buildPrompt(item.content ?? '', meta) },
