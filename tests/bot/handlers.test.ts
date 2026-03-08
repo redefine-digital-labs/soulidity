@@ -102,6 +102,15 @@ describe('handleStart', () => {
     expect(msg).toContain('OpenClaw')
     expect(msg).toContain('/join')
   })
+
+  it('triggers join flow when deep link payload is "join"', async () => {
+    const ctx = createMockCtx({ match: 'join' })
+    await handleStart(ctx as any)
+    expect(ctx.reply).toHaveBeenCalledTimes(1)
+    const msg = ctx.reply.mock.calls[0][0] as string
+    expect(msg).toContain('join-skill.md')
+    expect(msg).toContain('123456789')
+  })
 })
 
 describe('registerHandlers', () => {

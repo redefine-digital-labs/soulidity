@@ -24,6 +24,13 @@ function buildJoinPrompt(tgId: number): string {
 
 export async function handleStart(ctx: Context): Promise<void> {
   if (ctx.chat?.type !== 'private') return
+
+  // Deep link: /start join → trigger join flow
+  const payload = (ctx as any).match
+  if (payload === 'join') {
+    return handleJoin(ctx)
+  }
+
   await ctx.reply(
     '🦞 欢迎来到 CryptoOpenClaw！\n\n' +
     '可用命令：\n' +

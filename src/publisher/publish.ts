@@ -1,4 +1,4 @@
-import { Bot } from 'grammy'
+import { Bot, InlineKeyboard } from 'grammy'
 import type { PrismaClient } from '../db/database.js'
 import { formatArticle } from './formatter.js'
 
@@ -40,7 +40,15 @@ export async function autoPublish(
         source_url: article.rawItem?.url ?? '',
       })
 
-      const sent = await bot.api.sendMessage(channelId, text, { parse_mode: 'HTML' })
+      const botUsername = process.env.TG_BOT_USERNAME
+      const sendOpts: any = { parse_mode: 'HTML' }
+      if (botUsername) {
+        const keyboard = new InlineKeyboard()
+          .url('🦞 加入社群', `https://t.me/${botUsername}?start=join`)
+        sendOpts.reply_markup = keyboard
+      }
+
+      const sent = await bot.api.sendMessage(channelId, text, sendOpts)
       const messageId = String(sent.message_id)
 
       await prisma.article.update({ where: { id: article.id }, data: { status: 'published' } })
