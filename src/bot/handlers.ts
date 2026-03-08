@@ -84,5 +84,8 @@ export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<vo
 export function registerHandlers(bot: Bot, prisma: PrismaClient): void {
   bot.command('start', handleStart)
   bot.command('join', handleJoin)
+  bot.command('chatid', async (ctx) => {
+    await ctx.reply(`Chat ID: <code>${ctx.chat.id}</code>`, { parse_mode: 'HTML' })
+  })
   bot.command('mark', (ctx) => handleMark(ctx, prisma))
 }
