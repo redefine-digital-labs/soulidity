@@ -5,14 +5,14 @@ import { formatArticle } from './formatter.js'
 /** Auto-publish draft articles older than `maxAgeMs` (default 10 minutes). */
 export async function autoPublish(
   prisma: PrismaClient,
-  opts: { maxAgeMs?: number } = {}
+  opts: { maxAgeMs?: number; bot?: Bot } = {}
 ): Promise<{ published: number; failed: number }> {
   const maxAge = opts.maxAgeMs ?? 10 * 60 * 1000
   const cutoff = new Date(Date.now() - maxAge)
 
   const token = process.env.TG_BOT_TOKEN
   const channelId = process.env.TG_CHANNEL_ID
-  if (!token || !channelId) {
+  if (!channelId || (!token && !opts.bot)) {
     console.error('TG_BOT_TOKEN or TG_CHANNEL_ID not configured, skipping auto-publish')
     return { published: 0, failed: 0 }
   }
@@ -27,7 +27,7 @@ export async function autoPublish(
 
   if (articles.length === 0) return { published: 0, failed: 0 }
 
-  const bot = new Bot(token)
+  const bot = opts.bot ?? new Bot(token!)
   let published = 0
   let failed = 0
 
