@@ -86,5 +86,6 @@ describe('handleMark', () => {
 
     await handleMark(ctx as any, prisma)
     expect(store.rawItems).toHaveLength(0)
+    expect(ctx.reply).not.toHaveBeenCalled()
   })
 })
