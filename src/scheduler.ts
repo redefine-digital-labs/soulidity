@@ -16,13 +16,13 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
   cron.schedule('0 * * * *', async () => {
     console.log(`[${new Date().toISOString()}] Running RSS collection...`)
     const result = await runCollectors(prisma, [collectRss])
-    console.log(`RSS: fetched ${result.total}, inserted ${result.inserted}`)
+    console.log(`RSS: fetched ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}`)
   })
 
   cron.schedule('0 6 * * *', async () => {
     console.log(`[${new Date().toISOString()}] Running GitHub collection...`)
     const result = await runCollectors(prisma, [collectGithub])
-    console.log(`GitHub: fetched ${result.total}, inserted ${result.inserted}`)
+    console.log(`GitHub: fetched ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}`)
   })
 
   cron.schedule('*/30 * * * *', async () => {

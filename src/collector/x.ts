@@ -9,15 +9,22 @@ export const EDGE_KEYWORDS = [
   'windsurf', 'copilot', 'devin', 'anthropic', 'ai编程', 'ai coding',
 ]
 
-export function filterTweet(content: string, type: 'SHORT' | 'LONG'): boolean {
-  const lower = content.toLowerCase()
-  if (type === 'LONG') {
-    return [...CORE_KEYWORDS, ...EDGE_KEYWORDS].some(kw => lower.includes(kw))
-  }
+/** Tiered keyword filter: core keyword = 1 match passes, edge keywords = 2+ matches needed */
+export function isRelevant(text: string): boolean {
+  const lower = text.toLowerCase()
   const coreHit = CORE_KEYWORDS.some(kw => lower.includes(kw))
   if (coreHit) return true
   const edgeHits = EDGE_KEYWORDS.filter(kw => lower.includes(kw))
   return edgeHits.length >= 2
+}
+
+export function filterTweet(content: string, type: 'SHORT' | 'LONG'): boolean {
+  if (type === 'LONG') {
+    // LONG tweets: any single keyword match is enough
+    const lower = content.toLowerCase()
+    return [...CORE_KEYWORDS, ...EDGE_KEYWORDS].some(kw => lower.includes(kw))
+  }
+  return isRelevant(content)
 }
 
 // --- Tweet scoring ---

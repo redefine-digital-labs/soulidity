@@ -12,8 +12,8 @@ beforeEach(() => {
 })
 
 const mockCollector = (): Promise<CollectedItem[]> => Promise.resolve([
-  { source_type: 'rss', source_name: 'test', title: 'AI Agent for DeFi', url: 'https://test.com/1', content: 'AI agent content', language: 'en', raw_data: {} },
-  { source_type: 'rss', source_name: 'test', title: 'Bitcoin Price', url: 'https://test.com/2', content: 'crypto news', language: 'en', raw_data: {} },
+  { source_type: 'rss', source_name: 'test', title: 'OpenClaw AI Agent launches new DeFi tool', url: 'https://test.com/1', content: 'OpenClaw announced a new AI agent platform', language: 'en', raw_data: {} },
+  { source_type: 'rss', source_name: 'test', title: 'Claude and Cursor integration announced', url: 'https://test.com/2', content: 'Anthropic Claude now works with Cursor IDE', language: 'en', raw_data: {} },
 ])
 
 describe('runCollectors', () => {
@@ -24,8 +24,8 @@ describe('runCollectors', () => {
 
     const items = await getRawItemsByStatus(prisma, 'new')
     expect(items).toHaveLength(2)
-    // AI Agent item should have higher score and come first
-    expect(items[0].title).toBe('AI Agent for DeFi')
+    // OpenClaw item should have higher score and come first
+    expect(items[0].title).toBe('OpenClaw AI Agent launches new DeFi tool')
     expect(items[0].score).toBeGreaterThan(items[1].score)
   })
 
@@ -36,8 +36,8 @@ describe('runCollectors', () => {
 
   it('skips items that collapse to the same canonical URL', async () => {
     const collector = (): Promise<CollectedItem[]> => Promise.resolve([
-      { source_type: 'rss', source_name: 'test', title: 'Story A', url: 'https://test.com/story?id=1&utm_source=rss', content: 'Body A', language: 'en', raw_data: {} },
-      { source_type: 'rss', source_name: 'test', title: 'Story A mirror', url: 'https://test.com/story?utm_medium=social&id=1', content: 'Body A', language: 'en', raw_data: {} },
+      { source_type: 'rss', source_name: 'test', title: 'OpenClaw launches new feature', url: 'https://test.com/story?id=1&utm_source=rss', content: 'OpenClaw update', language: 'en', raw_data: {} },
+      { source_type: 'rss', source_name: 'test', title: 'OpenClaw launches new feature mirror', url: 'https://test.com/story?utm_medium=social&id=1', content: 'OpenClaw update', language: 'en', raw_data: {} },
     ])
 
     const result = await runCollectors(prisma, [collector])

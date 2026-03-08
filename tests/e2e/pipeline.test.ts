@@ -36,9 +36,9 @@ describe('full pipeline', () => {
       {
         source_type: 'rss',
         source_name: 'coindesk',
-        title: 'AI Agent Launches on Sui',
+        title: 'OpenClaw AI Agent Launches on Sui',
         url: 'https://example.com/ai-agent',
-        content: 'A new AI agent framework for DeFi on Sui blockchain',
+        content: 'A new OpenClaw AI agent framework for DeFi on Sui blockchain',
         language: 'en',
         raw_data: { test: true },
       },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterTweet, scoreTweet, CORE_KEYWORDS, EDGE_KEYWORDS } from '../../src/collector/x.js'
+import { filterTweet, isRelevant, scoreTweet, CORE_KEYWORDS, EDGE_KEYWORDS } from '../../src/collector/x.js'
 
 describe('filterTweet', () => {
   it('passes LONG tweet with any core keyword', () => {
@@ -29,6 +29,24 @@ describe('filterTweet', () => {
   it('is case insensitive', () => {
     expect(filterTweet('OPENCLAW rocks', 'SHORT')).toBe(true)
     expect(filterTweet('using CURSOR and CLAUDE together', 'SHORT')).toBe(true)
+  })
+})
+
+describe('isRelevant (shared filter for RSS/GitHub/X)', () => {
+  it('passes with core keyword', () => {
+    expect(isRelevant('OpenClaw launches new feature')).toBe(true)
+  })
+
+  it('rejects with only 1 edge keyword', () => {
+    expect(isRelevant('Claude is a great tool')).toBe(false)
+  })
+
+  it('passes with 2+ edge keywords', () => {
+    expect(isRelevant('Using Claude with Cursor for AI coding')).toBe(true)
+  })
+
+  it('rejects irrelevant content', () => {
+    expect(isRelevant('Bitcoin price surges to new high')).toBe(false)
   })
 })
 
