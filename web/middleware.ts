@@ -14,6 +14,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/community') ||
     pathname.startsWith('/u/') ||
     pathname.startsWith('/news') ||
+    pathname.startsWith('/api/join') ||
+    pathname.startsWith('/api/verify') ||
     pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico'
   ) {
