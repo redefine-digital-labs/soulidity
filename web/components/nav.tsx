@@ -5,6 +5,7 @@ import { createSupabaseBrowser } from '@web/lib/supabase/client'
 
 const links = [
   { href: '/admin', label: 'Dashboard' },
+  { href: '/admin/tweets', label: 'Tweets' },
   { href: '/admin/submit', label: 'Submit' },
   { href: '/companies', label: 'Companies' },
   { href: '/admin/invites', label: 'Invites' },
