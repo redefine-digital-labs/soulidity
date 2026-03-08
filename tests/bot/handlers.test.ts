@@ -114,12 +114,47 @@ describe('handleStart', () => {
 })
 
 describe('registerHandlers', () => {
-  it('registers all commands on the bot', () => {
-    const bot = { command: vi.fn() }
+  it('registers all commands and event handlers on the bot', () => {
+    const bot = { command: vi.fn(), on: vi.fn() }
     const mock = createMockPrisma()
     registerHandlers(bot as any, mock.prisma)
     expect(bot.command).toHaveBeenCalledWith('start', expect.any(Function))
     expect(bot.command).toHaveBeenCalledWith('join', expect.any(Function))
     expect(bot.command).toHaveBeenCalledWith('mark', expect.any(Function))
+    expect(bot.on).toHaveBeenCalledWith('chat_member', expect.any(Function))
+  })
+
+  it('welcome handler replies when new member joins', async () => {
+    const bot = { command: vi.fn(), on: vi.fn() }
+    const mock = createMockPrisma()
+    registerHandlers(bot as any, mock.prisma)
+
+    const chatMemberHandler = bot.on.mock.calls.find((c: any) => c[0] === 'chat_member')![1]
+    const ctx = {
+      chatMember: {
+        old_chat_member: { status: 'left' },
+        new_chat_member: { status: 'member', user: { first_name: 'Alice' } },
+      },
+      reply: vi.fn(),
+    }
+    await chatMemberHandler(ctx)
+    expect(ctx.reply).toHaveBeenCalledWith('🦞 欢迎 Alice 加入 OpenClaw 社群！')
+  })
+
+  it('welcome handler ignores non-join events', async () => {
+    const bot = { command: vi.fn(), on: vi.fn() }
+    const mock = createMockPrisma()
+    registerHandlers(bot as any, mock.prisma)
+
+    const chatMemberHandler = bot.on.mock.calls.find((c: any) => c[0] === 'chat_member')![1]
+    const ctx = {
+      chatMember: {
+        old_chat_member: { status: 'member' },
+        new_chat_member: { status: 'member', user: { first_name: 'Bob' } },
+      },
+      reply: vi.fn(),
+    }
+    await chatMemberHandler(ctx)
+    expect(ctx.reply).not.toHaveBeenCalled()
   })
 })

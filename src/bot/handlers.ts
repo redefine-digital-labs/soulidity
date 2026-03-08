@@ -85,4 +85,15 @@ export function registerHandlers(bot: Bot, prisma: PrismaClient): void {
     await ctx.reply(`Chat ID: <code>${ctx.chat.id}</code>`, { parse_mode: 'HTML' })
   })
   bot.command('mark', (ctx) => handleMark(ctx, prisma))
+
+  // Welcome new members joining the group
+  bot.on('chat_member', async (ctx) => {
+    const { old_chat_member, new_chat_member } = ctx.chatMember
+    const wasOut = old_chat_member.status === 'left' || old_chat_member.status === 'kicked'
+    const isIn = new_chat_member.status === 'member' || new_chat_member.status === 'administrator'
+    if (wasOut && isIn) {
+      const name = new_chat_member.user.first_name
+      await ctx.reply(`🦞 欢迎 ${name} 加入 OpenClaw 社群！`)
+    }
+  })
 }
