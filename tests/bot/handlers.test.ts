@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleJoin, handleMark } from '../../src/bot/handlers.js'
+import { handleJoin, handleMark, handleStart, registerHandlers } from '../../src/bot/handlers.js'
 import { createMockPrisma } from '../helpers/mock-prisma.js'
 
 function createMockCtx(overrides: any = {}) {
@@ -87,5 +87,27 @@ describe('handleMark', () => {
     await handleMark(ctx as any, prisma)
     expect(store.rawItems).toHaveLength(0)
     expect(ctx.reply).not.toHaveBeenCalled()
+  })
+})
+
+describe('handleStart', () => {
+  it('replies with welcome message in private chat', async () => {
+    const ctx = createMockCtx()
+    await handleStart(ctx as any)
+    expect(ctx.reply).toHaveBeenCalledTimes(1)
+    const msg = ctx.reply.mock.calls[0][0] as string
+    expect(msg).toContain('OpenClaw')
+    expect(msg).toContain('/join')
+  })
+})
+
+describe('registerHandlers', () => {
+  it('registers all commands on the bot', () => {
+    const bot = { command: vi.fn() }
+    const mock = createMockPrisma()
+    registerHandlers(bot as any, mock.prisma)
+    expect(bot.command).toHaveBeenCalledWith('start', expect.any(Function))
+    expect(bot.command).toHaveBeenCalledWith('join', expect.any(Function))
+    expect(bot.command).toHaveBeenCalledWith('mark', expect.any(Function))
   })
 })

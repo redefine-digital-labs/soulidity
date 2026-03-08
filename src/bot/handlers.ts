@@ -1,4 +1,4 @@
-import type { Context } from 'grammy'
+import type { Bot, Context } from 'grammy'
 import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
 
@@ -19,6 +19,16 @@ function buildJoinPrompt(tgId: number): string {
     '- 请向我索要邀请码',
     '---',
   ].join('\n')
+}
+
+export async function handleStart(ctx: Context): Promise<void> {
+  if (ctx.chat?.type !== 'private') return
+  await ctx.reply(
+    '🦞 欢迎来到 CryptoOpenClaw！\n\n' +
+    '可用命令：\n' +
+    '/join — 验证身份加入社群\n' +
+    '/start — 显示本帮助'
+  )
 }
 
 export async function handleJoin(ctx: Context): Promise<void> {
@@ -61,4 +71,10 @@ export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<vo
   })
 
   await ctx.reply('✅ 已标记为素材')
+}
+
+export function registerHandlers(bot: Bot, prisma: PrismaClient): void {
+  bot.command('start', handleStart)
+  bot.command('join', handleJoin)
+  bot.command('mark', (ctx) => handleMark(ctx, prisma))
 }
