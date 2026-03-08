@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { Bot } from 'grammy'
-import { processJoinRequest } from '../../../../src/bot/gateway.js'
 
 export async function POST(request: NextRequest) {
   let body: any
@@ -23,23 +22,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Server not configured' }, { status: 500 })
   }
 
-  const bot = new Bot(token)
-
-  const result = await processJoinRequest(prisma, {
-    tg_id,
-    invite_code,
-    createInviteLink: async () => {
-      const link = await bot.api.createChatInviteLink(groupId, {
-        member_limit: 1,
-        expire_date: Math.floor(Date.now() / 1000) + 600,
-      })
-      return link.invite_link
-    },
+  // Validate invite code
+  const invite = await prisma.inviteCode.findFirst({
+    where: { code: invite_code, active: 1, usedBy: null },
   })
-
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 422 })
+  if (!invite) {
+    return NextResponse.json({ success: false, error: 'Invalid or used invite code' }, { status: 422 })
   }
 
-  return NextResponse.json({ success: true, invite_link: result.invite_link })
+  // Generate invite link before consuming code (so failure doesn't waste the code)
+  const bot = new Bot(token)
+  let invite_link: string
+  try {
+    const link = await bot.api.createChatInviteLink(groupId, {
+      member_limit: 1,
+      expire_date: Math.floor(Date.now() / 1000) + 600,
+    })
+    invite_link = link.invite_link
+  } catch {
+    return NextResponse.json({ success: false, error: 'Failed to create invite link' }, { status: 500 })
+  }
+
+  // Consume invite code and create member
+  await prisma.inviteCode.update({
+    where: { code: invite_code },
+    data: { usedBy: tg_id, active: 0 },
+  })
+  await prisma.member.upsert({
+    where: { tgId: tg_id },
+    create: { tgId: tg_id, inviteCode: invite_code },
+    update: {},
+  })
+
+  return NextResponse.json({ success: true, invite_link })
 }
