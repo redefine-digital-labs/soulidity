@@ -41,6 +41,22 @@ describe('processJoinRequest', () => {
     expect(createInviteLink).toHaveBeenCalled()
   })
 
+  it('returns error and preserves invite code when link creation fails', async () => {
+    store.inviteCodes.push({ code: 'LINK1234', active: 1, usedBy: null, createdAt: new Date() })
+
+    const createInviteLink = vi.fn().mockRejectedValue(new Error('Bot API error'))
+    const result = await processJoinRequest(prisma, {
+      tg_id: '123',
+      invite_code: 'LINK1234',
+      createInviteLink,
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('invite link')
+    expect(store.inviteCodes[0].active).toBe(1)
+    expect(store.inviteCodes[0].usedBy).toBeNull()
+  })
+
   it('rejects already-used invite code', async () => {
     store.inviteCodes.push({ code: 'USED1234', active: 0, usedBy: 'other', createdAt: new Date() })
 

@@ -24,6 +24,13 @@ export async function processJoinRequest(
     return { success: false, error: 'Invalid or used invite code' }
   }
 
+  let invite_link: string
+  try {
+    invite_link = await req.createInviteLink()
+  } catch {
+    return { success: false, error: 'Failed to create invite link' }
+  }
+
   await prisma.inviteCode.update({
     where: { code: req.invite_code },
     data: { usedBy: req.tg_id, active: 0 },
@@ -34,8 +41,6 @@ export async function processJoinRequest(
     create: { tgId: req.tg_id, inviteCode: req.invite_code },
     update: {},
   })
-
-  const invite_link = await req.createInviteLink()
 
   return { success: true, invite_link }
 }
