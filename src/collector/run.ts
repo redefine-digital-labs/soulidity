@@ -52,8 +52,17 @@ if (process.argv[1]?.endsWith('run.ts') || process.argv[1]?.endsWith('run.js')) 
   const { createPrisma } = await import('../db/database.js')
   const prisma = createPrisma()
 
-  console.log('Running collectors...')
-  const result = await runCollectors(prisma, [collectRss, collectGithub])
-  console.log(`Done. Fetched ${result.total} items, inserted ${result.inserted} new, skipped ${result.skipped} duplicates.`)
+  const mode = process.argv[2]
+
+  if (mode === 'x') {
+    const { collectX } = await import('./x.js')
+    console.log('Running X collector...')
+    const result = await collectX(prisma)
+    console.log(`Done. Total ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}, pending_review ${result.pendingReview}`)
+  } else {
+    console.log('Running collectors...')
+    const result = await runCollectors(prisma, [collectRss, collectGithub])
+    console.log(`Done. Fetched ${result.total} items, inserted ${result.inserted} new, skipped ${result.skipped} duplicates.`)
+  }
   await prisma.$disconnect()
 }

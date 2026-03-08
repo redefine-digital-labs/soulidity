@@ -8,6 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "collect": "tsx src/collector/run.ts",
+    "collect:x": "tsx src/collector/run.ts x",
     "produce": "tsx src/producer/run.ts",
     "publish": "tsx src/publisher/run.ts",
     "seed:directions": "tsx src/db/seed-directions.ts",

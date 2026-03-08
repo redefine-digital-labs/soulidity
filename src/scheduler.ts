@@ -4,6 +4,7 @@ import { expireOldRawItems } from './db/database.js'
 import { runCollectors } from './collector/run.js'
 import { collectRss } from './collector/rss.js'
 import { collectGithub } from './collector/github.js'
+import { collectX } from './collector/x.js'
 import { runDedup } from './producer/dedup.js'
 import { produceArticles } from './producer/produce.js'
 import { autoPublish } from './publisher/publish.js'
@@ -22,6 +23,16 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
     console.log(`[${new Date().toISOString()}] Running GitHub collection...`)
     const result = await runCollectors(prisma, [collectGithub])
     console.log(`GitHub: fetched ${result.total}, inserted ${result.inserted}`)
+  })
+
+  cron.schedule('*/30 * * * *', async () => {
+    console.log(`[${new Date().toISOString()}] Running X collection...`)
+    try {
+      const result = await collectX(prisma)
+      console.log(`X: total ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}, pending_review ${result.pendingReview}`)
+    } catch (err) {
+      console.error('X collection failed:', err)
+    }
   })
 
   cron.schedule('25 * * * *', async () => {
@@ -77,6 +88,7 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter) {
   console.log('Scheduler started. Cron jobs:')
   console.log('  RSS collection:      every hour at :00')
   console.log('  GitHub collection:   daily at 06:00')
+  console.log('  X collection:        every 30 minutes')
   console.log('  Dedup + Produce:     every hour at :25')
   console.log('  Auto-publish:        every 5 minutes')
 }
