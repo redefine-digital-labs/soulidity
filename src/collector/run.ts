@@ -49,6 +49,7 @@ export async function runCollectors(prisma: PrismaClient, collectors: Array<() =
 
 // CLI entry point
 if (process.argv[1]?.endsWith('run.ts') || process.argv[1]?.endsWith('run.js')) {
+  await import('dotenv/config')
   const { createPrisma } = await import('../db/database.js')
   const prisma = createPrisma()
 
