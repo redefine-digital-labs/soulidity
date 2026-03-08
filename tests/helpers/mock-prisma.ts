@@ -2,6 +2,7 @@ import { vi } from 'vitest'
 
 interface MockStore {
   rawItems: any[]
+  collectorStates: any[]
   articles: any[]
   publications: any[]
   members: any[]
@@ -123,6 +124,7 @@ function createModel(collection: any[], defaults: Record<string, any> = {}, uniq
 export function createMockPrisma() {
   const store: MockStore = {
     rawItems: [],
+    collectorStates: [],
     articles: [],
     publications: [],
     members: [],
@@ -141,6 +143,7 @@ export function createMockPrisma() {
 
   const prisma = {
     rawItem: createModel(store.rawItems, { status: 'new' }, ['url']),
+    collectorState: createModel(store.collectorStates, {}, ['source']),
     article: createModel(store.articles, { status: 'draft' }),
     publication: createModel(store.publications),
     member: createModel(store.members, { level: 1 }),

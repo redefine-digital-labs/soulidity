@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { parseTweetMeta } from '@web/lib/admin-tweet-review'
 
 interface TweetItem {
   id: string
@@ -10,22 +11,6 @@ interface TweetItem {
   status: string
   rawData: string | null
   createdAt: string
-}
-
-interface TweetMeta {
-  author: string
-  display_name?: string
-  like_count: number
-  retweet_count: number
-  reply_count: number
-  view_count: number
-  tweet_type: string
-  posted_at: string
-}
-
-function parseMeta(rawData: string | null): TweetMeta | null {
-  if (!rawData) return null
-  try { return JSON.parse(rawData) } catch { return null }
 }
 
 export default function TweetsReviewPage() {
@@ -73,7 +58,7 @@ export default function TweetsReviewPage() {
       ) : (
         <div className="space-y-4">
           {items.map(item => {
-            const meta = parseMeta(item.rawData)
+            const meta = parseTweetMeta(item.rawData)
             const isProcessing = actionLoading === item.id
             return (
               <div key={item.id} className="border rounded-lg p-4 bg-white">

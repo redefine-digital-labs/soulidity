@@ -15,6 +15,31 @@ interface PipelineResult {
 
 const TRANSIENT_DB_ERROR_CODES = new Set(['08006', '08003', '08001', '57P01'])
 
+function getReviewHint(rawData: string | null): { title?: string; summary?: string } | undefined {
+  if (!rawData) return undefined
+
+  try {
+    const parsed = JSON.parse(rawData)
+    if (!parsed || typeof parsed !== 'object') return undefined
+
+    const review = typeof parsed.review === 'object' && parsed.review !== null ? parsed.review : null
+    const title = typeof review?.title === 'string'
+      ? review.title
+      : typeof parsed.review_title === 'string'
+        ? parsed.review_title
+        : undefined
+    const summary = typeof review?.summary === 'string'
+      ? review.summary
+      : typeof parsed.review_summary === 'string'
+        ? parsed.review_summary
+        : undefined
+
+    return title || summary ? { title, summary } : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function requeueRawItem(prisma: PrismaClient, rawItemId: string): Promise<void> {
   await updateRawItemStatus(prisma, rawItemId, 'deduped').catch(() => {})
 }
@@ -31,7 +56,7 @@ export async function runAgentPipeline(
     await updateRawItemStatus(prisma, rawItemId, 'processing')
 
     // --- Reporter phase ---
-    const reporterPrompt = buildReporterPrompt(item.title, item.content ?? '', item.sourceName)
+    const reporterPrompt = buildReporterPrompt(item.title, item.content ?? '', item.sourceName, getReviewHint(item.rawData))
     const reporterRaw = await llm.generate(REPORTER_SYSTEM_PROMPT, reporterPrompt)
     const reporterOutput = parseReporterResponse(reporterRaw)
 

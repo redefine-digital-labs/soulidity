@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { buildApprovedTweetUpdate, parseTweetMeta } from '@web/lib/admin-tweet-review'
 import OpenAI from 'openai'
 
 const SYSTEM_PROMPT = `你是一名专业的 AI×Web3 新闻编辑。
 根据一条推文，生成一条结构化的中文新闻。
 必须只返回合法 JSON，不要 markdown 代码块。`
 
-function buildPrompt(content: string, meta: { author: string; display_name?: string; like_count: number; view_count: number; posted_at: string }): string {
+function buildPrompt(content: string, meta: {
+  author?: string
+  display_name?: string
+  like_count?: number
+  view_count?: number
+  posted_at?: string
+}): string {
   return `推文内容：${content}
-作者：${meta.author}${meta.display_name ? ` (${meta.display_name})` : ''}
-互动：${meta.like_count} likes, ${meta.view_count} views
-发布时间：${meta.posted_at}
+作者：${meta.author ?? 'unknown'}${meta.display_name ? ` (${meta.display_name})` : ''}
+互动：${meta.like_count ?? 0} likes, ${meta.view_count ?? 0} views
+发布时间：${meta.posted_at ?? 'unknown'}
 
 输出 JSON：
 {
@@ -34,7 +41,7 @@ export async function POST(
       return NextResponse.json({ error: `Invalid status: ${item.status}` }, { status: 400 })
     }
 
-    const meta = item.rawData ? JSON.parse(item.rawData) : {}
+    const meta = parseTweetMeta(item.rawData) ?? {}
 
     // LLM expand
     const apiKey = process.env.ZAI_API_KEY
@@ -64,14 +71,14 @@ export async function POST(
       return NextResponse.json({ error: 'LLM determined content too thin to expand' }, { status: 422 })
     }
 
-    // Update RawItem with expanded content and move to 'new'
+    // Preserve the original tweet text and store review output in rawData.
     await prisma.rawItem.update({
       where: { id },
-      data: {
+      data: buildApprovedTweetUpdate(item.rawData, {
         title: result.title,
-        content: result.summary,
-        status: 'new',
-      },
+        summary: result.summary,
+        reviewedAt: new Date().toISOString(),
+      }),
     })
 
     return NextResponse.json({ success: true, title: result.title, summary: result.summary })

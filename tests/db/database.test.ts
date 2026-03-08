@@ -1,6 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createMockPrisma } from '../helpers/mock-prisma.js'
-import { insertRawItem, getRawItemsByStatus, updateRawItemStatus, insertArticle, getArticlesByStatus, getArticleById, updateArticle, getStats } from '../../src/db/database.js'
+import {
+  insertRawItem,
+  getRawItemsByStatus,
+  updateRawItemStatus,
+  insertArticle,
+  getArticlesByStatus,
+  getArticleById,
+  updateArticle,
+  getStats,
+  getCollectorState,
+  upsertCollectorState,
+} from '../../src/db/database.js'
 
 let prisma: ReturnType<typeof createMockPrisma>['prisma']
 
@@ -111,5 +122,37 @@ describe('stats', () => {
     expect(stats.raw_new).toBe(1)
     expect(stats.articles_draft).toBe(1)
     expect(stats.articles_rejected).toBe(0)
+  })
+})
+
+describe('collector state', () => {
+  it('stores and updates the X collector cursor', async () => {
+    expect(await getCollectorState(prisma, 'x')).toBeUndefined()
+
+    const firstPostedAt = new Date('2026-03-08T00:00:00.000Z')
+    await upsertCollectorState(prisma, 'x', {
+      last_posted_at: firstPostedAt,
+      last_tweet_id: '100',
+    })
+
+    let state = await getCollectorState(prisma, 'x')
+    expect(state).toMatchObject({
+      source: 'x',
+      last_posted_at: firstPostedAt.toISOString(),
+      last_tweet_id: '100',
+    })
+
+    const nextPostedAt = new Date('2026-03-08T00:30:00.000Z')
+    await upsertCollectorState(prisma, 'x', {
+      last_posted_at: nextPostedAt,
+      last_tweet_id: '200',
+    })
+
+    state = await getCollectorState(prisma, 'x')
+    expect(state).toMatchObject({
+      source: 'x',
+      last_posted_at: nextPostedAt.toISOString(),
+      last_tweet_id: '200',
+    })
   })
 })

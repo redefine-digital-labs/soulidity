@@ -28,6 +28,15 @@ model RawItem {
   @@map("raw_items")
 }
 
+model CollectorState {
+  source       String    @id
+  lastPostedAt DateTime? @map("last_posted_at") @db.Timestamptz
+  lastTweetId  String?   @map("last_tweet_id")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("collector_states")
+}
+
 model Article {
   id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   rawItemId    String           @map("raw_item_id") @db.Uuid

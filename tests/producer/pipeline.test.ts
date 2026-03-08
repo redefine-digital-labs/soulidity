@@ -106,4 +106,48 @@ describe('runAgentPipeline', () => {
     expect(result.success).toBe(false)
     expect(result.error).toContain('not found')
   })
+
+  it('passes review hints to the reporter without replacing the original tweet text', async () => {
+    const { prisma, store } = createMockPrisma()
+    seedAgentRoles(store)
+
+    store.rawItems.push({
+      id: 'raw-x-1',
+      sourceType: 'x',
+      sourceName: 'x:openclaw',
+      title: 'Original tweet title',
+      url: 'https://x.com/openclaw/status/1',
+      content: 'Original tweet body with the source facts intact',
+      language: 'en',
+      score: 8,
+      status: 'deduped',
+      rawData: JSON.stringify({
+        tweet_id: '1',
+        author: 'openclaw',
+        review: {
+          title: '审核建议标题',
+          summary: '审核建议摘要',
+          reviewedAt: '2026-03-08T08:00:00.000Z',
+        },
+      }),
+      createdAt: new Date(),
+    })
+
+    const llm = createMockLLM([
+      JSON.stringify({ title_zh: '测试标题', lead_zh: '据 x:openclaw 消息，测试' }),
+      JSON.stringify({ body_zh: '深度分析内容', tags: ['Crypto'], companies: [] }),
+      JSON.stringify({ title_zh: '最终标题', summary_zh: '最终摘要', analysis_zh: '最终分析', quality_score: 8, approved: true }),
+    ])
+
+    const result = await runAgentPipeline(prisma, llm, 'raw-x-1')
+
+    expect(result.success).toBe(true)
+    expect(llm.generate).toHaveBeenCalledTimes(3)
+
+    const reporterPrompt = llm.generate.mock.calls[0][1]
+    expect(reporterPrompt).toContain('Original tweet body with the source facts intact')
+    expect(reporterPrompt).toContain('审核建议标题')
+    expect(reporterPrompt).toContain('审核建议摘要')
+    expect(store.rawItems[0].content).toBe('Original tweet body with the source facts intact')
+  })
 })

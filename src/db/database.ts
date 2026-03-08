@@ -1,6 +1,6 @@
 import { PrismaClient } from '../../generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
-import type { RawItem, Article, RawItemStatus, ArticleStatus } from '../shared/types.js'
+import type { RawItem, Article, RawItemStatus, ArticleStatus, CollectorState } from '../shared/types.js'
 import { normalizeUrl } from '../shared/dedup.js'
 
 export type { PrismaClient }
@@ -65,6 +65,32 @@ export async function expireOldRawItems(prisma: PrismaClient): Promise<number> {
 
 export async function updateRawItemStatus(prisma: PrismaClient, id: string, status: RawItemStatus): Promise<void> {
   await prisma.rawItem.update({ where: { id }, data: { status } })
+}
+
+// --- collector_states ---
+
+export async function getCollectorState(prisma: PrismaClient, source: string): Promise<CollectorState | undefined> {
+  const row = await prisma.collectorState.findUnique({ where: { source } })
+  return row ? toCollectorState(row) : undefined
+}
+
+export async function upsertCollectorState(
+  prisma: PrismaClient,
+  source: string,
+  cursor: { last_posted_at: Date | null; last_tweet_id: string | null },
+): Promise<void> {
+  await prisma.collectorState.upsert({
+    where: { source },
+    create: {
+      source,
+      lastPostedAt: cursor.last_posted_at,
+      lastTweetId: cursor.last_tweet_id,
+    },
+    update: {
+      lastPostedAt: cursor.last_posted_at,
+      lastTweetId: cursor.last_tweet_id,
+    },
+  })
 }
 
 // --- articles ---
@@ -206,6 +232,15 @@ function toRawItem(row: any): RawItem {
     status: row.status,
     raw_data: row.rawData,
     created_at: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+  }
+}
+
+function toCollectorState(row: any): CollectorState {
+  return {
+    source: row.source,
+    last_posted_at: row.lastPostedAt instanceof Date ? row.lastPostedAt.toISOString() : row.lastPostedAt,
+    last_tweet_id: row.lastTweetId,
+    updated_at: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
   }
 }
 

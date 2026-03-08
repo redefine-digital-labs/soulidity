@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseReporterResponse, REPORTER_SYSTEM_PROMPT } from '../../../src/producer/agents/reporter.js'
+import { buildReporterPrompt, parseReporterResponse, REPORTER_SYSTEM_PROMPT } from '../../../src/producer/agents/reporter.js'
 
 describe('reporter agent', () => {
   it('parses valid reporter response', () => {
@@ -19,5 +19,22 @@ describe('reporter agent', () => {
 
   it('has a system prompt', () => {
     expect(REPORTER_SYSTEM_PROMPT).toContain('记者')
+  })
+
+  it('includes review hints as non-authoritative guidance', () => {
+    const prompt = buildReporterPrompt(
+      '原始标题',
+      '这里是原始推文全文',
+      'x:openclaw',
+      {
+        title: '审核建议标题',
+        summary: '审核建议摘要',
+      },
+    )
+
+    expect(prompt).toContain('这里是原始推文全文')
+    expect(prompt).toContain('审核建议标题')
+    expect(prompt).toContain('审核建议摘要')
+    expect(prompt).toContain('仅作写作提示')
   })
 })

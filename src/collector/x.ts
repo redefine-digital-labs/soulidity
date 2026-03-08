@@ -1,5 +1,6 @@
 import pg from 'pg'
 import type { PrismaClient } from '../db/database.js'
+import { getCollectorState, upsertCollectorState } from '../db/database.js'
 
 // --- Keyword filtering ---
 
@@ -57,7 +58,21 @@ interface XTweet {
   display_name: string | null
 }
 
+export interface XCursor {
+  lastPostedAt: Date | null
+  lastTweetId: string | null
+}
+
+interface CollectXDeps {
+  batchSize?: number
+  fetchBatch?: (cursor: XCursor, limit: number) => Promise<XTweet[]>
+  loadCursor?: (prisma: PrismaClient) => Promise<XCursor>
+  saveCursor?: (prisma: PrismaClient, cursor: XCursor) => Promise<void>
+}
+
 // --- Collector ---
+
+const DEFAULT_BATCH_SIZE = 200
 
 let xPool: pg.Pool | null = null
 
@@ -70,17 +85,40 @@ function getPool(): pg.Pool {
   return xPool
 }
 
-async function fetchNewTweets(pool: pg.Pool, existingUrls: Set<string>): Promise<XTweet[]> {
-  const { rows } = await pool.query<XTweet>(`
+function createPgBatchFetcher(pool: pg.Pool) {
+  return async (cursor: XCursor, limit: number): Promise<XTweet[]> => {
+    const { rows } = await pool.query<XTweet>(`
     SELECT
       t.tweet_id, t.content, t.type, t.tweet_url, t.posted_at,
       t.like_count, t.retweet_count, t.reply_count, t.view_count,
       a.username, a.display_name
     FROM tweets t
     JOIN authors a ON t.author_id = a.id
-    ORDER BY t.posted_at DESC
-  `)
-  return rows.filter(r => !existingUrls.has(r.tweet_url))
+    WHERE (
+      $1::timestamptz IS NULL
+      OR t.posted_at > $1
+      OR (t.posted_at = $1 AND ($2::text IS NULL OR t.tweet_id > $2))
+    )
+    ORDER BY t.posted_at ASC, t.tweet_id ASC
+    LIMIT $3
+  `, [cursor.lastPostedAt, cursor.lastTweetId, limit])
+    return rows
+  }
+}
+
+async function loadXCursor(prisma: PrismaClient): Promise<XCursor> {
+  const state = await getCollectorState(prisma, 'x')
+  return {
+    lastPostedAt: state?.last_posted_at ? new Date(state.last_posted_at) : null,
+    lastTweetId: state?.last_tweet_id ?? null,
+  }
+}
+
+async function saveXCursor(prisma: PrismaClient, cursor: XCursor): Promise<void> {
+  await upsertCollectorState(prisma, 'x', {
+    last_posted_at: cursor.lastPostedAt,
+    last_tweet_id: cursor.lastTweetId,
+  })
 }
 
 export async function collectX(prisma: PrismaClient): Promise<{
@@ -88,69 +126,92 @@ export async function collectX(prisma: PrismaClient): Promise<{
   inserted: number
   filtered: number
   pendingReview: number
+}>
+export async function collectX(prisma: PrismaClient, deps: CollectXDeps = {}): Promise<{
+  total: number
+  inserted: number
+  filtered: number
+  pendingReview: number
 }> {
-  const pool = getPool()
+  const batchSize = deps.batchSize ?? DEFAULT_BATCH_SIZE
+  const fetchBatch = deps.fetchBatch ?? createPgBatchFetcher(getPool())
+  const loadCursor = deps.loadCursor ?? loadXCursor
+  const saveCursor = deps.saveCursor ?? saveXCursor
 
-  // Get already-processed tweet URLs from ClawNews
-  const existing = await prisma.rawItem.findMany({
-    where: { sourceType: 'x' },
-    select: { url: true },
-  })
-  const existingUrls = new Set(existing.map(r => r.url))
-
-  const newTweets = await fetchNewTweets(pool, existingUrls)
-
+  let cursor = await loadCursor(prisma)
   let inserted = 0
   let filtered = 0
   let pendingReview = 0
+  let total = 0
 
-  for (const tweet of newTweets) {
-    if (!filterTweet(tweet.content, tweet.type)) {
-      filtered++
-      continue
+  while (true) {
+    const tweets = await fetchBatch(cursor, batchSize)
+    if (tweets.length === 0) break
+
+    total += tweets.length
+    let batchCursor = cursor
+
+    for (const tweet of tweets) {
+      batchCursor = {
+        lastPostedAt: tweet.posted_at,
+        lastTweetId: tweet.tweet_id,
+      }
+
+      if (!filterTweet(tweet.content, tweet.type)) {
+        filtered++
+        continue
+      }
+
+      const score = scoreTweet(tweet)
+      const meta = JSON.stringify({
+        tweet_id: tweet.tweet_id,
+        tweet_url: tweet.tweet_url,
+        author: tweet.username,
+        display_name: tweet.display_name,
+        like_count: tweet.like_count,
+        retweet_count: tweet.retweet_count,
+        reply_count: tweet.reply_count,
+        view_count: tweet.view_count,
+        tweet_type: tweet.type,
+        posted_at: tweet.posted_at,
+      })
+
+      const isShort = tweet.type === 'SHORT'
+      const status = isShort ? 'pending_review' : 'new'
+      const title = isShort ? tweet.content.slice(0, 100) : tweet.content.slice(0, 60)
+
+      try {
+        await prisma.rawItem.create({
+          data: {
+            sourceType: 'x',
+            sourceName: `x:${tweet.username}`,
+            title,
+            url: tweet.tweet_url,
+            content: tweet.content,
+            language: 'en',
+            score,
+            status,
+            rawData: meta,
+          },
+        })
+        inserted++
+        if (isShort) pendingReview++
+      } catch (err: any) {
+        if (err?.code === 'P2002') {
+          console.log(`  skipped (already exists): ${tweet.tweet_url}`)
+        } else {
+          throw err
+        }
+      }
     }
 
-    const score = scoreTweet(tweet)
-    const meta = JSON.stringify({
-      author: tweet.username,
-      display_name: tweet.display_name,
-      like_count: tweet.like_count,
-      retweet_count: tweet.retweet_count,
-      reply_count: tweet.reply_count,
-      view_count: tweet.view_count,
-      tweet_type: tweet.type,
-      posted_at: tweet.posted_at,
-    })
+    await saveCursor(prisma, batchCursor)
+    cursor = batchCursor
 
-    const isShort = tweet.type === 'SHORT'
-    const status = isShort ? 'pending_review' : 'new'
-    const title = isShort ? tweet.content.slice(0, 100) : tweet.content.slice(0, 60)
-    const body = tweet.content
-
-    try {
-      await prisma.rawItem.create({
-        data: {
-          sourceType: 'x',
-          sourceName: `x:${tweet.username}`,
-          title,
-          url: tweet.tweet_url,
-          content: body,
-          language: 'zh',
-          score,
-          status,
-          rawData: meta,
-        },
-      })
-      inserted++
-      if (isShort) pendingReview++
-    } catch (err: any) {
-      if (err?.code === 'P2002') {
-        console.log(`  skipped (already exists): ${tweet.tweet_url}`)
-      } else {
-        throw err
-      }
+    if (tweets.length < batchSize) {
+      break
     }
   }
 
-  return { total: newTweets.length, inserted, filtered, pendingReview }
+  return { total, inserted, filtered, pendingReview }
 }

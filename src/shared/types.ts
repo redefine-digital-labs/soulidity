@@ -17,6 +17,13 @@ export interface RawItem {
   created_at: string
 }
 
+export interface CollectorState {
+  source: string
+  last_posted_at: string | null
+  last_tweet_id: string | null
+  updated_at: string
+}
+
 export interface Article {
   id: string
   raw_item_id: string
