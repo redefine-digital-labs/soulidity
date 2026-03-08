@@ -1,4 +1,6 @@
 import type { Context } from 'grammy'
+import { insertRawItem } from '../db/database.js'
+import type { PrismaClient } from '../db/database.js'
 
 const SKILL_URL = 'https://raw.githubusercontent.com/anthropics/claude-code/main/data/join-skill.md'
 
@@ -24,4 +26,39 @@ export async function handleJoin(ctx: Context): Promise<void> {
   const tgId = ctx.from?.id
   if (!tgId) return
   await ctx.reply(buildJoinPrompt(tgId))
+}
+
+export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<void> {
+  const chatId = ctx.chat?.id
+  const fromId = ctx.from?.id
+  if (!chatId || !fromId) return
+
+  const replyMsg = (ctx.message as any)?.reply_to_message
+  if (!replyMsg?.text) {
+    await ctx.reply('请回复一条消息后使用 /mark')
+    return
+  }
+
+  // Check admin status
+  const member = await ctx.api.getChatMember(chatId, fromId)
+  if (member.status !== 'administrator' && member.status !== 'creator') {
+    return
+  }
+
+  const text = replyMsg.text as string
+  const msgId = replyMsg.message_id
+
+  await insertRawItem(prisma, {
+    source_type: 'community',
+    source_name: 'tg_group',
+    title: text.slice(0, 80),
+    url: `tg://msg/${chatId}/${msgId}`,
+    title_hash: null,
+    content: text,
+    language: 'zh',
+    score: 5.0,
+    raw_data: JSON.stringify({ chat_id: chatId, message_id: msgId, from_id: replyMsg.from?.id }),
+  })
+
+  await ctx.reply('✅ 已标记为素材')
 }
