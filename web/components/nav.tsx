@@ -4,12 +4,12 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createSupabaseBrowser } from '@web/lib/supabase/client'
 
 const links = [
-  { href: '/admin', label: 'Dashboard', exact: true },
-  { href: '/admin/tweets', label: 'Tweets' },
-  { href: '/admin/submit', label: 'Submit' },
-  { href: '/companies', label: 'Companies' },
-  { href: '/admin/invites', label: 'Invites' },
-  { href: '/admin/members', label: 'Members' },
+  { href: '/admin', label: '仪表盘', exact: true },
+  { href: '/admin/tweets', label: '推文' },
+  { href: '/admin/submit', label: '投稿' },
+  { href: '/companies', label: '项目追踪' },
+  { href: '/admin/invites', label: '邀请码' },
+  { href: '/admin/members', label: '成员' },
   { href: '/knowledge', label: '知识库' },
 ]
 
@@ -25,10 +25,10 @@ export function Nav() {
   }
 
   return (
-    <nav className="sticky top-0 z-50" style={{ background: 'rgba(9, 9, 11, 0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-subtle)' }}>
+    <nav className="sticky top-0 z-50" style={{ background: 'rgba(250, 250, 250, 0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-subtle)' }}>
       <div className="max-w-5xl mx-auto px-6 flex items-center h-14 gap-6">
         <Link href="/admin" className="font-bold text-base shrink-0" style={{ fontFamily: 'var(--font-display)', color: 'var(--accent-amber)' }}>
-          COC Admin
+          COC 管理后台
         </Link>
         <div className="flex gap-1">
           {links.map(link => {

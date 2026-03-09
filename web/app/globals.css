@@ -3,28 +3,28 @@
 @import "tailwindcss";
 
 :root {
-  --bg-primary: #09090b;
-  --bg-surface: #131316;
-  --bg-elevated: #1c1c21;
-  --bg-hover: #232329;
-  --border-subtle: #27272a;
-  --border-default: #3f3f46;
-  --border-bright: #52525b;
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --accent-cyan: #22d3ee;
-  --accent-cyan-dim: rgba(34, 211, 238, 0.15);
-  --accent-amber: #fbbf24;
-  --accent-amber-dim: rgba(251, 191, 36, 0.15);
-  --accent-emerald: #34d399;
-  --accent-emerald-dim: rgba(52, 211, 153, 0.15);
-  --accent-rose: #fb7185;
-  --accent-rose-dim: rgba(251, 113, 133, 0.15);
-  --accent-violet: #a78bfa;
-  --accent-violet-dim: rgba(167, 139, 250, 0.15);
-  --accent-blue: #60a5fa;
-  --accent-blue-dim: rgba(96, 165, 250, 0.15);
+  --bg-primary: #fafafa;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f3f4f6;
+  --bg-hover: #e5e7eb;
+  --border-subtle: #e5e7eb;
+  --border-default: #d1d5db;
+  --border-bright: #9ca3af;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --accent-cyan: #0891b2;
+  --accent-cyan-dim: rgba(8, 145, 178, 0.08);
+  --accent-amber: #d97706;
+  --accent-amber-dim: rgba(217, 119, 6, 0.08);
+  --accent-emerald: #059669;
+  --accent-emerald-dim: rgba(5, 150, 105, 0.08);
+  --accent-rose: #e11d48;
+  --accent-rose-dim: rgba(225, 29, 72, 0.08);
+  --accent-violet: #7c3aed;
+  --accent-violet-dim: rgba(124, 58, 237, 0.08);
+  --accent-blue: #2563eb;
+  --accent-blue-dim: rgba(37, 99, 235, 0.08);
   --font-display: 'Bricolage Grotesque', ui-serif, Georgia, serif;
   --font-body: 'Outfit', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -80,7 +80,7 @@ h1, h2, h3 {
 
 .glass-card:hover {
   border-color: var(--border-default);
-  box-shadow: 0 0 0 1px var(--border-subtle), 0 4px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 1px var(--border-subtle), 0 4px 24px rgba(0, 0, 0, 0.06);
 }
 
 /* Elevated card (no hover effect) */
@@ -92,8 +92,8 @@ h1, h2, h3 {
 
 /* Subtle glow on interactive elements */
 .glow-cyan:hover {
-  box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
-  border-color: rgba(34, 211, 238, 0.3);
+  box-shadow: 0 0 20px rgba(8, 145, 178, 0.1);
+  border-color: rgba(8, 145, 178, 0.3);
 }
 
 /* Badge styles */
@@ -183,12 +183,12 @@ h1, h2, h3 {
 
 .btn-primary {
   background: var(--accent-cyan);
-  color: var(--bg-primary);
+  color: #ffffff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #06b6d4;
-  box-shadow: 0 0 16px rgba(34, 211, 238, 0.3);
+  background: #0e7490;
+  box-shadow: 0 0 16px rgba(8, 145, 178, 0.2);
 }
 
 .btn-surface {
@@ -205,21 +205,21 @@ h1, h2, h3 {
 .btn-danger {
   background: var(--accent-rose-dim);
   color: var(--accent-rose);
-  border: 1px solid rgba(251, 113, 133, 0.2);
+  border: 1px solid rgba(225, 29, 72, 0.15);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(251, 113, 133, 0.25);
+  background: rgba(225, 29, 72, 0.12);
 }
 
 .btn-success {
   background: var(--accent-emerald-dim);
   color: var(--accent-emerald);
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  border: 1px solid rgba(5, 150, 105, 0.15);
 }
 
 .btn-success:hover:not(:disabled) {
-  background: rgba(52, 211, 153, 0.25);
+  background: rgba(5, 150, 105, 0.12);
 }
 
 /* Input styling */
@@ -274,7 +274,7 @@ select.input-dark {
 
 .filter-pill-active {
   background: var(--accent-cyan-dim);
-  border-color: rgba(34, 211, 238, 0.3);
+  border-color: rgba(8, 145, 178, 0.3);
   color: var(--accent-cyan);
 }
 

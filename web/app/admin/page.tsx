@@ -5,13 +5,13 @@ export default function DashboardPage() {
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
       <h1 className="text-2xl font-bold mb-6" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-        Dashboard
+        仪表盘
       </h1>
       <div className="animate-fade-up">
         <StatsBar />
       </div>
       <div className="mt-8 animate-fade-up" style={{ animationDelay: '100ms' }}>
-        <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>Articles</h2>
+        <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>文章列表</h2>
         <ArticleList />
       </div>
     </div>

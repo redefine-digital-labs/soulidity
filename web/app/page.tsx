@@ -23,10 +23,10 @@ export default async function HomePage() {
         {/* Hero section */}
         <div className="mb-10 animate-fade-up">
           <h1 className="text-4xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-            <span className="text-gradient">Latest News</span>
+            <span className="text-gradient">最新资讯</span>
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '1.05rem' }}>
-            AI-curated crypto & Web3 intelligence, processed by multi-agent pipeline
+            AI 多智能体流水线驱动的加密货币与 Web3 情报
           </p>
         </div>
 
@@ -73,7 +73,7 @@ export default async function HomePage() {
             )
           })}
           {articles.length === 0 && (
-            <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>No published news yet.</div>
+            <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>暂无已发布的资讯</div>
           )}
         </div>
       </div>

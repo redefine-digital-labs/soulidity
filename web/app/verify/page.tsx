@@ -26,16 +26,16 @@ function VerifyForm() {
             <span className="text-gradient">CryptoOpenClaw</span>
           </h1>
           <p className="mb-8" style={{ color: 'var(--text-muted)' }}>
-            Enter your invite code to join the community.
+            输入邀请码加入社区
           </p>
           <input
             className="input-dark mb-4"
-            placeholder="Invite code"
+            placeholder="邀请码"
             value={code}
             onChange={e => setCode(e.target.value.toUpperCase())}
           />
           <button onClick={verify} className="btn btn-primary w-full">
-            Verify
+            验证
           </button>
           {result && (
             <div
@@ -43,10 +43,10 @@ function VerifyForm() {
               style={{
                 background: result.verified ? 'var(--accent-emerald-dim)' : 'var(--accent-rose-dim)',
                 color: result.verified ? 'var(--accent-emerald)' : 'var(--accent-rose)',
-                border: `1px solid ${result.verified ? 'rgba(52, 211, 153, 0.3)' : 'rgba(251, 113, 133, 0.3)'}`,
+                border: `1px solid ${result.verified ? 'rgba(5, 150, 105, 0.3)' : 'rgba(225, 29, 72, 0.3)'}`,
               }}
             >
-              {result.verified ? 'Verified! You will receive a group invite shortly.' : result.error}
+              {result.verified ? '验证成功！你将很快收到群组邀请。' : result.error}
             </div>
           )}
         </div>
@@ -59,7 +59,7 @@ export default function VerifyPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">
-        <div className="glass-panel p-8 animate-pulse" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+        <div className="glass-panel p-8 animate-pulse" style={{ color: 'var(--text-muted)' }}>加载中...</div>
       </div>
     }>
       <VerifyForm />

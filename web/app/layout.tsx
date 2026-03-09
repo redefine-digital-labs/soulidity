@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "CryptoOpenClaw",
-  description: "AI-powered crypto news & OpenClaw ecosystem",
+  description: "AI 驱动的加密货币新闻与 OpenClaw 生态",
 };
 
 export default function RootLayout({

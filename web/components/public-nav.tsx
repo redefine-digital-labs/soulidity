@@ -4,9 +4,9 @@ import { usePathname } from 'next/navigation'
 
 const links = [
   { href: '/', label: '新闻' },
-  { href: '/companies', label: 'Companies' },
-  { href: '/directions', label: 'Directions' },
-  { href: '/community', label: 'Community' },
+  { href: '/companies', label: '项目追踪' },
+  { href: '/directions', label: '养成方向' },
+  { href: '/community', label: '社区' },
   { href: '/knowledge', label: '知识库' },
 ]
 
@@ -14,7 +14,7 @@ export function PublicNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="sticky top-0 z-50" style={{ background: 'rgba(9, 9, 11, 0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-subtle)' }}>
+    <nav className="sticky top-0 z-50" style={{ background: 'rgba(250, 250, 250, 0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-subtle)' }}>
       <div className="max-w-6xl mx-auto px-6 flex items-center h-16 gap-8">
         <Link href="/" className="text-xl font-bold shrink-0" style={{ fontFamily: 'var(--font-display)' }}>
           <span className="text-gradient">CryptoOpenClaw</span>
@@ -46,7 +46,7 @@ export function PublicNav() {
           onMouseEnter={e => (e.target as HTMLElement).style.color = 'var(--text-primary)'}
           onMouseLeave={e => (e.target as HTMLElement).style.color = 'var(--text-muted)'}
         >
-          Login
+          登录
         </Link>
       </div>
     </nav>

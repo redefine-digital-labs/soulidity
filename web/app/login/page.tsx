@@ -26,14 +26,14 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4">
       {/* Subtle radial glow behind the form */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(34, 211, 238, 0.06) 0%, transparent 70%)' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(8, 145, 178, 0.06) 0%, transparent 70%)' }} />
       </div>
 
       <form onSubmit={handleSubmit} className="glass-panel p-8 w-full max-w-sm animate-fade-up relative">
         <h1 className="text-2xl font-bold mb-1 text-center" style={{ fontFamily: 'var(--font-display)' }}>
           <span className="text-gradient">CryptoOpenClaw</span>
         </h1>
-        <p className="text-center text-sm mb-8" style={{ color: 'var(--text-muted)' }}>Sign in to continue</p>
+        <p className="text-center text-sm mb-8" style={{ color: 'var(--text-muted)' }}>登录以继续</p>
 
         <div className="space-y-4">
           <div>

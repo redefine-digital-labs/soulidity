@@ -43,9 +43,9 @@ export default function CompaniesPage() {
       <div className="max-w-4xl mx-auto px-6 py-10">
         <div className="mb-8 animate-fade-up">
           <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-            <span className="text-gradient">Companies</span>
+            <span className="text-gradient">项目追踪</span>
           </h1>
-          <p style={{ color: 'var(--text-muted)' }}>Tracked entities across the crypto ecosystem</p>
+          <p style={{ color: 'var(--text-muted)' }}>追踪加密生态中的项目与实体</p>
         </div>
 
         <div className="flex gap-2 mb-6 flex-wrap animate-fade-up" style={{ animationDelay: '50ms' }}>
@@ -55,7 +55,7 @@ export default function CompaniesPage() {
               onClick={() => setFilter(c)}
               className={`filter-pill ${filter === c ? 'filter-pill-active' : ''}`}
             >
-              {c || 'All'}
+              {c || '全部'}
             </button>
           ))}
         </div>
@@ -74,12 +74,12 @@ export default function CompaniesPage() {
               </div>
               <div className="text-right shrink-0">
                 <div className="text-xl font-bold data-value" style={{ color: 'var(--accent-cyan)' }}>{company.mentionCount}</div>
-                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>mentions</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>次提及</div>
               </div>
             </div>
           ))}
           {companies.length === 0 && (
-            <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>No companies</div>
+            <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>暂无项目</div>
           )}
         </div>
       </div>

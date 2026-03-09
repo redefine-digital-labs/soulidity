@@ -19,11 +19,11 @@ export function StatsBar() {
   if (!stats) return <div className="h-20 rounded-xl animate-pulse" style={{ background: 'var(--bg-surface)' }} />
 
   const items = [
-    { label: 'Pending', value: stats.raw_new, color: 'var(--accent-amber)' },
-    { label: 'Draft', value: stats.articles_draft, color: 'var(--accent-blue)' },
-    { label: 'Rejected', value: stats.articles_rejected, color: 'var(--accent-rose)' },
-    { label: 'Published', value: stats.published_today, color: 'var(--accent-violet)' },
-    { label: 'Companies', value: stats.companies_total, color: 'var(--accent-cyan)' },
+    { label: '待处理', value: stats.raw_new, color: 'var(--accent-amber)' },
+    { label: '草稿', value: stats.articles_draft, color: 'var(--accent-blue)' },
+    { label: '已拒绝', value: stats.articles_rejected, color: 'var(--accent-rose)' },
+    { label: '已发布', value: stats.published_today, color: 'var(--accent-violet)' },
+    { label: '项目', value: stats.companies_total, color: 'var(--accent-cyan)' },
   ]
 
   return (
