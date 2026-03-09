@@ -20,7 +20,8 @@ model RawItem {
   status     String    @default("new")
   rawData    String?   @map("raw_data")
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  articles   Article[]
+  articles         Article[]
+  knowledgeSources KnowledgeEntrySource[]
 
   @@index([status])
   @@index([score(sort: Desc)])
@@ -249,4 +250,34 @@ model MemberAchievement {
 
   @@id([memberId, achievementId])
   @@map("member_achievements")
+}
+
+model KnowledgeEntry {
+  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title        String
+  content      String
+  category     String
+  contentType  String                 @map("content_type")
+  status       String                 @default("raw")
+  mergedIntoId String?                @map("merged_into_id") @db.Uuid
+  mergedInto   KnowledgeEntry?        @relation("KnowledgeMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom   KnowledgeEntry[]       @relation("KnowledgeMerge")
+  sources      KnowledgeEntrySource[]
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([category])
+  @@index([contentType])
+  @@index([status])
+  @@map("knowledge_entries")
+}
+
+model KnowledgeEntrySource {
+  entryId   String         @map("entry_id") @db.Uuid
+  entry     KnowledgeEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  rawItemId String         @map("raw_item_id") @db.Uuid
+  rawItem   RawItem        @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, rawItemId])
+  @@map("knowledge_entry_sources")
 }
