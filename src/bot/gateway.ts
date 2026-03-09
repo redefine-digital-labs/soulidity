@@ -23,6 +23,9 @@ export async function processJoinRequest(
   if (!invite) {
     return { success: false, error: 'Invalid or used invite code' }
   }
+  if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
+    return { success: false, error: 'Invite code expired' }
+  }
 
   let invite_link: string
   try {

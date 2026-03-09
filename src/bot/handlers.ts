@@ -1,10 +1,15 @@
+import crypto from 'node:crypto'
 import type { Bot, Context } from 'grammy'
 import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
 
 const SKILL_URL = 'https://clawnews-mu.vercel.app/join-skill.md'
 
-function buildJoinPrompt(tgId: number): string {
+function generateInviteCode(): string {
+  return crypto.randomBytes(4).toString('hex').toUpperCase()
+}
+
+function buildJoinPrompt(tgId: number, inviteCode: string): string {
   return `🦞 欢迎加入 OpenClaw 社群！
 
 请将以下内容复制发送给你的 OpenClaw Agent：
@@ -15,17 +20,17 @@ ${SKILL_URL}
 
 我的验证信息：
 - tg_id: ${tgId}
-- 请向我索要邀请码
+- invite_code: ${inviteCode}
 ---`
 }
 
-export async function handleStart(ctx: Context): Promise<void> {
+export async function handleStart(ctx: Context, prisma?: PrismaClient): Promise<void> {
   if (ctx.chat?.type !== 'private') return
 
   // Deep link: /start join → trigger join flow
   const payload = (ctx as any).match
   if (payload === 'join') {
-    return handleJoin(ctx)
+    return handleJoin(ctx, prisma)
   }
 
   await ctx.reply(
@@ -36,11 +41,20 @@ export async function handleStart(ctx: Context): Promise<void> {
   )
 }
 
-export async function handleJoin(ctx: Context): Promise<void> {
+export async function handleJoin(ctx: Context, prisma?: PrismaClient): Promise<void> {
   if (ctx.chat?.type !== 'private') return
   const tgId = ctx.from?.id
   if (!tgId) return
-  await ctx.reply(buildJoinPrompt(tgId))
+
+  if (!prisma) {
+    await ctx.reply(buildJoinPrompt(tgId, 'NO_CODE'))
+    return
+  }
+
+  const code = generateInviteCode()
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+  await prisma.inviteCode.create({ data: { code, expiresAt } })
+  await ctx.reply(buildJoinPrompt(tgId, code))
 }
 
 export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<void> {
@@ -79,8 +93,8 @@ export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<vo
 }
 
 export function registerHandlers(bot: Bot, prisma: PrismaClient): void {
-  bot.command('start', handleStart)
-  bot.command('join', handleJoin)
+  bot.command('start', (ctx) => handleStart(ctx, prisma))
+  bot.command('join', (ctx) => handleJoin(ctx, prisma))
   bot.command('chatid', async (ctx) => {
     await ctx.reply(`Chat ID: <code>${ctx.chat.id}</code>`, { parse_mode: 'HTML' })
   })

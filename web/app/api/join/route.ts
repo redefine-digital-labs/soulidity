@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
   if (!invite) {
     return NextResponse.json({ success: false, error: 'Invalid or used invite code' }, { status: 422 })
   }
+  if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
+    return NextResponse.json({ success: false, error: 'Invite code expired' }, { status: 422 })
+  }
 
   // Generate invite link before consuming code (so failure doesn't waste the code)
   const bot = new Bot(token)

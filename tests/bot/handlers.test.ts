@@ -12,18 +12,29 @@ function createMockCtx(overrides: any = {}) {
 }
 
 describe('handleJoin', () => {
-  it('replies with prompt containing tg_id in private chat', async () => {
+  let prisma: ReturnType<typeof createMockPrisma>['prisma']
+  let store: ReturnType<typeof createMockPrisma>['store']
+
+  beforeEach(() => {
+    const mock = createMockPrisma()
+    prisma = mock.prisma
+    store = mock.store
+  })
+
+  it('generates invite code and includes it in prompt', async () => {
     const ctx = createMockCtx()
-    await handleJoin(ctx as any)
+    await handleJoin(ctx as any, prisma)
     expect(ctx.reply).toHaveBeenCalledTimes(1)
     const msg = ctx.reply.mock.calls[0][0] as string
     expect(msg).toContain('123456789')
     expect(msg).toContain('join-skill.md')
+    expect(msg).toContain('invite_code:')
+    expect(store.inviteCodes).toHaveLength(1)
   })
 
   it('ignores non-private chats', async () => {
     const ctx = createMockCtx({ chat: { type: 'group' } })
-    await handleJoin(ctx as any)
+    await handleJoin(ctx as any, prisma)
     expect(ctx.reply).not.toHaveBeenCalled()
   })
 })
@@ -104,12 +115,14 @@ describe('handleStart', () => {
   })
 
   it('triggers join flow when deep link payload is "join"', async () => {
+    const mock = createMockPrisma()
     const ctx = createMockCtx({ match: 'join' })
-    await handleStart(ctx as any)
+    await handleStart(ctx as any, mock.prisma)
     expect(ctx.reply).toHaveBeenCalledTimes(1)
     const msg = ctx.reply.mock.calls[0][0] as string
     expect(msg).toContain('join-skill.md')
     expect(msg).toContain('123456789')
+    expect(msg).toContain('invite_code:')
   })
 })
 

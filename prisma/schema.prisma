@@ -147,10 +147,11 @@ model Member {
 }
 
 model InviteCode {
-  code      String   @id
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  usedBy    String?  @map("used_by")
-  active    Int      @default(1)
+  code      String    @id
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz
+  usedBy    String?   @map("used_by")
+  active    Int       @default(1)
 
   @@map("invite_codes")
 }
