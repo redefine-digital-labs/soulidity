@@ -4,6 +4,38 @@ import { prisma } from '@web/lib/prisma'
 const VALID_CATEGORIES = ['MCP', 'Mac', 'Windows', 'Linux', 'Prompt', 'Agent调试', '其他']
 const VALID_CONTENT_TYPES = ['教程', '踩坑记录', '最佳实践', '工具推荐']
 
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const category = searchParams.get('category')
+  const contentType = searchParams.get('contentType')
+  const q = searchParams.get('q')
+
+  const where: any = { status: 'raw' }
+  if (category) where.category = category
+  if (contentType) where.contentType = contentType
+  if (q) {
+    where.OR = [
+      { title: { contains: q, mode: 'insensitive' } },
+      { content: { contains: q, mode: 'insensitive' } },
+    ]
+  }
+
+  const entries = await prisma.knowledgeEntry.findMany({
+    where,
+    include: {
+      sources: {
+        include: {
+          rawItem: { select: { url: true, sourceName: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  })
+
+  return NextResponse.json(entries)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
