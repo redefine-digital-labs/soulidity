@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { Bot } from 'grammy'
 
 export async function POST(request: NextRequest) {
   let body: any
@@ -35,14 +34,22 @@ export async function POST(request: NextRequest) {
   }
 
   // Generate invite link before consuming code (so failure doesn't waste the code)
-  const bot = new Bot(token)
   let invite_link: string
   try {
-    const link = await bot.api.createChatInviteLink(groupId, {
-      member_limit: 1,
-      expire_date: Math.floor(Date.now() / 1000) + 600,
+    const res = await fetch(`https://api.telegram.org/bot${token}/createChatInviteLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: groupId,
+        member_limit: 1,
+        expire_date: Math.floor(Date.now() / 1000) + 600,
+      }),
     })
-    invite_link = link.invite_link
+    const data = await res.json()
+    if (!data.ok) {
+      return NextResponse.json({ success: false, error: `Telegram API error: ${data.description}` }, { status: 500 })
+    }
+    invite_link = data.result.invite_link
   } catch (err) {
     return NextResponse.json({ success: false, error: `Failed to create invite link: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 })
   }
