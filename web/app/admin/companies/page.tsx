@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { PublicNav } from '@web/components/public-nav'
+import { Nav } from '@web/components/nav'
 
 interface Company {
   id: string
@@ -39,7 +39,7 @@ export default function CompaniesPage() {
 
   return (
     <div className="min-h-screen">
-      <PublicNav />
+      <Nav />
       <div className="max-w-4xl mx-auto px-6 py-10">
         <div className="mb-8 animate-fade-up">
           <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>

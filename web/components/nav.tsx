@@ -7,7 +7,7 @@ const links = [
   { href: '/admin', label: '仪表盘', exact: true },
   { href: '/admin/tweets', label: '推文' },
   { href: '/admin/submit', label: '投稿' },
-  { href: '/companies', label: '项目追踪' },
+  { href: '/admin/companies', label: '项目追踪' },
   { href: '/admin/invites', label: '邀请码' },
   { href: '/admin/members', label: '成员' },
   { href: '/knowledge', label: '知识库' },

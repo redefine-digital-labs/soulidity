@@ -4,7 +4,6 @@ import { usePathname } from 'next/navigation'
 
 const links = [
   { href: '/', label: '新闻' },
-  { href: '/companies', label: '项目追踪' },
   { href: '/directions', label: '养成方向' },
   { href: '/community', label: '社区' },
   { href: '/knowledge', label: '知识库' },
