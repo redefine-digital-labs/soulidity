@@ -100,38 +100,38 @@ export default function DirectionsAdminPage() {
     <div className="max-w-4xl mx-auto px-6 py-10">
       <div className="mb-8 animate-fade-up">
         <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-          <span className="text-gradient">Directions Admin</span>
+          <span className="text-gradient">方向管理</span>
         </h1>
       </div>
 
       {/* Add Category */}
       <section className="glass-panel p-6 mb-6 animate-fade-up" style={{ animationDelay: '50ms' }}>
         <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-          Add Category
+          添加分类
         </h2>
         <form onSubmit={createCategory} className="flex flex-wrap gap-3 items-end">
           <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Name
+            英文名
             <input value={catName} onChange={e => setCatName(e.target.value)} required
               className="input-dark mt-1" style={{ width: '10rem' }} />
           </label>
           <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Name (ZH)
+            中文名
             <input value={catNameZh} onChange={e => setCatNameZh(e.target.value)} required
               className="input-dark mt-1" style={{ width: '10rem' }} />
           </label>
           <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Icon
+            图标
             <input value={catIcon} onChange={e => setCatIcon(e.target.value)}
               className="input-dark mt-1" style={{ width: '4rem' }} />
           </label>
           <button type="submit" className="btn btn-primary">
-            Add
+            添加
           </button>
         </form>
         {categories.length > 0 && (
           <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-            Existing: {categories.map(c => `${c.icon} ${c.nameZh} (${c.name})`).join(', ')}
+            已有分类: {categories.map(c => `${c.icon} ${c.nameZh} (${c.name})`).join(', ')}
           </div>
         )}
       </section>
@@ -139,59 +139,59 @@ export default function DirectionsAdminPage() {
       {/* Add Direction */}
       <section className="glass-panel p-6 mb-6 animate-fade-up" style={{ animationDelay: '100ms' }}>
         <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-          Add Direction
+          添加方向
         </h2>
         <form onSubmit={createDirection} className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-3 items-end">
             <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Category
+              所属分类
               <select value={dirCategoryId} onChange={e => setDirCategoryId(e.target.value)} required
                 className="input-dark mt-1" style={{ width: '12rem' }}>
-                <option value="">Select...</option>
+                <option value="">请选择...</option>
                 {categories.map(c => (
                   <option key={c.id} value={c.id}>{c.icon} {c.nameZh}</option>
                 ))}
               </select>
             </label>
             <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Name
+              英文名
               <input value={dirName} onChange={e => setDirName(e.target.value)} required
                 className="input-dark mt-1" style={{ width: '10rem' }} />
             </label>
             <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Name (ZH)
+              中文名
               <input value={dirNameZh} onChange={e => setDirNameZh(e.target.value)} required
                 className="input-dark mt-1" style={{ width: '10rem' }} />
             </label>
             <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Icon
+              图标
               <input value={dirIcon} onChange={e => setDirIcon(e.target.value)}
                 className="input-dark mt-1" style={{ width: '4rem' }} />
             </label>
           </div>
           <div className="flex flex-wrap gap-3 items-end">
             <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Description (ZH)
+              描述
               <input value={dirDescZh} onChange={e => setDirDescZh(e.target.value)}
                 className="input-dark mt-1" style={{ width: '16rem' }} />
             </label>
             <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-              User Count
+              用户数
               <input type="number" value={dirUserCount} onChange={e => setDirUserCount(Number(e.target.value))}
                 className="input-dark mt-1" style={{ width: '6rem' }} />
             </label>
             <label className="flex flex-col text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Rating
+              评分
               <input type="number" step="0.1" value={dirRating} onChange={e => setDirRating(Number(e.target.value))}
                 className="input-dark mt-1" style={{ width: '6rem' }} />
             </label>
             <label className="flex items-center gap-2 text-sm pt-5 cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
               <input type="checkbox" checked={dirFeatured} onChange={e => setDirFeatured(e.target.checked)}
                 className="accent-[var(--accent-cyan)]" />
-              Featured
+              推荐
             </label>
             <button type="submit" className="btn btn-primary">
-              Add
+              添加
             </button>
           </div>
         </form>
@@ -200,17 +200,17 @@ export default function DirectionsAdminPage() {
       {/* Directions Table */}
       <section className="animate-fade-up" style={{ animationDelay: '150ms' }}>
         <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-          Directions <span style={{ color: 'var(--text-muted)' }}>({directions.length})</span>
+          方向列表 <span style={{ color: 'var(--text-muted)' }}>({directions.length})</span>
         </h2>
         <div className="glass-panel overflow-hidden">
           <table className="dark-table">
             <thead>
               <tr>
-                <th>Name (ZH)</th>
-                <th>Category</th>
-                <th style={{ textAlign: 'right' }}>Users</th>
-                <th style={{ textAlign: 'right' }}>Rating</th>
-                <th>Featured</th>
+                <th>名称</th>
+                <th>分类</th>
+                <th style={{ textAlign: 'right' }}>用户数</th>
+                <th style={{ textAlign: 'right' }}>评分</th>
+                <th>推荐</th>
                 <th>Slug</th>
               </tr>
             </thead>
@@ -223,7 +223,7 @@ export default function DirectionsAdminPage() {
                   <td className="data-value" style={{ textAlign: 'right', color: 'var(--accent-amber)' }}>{d.rating.toFixed(1)}</td>
                   <td>
                     <span className={`badge ${d.featured ? 'badge-emerald' : 'badge-muted'}`}>
-                      {d.featured ? 'Yes' : 'No'}
+                      {d.featured ? '是' : '否'}
                     </span>
                   </td>
                   <td className="data-value" style={{ color: 'var(--text-muted)' }}>{d.slug}</td>
@@ -232,7 +232,7 @@ export default function DirectionsAdminPage() {
             </tbody>
           </table>
           {directions.length === 0 && (
-            <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No directions yet</div>
+            <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>暂无方向</div>
           )}
         </div>
       </section>

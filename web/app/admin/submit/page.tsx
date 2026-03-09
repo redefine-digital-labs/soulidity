@@ -40,7 +40,7 @@ export default function SubmitPage() {
         setResult({ success: false, error: data.error })
       }
     } catch {
-      setResult({ success: false, error: 'Network error' })
+      setResult({ success: false, error: '网络错误，请重试' })
     } finally {
       setLoading(false)
     }
@@ -50,7 +50,7 @@ export default function SubmitPage() {
     <div className="max-w-4xl mx-auto px-6 py-10">
       <div className="mb-8 animate-fade-up">
         <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-          <span className="text-gradient">Submit Content</span>
+          <span className="text-gradient">投稿</span>
         </h1>
       </div>
 
@@ -60,13 +60,13 @@ export default function SubmitPage() {
           onClick={() => setTab('url')}
           className={`filter-pill ${tab === 'url' ? 'filter-pill-active' : ''}`}
         >
-          Paste URL
+          粘贴链接
         </button>
         <button
           onClick={() => setTab('markdown')}
           className={`filter-pill ${tab === 'markdown' ? 'filter-pill-active' : ''}`}
         >
-          Upload Markdown
+          上传 Markdown
         </button>
       </div>
 
@@ -74,7 +74,7 @@ export default function SubmitPage() {
       <div className="glass-panel p-6 animate-fade-up" style={{ animationDelay: '100ms' }}>
         <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>URL</label>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>文章链接</label>
             <input
               type="url"
               value={url}
@@ -87,21 +87,21 @@ export default function SubmitPage() {
           {tab === 'markdown' && (
             <>
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Title</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>标题</label>
                 <input
                   type="text"
                   value={title}
                   onChange={e => setTitle(e.target.value)}
-                  placeholder="Article title"
+                  placeholder="文章标题"
                   className="input-dark"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Content (Markdown)</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>内容（Markdown）</label>
                 <textarea
                   value={content}
                   onChange={e => setContent(e.target.value)}
-                  placeholder="Paste markdown content here..."
+                  placeholder="粘贴 Markdown 内容..."
                   rows={12}
                   className="input-dark"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem' }}
@@ -115,7 +115,7 @@ export default function SubmitPage() {
             disabled={loading || !url.trim() || (tab === 'markdown' && (!title.trim() || !content.trim()))}
             className="btn btn-primary"
           >
-            {loading ? 'Processing...' : 'Submit'}
+            {loading ? '处理中...' : '提交'}
           </button>
         </div>
       </div>
@@ -125,13 +125,13 @@ export default function SubmitPage() {
         <div
           className="mt-6 glass-panel p-4 animate-fade-up"
           style={{
-            borderColor: result.success ? 'rgba(52, 211, 153, 0.3)' : 'rgba(251, 113, 133, 0.3)',
+            borderColor: result.success ? 'rgba(5, 150, 105, 0.3)' : 'rgba(225, 29, 72, 0.3)',
             background: result.success ? 'var(--accent-emerald-dim)' : 'var(--accent-rose-dim)',
           }}
         >
           {result.success ? (
             <p style={{ color: 'var(--accent-emerald)' }}>
-              Article created:{' '}
+              文章已创建:{' '}
               <Link href={`/admin/articles/${result.articleId}`} className="font-medium underline">
                 {result.title}
               </Link>

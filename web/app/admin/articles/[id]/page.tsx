@@ -23,7 +23,7 @@ export default function ArticlePage() {
     return (
       <div className="max-w-4xl mx-auto px-6 py-10">
         <div className="glass-panel p-8 text-center" style={{ color: 'var(--accent-rose)' }}>
-          Article not found
+          文章未找到
         </div>
       </div>
     )
@@ -33,7 +33,7 @@ export default function ArticlePage() {
     return (
       <div className="max-w-4xl mx-auto px-6 py-10">
         <div className="glass-panel p-8 text-center animate-pulse" style={{ color: 'var(--text-muted)' }}>
-          Loading...
+          加载中...
         </div>
       </div>
     )
@@ -43,7 +43,7 @@ export default function ArticlePage() {
     <div className="max-w-4xl mx-auto px-6 py-10">
       <div className="mb-8 animate-fade-up">
         <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-          <span className="text-gradient">Edit Article</span>
+          <span className="text-gradient">编辑文章</span>
         </h1>
       </div>
       <div className="glass-panel p-6 animate-fade-up" style={{ animationDelay: '50ms' }}>

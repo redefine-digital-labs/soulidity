@@ -48,8 +48,8 @@ export function ArticleEditor({ article }: { article: Article }) {
       {/* Meta info */}
       <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--text-muted)' }}>
         <span className="badge badge-muted">{form.status}</span>
-        {article.source_name && <span>Source: {article.source_name}</span>}
-        {article.source_url && <a href={article.source_url} target="_blank" style={{ color: 'var(--accent-cyan)' }}>Original ↗</a>}
+        {article.source_name && <span>来源: {article.source_name}</span>}
+        {article.source_url && <a href={article.source_url} target="_blank" style={{ color: 'var(--accent-cyan)' }}>原文 ↗</a>}
         <span className="data-value">{new Date(article.createdAt).toLocaleString()}</span>
       </div>
 
@@ -71,14 +71,14 @@ export function ArticleEditor({ article }: { article: Article }) {
 
       {/* Tags */}
       <div>
-        <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Tags (comma separated)</label>
+        <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>标签（逗号分隔）</label>
         <input className="input-dark" value={form.tags ? JSON.parse(form.tags).join(', ') : ''} onChange={e => update('tags', JSON.stringify(e.target.value.split(',').map(t => t.trim()).filter(Boolean)))} />
       </div>
 
       {/* Companies */}
       {article.companies && article.companies.length > 0 && (
         <div>
-          <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>关联公司</label>
+          <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>关联项目</label>
           <div className="flex flex-wrap gap-2">
             {article.companies.map(c => (
               <span key={c.id} className="badge badge-violet">{c.name} <span style={{ opacity: 0.6 }}>({c.category})</span></span>
@@ -89,10 +89,10 @@ export function ArticleEditor({ article }: { article: Article }) {
 
       {/* Actions */}
       <div className="flex gap-3 pt-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-        <button onClick={save} disabled={saving} className="btn btn-primary">{saving ? 'Saving...' : 'Save'}</button>
-        {form.status === 'draft' && <button onClick={publish} className="btn" style={{ background: 'var(--accent-violet-dim)', color: 'var(--accent-violet)', border: '1px solid rgba(167,139,250,0.2)' }}>Publish to TG</button>}
-        {form.status === 'draft' && <button onClick={() => setStatus('rejected')} className="btn btn-danger">Reject</button>}
-        <button onClick={() => router.push('/admin')} className="btn btn-surface">Back</button>
+        <button onClick={save} disabled={saving} className="btn btn-primary">{saving ? '保存中...' : '保存'}</button>
+        {form.status === 'draft' && <button onClick={publish} className="btn" style={{ background: 'var(--accent-violet-dim)', color: 'var(--accent-violet)', border: '1px solid rgba(167,139,250,0.2)' }}>发布到 TG</button>}
+        {form.status === 'draft' && <button onClick={() => setStatus('rejected')} className="btn btn-danger">拒绝</button>}
+        <button onClick={() => router.push('/admin')} className="btn btn-surface">返回</button>
       </div>
     </div>
   )

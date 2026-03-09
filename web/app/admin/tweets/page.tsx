@@ -29,7 +29,7 @@ export default function TweetsReviewPage() {
   async function handleApprove(id: string) {
     setActionLoading(id)
     const res = await fetch(`/api/admin/tweets/${id}/approve`, { method: 'POST' })
-    if (res.ok) { setItems(prev => prev.filter(i => i.id !== id)) } else { const err = await res.json(); alert(err.error || 'Approve failed') }
+    if (res.ok) { setItems(prev => prev.filter(i => i.id !== id)) } else { const err = await res.json(); alert(err.error || '审核通过失败') }
     setActionLoading(null)
   }
 
@@ -53,7 +53,7 @@ export default function TweetsReviewPage() {
     setActionLoading(null)
   }
 
-  if (loading) return <div className="max-w-5xl mx-auto px-6 py-8" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+  if (loading) return <div className="max-w-5xl mx-auto px-6 py-8" style={{ color: 'var(--text-muted)' }}>加载中...</div>
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
@@ -70,10 +70,10 @@ export default function TweetsReviewPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="font-medium text-sm" style={{ color: 'var(--accent-cyan)' }}>{meta?.author ?? 'unknown'}</span>
+                      <span className="font-medium text-sm" style={{ color: 'var(--accent-cyan)' }}>{meta?.author ?? '未知'}</span>
                       {meta?.display_name && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{meta.display_name}</span>}
                       <span className="badge badge-muted">{meta?.tweet_type === 'SHORT' ? '短推' : '长推'}</span>
-                      <span className="text-xs data-value" style={{ color: 'var(--text-muted)' }}>Score: {item.score}</span>
+                      <span className="text-xs data-value" style={{ color: 'var(--text-muted)' }}>评分: {item.score}</span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap mb-2" style={{ color: 'var(--text-secondary)' }}>{item.content}</p>
                     <div className="flex gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -85,9 +85,9 @@ export default function TweetsReviewPage() {
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button onClick={() => handleApprove(item.id)} disabled={isProcessing} className="btn btn-success text-xs">{isProcessing ? '...' : '通过'}</button>
+                    <button onClick={() => handleApprove(item.id)} disabled={isProcessing} className="btn btn-success text-xs">{isProcessing ? '处理中...' : '通过'}</button>
                     <button onClick={() => handleReject(item.id)} disabled={isProcessing} className="btn btn-danger text-xs">拒绝</button>
-                    <button onClick={() => openKbModal(item)} disabled={isProcessing} className="btn btn-primary text-xs">知识库</button>
+                    <button onClick={() => openKbModal(item)} disabled={isProcessing} className="btn btn-primary text-xs">存入知识库</button>
                   </div>
                 </div>
               </div>
