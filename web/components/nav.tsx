@@ -10,6 +10,7 @@ const links = [
   { href: '/companies', label: 'Companies' },
   { href: '/admin/invites', label: 'Invites' },
   { href: '/admin/members', label: 'Members' },
+  { href: '/knowledge', label: '知识库' },
 ]
 
 export function Nav() {
