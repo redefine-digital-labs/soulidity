@@ -19,7 +19,8 @@ export async function POST(request: NextRequest) {
   const token = process.env.TG_BOT_TOKEN
   const groupId = process.env.TG_GROUP_ID
   if (!token || !groupId) {
-    return NextResponse.json({ success: false, error: 'Server not configured' }, { status: 500 })
+    const missing = [!token && 'TG_BOT_TOKEN', !groupId && 'TG_GROUP_ID'].filter(Boolean)
+    return NextResponse.json({ success: false, error: `Server not configured: missing ${missing.join(', ')}` }, { status: 500 })
   }
 
   // Validate invite code
@@ -42,8 +43,8 @@ export async function POST(request: NextRequest) {
       expire_date: Math.floor(Date.now() / 1000) + 600,
     })
     invite_link = link.invite_link
-  } catch {
-    return NextResponse.json({ success: false, error: 'Failed to create invite link' }, { status: 500 })
+  } catch (err) {
+    return NextResponse.json({ success: false, error: `Failed to create invite link: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 })
   }
 
   // Consume invite code and create member
