@@ -17,7 +17,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/join') ||
     pathname.startsWith('/api/verify') ||
     pathname.startsWith('/_next/') ||
-    pathname === '/favicon.ico'
+    pathname === '/favicon.ico' ||
+    pathname === '/join-skill.md'
   ) {
     return NextResponse.next()
   }
