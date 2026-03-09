@@ -23,129 +23,71 @@ export default function TweetsReviewPage() {
   const [kbModal, setKbModal] = useState<{ id: string; content: string } | null>(null)
   const [kbForm, setKbForm] = useState({ category: CATEGORIES[0], contentType: CONTENT_TYPES[0], title: '' })
 
-  async function fetchItems() {
-    setLoading(true)
-    const res = await fetch('/api/admin/tweets')
-    if (res.ok) setItems(await res.json())
-    setLoading(false)
-  }
-
+  async function fetchItems() { setLoading(true); const res = await fetch('/api/admin/tweets'); if (res.ok) setItems(await res.json()); setLoading(false) }
   useEffect(() => { fetchItems() }, [])
 
   async function handleApprove(id: string) {
     setActionLoading(id)
     const res = await fetch(`/api/admin/tweets/${id}/approve`, { method: 'POST' })
-    if (res.ok) {
-      setItems(prev => prev.filter(i => i.id !== id))
-    } else {
-      const err = await res.json()
-      alert(err.error || 'Approve failed')
-    }
+    if (res.ok) { setItems(prev => prev.filter(i => i.id !== id)) } else { const err = await res.json(); alert(err.error || 'Approve failed') }
     setActionLoading(null)
   }
 
   async function handleReject(id: string) {
     setActionLoading(id)
     const res = await fetch(`/api/admin/tweets/${id}/reject`, { method: 'POST' })
-    if (res.ok) {
-      setItems(prev => prev.filter(i => i.id !== id))
-    }
+    if (res.ok) { setItems(prev => prev.filter(i => i.id !== id)) }
     setActionLoading(null)
   }
 
   function openKbModal(item: TweetItem) {
-    setKbForm({
-      category: CATEGORIES[0],
-      contentType: CONTENT_TYPES[0],
-      title: (item.content ?? item.title).slice(0, 60),
-    })
+    setKbForm({ category: CATEGORIES[0], contentType: CONTENT_TYPES[0], title: (item.content ?? item.title).slice(0, 60) })
     setKbModal({ id: item.id, content: item.content ?? item.title })
   }
 
   async function handleSaveKb() {
     if (!kbModal) return
     setActionLoading(kbModal.id)
-    const res = await fetch('/api/admin/knowledge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        rawItemId: kbModal.id,
-        category: kbForm.category,
-        contentType: kbForm.contentType,
-        title: kbForm.title,
-      }),
-    })
-    if (res.ok) {
-      setItems(prev => prev.filter(i => i.id !== kbModal.id))
-      setKbModal(null)
-    } else {
-      const err = await res.json()
-      alert(err.error || '保存失败')
-    }
+    const res = await fetch('/api/admin/knowledge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawItemId: kbModal.id, category: kbForm.category, contentType: kbForm.contentType, title: kbForm.title }) })
+    if (res.ok) { setItems(prev => prev.filter(i => i.id !== kbModal.id)); setKbModal(null) } else { const err = await res.json(); alert(err.error || '保存失败') }
     setActionLoading(null)
   }
 
-  if (loading) return <div className="max-w-4xl mx-auto p-6">Loading...</div>
+  if (loading) return <div className="max-w-5xl mx-auto px-6 py-8" style={{ color: 'var(--text-muted)' }}>Loading...</div>
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">推文审核</h1>
+    <div className="max-w-5xl mx-auto px-6 py-8">
+      <h1 className="text-2xl font-bold mb-6" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>推文审核</h1>
       {items.length === 0 ? (
-        <p className="text-gray-500">没有待审核的推文</p>
+        <p style={{ color: 'var(--text-muted)' }}>没有待审核的推文</p>
       ) : (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-3 stagger-children">
           {items.map(item => {
             const meta = parseTweetMeta(item.rawData)
             const isProcessing = actionLoading === item.id
             return (
-              <div key={item.id} className="border rounded-lg p-4 bg-white">
+              <div key={item.id} className="glass-card p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="font-medium text-sm">{meta?.author ?? 'unknown'}</span>
-                      {meta?.display_name && (
-                        <span className="text-gray-400 text-xs">{meta.display_name}</span>
-                      )}
-                      <span className="text-xs text-gray-400">
-                        {meta?.tweet_type === 'SHORT' ? '短推' : '长推'}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        Score: {item.score}
-                      </span>
+                      <span className="font-medium text-sm" style={{ color: 'var(--accent-cyan)' }}>{meta?.author ?? 'unknown'}</span>
+                      {meta?.display_name && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{meta.display_name}</span>}
+                      <span className="badge badge-muted">{meta?.tweet_type === 'SHORT' ? '短推' : '长推'}</span>
+                      <span className="text-xs data-value" style={{ color: 'var(--text-muted)' }}>Score: {item.score}</span>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap mb-2">{item.content}</p>
-                    <div className="flex gap-3 text-xs text-gray-400">
+                    <p className="text-sm whitespace-pre-wrap mb-2" style={{ color: 'var(--text-secondary)' }}>{item.content}</p>
+                    <div className="flex gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                       <span>❤️ {meta?.like_count ?? 0}</span>
                       <span>🔁 {meta?.retweet_count ?? 0}</span>
                       <span>💬 {meta?.reply_count ?? 0}</span>
                       <span>👁 {meta?.view_count ?? 0}</span>
-                      <a href={item.url} target="_blank" rel="noopener" className="text-blue-500 hover:underline">
-                        原文
-                      </a>
+                      <a href={item.url} target="_blank" rel="noopener" style={{ color: 'var(--accent-cyan)' }}>原文 ↗</a>
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => handleApprove(item.id)}
-                      disabled={isProcessing}
-                      className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {isProcessing ? '处理中...' : '通过'}
-                    </button>
-                    <button
-                      onClick={() => handleReject(item.id)}
-                      disabled={isProcessing}
-                      className="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-                    >
-                      拒绝
-                    </button>
-                    <button
-                      onClick={() => openKbModal(item)}
-                      disabled={isProcessing}
-                      className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      知识库
-                    </button>
+                    <button onClick={() => handleApprove(item.id)} disabled={isProcessing} className="btn btn-success text-xs">{isProcessing ? '...' : '通过'}</button>
+                    <button onClick={() => handleReject(item.id)} disabled={isProcessing} className="btn btn-danger text-xs">拒绝</button>
+                    <button onClick={() => openKbModal(item)} disabled={isProcessing} className="btn btn-primary text-xs">知识库</button>
                   </div>
                 </div>
               </div>
@@ -153,55 +95,29 @@ export default function TweetsReviewPage() {
           })}
         </div>
       )}
+
+      {/* KB Modal */}
       {kbModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-lg font-bold mb-4">存入知识库</h2>
+        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="glass-panel p-6 w-full max-w-md animate-fade-up">
+            <h2 className="text-lg font-bold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>存入知识库</h2>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium mb-1">标题</label>
-                <input
-                  type="text"
-                  value={kbForm.title}
-                  onChange={e => setKbForm(f => ({ ...f, title: e.target.value }))}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                />
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>标题</label>
+                <input type="text" value={kbForm.title} onChange={e => setKbForm(f => ({ ...f, title: e.target.value }))} className="input-dark" />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">分类</label>
-                <select
-                  value={kbForm.category}
-                  onChange={e => setKbForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                >
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>分类</label>
+                <select value={kbForm.category} onChange={e => setKbForm(f => ({ ...f, category: e.target.value }))} className="input-dark">{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">内容类型</label>
-                <select
-                  value={kbForm.contentType}
-                  onChange={e => setKbForm(f => ({ ...f, contentType: e.target.value }))}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                >
-                  {CONTENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>内容类型</label>
+                <select value={kbForm.contentType} onChange={e => setKbForm(f => ({ ...f, contentType: e.target.value }))} className="input-dark">{CONTENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={() => setKbModal(null)}
-                className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveKb}
-                disabled={!kbForm.title || actionLoading === kbModal.id}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {actionLoading === kbModal.id ? '保存中...' : '保存'}
-              </button>
+              <button onClick={() => setKbModal(null)} className="btn btn-surface">取消</button>
+              <button onClick={handleSaveKb} disabled={!kbForm.title || actionLoading === kbModal.id} className="btn btn-primary">{actionLoading === kbModal.id ? '保存中...' : '保存'}</button>
             </div>
           </div>
         </div>

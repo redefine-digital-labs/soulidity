@@ -16,47 +16,64 @@ export default async function HomePage() {
   })
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <PublicNav />
 
-      {/* Article list */}
-      <div className="max-w-4xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-6">Latest News</h1>
-        <div className="space-y-3">
+      <div className="max-w-4xl mx-auto px-6 py-10">
+        {/* Hero section */}
+        <div className="mb-10 animate-fade-up">
+          <h1 className="text-4xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+            <span className="text-gradient">Latest News</span>
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '1.05rem' }}>
+            AI-curated crypto & Web3 intelligence, processed by multi-agent pipeline
+          </p>
+        </div>
+
+        {/* Article list */}
+        <div className="flex flex-col gap-3 stagger-children">
           {articles.map(article => {
             const tags: string[] = article.tags ? JSON.parse(article.tags) : []
             return (
-              <div key={article.id} className="bg-white rounded-lg p-4 shadow-sm border">
-                <Link href={`/news/${article.id}`} className="font-medium text-gray-900 hover:text-blue-600">
-                  {article.titleZh}
+              <article key={article.id} className="glass-card glow-cyan p-5 group">
+                <Link href={`/news/${article.id}`} className="block">
+                  <h2 className="text-lg font-semibold mb-2 transition-colors group-hover:text-[var(--accent-cyan)]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
+                    {article.titleZh}
+                  </h2>
+                  <p className="text-sm leading-relaxed line-clamp-2 mb-3" style={{ color: 'var(--text-secondary)' }}>
+                    {article.summaryZh}
+                  </p>
                 </Link>
-                <div className="mt-1 text-sm text-gray-600 line-clamp-2">{article.summaryZh}</div>
-                <div className="mt-2 flex items-center gap-2 flex-wrap text-xs text-gray-400">
-                  <span>{new Date(article.createdAt).toLocaleDateString()}</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="data-value text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {new Date(article.createdAt).toLocaleDateString('zh-CN')}
+                  </span>
                   {article.rawItem.sourceName && (
                     <>
-                      <span>&middot;</span>
-                      <span>{article.rawItem.sourceName}</span>
+                      <span style={{ color: 'var(--border-default)' }}>·</span>
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{article.rawItem.sourceName}</span>
                     </>
                   )}
                   {article.rawItem.url && (
                     <>
-                      <span>&middot;</span>
-                      <a href={article.rawItem.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Original</a>
+                      <span style={{ color: 'var(--border-default)' }}>·</span>
+                      <a href={article.rawItem.url} target="_blank" rel="noopener noreferrer" className="text-xs transition-colors" style={{ color: 'var(--accent-cyan)' }}>
+                        原文
+                      </a>
                     </>
                   )}
                   {article.companies.map(ac => (
-                    <span key={ac.companyId} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded">{ac.company.name}</span>
+                    <span key={ac.companyId} className="badge badge-violet">{ac.company.name}</span>
                   ))}
                   {tags.map(tag => (
-                    <span key={tag} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">{tag}</span>
+                    <span key={tag} className="badge badge-muted">{tag}</span>
                   ))}
                 </div>
-              </div>
+              </article>
             )
           })}
           {articles.length === 0 && (
-            <div className="text-center text-gray-400 py-12">No published news yet.</div>
+            <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>No published news yet.</div>
           )}
         </div>
       </div>

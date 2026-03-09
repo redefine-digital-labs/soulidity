@@ -19,30 +19,49 @@ function VerifyForm() {
   }
 
   return (
-    <div className="max-w-md mx-auto p-6 mt-20">
-      <h1 className="text-2xl font-bold mb-4">CryptoOpenClaw Verification</h1>
-      <p className="text-gray-500 mb-6">Enter your invite code to join the community.</p>
-      <input
-        className="w-full border rounded px-3 py-2 mb-4"
-        placeholder="Invite code"
-        value={code}
-        onChange={e => setCode(e.target.value.toUpperCase())}
-      />
-      <button onClick={verify} className="w-full bg-gray-900 text-white rounded py-2 hover:bg-gray-700">
-        Verify
-      </button>
-      {result && (
-        <div className={`mt-4 p-3 rounded ${result.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          {result.verified ? 'Verified! You will receive a group invite shortly.' : result.error}
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="glass-panel p-8 animate-fade-up">
+          <h1 className="text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+            <span className="text-gradient">CryptoOpenClaw</span>
+          </h1>
+          <p className="mb-8" style={{ color: 'var(--text-muted)' }}>
+            Enter your invite code to join the community.
+          </p>
+          <input
+            className="input-dark mb-4"
+            placeholder="Invite code"
+            value={code}
+            onChange={e => setCode(e.target.value.toUpperCase())}
+          />
+          <button onClick={verify} className="btn btn-primary w-full">
+            Verify
+          </button>
+          {result && (
+            <div
+              className="mt-6 p-4 rounded-lg animate-fade-up"
+              style={{
+                background: result.verified ? 'var(--accent-emerald-dim)' : 'var(--accent-rose-dim)',
+                color: result.verified ? 'var(--accent-emerald)' : 'var(--accent-rose)',
+                border: `1px solid ${result.verified ? 'rgba(52, 211, 153, 0.3)' : 'rgba(251, 113, 133, 0.3)'}`,
+              }}
+            >
+              {result.verified ? 'Verified! You will receive a group invite shortly.' : result.error}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
 
 export default function VerifyPage() {
   return (
-    <Suspense fallback={<div className="max-w-md mx-auto p-6 mt-20">Loading...</div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="glass-panel p-8 animate-pulse" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+      </div>
+    }>
       <VerifyForm />
     </Suspense>
   )

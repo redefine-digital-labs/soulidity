@@ -19,13 +19,36 @@ export default function ArticlePage() {
       .catch(() => setError(true))
   }, [id])
 
-  if (error) return <div className="max-w-4xl mx-auto p-6 text-red-500">Article not found</div>
-  if (!article) return <div className="max-w-4xl mx-auto p-6 animate-pulse">Loading...</div>
+  if (error) {
+    return (
+      <div className="max-w-4xl mx-auto px-6 py-10">
+        <div className="glass-panel p-8 text-center" style={{ color: 'var(--accent-rose)' }}>
+          Article not found
+        </div>
+      </div>
+    )
+  }
+
+  if (!article) {
+    return (
+      <div className="max-w-4xl mx-auto px-6 py-10">
+        <div className="glass-panel p-8 text-center animate-pulse" style={{ color: 'var(--text-muted)' }}>
+          Loading...
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Edit Article</h1>
-      <ArticleEditor article={article} />
+    <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="mb-8 animate-fade-up">
+        <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-gradient">Edit Article</span>
+        </h1>
+      </div>
+      <div className="glass-panel p-6 animate-fade-up" style={{ animationDelay: '50ms' }}>
+        <ArticleEditor article={article} />
+      </div>
     </div>
   )
 }

@@ -2,12 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-interface Company {
-  id: string
-  name: string
-  slug: string
-  category: string
-}
+interface Company { id: string; name: string; slug: string; category: string }
 
 interface Article {
   id: string
@@ -31,21 +26,13 @@ export function ArticleEditor({ article }: { article: Article }) {
 
   async function save() {
     setSaving(true)
-    await fetch(`/api/articles/${article.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
-    })
+    await fetch(`/api/articles/${article.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
     setSaving(false)
     router.refresh()
   }
 
   async function setStatus(status: string) {
-    await fetch(`/api/articles/${article.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    })
+    await fetch(`/api/articles/${article.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
     router.refresh()
     router.push('/admin')
   }
@@ -59,72 +46,53 @@ export function ArticleEditor({ article }: { article: Article }) {
   return (
     <div className="space-y-6">
       {/* Meta info */}
-      <div className="flex items-center gap-4 text-sm text-gray-500">
-        <span className="px-2 py-0.5 bg-gray-100 rounded">{form.status}</span>
+      <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+        <span className="badge badge-muted">{form.status}</span>
         {article.source_name && <span>Source: {article.source_name}</span>}
-        {article.source_url && <a href={article.source_url} target="_blank" className="text-blue-500 hover:underline">Original</a>}
-        <span>{new Date(article.createdAt).toLocaleString()}</span>
+        {article.source_url && <a href={article.source_url} target="_blank" style={{ color: 'var(--accent-cyan)' }}>Original ↗</a>}
+        <span className="data-value">{new Date(article.createdAt).toLocaleString()}</span>
       </div>
 
       {/* Editor */}
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">标题</label>
-          <input className="w-full border rounded px-3 py-2" value={form.titleZh} onChange={e => update('titleZh', e.target.value)} />
+          <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>标题</label>
+          <input className="input-dark" value={form.titleZh} onChange={e => update('titleZh', e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">摘要</label>
-          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.summaryZh} onChange={e => update('summaryZh', e.target.value)} />
+          <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>摘要</label>
+          <textarea className="input-dark" style={{ height: '8rem', resize: 'vertical' }} value={form.summaryZh} onChange={e => update('summaryZh', e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">解读</label>
-          <textarea className="w-full border rounded px-3 py-2 h-32" value={form.analysisZh ?? ''} onChange={e => update('analysisZh', e.target.value)} />
+          <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>解读</label>
+          <textarea className="input-dark" style={{ height: '8rem', resize: 'vertical' }} value={form.analysisZh ?? ''} onChange={e => update('analysisZh', e.target.value)} />
         </div>
       </div>
 
       {/* Tags */}
       <div>
-        <label className="block text-sm font-medium mb-1">Tags (comma separated)</label>
-        <input
-          className="w-full border rounded px-3 py-2"
-          value={form.tags ? JSON.parse(form.tags).join(', ') : ''}
-          onChange={e => update('tags', JSON.stringify(e.target.value.split(',').map(t => t.trim()).filter(Boolean)))}
-        />
+        <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Tags (comma separated)</label>
+        <input className="input-dark" value={form.tags ? JSON.parse(form.tags).join(', ') : ''} onChange={e => update('tags', JSON.stringify(e.target.value.split(',').map(t => t.trim()).filter(Boolean)))} />
       </div>
 
       {/* Companies */}
       {article.companies && article.companies.length > 0 && (
         <div>
-          <label className="block text-sm font-medium mb-2">关联公司</label>
+          <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>关联公司</label>
           <div className="flex flex-wrap gap-2">
             {article.companies.map(c => (
-              <span key={c.id} className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm">
-                {c.name}
-                <span className="text-indigo-400 text-xs">({c.category})</span>
-              </span>
+              <span key={c.id} className="badge badge-violet">{c.name} <span style={{ opacity: 0.6 }}>({c.category})</span></span>
             ))}
           </div>
         </div>
       )}
 
       {/* Actions */}
-      <div className="flex gap-3 pt-4 border-t">
-        <button onClick={save} disabled={saving} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50">
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-        {form.status === 'draft' && (
-          <button onClick={publish} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-500">
-            Publish to TG
-          </button>
-        )}
-        {form.status === 'draft' && (
-          <button onClick={() => setStatus('rejected')} className="px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">
-            Reject
-          </button>
-        )}
-        <button onClick={() => router.push('/admin')} className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
-          Back
-        </button>
+      <div className="flex gap-3 pt-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+        <button onClick={save} disabled={saving} className="btn btn-primary">{saving ? 'Saving...' : 'Save'}</button>
+        {form.status === 'draft' && <button onClick={publish} className="btn" style={{ background: 'var(--accent-violet-dim)', color: 'var(--accent-violet)', border: '1px solid rgba(167,139,250,0.2)' }}>Publish to TG</button>}
+        {form.status === 'draft' && <button onClick={() => setStatus('rejected')} className="btn btn-danger">Reject</button>}
+        <button onClick={() => router.push('/admin')} className="btn btn-surface">Back</button>
       </div>
     </div>
   )

@@ -23,37 +23,45 @@ export default function InvitesPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Invite Codes</h1>
-        <button onClick={createCode} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700">
+    <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="flex items-center justify-between mb-8 animate-fade-up">
+        <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-gradient">Invite Codes</span>
+        </h1>
+        <button onClick={createCode} className="btn btn-primary">
           Generate Code
         </button>
       </div>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="border-b text-left text-sm text-gray-500">
-            <th className="p-2">Code</th>
-            <th className="p-2">Status</th>
-            <th className="p-2">Used By</th>
-            <th className="p-2">Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {invites.map(inv => (
-            <tr key={inv.code} className="border-b hover:bg-gray-50">
-              <td className="p-2 font-mono font-bold">{inv.code}</td>
-              <td className="p-2">
-                <span className={`px-2 py-0.5 rounded text-xs ${inv.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {inv.active ? 'Active' : 'Used'}
-                </span>
-              </td>
-              <td className="p-2 text-sm text-gray-500">{inv.used_by ?? '-'}</td>
-              <td className="p-2 text-sm text-gray-500">{new Date(inv.created_at).toLocaleString()}</td>
+
+      <div className="glass-panel overflow-hidden animate-fade-up" style={{ animationDelay: '50ms' }}>
+        <table className="dark-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Status</th>
+              <th>Used By</th>
+              <th>Created</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {invites.map(inv => (
+              <tr key={inv.code}>
+                <td className="data-value" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{inv.code}</td>
+                <td>
+                  <span className={`badge ${inv.active ? 'badge-emerald' : 'badge-muted'}`}>
+                    {inv.active ? 'Active' : 'Used'}
+                  </span>
+                </td>
+                <td>{inv.used_by ?? <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                <td className="data-value" style={{ color: 'var(--text-muted)' }}>{new Date(inv.created_at).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {invites.length === 0 && (
+          <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No invite codes yet</div>
+        )}
+      </div>
     </div>
   )
 }

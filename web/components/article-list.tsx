@@ -11,10 +11,10 @@ interface Article {
   createdAt: string
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-blue-100 text-blue-700',
-  published: 'bg-purple-100 text-purple-700',
-  rejected: 'bg-red-100 text-red-700',
+const STATUS_BADGE: Record<string, string> = {
+  draft: 'badge-blue',
+  published: 'badge-violet',
+  rejected: 'badge-rose',
 }
 
 export function ArticleList() {
@@ -26,21 +26,14 @@ export function ArticleList() {
     fetch(url).then(r => r.json()).then(setArticles)
   }, [filter])
 
-  useEffect(() => {
-    fetchArticles()
-  }, [fetchArticles])
+  useEffect(() => { fetchArticles() }, [fetchArticles])
 
-  // Real-time subscription
   useEffect(() => {
     const supabase = createSupabaseBrowser()
     const channel = supabase
       .channel('articles-changes')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'articles' },
-        () => { fetchArticles() }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'articles' }, () => { fetchArticles() })
       .subscribe()
-
     return () => { supabase.removeChannel(channel) }
   }, [fetchArticles])
 
@@ -50,39 +43,28 @@ export function ArticleList() {
     <div>
       <div className="flex gap-2 mb-4">
         {filters.map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1 rounded text-sm ${filter === f ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
+          <button key={f} onClick={() => setFilter(f)} className={`filter-pill ${filter === f ? 'filter-pill-active' : ''}`}>
             {f || 'All'}
           </button>
         ))}
       </div>
-
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         {articles.map(article => (
-          <Link
-            key={article.id}
-            href={`/admin/articles/${article.id}`}
-            className="block bg-white rounded-lg p-4 shadow-sm border hover:border-gray-300 transition"
-          >
+          <Link key={article.id} href={`/admin/articles/${article.id}`} className="glass-card glow-cyan p-4 block group">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="font-medium text-gray-900 truncate">{article.titleZh}</div>
+                <div className="font-medium truncate group-hover:text-[var(--accent-cyan)] transition-colors" style={{ color: 'var(--text-primary)' }}>{article.titleZh}</div>
               </div>
-              <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ${STATUS_COLORS[article.status] ?? 'bg-gray-100'}`}>
-                {article.status}
-              </span>
+              <span className={`badge ${STATUS_BADGE[article.status] ?? 'badge-muted'} shrink-0`}>{article.status}</span>
             </div>
-            <div className="mt-2 text-xs text-gray-400">
+            <div className="mt-2 text-xs data-value" style={{ color: 'var(--text-muted)' }}>
               {new Date(article.createdAt).toLocaleString()}
-              {article.tags && ` \u00b7 ${JSON.parse(article.tags).join(', ')}`}
+              {article.tags && ` · ${JSON.parse(article.tags).join(', ')}`}
             </div>
           </Link>
         ))}
         {articles.length === 0 && (
-          <div className="text-center text-gray-400 py-8">No articles</div>
+          <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>No articles</div>
         )}
       </div>
     </div>

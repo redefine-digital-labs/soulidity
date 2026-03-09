@@ -19,29 +19,41 @@ export default function MembersPage() {
   }, [])
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Members ({members.length})</h1>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="border-b text-left text-sm text-gray-500">
-            <th className="p-2">TG ID</th>
-            <th className="p-2">Name</th>
-            <th className="p-2">Level</th>
-            <th className="p-2">Joined</th>
-          </tr>
-        </thead>
-        <tbody>
-          {members.map(m => (
-            <tr key={m.id} className="border-b hover:bg-gray-50">
-              <td className="p-2 font-mono text-sm">{m.tg_id}</td>
-              <td className="p-2">{m.tg_name ?? '-'}</td>
-              <td className="p-2">{LEVELS[m.level] ?? m.level}</td>
-              <td className="p-2 text-sm text-gray-500">{new Date(m.joined_at).toLocaleString()}</td>
+    <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="mb-8 animate-fade-up">
+        <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-gradient">Members</span>
+          <span className="ml-3 text-base" style={{ color: 'var(--text-muted)' }}>({members.length})</span>
+        </h1>
+      </div>
+
+      <div className="glass-panel overflow-hidden animate-fade-up" style={{ animationDelay: '50ms' }}>
+        <table className="dark-table">
+          <thead>
+            <tr>
+              <th>TG ID</th>
+              <th>Name</th>
+              <th>Level</th>
+              <th>Joined</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {members.length === 0 && <div className="text-center text-gray-400 py-8">No members yet</div>}
+          </thead>
+          <tbody>
+            {members.map(m => (
+              <tr key={m.id}>
+                <td className="data-value" style={{ color: 'var(--text-primary)' }}>{m.tg_id}</td>
+                <td style={{ color: 'var(--text-primary)' }}>{m.tg_name ?? <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                <td>
+                  <span className="badge badge-cyan">{LEVELS[m.level] ?? m.level}</span>
+                </td>
+                <td className="data-value" style={{ color: 'var(--text-muted)' }}>{new Date(m.joined_at).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {members.length === 0 && (
+          <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No members yet</div>
+        )}
+      </div>
     </div>
   )
 }

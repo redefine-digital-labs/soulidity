@@ -47,84 +47,97 @@ export default function SubmitPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Submit Content</h1>
+    <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="mb-8 animate-fade-up">
+        <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-gradient">Submit Content</span>
+        </h1>
+      </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b">
+      <div className="flex gap-2 mb-8 animate-fade-up" style={{ animationDelay: '50ms' }}>
         <button
           onClick={() => setTab('url')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === 'url' ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`filter-pill ${tab === 'url' ? 'filter-pill-active' : ''}`}
         >
           Paste URL
         </button>
         <button
           onClick={() => setTab('markdown')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === 'markdown' ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`filter-pill ${tab === 'markdown' ? 'filter-pill-active' : ''}`}
         >
           Upload Markdown
         </button>
       </div>
 
       {/* Form */}
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
-          <input
-            type="url"
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            placeholder="https://example.com/article"
-            className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-gray-900"
-          />
+      <div className="glass-panel p-6 animate-fade-up" style={{ animationDelay: '100ms' }}>
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>URL</label>
+            <input
+              type="url"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              placeholder="https://example.com/article"
+              className="input-dark"
+            />
+          </div>
+
+          {tab === 'markdown' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  placeholder="Article title"
+                  className="input-dark"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Content (Markdown)</label>
+                <textarea
+                  value={content}
+                  onChange={e => setContent(e.target.value)}
+                  placeholder="Paste markdown content here..."
+                  rows={12}
+                  className="input-dark"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem' }}
+                />
+              </div>
+            </>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading || !url.trim() || (tab === 'markdown' && (!title.trim() || !content.trim()))}
+            className="btn btn-primary"
+          >
+            {loading ? 'Processing...' : 'Submit'}
+          </button>
         </div>
-
-        {tab === 'markdown' && (
-          <>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="Article title"
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-gray-900"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Content (Markdown)</label>
-              <textarea
-                value={content}
-                onChange={e => setContent(e.target.value)}
-                placeholder="Paste markdown content here..."
-                rows={12}
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-gray-900 font-mono text-sm"
-              />
-            </div>
-          </>
-        )}
-
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !url.trim() || (tab === 'markdown' && (!title.trim() || !content.trim()))}
-          className="px-6 py-2 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading ? 'Processing...' : 'Submit'}
-        </button>
       </div>
 
       {/* Result */}
       {result && (
-        <div className={`mt-6 p-4 rounded ${result.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+        <div
+          className="mt-6 glass-panel p-4 animate-fade-up"
+          style={{
+            borderColor: result.success ? 'rgba(52, 211, 153, 0.3)' : 'rgba(251, 113, 133, 0.3)',
+            background: result.success ? 'var(--accent-emerald-dim)' : 'var(--accent-rose-dim)',
+          }}
+        >
           {result.success ? (
-            <p className="text-green-800">
+            <p style={{ color: 'var(--accent-emerald)' }}>
               Article created:{' '}
               <Link href={`/admin/articles/${result.articleId}`} className="font-medium underline">
                 {result.title}
               </Link>
             </p>
           ) : (
-            <p className="text-red-800">{result.error}</p>
+            <p style={{ color: 'var(--accent-rose)' }}>{result.error}</p>
           )}
         </div>
       )}

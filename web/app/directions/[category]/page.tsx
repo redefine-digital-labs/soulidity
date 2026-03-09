@@ -49,39 +49,37 @@ export default function CategoryDirectionsPage() {
   const categoryMeta = directions[0]?.category
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <PublicNav />
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="max-w-4xl mx-auto px-6 py-10">
         {/* Breadcrumb */}
-        <nav className="text-sm text-gray-500 mb-4">
-          <Link href="/directions" className="hover:text-gray-700">
+        <nav className="text-sm mb-6 animate-fade-up" style={{ color: 'var(--text-muted)' }}>
+          <Link href="/directions" className="transition-colors hover:text-[var(--accent-cyan)]">
             养成方向
           </Link>
           <span className="mx-2">&gt;</span>
-          <span className="text-gray-900">
+          <span style={{ color: 'var(--text-primary)' }}>
             {categoryMeta
               ? `${categoryMeta.icon} ${categoryMeta.nameZh}`
               : decodeURIComponent(category)}
           </span>
         </nav>
 
-        <h1 className="text-2xl font-bold mb-6">
-          {categoryMeta
-            ? `${categoryMeta.icon} ${categoryMeta.nameZh}`
-            : decodeURIComponent(category)}
+        <h1 className="text-2xl font-bold mb-8 animate-fade-up" style={{ fontFamily: 'var(--font-display)', animationDelay: '50ms' }}>
+          <span className="text-gradient">
+            {categoryMeta
+              ? `${categoryMeta.icon} ${categoryMeta.nameZh}`
+              : decodeURIComponent(category)}
+          </span>
         </h1>
 
         {/* Sort controls */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-8 animate-fade-up" style={{ animationDelay: '100ms' }}>
           {SORT_OPTIONS.map(opt => (
             <button
               key={opt.key}
               onClick={() => setSort(opt.key)}
-              className={`px-3 py-1 rounded text-sm ${
-                sort === opt.key
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              className={`filter-pill ${sort === opt.key ? 'filter-pill-active' : ''}`}
             >
               {opt.label}
             </button>
@@ -90,43 +88,43 @@ export default function CategoryDirectionsPage() {
 
         {/* Direction cards */}
         {loading ? (
-          <div className="text-center text-gray-400 py-8">加载中...</div>
+          <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : directions.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">该分类暂无方向</div>
+          <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>该分类暂无方向</div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 stagger-children">
             {directions.map(d => (
               <Link
                 key={d.id}
                 href={`/directions/${encodeURIComponent(category)}/${d.slug}`}
-                className="block bg-white rounded-lg p-4 shadow-sm border hover:shadow-md transition-shadow"
+                className="glass-card glow-cyan block p-5 group"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-xl">{d.icon}</span>
-                      <span className="font-medium text-gray-900">
+                      <span className="font-medium group-hover:text-[var(--accent-cyan)] transition-colors" style={{ color: 'var(--text-primary)' }}>
                         {d.nameZh}
                       </span>
                     </div>
                     {d.descriptionZh && (
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                      <p className="text-sm mt-1 line-clamp-1" style={{ color: 'var(--text-muted)' }}>
                         {d.descriptionZh}
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-4 shrink-0 text-sm text-gray-500">
+                  <div className="flex items-center gap-5 shrink-0 text-sm">
                     <div className="text-center">
-                      <div className="font-bold text-gray-900">
+                      <div className="data-value font-bold" style={{ color: 'var(--accent-cyan)' }}>
                         {d.userCount.toLocaleString()}
                       </div>
-                      <div className="text-xs">使用</div>
+                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>使用</div>
                     </div>
                     <div className="text-center">
-                      <div className="font-bold text-gray-900">
+                      <div className="data-value font-bold" style={{ color: 'var(--accent-amber)' }}>
                         {d.rating.toFixed(1)}
                       </div>
-                      <div className="text-xs">评分</div>
+                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>评分</div>
                     </div>
                   </div>
                 </div>

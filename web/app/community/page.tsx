@@ -40,9 +40,7 @@ export default function CommunityPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/categories')
-      .then(r => (r.ok ? r.json() : []))
-      .then(setCategories)
+    fetch('/api/categories').then(r => (r.ok ? r.json() : [])).then(setCategories)
   }, [])
 
   useEffect(() => {
@@ -57,129 +55,66 @@ export default function CommunityPage() {
   }, [activeDirection, sort])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <PublicNav />
-      <div className="max-w-4xl mx-auto p-6">
-        {/* Header row */}
-        <div className="flex items-center justify-between mb-6">
+      <div className="max-w-4xl mx-auto px-6 py-10">
+        <div className="flex items-center justify-between mb-8 animate-fade-up">
           <div>
-            <h1 className="text-2xl font-bold mb-1">社区日志</h1>
-            <p className="text-gray-500 text-sm">分享你的养成历程与心得</p>
+            <h1 className="text-3xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+              <span className="text-gradient">社区日志</span>
+            </h1>
+            <p style={{ color: 'var(--text-muted)' }}>分享你的养成历程与心得</p>
           </div>
-          <Link
-            href="/community/new"
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            发布日志
-          </Link>
+          <Link href="/community/new" className="btn btn-primary">发布日志</Link>
         </div>
 
         {/* Filter bar */}
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          {/* Direction tabs */}
+        <div className="flex items-center gap-3 mb-6 flex-wrap animate-fade-up" style={{ animationDelay: '50ms' }}>
           <div className="flex gap-2 flex-wrap flex-1">
-            <button
-              onClick={() => setActiveDirection('')}
-              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${
-                activeDirection === ''
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-              }`}
-            >
-              全部
-            </button>
+            <button onClick={() => setActiveDirection('')} className={`filter-pill ${activeDirection === '' ? 'filter-pill-active' : ''}`}>全部</button>
             {categories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveDirection(cat.name)}
-                className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${
-                  activeDirection === cat.name
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-                }`}
-              >
+              <button key={cat.id} onClick={() => setActiveDirection(cat.name)} className={`filter-pill ${activeDirection === cat.name ? 'filter-pill-active' : ''}`}>
                 {cat.icon} {cat.nameZh}
               </button>
             ))}
           </div>
-
-          {/* Sort toggle */}
-          <div className="flex border border-gray-200 rounded-lg overflow-hidden bg-white shrink-0">
-            <button
-              onClick={() => setSort('latest')}
-              className={`text-sm px-3 py-1.5 transition-colors ${
-                sort === 'latest'
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              最新
-            </button>
-            <button
-              onClick={() => setSort('popular')}
-              className={`text-sm px-3 py-1.5 transition-colors ${
-                sort === 'popular'
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              热门
-            </button>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+            <button onClick={() => setSort('latest')} className="px-3 py-1.5 text-xs font-medium transition-colors" style={{ background: sort === 'latest' ? 'var(--accent-cyan-dim)' : 'transparent', color: sort === 'latest' ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>最新</button>
+            <button onClick={() => setSort('popular')} className="px-3 py-1.5 text-xs font-medium transition-colors" style={{ background: sort === 'popular' ? 'var(--accent-cyan-dim)' : 'transparent', color: sort === 'popular' ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>热门</button>
           </div>
         </div>
 
         {/* Post list */}
         {loading ? (
-          <div className="text-center text-gray-400 py-16">加载中...</div>
+          <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : posts.length === 0 ? (
-          <div className="text-center text-gray-400 py-16">暂无日志</div>
+          <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>暂无日志</div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 stagger-children">
             {posts.map(post => {
               const displayName = post.member.tgName ?? '匿名'
               const avatarChar = displayName.charAt(0).toUpperCase()
-              const preview = post.content.length > 100
-                ? post.content.slice(0, 100) + '…'
-                : post.content
+              const preview = post.content.length > 100 ? post.content.slice(0, 100) + '…' : post.content
 
               return (
-                <div
-                  key={post.id}
-                  className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow"
-                >
-                  {/* Author row */}
+                <div key={post.id} className="glass-card glow-cyan p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
                       {avatarChar}
                     </div>
-                    <span className="text-sm text-gray-600">{displayName}</span>
+                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{displayName}</span>
                     {post.direction && (
-                      <span className="ml-auto text-xs text-gray-400 border border-gray-200 rounded px-2 py-0.5">
-                        {post.direction.icon} {post.direction.nameZh}
-                      </span>
+                      <span className="ml-auto badge badge-muted">{post.direction.icon} {post.direction.nameZh}</span>
                     )}
                   </div>
-
-                  {/* Title */}
-                  <Link
-                    href={`/community/${post.id}`}
-                    className="block font-medium text-gray-900 hover:text-blue-600 mb-1 transition-colors"
-                  >
+                  <Link href={`/community/${post.id}`} className="block font-semibold mb-1 transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
                     {post.title}
                   </Link>
-
-                  {/* Content preview */}
-                  {preview && (
-                    <p className="text-sm text-gray-500 leading-relaxed mb-3">
-                      {preview}
-                    </p>
-                  )}
-
-                  {/* Footer row */}
-                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                  {preview && <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>{preview}</p>}
+                  <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <span>👍 {post.likeCount}</span>
                     <span>💬 {post.commentCount}</span>
-                    <span className="ml-auto">{timeAgo(post.createdAt)}</span>
+                    <span className="ml-auto data-value">{timeAgo(post.createdAt)}</span>
                   </div>
                 </div>
               )

@@ -1,16 +1,53 @@
+'use client'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+
+const links = [
+  { href: '/', label: '新闻' },
+  { href: '/companies', label: 'Companies' },
+  { href: '/directions', label: 'Directions' },
+  { href: '/community', label: 'Community' },
+  { href: '/knowledge', label: '知识库' },
+]
 
 export function PublicNav() {
+  const pathname = usePathname()
+
   return (
-    <nav className="border-b bg-white">
-      <div className="max-w-4xl mx-auto px-6 flex items-center h-14 gap-6">
-        <Link href="/" className="font-bold text-lg">CryptoOpenClaw</Link>
-        <div className="flex gap-4">
-          <Link href="/companies" className="text-sm text-gray-500 hover:text-gray-700">Companies</Link>
-          <Link href="/directions" className="text-sm text-gray-500 hover:text-gray-700">Directions</Link>
-          <Link href="/community" className="text-sm text-gray-500 hover:text-gray-700">Community</Link>
+    <nav className="sticky top-0 z-50" style={{ background: 'rgba(9, 9, 11, 0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-subtle)' }}>
+      <div className="max-w-6xl mx-auto px-6 flex items-center h-16 gap-8">
+        <Link href="/" className="text-xl font-bold shrink-0" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-gradient">CryptoOpenClaw</span>
+        </Link>
+        <div className="flex gap-1">
+          {links.map(link => {
+            const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href))
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="px-3 py-1.5 rounded-md text-sm transition-colors"
+                style={{
+                  color: isActive ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                  background: isActive ? 'var(--accent-cyan-dim)' : 'transparent',
+                }}
+                onMouseEnter={e => { if (!isActive) (e.target as HTMLElement).style.color = 'var(--text-primary)' }}
+                onMouseLeave={e => { if (!isActive) (e.target as HTMLElement).style.color = 'var(--text-muted)' }}
+              >
+                {link.label}
+              </Link>
+            )
+          })}
         </div>
-        <Link href="/login" className="ml-auto text-sm text-gray-500 hover:text-gray-700">Login</Link>
+        <Link
+          href="/login"
+          className="ml-auto text-sm transition-colors"
+          style={{ color: 'var(--text-muted)' }}
+          onMouseEnter={e => (e.target as HTMLElement).style.color = 'var(--text-primary)'}
+          onMouseLeave={e => (e.target as HTMLElement).style.color = 'var(--text-muted)'}
+        >
+          Login
+        </Link>
       </div>
     </nav>
   )

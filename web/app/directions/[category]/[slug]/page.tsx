@@ -26,67 +26,67 @@ export default async function DirectionDetailPage({
   const description = direction.descriptionZh || direction.description
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <PublicNav />
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="max-w-4xl mx-auto px-6 py-10">
         {/* Breadcrumb */}
-        <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
-          <Link href="/directions" className="hover:text-gray-700">
+        <nav className="flex items-center gap-2 text-sm mb-8 animate-fade-up" style={{ color: 'var(--text-muted)' }}>
+          <Link href="/directions" className="transition-colors hover:text-[var(--accent-cyan)]">
             养成方向
           </Link>
           <span>/</span>
           <Link
             href={`/directions/${direction.category.name}`}
-            className="hover:text-gray-700"
+            className="transition-colors hover:text-[var(--accent-cyan)]"
           >
             {direction.category.icon} {direction.category.nameZh}
           </Link>
           <span>/</span>
-          <span className="text-gray-900">{direction.nameZh}</span>
+          <span style={{ color: 'var(--text-primary)' }}>{direction.nameZh}</span>
         </nav>
 
         {/* Header card */}
-        <div className="bg-white rounded-lg border p-6 mb-6">
+        <div className="glass-panel p-6 mb-6 animate-fade-up" style={{ animationDelay: '50ms' }}>
           <div className="flex items-center gap-4">
             <span className="text-5xl">{direction.icon}</span>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {direction.nameZh}
+              <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                <span className="text-gradient">{direction.nameZh}</span>
               </h1>
-              <p className="text-sm text-gray-400 mt-1">{direction.name}</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{direction.name}</p>
             </div>
           </div>
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-lg border p-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">
+        <div className="grid grid-cols-3 gap-4 mb-6 animate-fade-up" style={{ animationDelay: '100ms' }}>
+          <div className="glass-card p-4 text-center">
+            <div className="text-2xl font-bold data-value" style={{ color: 'var(--accent-cyan)' }}>
               {direction.userCount}
             </div>
-            <div className="text-xs text-gray-500 mt-1">使用人数</div>
+            <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>使用人数</div>
           </div>
-          <div className="bg-white rounded-lg border p-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">
+          <div className="glass-card p-4 text-center">
+            <div className="text-2xl font-bold data-value" style={{ color: 'var(--accent-amber)' }}>
               {direction.rating.toFixed(1)}
             </div>
-            <div className="text-xs text-gray-500 mt-1">评分</div>
+            <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>评分</div>
           </div>
-          <div className="bg-white rounded-lg border p-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">
+          <div className="glass-card p-4 text-center">
+            <div className="text-2xl font-bold">
               {direction.category.icon}
             </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {direction.category.nameZh}
+            <div className="text-xs mt-1">
+              <span className="badge badge-cyan">{direction.category.nameZh}</span>
             </div>
           </div>
         </div>
 
         {/* Description section */}
         {description && (
-          <div className="bg-white rounded-lg border p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">介绍</h2>
-            <p className="text-gray-700 whitespace-pre-line">{description}</p>
+          <div className="glass-panel p-6 animate-fade-up" style={{ animationDelay: '150ms' }}>
+            <h2 className="text-lg font-semibold mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>介绍</h2>
+            <p className="whitespace-pre-line" style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>{description}</p>
           </div>
         )}
       </div>

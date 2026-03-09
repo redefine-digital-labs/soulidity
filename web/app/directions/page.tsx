@@ -29,74 +29,64 @@ export default function DirectionsPage() {
   const [top, setTop] = useState<Direction[]>([])
 
   useEffect(() => {
-    fetch('/api/categories')
-      .then(r => (r.ok ? r.json() : []))
-      .then(setCategories)
-    fetch('/api/directions?featured=true')
-      .then(r => (r.ok ? r.json() : []))
-      .then(setFeatured)
-    fetch('/api/directions?sort=userCount')
-      .then(r => (r.ok ? r.json() : []))
-      .then((data: Direction[]) => setTop(data.slice(0, 20)))
+    fetch('/api/categories').then(r => (r.ok ? r.json() : [])).then(setCategories)
+    fetch('/api/directions?featured=true').then(r => (r.ok ? r.json() : [])).then(setFeatured)
+    fetch('/api/directions?sort=userCount').then(r => (r.ok ? r.json() : [])).then((data: Direction[]) => setTop(data.slice(0, 20)))
   }, [])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <PublicNav />
-      <div className="max-w-6xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-1">OpenClaw 养成方向</h1>
-        <p className="text-gray-500 mb-8">探索 OpenClaw 的各种应用场景</p>
+      <div className="max-w-6xl mx-auto px-6 py-10">
+        <div className="mb-10 animate-fade-up">
+          <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+            <span className="text-gradient">OpenClaw 养成方向</span>
+          </h1>
+          <p style={{ color: 'var(--text-muted)' }}>探索 OpenClaw 的各种应用场景</p>
+        </div>
 
         {/* Category cards */}
-        <section className="mb-10">
-          <h2 className="text-lg font-semibold mb-4">分类</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <section className="mb-12 animate-fade-up" style={{ animationDelay: '50ms' }}>
+          <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>分类</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {categories.map(cat => (
               <Link
                 key={cat.id}
                 href={`/directions/${cat.name}`}
-                className="bg-white rounded-lg border p-4 hover:shadow-md transition-shadow text-center"
+                className="glass-card glow-cyan p-4 text-center group"
               >
                 <div className="text-3xl mb-2">{cat.icon}</div>
-                <div className="font-medium text-gray-900">{cat.nameZh}</div>
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="font-medium text-sm group-hover:text-[var(--accent-cyan)] transition-colors" style={{ color: 'var(--text-primary)' }}>{cat.nameZh}</div>
+                <div className="text-xs mt-1 data-value" style={{ color: 'var(--text-muted)' }}>
                   {cat._count.directions} 个方向
                 </div>
               </Link>
             ))}
             {categories.length === 0 && (
-              <div className="col-span-full text-center text-gray-400 py-8">
-                暂无分类
-              </div>
+              <div className="col-span-full text-center py-8" style={{ color: 'var(--text-muted)' }}>暂无分类</div>
             )}
           </div>
         </section>
 
         {/* Featured directions */}
         {featured.length > 0 && (
-          <section className="mb-10">
-            <h2 className="text-lg font-semibold mb-4">推荐方向</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <section className="mb-12 animate-fade-up" style={{ animationDelay: '100ms' }}>
+            <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>推荐方向</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {featured.map(d => (
-                <Link
-                  key={d.id}
-                  href={`/directions/${d.category.name}/${d.slug}`}
-                  className="bg-white rounded-lg border p-4 hover:shadow-md transition-shadow"
-                >
+                <Link key={d.id} href={`/directions/${d.category.name}/${d.slug}`} className="glass-card glow-cyan p-5 group">
                   <div className="flex items-center gap-3 mb-3">
                     <span className="text-2xl">{d.icon}</span>
                     <div>
-                      <div className="font-medium text-gray-900">
-                        {d.nameZh}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {d.category.icon} {d.category.nameZh}
-                      </div>
+                      <div className="font-medium group-hover:text-[var(--accent-cyan)] transition-colors" style={{ color: 'var(--text-primary)' }}>{d.nameZh}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{d.category.icon} {d.category.nameZh}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
-                    <span>{d.userCount} 用户</span>
-                    <span>评分 {d.rating.toFixed(1)}</span>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="data-value" style={{ color: 'var(--accent-cyan)' }}>{d.userCount}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>用户</span>
+                    <span className="data-value" style={{ color: 'var(--accent-amber)' }}>{d.rating.toFixed(1)}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>评分</span>
                   </div>
                 </Link>
               ))}
@@ -106,45 +96,38 @@ export default function DirectionsPage() {
 
         {/* Hot ranking table */}
         {top.length > 0 && (
-          <section>
-            <h2 className="text-lg font-semibold mb-4">热门排行</h2>
-            <div className="bg-white rounded-lg border overflow-hidden">
-              <table className="w-full text-sm">
+          <section className="animate-fade-up" style={{ animationDelay: '150ms' }}>
+            <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>热门排行</h2>
+            <div className="glass-panel overflow-hidden">
+              <table className="dark-table">
                 <thead>
-                  <tr className="border-b bg-gray-50 text-gray-500 text-left">
-                    <th className="px-4 py-3 w-10">#</th>
-                    <th className="px-4 py-3">方向</th>
-                    <th className="px-4 py-3">分类</th>
-                    <th className="px-4 py-3 text-right">用户数</th>
-                    <th className="px-4 py-3 text-right">评分</th>
+                  <tr>
+                    <th style={{ width: '40px' }}>#</th>
+                    <th>方向</th>
+                    <th>分类</th>
+                    <th style={{ textAlign: 'right' }}>用户数</th>
+                    <th style={{ textAlign: 'right' }}>评分</th>
                   </tr>
                 </thead>
                 <tbody>
                   {top.map((d, i) => (
-                    <tr key={d.id} className="border-b last:border-0 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-400 font-medium">
+                    <tr key={d.id}>
+                      <td className="data-value" style={{ color: i < 3 ? 'var(--accent-amber)' : 'var(--text-muted)' }}>
                         {i + 1}
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         <Link
                           href={`/directions/${d.category.name}/${d.slug}`}
-                          className="flex items-center gap-2 hover:text-blue-600"
+                          className="flex items-center gap-2 transition-colors hover:text-[var(--accent-cyan)]"
+                          style={{ color: 'var(--text-primary)' }}
                         >
                           <span>{d.icon}</span>
-                          <span className="font-medium text-gray-900">
-                            {d.nameZh}
-                          </span>
+                          <span className="font-medium">{d.nameZh}</span>
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {d.category.icon} {d.category.nameZh}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700">
-                        {d.userCount}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700">
-                        {d.rating.toFixed(1)}
-                      </td>
+                      <td>{d.category.icon} {d.category.nameZh}</td>
+                      <td className="data-value" style={{ textAlign: 'right', color: 'var(--accent-cyan)' }}>{d.userCount}</td>
+                      <td className="data-value" style={{ textAlign: 'right', color: 'var(--accent-amber)' }}>{d.rating.toFixed(1)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -16,50 +16,56 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
-
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) {
-        setError(error.message)
-      } else {
-        router.push('/admin')
-        router.refresh()
-      }
-    } catch {
-      setError('网络错误，请重试')
-    } finally {
-      setLoading(false)
-    }
+      if (error) { setError(error.message) } else { router.push('/admin'); router.refresh() }
+    } catch { setError('网络错误，请重试') } finally { setLoading(false) }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow-sm border w-full max-w-sm">
-        <h1 className="text-xl font-bold mb-6 text-center">CryptoOpenClaw</h1>
+    <div className="min-h-screen flex items-center justify-center px-4">
+      {/* Subtle radial glow behind the form */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(34, 211, 238, 0.06) 0%, transparent 70%)' }} />
+      </div>
 
-        <input
-          type="email"
-          placeholder="邮箱"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-gray-900"
-          autoFocus
-        />
+      <form onSubmit={handleSubmit} className="glass-panel p-8 w-full max-w-sm animate-fade-up relative">
+        <h1 className="text-2xl font-bold mb-1 text-center" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-gradient">CryptoOpenClaw</span>
+        </h1>
+        <p className="text-center text-sm mb-8" style={{ color: 'var(--text-muted)' }}>Sign in to continue</p>
 
-        <input
-          type="password"
-          placeholder="密码"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>邮箱</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input-dark"
+              placeholder="you@example.com"
+              autoFocus
+            />
+          </div>
 
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>密码</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="input-dark"
+              placeholder="••••••••"
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-sm mt-4" style={{ color: 'var(--accent-rose)' }}>{error}</p>}
 
         <button
           type="submit"
           disabled={loading || !email || !password}
-          className="w-full py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50"
+          className="btn btn-primary w-full mt-6"
         >
           {loading ? '登录中...' : '登录'}
         </button>

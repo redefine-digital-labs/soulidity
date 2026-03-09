@@ -16,22 +16,22 @@ export function StatsBar() {
     fetch('/api/stats').then(r => r.json()).then(setStats)
   }, [])
 
-  if (!stats) return <div className="animate-pulse h-16 bg-gray-100 rounded" />
+  if (!stats) return <div className="h-20 rounded-xl animate-pulse" style={{ background: 'var(--bg-surface)' }} />
 
   const items = [
-    { label: 'Pending', value: stats.raw_new, color: 'text-yellow-600' },
-    { label: 'Draft', value: stats.articles_draft, color: 'text-blue-600' },
-    { label: 'Rejected', value: stats.articles_rejected, color: 'text-red-600' },
-    { label: 'Published Today', value: stats.published_today, color: 'text-purple-600' },
-    { label: 'Companies', value: stats.companies_total, color: 'text-indigo-600' },
+    { label: 'Pending', value: stats.raw_new, color: 'var(--accent-amber)' },
+    { label: 'Draft', value: stats.articles_draft, color: 'var(--accent-blue)' },
+    { label: 'Rejected', value: stats.articles_rejected, color: 'var(--accent-rose)' },
+    { label: 'Published', value: stats.published_today, color: 'var(--accent-violet)' },
+    { label: 'Companies', value: stats.companies_total, color: 'var(--accent-cyan)' },
   ]
 
   return (
-    <div className="grid grid-cols-5 gap-4">
+    <div className="grid grid-cols-5 gap-3">
       {items.map(item => (
-        <div key={item.label} className="bg-white rounded-lg p-4 shadow-sm border">
-          <div className={`text-2xl font-bold ${item.color}`}>{item.value}</div>
-          <div className="text-sm text-gray-500">{item.label}</div>
+        <div key={item.label} className="glass-panel p-4 text-center">
+          <div className="text-2xl font-bold data-value stat-glow" style={{ color: item.color }}>{item.value}</div>
+          <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{item.label}</div>
         </div>
       ))}
     </div>
