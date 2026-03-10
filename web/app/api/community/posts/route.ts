@@ -6,10 +6,18 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const direction = request.nextUrl.searchParams.get('direction')
   const sort = request.nextUrl.searchParams.get('sort') ?? 'latest'
+  const type = request.nextUrl.searchParams.get('type')
+  const directionId = request.nextUrl.searchParams.get('directionId')
 
   const where: any = { status: 'published' }
   if (direction) {
     where.direction = { slug: direction }
+  }
+  if (directionId) {
+    where.directionId = directionId
+  }
+  if (type) {
+    where.type = type
   }
 
   const orderBy: any = sort === 'popular' ? { likeCount: 'desc' } : { createdAt: 'desc' }
@@ -40,6 +48,7 @@ export async function POST(request: NextRequest) {
       title: body.title,
       content: body.content,
       tags: body.tags ? JSON.stringify(body.tags) : null,
+      type: body.type ?? 'log',
     },
   })
 
