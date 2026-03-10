@@ -8,6 +8,7 @@ interface PostItem {
   id: string
   title: string
   content: string
+  type: string
   likeCount: number
   commentCount: number
   createdAt: string
@@ -36,6 +37,7 @@ export default function CommunityPage() {
   const [categories, setCategories] = useState<CategoryItem[]>([])
   const [posts, setPosts] = useState<PostItem[]>([])
   const [activeDirection, setActiveDirection] = useState<string>('')
+  const [postType, setPostType] = useState<'' | 'log' | 'question'>('')
   const [sort, setSort] = useState<'latest' | 'popular'>('latest')
   const [loading, setLoading] = useState(true)
 
@@ -47,12 +49,13 @@ export default function CommunityPage() {
     setLoading(true)
     const params = new URLSearchParams()
     if (activeDirection) params.set('direction', activeDirection)
+    if (postType) params.set('type', postType)
     params.set('sort', sort)
     fetch(`/api/community/posts?${params.toString()}`)
       .then(r => (r.ok ? r.json() : []))
       .then(setPosts)
       .finally(() => setLoading(false))
-  }, [activeDirection, sort])
+  }, [activeDirection, postType, sort])
 
   return (
     <div className="min-h-screen">
@@ -61,15 +64,25 @@ export default function CommunityPage() {
         <div className="flex items-center justify-between mb-8 animate-fade-up">
           <div>
             <h1 className="text-3xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-              <span className="text-gradient">社区日志</span>
+              <span className="text-gradient">社区</span>
             </h1>
             <p style={{ color: 'var(--text-muted)' }}>分享你的养成历程与心得</p>
           </div>
-          <Link href="/community/new" className="btn btn-primary">发布日志</Link>
+          <div className="flex gap-2">
+            <Link href="/community/leaderboard" className="btn btn-surface">🏆 排行榜</Link>
+            <Link href="/community/new" className="btn btn-primary">发布日志</Link>
+          </div>
+        </div>
+
+        {/* Type filter */}
+        <div className="flex gap-2 mb-4 animate-fade-up" style={{ animationDelay: '50ms' }}>
+          <button onClick={() => setPostType('')} className={`filter-pill ${postType === '' ? 'filter-pill-active' : ''}`}>全部</button>
+          <button onClick={() => setPostType('log')} className={`filter-pill ${postType === 'log' ? 'filter-pill-active' : ''}`}>📝 日志</button>
+          <button onClick={() => setPostType('question')} className={`filter-pill ${postType === 'question' ? 'filter-pill-active' : ''}`}>❓ 问答</button>
         </div>
 
         {/* Filter bar */}
-        <div className="flex items-center gap-3 mb-6 flex-wrap animate-fade-up" style={{ animationDelay: '50ms' }}>
+        <div className="flex items-center gap-3 mb-6 flex-wrap animate-fade-up" style={{ animationDelay: '100ms' }}>
           <div className="flex gap-2 flex-wrap flex-1">
             <button onClick={() => setActiveDirection('')} className={`filter-pill ${activeDirection === '' ? 'filter-pill-active' : ''}`}>全部</button>
             {categories.map(cat => (
@@ -88,7 +101,7 @@ export default function CommunityPage() {
         {loading ? (
           <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : posts.length === 0 ? (
-          <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>暂无日志</div>
+          <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>暂无帖子</div>
         ) : (
           <div className="flex flex-col gap-3 stagger-children">
             {posts.map(post => {
@@ -103,12 +116,13 @@ export default function CommunityPage() {
                       {avatarChar}
                     </div>
                     <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{displayName}</span>
+                    {post.type === 'question' && <span className="badge badge-cyan">问答</span>}
                     {post.direction && (
                       <span className="ml-auto badge badge-muted">{post.direction.icon} {post.direction.nameZh}</span>
                     )}
                   </div>
                   <Link href={`/community/${post.id}`} className="block font-semibold mb-1 transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-                    {post.title}
+                    {post.type === 'question' ? '❓ ' : ''}{post.title}
                   </Link>
                   {preview && <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>{preview}</p>}
                   <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
