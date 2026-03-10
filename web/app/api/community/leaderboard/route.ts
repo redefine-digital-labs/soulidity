@@ -14,24 +14,24 @@ export async function GET(request: NextRequest) {
         tgName: true,
         avatar: true,
         level: true,
-        exp: true,
         _count: { select: { posts: true, comments: true } },
       },
-      orderBy: { exp: 'desc' },
-      take: 20,
     })
 
-    const ranked = members.map((m, i) => ({
-      rank: i + 1,
-      id: m.id,
-      tgName: m.tgName,
-      avatar: m.avatar,
-      level: m.level,
-      score: m._count.posts * 10 + m._count.comments * 3,
-      postCount: m._count.posts,
-      commentCount: m._count.comments,
-    }))
-    ranked.sort((a, b) => b.score - a.score)
+    const ranked = members
+      .map(m => ({
+        rank: 0,
+        id: m.id,
+        tgName: m.tgName,
+        avatar: m.avatar,
+        level: m.level,
+        score: m._count.posts * 10 + m._count.comments * 3,
+        postCount: m._count.posts,
+        commentCount: m._count.comments,
+      }))
+      .filter(m => m.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20)
     ranked.forEach((r, i) => (r.rank = i + 1))
 
     return NextResponse.json(ranked)
