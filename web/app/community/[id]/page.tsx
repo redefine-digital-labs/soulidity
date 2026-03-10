@@ -9,6 +9,7 @@ interface PostDetail {
   id: string
   title: string
   content: string
+  type: string
   tags: string | null
   likeCount: number
   commentCount: number
@@ -19,6 +20,7 @@ interface PostDetail {
   comments: Array<{
     id: string
     content: string
+    isAccepted: boolean
     createdAt: string
     member: { id: string; tgName: string | null; avatar: string | null; level: number }
   }>
@@ -44,6 +46,20 @@ export default function PostDetailPage() {
   const [commentContent, setCommentContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [acceptingId, setAcceptingId] = useState<string | null>(null)
+
+  async function handleAccept(commentId: string) {
+    if (!memberId.trim()) { setSubmitError('请先填写用户ID才能采纳回答'); return }
+    setAcceptingId(commentId)
+    try {
+      const res = await fetch(`/api/community/posts/${id}/comments/${commentId}/accept`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: memberId.trim() }),
+      })
+      if (!res.ok) { const data = await res.json().catch(() => ({})); setSubmitError(data?.error ?? '采纳失败'); return }
+      await fetchPost()
+    } catch { setSubmitError('采纳失败') } finally { setAcceptingId(null) }
+  }
 
   async function fetchPost() {
     try {
@@ -95,7 +111,7 @@ export default function PostDetailPage() {
             </div>
             {post.direction && <span className="ml-auto badge badge-muted">{post.direction.icon} {post.direction.nameZh}</span>}
           </div>
-          <h1 className="text-2xl font-bold mb-4 leading-tight" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{post.title}</h1>
+          <h1 className="text-2xl font-bold mb-4 leading-tight" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{post.type === 'question' ? '❓ ' : ''}{post.title}</h1>
           <p className="leading-relaxed whitespace-pre-wrap mb-4" style={{ color: 'var(--text-secondary)' }}>{post.content}</p>
           {tags.length > 0 && <div className="flex flex-wrap gap-2 mb-4">{tags.map(tag => <span key={tag} className="badge badge-muted">#{tag}</span>)}</div>}
           <div className="flex items-center gap-4 text-sm pt-4" style={{ borderTop: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
@@ -111,21 +127,39 @@ export default function PostDetailPage() {
             <p className="text-sm py-4 text-center" style={{ color: 'var(--text-muted)' }}>暂无评论，来留下第一条吧</p>
           ) : (
             <div className="flex flex-col gap-5">
-              {post.comments.map(comment => {
+              {[...post.comments]
+                .sort((a, b) => {
+                  if (a.isAccepted !== b.isAccepted) return a.isAccepted ? -1 : 1
+                  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                })
+                .map(comment => {
                 const cName = comment.member.tgName ?? '匿名'
                 const cChar = cName.charAt(0).toUpperCase()
                 return (
-                  <div key={comment.id} className="flex gap-3">
+                  <div key={comment.id} className="flex gap-3" style={comment.isAccepted ? { borderLeft: '3px solid #10b981', paddingLeft: '12px' } : undefined}>
                     <Link href={`/u/${comment.member.id}`} className="shrink-0">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>{cChar}</div>
                     </Link>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <Link href={`/u/${comment.member.id}`} className="text-sm font-medium transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-secondary)' }}>{cName}</Link>
                         <span className="text-xs">{levelBadge(comment.member.level)}</span>
+                        {post.type === 'question' && comment.isAccepted && (
+                          <span className="badge" style={{ background: '#065f4620', color: '#10b981' }}>✅ 已采纳</span>
+                        )}
                         <span className="text-xs data-value ml-auto shrink-0" style={{ color: 'var(--text-muted)' }}>{formatDate(comment.createdAt)}</span>
                       </div>
                       <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{comment.content}</p>
+                      {post.type === 'question' && !comment.isAccepted && memberId.trim() === post.member.id && (
+                        <button
+                          onClick={() => handleAccept(comment.id)}
+                          disabled={acceptingId === comment.id}
+                          className="btn btn-surface text-xs mt-2"
+                          style={{ padding: '4px 10px' }}
+                        >
+                          {acceptingId === comment.id ? '采纳中...' : '采纳'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )
