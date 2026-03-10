@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { requireAuth } from '@web/lib/auth/require-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,14 +37,17 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const { error, session } = await requireAuth()
+  if (error) return error
+
   const body = await request.json()
-  if (!body.memberId || !body.title || !body.content) {
-    return NextResponse.json({ error: 'memberId, title, content required' }, { status: 400 })
+  if (!body.title || !body.content) {
+    return NextResponse.json({ error: 'title, content required' }, { status: 400 })
   }
 
   const post = await prisma.post.create({
     data: {
-      memberId: body.memberId,
+      memberId: session!.memberId,
       directionId: body.directionId ?? null,
       title: body.title,
       content: body.content,

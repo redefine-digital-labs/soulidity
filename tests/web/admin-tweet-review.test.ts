@@ -16,7 +16,7 @@ describe('admin tweet review helpers', () => {
     })
 
     expect(update).toEqual({
-      status: 'new',
+      status: 'approved',
       rawData: expect.any(String),
     })
     expect(update).not.toHaveProperty('title')

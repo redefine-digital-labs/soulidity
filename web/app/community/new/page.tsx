@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { PublicNav } from '@web/components/public-nav'
+import { useAuth } from '@web/components/auth-provider'
 
 interface DirectionOption {
   id: string
@@ -15,7 +16,7 @@ interface DirectionOption {
 function NewPostForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [memberId, setMemberId] = useState('')
+  const { user, loading: authLoading } = useAuth()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [directionId, setDirectionId] = useState('')
@@ -43,7 +44,7 @@ function NewPostForm() {
     setError('')
     setLoading(true)
     try {
-      const body: Record<string, string> = { memberId, title, content, type: postType }
+      const body: Record<string, string> = { title, content, type: postType }
       if (directionId) body.directionId = directionId
       if (tags.trim()) body.tags = tags.trim()
       const res = await fetch('/api/community/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -51,6 +52,19 @@ function NewPostForm() {
       const post = await res.json()
       router.push(`/community/${post.id}`)
     } catch { setError('网络错误，请重试') } finally { setLoading(false) }
+  }
+
+  if (authLoading) {
+    return <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+  }
+
+  if (!user) {
+    return (
+      <div className="glass-panel p-6 animate-fade-up text-center">
+        <p className="text-lg mb-4" style={{ color: 'var(--text-secondary)' }}>请先登录后再发帖</p>
+        <Link href="/login" className="btn btn-primary inline-block">去登录</Link>
+      </div>
+    )
   }
 
   return (
@@ -63,11 +77,6 @@ function NewPostForm() {
         <div className="flex gap-2">
           <button type="button" onClick={() => setPostType('log')} className={`filter-pill ${postType === 'log' ? 'filter-pill-active' : ''}`}>📝 日志</button>
           <button type="button" onClick={() => setPostType('question')} className={`filter-pill ${postType === 'question' ? 'filter-pill-active' : ''}`}>❓ 问答</button>
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>用户ID (临时)</label>
-          <input type="text" value={memberId} onChange={e => setMemberId(e.target.value)} placeholder="粘贴你的成员 UUID" required className="input-dark" />
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>临时字段，auth 集成后将自动填充</p>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>标题 <span style={{ color: 'var(--accent-rose)' }}>*</span></label>
@@ -89,7 +98,7 @@ function NewPostForm() {
           <input type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="用逗号分隔，例如：DeFi,NFT,Sui" className="input-dark" />
         </div>
         {error && <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{error}</p>}
-        <button type="submit" disabled={loading || !memberId || !title || !content} className="btn btn-primary w-full">
+        <button type="submit" disabled={loading || !title || !content} className="btn btn-primary w-full">
           {loading ? '发布中...' : '发布'}
         </button>
       </form>

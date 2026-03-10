@@ -29,12 +29,19 @@ function buildPrompt(content: string, meta: {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
 
   try {
+    // Parse body for directionId (required)
+    const body = await req.json().catch(() => ({}))
+    const { directionId } = body as { directionId?: string }
+    if (!directionId) {
+      return NextResponse.json({ error: '必须选择关联方向' }, { status: 400 })
+    }
+
     const item = await prisma.rawItem.findUnique({ where: { id } })
     if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (item.status !== 'pending_review') {
@@ -71,19 +78,34 @@ export async function POST(
       return NextResponse.json({ error: 'LLM determined content too thin to expand' }, { status: 422 })
     }
 
-    // Preserve the original tweet text and store review output in rawData.
-    await prisma.rawItem.update({
-      where: { id },
-      data: buildApprovedTweetUpdate(item.rawData, {
-        title: result.title,
-        summary: result.summary,
-        reviewedAt: new Date().toISOString(),
+    // Update RawItem and create Article in a transaction
+    const [, article] = await prisma.$transaction([
+      prisma.rawItem.update({
+        where: { id },
+        data: buildApprovedTweetUpdate(item.rawData, {
+          title: result.title,
+          summary: result.summary,
+          reviewedAt: new Date().toISOString(),
+        }),
       }),
-    })
+      prisma.article.create({
+        data: {
+          rawItemId: id,
+          titleZh: result.title,
+          titleEn: item.title,
+          summaryZh: result.summary,
+          summaryEn: item.content ?? '',
+          status: 'published',
+          pipelineStatus: 'completed',
+          directionId,
+        },
+      }),
+    ])
 
-    return NextResponse.json({ success: true, title: result.title, summary: result.summary })
+    return NextResponse.json({ success: true, title: result.title, summary: result.summary, articleId: article.id })
   } catch (err: any) {
     console.error('Approve error:', err)
-    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 })
+    const message = err?.meta?.cause || err?.message || 'Internal error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

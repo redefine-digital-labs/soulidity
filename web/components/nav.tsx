@@ -6,6 +6,7 @@ import { createSupabaseBrowser } from '@web/lib/supabase/client'
 const links = [
   { href: '/admin', label: '仪表盘', exact: true },
   { href: '/admin/tweets', label: '推文' },
+  { href: '/admin/directions', label: '方向管理' },
   { href: '/admin/submit', label: '投稿' },
   { href: '/admin/companies', label: '项目追踪' },
   { href: '/admin/invites', label: '邀请码' },
@@ -20,7 +21,7 @@ export function Nav() {
 
   async function handleLogout() {
     await supabase.auth.signOut()
-    router.push('/login')
+    router.push('/admin/login')
     router.refresh()
   }
 

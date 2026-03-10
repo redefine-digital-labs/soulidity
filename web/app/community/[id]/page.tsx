@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { PublicNav } from '@web/components/public-nav'
+import { useAuth } from '@web/components/auth-provider'
 
 interface PostDetail {
   id: string
@@ -39,22 +40,23 @@ function formatDate(dateStr: string): string {
 
 export default function PostDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
   const [post, setPost] = useState<PostDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [memberId, setMemberId] = useState('')
   const [commentContent, setCommentContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
 
   async function handleAccept(commentId: string) {
-    if (!memberId.trim()) { setSubmitError('请先填写用户ID才能采纳回答'); return }
     setAcceptingId(commentId)
+    setSubmitError(null)
     try {
       const res = await fetch(`/api/community/posts/${id}/comments/${commentId}/accept`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId: memberId.trim() }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       })
       if (!res.ok) { const data = await res.json().catch(() => ({})); setSubmitError(data?.error ?? '采纳失败'); return }
       await fetchPost()
@@ -73,10 +75,10 @@ export default function PostDetailPage() {
 
   async function handleCommentSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!memberId.trim() || !commentContent.trim()) return
+    if (!commentContent.trim()) return
     setSubmitting(true); setSubmitError(null)
     try {
-      const res = await fetch(`/api/community/posts/${id}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ memberId: memberId.trim(), content: commentContent.trim() }) })
+      const res = await fetch(`/api/community/posts/${id}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: commentContent.trim() }) })
       if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data?.error ?? '发表失败') }
       setCommentContent('')
       await fetchPost()
@@ -89,6 +91,7 @@ export default function PostDetailPage() {
   const displayName = post.member.tgName ?? '匿名'
   const avatarChar = displayName.charAt(0).toUpperCase()
   const tags = post.tags ? post.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+  const isAuthor = user?.id === post.member.id
 
   return (
     <div className="min-h-screen">
@@ -150,7 +153,7 @@ export default function PostDetailPage() {
                         <span className="text-xs data-value ml-auto shrink-0" style={{ color: 'var(--text-muted)' }}>{formatDate(comment.createdAt)}</span>
                       </div>
                       <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{comment.content}</p>
-                      {post.type === 'question' && !comment.isAccepted && memberId.trim() === post.member.id && (
+                      {post.type === 'question' && !comment.isAccepted && isAuthor && (
                         <button
                           onClick={() => handleAccept(comment.id)}
                           disabled={acceptingId === comment.id}
@@ -171,20 +174,23 @@ export default function PostDetailPage() {
         {/* Comment form */}
         <div className="glass-panel p-6 animate-fade-up" style={{ animationDelay: '200ms' }}>
           <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>发表评论</h2>
-          <form onSubmit={handleCommentSubmit} className="flex flex-col gap-3">
-            <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>用户ID (临时)</label>
-              <input type="text" value={memberId} onChange={e => setMemberId(e.target.value)} placeholder="输入你的用户 ID" className="input-dark" required />
+          {user ? (
+            <form onSubmit={handleCommentSubmit} className="flex flex-col gap-3">
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>内容</label>
+                <textarea value={commentContent} onChange={e => setCommentContent(e.target.value)} placeholder="写下你的评论..." rows={4} className="input-dark" style={{ resize: 'none' }} required />
+              </div>
+              {submitError && <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{submitError}</p>}
+              <div className="flex justify-end">
+                <button type="submit" disabled={submitting} className="btn btn-primary">{submitting ? '提交中...' : '发表评论'}</button>
+              </div>
+            </form>
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>登录后即可评论</p>
+              <Link href="/login" className="btn btn-primary inline-block">去登录</Link>
             </div>
-            <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>内容</label>
-              <textarea value={commentContent} onChange={e => setCommentContent(e.target.value)} placeholder="写下你的评论..." rows={4} className="input-dark" style={{ resize: 'none' }} required />
-            </div>
-            {submitError && <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{submitError}</p>}
-            <div className="flex justify-end">
-              <button type="submit" disabled={submitting} className="btn btn-primary">{submitting ? '提交中...' : '发表评论'}</button>
-            </div>
-          </form>
+          )}
         </div>
       </div>
     </div>

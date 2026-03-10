@@ -10,7 +10,7 @@ function toSlug(name: string): string {
 export async function GET() {
   const directions = await prisma.direction.findMany({
     orderBy: { createdAt: 'desc' },
-    include: { category: { select: { name: true, nameZh: true } } },
+    include: { category: { select: { id: true, name: true, nameZh: true, icon: true } } },
   })
   return NextResponse.json(directions)
 }

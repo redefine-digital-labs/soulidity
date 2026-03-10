@@ -38,11 +38,11 @@ export function mergeTweetReview(rawData: string | null, review: TweetReview): s
 }
 
 export function buildApprovedTweetUpdate(rawData: string | null, review: TweetReview): {
-  status: 'new'
+  status: 'approved'
   rawData: string
 } {
   return {
-    status: 'new',
+    status: 'approved',
     rawData: mergeTweetReview(rawData, review),
   }
 }

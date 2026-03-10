@@ -29,6 +29,14 @@ interface PostItem {
   member: { id: string; tgName: string | null; avatar: string | null; level: number }
 }
 
+interface ArticleItem {
+  id: string
+  titleZh: string
+  summaryZh: string
+  createdAt: string
+  rawItem: { url: string; sourceName: string; rawData: string | null }
+}
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const minutes = Math.floor(diff / 60000)
@@ -43,14 +51,16 @@ function levelBadge(level: number): string {
   return ['🥚', '🦐', '🦞', '🦞🦞', '🦞🦞🦞'][level - 1] ?? '🥚'
 }
 
-type TabKey = 'overview' | 'discussion' | 'qa'
+type TabKey = 'overview' | 'news' | 'discussion' | 'qa'
 
 export default function DirectionDetailPage() {
   const { category, slug } = useParams<{ category: string; slug: string }>()
   const [direction, setDirection] = useState<DirectionDetail | null>(null)
   const [tab, setTab] = useState<TabKey>('overview')
   const [posts, setPosts] = useState<PostItem[]>([])
+  const [articles, setArticles] = useState<ArticleItem[]>([])
   const [postsLoading, setPostsLoading] = useState(false)
+  const [articlesLoading, setArticlesLoading] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -61,7 +71,16 @@ export default function DirectionDetailPage() {
   }, [slug])
 
   useEffect(() => {
-    if (tab === 'overview' || !direction) return
+    if (!direction) return
+    if (tab === 'news') {
+      setArticlesLoading(true)
+      fetch(`/api/articles?directionId=${direction.id}&status=published`)
+        .then(r => (r.ok ? r.json() : []))
+        .then(setArticles)
+        .finally(() => setArticlesLoading(false))
+      return
+    }
+    if (tab === 'overview') return
     setPostsLoading(true)
     const type = tab === 'discussion' ? 'log' : 'question'
     fetch(`/api/community/posts?directionId=${direction.id}&type=${type}&sort=latest`)
@@ -76,6 +95,7 @@ export default function DirectionDetailPage() {
   const description = direction.descriptionZh || direction.description
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: '概览' },
+    { key: 'news', label: '资讯' },
     { key: 'discussion', label: '讨论' },
     { key: 'qa', label: '问答' },
   ]
@@ -147,6 +167,40 @@ export default function DirectionDetailPage() {
           <div className="glass-panel p-6 animate-fade-up">
             <h2 className="text-lg font-semibold mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>介绍</h2>
             <p className="whitespace-pre-line" style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>{description}</p>
+          </div>
+        )}
+
+        {tab === 'news' && (
+          <div className="animate-fade-up">
+            {articlesLoading ? (
+              <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            ) : articles.length === 0 ? (
+              <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>暂无相关资讯</div>
+            ) : (
+              <div className="flex flex-col gap-3 stagger-children">
+                {articles.map(article => {
+                  let author = ''
+                  try {
+                    const raw = article.rawItem.rawData ? JSON.parse(article.rawItem.rawData) : null
+                    author = raw?.author || raw?.review?.author || ''
+                  } catch { /* ignore */ }
+                  return (
+                    <div key={article.id} className="glass-card glow-cyan p-4">
+                      <h3 className="font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+                        {article.titleZh}
+                      </h3>
+                      <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-secondary)' }}>{article.summaryZh}</p>
+                      <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {author && <span>@{author}</span>}
+                        <span>{article.rawItem.sourceName}</span>
+                        <span className="data-value">{timeAgo(article.createdAt)}</span>
+                        <a href={article.rawItem.url} target="_blank" rel="noopener" className="ml-auto transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--accent-cyan)' }}>原文 ↗</a>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 

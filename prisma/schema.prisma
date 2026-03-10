@@ -55,8 +55,11 @@ model Article {
   publications   Publication[]
   companies      ArticleCompany[]
   processLogs    AgentProcessLog[]
+  directionId    String?           @map("direction_id") @db.Uuid
+  direction      Direction?        @relation(fields: [directionId], references: [id])
 
   @@index([status])
+  @@index([directionId])
   @@map("articles")
 }
 
@@ -142,9 +145,27 @@ model Member {
   posts        Post[]
   comments     Comment[]
   achievements MemberAchievement[]
+  loginChallenges LoginChallenge[]
 
   @@index([tgId])
   @@map("members")
+}
+
+model LoginChallenge {
+  token      String    @id
+  tgId       String?   @map("tg_id")
+  memberId   String?   @map("member_id") @db.Uuid
+  member     Member?   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  status     String    @default("pending")
+  error      String?
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([memberId])
+  @@index([expiresAt])
+  @@map("login_challenges")
 }
 
 model InviteCode {
@@ -186,6 +207,7 @@ model Direction {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   posts         Post[]
+  articles      Article[]
 
   @@index([categoryId])
   @@index([userCount(sort: Desc)])

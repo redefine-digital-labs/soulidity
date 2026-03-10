@@ -32,6 +32,9 @@ export async function handleStart(ctx: Context, prisma?: PrismaClient): Promise<
   if (payload === 'join') {
     return handleJoin(ctx, prisma)
   }
+  if (typeof payload === 'string' && payload.startsWith('login_')) {
+    return handleLoginChallenge(ctx, payload.slice('login_'.length), prisma)
+  }
 
   await ctx.reply(
     '🦞 欢迎来到 CryptoOpenClaw！\n\n' +
@@ -39,6 +42,70 @@ export async function handleStart(ctx: Context, prisma?: PrismaClient): Promise<
     '/join — 验证身份加入社群\n' +
     '/start — 显示本帮助'
   )
+}
+
+export async function handleLoginChallenge(ctx: Context, token: string, prisma?: PrismaClient): Promise<void> {
+  if (ctx.chat?.type !== 'private') return
+  if (!token) {
+    await ctx.reply('登录请求无效，请回到网站重新发起。')
+    return
+  }
+  if (!prisma) {
+    await ctx.reply('当前无法处理网页登录，请稍后重试。')
+    return
+  }
+
+  const challenge = await prisma.loginChallenge.findUnique({
+    where: { token },
+    select: { expiresAt: true, status: true },
+  })
+
+  if (!challenge) {
+    await ctx.reply('登录请求不存在，请回到网站重新发起。')
+    return
+  }
+  if (challenge.expiresAt.getTime() <= Date.now()) {
+    await prisma.loginChallenge.update({
+      where: { token },
+      data: { error: 'expired', status: 'expired' },
+    }).catch(() => {})
+    await ctx.reply('登录请求已过期，请回到网站重新发起。')
+    return
+  }
+  if (challenge.status === 'consumed') {
+    await ctx.reply('这个登录请求已经使用过了，请回到网站重新发起。')
+    return
+  }
+  if (challenge.status === 'verified') {
+    await ctx.reply('登录已经确认，请回到浏览器完成登录。')
+    return
+  }
+
+  const tgId = ctx.from?.id
+  if (!tgId) return
+
+  const member = await prisma.member.findUnique({
+    where: { tgId: String(tgId) },
+    select: { id: true },
+  })
+
+  if (!member) {
+    await ctx.reply('未找到关联账号，请先通过邀请码加入社区后再登录。')
+    return
+  }
+
+  await prisma.loginChallenge.update({
+    where: { token },
+    data: {
+      error: null,
+      memberId: member.id,
+      status: 'verified',
+      tgId: String(tgId),
+      verifiedAt: new Date(),
+    },
+  })
+
+  await ctx.reply('✅ 登录已确认，请返回浏览器继续。')
 }
 
 export async function handleJoin(ctx: Context, prisma?: PrismaClient): Promise<void> {

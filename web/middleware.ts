@@ -3,11 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const isPublicArticlesCollection = pathname === '/api/articles' || pathname === '/api/articles/'
 
   // Public paths — no auth required
   if (
     pathname === '/' ||
     pathname === '/login' ||
+    pathname === '/admin/login' ||
     pathname === '/verify' ||
     pathname.startsWith('/directions') ||
     pathname.startsWith('/community') ||
@@ -17,6 +19,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/knowledge') ||
     pathname.startsWith('/api/join') ||
     pathname.startsWith('/api/verify') ||
+    isPublicArticlesCollection ||
+    pathname.startsWith('/api/community') ||
+    pathname.startsWith('/api/auth') ||
     pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico' ||
     pathname === '/join-skill.md'
@@ -51,7 +56,7 @@ export async function middleware(request: NextRequest) {
 
   if (!user) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    url.pathname = '/admin/login'
     return NextResponse.redirect(url)
   }
 

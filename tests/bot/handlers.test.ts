@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleJoin, handleMark, handleStart, registerHandlers } from '../../src/bot/handlers.js'
+import { handleJoin, handleLoginChallenge, handleMark, handleStart, registerHandlers } from '../../src/bot/handlers.js'
 import { createMockPrisma } from '../helpers/mock-prisma.js'
 
 function createMockCtx(overrides: any = {}) {
@@ -123,6 +123,47 @@ describe('handleStart', () => {
     expect(msg).toContain('join-skill.md')
     expect(msg).toContain('123456789')
     expect(msg).toContain('invite_code:')
+  })
+
+  it('routes login deep links through the login challenge flow', async () => {
+    const mock = createMockPrisma()
+    mock.store.loginChallenges.push({
+      token: 'login-token',
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+    mock.store.members.push({
+      id: 'member-1',
+      tgId: '123456789',
+      level: 1,
+    })
+
+    const ctx = createMockCtx({ match: 'login_login-token' })
+    await handleStart(ctx as any, mock.prisma)
+
+    expect(ctx.reply).toHaveBeenCalledWith('✅ 登录已确认，请返回浏览器继续。')
+    expect(mock.store.loginChallenges[0]).toMatchObject({
+      memberId: 'member-1',
+      status: 'verified',
+      tgId: '123456789',
+    })
+  })
+})
+
+describe('handleLoginChallenge', () => {
+  it('asks the user to join first when no member account exists', async () => {
+    const mock = createMockPrisma()
+    mock.store.loginChallenges.push({
+      token: 'needs-member',
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+
+    const ctx = createMockCtx()
+    await handleLoginChallenge(ctx as any, 'needs-member', mock.prisma)
+
+    expect(ctx.reply).toHaveBeenCalledWith('未找到关联账号，请先通过邀请码加入社区后再登录。')
+    expect(mock.store.loginChallenges[0].status).toBe('pending')
   })
 })
 

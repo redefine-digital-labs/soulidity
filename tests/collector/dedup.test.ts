@@ -53,6 +53,31 @@ describe('isDuplicate', () => {
     })
   })
 
+  it('treats approved rows as dedup references', async () => {
+    const { prisma, store } = createMockPrisma()
+    const title = 'Solana validator revenue climbs as MEV demand rises'
+
+    store.rawItems.push({
+      id: 'raw-approved',
+      title,
+      titleHash: titleHash(title),
+      status: 'approved',
+      createdAt: new Date(),
+    })
+
+    const result = await isDuplicate(prisma, {
+      title,
+      content: 'Validator revenue climbs as MEV demand rises across the network.',
+      url: 'https://example.com/solana-mev',
+    })
+
+    expect(result).toEqual({
+      duplicate: true,
+      hash: titleHash(title),
+      matchedId: 'raw-approved',
+    })
+  })
+
   it('ignores expired rows during similarity matching', async () => {
     const { prisma, store } = createMockPrisma()
 
