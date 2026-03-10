@@ -206,6 +206,7 @@ model Post {
   likeCount    Int        @default(0) @map("like_count")
   commentCount Int        @default(0) @map("comment_count")
   status       String     @default("published")
+  type         String     @default("log")
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   comments     Comment[]
@@ -213,6 +214,7 @@ model Post {
   @@index([memberId])
   @@index([directionId])
   @@index([createdAt])
+  @@index([type])
   @@map("posts")
 }
 
@@ -222,8 +224,9 @@ model Comment {
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   memberId  String   @map("member_id") @db.Uuid
   member    Member   @relation(fields: [memberId], references: [id])
-  content   String
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  content    String
+  isAccepted Boolean  @default(false) @map("is_accepted")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([postId])
   @@map("comments")
