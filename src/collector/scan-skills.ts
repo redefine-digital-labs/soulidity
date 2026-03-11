@@ -94,14 +94,20 @@ export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number
     synced++
   }
 
-  // Step 4: Remove skills no longer on GitHub
-  const skillNames = skills.map(s => s.name)
-  const removed = await prisma.skill.deleteMany({
-    where: { name: { notIn: skillNames } },
-  })
+  // Step 4: Remove skills no longer on GitHub (only if we fetched some)
+  let removedCount = 0
+  if (skills.length > 0) {
+    const skillNames = skills.map(s => s.name)
+    const removed = await prisma.skill.deleteMany({
+      where: { name: { notIn: skillNames } },
+    })
+    removedCount = removed.count
+  } else {
+    console.warn('No skills fetched; skipping removal to avoid data loss')
+  }
 
-  console.log(`Skills sync done: synced ${synced}, removed ${removed.count}`)
-  return { synced, removed: removed.count }
+  console.log(`Skills sync done: synced ${synced}, removed ${removedCount}`)
+  return { synced, removed: removedCount }
 }
 
 // CLI entry point
