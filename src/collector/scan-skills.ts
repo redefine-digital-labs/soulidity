@@ -1,113 +1,110 @@
 import type { PrismaClient } from '../db/database.js'
 
-const REPO_API = 'https://api.github.com/repos/openclaw/openclaw/contents/skills'
-const GITHUB_BASE = 'https://github.com/openclaw/openclaw/tree/main/skills'
+const CLAWHUB_API = 'https://clawhub.ai/api/v1/skills'
 
-interface GitHubContent {
-  name: string
-  type: string
-  url: string
+interface ClawHubSkill {
+  slug: string
+  displayName: string
+  summary: string
+  stats: {
+    downloads: number
+    stars: number
+    versions: number
+  }
+  latestVersion: {
+    version: string
+  } | null
 }
 
-interface GitHubFile {
-  content: string
-  encoding: string
+interface ClawHubResponse {
+  items: ClawHubSkill[]
+  nextCursor: string | null
 }
 
-function parseFrontmatter(raw: string): { name: string; description: string; emoji: string } {
-  const match = raw.match(/^---\s*\n([\s\S]*?)\n---/)
-  if (!match) return { name: '', description: '', emoji: '🔧' }
+export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number }> {
+  console.log(`[${new Date().toISOString()}] Scanning ClawHub skills...`)
 
-  const fm = match[1]
+  const skillMap = new Map<string, ClawHubSkill>()
+  let cursor: string | null = null
 
-  const nameMatch = fm.match(/^name:\s*(.+)$/m)
-  const descMatch = fm.match(/^description:\s*(.+)$/m)
+  // Paginate through all skills
+  while (true) {
+    const url = new URL(CLAWHUB_API)
+    url.searchParams.set('limit', '200')
+    url.searchParams.set('sort', 'downloads')
+    if (cursor) url.searchParams.set('cursor', cursor)
 
-  let emoji = '🔧'
-  const metaMatch = fm.match(/^metadata:\s*(.+)$/m)
-  if (metaMatch) {
-    try {
-      const meta = JSON.parse(metaMatch[1])
-      if (meta?.openclaw?.emoji) emoji = meta.openclaw.emoji
-    } catch {}
-  }
+    const res = await fetch(url.toString(), {
+      headers: { 'User-Agent': 'CryptoOpenClaw/0.1' },
+    })
 
-  return {
-    name: nameMatch?.[1]?.trim() ?? '',
-    description: descMatch?.[1]?.trim() ?? '',
-    emoji,
-  }
-}
-
-export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number; removed: number }> {
-  console.log(`[${new Date().toISOString()}] Scanning GitHub skills...`)
-
-  // Step 1: List all skill directories
-  const res = await fetch(REPO_API, {
-    headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'CryptoOpenClaw' },
-  })
-  if (!res.ok) {
-    console.error(`GitHub API error: ${res.status} ${res.statusText}`)
-    return { synced: 0, removed: 0 }
-  }
-
-  const contents: GitHubContent[] = await res.json()
-  const dirs = contents.filter(c => c.type === 'dir')
-
-  // Step 2: Fetch each SKILL.md and parse frontmatter
-  const skills: { name: string; description: string; emoji: string; githubUrl: string }[] = []
-
-  for (const dir of dirs) {
-    try {
-      const fileRes = await fetch(`${REPO_API}/${dir.name}/SKILL.md`, {
-        headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'CryptoOpenClaw' },
-      })
-      if (!fileRes.ok) continue
-
-      const file: GitHubFile = await fileRes.json()
-      const content = Buffer.from(file.content, 'base64').toString('utf-8')
-      const parsed = parseFrontmatter(content)
-
-      skills.push({
-        name: parsed.name || dir.name,
-        description: parsed.description || `${dir.name} skill`,
-        emoji: parsed.emoji,
-        githubUrl: `${GITHUB_BASE}/${dir.name}`,
-      })
-    } catch (err) {
-      console.error(`Failed to fetch SKILL.md for ${dir.name}:`, err)
+    if (!res.ok) {
+      console.error(`ClawHub API error: ${res.status} ${res.statusText}`)
+      break
     }
+
+    const data: ClawHubResponse = await res.json()
+    if (data.items.length === 0) break
+
+    const prevSize = skillMap.size
+    for (const item of data.items) {
+      skillMap.set(item.slug, item)
+    }
+    console.log(`  fetched ${skillMap.size} unique skills so far...`)
+
+    // Stop if no new unique items or no cursor
+    if (skillMap.size === prevSize || !data.nextCursor) break
+    cursor = data.nextCursor
   }
 
-  // Step 3: Upsert all skills
+  const skills = Array.from(skillMap.values())
+
+  if (skills.length === 0) {
+    console.warn('No skills fetched from ClawHub; skipping sync')
+    return { synced: 0 }
+  }
+
+  // Upsert individually (no transaction — Supabase pooler has strict timeout)
   let synced = 0
   for (const skill of skills) {
     await prisma.skill.upsert({
-      where: { name: skill.name },
-      create: skill,
+      where: { slug: skill.slug },
+      create: {
+        slug: skill.slug,
+        displayName: skill.displayName,
+        summary: skill.summary,
+        version: skill.latestVersion?.version ?? '1.0.0',
+        downloads: skill.stats.downloads,
+        stars: skill.stats.stars,
+        versions: skill.stats.versions,
+      },
       update: {
-        description: skill.description,
-        emoji: skill.emoji,
-        githubUrl: skill.githubUrl,
+        displayName: skill.displayName,
+        summary: skill.summary,
+        version: skill.latestVersion?.version ?? '1.0.0',
+        downloads: skill.stats.downloads,
+        stars: skill.stats.stars,
+        versions: skill.stats.versions,
       },
     })
     synced++
+    if (synced % 2000 === 0) {
+      console.log(`  upserted ${synced}/${skills.length} skills...`)
+    }
+  }
+  console.log(`  upserted ${synced}/${skills.length} skills...`)
+
+  // Remove skills no longer on ClawHub
+  const slugs = skills.map(s => s.slug)
+  const removed = await prisma.skill.deleteMany({
+    where: { slug: { notIn: slugs } },
+  })
+  if (removed.count > 0) {
+    console.log(`  removed ${removed.count} stale skills`)
   }
 
-  // Step 4: Remove skills no longer on GitHub (only if we fetched some)
-  let removedCount = 0
-  if (skills.length > 0) {
-    const skillNames = skills.map(s => s.name)
-    const removed = await prisma.skill.deleteMany({
-      where: { name: { notIn: skillNames } },
-    })
-    removedCount = removed.count
-  } else {
-    console.warn('No skills fetched; skipping removal to avoid data loss')
-  }
-
-  console.log(`Skills sync done: synced ${synced}, removed ${removedCount}`)
-  return { synced, removed: removedCount }
+  console.log(`Skills sync done: synced ${synced}`)
+  return { synced }
 }
 
 // CLI entry point

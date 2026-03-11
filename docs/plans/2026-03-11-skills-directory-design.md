@@ -329,7 +329,7 @@ export default function SkillsPage() {
             <span className="text-gradient">OpenClaw 技能</span>
           </h1>
           <p style={{ color: 'var(--text-muted)' }}>
-            {loading ? '加载中...' : `共 ${filtered.length} 个技能，每日自动同步自 GitHub`}
+            {loading ? '加载中...' : `共 ${filtered.length} 个技能`}
           </p>
         </div>
 

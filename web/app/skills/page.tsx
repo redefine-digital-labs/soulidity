@@ -5,11 +5,19 @@ import { PublicNav } from '@web/components/public-nav'
 
 interface Skill {
   id: string
-  name: string
-  description: string
-  emoji: string
-  githubUrl: string
-  updatedAt: string
+  slug: string
+  displayName: string
+  summary: string
+  version: string
+  downloads: number
+  stars: number
+  versions: number
+}
+
+function formatNum(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
+  return String(n)
 }
 
 export default function SkillsPage() {
@@ -26,8 +34,9 @@ export default function SkillsPage() {
 
   const filtered = search
     ? skills.filter(s =>
-        s.name.toLowerCase().includes(search.toLowerCase()) ||
-        s.description.toLowerCase().includes(search.toLowerCase())
+        s.displayName.toLowerCase().includes(search.toLowerCase()) ||
+        s.slug.toLowerCase().includes(search.toLowerCase()) ||
+        s.summary.toLowerCase().includes(search.toLowerCase())
       )
     : skills
 
@@ -40,7 +49,7 @@ export default function SkillsPage() {
             <span className="text-gradient">OpenClaw 技能</span>
           </h1>
           <p style={{ color: 'var(--text-muted)' }}>
-            {loading ? '加载中...' : `共 ${filtered.length} 个技能，每日自动同步自 GitHub`}
+            {loading ? '加载中...' : `共 ${filtered.length.toLocaleString()} 个技能，每日自动同步`}
           </p>
         </div>
 
@@ -64,21 +73,23 @@ export default function SkillsPage() {
             {filtered.map(skill => (
               <a
                 key={skill.id}
-                href={skill.githubUrl}
+                href={`https://clawhub.ai/skills/${skill.slug}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="glass-card p-5 transition-all hover:scale-[1.02] hover:shadow-lg"
                 style={{ textDecoration: 'none' }}
               >
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-3xl">{skill.emoji}</span>
-                  <h2 className="font-semibold" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-                    {skill.name}
-                  </h2>
-                </div>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  {skill.description.length > 120 ? skill.description.slice(0, 120) + '...' : skill.description}
+                <h2 className="font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+                  {skill.displayName}
+                </h2>
+                <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
+                  {skill.summary.length > 100 ? skill.summary.slice(0, 100) + '...' : skill.summary}
                 </p>
+                <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  <span title="下载量">↓ {formatNum(skill.downloads)}</span>
+                  <span title="星标">★ {formatNum(skill.stars)}</span>
+                  <span className="ml-auto badge badge-cyan">{skill.version}</span>
+                </div>
               </a>
             ))}
           </div>

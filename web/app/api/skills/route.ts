@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const skills = await prisma.skill.findMany({
-    orderBy: { name: 'asc' },
+    orderBy: { downloads: 'desc' },
   })
 
   return NextResponse.json(skills)

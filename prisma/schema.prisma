@@ -309,12 +309,17 @@ model KnowledgeEntrySource {
 
 model Skill {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String   @unique
-  description String
-  emoji       String   @default("🔧")
-  githubUrl   String   @map("github_url")
+  slug        String   @unique
+  displayName String   @map("display_name")
+  summary     String
+  version     String   @default("1.0.0")
+  downloads   Int      @default(0)
+  stars       Int      @default(0)
+  versions    Int      @default(1)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
+  @@index([downloads(sort: Desc)])
+  @@index([stars(sort: Desc)])
   @@map("skills")
 }
