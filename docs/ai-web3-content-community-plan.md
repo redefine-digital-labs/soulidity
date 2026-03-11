@@ -423,6 +423,7 @@ DirectionStat      — 方向统计数据（使用人数、评分趋势）
 | 排行榜 | `/community/leaderboard` | 活跃度/贡献度排行 | ✅ |
 | 个人主页 | `/u/[id]` | 养成等级、成就、日志 | ✅ |
 | 知识库 | `/knowledge` | 知识条目浏览与搜索 | ✅ |
+| 技能目录 | `/skills` | OpenClaw 技能卡片列表，每日同步 GitHub | ✅ |
 | 登录 | `/login` | Supabase Auth 认证 | ✅ |
 | 验证 | `/verify` | 邮箱/凭证验证 | ✅ |
 
