@@ -16,7 +16,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/u/') ||
     pathname.startsWith('/news') ||
     pathname.startsWith('/knowledge') ||
+    pathname.startsWith('/skills') ||
     pathname.startsWith('/api/knowledge') ||
+    pathname.startsWith('/api/skills') ||
     pathname.startsWith('/api/join') ||
     pathname.startsWith('/api/verify') ||
     isPublicArticlesCollection ||
