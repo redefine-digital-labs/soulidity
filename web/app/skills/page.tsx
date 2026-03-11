@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PublicNav } from '@web/components/public-nav'
 
 interface Skill {
@@ -14,6 +14,8 @@ interface Skill {
   versions: number
 }
 
+const PAGE_SIZE = 60
+
 function formatNum(n: number): string {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
@@ -24,6 +26,7 @@ export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     fetch('/api/skills')
@@ -32,13 +35,21 @@ export default function SkillsPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  const filtered = search
-    ? skills.filter(s =>
-        s.displayName.toLowerCase().includes(search.toLowerCase()) ||
-        s.slug.toLowerCase().includes(search.toLowerCase()) ||
-        s.summary.toLowerCase().includes(search.toLowerCase())
-      )
-    : skills
+  const filtered = useMemo(() => {
+    if (!search) return skills
+    const q = search.toLowerCase()
+    return skills.filter(s =>
+      s.displayName.toLowerCase().includes(q) ||
+      s.slug.toLowerCase().includes(q) ||
+      s.summary.toLowerCase().includes(q)
+    )
+  }, [skills, search])
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // Reset to page 1 when search changes
+  useEffect(() => { setPage(1) }, [search])
 
   return (
     <div className="min-h-screen">
@@ -69,30 +80,56 @@ export default function SkillsPage() {
         ) : filtered.length === 0 ? (
           <p style={{ color: 'var(--text-muted)' }}>暂无匹配技能</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children">
-            {filtered.map(skill => (
-              <a
-                key={skill.id}
-                href={`https://clawhub.ai/skills/${skill.slug}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="glass-card p-5 transition-all hover:scale-[1.02] hover:shadow-lg"
-                style={{ textDecoration: 'none' }}
-              >
-                <h2 className="font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-                  {skill.displayName}
-                </h2>
-                <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
-                  {skill.summary.length > 100 ? skill.summary.slice(0, 100) + '...' : skill.summary}
-                </p>
-                <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  <span title="下载量">↓ {formatNum(skill.downloads)}</span>
-                  <span title="星标">★ {formatNum(skill.stars)}</span>
-                  <span className="ml-auto badge badge-cyan">{skill.version}</span>
-                </div>
-              </a>
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children">
+              {paged.map(skill => (
+                <a
+                  key={skill.id}
+                  href={`https://clawhub.ai/skills/${skill.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="glass-card p-5 transition-all hover:scale-[1.02] hover:shadow-lg"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <h2 className="font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+                    {skill.displayName}
+                  </h2>
+                  <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
+                    {skill.summary.length > 100 ? skill.summary.slice(0, 100) + '...' : skill.summary}
+                  </p>
+                  <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <span title="下载量">↓ {formatNum(skill.downloads)}</span>
+                    <span title="星标">★ {formatNum(skill.stars)}</span>
+                    <span className="ml-auto badge badge-cyan">{skill.version}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-8">
+                <button
+                  onClick={() => { setPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                  disabled={page === 1}
+                  className="glass-card px-3 py-1.5 text-sm transition-opacity disabled:opacity-30"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  上一页
+                </button>
+                <span className="text-sm px-3" style={{ color: 'var(--text-muted)' }}>
+                  {page} / {totalPages}
+                </span>
+                <button
+                  onClick={() => { setPage(p => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                  disabled={page === totalPages}
+                  className="glass-card px-3 py-1.5 text-sm transition-opacity disabled:opacity-30"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  下一页
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
