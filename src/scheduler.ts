@@ -10,6 +10,7 @@ import { runDedup } from './producer/dedup.js'
 import { produceArticles } from './producer/produce.js'
 import { autoPublish } from './publisher/publish.js'
 import type { LLMAdapter } from './producer/llm.js'
+import { scanSkills } from './collector/scan-skills.js'
 
 export function startScheduler(prisma: PrismaClient, llm: LLMAdapter, bot?: Bot) {
   let producing = false
@@ -86,10 +87,20 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter, bot?: Bot)
     }
   })
 
+  cron.schedule('0 0 * * *', async () => {
+    console.log(`[${new Date().toISOString()}] Running skills scan...`)
+    try {
+      await scanSkills(prisma)
+    } catch (err) {
+      console.error('Skills scan failed:', err)
+    }
+  })
+
   console.log('Scheduler started. Cron jobs:')
   console.log('  RSS collection:      every hour at :00')
   console.log('  GitHub collection:   daily at 06:00')
   console.log('  X collection:        every 30 minutes')
   console.log('  Dedup + Produce:     every hour at :25')
   console.log('  Auto-publish:        every 5 minutes')
+  console.log('  Skills scan:         daily at 00:00')
 }
