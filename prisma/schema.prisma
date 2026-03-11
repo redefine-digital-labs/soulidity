@@ -306,3 +306,15 @@ model KnowledgeEntrySource {
   @@id([entryId, rawItemId])
   @@map("knowledge_entry_sources")
 }
+
+model Skill {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique
+  description String
+  emoji       String   @default("🔧")
+  githubUrl   String   @map("github_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("skills")
+}
