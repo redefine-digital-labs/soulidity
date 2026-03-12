@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   }
 
   const priceBigInt = BigInt(priceMist)
-  if (priceBigInt <= 0n) {
+  if (priceBigInt <= BigInt(0)) {
     return NextResponse.json({ error: 'Price must be positive' }, { status: 400 })
   }
 
