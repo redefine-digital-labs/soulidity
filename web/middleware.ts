@@ -24,6 +24,7 @@ export async function middleware(request: NextRequest) {
     isPublicArticlesCollection ||
     pathname.startsWith('/api/community') ||
     pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/wallet') ||
     pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico' ||
     pathname === '/join-skill.md'
