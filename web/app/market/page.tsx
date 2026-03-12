@@ -26,6 +26,24 @@ function formatSUI(mist: string): string {
   return sui < 0.01 ? '< 0.01' : sui.toFixed(2)
 }
 
+function useSuiPrice() {
+  const [price, setPrice] = useState<number | null>(null)
+  useEffect(() => {
+    fetch('https://api.coingecko.com/api/v3/simple/price?ids=sui&vs_currencies=usd')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.sui?.usd) setPrice(data.sui.usd) })
+      .catch(() => {})
+  }, [])
+  return price
+}
+
+function formatUSD(mist: string, suiPrice: number | null): string | null {
+  if (!suiPrice) return null
+  const sui = Number(BigInt(mist)) / 1e9
+  const usd = sui * suiPrice
+  return usd < 0.01 ? '< $0.01' : `$${usd.toFixed(2)}`
+}
+
 export default function MarketPage() {
   const [listings, setListings] = useState<ListingItem[]>([])
   const [total, setTotal] = useState(0)
@@ -45,6 +63,7 @@ export default function MarketPage() {
 
   useEffect(() => { setPage(1) }, [search])
 
+  const suiPrice = useSuiPrice()
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
@@ -52,11 +71,14 @@ export default function MarketPage() {
       <PublicNav />
       <div className="max-w-5xl mx-auto px-6 py-10">
         <div className="mb-8 animate-fade-up">
-          <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-            <span className="text-gradient">模板市场</span>
+          <h1 className="text-3xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+            <span className="text-gradient">OpenClaw 模板市场</span>
           </h1>
-          <p style={{ color: 'var(--text-muted)' }}>
-            {loading ? '加载中...' : `共 ${total} 个模板`}
+          <p className="text-base mb-1" style={{ color: 'var(--text-secondary)' }}>
+            发现、购买、部署 — 用模板加速你的 AI Agent 构建
+          </p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            {loading ? '加载中...' : `${total} 个模板可用`}
           </p>
         </div>
 
@@ -102,9 +124,16 @@ export default function MarketPage() {
                   </p>
                   <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
                     <span className="badge badge-cyan">{listing.bundle.category}</span>
-                    <span className="font-semibold" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
-                      {formatSUI(listing.priceMist)} SUI
-                    </span>
+                    <div className="text-right">
+                      <span className="font-semibold block" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
+                        {formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
+                      </span>
+                      {suiPrice && (
+                        <span className="text-[10px]" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                          {formatSUI(listing.priceMist)} SUI
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </Link>
               ))}

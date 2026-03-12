@@ -19,5 +19,10 @@ export async function GET() {
     orderBy: { grantedAt: 'desc' },
   })
 
-  return NextResponse.json({ entitlements })
+  const serialized = entitlements.map(e => ({
+    ...e,
+    order: e.order ? { ...e.order, priceMist: e.order.priceMist.toString() } : e.order,
+  }))
+
+  return NextResponse.json({ entitlements: serialized })
 }

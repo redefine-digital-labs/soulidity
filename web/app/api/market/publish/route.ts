@@ -28,7 +28,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid storage path' }, { status: 403 })
   }
 
-  const priceBigInt = BigInt(priceMist)
+  let priceBigInt: bigint
+  try {
+    priceBigInt = BigInt(priceMist)
+  } catch {
+    return NextResponse.json({ error: 'priceMist must be a valid integer string' }, { status: 400 })
+  }
   if (priceBigInt <= BigInt(0)) {
     return NextResponse.json({ error: 'Price must be positive' }, { status: 400 })
   }
@@ -61,5 +66,8 @@ export async function POST(request: NextRequest) {
     return { bundle, listing }
   })
 
-  return NextResponse.json(result, { status: 201 })
+  return NextResponse.json({
+    bundle: result.bundle,
+    listing: { ...result.listing, priceMist: result.listing.priceMist.toString() },
+  }, { status: 201 })
 }

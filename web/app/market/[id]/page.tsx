@@ -29,11 +29,30 @@ function formatSUI(mist: string): string {
   return sui < 0.01 ? '< 0.01' : sui.toFixed(2)
 }
 
+function useSuiPrice() {
+  const [price, setPrice] = useState<number | null>(null)
+  useEffect(() => {
+    fetch('https://api.coingecko.com/api/v3/simple/price?ids=sui&vs_currencies=usd')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.sui?.usd) setPrice(data.sui.usd) })
+      .catch(() => {})
+  }, [])
+  return price
+}
+
+function formatUSD(mist: string, suiPrice: number | null): string | null {
+  if (!suiPrice) return null
+  const sui = Number(BigInt(mist)) / 1e9
+  const usd = sui * suiPrice
+  return usd < 0.01 ? '< $0.01' : `$${usd.toFixed(2)}`
+}
+
 export default function MarketDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [listing, setListing] = useState<ListingDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const suiPrice = useSuiPrice()
 
   useEffect(() => {
     fetch(`/api/market/listings/${id}`)
@@ -107,9 +126,14 @@ export default function MarketDetailPage() {
           {/* Right: purchase card */}
           <div className="animate-fade-up" style={{ animationDelay: '100ms' }}>
             <div className="glass-card p-6 sticky top-24">
-              <div className="text-2xl font-bold mb-1" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
-                {formatSUI(listing.priceMist)} SUI
+              <div className="text-2xl font-bold mb-0.5" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
+                {formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
               </div>
+              {suiPrice && (
+                <p className="text-xs mb-1" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  {formatSUI(listing.priceMist)} SUI
+                </p>
+              )}
               <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>一次购买，永久下载</p>
 
               <div className="mb-4">

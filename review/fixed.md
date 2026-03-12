@@ -37,3 +37,56 @@ Files changed:
 
 Files changed:
 - `docs/plans/2026-03-12-implementation-plan.md` (Step 2)
+
+---
+
+## Round 2 (2026-03-12)
+
+### 6. High - `seed-market` 不是幂等的，第二次执行会直接失败
+
+**Problem**: 脚本用 `tgName: 'mock_seller'` 查卖家，但创建的成员 `tgName` 是 `'OpenClaw 官方'`。第二次执行永远查不到已创建的卖家，重复插入 `tgId: '999999001'` 触发唯一键约束失败。
+
+**Fix**: 改为用 `tgId: '999999001'` 查找，与创建值保持一致。
+
+Files changed:
+- `src/db/seed-market.ts` (line 163)
+
+### 7. High - `BigInt` 序列化修复未覆盖发布接口
+
+**Problem**: `POST /api/market/publish` 直接 `NextResponse.json(result)` 返回，`result.listing.priceMist` 是 Prisma 的 `BigInt`，JSON 序列化会抛 `TypeError: Do not know how to serialize a BigInt`。
+
+**Fix**: 将 `listing.priceMist` 显式转成字符串后返回，与其它 market 接口保持一致。
+
+Files changed:
+- `web/app/api/market/publish/route.ts` (line 64)
+
+### 8. Medium - 价格 hook 命名不符合 React Hooks 规则
+
+**Problem**: `usesuiPrice` 不匹配 React Hooks lint 期望的 `use[A-Z]...` 模式，导致 `react-hooks/rules-of-hooks` lint 报错。
+
+**Fix**: 重命名为 `useSuiPrice`，同步更新调用点。
+
+Files changed:
+- `web/app/market/page.tsx` (lines 29, 66)
+
+### 9. Medium - `seed-market` 钱包查询条件与发布接口不一致
+
+**Problem**: seed 脚本查 wallet 时只按 `memberId` 查第一条绑定，没有限制 `chain: 'sui'` 和 `isPrimary: true`，与正式发布流程条件不一致。
+
+**Fix**: 添加 `chain: 'sui', isPrimary: true` 筛选条件。
+
+Files changed:
+- `src/db/seed-market.ts` (line 178)
+
+---
+
+## Round 3 (2026-03-12)
+
+### 10. Medium - `POST /api/market/publish` 对非法 `priceMist` 会直接返回 500
+
+**Problem**: `BigInt(priceMist)` 对非整数字符串（如 `"1.5"`、`"abc"`）会抛 `SyntaxError`，接口返回 500 而非 400 校验错误。公开 POST 接口不应把参数校验问题升级为服务器错误。
+
+**Fix**: 用 try-catch 包裹 `BigInt()` 转换，捕获异常后返回 400 和明确的错误信息 `"priceMist must be a valid integer string"`。
+
+Files changed:
+- `web/app/api/market/publish/route.ts` (lines 31-35)

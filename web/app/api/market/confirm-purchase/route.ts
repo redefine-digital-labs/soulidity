@@ -117,5 +117,8 @@ export async function POST(request: NextRequest) {
     return { order, entitlement }
   })
 
-  return NextResponse.json(result)
+  return NextResponse.json({
+    order: { ...result.order, priceMist: result.order.priceMist.toString() },
+    entitlement: result.entitlement,
+  })
 }

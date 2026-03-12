@@ -52,5 +52,10 @@ export async function GET(request: NextRequest) {
     prisma.listing.count({ where }),
   ])
 
-  return NextResponse.json({ listings, total, page, limit })
+  const serialized = listings.map(l => ({
+    ...l,
+    priceMist: l.priceMist.toString(),
+  }))
+
+  return NextResponse.json({ listings: serialized, total, page, limit })
 }
