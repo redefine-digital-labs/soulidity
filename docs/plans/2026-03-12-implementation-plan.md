@@ -214,19 +214,29 @@ npm install @mysten/sui @mysten/dapp-kit @tanstack/react-query
 Add to `.env.example`:
 
 ```
+# Supabase (service role — needed for Storage uploads/signed URLs)
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+
 # Sui
 NEXT_PUBLIC_SUI_NETWORK=testnet
 SUI_RECIPIENT_ADDRESS=0x_YOUR_PLATFORM_WALLET_ADDRESS
 ```
 
-Add the same to `.env` with your actual Sui wallet address that will receive payments.
+Add the same to `.env` with your actual values. `SUPABASE_SERVICE_ROLE_KEY` is found in your Supabase dashboard under Settings → API → service_role key. It is required for bundle upload and download operations.
 
-**Step 3: Create Supabase Storage bucket**
+**Step 3: Create Supabase Storage buckets**
 
-Create a bucket named `agent-bundles` in your Supabase dashboard (Storage → New bucket). Settings:
-- Public: **No** (private bucket, downloads via signed URLs)
-- File size limit: 50MB
-- Allowed MIME types: `application/zip, application/x-zip-compressed, image/png, image/jpeg, image/webp`
+Create two buckets in your Supabase dashboard (Storage → New bucket):
+
+1. `agent-bundles` — private bucket for downloadable bundles:
+   - Public: **No** (downloads via signed URLs)
+   - File size limit: 50MB
+   - Allowed MIME types: `application/zip, application/x-zip-compressed`
+
+2. `agent-previews` — public bucket for preview images:
+   - Public: **Yes** (images render directly via public URL)
+   - File size limit: 5MB
+   - Allowed MIME types: `image/png, image/jpeg, image/webp`
 
 **Step 4: Commit**
 

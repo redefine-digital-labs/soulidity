@@ -12,5 +12,13 @@ export async function POST() {
   const message = `Sign this message to bind your Sui wallet to CryptoOpenClaw.\n\nAccount: ${session.memberId}\nNonce: ${nonce}`
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
 
-  return NextResponse.json({ nonce, message, expiresAt: expiresAt.toISOString() })
+  const response = NextResponse.json({ nonce, message, expiresAt: expiresAt.toISOString() })
+  response.cookies.set('wallet-bind-nonce', nonce, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 600,
+    path: '/api/wallet/bind',
+  })
+  return response
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@web/lib/auth/session'
 import { prisma } from '@web/lib/prisma'
-import { createSupabaseServer } from '@web/lib/supabase/server'
+import { createSupabaseAdmin } from '@web/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'No active entitlement for this bundle' }, { status: 403 })
   }
 
-  const supabase = await createSupabaseServer()
+  const supabase = createSupabaseAdmin()
   const { data, error } = await supabase.storage
     .from(entitlement.bundle.storageBucket)
     .createSignedUrl(entitlement.bundle.storagePath, 300)

@@ -79,6 +79,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Payment amount insufficient or recipient mismatch' }, { status: 400 })
   }
 
+  // 4. Transaction must post-date the intent creation (prevent replay of old transfers)
+  // Allow 60s clock skew between Postgres and Sui checkpoint timestamps
+  const CLOCK_SKEW_MS = 60_000
+  const txTimestamp = txBlock.timestampMs
+  if (!txTimestamp || Number(txTimestamp) < intent.createdAt.getTime() - CLOCK_SKEW_MS) {
+    return NextResponse.json({ error: 'Transaction predates purchase intent' }, { status: 400 })
+  }
+
   // All checks passed — atomically create Order + Entitlement
   const result = await prisma.$transaction(async (tx) => {
     await tx.purchaseIntent.update({

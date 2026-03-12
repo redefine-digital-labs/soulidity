@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
+  // Validate storagePath belongs to authenticated user
+  if (!storagePath.startsWith(`${session.memberId}/`)) {
+    return NextResponse.json({ error: 'Invalid storage path' }, { status: 403 })
+  }
+
   const priceBigInt = BigInt(priceMist)
   if (priceBigInt <= BigInt(0)) {
     return NextResponse.json({ error: 'Price must be positive' }, { status: 400 })

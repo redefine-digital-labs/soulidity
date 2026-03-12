@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { getSession } from '@web/lib/auth/session'
-import { createSupabaseServer } from '@web/lib/supabase/server'
+import { createSupabaseAdmin } from '@web/lib/supabase/server'
 
 const MAX_BUNDLE_SIZE = 50 * 1024 * 1024 // 50MB
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -38,17 +38,25 @@ export async function POST(request: NextRequest) {
   const ext = file.name.split('.').pop() || (isBundle ? 'zip' : 'png')
   const storagePath = `${session.memberId}/${Date.now()}-${hash.slice(0, 8)}.${ext}`
 
-  const supabase = await createSupabaseServer()
+  const bucket = isBundle ? 'agent-bundles' : 'agent-previews'
+  const supabase = createSupabaseAdmin()
   const { error } = await supabase.storage
-    .from('agent-bundles')
+    .from(bucket)
     .upload(storagePath, buffer, { contentType: file.type, upsert: false })
 
   if (error) {
     return NextResponse.json({ error: `Upload failed: ${error.message}` }, { status: 500 })
   }
 
+  // For previews, return public URL so images render directly
+  let returnPath = storagePath
+  if (!isBundle) {
+    const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath)
+    returnPath = data.publicUrl
+  }
+
   return NextResponse.json({
-    storagePath,
+    storagePath: returnPath,
     contentHash: isBundle ? hash : undefined,
     size: file.size,
   })

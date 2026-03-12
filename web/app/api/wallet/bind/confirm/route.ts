@@ -14,6 +14,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing nonce or signature' }, { status: 400 })
   }
 
+  // Verify nonce matches the one set by challenge endpoint
+  const storedNonce = request.cookies.get('wallet-bind-nonce')?.value
+  if (!storedNonce || storedNonce !== nonce) {
+    return NextResponse.json({ error: 'Invalid or expired challenge' }, { status: 400 })
+  }
+
   // Re-derive the expected message
   const message = `Sign this message to bind your Sui wallet to CryptoOpenClaw.\n\nAccount: ${session.memberId}\nNonce: ${nonce}`
   const messageBytes = new TextEncoder().encode(message)
@@ -34,7 +40,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Wallet already bound to another account' }, { status: 409 })
   }
   if (existing && existing.memberId === session.memberId) {
-    return NextResponse.json({ walletBinding: existing })
+    const response = NextResponse.json({ walletBinding: existing })
+    response.cookies.delete({ name: 'wallet-bind-nonce', path: '/api/wallet/bind' })
+    return response
   }
 
   // Set all existing bindings for this member+chain to non-primary
@@ -52,5 +60,7 @@ export async function POST(request: NextRequest) {
     },
   })
 
-  return NextResponse.json({ walletBinding })
+  const response = NextResponse.json({ walletBinding })
+  response.cookies.delete({ name: 'wallet-bind-nonce', path: '/api/wallet/bind' })
+  return response
 }
