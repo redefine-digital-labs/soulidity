@@ -146,6 +146,11 @@ model Member {
   comments     Comment[]
   achievements MemberAchievement[]
   loginChallenges LoginChallenge[]
+  walletBindings  WalletBinding[]
+  soldBundles     AgentBundle[]
+  purchaseIntents PurchaseIntent[]
+  orders          Order[]         @relation("BuyerOrders")
+  entitlements    Entitlement[]
 
   @@index([tgId])
   @@map("members")
@@ -322,4 +327,132 @@ model Skill {
   @@index([downloads(sort: Desc)])
   @@index([stars(sort: Desc)])
   @@map("skills")
+}
+
+model WalletBinding {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId    String   @map("member_id") @db.Uuid
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  chain       String   @default("sui")
+  address     String
+  isPrimary   Boolean  @default(true) @map("is_primary")
+  verifiedAt  DateTime @default(now()) @map("verified_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  purchaseIntents PurchaseIntent[]
+  orders          Order[]
+  entitlements    Entitlement[]
+
+  @@unique([chain, address])
+  @@index([memberId, chain])
+  @@map("wallet_bindings")
+}
+
+model AgentBundle {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sellerId      String   @map("seller_id") @db.Uuid
+  seller        Member   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  name          String
+  description   String
+  version       String   @default("1.0.0")
+  category      String
+  tags          String[]
+  storageBucket String   @default("agent-bundles") @map("storage_bucket")
+  storagePath   String   @map("storage_path")
+  contentHash   String   @map("content_hash")
+  previewImages String[] @map("preview_images")
+  readme        String?
+  status        String   @default("draft")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  listings     Listing[]
+  entitlements Entitlement[]
+
+  @@index([sellerId, status])
+  @@map("agent_bundles")
+}
+
+model Listing {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bundleId            String      @map("bundle_id") @db.Uuid
+  bundle              AgentBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  sellerWalletAddress String      @map("seller_wallet_address")
+  priceMist           BigInt      @map("price_mist")
+  currency            String      @default("SUI")
+  status              String      @default("active")
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  purchaseIntents PurchaseIntent[]
+  orders          Order[]
+
+  @@index([bundleId, status])
+  @@map("listings")
+}
+
+model PurchaseIntent {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listingId         String        @map("listing_id") @db.Uuid
+  listing           Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  memberId          String        @map("member_id") @db.Uuid
+  member            Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  walletBindingId   String        @map("wallet_binding_id") @db.Uuid
+  walletBinding     WalletBinding @relation(fields: [walletBindingId], references: [id], onDelete: Cascade)
+  expectedPriceMist BigInt        @map("expected_price_mist")
+  recipientAddress  String        @map("recipient_address")
+  nonce             String        @unique
+  expiresAt         DateTime      @map("expires_at") @db.Timestamptz
+  txDigest          String?       @unique @map("tx_digest")
+  status            String        @default("pending")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  order Order?
+
+  @@index([memberId, status])
+  @@index([listingId, status])
+  @@map("purchase_intents")
+}
+
+model Order {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listingId        String         @map("listing_id") @db.Uuid
+  listing          Listing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId          String         @map("buyer_id") @db.Uuid
+  buyer            Member         @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Cascade)
+  walletBindingId  String         @map("wallet_binding_id") @db.Uuid
+  walletBinding    WalletBinding  @relation(fields: [walletBindingId], references: [id], onDelete: Cascade)
+  purchaseIntentId String         @unique @map("purchase_intent_id") @db.Uuid
+  purchaseIntent   PurchaseIntent @relation(fields: [purchaseIntentId], references: [id], onDelete: Cascade)
+  priceMist        BigInt         @map("price_mist")
+  txDigest         String         @unique @map("tx_digest")
+  status           String         @default("completed")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  entitlement Entitlement?
+
+  @@index([buyerId, createdAt(sort: Desc)])
+  @@map("orders")
+}
+
+model Entitlement {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bundleId        String         @map("bundle_id") @db.Uuid
+  bundle          AgentBundle    @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  orderId         String         @unique @map("order_id") @db.Uuid
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  memberId        String         @map("member_id") @db.Uuid
+  member          Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  walletBindingId String?        @map("wallet_binding_id") @db.Uuid
+  walletBinding   WalletBinding? @relation(fields: [walletBindingId], references: [id], onDelete: SetNull)
+  accessType      String         @default("download") @map("access_type")
+  status          String         @default("active")
+  grantedAt       DateTime       @default(now()) @map("granted_at") @db.Timestamptz
+  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([memberId, status])
+  @@index([bundleId, status])
+  @@map("entitlements")
 }
