@@ -1,12 +1,14 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
+import { usePrivy } from '@privy-io/react-auth'
 
 interface AuthUser {
   id: string
   tgName: string | null
   avatar: string | null
   level: number
+  kind: string
 }
 
 interface AuthContextValue {
@@ -14,6 +16,7 @@ interface AuthContextValue {
   loading: boolean
   logout: () => Promise<void>
   refresh: () => Promise<void>
+  getAuthHeaders: () => Promise<Record<string, string>>
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -21,16 +24,33 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
   logout: async () => {},
   refresh: async () => {},
+  getAuthHeaders: async () => ({}),
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { ready, authenticated, logout: privyLogout, getAccessToken } = usePrivy()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    if (!authenticated) return {}
+    const token = await getAccessToken()
+    if (!token) return {}
+    return { Authorization: `Bearer ${token}` }
+  }, [authenticated, getAccessToken])
+
   const fetchUser = useCallback(async () => {
+    if (!ready) return
+    if (!authenticated) {
+      setUser(null)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
-      const res = await fetch('/api/auth/me', { cache: 'no-store' })
+      const headers = await getAuthHeaders()
+      const res = await fetch('/api/auth/me', { cache: 'no-store', headers })
       if (res.ok) {
         const data = await res.json()
         setUser(data.user ?? null)
@@ -42,19 +62,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [ready, authenticated, getAuthHeaders])
 
   useEffect(() => {
     fetchUser()
   }, [fetchUser])
 
   const logout = useCallback(async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await privyLogout()
     setUser(null)
-  }, [])
+  }, [privyLogout])
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refresh: fetchUser }}>
+    <AuthContext.Provider value={{ user, loading, logout, refresh: fetchUser, getAuthHeaders }}>
       {children}
     </AuthContext.Provider>
   )
