@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { PrivyProvider } from "@web/components/privy-provider";
 import { AuthProvider } from "@web/components/auth-provider";
 
 export const metadata: Metadata = {
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <PrivyProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </PrivyProvider>
       </body>
     </html>
   );
