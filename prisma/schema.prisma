@@ -130,17 +130,35 @@ model Publication {
   @@map("publications")
 }
 
+model Account {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  privyDid  String?  @unique @map("privy_did")
+  tgId      String?  @unique @map("tg_id")
+  tgName    String?  @map("tg_name")
+  avatar    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  members Member[]
+
+  @@map("accounts")
+}
+
 model Member {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tgId       String   @unique @map("tg_id")
-  tgName     String?  @map("tg_name")
-  wallet     String?
-  level      Int      @default(1)
-  inviteCode String?  @map("invite_code")
-  avatar     String?
-  bio        String?
-  exp        Int      @default(0)
-  joinedAt   DateTime @default(now()) @map("joined_at") @db.Timestamptz
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String?  @map("account_id") @db.Uuid
+  account     Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tgId        String   @unique @map("tg_id")
+  tgName      String?  @map("tg_name")
+  wallet      String?
+  level       Int      @default(1)
+  inviteCode  String?  @map("invite_code")
+  avatar      String?
+  bio         String?
+  exp         Int      @default(0)
+  kind        String   @default("human")
+  displayName String?  @map("display_name")
+  apiKey      String?  @unique @map("api_key")
+  joinedAt    DateTime @default(now()) @map("joined_at") @db.Timestamptz
 
   posts        Post[]
   comments     Comment[]
@@ -153,6 +171,7 @@ model Member {
   entitlements    Entitlement[]
 
   @@index([tgId])
+  @@index([accountId, kind])
   @@map("members")
 }
 
