@@ -147,7 +147,7 @@ model Member {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   accountId   String?  @map("account_id") @db.Uuid
   account     Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  tgId        String   @unique @map("tg_id")
+  tgId        String?  @unique @map("tg_id")
   tgName      String?  @map("tg_name")
   wallet      String?
   level       Int      @default(1)

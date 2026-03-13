@@ -1,7 +1,6 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
-import { usePrivy } from '@privy-io/react-auth'
 
 interface AuthUser {
   id: string
@@ -27,8 +26,29 @@ const AuthContext = createContext<AuthContextValue>({
   getAuthHeaders: async () => ({}),
 })
 
+function usePrivySafe() {
+  try {
+    // Dynamic import to avoid crash when PrivyProvider is absent
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { usePrivy } = require('@privy-io/react-auth')
+    return usePrivy() as {
+      ready: boolean
+      authenticated: boolean
+      logout: () => Promise<void>
+      getAccessToken: () => Promise<string | null>
+    }
+  } catch {
+    return {
+      ready: true,
+      authenticated: false,
+      logout: async () => {},
+      getAccessToken: async () => null as string | null,
+    }
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { ready, authenticated, logout: privyLogout, getAccessToken } = usePrivy()
+  const { ready, authenticated, logout: privyLogout, getAccessToken } = usePrivySafe()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
 
