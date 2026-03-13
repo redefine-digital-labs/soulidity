@@ -7,7 +7,7 @@ import { WalletConnect } from '@web/components/market/wallet-connect'
 import { useAuth } from '@web/components/auth-provider'
 
 export default function PublishPage() {
-  const { user } = useAuth()
+  const { user, getAuthHeaders } = useAuth()
   const router = useRouter()
   const [form, setForm] = useState({ name: '', description: '', category: '', tags: '', readme: '', priceSUI: '' })
   const [bundlePath, setBundlePath] = useState('')
@@ -21,7 +21,8 @@ export default function PublishPage() {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('type', type)
-    const res = await fetch('/api/market/upload', { method: 'POST', body: fd })
+    const authHeaders = await getAuthHeaders()
+    const res = await fetch('/api/market/upload', { method: 'POST', body: fd, headers: authHeaders })
     if (!res.ok) {
       const err = await res.json()
       throw new Error(err.error || 'Upload failed')
@@ -70,9 +71,10 @@ export default function PublishPage() {
     setError('')
     try {
       const priceMist = String(BigInt(Math.round(parseFloat(form.priceSUI) * 1e9)))
+      const authHeaders = await getAuthHeaders()
       const res = await fetch('/api/market/publish', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           name: form.name,
           description: form.description,

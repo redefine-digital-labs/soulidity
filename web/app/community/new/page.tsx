@@ -16,7 +16,7 @@ interface DirectionOption {
 function NewPostForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, getAuthHeaders } = useAuth()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [directionId, setDirectionId] = useState('')
@@ -47,7 +47,8 @@ function NewPostForm() {
       const body: Record<string, string> = { title, content, type: postType }
       if (directionId) body.directionId = directionId
       if (tags.trim()) body.tags = tags.trim()
-      const res = await fetch('/api/community/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const authHeaders = await getAuthHeaders()
+      const res = await fetch('/api/community/posts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) })
       if (!res.ok) { const data = await res.json().catch(() => ({})); setError(data.error || `发布失败 (${res.status})`); return }
       const post = await res.json()
       router.push(`/community/${post.id}`)

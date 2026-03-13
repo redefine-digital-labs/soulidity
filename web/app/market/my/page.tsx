@@ -19,23 +19,28 @@ function formatSUI(mist: string): string {
 }
 
 export default function MyMarketPage() {
-  const { user } = useAuth()
+  const { user, getAuthHeaders } = useAuth()
   const [entitlements, setEntitlements] = useState<MyEntitlement[]>([])
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
-    fetch('/api/market/my')
-      .then(r => r.ok ? r.json() : { entitlements: [] })
-      .then(data => setEntitlements(data.entitlements || []))
-      .finally(() => setLoading(false))
-  }, [user])
+    async function load() {
+      const headers = await getAuthHeaders()
+      fetch('/api/market/my', { headers })
+        .then(r => r.ok ? r.json() : { entitlements: [] })
+        .then(data => setEntitlements(data.entitlements || []))
+        .finally(() => setLoading(false))
+    }
+    load()
+  }, [user, getAuthHeaders])
 
   async function handleDownload(bundleId: string) {
     setDownloading(bundleId)
     try {
-      const res = await fetch(`/api/market/download?bundleId=${bundleId}`)
+      const authHeaders = await getAuthHeaders()
+      const res = await fetch(`/api/market/download?bundleId=${bundleId}`, { headers: authHeaders })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       window.open(data.downloadUrl, '_blank')

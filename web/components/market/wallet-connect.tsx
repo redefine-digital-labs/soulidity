@@ -7,7 +7,7 @@ import { useAuth } from '@web/components/auth-provider'
 export function WalletConnect() {
   const account = useCurrentAccount()
   const { mutateAsync: signMessage } = useSignPersonalMessage()
-  const { user } = useAuth()
+  const { user, getAuthHeaders } = useAuth()
   const [binding, setBinding] = useState(false)
   const [bound, setBound] = useState(false)
   const [error, setError] = useState('')
@@ -19,7 +19,8 @@ export function WalletConnect() {
 
     try {
       // 1. Get challenge
-      const challengeRes = await fetch('/api/wallet/bind/challenge', { method: 'POST' })
+      const authHeaders = await getAuthHeaders()
+      const challengeRes = await fetch('/api/wallet/bind/challenge', { method: 'POST', headers: authHeaders })
       const { nonce, message } = await challengeRes.json()
       if (!nonce) throw new Error('Failed to get challenge')
 
@@ -29,7 +30,7 @@ export function WalletConnect() {
       // 3. Confirm binding
       const confirmRes = await fetch('/api/wallet/bind/confirm', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ nonce, signature }),
       })
       const result = await confirmRes.json()

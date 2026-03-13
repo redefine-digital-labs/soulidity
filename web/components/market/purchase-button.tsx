@@ -14,7 +14,7 @@ interface PurchaseButtonProps {
 
 export function PurchaseButton({ listingId, priceMist, disabled, onSuccess }: PurchaseButtonProps) {
   const account = useCurrentAccount()
-  const { user } = useAuth()
+  const { user, getAuthHeaders } = useAuth()
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
   const [status, setStatus] = useState<'idle' | 'creating' | 'signing' | 'confirming' | 'done' | 'error'>('idle')
   const [error, setError] = useState('')
@@ -26,9 +26,10 @@ export function PurchaseButton({ listingId, priceMist, disabled, onSuccess }: Pu
 
     try {
       // 1. Create purchase intent
+      const authHeaders = await getAuthHeaders()
       const intentRes = await fetch('/api/market/purchase-intent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ listingId }),
       })
       const intent = await intentRes.json()
@@ -46,7 +47,7 @@ export function PurchaseButton({ listingId, priceMist, disabled, onSuccess }: Pu
       setStatus('confirming')
       const confirmRes = await fetch('/api/market/confirm-purchase', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ intentId: intent.intentId, txDigest: result.digest }),
       })
       const confirmData = await confirmRes.json()

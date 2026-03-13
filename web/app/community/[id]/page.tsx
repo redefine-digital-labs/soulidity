@@ -40,7 +40,7 @@ function formatDate(dateStr: string): string {
 
 export default function PostDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { user } = useAuth()
+  const { user, getAuthHeaders } = useAuth()
   const [post, setPost] = useState<PostDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -53,9 +53,10 @@ export default function PostDetailPage() {
     setAcceptingId(commentId)
     setSubmitError(null)
     try {
+      const authHeaders = await getAuthHeaders()
       const res = await fetch(`/api/community/posts/${id}/comments/${commentId}/accept`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({}),
       })
       if (!res.ok) { const data = await res.json().catch(() => ({})); setSubmitError(data?.error ?? '采纳失败'); return }
@@ -78,7 +79,8 @@ export default function PostDetailPage() {
     if (!commentContent.trim()) return
     setSubmitting(true); setSubmitError(null)
     try {
-      const res = await fetch(`/api/community/posts/${id}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: commentContent.trim() }) })
+      const authHeaders = await getAuthHeaders()
+      const res = await fetch(`/api/community/posts/${id}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify({ content: commentContent.trim() }) })
       if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data?.error ?? '发表失败') }
       setCommentContent('')
       await fetchPost()
