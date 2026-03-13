@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 import { suiClient } from '@web/lib/sui'
 
 export async function POST(request: NextRequest) {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
   const { intentId, txDigest } = await request.json()
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   if (!intent) {
     return NextResponse.json({ error: 'Intent not found' }, { status: 404 })
   }
-  if (intent.memberId !== session.memberId) {
+  if (intent.memberId !== identity.memberId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (intent.status !== 'pending') {
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     const order = await tx.order.create({
       data: {
         listingId: intent.listingId,
-        buyerId: session.memberId,
+        buyerId: identity.memberId,
         walletBindingId: intent.walletBindingId,
         purchaseIntentId: intentId,
         priceMist: intent.expectedPriceMist,
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       data: {
         bundleId: intent.listing.bundleId,
         orderId: order.id,
-        memberId: session.memberId,
+        memberId: identity.memberId,
         walletBindingId: intent.walletBindingId,
       },
     })

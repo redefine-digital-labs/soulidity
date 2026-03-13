@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { createSupabaseAdmin } from '@web/lib/supabase/server'
 
 const MAX_BUNDLE_SIZE = 50 * 1024 * 1024 // 50MB
@@ -9,9 +9,9 @@ const ALLOWED_BUNDLE_TYPES = ['application/zip', 'application/x-zip-compressed']
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
 export async function POST(request: NextRequest) {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
   const formData = await request.formData()
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer())
   const hash = createHash('sha256').update(buffer).digest('hex')
   const ext = file.name.split('.').pop() || (isBundle ? 'zip' : 'png')
-  const storagePath = `${session.memberId}/${Date.now()}-${hash.slice(0, 8)}.${ext}`
+  const storagePath = `${identity.memberId}/${Date.now()}-${hash.slice(0, 8)}.${ext}`
 
   const bucket = isBundle ? 'agent-bundles' : 'agent-previews'
   const supabase = createSupabaseAdmin()

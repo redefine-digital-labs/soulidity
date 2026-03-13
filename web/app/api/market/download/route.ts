@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 import { createSupabaseAdmin } from '@web/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
   const bundleId = request.nextUrl.searchParams.get('bundleId')
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   }
 
   const entitlement = await prisma.entitlement.findFirst({
-    where: { memberId: session.memberId, bundleId, status: 'active' },
+    where: { memberId: identity.memberId, bundleId, status: 'active' },
     include: {
       bundle: { select: { storageBucket: true, storagePath: true, name: true } },
     },

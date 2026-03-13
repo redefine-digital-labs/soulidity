@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 
 export async function POST(request: NextRequest) {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
   const { listingId } = await request.json()
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   }
 
   const wallet = await prisma.walletBinding.findFirst({
-    where: { memberId: session.memberId, chain: 'sui', isPrimary: true },
+    where: { memberId: identity.memberId, chain: 'sui', isPrimary: true },
   })
   if (!wallet) {
     return NextResponse.json({ error: 'No Sui wallet bound' }, { status: 400 })
@@ -29,12 +29,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Listing not found or inactive' }, { status: 404 })
   }
 
-  if (listing.bundle.sellerId === session.memberId) {
+  if (listing.bundle.sellerId === identity.memberId) {
     return NextResponse.json({ error: 'Cannot purchase your own bundle' }, { status: 400 })
   }
 
   const existingEntitlement = await prisma.entitlement.findFirst({
-    where: { memberId: session.memberId, bundleId: listing.bundleId, status: 'active' },
+    where: { memberId: identity.memberId, bundleId: listing.bundleId, status: 'active' },
   })
   if (existingEntitlement) {
     return NextResponse.json({ error: 'You already own this bundle' }, { status: 400 })
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   const intent = await prisma.purchaseIntent.create({
     data: {
       listingId,
-      memberId: session.memberId,
+      memberId: identity.memberId,
       walletBindingId: wallet.id,
       expectedPriceMist: listing.priceMist,
       recipientAddress,

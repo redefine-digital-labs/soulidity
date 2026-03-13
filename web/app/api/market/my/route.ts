@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
   const entitlements = await prisma.entitlement.findMany({
-    where: { memberId: session.memberId, status: 'active' },
+    where: { memberId: identity.memberId, status: 'active' },
     include: {
       bundle: { select: { id: true, name: true, category: true, version: true } },
       order: { select: { priceMist: true, txDigest: true, createdAt: true } },

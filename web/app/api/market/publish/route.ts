@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 
 export async function POST(request: NextRequest) {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
   // Seller must have a primary Sui wallet bound
   const wallet = await prisma.walletBinding.findFirst({
-    where: { memberId: session.memberId, chain: 'sui', isPrimary: true },
+    where: { memberId: identity.memberId, chain: 'sui', isPrimary: true },
   })
   if (!wallet) {
     return NextResponse.json({ error: 'No Sui wallet bound. Please bind your wallet first.' }, { status: 400 })
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Validate storagePath belongs to authenticated user
-  if (!storagePath.startsWith(`${session.memberId}/`)) {
+  if (!storagePath.startsWith(`${identity.memberId}/`)) {
     return NextResponse.json({ error: 'Invalid storage path' }, { status: 403 })
   }
 
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   const result = await prisma.$transaction(async (tx) => {
     const bundle = await tx.agentBundle.create({
       data: {
-        sellerId: session.memberId,
+        sellerId: identity.memberId,
         name,
         description,
         category,

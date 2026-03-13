@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyPersonalMessageSignature } from '@mysten/sui/verify'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 
 export async function POST(request: NextRequest) {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
   const { nonce, signature } = await request.json()
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Re-derive the expected message
-  const message = `Sign this message to bind your Sui wallet to CryptoOpenClaw.\n\nAccount: ${session.memberId}\nNonce: ${nonce}`
+  const message = `Sign this message to bind your Sui wallet to CryptoOpenClaw.\n\nAccount: ${identity.memberId}\nNonce: ${nonce}`
   const messageBytes = new TextEncoder().encode(message)
 
   let signerAddress: string
@@ -36,10 +36,10 @@ export async function POST(request: NextRequest) {
   const existing = await prisma.walletBinding.findUnique({
     where: { chain_address: { chain: 'sui', address: signerAddress } },
   })
-  if (existing && existing.memberId !== session.memberId) {
+  if (existing && existing.memberId !== identity.memberId) {
     return NextResponse.json({ error: 'Wallet already bound to another account' }, { status: 409 })
   }
-  if (existing && existing.memberId === session.memberId) {
+  if (existing && existing.memberId === identity.memberId) {
     const response = NextResponse.json({ walletBinding: existing })
     response.cookies.delete({ name: 'wallet-bind-nonce', path: '/api/wallet/bind' })
     return response
@@ -47,13 +47,13 @@ export async function POST(request: NextRequest) {
 
   // Set all existing bindings for this member+chain to non-primary
   await prisma.walletBinding.updateMany({
-    where: { memberId: session.memberId, chain: 'sui' },
+    where: { memberId: identity.memberId, chain: 'sui' },
     data: { isPrimary: false },
   })
 
   const walletBinding = await prisma.walletBinding.create({
     data: {
-      memberId: session.memberId,
+      memberId: identity.memberId,
       chain: 'sui',
       address: signerAddress,
       isPrimary: true,

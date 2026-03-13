@@ -1,23 +1,32 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { getSession } from '@web/lib/auth/session'
+import { resolveIdentity } from '@web/lib/auth/identity'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const session = await getSession()
-  if (!session) {
+  const identity = await resolveIdentity()
+  if (!identity) {
     return NextResponse.json({ user: null })
   }
 
   const member = await prisma.member.findUnique({
-    where: { id: session.memberId },
-    select: { id: true, tgName: true, avatar: true, level: true, bio: true },
+    where: { id: identity.memberId },
+    select: { id: true, displayName: true, tgName: true, avatar: true, level: true, bio: true, kind: true },
   })
 
   if (!member) {
     return NextResponse.json({ user: null })
   }
 
-  return NextResponse.json({ user: member })
+  return NextResponse.json({
+    user: {
+      id: member.id,
+      tgName: member.displayName || member.tgName,
+      avatar: member.avatar,
+      level: member.level,
+      bio: member.bio,
+      kind: member.kind,
+    },
+  })
 }

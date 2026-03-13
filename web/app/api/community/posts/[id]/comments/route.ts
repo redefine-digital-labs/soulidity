@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { requireAuth } from '@web/lib/auth/require-auth'
+import { requireIdentity } from '@web/lib/auth/identity'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +8,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, session } = await requireAuth()
+  const { error, identity } = await requireIdentity()
   if (error) return error
 
   const { id } = await params
@@ -21,7 +21,7 @@ export async function POST(
   const comment = await prisma.comment.create({
     data: {
       postId: id,
-      memberId: session!.memberId,
+      memberId: identity!.memberId,
       content: body.content,
     },
   })
