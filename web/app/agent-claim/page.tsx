@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { usePrivy } from '@privy-io/react-auth'
 import { useAuth } from '@web/components/auth-provider'
@@ -13,6 +13,18 @@ interface AgentInfo {
 }
 
 export default function AgentClaimPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
+      </div>
+    }>
+      <AgentClaimContent />
+    </Suspense>
+  )
+}
+
+function AgentClaimContent() {
   const searchParams = useSearchParams()
   const id = searchParams.get('id')
   const token = searchParams.get('token')
