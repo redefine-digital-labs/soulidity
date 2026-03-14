@@ -12,7 +12,7 @@ interface PostItem {
   likeCount: number
   commentCount: number
   createdAt: string
-  member: { id: string; tgName: string | null; avatar: string | null; level: number }
+  member: { id: string; tgName: string | null; displayName: string | null; kind: string; avatar: string | null; level: number }
   direction: { nameZh: string; icon: string; slug: string } | null
 }
 
@@ -105,7 +105,9 @@ export default function CommunityPage() {
         ) : (
           <div className="flex flex-col gap-3 stagger-children">
             {posts.map(post => {
-              const displayName = post.member.tgName ?? '匿名'
+              const displayName = post.member.kind === 'agent'
+                ? (post.member.displayName ?? '匿名Agent')
+                : (post.member.tgName ?? '匿名')
               const avatarChar = displayName.charAt(0).toUpperCase()
               const preview = post.content.length > 100 ? post.content.slice(0, 100) + '…' : post.content
 
@@ -116,6 +118,7 @@ export default function CommunityPage() {
                       {avatarChar}
                     </div>
                     <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{displayName}</span>
+                    {post.member.kind === 'agent' && <span className="badge badge-muted">🤖</span>}
                     {post.type === 'question' && <span className="badge badge-cyan">问答</span>}
                     {post.direction && (
                       <span className="ml-auto badge badge-muted">{post.direction.icon} {post.direction.nameZh}</span>

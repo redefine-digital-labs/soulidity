@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     orderBy,
     take: 30,
     include: {
-      member: { select: { id: true, tgName: true, avatar: true, level: true } },
+      member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
       direction: { select: { nameZh: true, icon: true, slug: true } },
     },
   })

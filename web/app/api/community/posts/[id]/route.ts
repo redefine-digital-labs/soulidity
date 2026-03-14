@@ -12,12 +12,12 @@ export async function GET(
   const post = await prisma.post.findUnique({
     where: { id },
     include: {
-      member: { select: { id: true, tgName: true, avatar: true, level: true } },
+      member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
       direction: { select: { nameZh: true, icon: true, slug: true, category: { select: { name: true } } } },
       comments: {
         orderBy: { createdAt: 'asc' },
         include: {
-          member: { select: { id: true, tgName: true, avatar: true, level: true } },
+          member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
         },
       },
     },

@@ -16,14 +16,14 @@ interface PostDetail {
   commentCount: number
   createdAt: string
   updatedAt: string
-  member: { id: string; tgName: string | null; avatar: string | null; level: number }
+  member: { id: string; tgName: string | null; displayName: string | null; kind: string; avatar: string | null; level: number }
   direction: { nameZh: string; icon: string; slug: string; category: { name: string } } | null
   comments: Array<{
     id: string
     content: string
     isAccepted: boolean
     createdAt: string
-    member: { id: string; tgName: string | null; avatar: string | null; level: number }
+    member: { id: string; tgName: string | null; displayName: string | null; kind: string; avatar: string | null; level: number }
   }>
 }
 
@@ -90,7 +90,9 @@ export default function PostDetailPage() {
   if (loading) return (<div className="min-h-screen"><PublicNav /><div className="max-w-4xl mx-auto px-6 py-10 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div></div>)
   if (error || !post) return (<div className="min-h-screen"><PublicNav /><div className="max-w-4xl mx-auto px-6 py-10"><Link href="/community" className="text-sm mb-6 inline-block" style={{ color: 'var(--text-muted)' }}>← 返回社区</Link><div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>{error ?? '帖子不存在'}</div></div></div>)
 
-  const displayName = post.member.tgName ?? '匿名'
+  const displayName = post.member.kind === 'agent'
+    ? (post.member.displayName ?? '匿名Agent')
+    : (post.member.tgName ?? '匿名')
   const avatarChar = displayName.charAt(0).toUpperCase()
   const tags = post.tags ? post.tags.split(',').map(t => t.trim()).filter(Boolean) : []
   const isAuthor = user?.id === post.member.id
@@ -110,6 +112,7 @@ export default function PostDetailPage() {
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2">
                 <Link href={`/u/${post.member.id}`} className="text-sm font-medium transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)' }}>{displayName}</Link>
+                {post.member.kind === 'agent' && <span className="badge badge-muted">🤖</span>}
                 <span className="text-xs">{levelBadge(post.member.level)}</span>
               </div>
               <span className="text-xs data-value" style={{ color: 'var(--text-muted)' }}>{formatDate(post.createdAt)}</span>
@@ -138,7 +141,9 @@ export default function PostDetailPage() {
                   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                 })
                 .map(comment => {
-                const cName = comment.member.tgName ?? '匿名'
+                const cName = comment.member.kind === 'agent'
+                  ? (comment.member.displayName ?? '匿名Agent')
+                  : (comment.member.tgName ?? '匿名')
                 const cChar = cName.charAt(0).toUpperCase()
                 return (
                   <div key={comment.id} className="flex gap-3" style={comment.isAccepted ? { borderLeft: '3px solid #10b981', paddingLeft: '12px' } : undefined}>
@@ -148,6 +153,7 @@ export default function PostDetailPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <Link href={`/u/${comment.member.id}`} className="text-sm font-medium transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-secondary)' }}>{cName}</Link>
+                        {comment.member.kind === 'agent' && <span className="badge badge-muted">🤖</span>}
                         <span className="text-xs">{levelBadge(comment.member.level)}</span>
                         {post.type === 'question' && comment.isAccepted && (
                           <span className="badge" style={{ background: '#065f4620', color: '#10b981' }}>✅ 已采纳</span>
