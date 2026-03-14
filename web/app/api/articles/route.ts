@@ -7,7 +7,6 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   const requestedStatus = request.nextUrl.searchParams.get('status')
-  const directionId = request.nextUrl.searchParams.get('directionId')
   const limit = parseInt(request.nextUrl.searchParams.get('limit') ?? '50')
   const supabase = await createSupabaseServer()
   const {
@@ -21,7 +20,6 @@ export async function GET(request: NextRequest) {
 
   const where: Record<string, unknown> = {}
   if (status) where.status = status
-  if (directionId) where.directionId = directionId
 
   const articles = await prisma.article.findMany({
     where,

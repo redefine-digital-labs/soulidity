@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { requireAdmin } from '@web/lib/auth/admin'
 import { buildApprovedTweetUpdate, parseTweetMeta } from '@web/lib/admin-tweet-review'
 import OpenAI from 'openai'
 
@@ -32,14 +33,18 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { error: authError } = await requireAdmin()
+  if (authError) return authError
+
   const { id } = await params
+  const body = await req.json().catch(() => ({}))
+  const tags: string[] = Array.isArray(body.tags)
+    ? body.tags.map((t: any) => typeof t === 'string' ? t.trim() : '').filter(Boolean)
+    : []
 
   try {
-    // Parse body for directionId (required)
-    const body = await req.json().catch(() => ({}))
-    const { directionId } = body as { directionId?: string }
-    if (!directionId) {
-      return NextResponse.json({ error: '必须选择关联方向' }, { status: 400 })
+    if (tags.length === 0) {
+      return NextResponse.json({ error: '请至少填写一个标签' }, { status: 400 })
     }
 
     const item = await prisma.rawItem.findUnique({ where: { id } })
@@ -95,9 +100,9 @@ export async function POST(
           titleEn: item.title,
           summaryZh: result.summary,
           summaryEn: item.content ?? '',
+          tags: tags.length > 0 ? JSON.stringify(tags) : null,
           status: 'published',
           pipelineStatus: 'completed',
-          directionId,
         },
       }),
     ])
@@ -105,7 +110,6 @@ export async function POST(
     return NextResponse.json({ success: true, title: result.title, summary: result.summary, articleId: article.id })
   } catch (err: any) {
     console.error('Approve error:', err)
-    const message = err?.meta?.cause || err?.message || 'Internal error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: '审核通过失败，请稍后重试' }, { status: 500 })
   }
 }

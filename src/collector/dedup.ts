@@ -3,7 +3,7 @@ import { findDuplicateMatch, titleHash } from './simhash.js'
 import type { CollectedItem } from './types.js'
 
 const WINDOW_HOURS = 72
-const DEDUP_REFERENCE_STATUSES = ['new', 'deduped', 'processing', 'produced', 'published', 'approved']
+const DEDUP_REFERENCE_STATUSES = ['new', 'deduped', 'processing', 'produced', 'published', 'approved', 'kb_saved']
 
 export async function isDuplicate(
   prisma: PrismaClient,

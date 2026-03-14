@@ -7,9 +7,7 @@ import { useAuth } from '@web/components/auth-provider'
 const links = [
   { href: '/', label: '新闻' },
   { href: '/skills', label: '技能' },
-  { href: '/directions', label: '养成方向' },
   { href: '/community', label: '社区' },
-  { href: '/knowledge', label: '知识库' },
   { href: '/market', label: '市场' },
 ]
 

@@ -21,7 +21,6 @@ model RawItem {
   rawData    String?   @map("raw_data")
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   articles         Article[]
-  knowledgeSources KnowledgeEntrySource[]
 
   @@index([status])
   @@index([score(sort: Desc)])
@@ -55,11 +54,7 @@ model Article {
   publications   Publication[]
   companies      ArticleCompany[]
   processLogs    AgentProcessLog[]
-  directionId    String?           @map("direction_id") @db.Uuid
-  direction      Direction?        @relation(fields: [directionId], references: [id])
-
   @@index([status])
-  @@index([directionId])
   @@map("articles")
 }
 
@@ -186,50 +181,10 @@ model InviteCode {
   @@map("invite_codes")
 }
 
-model Category {
-  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String      @unique
-  nameZh      String      @map("name_zh")
-  icon        String      @default("📦")
-  sortOrder   Int         @default(0) @map("sort_order")
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  directions  Direction[]
-
-  @@map("categories")
-}
-
-model Direction {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  categoryId    String   @map("category_id") @db.Uuid
-  category      Category @relation(fields: [categoryId], references: [id])
-  name          String
-  nameZh        String   @map("name_zh")
-  slug          String   @unique
-  description   String?
-  descriptionZh String?  @map("description_zh")
-  icon          String   @default("🔧")
-  userCount     Int      @default(0) @map("user_count")
-  rating        Float    @default(0)
-  featured      Boolean  @default(false)
-  status        String   @default("active")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  posts         Post[]
-  articles      Article[]
-
-  @@index([categoryId])
-  @@index([userCount(sort: Desc)])
-  @@index([rating(sort: Desc)])
-  @@index([featured])
-  @@map("directions")
-}
-
 model Post {
   id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   memberId     String     @map("member_id") @db.Uuid
   member       Member     @relation(fields: [memberId], references: [id])
-  directionId  String?    @map("direction_id") @db.Uuid
-  direction    Direction? @relation(fields: [directionId], references: [id])
   title        String
   content      String
   tags         String?
@@ -237,12 +192,12 @@ model Post {
   commentCount Int        @default(0) @map("comment_count")
   status       String     @default("published")
   type         String     @default("log")
+  sourceUrl    String?    @map("source_url")
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   comments     Comment[]
 
   @@index([memberId])
-  @@index([directionId])
   @@index([createdAt])
   @@index([type])
   @@map("posts")
@@ -283,36 +238,6 @@ model MemberAchievement {
 
   @@id([memberId, achievementId])
   @@map("member_achievements")
-}
-
-model KnowledgeEntry {
-  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title        String
-  content      String
-  category     String
-  contentType  String                 @map("content_type")
-  status       String                 @default("raw")
-  mergedIntoId String?                @map("merged_into_id") @db.Uuid
-  mergedInto   KnowledgeEntry?        @relation("KnowledgeMerge", fields: [mergedIntoId], references: [id])
-  mergedFrom   KnowledgeEntry[]       @relation("KnowledgeMerge")
-  sources      KnowledgeEntrySource[]
-  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@index([category])
-  @@index([contentType])
-  @@index([status])
-  @@map("knowledge_entries")
-}
-
-model KnowledgeEntrySource {
-  entryId   String         @map("entry_id") @db.Uuid
-  entry     KnowledgeEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  rawItemId String         @map("raw_item_id") @db.Uuid
-  rawItem   RawItem        @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
-
-  @@id([entryId, rawItemId])
-  @@map("knowledge_entry_sources")
 }
 
 model Skill {

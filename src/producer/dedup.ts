@@ -4,7 +4,7 @@ import type { RawItem } from '../shared/types.js'
 import { findDuplicateMatch } from '../shared/dedup.js'
 
 const WINDOW_HOURS = 72
-const DEDUP_REFERENCE_STATUSES = ['deduped', 'processing', 'produced', 'published']
+const DEDUP_REFERENCE_STATUSES = ['deduped', 'processing', 'produced', 'published', 'kb_saved']
 
 type DedupReference = Pick<RawItem, 'id' | 'title' | 'content' | 'url'>
 

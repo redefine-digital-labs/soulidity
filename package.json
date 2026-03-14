@@ -11,7 +11,6 @@
     "collect:x": "tsx src/collector/run.ts x",
     "produce": "tsx src/producer/run.ts",
     "publish": "tsx src/publisher/run.ts",
-    "seed:directions": "tsx src/db/seed-directions.ts",
     "seed:achievements": "tsx src/db/seed-achievements.ts",
     "scan:skills": "tsx src/collector/scan-skills.ts"
   },

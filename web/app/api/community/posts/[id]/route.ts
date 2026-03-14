@@ -13,7 +13,6 @@ export async function GET(
     where: { id },
     include: {
       member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
-      direction: { select: { nameZh: true, icon: true, slug: true, category: { select: { name: true } } } },
       comments: {
         orderBy: { createdAt: 'asc' },
         include: {

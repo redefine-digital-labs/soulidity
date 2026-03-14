@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { requireAdmin } from '@web/lib/auth/admin'
 
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { error } = await requireAdmin()
+  if (error) return error
+
   const { id } = await params
 
   const item = await prisma.rawItem.findUnique({ where: { id } })

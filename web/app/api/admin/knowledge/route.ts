@@ -1,42 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { requireAdmin } from '@web/lib/auth/admin'
 
 const VALID_CATEGORIES = ['MCP', 'Mac', 'Windows', 'Linux', 'Prompt', 'Agent调试', '其他']
 const VALID_CONTENT_TYPES = ['教程', '踩坑记录', '最佳实践', '工具推荐']
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
-  const category = searchParams.get('category')
-  const contentType = searchParams.get('contentType')
-  const q = searchParams.get('q')
-
-  const where: any = { status: 'raw' }
-  if (category) where.category = category
-  if (contentType) where.contentType = contentType
-  if (q) {
-    where.OR = [
-      { title: { contains: q, mode: 'insensitive' } },
-      { content: { contains: q, mode: 'insensitive' } },
-    ]
-  }
-
-  const entries = await prisma.knowledgeEntry.findMany({
-    where,
-    include: {
-      sources: {
-        include: {
-          rawItem: { select: { url: true, sourceName: true } },
-        },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  })
-
-  return NextResponse.json(entries)
-}
-
 export async function POST(req: NextRequest) {
+  const { error: authError } = await requireAdmin()
+  if (authError) return authError
+
   try {
     const body = await req.json()
     const { rawItemId, category, contentType, title } = body
@@ -58,26 +30,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '推文不存在' }, { status: 404 })
     }
 
-    const entry = await prisma.knowledgeEntry.create({
-      data: {
-        title,
-        content: rawItem.content ?? rawItem.title,
-        category,
-        contentType,
-        sources: {
-          create: { rawItemId },
+    if (rawItem.status === 'kb_saved') {
+      return NextResponse.json({ error: '该推文已保存为知识库条目' }, { status: 409 })
+    }
+
+    const systemMember = await prisma.member.findUnique({ where: { tgId: 'SYSTEM_KB_BOT' } })
+    if (!systemMember) {
+      return NextResponse.json({ error: '系统成员不存在' }, { status: 500 })
+    }
+
+    const post = await prisma.$transaction(async (tx) => {
+      // Atomic claim: only succeeds if status is not yet 'kb_saved'
+      const claimed = await tx.rawItem.updateMany({
+        where: { id: rawItemId, status: { not: 'kb_saved' } },
+        data: { status: 'kb_saved' },
+      })
+      if (claimed.count === 0) {
+        throw new Error('ALREADY_SAVED')
+      }
+
+      return tx.post.create({
+        data: {
+          memberId: systemMember.id,
+          title,
+          content: rawItem.content ?? rawItem.title,
+          tags: `${category},${contentType}`,
+          type: 'knowledge',
+          status: 'published',
+          sourceUrl: rawItem.url,
         },
-      },
+      })
     })
 
-    await prisma.rawItem.update({
-      where: { id: rawItemId },
-      data: { status: 'kb_saved' },
-    })
-
-    return NextResponse.json({ success: true, id: entry.id })
+    return NextResponse.json({ success: true, id: post.id })
   } catch (err: any) {
-    console.error('Failed to save knowledge entry:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    if (err?.message === 'ALREADY_SAVED') {
+      return NextResponse.json({ error: '该推文已保存为知识库条目' }, { status: 409 })
+    }
+    console.error('Failed to save knowledge post:', err)
+    return NextResponse.json({ error: '保存失败，请稍后重试' }, { status: 500 })
   }
 }

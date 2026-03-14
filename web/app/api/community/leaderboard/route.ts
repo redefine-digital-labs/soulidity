@@ -5,10 +5,10 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   const dimension = request.nextUrl.searchParams.get('dimension') ?? 'active'
-  const directionId = request.nextUrl.searchParams.get('directionId')
 
   if (dimension === 'active') {
     const members = await prisma.member.findMany({
+      where: { kind: { not: 'system' } },
       select: {
         id: true,
         tgName: true,
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
   if (dimension === 'helpful') {
     const comments = await prisma.comment.groupBy({
       by: ['memberId'],
-      where: { isAccepted: true },
+      where: { isAccepted: true, member: { kind: { not: 'system' } } },
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
       take: 20,
@@ -58,32 +58,6 @@ export async function GET(request: NextRequest) {
       ...memberMap.get(c.memberId),
       acceptedCount: c._count.id,
       score: c._count.id * 20,
-    }))
-
-    return NextResponse.json(ranked)
-  }
-
-  if (dimension === 'direction' && directionId) {
-    const posts = await prisma.post.groupBy({
-      by: ['memberId'],
-      where: { directionId, status: 'published' },
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: 20,
-    })
-
-    const memberIds = posts.map(p => p.memberId)
-    const members = await prisma.member.findMany({
-      where: { id: { in: memberIds } },
-      select: { id: true, tgName: true, avatar: true, level: true },
-    })
-    const memberMap = new Map(members.map(m => [m.id, m]))
-
-    const ranked = posts.map((p, i) => ({
-      rank: i + 1,
-      ...memberMap.get(p.memberId),
-      postCount: p._count.id,
-      score: p._count.id * 10,
     }))
 
     return NextResponse.json(ranked)

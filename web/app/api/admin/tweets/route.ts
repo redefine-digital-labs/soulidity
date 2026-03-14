@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { requireAdmin } from '@web/lib/auth/admin'
 
 export async function GET(request: NextRequest) {
+  const { error } = await requireAdmin()
+  if (error) return error
+
   const status = request.nextUrl.searchParams.get('status') ?? 'pending_review'
 
   const items = await prisma.rawItem.findMany({

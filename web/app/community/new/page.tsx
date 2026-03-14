@@ -1,17 +1,10 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
-
-interface DirectionOption {
-  id: string
-  nameZh: string
-  icon: string
-  slug?: string
-}
 
 function NewPostForm() {
   const router = useRouter()
@@ -19,25 +12,12 @@ function NewPostForm() {
   const { user, loading: authLoading, getAuthHeaders } = useAuth()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
-  const [directionId, setDirectionId] = useState('')
   const [postType, setPostType] = useState<'log' | 'question'>(
     (searchParams.get('type') as 'log' | 'question') ?? 'log'
   )
   const [tags, setTags] = useState('')
-  const [directions, setDirections] = useState<DirectionOption[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    fetch('/api/directions').then(r => (r.ok ? r.json() : [])).then((data: DirectionOption[]) => {
-      setDirections(data)
-      const dirSlug = searchParams.get('direction')
-      if (dirSlug) {
-        const match = data.find((d: DirectionOption) => d.slug === dirSlug)
-        if (match) setDirectionId(match.id)
-      }
-    }).catch(() => setDirections([]))
-  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -45,7 +25,6 @@ function NewPostForm() {
     setLoading(true)
     try {
       const body: Record<string, string> = { title, content, type: postType }
-      if (directionId) body.directionId = directionId
       if (tags.trim()) body.tags = tags.trim()
       const authHeaders = await getAuthHeaders()
       const res = await fetch('/api/community/posts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) })
@@ -86,13 +65,6 @@ function NewPostForm() {
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>内容 <span style={{ color: 'var(--accent-rose)' }}>*</span></label>
           <textarea value={content} onChange={e => setContent(e.target.value)} placeholder={postType === 'question' ? '详细描述你的问题，以便他人帮助你...' : '写下你的内容...'} required rows={8} className="input-dark" style={{ resize: 'vertical' }} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>方向 (可选)</label>
-          <select value={directionId} onChange={e => setDirectionId(e.target.value)} className="input-dark">
-            <option value="">不关联方向</option>
-            {directions.map(d => <option key={d.id} value={d.id}>{d.icon} {d.nameZh}</option>)}
-          </select>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>标签 (可选)</label>

@@ -5,20 +5,21 @@ import { requireIdentity } from '@web/lib/auth/identity'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
-  const direction = request.nextUrl.searchParams.get('direction')
   const sort = request.nextUrl.searchParams.get('sort') ?? 'latest'
   const type = request.nextUrl.searchParams.get('type')
-  const directionId = request.nextUrl.searchParams.get('directionId')
+  const tag = request.nextUrl.searchParams.get('tag')
 
   const where: any = { status: 'published' }
-  if (direction) {
-    where.direction = { slug: direction }
-  }
-  if (directionId) {
-    where.directionId = directionId
-  }
   if (type) {
     where.type = type
+  }
+  if (tag) {
+    where.OR = [
+      { tags: { equals: tag } },
+      { tags: { startsWith: tag + ',' } },
+      { tags: { endsWith: ',' + tag } },
+      { tags: { contains: ',' + tag + ',' } },
+    ]
   }
 
   const orderBy: any = sort === 'popular' ? { likeCount: 'desc' } : { createdAt: 'desc' }
@@ -29,7 +30,6 @@ export async function GET(request: NextRequest) {
     take: 30,
     include: {
       member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
-      direction: { select: { nameZh: true, icon: true, slug: true } },
     },
   })
 
@@ -45,13 +45,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'title, content required' }, { status: 400 })
   }
 
+  let normalizedTags: string | null = null
+  if (body.tags !== undefined && body.tags !== null) {
+    const tagParts = typeof body.tags === 'string'
+      ? body.tags.split(',')
+      : Array.isArray(body.tags) && body.tags.every((tag: unknown): tag is string => typeof tag === 'string')
+        ? body.tags
+        : null
+
+    if (!tagParts) {
+      return NextResponse.json({ error: 'tags must be a string or string[]' }, { status: 400 })
+    }
+
+    normalizedTags = tagParts.map((tag: string) => tag.trim()).filter(Boolean).join(',') || null
+  }
+
   const post = await prisma.post.create({
     data: {
       memberId: identity!.memberId,
-      directionId: body.directionId ?? null,
       title: body.title,
       content: body.content,
-      tags: body.tags ? JSON.stringify(body.tags) : null,
+      tags: normalizedTags,
       type: body.type ?? 'log',
     },
   })

@@ -1,5 +1,5 @@
 export type SourceType = 'rss' | 'github' | 'x' | 'community'
-export type RawItemStatus = 'new' | 'deduped' | 'duplicate' | 'processing' | 'produced' | 'published' | 'rejected' | 'expired' | 'pending_review' | 'approved'
+export type RawItemStatus = 'new' | 'deduped' | 'duplicate' | 'processing' | 'produced' | 'published' | 'rejected' | 'expired' | 'pending_review' | 'approved' | 'kb_saved'
 export type ArticleStatus = 'draft' | 'published' | 'rejected'
 
 export interface RawItem {
@@ -77,36 +77,9 @@ export interface AgentProcessLog {
   created_at: string
 }
 
-export interface Category {
-  id: string
-  name: string
-  name_zh: string
-  icon: string
-  sort_order: number
-  created_at: string
-}
-
-export interface Direction {
-  id: string
-  category_id: string
-  name: string
-  name_zh: string
-  slug: string
-  description: string | null
-  description_zh: string | null
-  icon: string
-  user_count: number
-  rating: number
-  featured: boolean
-  status: string
-  created_at: string
-  updated_at: string
-}
-
 export interface Post {
   id: string
   member_id: string
-  direction_id: string | null
   title: string
   content: string
   tags: string | null

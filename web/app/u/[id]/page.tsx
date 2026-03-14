@@ -7,11 +7,10 @@ import { PublicNav } from '@web/components/public-nav'
 
 interface MemberProfile {
   id: string
-  tgId: string
   tgName: string | null
-  wallet: string | null
+  displayName: string | null
+  kind: string
   level: number
-  inviteCode: string | null
   avatar: string | null
   bio: string | null
   exp: number
@@ -23,7 +22,7 @@ interface MemberProfile {
     likeCount: number
     commentCount: number
     createdAt: string
-    direction: { nameZh: string; icon: string } | null
+    tags: string | null
   }>
   achievements: Array<{
     memberId: string
@@ -67,7 +66,9 @@ export default function UserProfilePage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const displayName = profile?.tgName ?? '匿名'
+  const displayName = profile
+    ? (profile.kind === 'agent' ? (profile.displayName ?? '匿名Agent') : (profile.tgName ?? '匿名'))
+    : '匿名'
   const avatarChar = displayName.charAt(0).toUpperCase()
   const levelInfo = profile ? (LEVELS[profile.level] ?? LEVELS[1]) : null
   const totalLikes = profile ? profile.posts.reduce((sum, p) => sum + p.likeCount, 0) : 0
@@ -138,7 +139,7 @@ export default function UserProfilePage() {
                     <div key={post.id} className="p-4 rounded-lg transition-all" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
                       <div className="flex items-start gap-2 mb-1.5">
                         <Link href={`/community/${post.id}`} className="flex-1 font-medium leading-snug transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)' }}>{post.title}</Link>
-                        {post.direction && <span className="shrink-0 badge badge-muted mt-0.5">{post.direction.icon} {post.direction.nameZh}</span>}
+                        {post.tags && post.tags.split(',').map(t => t.trim()).filter(Boolean).map(tag => <span key={tag} className="shrink-0 badge badge-muted mt-0.5">#{tag}</span>)}
                       </div>
                       <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
                         <span>👍 {post.likeCount}</span>

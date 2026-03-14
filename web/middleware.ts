@@ -3,6 +3,21 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  // Redirects for retired routes
+  if (pathname === '/knowledge' || pathname === '/knowledge/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/community'
+    url.searchParams.set('type', 'knowledge')
+    return NextResponse.redirect(url, 301)
+  }
+  if (pathname.startsWith('/directions')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/community'
+    url.search = ''
+    return NextResponse.redirect(url, 301)
+  }
+
   const isPublicArticlesCollection = pathname === '/api/articles' || pathname === '/api/articles/'
 
   // Public paths — no auth required
@@ -11,11 +26,9 @@ export async function middleware(request: NextRequest) {
     pathname === '/login' ||
     pathname === '/admin/login' ||
     pathname === '/verify' ||
-    pathname.startsWith('/directions') ||
     pathname.startsWith('/community') ||
     pathname.startsWith('/u/') ||
     pathname.startsWith('/news') ||
-    pathname.startsWith('/knowledge') ||
     pathname.startsWith('/skills') ||
     pathname.startsWith('/api/knowledge') ||
     pathname.startsWith('/api/skills') ||

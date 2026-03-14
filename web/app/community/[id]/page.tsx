@@ -12,12 +12,12 @@ interface PostDetail {
   content: string
   type: string
   tags: string | null
+  sourceUrl: string | null
   likeCount: number
   commentCount: number
   createdAt: string
   updatedAt: string
   member: { id: string; tgName: string | null; displayName: string | null; kind: string; avatar: string | null; level: number }
-  direction: { nameZh: string; icon: string; slug: string; category: { name: string } } | null
   comments: Array<{
     id: string
     content: string
@@ -117,10 +117,15 @@ export default function PostDetailPage() {
               </div>
               <span className="text-xs data-value" style={{ color: 'var(--text-muted)' }}>{formatDate(post.createdAt)}</span>
             </div>
-            {post.direction && <span className="ml-auto badge badge-muted">{post.direction.icon} {post.direction.nameZh}</span>}
           </div>
-          <h1 className="text-2xl font-bold mb-4 leading-tight" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{post.type === 'question' ? '❓ ' : ''}{post.title}</h1>
+          <h1 className="text-2xl font-bold mb-4 leading-tight" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{post.type === 'question' ? '❓ ' : post.type === 'knowledge' ? '📚 ' : ''}{post.title}</h1>
           <p className="leading-relaxed whitespace-pre-wrap mb-4" style={{ color: 'var(--text-secondary)' }}>{post.content}</p>
+          {post.sourceUrl && /^https?:\/\//i.test(post.sourceUrl) && (
+            <p className="text-sm mb-4">
+              <span style={{ color: 'var(--text-muted)' }}>来源：</span>
+              <a href={post.sourceUrl} target="_blank" rel="noopener noreferrer" className="transition-colors break-all" style={{ color: 'var(--accent-cyan)' }}>{post.sourceUrl}</a>
+            </p>
+          )}
           {tags.length > 0 && <div className="flex flex-wrap gap-2 mb-4">{tags.map(tag => <span key={tag} className="badge badge-muted">#{tag}</span>)}</div>}
           <div className="flex items-center gap-4 text-sm pt-4" style={{ borderTop: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
             <span>👍 {post.likeCount}</span>

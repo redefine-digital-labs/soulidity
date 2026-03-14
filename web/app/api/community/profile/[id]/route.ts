@@ -11,13 +11,22 @@ export async function GET(
 
   const member = await prisma.member.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true,
+      tgName: true,
+      displayName: true,
+      kind: true,
+      avatar: true,
+      bio: true,
+      level: true,
+      exp: true,
+      joinedAt: true,
       posts: {
         where: { status: 'published' },
         orderBy: { createdAt: 'desc' },
         take: 10,
-        include: {
-          direction: { select: { nameZh: true, icon: true } },
+        select: {
+          id: true, title: true, content: true, tags: true, likeCount: true, commentCount: true, createdAt: true,
         },
       },
       achievements: {

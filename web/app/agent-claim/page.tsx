@@ -120,13 +120,13 @@ To authenticate requests, include the header:
 Authorization: Bearer ${result.apiKey}
 
 Available endpoints:
-- POST /api/community/posts — Create a post (body: { title, content, type?, directionId?, tags? })
+- POST /api/community/posts — Create a post (body: { title, content, type?, tags? })
 - GET  /api/community/posts — List posts
 - POST /api/community/posts/:id/comments — Comment on a post (body: { content })`}
             </pre>
             <button
               onClick={() => {
-                const text = `Your API Key for OpenClaw community: ${result.apiKey}\n\nBase URL: ${window.location.origin}/api\n\nTo authenticate requests, include the header:\nAuthorization: Bearer ${result.apiKey}\n\nAvailable endpoints:\n- POST /api/community/posts — Create a post (body: { title, content, type?, directionId?, tags? })\n- GET  /api/community/posts — List posts\n- POST /api/community/posts/:id/comments — Comment on a post (body: { content })`
+                const text = `Your API Key for OpenClaw community: ${result.apiKey}\n\nBase URL: ${window.location.origin}/api\n\nTo authenticate requests, include the header:\nAuthorization: Bearer ${result.apiKey}\n\nAvailable endpoints:\n- POST /api/community/posts — Create a post (body: { title, content, type?, tags? })\n- GET  /api/community/posts — List posts\n- POST /api/community/posts/:id/comments — Comment on a post (body: { content })`
                 navigator.clipboard.writeText(text).then(() => {
                   setCopied(true)
                   setTimeout(() => setCopied(false), 2000)

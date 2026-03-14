@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { PublicNav } from '@web/components/public-nav'
 
@@ -9,18 +10,19 @@ interface PostItem {
   title: string
   content: string
   type: string
+  tags: string | null
   likeCount: number
   commentCount: number
   createdAt: string
   member: { id: string; tgName: string | null; displayName: string | null; kind: string; avatar: string | null; level: number }
-  direction: { nameZh: string; icon: string; slug: string } | null
 }
 
-interface CategoryItem {
-  id: string
-  name: string
-  nameZh: string
-  icon: string
+type PostTypeFilter = '' | 'log' | 'question' | 'knowledge'
+
+function getPostTypeFilter(value: string | null): PostTypeFilter {
+  return (['log', 'question', 'knowledge'] as const).includes(value as 'log' | 'question' | 'knowledge')
+    ? value as PostTypeFilter
+    : ''
 }
 
 function timeAgo(dateStr: string): string {
@@ -34,28 +36,58 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function CommunityPage() {
-  const [categories, setCategories] = useState<CategoryItem[]>([])
+  return (
+    <Suspense fallback={<div className="min-h-screen"><PublicNav /><div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>加载中...</div></div>}>
+      <CommunityPageInner />
+    </Suspense>
+  )
+}
+
+function CommunityPageInner() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const urlPostType = getPostTypeFilter(searchParams.get('type'))
+
   const [posts, setPosts] = useState<PostItem[]>([])
-  const [activeDirection, setActiveDirection] = useState<string>('')
-  const [postType, setPostType] = useState<'' | 'log' | 'question'>('')
+  const [activeTag, setActiveTag] = useState<string>('')
+  const [postType, setPostType] = useState<PostTypeFilter>(urlPostType)
+
+  const changePostType = (type: PostTypeFilter) => {
+    setPostType(type)
+    const params = new URLSearchParams(searchParams.toString())
+    if (type) {
+      params.set('type', type)
+    } else {
+      params.delete('type')
+    }
+    const qs = params.toString()
+    router.replace(qs ? `/community?${qs}` : '/community')
+  }
   const [sort, setSort] = useState<'latest' | 'popular'>('latest')
+  const [allTags, setAllTags] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/categories').then(r => (r.ok ? r.json() : [])).then(setCategories)
+    fetch('/api/community/tags')
+      .then(r => (r.ok ? r.json() : []))
+      .then(setAllTags)
   }, [])
+
+  useEffect(() => {
+    setPostType(urlPostType)
+  }, [urlPostType])
 
   useEffect(() => {
     setLoading(true)
     const params = new URLSearchParams()
-    if (activeDirection) params.set('direction', activeDirection)
+    if (activeTag) params.set('tag', activeTag)
     if (postType) params.set('type', postType)
     params.set('sort', sort)
     fetch(`/api/community/posts?${params.toString()}`)
       .then(r => (r.ok ? r.json() : []))
       .then(setPosts)
       .finally(() => setLoading(false))
-  }, [activeDirection, postType, sort])
+  }, [activeTag, postType, sort])
 
   return (
     <div className="min-h-screen">
@@ -76,18 +108,19 @@ export default function CommunityPage() {
 
         {/* Type filter */}
         <div className="flex gap-2 mb-4 animate-fade-up" style={{ animationDelay: '50ms' }}>
-          <button onClick={() => setPostType('')} className={`filter-pill ${postType === '' ? 'filter-pill-active' : ''}`}>全部</button>
-          <button onClick={() => setPostType('log')} className={`filter-pill ${postType === 'log' ? 'filter-pill-active' : ''}`}>📝 日志</button>
-          <button onClick={() => setPostType('question')} className={`filter-pill ${postType === 'question' ? 'filter-pill-active' : ''}`}>❓ 问答</button>
+          <button onClick={() => changePostType('')} className={`filter-pill ${postType === '' ? 'filter-pill-active' : ''}`}>全部</button>
+          <button onClick={() => changePostType('log')} className={`filter-pill ${postType === 'log' ? 'filter-pill-active' : ''}`}>📝 日志</button>
+          <button onClick={() => changePostType('question')} className={`filter-pill ${postType === 'question' ? 'filter-pill-active' : ''}`}>❓ 问答</button>
+          <button onClick={() => changePostType('knowledge')} className={`filter-pill ${postType === 'knowledge' ? 'filter-pill-active' : ''}`}>📚 知识库</button>
         </div>
 
-        {/* Filter bar */}
+        {/* Tag filter + sort */}
         <div className="flex items-center gap-3 mb-6 flex-wrap animate-fade-up" style={{ animationDelay: '100ms' }}>
           <div className="flex gap-2 flex-wrap flex-1">
-            <button onClick={() => setActiveDirection('')} className={`filter-pill ${activeDirection === '' ? 'filter-pill-active' : ''}`}>全部</button>
-            {categories.map(cat => (
-              <button key={cat.id} onClick={() => setActiveDirection(cat.name)} className={`filter-pill ${activeDirection === cat.name ? 'filter-pill-active' : ''}`}>
-                {cat.icon} {cat.nameZh}
+            <button onClick={() => setActiveTag('')} className={`filter-pill ${activeTag === '' ? 'filter-pill-active' : ''}`}>全部</button>
+            {allTags.map(tag => (
+              <button key={tag} onClick={() => setActiveTag(tag)} className={`filter-pill ${activeTag === tag ? 'filter-pill-active' : ''}`}>
+                #{tag}
               </button>
             ))}
           </div>
@@ -110,6 +143,7 @@ export default function CommunityPage() {
                 : (post.member.tgName ?? '匿名')
               const avatarChar = displayName.charAt(0).toUpperCase()
               const preview = post.content.length > 100 ? post.content.slice(0, 100) + '…' : post.content
+              const postTags = post.tags ? post.tags.split(',').map(t => t.trim()).filter(Boolean) : []
 
               return (
                 <div key={post.id} className="glass-card glow-cyan p-4">
@@ -120,12 +154,15 @@ export default function CommunityPage() {
                     <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{displayName}</span>
                     {post.member.kind === 'agent' && <span className="badge badge-muted">🤖</span>}
                     {post.type === 'question' && <span className="badge badge-cyan">问答</span>}
-                    {post.direction && (
-                      <span className="ml-auto badge badge-muted">{post.direction.icon} {post.direction.nameZh}</span>
+                    {post.type === 'knowledge' && <span className="badge badge-cyan">📚 知识库</span>}
+                    {postTags.length > 0 && (
+                      <div className="ml-auto flex gap-1">
+                        {postTags.map(tag => <span key={tag} className="badge badge-muted">#{tag}</span>)}
+                      </div>
                     )}
                   </div>
                   <Link href={`/community/${post.id}`} className="block font-semibold mb-1 transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-                    {post.type === 'question' ? '❓ ' : ''}{post.title}
+                    {post.type === 'question' ? '❓ ' : post.type === 'knowledge' ? '📚 ' : ''}{post.title}
                   </Link>
                   {preview && <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>{preview}</p>}
                   <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
