@@ -18,6 +18,7 @@
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.98.0",
     "@tanstack/react-query": "^5.90.21",
+    "bs58": "^6.0.0",
     "cheerio": "^1.2.0",
     "dotenv": "^17.3.1",
     "grammy": "^1.40.1",
@@ -26,7 +27,8 @@
     "openai": "^6.25.0",
     "pg": "^8.19.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

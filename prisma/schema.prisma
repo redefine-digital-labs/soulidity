@@ -135,6 +135,7 @@ model Account {
   privyDid  String?  @unique @map("privy_did")
   tgId      String?  @unique @map("tg_id")
   tgName    String?  @map("tg_name")
+  email     String?  @unique
   avatar    String?
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
@@ -329,6 +330,18 @@ model Skill {
   @@index([downloads(sort: Desc)])
   @@index([stars(sort: Desc)])
   @@map("skills")
+}
+
+model WalletChallenge {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  address   String
+  nonce     String   @unique
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([address, expiresAt])
+  @@map("wallet_challenges")
 }
 
 model WalletBinding {

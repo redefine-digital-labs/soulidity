@@ -30,7 +30,10 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/wallet') ||
     pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico' ||
-    pathname === '/join-skill.md'
+    pathname === '/join-skill.md' ||
+    pathname === '/agent-join-skill.md' ||
+    pathname.startsWith('/api/agent-join') ||
+    pathname === '/agent-claim'
   ) {
     return NextResponse.next()
   }
