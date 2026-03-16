@@ -5,11 +5,129 @@ import { privy } from './privy'
 import nacl from 'tweetnacl'
 import bs58 from 'bs58'
 import { buildChallengeMessage } from '@web/app/api/auth/challenge/route'
+import { isUniqueConstraintError } from '@shared/prisma-errors'
 
 export interface Identity {
   accountId: string
   memberId: string
   kind: 'human' | 'agent'
+}
+
+type HumanAccountLookup = { privyDid: string } | { tgId: string } | { email: string }
+
+type HumanAccountIdentityRecord = {
+  id: string
+  privyDid: string | null
+  tgName: string | null
+  email: string | null
+  members: Array<{
+    id: string
+    kind: string
+  }>
+}
+
+async function findHumanAccount(where: HumanAccountLookup): Promise<HumanAccountIdentityRecord | null> {
+  return prisma.account.findUnique({
+    where,
+    include: {
+      members: {
+        where: { kind: 'human' },
+        select: { id: true, kind: true },
+        take: 1,
+      },
+    },
+  })
+}
+
+function toHumanIdentity(account: HumanAccountIdentityRecord): Identity | null {
+  const member = account.members[0]
+  if (!member) {
+    return null
+  }
+
+  return {
+    accountId: account.id,
+    memberId: member.id,
+    kind: 'human',
+  }
+}
+
+export async function resolvePrivyIdentity(token: string): Promise<Identity | null> {
+  const claims = await privy.verifyAuthToken(token)
+
+  const linkedAccount = await findHumanAccount({ privyDid: claims.userId })
+  if (linkedAccount) {
+    return toHumanIdentity(linkedAccount)
+  }
+
+  const privyUser = await privy.getUser(claims.userId)
+  const telegramTgId = privyUser.telegram?.telegramUserId
+  const tgId = telegramTgId !== undefined && telegramTgId !== null
+    ? String(telegramTgId)
+    : null
+  const email = privyUser.email?.address?.trim().toLowerCase() || null
+  const tgName = privyUser.telegram?.username?.trim() || null
+
+  const candidates: HumanAccountLookup[] = []
+  if (tgId) {
+    candidates.push({ tgId })
+  }
+  if (email) {
+    candidates.push({ email })
+  }
+
+  for (const candidate of candidates) {
+    const legacyAccount = await findHumanAccount(candidate)
+    if (!legacyAccount) {
+      continue
+    }
+    if (legacyAccount.privyDid && legacyAccount.privyDid !== claims.userId) {
+      continue
+    }
+
+    const updateData: {
+      privyDid?: string
+      email?: string
+      tgName?: string
+    } = {}
+
+    if (legacyAccount.privyDid !== claims.userId) {
+      updateData.privyDid = claims.userId
+    }
+    if (email && legacyAccount.email !== email) {
+      updateData.email = email
+    }
+    if (tgName && legacyAccount.tgName !== tgName) {
+      updateData.tgName = tgName
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      try {
+        await prisma.account.update({
+          where: { id: legacyAccount.id },
+          data: updateData,
+        })
+      } catch (error) {
+        if (isUniqueConstraintError(error) && updateData.email) {
+          // Email already claimed by another account — link privyDid/tgName
+          // without the email so the user can still log in
+          const { email: _, ...safeData } = updateData
+          if (Object.keys(safeData).length > 0) {
+            await prisma.account.update({
+              where: { id: legacyAccount.id },
+              data: safeData,
+            })
+          }
+        } else {
+          throw error
+        }
+      }
+    }
+
+    return toHumanIdentity(legacyAccount)
+  }
+
+  return null
 }
 
 export async function resolveIdentity(): Promise<Identity | null> {
@@ -44,23 +162,7 @@ export async function resolveIdentity(): Promise<Identity | null> {
 
   // Privy token path
   try {
-    const claims = await privy.verifyAuthToken(token)
-    const account = await prisma.account.findUnique({
-      where: { privyDid: claims.userId },
-      include: {
-        members: {
-          where: { kind: 'human' },
-          select: { id: true, kind: true },
-          take: 1,
-        },
-      },
-    })
-    if (!account || account.members.length === 0) return null
-    return {
-      accountId: account.id,
-      memberId: account.members[0].id,
-      kind: 'human',
-    }
+    return await resolvePrivyIdentity(token)
   } catch {
     return null
   }

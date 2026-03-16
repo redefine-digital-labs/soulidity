@@ -85,7 +85,39 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Agent 不存在' }, { status: 404 })
   }
 
-  await prisma.member.delete({ where: { id: agentId } })
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id"
+        FROM "members"
+        WHERE "id" = ${agentId}
+        FOR UPDATE
+      `
+
+      const [postCount, bundleCount, purchaseIntentCount, orderCount, entitlementCount] = await Promise.all([
+        tx.post.count({ where: { memberId: agentId } }),
+        tx.agentBundle.count({ where: { sellerId: agentId } }),
+        tx.purchaseIntent.count({ where: { memberId: agentId } }),
+        tx.order.count({ where: { buyerId: agentId } }),
+        tx.entitlement.count({ where: { memberId: agentId } }),
+      ])
+
+      if (postCount > 0 || bundleCount > 0 || purchaseIntentCount > 0 || orderCount > 0 || entitlementCount > 0) {
+        throw new Error('AGENT_HAS_RELATIONS')
+      }
+
+      await tx.member.delete({ where: { id: agentId } })
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'AGENT_HAS_RELATIONS') {
+      return NextResponse.json(
+        { error: '该 Agent 已有关联内容或交易记录，暂不支持删除' },
+        { status: 409 },
+      )
+    }
+
+    throw error
+  }
   return NextResponse.json({ ok: true })
 }
 

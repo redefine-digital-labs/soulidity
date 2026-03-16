@@ -5,6 +5,7 @@ interface MockStore {
   collectorStates: any[]
   articles: any[]
   publications: any[]
+  accounts: any[]
   members: any[]
   inviteCodes: any[]
   companies: any[]
@@ -25,6 +26,13 @@ function matchWhere(row: any, where: any): boolean {
       return row[k] === null || row[k] === undefined
     }
     if (v && typeof v === 'object' && !Array.isArray(v)) {
+      if ('not' in v) {
+        const notValue = v.not
+        if (notValue === null) {
+          return row[k] !== null && row[k] !== undefined
+        }
+        return row[k] !== notValue
+      }
       if ('in' in v) {
         return Array.isArray(v.in) && v.in.includes(row[k])
       }
@@ -58,7 +66,10 @@ function applySelect(row: any, select: any): any {
 function createModel(collection: any[], defaults: Record<string, any> = {}, uniqueKeys: string[] = []) {
   return {
     create: vi.fn(async ({ data }: any) => {
-      if (uniqueKeys.some((key) => collection.some((row) => row[key] === data[key]))) {
+      if (uniqueKeys.some((key) => {
+        const value = data[key]
+        return value !== null && value !== undefined && collection.some((row) => row[key] === value)
+      })) {
         const err: any = new Error('Unique constraint failed')
         err.code = 'P2002'
         throw err
@@ -80,8 +91,10 @@ function createModel(collection: any[], defaults: Record<string, any> = {}, uniq
       if (select) rows = rows.map(r => applySelect(r, select))
       return rows
     }),
-    findUnique: vi.fn(async ({ where }: any) => {
-      return collection.find(r => matchWhere(r, where)) ?? null
+    findUnique: vi.fn(async ({ where, select }: any) => {
+      const row = collection.find(r => matchWhere(r, where))
+      if (!row) return null
+      return select ? applySelect(row, select) : row
     }),
     findFirst: vi.fn(async ({ where, select }: any = {}) => {
       const row = collection.find(r => matchWhere(r, where))
@@ -97,6 +110,13 @@ function createModel(collection: any[], defaults: Record<string, any> = {}, uniq
       }
       Object.assign(row, data)
       return row
+    }),
+    updateMany: vi.fn(async ({ where, data }: any) => {
+      const rows = collection.filter(r => matchWhere(r, where))
+      for (const row of rows) {
+        Object.assign(row, data)
+      }
+      return { count: rows.length }
     }),
     upsert: vi.fn(async ({ where, create, update }: any) => {
       const existing = collection.find(r => matchWhere(r, where))
@@ -127,6 +147,7 @@ export function createMockPrisma() {
     collectorStates: [],
     articles: [],
     publications: [],
+    accounts: [],
     members: [],
     inviteCodes: [],
     companies: [],
@@ -146,6 +167,7 @@ export function createMockPrisma() {
     collectorState: createModel(store.collectorStates, {}, ['source']),
     article: createModel(store.articles, { status: 'draft' }),
     publication: createModel(store.publications),
+    account: createModel(store.accounts, {}, ['privyDid', 'tgId', 'email']),
     member: createModel(store.members, { level: 1 }),
     inviteCode: createModel(store.inviteCodes, { active: 1 }),
     company: createModel(store.companies, { mentionCount: 0 }),
@@ -158,6 +180,17 @@ export function createMockPrisma() {
     comment: createModel(store.comments),
     achievement: createModel(store.achievements),
     memberAchievement: createModel(store.memberAchievements),
+    $transaction: vi.fn(async (callback: any) => {
+      const snapshot = structuredClone(store)
+      try {
+        return await callback(prisma)
+      } catch (error) {
+        for (const key of Object.keys(store) as Array<keyof MockStore>) {
+          store[key].splice(0, store[key].length, ...snapshot[key])
+        }
+        throw error
+      }
+    }),
     $disconnect: vi.fn(),
   }
 

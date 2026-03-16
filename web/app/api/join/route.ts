@@ -1,7 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { processJoinRequest } from '@bot/gateway'
+import { getAppBaseUrl } from '@shared/app-config'
+import { isInviteCode, normalizeInviteCode } from '@shared/invite-code-format'
+import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
+  const requestIp = getRequestIp(request.headers)
+  if (requestIp) {
+    const joinRateLimit = takeRateLimitToken(`join:${requestIp}`, {
+      max: 20,
+      windowMs: 10 * 60 * 1000,
+    })
+    if (joinRateLimit.limited) {
+      return NextResponse.json(
+        { success: false, error: 'Too many join attempts, please try again later' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(joinRateLimit.retryAfterSeconds),
+          },
+        }
+      )
+    }
+  }
+
   let body: any
   try {
     body = await request.json()
@@ -11,59 +34,63 @@ export async function POST(request: NextRequest) {
 
   const { tg_id, invite_code } = body
 
-  if (!tg_id || !invite_code) {
+  if ((typeof tg_id !== 'string' && typeof tg_id !== 'number') || typeof invite_code !== 'string') {
     return NextResponse.json({ success: false, error: 'tg_id and invite_code required' }, { status: 400 })
+  }
+
+  const tgId = String(tg_id).trim()
+  const inviteCode = normalizeInviteCode(invite_code)
+
+  if (!tgId || !/^\d+$/.test(tgId) || !isInviteCode(inviteCode)) {
+    return NextResponse.json({ success: false, error: 'Invalid tg_id or invite_code format' }, { status: 400 })
   }
 
   const token = process.env.TG_BOT_TOKEN
   const groupId = process.env.TG_GROUP_ID
   if (!token || !groupId) {
-    const missing = [!token && 'TG_BOT_TOKEN', !groupId && 'TG_GROUP_ID'].filter(Boolean)
-    return NextResponse.json({ success: false, error: `Server not configured: missing ${missing.join(', ')}` }, { status: 500 })
+    console.error('[join] server not configured: missing Telegram env')
+    return NextResponse.json({ success: false, error: 'Server not configured' }, { status: 500 })
   }
-
-  // Validate invite code
-  const invite = await prisma.inviteCode.findFirst({
-    where: { code: invite_code, active: 1, usedBy: null },
-  })
-  if (!invite) {
-    return NextResponse.json({ success: false, error: 'Invalid or used invite code' }, { status: 422 })
-  }
-  if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
-    return NextResponse.json({ success: false, error: 'Invite code expired' }, { status: 422 })
-  }
-
-  // Generate invite link before consuming code (so failure doesn't waste the code)
-  let invite_link: string
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/createChatInviteLink`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: groupId,
-        member_limit: 1,
-        expire_date: Math.floor(Date.now() / 1000) + 600,
-      }),
-    })
-    const data = await res.json()
-    if (!data.ok) {
-      return NextResponse.json({ success: false, error: `Telegram API error: ${data.description}` }, { status: 500 })
-    }
-    invite_link = data.result.invite_link
-  } catch (err) {
-    return NextResponse.json({ success: false, error: `Failed to create invite link: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 })
-  }
-
-  // Consume invite code and create member
-  await prisma.inviteCode.update({
-    where: { code: invite_code },
-    data: { usedBy: tg_id, active: 0 },
-  })
-  await prisma.member.upsert({
-    where: { tgId: tg_id },
-    create: { tgId: tg_id, inviteCode: invite_code },
-    update: {},
+  const result = await processJoinRequest(prisma, {
+    tg_id: tgId,
+    invite_code: inviteCode,
+    createInviteLink: async () => {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${token}/createChatInviteLink`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: groupId,
+            member_limit: 1,
+            expire_date: Math.floor(Date.now() / 1000) + 600,
+          }),
+        })
+        const data = await res.json()
+        if (!data.ok || typeof data.result?.invite_link !== 'string') {
+          console.error('[join] Telegram API error:', {
+            description: typeof data.description === 'string' ? data.description : undefined,
+            error_code: typeof data.error_code === 'number' ? data.error_code : undefined,
+          })
+          throw new Error('TELEGRAM_INVITE_FAILED')
+        }
+        return data.result.invite_link
+      } catch (error) {
+        console.error('[join] failed to create Telegram invite link:', error)
+        throw new Error('TELEGRAM_INVITE_FAILED')
+      }
+    },
   })
 
-  return NextResponse.json({ success: true, invite_link })
+  if (!result.success) {
+    const status = result.error_code === 'LINK_FAILED'
+      ? 500
+      : result.error_code === 'ALREADY_REGISTERED'
+        ? 409
+        : 422
+    return NextResponse.json({ success: false, error: result.error }, { status })
+  }
+
+  const register_url = `${getAppBaseUrl()}/register?code=${result.register_code ?? inviteCode}`
+
+  return NextResponse.json({ success: true, invite_link: result.invite_link, register_url })
 }

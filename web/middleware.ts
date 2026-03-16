@@ -26,6 +26,8 @@ export async function middleware(request: NextRequest) {
     pathname === '/login' ||
     pathname === '/admin/login' ||
     pathname === '/verify' ||
+    pathname === '/register' ||
+    pathname === '/api/register' ||
     pathname.startsWith('/community') ||
     pathname.startsWith('/u/') ||
     pathname.startsWith('/news') ||
@@ -36,7 +38,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/verify') ||
     isPublicArticlesCollection ||
     pathname.startsWith('/api/community') ||
-    pathname.startsWith('/api/auth') ||
+    pathname === '/api/auth/challenge' ||
+    pathname === '/api/auth/logout' ||
+    pathname === '/api/auth/me' ||
     pathname.startsWith('/market') ||
     pathname.startsWith('/api/market/') ||
     pathname.startsWith('/api/agents') ||

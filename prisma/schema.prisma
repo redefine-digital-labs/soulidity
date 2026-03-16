@@ -167,6 +167,7 @@ model Member {
 
   @@index([tgId])
   @@index([accountId, kind])
+  @@index([inviteCode])
   @@map("members")
 }
 
@@ -208,7 +209,7 @@ model Comment {
   postId    String   @map("post_id") @db.Uuid
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   memberId  String   @map("member_id") @db.Uuid
-  member    Member   @relation(fields: [memberId], references: [id])
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
   content    String
   isAccepted Boolean  @default(false) @map("is_accepted")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -231,7 +232,7 @@ model Achievement {
 
 model MemberAchievement {
   memberId      String      @map("member_id") @db.Uuid
-  member        Member      @relation(fields: [memberId], references: [id])
+  member        Member      @relation(fields: [memberId], references: [id], onDelete: Cascade)
   achievementId String      @map("achievement_id") @db.Uuid
   achievement   Achievement @relation(fields: [achievementId], references: [id])
   earnedAt      DateTime    @default(now()) @map("earned_at") @db.Timestamptz

@@ -1,12 +1,13 @@
-import crypto from 'node:crypto'
 import type { Bot, Context } from 'grammy'
 import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
+import { getAppBaseUrl } from '../shared/app-config.js'
+import { createInviteCodeRecord } from '../shared/invite-code-record.js'
 
-const SKILL_URL = 'https://clawnews-mu.vercel.app/join-skill.md'
+const JOIN_INVITE_CODE_TTL_MS = 30 * 60 * 1000
 
-function generateInviteCode(): string {
-  return crypto.randomBytes(4).toString('hex').toUpperCase()
+function getSkillUrl(): string {
+  return `${getAppBaseUrl()}/join-skill.md`
 }
 
 function buildJoinPrompt(tgId: number, inviteCode: string): string {
@@ -16,12 +17,19 @@ function buildJoinPrompt(tgId: number, inviteCode: string): string {
 
 ---
 请执行以下 skill 帮我加入 OpenClaw 社群：
-${SKILL_URL}
+${getSkillUrl()}
 
 我的验证信息：
 - tg_id: ${tgId}
 - invite_code: ${inviteCode}
----`
+---
+
+验证成功后，你将获得：
+1. Telegram 群组邀请链接
+2. 网站注册链接
+
+请先完成验证，再使用返回的注册链接注册网站账号
+（邀请码 30 分钟内有效）`
 }
 
 export async function handleStart(ctx: Context, prisma?: PrismaClient): Promise<void> {
@@ -46,14 +54,47 @@ export async function handleJoin(ctx: Context, prisma?: PrismaClient): Promise<v
   if (!tgId) return
 
   if (!prisma) {
-    await ctx.reply(buildJoinPrompt(tgId, 'NO_CODE'))
+    await ctx.reply('系统暂时不可用，请稍后再试')
     return
   }
 
-  const code = generateInviteCode()
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
-  await prisma.inviteCode.create({ data: { code, expiresAt } })
-  await ctx.reply(buildJoinPrompt(tgId, code))
+  const existingMember = await prisma.member.findUnique({
+    where: { tgId: String(tgId) },
+    select: { id: true, accountId: true, inviteCode: true },
+  })
+  if (existingMember?.accountId) {
+    await ctx.reply(`你已注册网站账号，请直接登录 ${getAppBaseUrl()}/login`)
+    return
+  }
+
+  const pendingMember = existingMember?.accountId === null ? existingMember : null
+  if (pendingMember?.inviteCode) {
+    const pendingInvite = await prisma.inviteCode.findUnique({
+      where: { code: pendingMember.inviteCode },
+      select: { expiresAt: true },
+    })
+    if (pendingInvite && (!pendingInvite.expiresAt || pendingInvite.expiresAt >= new Date())) {
+      await ctx.reply(buildJoinPrompt(tgId, pendingMember.inviteCode))
+      return
+    }
+  }
+
+  const expiresAt = new Date(Date.now() + JOIN_INVITE_CODE_TTL_MS)
+  try {
+    const code = await prisma.$transaction(async (tx) => {
+      const nextCode = await createInviteCodeRecord(tx, { expiresAt })
+      await tx.member.upsert({
+        where: { tgId: String(tgId) },
+        create: { tgId: String(tgId), accountId: null, inviteCode: nextCode },
+        update: { inviteCode: nextCode },
+      })
+      return nextCode
+    })
+    await ctx.reply(buildJoinPrompt(tgId, code))
+  } catch (error) {
+    console.error('[handleJoin] transaction failed:', error)
+    await ctx.reply('系统暂时不可用，请稍后再试')
+  }
 }
 
 export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<void> {
