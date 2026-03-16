@@ -29,7 +29,7 @@ function ClawIcon({ size = 80 }: { size?: number }) {
 type LoginTab = 'human' | 'robot'
 
 export default function LoginPage() {
-  const { ready, authenticated, login } = usePrivy()
+  const { ready, authenticated } = usePrivy()
   const { user, loading, logout } = useAuth()
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<LoginTab>('human')
@@ -65,15 +65,6 @@ export default function LoginPage() {
     return () => window.clearTimeout(timeoutId)
   }, [resendCooldown])
 
-  async function handleTelegramLogin() {
-    await login({ loginMethods: ['telegram'] })
-  }
-
-  async function handleSwitchToTelegramLogin() {
-    await logout()
-    await handleTelegramLogin()
-  }
-
   useEffect(() => {
     if (ready && authenticated && user) {
       router.push('/community')
@@ -101,7 +92,7 @@ export default function LoginPage() {
             <span className="text-gradient">未找到账号</span>
           </h1>
           <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-            新用户需要先通过邀请码注册。老成员如果之前通过 Telegram 加入，请改用 Telegram 登录。
+            新用户需要先通过邀请码注册。
           </p>
           <div className="glass-panel p-6 w-full max-w-sm text-left">
             <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>获取邀请码：</p>
@@ -120,9 +111,6 @@ export default function LoginPage() {
               </li>
             </ol>
             <div className="flex flex-col gap-3">
-              <button onClick={() => void handleSwitchToTelegramLogin()} className="btn btn-primary w-full">
-                退出并改用 Telegram 登录
-              </button>
               <button onClick={() => void logout()} className="btn w-full">
                 退出并更换邮箱
               </button>
@@ -263,20 +251,12 @@ export default function LoginPage() {
                 </>
               )}
 
-              <button
-                onClick={() => void handleTelegramLogin()}
-                disabled={emailBusy}
-                className="btn w-full mt-3 py-3 text-base"
-              >
-                通过 Telegram 登录
-              </button>
-
               {emailError && (
                 <p className="text-xs mt-2" style={{ color: 'var(--accent-red, #ef4444)' }}>{emailError}</p>
               )}
 
               <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-                已绑定邮箱的成员可用验证码登录，老成员也可直接使用 Telegram 登录。
+                使用注册时的邮箱接收验证码登录。
               </p>
 
               <div className="mt-4 pt-4 text-left" style={{ borderTop: '1px solid var(--border-subtle)' }}>

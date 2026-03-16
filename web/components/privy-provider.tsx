@@ -7,7 +7,7 @@ export function PrivyProvider({ children }: { children: React.ReactNode }) {
     <BasePrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        loginMethods: ['telegram', 'email'],
+        loginMethods: ['email'],
         appearance: {
           showWalletLoginFirst: false,
         },
