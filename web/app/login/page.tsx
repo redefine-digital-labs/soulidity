@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { usePrivy } from '@privy-io/react-auth'
+import { usePrivy, useLoginWithEmail } from '@privy-io/react-auth'
 import { useAuth } from '@web/components/auth-provider'
 
 function ClawIcon({ size = 80 }: { size?: number }) {
@@ -34,6 +34,36 @@ export default function LoginPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<LoginTab>('human')
   const [email, setEmail] = useState('')
+  const [otpCode, setOtpCode] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [sentToEmail, setSentToEmail] = useState('')
+  const [resendCooldown, setResendCooldown] = useState(0)
+
+  const {
+    sendCode,
+    loginWithCode,
+    state: emailState,
+  } = useLoginWithEmail({
+    onError: (error) => {
+      setEmailError(error instanceof Error ? error.message : String(error))
+    },
+  })
+
+  const awaitingCode = emailState.status === 'awaiting-code-input'
+  const emailBusy = emailState.status === 'sending-code' || emailState.status === 'submitting-code'
+  const trimmedEmail = email.trim()
+  const showingEditedEmail = awaitingCode && sentToEmail !== '' && trimmedEmail !== sentToEmail
+  const resendDisabled = !trimmedEmail || emailBusy || (trimmedEmail === sentToEmail && resendCooldown > 0)
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+
+    const timeoutId = window.setTimeout(() => {
+      setResendCooldown(current => Math.max(0, current - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [resendCooldown])
 
   async function handleTelegramLogin() {
     await login({ loginMethods: ['telegram'] })
@@ -103,9 +133,26 @@ export default function LoginPage() {
     )
   }
 
-  function handleEmailLogin() {
-    if (!email.trim()) return
-    void login({ loginMethods: ['email'], prefill: { type: 'email', value: email.trim() } })
+  async function handleSendCode() {
+    if (!trimmedEmail) return
+    setEmailError('')
+    try {
+      await sendCode({ email: trimmedEmail })
+      setSentToEmail(trimmedEmail)
+      setResendCooldown(30)
+    } catch {
+      setEmailError('网络错误，请重试')
+    }
+  }
+
+  async function handleLoginWithCode() {
+    if (!otpCode.trim()) return
+    setEmailError('')
+    try {
+      await loginWithCode({ code: otpCode.trim() })
+    } catch {
+      setEmailError('网络错误，请重试')
+    }
   }
 
   return (
@@ -157,25 +204,79 @@ export default function LoginPage() {
         <div className="glass-panel p-6 w-full max-w-md rounded-t-none" style={{ borderTop: 'none' }}>
           {activeTab === 'human' ? (
             <>
-              <input
-                type="email"
-                className="input-dark mb-3"
-                placeholder="your@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-              />
+              {!awaitingCode ? (
+                <>
+                  <input
+                    type="email"
+                    className="input-dark mb-3"
+                    placeholder="your@email.com"
+                    value={email}
+                    onChange={e => { setEmail(e.target.value); setEmailError('') }}
+                    onKeyDown={e => e.key === 'Enter' && void handleSendCode()}
+                    disabled={emailBusy}
+                  />
+                  <button onClick={() => void handleSendCode()} disabled={!email.trim() || emailBusy} className="btn btn-primary w-full py-3 text-base">
+                    {emailBusy ? '发送中...' : '发送验证码'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="email"
+                    className="input-dark mb-3"
+                    placeholder="your@email.com"
+                    value={email}
+                    onChange={e => { setEmail(e.target.value); setEmailError('') }}
+                    onKeyDown={e => e.key === 'Enter' && void handleSendCode()}
+                    disabled={emailBusy}
+                  />
+                  <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+                    验证码已发送至 <span style={{ color: 'var(--accent-cyan)' }}>{sentToEmail || trimmedEmail}</span>。
+                  </p>
+                  {showingEditedEmail && (
+                    <p className="text-xs mb-3" style={{ color: 'var(--accent-amber, #f59e0b)' }}>
+                      当前输入已改为 {trimmedEmail}，需要重新发送验证码到新邮箱。
+                    </p>
+                  )}
+                  <input
+                    type="text"
+                    className="input-dark mb-3"
+                    placeholder="输入验证码"
+                    value={otpCode}
+                    onChange={e => setOtpCode(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && void handleLoginWithCode()}
+                    disabled={emailBusy}
+                    autoFocus
+                  />
+                  <button onClick={() => void handleLoginWithCode()} disabled={!otpCode.trim() || emailBusy} className="btn btn-primary w-full py-3 text-base">
+                    {emailBusy ? '验证中...' : '登录'}
+                  </button>
+                  <button
+                    onClick={() => void handleSendCode()}
+                    disabled={resendDisabled}
+                    className="btn w-full mt-2 py-2 text-sm"
+                  >
+                    {trimmedEmail === sentToEmail && resendCooldown > 0
+                      ? `重新发送验证码 (${resendCooldown}s)`
+                      : '重新发送验证码'}
+                  </button>
+                </>
+              )}
 
-              <button onClick={handleEmailLogin} disabled={!email.trim()} className="btn btn-primary w-full py-3 text-base">
-                发送验证码登录
-              </button>
-
-              <button onClick={() => void handleTelegramLogin()} className="btn w-full mt-3 py-3 text-base">
+              <button
+                onClick={() => void handleTelegramLogin()}
+                disabled={emailBusy}
+                className="btn w-full mt-3 py-3 text-base"
+              >
                 通过 Telegram 登录
               </button>
 
+              {emailError && (
+                <p className="text-xs mt-2" style={{ color: 'var(--accent-red, #ef4444)' }}>{emailError}</p>
+              )}
+
               <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-                新成员请使用注册邮箱接收验证码。已有社区账号的老成员可直接使用 Telegram 登录。
+                已绑定邮箱的成员可用验证码登录，老成员也可直接使用 Telegram 登录。
               </p>
 
               <div className="mt-4 pt-4 text-left" style={{ borderTop: '1px solid var(--border-subtle)' }}>

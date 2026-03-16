@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { usePrivy } from '@privy-io/react-auth'
+import { usePrivy, useLoginWithEmail } from '@privy-io/react-auth'
 import Link from 'next/link'
 import { useAuth } from '@web/components/auth-provider'
 import { isInviteCode } from '@shared/invite-code-format'
@@ -11,12 +11,31 @@ function RegisterForm() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const code = (searchParams.get('code') ?? '').toUpperCase().trim()
-  const { ready, authenticated, login, getAccessToken, user: privyUser } = usePrivy()
+  const { ready, authenticated, getAccessToken, user: privyUser } = usePrivy()
   const { user, refresh, logout, loading: authLoading } = useAuth()
 
   const [email, setEmail] = useState('')
+  const [otpCode, setOtpCode] = useState('')
   const [registering, setRegistering] = useState(false)
   const [error, setError] = useState('')
+  const [sentToEmail, setSentToEmail] = useState('')
+  const [resendCooldown, setResendCooldown] = useState(0)
+
+  const {
+    sendCode,
+    loginWithCode,
+    state: emailState,
+  } = useLoginWithEmail({
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : String(err))
+    },
+  })
+
+  const awaitingCode = emailState.status === 'awaiting-code-input'
+  const emailBusy = emailState.status === 'sending-code' || emailState.status === 'submitting-code'
+  const trimmedEmail = email.trim()
+  const showingEditedEmail = awaitingCode && sentToEmail !== '' && trimmedEmail !== sentToEmail
+  const resendDisabled = !trimmedEmail || emailBusy || (trimmedEmail === sentToEmail && resendCooldown > 0)
   const authenticatedEmail = privyUser?.email?.address ?? ''
   const hasCode = code.length > 0
   const codeValid = hasCode && isInviteCode(code)
@@ -30,6 +49,16 @@ function RegisterForm() {
   useEffect(() => {
     if (user) router.push('/community')
   }, [user, router])
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+
+    const timeoutId = window.setTimeout(() => {
+      setResendCooldown(current => Math.max(0, current - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [resendCooldown])
 
   const completeRegistration = useCallback(async () => {
     if (!authenticated || registering) return
@@ -61,9 +90,26 @@ function RegisterForm() {
     }
   }, [authenticated, getAccessToken, code, refresh, router, registering])
 
-  function handleLogin() {
-    if (!email.trim()) return
-    login({ loginMethods: ['email'], prefill: { type: 'email', value: email.trim() } })
+  async function handleSendCode() {
+    if (!trimmedEmail) return
+    setError('')
+    try {
+      await sendCode({ email: trimmedEmail })
+      setSentToEmail(trimmedEmail)
+      setResendCooldown(30)
+    } catch {
+      setError('网络错误，请重试')
+    }
+  }
+
+  async function handleVerifyCode() {
+    if (!otpCode.trim()) return
+    setError('')
+    try {
+      await loginWithCode({ code: otpCode.trim() })
+    } catch {
+      setError('网络错误，请重试')
+    }
   }
 
   async function handleLogoutToLogin() {
@@ -164,18 +210,65 @@ function RegisterForm() {
         {codeValid === true && !authenticated && (
           <div className="mt-4">
             <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>请输入邮箱继续注册，系统会在验证后绑定邀请码</p>
-            <input
-              type="email"
-              className="input-dark mb-3"
-              placeholder="your@email.com"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setError('') }}
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            />
 
-            <button onClick={handleLogin} disabled={!email.trim()} className="btn btn-primary w-full">
-              发送验证码
-            </button>
+            {!awaitingCode ? (
+              <>
+                <input
+                  type="email"
+                  className="input-dark mb-3"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setError('') }}
+                  onKeyDown={e => e.key === 'Enter' && void handleSendCode()}
+                  disabled={emailBusy}
+                />
+                <button onClick={() => void handleSendCode()} disabled={!email.trim() || emailBusy} className="btn btn-primary w-full">
+                  {emailBusy ? '发送中...' : '发送验证码'}
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="email"
+                  className="input-dark mb-3"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setError('') }}
+                  onKeyDown={e => e.key === 'Enter' && void handleSendCode()}
+                  disabled={emailBusy}
+                />
+                <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+                  验证码已发送至 <span style={{ color: 'var(--accent-cyan)' }}>{sentToEmail || trimmedEmail}</span>。
+                </p>
+                {showingEditedEmail && (
+                  <p className="text-xs mb-3" style={{ color: 'var(--accent-amber, #f59e0b)' }}>
+                    当前输入已改为 {trimmedEmail}，需要重新发送验证码到新邮箱。
+                  </p>
+                )}
+                <input
+                  type="text"
+                  className="input-dark mb-3"
+                  placeholder="输入验证码"
+                  value={otpCode}
+                  onChange={e => setOtpCode(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && void handleVerifyCode()}
+                  disabled={emailBusy}
+                  autoFocus
+                />
+                <button onClick={() => void handleVerifyCode()} disabled={!otpCode.trim() || emailBusy} className="btn btn-primary w-full">
+                  {emailBusy ? '验证中...' : '验证并注册'}
+                </button>
+                <button
+                  onClick={() => void handleSendCode()}
+                  disabled={resendDisabled}
+                  className="btn w-full mt-2 py-2 text-sm"
+                >
+                  {trimmedEmail === sentToEmail && resendCooldown > 0
+                    ? `重新发送验证码 (${resendCooldown}s)`
+                    : '重新发送验证码'}
+                </button>
+              </>
+            )}
 
             <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
               使用邀请码绑定邮箱。若该邮箱已注册，验证后会直接登录或提示你返回登录页。
