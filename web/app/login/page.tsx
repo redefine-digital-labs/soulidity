@@ -44,7 +44,7 @@ export default function LoginPage() {
     loginWithCode,
     state: emailState,
   } = useLoginWithEmail({
-    onError: (error) => {
+    onError: (error: unknown) => {
       setEmailError(error instanceof Error ? error.message : String(error))
     },
   })

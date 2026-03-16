@@ -26,7 +26,7 @@ function RegisterForm() {
     loginWithCode,
     state: emailState,
   } = useLoginWithEmail({
-    onError: (err) => {
+    onError: (err: unknown) => {
       setError(err instanceof Error ? err.message : String(err))
     },
   })
