@@ -12,7 +12,7 @@ beforeEach(() => {
 describe('invite codes', () => {
   it('creates and validates invite code', async () => {
     const code = await createInviteCode(prisma)
-    expect(code).toHaveLength(8)
+    expect(code).toHaveLength(16)
     expect(await validateInviteCode(prisma, code)).toBe(true)
   })
 

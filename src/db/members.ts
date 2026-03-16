@@ -1,10 +1,8 @@
 import type { PrismaClient } from './database.js'
-import crypto from 'crypto'
+import { createInviteCodeRecord } from '../shared/invite-code-record.js'
 
 export async function createInviteCode(prisma: PrismaClient): Promise<string> {
-  const code = crypto.randomUUID().slice(0, 8).toUpperCase()
-  await prisma.inviteCode.create({ data: { code } })
-  return code
+  return createInviteCodeRecord(prisma)
 }
 
 export async function validateInviteCode(prisma: PrismaClient, code: string): Promise<boolean> {

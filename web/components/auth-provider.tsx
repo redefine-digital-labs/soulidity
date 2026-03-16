@@ -53,27 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch('/api/auth/me', { cache: 'no-store', headers })
       if (res.ok) {
         const data = await res.json()
-        if (data.user) {
-          setUser(data.user)
-          return
-        }
-
-        // user is null — try linking via privy-callback
-        const linkRes = await fetch('/api/auth/privy-callback', {
-          method: 'POST',
-          headers,
-        })
-        if (linkRes.ok) {
-          // Retry /api/auth/me after linking
-          const retryRes = await fetch('/api/auth/me', { cache: 'no-store', headers })
-          if (retryRes.ok) {
-            const retryData = await retryRes.json()
-            setUser(retryData.user ?? null)
-            return
-          }
-        }
-
-        setUser(null)
+        setUser(data.user ?? null)
       } else {
         setUser(null)
       }

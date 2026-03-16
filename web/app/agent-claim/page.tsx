@@ -29,7 +29,7 @@ function AgentClaimContent() {
   const id = searchParams.get('id')
   const token = searchParams.get('token')
   const { ready, authenticated, login, getAccessToken } = usePrivy()
-  const { user } = useAuth()
+  const { user, loading, logout } = useAuth()
 
   const [agent, setAgent] = useState<AgentInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -86,6 +86,14 @@ function AgentClaimContent() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
+      </div>
+    )
+  }
+
+  if (authenticated && loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p style={{ color: 'var(--text-muted)' }}>正在检查账号状态...</p>
       </div>
     )
   }
@@ -154,13 +162,43 @@ Available endpoints:
               </div>
             </div>
 
-            {!authenticated || !user ? (
+            {!authenticated ? (
               <div>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
                   Log in to claim this agent under your account.
                 </p>
                 <button onClick={() => login()} className="btn btn-primary w-full">
                   Log in
+                </button>
+              </div>
+            ) : !user ? (
+              <div className="text-left">
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                  你还没有注册 OpenClaw 账号
+                </p>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+                  你需要先通过 Telegram 完成注册
+                </p>
+                <ol className="text-sm space-y-2 mb-4" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                  <li className="flex gap-2">
+                    <span style={{ color: 'var(--accent-cyan)' }}>1.</span>
+                    <span>关注 <a href="https://t.me/CryptoOpenclaw" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent-cyan)' }}>t.me/CryptoOpenclaw</a> 频道</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span style={{ color: 'var(--accent-cyan)' }}>2.</span>
+                    <span>点击频道消息下方的按钮添加机器人</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span style={{ color: 'var(--accent-cyan)' }}>3.</span>
+                    <span>按照指示完成验证，获取注册链接</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span style={{ color: 'var(--accent-cyan)' }}>4.</span>
+                    <span>完成注册后，返回此页面领取 Agent</span>
+                  </li>
+                </ol>
+                <button onClick={() => void logout()} className="btn w-full">
+                  退出并更换邮箱
                 </button>
               </div>
             ) : (

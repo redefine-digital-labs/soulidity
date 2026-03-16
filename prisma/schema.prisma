@@ -167,6 +167,7 @@ model Member {
 
   @@index([tgId])
   @@index([accountId, kind])
+  @@index([inviteCode])
   @@map("members")
 }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { createInviteCodeRecord } from '@shared/invite-code-record'
 
 export async function GET() {
   const invites = await prisma.inviteCode.findMany({ orderBy: { createdAt: 'desc' } })
@@ -7,7 +8,6 @@ export async function GET() {
 }
 
 export async function POST() {
-  const code = crypto.randomUUID().slice(0, 8).toUpperCase()
-  await prisma.inviteCode.create({ data: { code } })
+  const code = await createInviteCodeRecord(prisma)
   return NextResponse.json({ code })
 }

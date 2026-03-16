@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@web/*": ["./*"]
+      "@bot/*": ["../src/bot/*"],
+      "@web/*": ["./*"],
+      "@shared/*": ["../src/shared/*"]
     }
   },
   "include": [

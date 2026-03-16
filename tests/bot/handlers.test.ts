@@ -30,12 +30,129 @@ describe('handleJoin', () => {
     expect(msg).toContain('join-skill.md')
     expect(msg).toContain('invite_code:')
     expect(store.inviteCodes).toHaveLength(1)
+    expect(store.inviteCodes[0].code).toHaveLength(16)
+    expect(store.members).toHaveLength(1)
+    expect(store.members[0].tgId).toBe('123456789')
+    expect(store.members[0].inviteCode).toBe(store.inviteCodes[0].code)
   })
 
   it('ignores non-private chats', async () => {
     const ctx = createMockCtx({ chat: { type: 'group' } })
     await handleJoin(ctx as any, prisma)
     expect(ctx.reply).not.toHaveBeenCalled()
+  })
+
+  it('reuses an existing unexpired pending invite code', async () => {
+    store.members.push({
+      id: 'member-1',
+      tgId: '123456789',
+      inviteCode: 'PENDING01',
+      accountId: null,
+      level: 1,
+      createdAt: new Date(),
+    })
+    store.inviteCodes.push({
+      code: 'PENDING01',
+      active: 0,
+      usedBy: '123456789',
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
+    })
+
+    const ctx = createMockCtx()
+    await handleJoin(ctx as any, prisma)
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1)
+    const msg = ctx.reply.mock.calls[0][0] as string
+    expect(msg).toContain('PENDING01')
+    expect(store.inviteCodes).toHaveLength(1)
+  })
+
+  it('reuses the same code on repeated /join before API verification completes', async () => {
+    const firstCtx = createMockCtx()
+    await handleJoin(firstCtx as any, prisma)
+
+    expect(store.inviteCodes).toHaveLength(1)
+    const firstCode = store.inviteCodes[0].code
+
+    const secondCtx = createMockCtx()
+    await handleJoin(secondCtx as any, prisma)
+
+    expect(store.inviteCodes).toHaveLength(1)
+    expect((secondCtx.reply.mock.calls[0][0] as string)).toContain(firstCode)
+    expect(store.members).toHaveLength(1)
+    expect(store.members[0].inviteCode).toBe(firstCode)
+  })
+
+  it('rotates an expired pending invite code once and then reuses the replacement', async () => {
+    store.members.push({
+      id: 'member-1',
+      tgId: '123456789',
+      inviteCode: 'EXPIRED01',
+      accountId: null,
+      level: 1,
+      createdAt: new Date(),
+    })
+    store.inviteCodes.push({
+      code: 'EXPIRED01',
+      active: 0,
+      usedBy: '123456789',
+      expiresAt: new Date(Date.now() - 60_000),
+      createdAt: new Date(),
+    })
+
+    const firstCtx = createMockCtx()
+    await handleJoin(firstCtx as any, prisma)
+
+    expect(store.inviteCodes).toHaveLength(2)
+    const replacementCode = store.inviteCodes[1].code
+    expect(replacementCode).toHaveLength(16)
+    expect(store.members[0].inviteCode).toBe(replacementCode)
+    expect((firstCtx.reply.mock.calls[0][0] as string)).toContain(replacementCode)
+
+    const secondCtx = createMockCtx()
+    await handleJoin(secondCtx as any, prisma)
+
+    expect(store.inviteCodes).toHaveLength(2)
+    expect((secondCtx.reply.mock.calls[0][0] as string)).toContain(replacementCode)
+  })
+
+  it('rolls back invite rotation when the pending member update fails', async () => {
+    store.members.push({
+      id: 'member-1',
+      tgId: '123456789',
+      inviteCode: 'EXPIRED01',
+      accountId: null,
+      level: 1,
+      createdAt: new Date(),
+    })
+    store.inviteCodes.push({
+      code: 'EXPIRED01',
+      active: 0,
+      usedBy: '123456789',
+      expiresAt: new Date(Date.now() - 60_000),
+      createdAt: new Date(),
+    })
+
+    prisma.member.upsert.mockRejectedValueOnce(new Error('write failed'))
+    const ctx = createMockCtx()
+
+    await handleJoin(ctx as any, prisma)
+    expect(store.inviteCodes).toHaveLength(1)
+    expect(store.members[0].inviteCode).toBe('EXPIRED01')
+    expect(ctx.reply).toHaveBeenCalledWith('系统暂时不可用，请稍后再试')
+  })
+
+  it('replies with a friendly error when invite code creation fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    prisma.$transaction.mockRejectedValueOnce(new Error('db down'))
+    const ctx = createMockCtx()
+
+    await handleJoin(ctx as any, prisma)
+
+    expect(ctx.reply).toHaveBeenCalledWith('系统暂时不可用，请稍后再试')
+    expect(consoleError).toHaveBeenCalledWith('[handleJoin] transaction failed:', expect.any(Error))
+    consoleError.mockRestore()
   })
 })
 
