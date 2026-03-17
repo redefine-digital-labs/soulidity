@@ -28,12 +28,13 @@ function AgentClaimContent() {
   const searchParams = useSearchParams()
   const id = searchParams.get('id')
   const token = searchParams.get('token')
-  const { ready, authenticated, login, getAccessToken } = usePrivy()
-  const { user, loading, logout } = useAuth()
+  const { ready, authenticated, login, getAccessToken, user: privyUser } = usePrivy()
+  const { user, loading, logout, refresh } = useAuth()
 
   const [agent, setAgent] = useState<AgentInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [claiming, setClaiming] = useState(false)
+  const [registering, setRegistering] = useState(false)
   const [result, setResult] = useState<{ apiKey: string } | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -71,6 +72,57 @@ function AgentClaimContent() {
       setError('Claim failed')
     } finally {
       setClaiming(false)
+    }
+  }
+
+  async function handleClaimWithRegister() {
+    if (!id || !token) return
+    setRegistering(true)
+    setError(null)
+    try {
+      const accessToken = await getAccessToken()
+      const res = await fetch('/api/agent-join/claim-register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ id, token }),
+      })
+      const data = await res.json()
+
+      if (res.ok) {
+        setResult({ apiKey: data.apiKey })
+        refresh()
+        return
+      }
+
+      if (res.status === 409) {
+        switch (data.code) {
+          case 'ACCOUNT_EXISTS':
+            // User actually has an account — refresh will resolve it, then auto-claim
+            await refresh()
+            handleClaim()
+            return
+          case 'EMAIL_EXISTS':
+            setError('该邮箱已被其他账号使用，请退出并更换邮箱')
+            return
+          case 'AGENT_CLAIMED':
+            setError('该 Agent 已被他人领取')
+            return
+        }
+      }
+
+      if (res.status === 429) {
+        setError('请求过于频繁，请稍后再试')
+        return
+      }
+
+      setError(data.error || '注册失败，请稍后重试')
+    } catch {
+      setError('注册失败，请稍后重试')
+    } finally {
+      setRegistering(false)
     }
   }
 
@@ -174,29 +226,18 @@ Available endpoints:
             ) : !user ? (
               <div className="text-left">
                 <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                  你还没有注册 OpenClaw 账号
+                  注册并领取 Agent
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-                  你需要先通过 Telegram 完成注册
+                  当前邮箱：{privyUser?.email?.address ?? '未知'}
                 </p>
-                <ol className="text-sm space-y-2 mb-4" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                  <li className="flex gap-2">
-                    <span style={{ color: 'var(--accent-cyan)' }}>1.</span>
-                    <span>关注 <a href="https://t.me/CryptoOpenclaw" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent-cyan)' }}>t.me/CryptoOpenclaw</a> 频道</span>
-                  </li>
-                  <li className="flex gap-2">
-                    <span style={{ color: 'var(--accent-cyan)' }}>2.</span>
-                    <span>点击频道消息下方的按钮添加机器人</span>
-                  </li>
-                  <li className="flex gap-2">
-                    <span style={{ color: 'var(--accent-cyan)' }}>3.</span>
-                    <span>按照指示完成验证，获取注册链接</span>
-                  </li>
-                  <li className="flex gap-2">
-                    <span style={{ color: 'var(--accent-cyan)' }}>4.</span>
-                    <span>完成注册后，返回此页面领取 Agent</span>
-                  </li>
-                </ol>
+                <button
+                  onClick={handleClaimWithRegister}
+                  disabled={registering}
+                  className="btn btn-primary w-full mb-2"
+                >
+                  {registering ? '处理中...' : '注册并领取 Agent'}
+                </button>
                 <button onClick={() => void logout()} className="btn w-full">
                   退出并更换邮箱
                 </button>

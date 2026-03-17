@@ -3,8 +3,10 @@ dist/
 data/
 .env
 .DS_Store
+.next/
 web/.next/
 web/node_modules/
+docs/screenshots/
 
 /generated/prisma
 .worktrees/
