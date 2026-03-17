@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
+import { AgentJoinGuide } from '@web/components/agent-join-guide'
 
 interface AgentItem {
   id: string
@@ -187,7 +188,7 @@ export default function UserProfilePage() {
                 ) : agentsError ? (
                   <p className="text-sm" style={{ color: '#ef4444' }}>{agentsError}</p>
                 ) : agents.length === 0 ? (
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无 Agent</p>
+                  <AgentJoinGuide />
                 ) : (
                   <div className="flex flex-col gap-3">
                     {agents.map(agent => (
