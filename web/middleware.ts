@@ -50,7 +50,8 @@ export async function middleware(request: NextRequest) {
     pathname === '/join-skill.md' ||
     pathname === '/agent-join-skill.md' ||
     pathname.startsWith('/api/agent-join') ||
-    pathname === '/agent-claim'
+    pathname === '/agent-claim' ||
+    pathname.startsWith('/.well-known/')
   ) {
     return NextResponse.next()
   }
