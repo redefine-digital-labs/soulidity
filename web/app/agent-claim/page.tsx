@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { usePrivy } from '@privy-io/react-auth'
 import { useAuth } from '@web/components/auth-provider'
@@ -196,6 +197,9 @@ Available endpoints:
             >
               {copied ? 'Copied!' : 'Copy to Clipboard'}
             </button>
+            <Link href="/community" className="btn w-full mt-2 text-center">
+              返回首页
+            </Link>
           </div>
         ) : agent ? (
           <div>
