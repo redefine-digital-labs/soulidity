@@ -43,6 +43,59 @@ Test matrix for the email OTP auth flow after Telegram login removal.
 | M6 | "未找到账号" state | Needs Privy auth with no DB account | ☐ |
 | M7 | Agent DELETE API tests (G1-G8) | curl with auth token | ☐ |
 
+---
+
+## Agent Claim — 未注册用户注册+领取
+
+### 背景
+
+新增 `POST /api/agent-join/claim-register` 端点，允许未注册用户在 claim 页面一步完成注册 + 领取 Agent，无需走 Telegram 邀请码注册流程。
+
+### API 端点
+
+`POST /api/agent-join/claim-register`
+- Header: `Authorization: Bearer <privy_token>`
+- Body: `{ id, token }`
+- 成功: `{ ok: true, apiKey }`
+- 错误码: `ACCOUNT_EXISTS` (409), `EMAIL_EXISTS` (409), `AGENT_CLAIMED` (409), 429
+
+### 前端改动
+
+`web/app/agent-claim/page.tsx` — `authenticated && !user` 分支：
+- 旧行为：显示 "你还没有注册" + Telegram 注册指引（死胡同）
+- 新行为：显示当前邮箱 + "注册并领取 Agent" 按钮，一步完成
+
+### Manual Tests
+
+| ID | Test | Steps | Expected | Result |
+|----|------|-------|----------|--------|
+| AC1 | 未注册用户一步注册+领取 | 1. 用新钱包调 `POST /api/agent-join` 获取 claim URL<br>2. 用未注册邮箱打开 claim URL<br>3. 完成邮箱 OTP<br>4. 点 "注册并领取 Agent" | 直接显示 API key，数据库有 Account + human Member + agent Member | ☐ |
+| AC2 | 已注册用户正常 claim | 用已注册邮箱打开 claim URL → 登录 | 显示 "Approve & Claim Agent" 按钮，点击后成功 | ☐ |
+| AC3 | 邮箱已被其他账号使用 | 用另一个账号已占用的邮箱尝试注册+领取 | 显示 "该邮箱已被其他账号使用，请退出并更换邮箱" | ☐ |
+| AC4 | Agent 已被他人领取 | 两人同时打开同一 claim link，第二人点击 | 显示 "该 Agent 已被他人领取" | ☐ |
+| AC5 | privyDid 已有账号但未识别 | privyDid 未关联但 email/tgId 已有 Account | 点击后 409 ACCOUNT_EXISTS → refresh 自动关联 → 无缝完成 claim | ☐ |
+| AC6 | 无效 claim link | 打开 `?id=xxx&token=bad` | 显示 "Invalid claim link" | ☐ |
+| AC7 | 频率限制 | 短时间内反复请求 claim-register | 显示 "请求过于频繁，请稍后再试" | ☐ |
+| AC8 | 网络超时后重试 | 第一次超时，再次点击 | 第二次 privyDid 已有 Account → 409 → refresh → 无缝 claim | ☐ |
+
+### 数据库验证 (AC1 成功后)
+
+```sql
+-- 确认 Account 创建正确
+SELECT id, "privyDid", email, "tgId" FROM accounts WHERE email = '<test-email>';
+-- tgId 应为 null
+
+-- 确认 human Member 创建
+SELECT id, kind, "accountId", "displayName" FROM members
+WHERE "accountId" = '<account-id>' AND kind = 'human';
+
+-- 确认 agent Member 已关联
+SELECT id, kind, "accountId", "displayName" FROM members
+WHERE "accountId" = '<account-id>' AND kind = 'agent';
+```
+
+---
+
 ## Screenshots
 
 Evidence screenshots saved to `docs/screenshots/`:
@@ -68,6 +121,13 @@ Changes verified via `npm run build` — passes with zero errors.
 | `web/app/login/page.tsx` | Updated footer text to "使用注册时的邮箱接收验证码登录。" |
 | `web/app/login/page.tsx` | Fixed `instanceof` TS error in onError callback |
 | `web/app/register/page.tsx` | Fixed same `instanceof` TS error |
+
+### Agent Claim Register Summary
+
+| File | Change |
+|------|--------|
+| `web/app/api/agent-join/claim-register/route.ts` | 新增：合并注册+claim 的 API 端点 |
+| `web/app/agent-claim/page.tsx` | 替换 "你还没有注册" 死胡同为 "注册并领取 Agent" 一步流程 |
 
 ### Preserved (TG bot references for invite codes — NOT login):
 - `register/page.tsx` — "Telegram 机器人" for getting invite codes

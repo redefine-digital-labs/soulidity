@@ -6,12 +6,7 @@ export function getAppBaseUrl(): string {
     return configuredBaseUrl
   }
 
-  const vercelUrl = process.env.VERCEL_URL?.trim()
-  if (vercelUrl) {
-    return `https://${vercelUrl}`
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'development') {
     return 'http://localhost:3000'
   }
 
