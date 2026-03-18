@@ -86,6 +86,14 @@ export default function MarketPage() {
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             {loading ? '加载中...' : `${total} 个模板可用`}
           </p>
+          <div className="flex gap-3 mt-3">
+            <Link href="/market/publish" className="glass-card px-4 py-2 text-sm font-semibold" style={{ color: 'var(--accent-cyan)' }}>
+              发布模板
+            </Link>
+            <Link href="/market/my" className="glass-card px-4 py-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+              我的购买
+            </Link>
+          </div>
         </div>
 
         <div className="mb-6 animate-fade-up" style={{ animationDelay: '50ms' }}>
