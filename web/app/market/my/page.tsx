@@ -22,9 +22,6 @@ function formatOrderAmount(amount: string, currency: string): string {
   if (currency === 'USDC') {
     return `${(Number(BigInt(amount)) / 1e6).toFixed(2)} USDC`
   }
-  if (currency === 'SOL') {
-    return `${(Number(BigInt(amount)) / 1e9).toFixed(4)} SOL`
-  }
   return `${formatSUI(amount)} SUI`
 }
 

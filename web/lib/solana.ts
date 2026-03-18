@@ -39,9 +39,6 @@ export const USDC_MINT: Record<string, string> = {
 
 export const USDC_DECIMALS = 6
 type X402SolanaNetwork = `solana:${string}`
-const MICROS_PER_USD = BigInt(1_000_000)
-const LAMPORTS_PER_SOL = BigInt(1_000_000_000)
-
 const X402_SOLANA_NETWORKS: Record<string, X402SolanaNetwork> = {
   [MAINNET_NETWORK]: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
   devnet: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
@@ -61,25 +58,4 @@ export function getX402SolanaNetwork(): X402SolanaNetwork {
 
 export function usdCentsToUsdcAtomicUnits(cents: number): bigint {
   return BigInt(cents) * BigInt(10_000)
-}
-
-export function usdCentsToLamports(cents: number, solPriceUsd: number): bigint {
-  if (!Number.isSafeInteger(cents) || cents < 0) {
-    throw new RangeError('USD cents must be a non-negative safe integer')
-  }
-  if (!Number.isFinite(solPriceUsd) || solPriceUsd <= 0) {
-    throw new RangeError('SOL price must be a positive finite number')
-  }
-
-  const solPriceMicros = Math.round(solPriceUsd * Number(MICROS_PER_USD))
-  if (!Number.isSafeInteger(solPriceMicros) || solPriceMicros <= 0) {
-    throw new RangeError('SOL price must be representable in micro-USD precision')
-  }
-
-  const usdMicros = BigInt(cents) * (MICROS_PER_USD / BigInt(100))
-  return ceilDiv(usdMicros * LAMPORTS_PER_SOL, BigInt(solPriceMicros))
-}
-
-function ceilDiv(numerator: bigint, denominator: bigint): bigint {
-  return (numerator + denominator - BigInt(1)) / denominator
 }

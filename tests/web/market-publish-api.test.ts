@@ -105,4 +105,65 @@ describe('POST /api/market/publish', () => {
       }),
     })
   })
+
+  it('returns 400 when no Sui wallet is bound to the seller', async () => {
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue(null)
+
+    const { POST } = await import('../../web/app/api/market/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Research Agent',
+          description: 'Summarizes markets',
+          category: 'Analysis',
+          storagePath: 'seller-1/research-agent.zip',
+          contentHash: 'hash-1',
+          priceMist: '1000000000',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'No Sui wallet bound. Please bind your wallet first.',
+    })
+    expect(mockedPrisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('returns 502 when the CoinGecko price fetch fails', async () => {
+    const { resetCoingeckoUsdPriceCache } = await import('../../web/lib/coingecko.ts')
+    resetCoingeckoUsdPriceCache()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+      }),
+    )
+
+    const { POST } = await import('../../web/app/api/market/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Research Agent',
+          description: 'Summarizes markets',
+          category: 'Analysis',
+          storagePath: 'seller-1/research-agent.zip',
+          contentHash: 'hash-1',
+          priceMist: '1000000000',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Failed to fetch sui price',
+    })
+    expect(mockedPrisma.$transaction).not.toHaveBeenCalled()
+  })
 })

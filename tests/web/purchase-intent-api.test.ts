@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockedResolveIdentity = vi.hoisted(() => vi.fn())
 const mockedGetAssociatedTokenAddress = vi.hoisted(() => vi.fn())
 const mockedUsdCentsToUsdcAtomicUnits = vi.hoisted(() => vi.fn())
-const mockedUsdCentsToLamports = vi.hoisted(() => vi.fn())
 const mockedGetUsdcMint = vi.hoisted(() => vi.fn())
 const mockedGetAccountInfo = vi.hoisted(() => vi.fn())
 
@@ -35,7 +34,6 @@ vi.mock('@web/lib/solana', () => ({
   solanaConnection: {
     getAccountInfo: mockedGetAccountInfo,
   },
-  usdCentsToLamports: mockedUsdCentsToLamports,
   usdCentsToUsdcAtomicUnits: mockedUsdCentsToUsdcAtomicUnits,
 }))
 
@@ -77,7 +75,6 @@ describe('POST /api/market/purchase-intent', () => {
     })
     mockedGetAccountInfo.mockResolvedValue({ owner: 'token-program' })
     mockedUsdCentsToUsdcAtomicUnits.mockReturnValue(2_500_000n)
-    mockedUsdCentsToLamports.mockReturnValue(20_000_000n)
   })
 
   it('creates a Solana USDC purchase intent using the seller ATA', async () => {
@@ -134,60 +131,6 @@ describe('POST /api/market/purchase-intent', () => {
     })
   })
 
-  it('creates a Solana SOL purchase intent using a lamports quote', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({
-          solana: { usd: 125 },
-        }),
-      }),
-    )
-
-    mockedPrisma.purchaseIntent.create.mockResolvedValue({
-      id: 'intent-2',
-      nonce: 'nonce-2',
-      chain: 'solana',
-      currency: 'SOL',
-      expectedAmount: 20_000_000n,
-      recipientAddress: '11111111111111111111111111111111',
-      recipientTokenAccount: null,
-      expiresAt: new Date('2026-03-17T01:15:00.000Z'),
-    })
-
-    const { POST } = await import('../../web/app/api/market/purchase-intent/route.ts')
-    const response = await POST(
-      new Request('http://localhost/api/market/purchase-intent', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          listingId: 'listing-1',
-          chain: 'solana',
-          currency: 'SOL',
-        }),
-      }) as any,
-    )
-
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({
-      intentId: 'intent-2',
-      nonce: 'nonce-2',
-      chain: 'solana',
-      currency: 'SOL',
-      amount: '20000000',
-      recipientAddress: '11111111111111111111111111111111',
-      recipientTokenAccount: null,
-      expiresAt: '2026-03-17T01:15:00.000Z',
-    })
-
-    expect(mockedUsdCentsToLamports).toHaveBeenCalledWith(250, 125)
-
-    vi.unstubAllGlobals()
-  })
-
   it('rejects USDC purchase intents when the seller ATA does not exist on-chain', async () => {
     mockedGetAccountInfo.mockResolvedValue(null)
 
@@ -209,6 +152,84 @@ describe('POST /api/market/purchase-intent', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
       error: 'Seller USDC token account not found',
+    })
+    expect(mockedPrisma.purchaseIntent.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when the buyer already owns the bundle', async () => {
+    mockedPrisma.entitlement.findFirst.mockResolvedValue({ id: 'entitlement-1', status: 'active' })
+
+    const { POST } = await import('../../web/app/api/market/purchase-intent/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/purchase-intent', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          listingId: 'listing-1',
+          chain: 'solana',
+          currency: 'USDC',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'You already own this bundle',
+    })
+    expect(mockedPrisma.purchaseIntent.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the listing does not exist or is inactive', async () => {
+    mockedPrisma.listing.findFirst.mockResolvedValue(null)
+
+    const { POST } = await import('../../web/app/api/market/purchase-intent/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/purchase-intent', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          listingId: 'listing-1',
+          chain: 'solana',
+          currency: 'USDC',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Listing not found or inactive',
+    })
+    expect(mockedPrisma.purchaseIntent.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when the seller does not have a Solana wallet bound', async () => {
+    mockedPrisma.walletBinding.findFirst
+      .mockReset()
+      .mockResolvedValueOnce({ id: 'buyer-wallet', address: 'So11111111111111111111111111111111111111112' })
+      .mockResolvedValueOnce(null)
+
+    const { POST } = await import('../../web/app/api/market/purchase-intent/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/purchase-intent', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          listingId: 'listing-1',
+          chain: 'solana',
+          currency: 'USDC',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Seller does not have a Solana wallet bound',
     })
     expect(mockedPrisma.purchaseIntent.create).not.toHaveBeenCalled()
   })

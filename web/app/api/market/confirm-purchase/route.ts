@@ -52,16 +52,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Solana intent missing expected amount' }, { status: 400 })
     }
 
-    const expectedRecipient = intent.currency === 'USDC'
-      ? intent.recipientTokenAccount || intent.recipientAddress
-      : intent.recipientAddress
+    const expectedRecipient = intent.recipientTokenAccount || intent.recipientAddress
 
     const result = await verifySolanaTransaction(
       txDigest,
       intent.walletBinding.address,
       expectedRecipient,
       intent.expectedAmount,
-      intent.currency as 'SOL' | 'USDC',
     )
 
     if (!result.ok) {

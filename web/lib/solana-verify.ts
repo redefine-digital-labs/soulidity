@@ -37,7 +37,6 @@ export async function verifySolanaTransaction(
   expectedSender: string,
   expectedRecipient: string,
   expectedAmount: bigint,
-  currency: 'SOL' | 'USDC',
 ): Promise<{ ok: true; verification: SolanaPaymentVerification } | { ok: false; error: string }> {
   let tx: ParsedTransactionWithMeta | null
 
@@ -64,15 +63,12 @@ export async function verifySolanaTransaction(
     return { ok: false, error: `Transaction failed: ${JSON.stringify(tx.meta.err)}` }
   }
 
-  const parsed =
-    currency === 'SOL'
-      ? findMatchingSolTransfer(tx, expectedSender, expectedRecipient)
-      : findMatchingSplTransfer(tx, getUsdcMint().toBase58(), expectedSender, expectedRecipient)
+  const parsed = findMatchingSplTransfer(tx, getUsdcMint().toBase58(), expectedSender, expectedRecipient)
 
   if (!parsed) {
     return {
       ok: false,
-      error: currency === 'SOL' ? 'No SOL transfer found in transaction' : 'No USDC transfer found in transaction',
+      error: 'No USDC transfer found in transaction',
     }
   }
 
@@ -95,31 +91,6 @@ export async function verifySolanaTransaction(
       timestampMs: tx.blockTime ? tx.blockTime * 1000 : undefined,
     },
   }
-}
-
-export function parseSolTransfer(tx: ParsedTransactionWithMeta): SolanaPaymentVerification | null {
-  for (const instruction of getParsedInstructions(tx)) {
-    if (instruction.program === 'system' && instruction.parsed?.type === 'transfer') {
-      const info = instruction.parsed.info as {
-        source?: string
-        destination?: string
-        lamports?: string | number
-      }
-
-      if (!info.source || !info.destination || info.lamports === undefined) {
-        continue
-      }
-
-      return {
-        success: true,
-        sender: info.source,
-        recipient: info.destination,
-        amount: BigInt(info.lamports),
-      }
-    }
-  }
-
-  return null
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -181,43 +152,6 @@ export function parseSplTransfer(
       recipient: info.destination,
       amount: BigInt(amount),
       mint,
-    }
-  }
-
-  return null
-}
-
-function findMatchingSolTransfer(
-  tx: ParsedTransactionWithMeta,
-  expectedSender: string,
-  expectedRecipient: string,
-): SolanaPaymentVerification | null {
-  for (const instruction of getParsedInstructions(tx)) {
-    if (instruction.program !== 'system' || instruction.parsed?.type !== 'transfer') {
-      continue
-    }
-
-    const info = instruction.parsed.info as {
-      source?: string
-      destination?: string
-      lamports?: string | number
-    }
-
-    if (
-      !info.source ||
-      !info.destination ||
-      info.lamports === undefined ||
-      info.source !== expectedSender ||
-      info.destination !== expectedRecipient
-    ) {
-      continue
-    }
-
-    return {
-      success: true,
-      sender: info.source,
-      recipient: info.destination,
-      amount: BigInt(info.lamports),
     }
   }
 

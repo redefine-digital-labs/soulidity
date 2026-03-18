@@ -3,7 +3,7 @@
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
-import { PublicKey, SystemProgram, Transaction as SolanaTransaction } from '@solana/web3.js'
+import { PublicKey, Transaction as SolanaTransaction } from '@solana/web3.js'
 import { useState } from 'react'
 import { useAuth } from '@web/components/auth-provider'
 import { USDC_DECIMALS } from '@web/lib/solana'
@@ -27,7 +27,6 @@ export function PurchaseButton({ listingId, disabled, onSuccess }: PurchaseButto
   const [status, setStatus] = useState<'idle' | 'creating' | 'signing' | 'confirming' | 'done' | 'error'>('idle')
   const [error, setError] = useState('')
   const [chain, setChain] = useState<'sui' | 'solana'>('sui')
-  const [solanaCurrency, setSolanaCurrency] = useState<'USDC' | 'SOL'>('USDC')
 
   async function handlePurchase() {
     if (!user) return
@@ -46,7 +45,6 @@ export function PurchaseButton({ listingId, disabled, onSuccess }: PurchaseButto
         body: JSON.stringify({
           listingId,
           chain,
-          currency: chain === 'solana' ? solanaCurrency : 'SUI',
         }),
       })
       const intent = await intentRes.json()
@@ -59,33 +57,23 @@ export function PurchaseButton({ listingId, disabled, onSuccess }: PurchaseButto
       if (chain === 'solana') {
         if (!publicKey) throw new Error('Please connect a Solana wallet first')
 
-        const transaction = new SolanaTransaction()
-        if (solanaCurrency === 'USDC') {
-          if (!intent.mint || !intent.recipientTokenAccount) {
-            throw new Error('Missing USDC payment details')
-          }
-
-          const mint = new PublicKey(intent.mint)
-          const sourceAta = await getAssociatedTokenAddress(mint, publicKey)
-          transaction.add(
-            createTransferCheckedInstruction(
-              sourceAta,
-              mint,
-              new PublicKey(intent.recipientTokenAccount),
-              publicKey,
-              BigInt(intent.amount),
-              USDC_DECIMALS,
-            ),
-          )
-        } else {
-          transaction.add(
-            SystemProgram.transfer({
-              fromPubkey: publicKey,
-              toPubkey: new PublicKey(intent.recipientAddress),
-              lamports: Number(intent.amount),
-            }),
-          )
+        if (!intent.mint || !intent.recipientTokenAccount) {
+          throw new Error('Missing USDC payment details')
         }
+
+        const transaction = new SolanaTransaction()
+        const mint = new PublicKey(intent.mint)
+        const sourceAta = await getAssociatedTokenAddress(mint, publicKey)
+        transaction.add(
+          createTransferCheckedInstruction(
+            sourceAta,
+            mint,
+            new PublicKey(intent.recipientTokenAccount),
+            publicKey,
+            BigInt(intent.amount),
+            USDC_DECIMALS,
+          ),
+        )
 
         txDigest = await sendTransaction(transaction, connection)
         await connection.confirmTransaction(txDigest, 'confirmed')
@@ -149,27 +137,6 @@ export function PurchaseButton({ listingId, disabled, onSuccess }: PurchaseButto
           Solana
         </button>
       </div>
-
-      {chain === 'solana' && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setSolanaCurrency('USDC')}
-            className="glass-card px-3 py-1.5 text-xs font-semibold transition-opacity"
-            style={{ color: solanaCurrency === 'USDC' ? 'var(--accent-cyan)' : 'var(--text-muted)', opacity: solanaCurrency === 'USDC' ? 1 : 0.8 }}
-          >
-            USDC
-          </button>
-          <button
-            type="button"
-            onClick={() => setSolanaCurrency('SOL')}
-            className="glass-card px-3 py-1.5 text-xs font-semibold transition-opacity"
-            style={{ color: solanaCurrency === 'SOL' ? 'var(--accent-cyan)' : 'var(--text-muted)', opacity: solanaCurrency === 'SOL' ? 1 : 0.8 }}
-          >
-            SOL
-          </button>
-        </div>
-      )}
 
       {chain === 'sui' && !suiAccount && (
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>请先连接 Sui 钱包</p>

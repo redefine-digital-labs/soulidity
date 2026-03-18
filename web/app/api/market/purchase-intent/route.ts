@@ -7,7 +7,6 @@ import { prisma } from '@web/lib/prisma'
 import {
   getUsdcMint,
   solanaConnection,
-  usdCentsToLamports,
   usdCentsToUsdcAtomicUnits,
 } from '@web/lib/solana'
 import { getAssociatedTokenAddress } from '@web/lib/solana-spl'
@@ -31,7 +30,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
-  const { listingId, chain = 'sui', currency = 'SUI' } = await request.json()
+  const { listingId, chain = 'sui' } = await request.json()
   if (!listingId) {
     return NextResponse.json({ error: 'Missing listingId' }, { status: 400 })
   }
@@ -88,21 +87,16 @@ export async function POST(request: NextRequest) {
     recipientAddress = sellerWallet.address
 
     const listingUsdCents = await resolveListingUsdCents(listing)
-    if (currency === 'USDC') {
-      const tokenAccount = await getAssociatedTokenAddress(
-        getUsdcMint(),
-        new PublicKey(sellerWallet.address),
-      )
-      const tokenAccountInfo = await solanaConnection.getAccountInfo(tokenAccount, 'confirmed')
-      if (!tokenAccountInfo) {
-        return NextResponse.json({ error: 'Seller USDC token account not found' }, { status: 400 })
-      }
-      recipientTokenAccount = tokenAccount.toBase58()
-      expectedAmount = usdCentsToUsdcAtomicUnits(listingUsdCents)
-    } else {
-      const solPriceUsd = await getCoingeckoUsdPrice('solana')
-      expectedAmount = usdCentsToLamports(listingUsdCents, solPriceUsd)
+    const tokenAccount = await getAssociatedTokenAddress(
+      getUsdcMint(),
+      new PublicKey(sellerWallet.address),
+    )
+    const tokenAccountInfo = await solanaConnection.getAccountInfo(tokenAccount, 'confirmed')
+    if (!tokenAccountInfo) {
+      return NextResponse.json({ error: 'Seller USDC token account not found' }, { status: 400 })
     }
+    recipientTokenAccount = tokenAccount.toBase58()
+    expectedAmount = usdCentsToUsdcAtomicUnits(listingUsdCents)
   }
 
   const intent = await prisma.purchaseIntent.create({
@@ -112,7 +106,7 @@ export async function POST(request: NextRequest) {
       agentMemberId: identity.kind === 'agent' ? identity.memberId : null,
       walletBindingId: wallet.id,
       chain: paymentChain,
-      currency,
+      currency: paymentChain === 'solana' ? 'USDC' : 'SUI',
       expectedPriceMist: listing.priceMist,
       expectedAmount,
       recipientAddress,
@@ -131,7 +125,7 @@ export async function POST(request: NextRequest) {
       amount: intent.expectedAmount?.toString(),
       recipientAddress: intent.recipientAddress,
       recipientTokenAccount: intent.recipientTokenAccount,
-      mint: intent.currency === 'USDC' ? getUsdcMint().toBase58() : undefined,
+      mint: getUsdcMint().toBase58(),
       expiresAt: intent.expiresAt.toISOString(),
     })
   }

@@ -18,6 +18,7 @@ const transactionMocks = vi.hoisted(() => ({
 const mockedPrisma = vi.hoisted(() => ({
   purchaseIntent: {
     findUnique: vi.fn(),
+    update: vi.fn(),
   },
   order: {
     findUnique: vi.fn(),
@@ -73,6 +74,7 @@ describe('POST /api/market/confirm-purchase', () => {
       walletBinding: { address: 'buyer-sol' },
     })
 
+    mockedPrisma.purchaseIntent.update.mockResolvedValue({})
     mockedPrisma.order.findUnique.mockResolvedValue(null)
     transactionMocks.purchaseIntent.update.mockResolvedValue({})
     transactionMocks.order.create.mockResolvedValue({
@@ -121,7 +123,6 @@ describe('POST /api/market/confirm-purchase', () => {
       'buyer-sol',
       'seller-ata',
       2_500_000n,
-      'USDC',
     )
     expect(transactionMocks.order.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -181,5 +182,143 @@ describe('POST /api/market/confirm-purchase', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Transaction missing timestamp',
     })
+  })
+
+  it('returns 400 and marks intent expired when the intent has passed its expiry time', async () => {
+    mockedPrisma.purchaseIntent.findUnique.mockResolvedValue({
+      id: 'intent-1',
+      memberId: 'buyer-1',
+      listingId: 'listing-1',
+      walletBindingId: 'buyer-wallet',
+      expectedPriceMist: 1_000_000_000n,
+      expectedAmount: 2_500_000n,
+      recipientAddress: 'seller-sol',
+      recipientTokenAccount: 'seller-ata',
+      chain: 'solana',
+      currency: 'USDC',
+      agentMemberId: null,
+      status: 'pending',
+      createdAt: new Date('2020-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2020-01-01T01:00:00.000Z'),
+      listing: { bundleId: 'bundle-1' },
+      walletBinding: { address: 'buyer-sol' },
+    })
+
+    const { POST } = await import('../../web/app/api/market/confirm-purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/confirm-purchase', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          intentId: 'intent-1',
+          txDigest: 'sig-1',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Intent expired',
+    })
+    expect(mockedPrisma.purchaseIntent.update).toHaveBeenCalledWith({
+      where: { id: 'intent-1' },
+      data: { status: 'expired' },
+    })
+  })
+
+  it('returns 400 when the intent status is already confirmed', async () => {
+    mockedPrisma.purchaseIntent.findUnique.mockResolvedValue({
+      id: 'intent-1',
+      memberId: 'buyer-1',
+      listingId: 'listing-1',
+      walletBindingId: 'buyer-wallet',
+      expectedPriceMist: 1_000_000_000n,
+      expectedAmount: 2_500_000n,
+      recipientAddress: 'seller-sol',
+      recipientTokenAccount: 'seller-ata',
+      chain: 'solana',
+      currency: 'USDC',
+      agentMemberId: null,
+      status: 'confirmed',
+      createdAt: new Date('2099-03-17T00:00:00.000Z'),
+      expiresAt: new Date('2099-03-17T01:00:00.000Z'),
+      listing: { bundleId: 'bundle-1' },
+      walletBinding: { address: 'buyer-sol' },
+    })
+
+    const { POST } = await import('../../web/app/api/market/confirm-purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/confirm-purchase', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          intentId: 'intent-1',
+          txDigest: 'sig-1',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Intent already confirmed',
+    })
+  })
+
+  it('returns 400 when the Solana transaction amount is insufficient', async () => {
+    mockedVerifySolanaTransaction.mockResolvedValue({
+      ok: false,
+      error: 'Amount insufficient',
+    })
+
+    const { POST } = await import('../../web/app/api/market/confirm-purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/confirm-purchase', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          intentId: 'intent-1',
+          txDigest: 'sig-1',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Amount insufficient',
+    })
+    expect(transactionMocks.order.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 when the transaction digest has already been used for an order', async () => {
+    mockedPrisma.order.findUnique.mockResolvedValue({
+      id: 'order-existing',
+      txDigest: 'sig-1',
+    })
+
+    const { POST } = await import('../../web/app/api/market/confirm-purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/market/confirm-purchase', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          intentId: 'intent-1',
+          txDigest: 'sig-1',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction already used',
+    })
+    expect(transactionMocks.order.create).not.toHaveBeenCalled()
   })
 })
