@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import nacl from 'tweetnacl'
@@ -90,14 +90,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Create pending agent member (no account yet) + wallet binding
-  const apiKey = `sk-${randomBytes(24).toString('hex')}`
+  // Create pending agent member (no account yet) + wallet binding.
+  // API keys are issued only when the agent is claimed so we never persist
+  // plaintext secrets for pending records.
   const member = await prisma.member.create({
     data: {
       kind: 'agent',
       displayName: name.trim(),
       wallet: address,
-      apiKey,
       walletBindings: {
         create: {
           chain,

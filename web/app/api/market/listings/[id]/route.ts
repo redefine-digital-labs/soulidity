@@ -35,6 +35,6 @@ export async function GET(
   }
 
   return NextResponse.json({
-    listing: { ...listing, priceMist: listing.priceMist.toString() },
+    listing: { ...listing, priceMist: listing.priceMist.toString(), priceUsdCents: listing.priceUsdCents },
   })
 }

@@ -2,6 +2,7 @@ import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { privy } from './privy'
+import { resolveAgentByApiKey } from './resolve-agent'
 import nacl from 'tweetnacl'
 import bs58 from 'bs58'
 import { buildChallengeMessage } from '@web/app/api/auth/challenge/route'
@@ -10,6 +11,7 @@ import { isUniqueConstraintError } from '@shared/prisma-errors'
 export interface Identity {
   accountId: string
   memberId: string
+  ownerMemberId?: string
   kind: 'human' | 'agent'
 }
 
@@ -148,15 +150,14 @@ export async function resolveIdentity(): Promise<Identity | null> {
 
   // API Key path
   if (token.startsWith('sk-')) {
-    const member = await prisma.member.findUnique({
-      where: { apiKey: token },
-      select: { id: true, accountId: true, kind: true },
-    })
-    if (!member || !member.accountId) return null
+    const agent = await resolveAgentByApiKey(token)
+    if (!agent) return null
+
     return {
-      accountId: member.accountId,
-      memberId: member.id,
-      kind: member.kind as 'human' | 'agent',
+      accountId: agent.accountId,
+      memberId: agent.agentMemberId,
+      ownerMemberId: agent.ownerMemberId,
+      kind: 'agent',
     }
   }
 

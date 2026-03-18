@@ -3,6 +3,7 @@ import { prisma } from '@web/lib/prisma'
 import { privy } from '@web/lib/auth/privy'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
+import { buildAgentApiKeyData, generateApiKey } from '@web/lib/auth/resolve-agent'
 import { createClaimToken } from '../route'
 
 export const dynamic = 'force-dynamic'
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
       // Confirm agent is still unclaimed inside transaction
       const agent = await tx.member.findUnique({
         where: { id: body.id },
-        select: { id: true, kind: true, accountId: true, apiKey: true },
+        select: { id: true, kind: true, accountId: true },
       })
 
       if (!agent || agent.kind !== 'agent') {
@@ -130,16 +131,21 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      const apiKey = generateApiKey()
+
       // Claim agent (CAS: only if still unclaimed)
       const linked = await tx.member.updateMany({
         where: { id: body.id, accountId: null },
-        data: { accountId: account.id },
+        data: {
+          accountId: account.id,
+          ...buildAgentApiKeyData(apiKey),
+        },
       })
       if (linked.count === 0) {
         throw new Error('AGENT_CLAIMED')
       }
 
-      return { apiKey: agent.apiKey }
+      return { apiKey }
     })
 
     return NextResponse.json({ ok: true, apiKey: result.apiKey })

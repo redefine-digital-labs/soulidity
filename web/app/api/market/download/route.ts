@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
+import { buildDownloadFileName } from '@web/lib/download-filename'
 import { prisma } from '@web/lib/prisma'
 import { createSupabaseAdmin } from '@web/lib/supabase/server'
 
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     downloadUrl: data.signedUrl,
-    fileName: `${entitlement.bundle.name}.zip`,
+    fileName: buildDownloadFileName(entitlement.bundle.name),
     expiresIn: 300,
   })
 }

@@ -7,6 +7,7 @@ import { PublicNav } from '@web/components/public-nav'
 interface ListingItem {
   id: string
   priceMist: string
+  priceUsdCents: number | null
   bundle: {
     id: string
     name: string
@@ -42,6 +43,11 @@ function formatUSD(mist: string, suiPrice: number | null): string | null {
   const sui = Number(BigInt(mist)) / 1e9
   const usd = sui * suiPrice
   return usd < 0.01 ? '< $0.01' : `$${usd.toFixed(2)}`
+}
+
+function formatUsdCents(cents: number | null): string | null {
+  if (cents === null) return null
+  return `$${(cents / 100).toFixed(2)}`
 }
 
 export default function MarketPage() {
@@ -126,9 +132,9 @@ export default function MarketPage() {
                     <span className="badge badge-cyan">{listing.bundle.category}</span>
                     <div className="text-right">
                       <span className="font-semibold block" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
-                        {formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
+                        {formatUsdCents(listing.priceUsdCents) ?? formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
                       </span>
-                      {suiPrice && (
+                      {(listing.priceUsdCents !== null || suiPrice) && (
                         <span className="text-[10px]" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                           {formatSUI(listing.priceMist)} SUI
                         </span>

@@ -1,11 +1,10 @@
-import { randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { resolveIdentity } from '@web/lib/auth/identity'
+import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { buildAgentApiKeyData, generateApiKey } from '@web/lib/auth/resolve-agent'
 
-function generateApiKey(): string {
-  return `sk-${randomBytes(24).toString('hex')}`
-}
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 // GET /api/agents — list my agents
 export async function GET() {
@@ -56,12 +55,12 @@ export async function POST(request: NextRequest) {
       kind: 'agent',
       displayName: displayName.trim(),
       bio: bio?.trim() || null,
-      apiKey,
+      ...buildAgentApiKeyData(apiKey),
     },
-    select: { id: true, displayName: true, apiKey: true },
+    select: { id: true, displayName: true },
   })
 
-  return NextResponse.json({ agent }, { status: 201 })
+  return NextResponse.json({ agent: { ...agent, apiKey } }, { status: 201 })
 }
 
 // DELETE /api/agents?id=xxx — delete agent
@@ -132,6 +131,25 @@ export async function PATCH(request: NextRequest) {
   if (!id) {
     return NextResponse.json({ error: 'id 必填' }, { status: 400 })
   }
+  if (typeof id !== 'string' || !UUID_PATTERN.test(id)) {
+    return NextResponse.json({ error: 'id 格式无效' }, { status: 400 })
+  }
+
+  const rateLimit = takeRateLimitToken(`agents-regenerate:${identity.accountId}:${id}`, {
+    max: 1,
+    windowMs: 60 * 60 * 1000,
+  })
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      { error: '请求过于频繁，请稍后再试' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rateLimit.retryAfterSeconds),
+        },
+      },
+    )
+  }
 
   const agent = await prisma.member.findUnique({
     where: { id },
@@ -145,7 +163,7 @@ export async function PATCH(request: NextRequest) {
   const newApiKey = generateApiKey()
   await prisma.member.update({
     where: { id },
-    data: { apiKey: newApiKey },
+    data: buildAgentApiKeyData(newApiKey),
   })
 
   return NextResponse.json({ apiKey: newApiKey })

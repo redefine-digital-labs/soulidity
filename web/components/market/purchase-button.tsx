@@ -2,25 +2,38 @@
 
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
+import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { PublicKey, SystemProgram, Transaction as SolanaTransaction } from '@solana/web3.js'
 import { useState } from 'react'
 import { useAuth } from '@web/components/auth-provider'
+import { USDC_DECIMALS } from '@web/lib/solana'
+import {
+  createTransferCheckedInstruction,
+  getAssociatedTokenAddress,
+} from '@web/lib/solana-spl'
 
 interface PurchaseButtonProps {
   listingId: string
-  priceMist: string
   disabled?: boolean
   onSuccess?: () => void
 }
 
-export function PurchaseButton({ listingId, priceMist, disabled, onSuccess }: PurchaseButtonProps) {
-  const account = useCurrentAccount()
+export function PurchaseButton({ listingId, disabled, onSuccess }: PurchaseButtonProps) {
+  const suiAccount = useCurrentAccount()
   const { user, getAuthHeaders } = useAuth()
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
+  const { connection } = useConnection()
+  const { publicKey, sendTransaction } = useWallet()
   const [status, setStatus] = useState<'idle' | 'creating' | 'signing' | 'confirming' | 'done' | 'error'>('idle')
   const [error, setError] = useState('')
+  const [chain, setChain] = useState<'sui' | 'solana'>('sui')
+  const [solanaCurrency, setSolanaCurrency] = useState<'USDC' | 'SOL'>('USDC')
 
   async function handlePurchase() {
-    if (!account || !user) return
+    if (!user) return
+    if (chain === 'sui' && !suiAccount) return
+    if (chain === 'solana' && !publicKey) return
+
     setStatus('creating')
     setError('')
 
@@ -30,25 +43,67 @@ export function PurchaseButton({ listingId, priceMist, disabled, onSuccess }: Pu
       const intentRes = await fetch('/api/market/purchase-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ listingId }),
+        body: JSON.stringify({
+          listingId,
+          chain,
+          currency: chain === 'solana' ? solanaCurrency : 'SUI',
+        }),
       })
       const intent = await intentRes.json()
       if (!intentRes.ok) throw new Error(intent.error || 'Failed to create intent')
 
       // 2. Build and sign transaction
       setStatus('signing')
-      const tx = new Transaction()
-      const [payment] = tx.splitCoins(tx.gas, [intent.priceMist])
-      tx.transferObjects([payment], intent.recipientAddress)
+      let txDigest: string
 
-      const result = await signAndExecute({ transaction: tx })
+      if (chain === 'solana') {
+        if (!publicKey) throw new Error('Please connect a Solana wallet first')
+
+        const transaction = new SolanaTransaction()
+        if (solanaCurrency === 'USDC') {
+          if (!intent.mint || !intent.recipientTokenAccount) {
+            throw new Error('Missing USDC payment details')
+          }
+
+          const mint = new PublicKey(intent.mint)
+          const sourceAta = await getAssociatedTokenAddress(mint, publicKey)
+          transaction.add(
+            createTransferCheckedInstruction(
+              sourceAta,
+              mint,
+              new PublicKey(intent.recipientTokenAccount),
+              publicKey,
+              BigInt(intent.amount),
+              USDC_DECIMALS,
+            ),
+          )
+        } else {
+          transaction.add(
+            SystemProgram.transfer({
+              fromPubkey: publicKey,
+              toPubkey: new PublicKey(intent.recipientAddress),
+              lamports: Number(intent.amount),
+            }),
+          )
+        }
+
+        txDigest = await sendTransaction(transaction, connection)
+        await connection.confirmTransaction(txDigest, 'confirmed')
+      } else {
+        const tx = new Transaction()
+        const [payment] = tx.splitCoins(tx.gas, [intent.priceMist])
+        tx.transferObjects([payment], intent.recipientAddress)
+
+        const result = await signAndExecute({ transaction: tx })
+        txDigest = result.digest
+      }
 
       // 3. Confirm purchase
       setStatus('confirming')
       const confirmRes = await fetch('/api/market/confirm-purchase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ intentId: intent.intentId, txDigest: result.digest }),
+        body: JSON.stringify({ intentId: intent.intentId, txDigest }),
       })
       const confirmData = await confirmRes.json()
       if (!confirmRes.ok) throw new Error(confirmData.error || 'Confirmation failed')
@@ -74,15 +129,66 @@ export function PurchaseButton({ listingId, priceMist, disabled, onSuccess }: Pu
     return <a href="/login" className="glass-card px-6 py-3 text-sm font-semibold block text-center" style={{ color: 'var(--accent-cyan)' }}>登录后购买</a>
   }
 
-  if (!account) {
-    return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>请先连接 Sui 钱包</p>
-  }
-
   return (
-    <div>
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setChain('sui')}
+          className="glass-card px-3 py-1.5 text-xs font-semibold transition-opacity"
+          style={{ color: chain === 'sui' ? 'var(--accent-cyan)' : 'var(--text-muted)', opacity: chain === 'sui' ? 1 : 0.8 }}
+        >
+          SUI
+        </button>
+        <button
+          type="button"
+          onClick={() => setChain('solana')}
+          className="glass-card px-3 py-1.5 text-xs font-semibold transition-opacity"
+          style={{ color: chain === 'solana' ? 'var(--accent-cyan)' : 'var(--text-muted)', opacity: chain === 'solana' ? 1 : 0.8 }}
+        >
+          Solana
+        </button>
+      </div>
+
+      {chain === 'solana' && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setSolanaCurrency('USDC')}
+            className="glass-card px-3 py-1.5 text-xs font-semibold transition-opacity"
+            style={{ color: solanaCurrency === 'USDC' ? 'var(--accent-cyan)' : 'var(--text-muted)', opacity: solanaCurrency === 'USDC' ? 1 : 0.8 }}
+          >
+            USDC
+          </button>
+          <button
+            type="button"
+            onClick={() => setSolanaCurrency('SOL')}
+            className="glass-card px-3 py-1.5 text-xs font-semibold transition-opacity"
+            style={{ color: solanaCurrency === 'SOL' ? 'var(--accent-cyan)' : 'var(--text-muted)', opacity: solanaCurrency === 'SOL' ? 1 : 0.8 }}
+          >
+            SOL
+          </button>
+        </div>
+      )}
+
+      {chain === 'sui' && !suiAccount && (
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>请先连接 Sui 钱包</p>
+      )}
+
+      {chain === 'solana' && !publicKey && (
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>请先连接 Solana 钱包</p>
+      )}
+
       <button
         onClick={handlePurchase}
-        disabled={disabled || status === 'creating' || status === 'signing' || status === 'confirming' || status === 'done'}
+        disabled={
+          disabled ||
+          status === 'creating' ||
+          status === 'signing' ||
+          status === 'confirming' ||
+          status === 'done' ||
+          (chain === 'sui' ? !suiAccount : !publicKey)
+        }
         className="glass-card px-6 py-3 text-sm font-semibold w-full transition-all"
         style={{
           color: status === 'done' ? 'var(--accent-green, #10b981)' : 'var(--accent-cyan)',

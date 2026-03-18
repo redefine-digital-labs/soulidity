@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
   const serialized = listings.map(l => ({
     ...l,
     priceMist: l.priceMist.toString(),
+    priceUsdCents: l.priceUsdCents,
   }))
 
   return NextResponse.json({ listings: serialized, total, page, limit })

@@ -10,12 +10,22 @@ interface MyEntitlement {
   status: string
   grantedAt: string
   bundle: { id: string; name: string; category: string; version: string }
-  order: { priceMist: string; txDigest: string; createdAt: string }
+  order: { priceMist: string; paidAmount: string; currency: string; txDigest: string; createdAt: string }
 }
 
 function formatSUI(mist: string): string {
   const sui = Number(BigInt(mist)) / 1e9
   return sui.toFixed(2)
+}
+
+function formatOrderAmount(amount: string, currency: string): string {
+  if (currency === 'USDC') {
+    return `${(Number(BigInt(amount)) / 1e6).toFixed(2)} USDC`
+  }
+  if (currency === 'SOL') {
+    return `${(Number(BigInt(amount)) / 1e9).toFixed(4)} SOL`
+  }
+  return `${formatSUI(amount)} SUI`
 }
 
 export default function MyMarketPage() {
@@ -88,7 +98,7 @@ export default function MyMarketPage() {
                   <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <span className="badge badge-cyan">{ent.bundle.category}</span>
                     <span>v{ent.bundle.version}</span>
-                    <span>{formatSUI(ent.order.priceMist)} SUI</span>
+                    <span>{formatOrderAmount(ent.order.paidAmount, ent.order.currency)}</span>
                     <span>{new Date(ent.grantedAt).toLocaleDateString('zh-CN')}</span>
                   </div>
                 </div>

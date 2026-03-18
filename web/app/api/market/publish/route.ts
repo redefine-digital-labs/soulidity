@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
+import { getCoingeckoUsdPrice } from '@web/lib/coingecko'
 import { prisma } from '@web/lib/prisma'
+
+async function resolvePriceUsdCents(priceMist: bigint): Promise<number> {
+  const suiPriceUsd = await getCoingeckoUsdPrice('sui')
+  const suiAmount = Number(priceMist) / 1_000_000_000
+  return Math.max(1, Math.ceil(suiAmount * suiPriceUsd * 100))
+}
 
 export async function POST(request: NextRequest) {
   const identity = await resolveIdentity()
@@ -38,6 +45,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Price must be positive' }, { status: 400 })
   }
 
+  let priceUsdCents: number
+  try {
+    priceUsdCents = await resolvePriceUsdCents(priceBigInt)
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to price listing in USD' },
+      { status: 502 },
+    )
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     const bundle = await tx.agentBundle.create({
       data: {
@@ -59,6 +76,7 @@ export async function POST(request: NextRequest) {
         bundleId: bundle.id,
         sellerWalletAddress: wallet.address,
         priceMist: priceBigInt,
+        priceUsdCents,
         status: 'active',
       },
     })

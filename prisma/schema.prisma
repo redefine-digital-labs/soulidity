@@ -154,6 +154,8 @@ model Member {
   kind        String   @default("human")
   displayName String?  @map("display_name")
   apiKey      String?  @unique @map("api_key")
+  apiKeyHash  String?  @unique @map("api_key_hash")
+  agentStatus String?  @default("active") @map("agent_status")
   joinedAt    DateTime @default(now()) @map("joined_at") @db.Timestamptz
 
   posts        Post[]
@@ -161,8 +163,10 @@ model Member {
   achievements MemberAchievement[]
   walletBindings  WalletBinding[]
   soldBundles     AgentBundle[]
-  purchaseIntents PurchaseIntent[]
+  purchaseIntents PurchaseIntent[] @relation("PurchaseIntentBuyer")
+  agentPurchaseIntents PurchaseIntent[] @relation("PurchaseIntentAgent")
   orders          Order[]         @relation("BuyerOrders")
+  agentOrders     Order[]         @relation("AgentOrders")
   entitlements    Entitlement[]
 
   @@index([tgId])
@@ -322,6 +326,7 @@ model Listing {
   sellerWalletAddress String      @map("seller_wallet_address")
   priceMist           BigInt      @map("price_mist")
   currency            String      @default("SUI")
+  priceUsdCents       Int?        @map("price_usd_cents")
   status              String      @default("active")
   createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -338,11 +343,18 @@ model PurchaseIntent {
   listingId         String        @map("listing_id") @db.Uuid
   listing           Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
   memberId          String        @map("member_id") @db.Uuid
-  member            Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member            Member        @relation("PurchaseIntentBuyer", fields: [memberId], references: [id], onDelete: Cascade)
+  agentMemberId     String?       @map("agent_member_id") @db.Uuid
+  agentMember       Member?       @relation("PurchaseIntentAgent", fields: [agentMemberId], references: [id], onDelete: SetNull)
   walletBindingId   String        @map("wallet_binding_id") @db.Uuid
   walletBinding     WalletBinding @relation(fields: [walletBindingId], references: [id], onDelete: Cascade)
+  chain             String        @default("sui")
+  currency          String        @default("SUI")
   expectedPriceMist BigInt        @map("expected_price_mist")
+  expectedAmount    BigInt?       @map("expected_amount")
   recipientAddress  String        @map("recipient_address")
+  recipientTokenAccount String?   @map("recipient_token_account")
+  paymentRequestId  String?       @unique @map("payment_request_id")
   nonce             String        @unique
   expiresAt         DateTime      @map("expires_at") @db.Timestamptz
   txDigest          String?       @unique @map("tx_digest")
@@ -353,6 +365,7 @@ model PurchaseIntent {
   order Order?
 
   @@index([memberId, status])
+  @@index([agentMemberId, status])
   @@index([listingId, status])
   @@map("purchase_intents")
 }
@@ -363,11 +376,16 @@ model Order {
   listing          Listing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyerId          String         @map("buyer_id") @db.Uuid
   buyer            Member         @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Cascade)
+  agentMemberId    String?        @map("agent_member_id") @db.Uuid
+  agentMember      Member?        @relation("AgentOrders", fields: [agentMemberId], references: [id], onDelete: SetNull)
   walletBindingId  String         @map("wallet_binding_id") @db.Uuid
   walletBinding    WalletBinding  @relation(fields: [walletBindingId], references: [id], onDelete: Cascade)
   purchaseIntentId String         @unique @map("purchase_intent_id") @db.Uuid
   purchaseIntent   PurchaseIntent @relation(fields: [purchaseIntentId], references: [id], onDelete: Cascade)
   priceMist        BigInt         @map("price_mist")
+  chain            String         @default("sui")
+  currency         String         @default("SUI")
+  paymentRequestId String?        @unique @map("payment_request_id")
   txDigest         String         @unique @map("tx_digest")
   status           String         @default("completed")
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
@@ -375,6 +393,7 @@ model Order {
   entitlement Entitlement?
 
   @@index([buyerId, createdAt(sort: Desc)])
+  @@index([agentMemberId, createdAt(sort: Desc)])
   @@map("orders")
 }
 

@@ -9,6 +9,7 @@ import { PurchaseButton } from '@web/components/market/purchase-button'
 interface ListingDetail {
   id: string
   priceMist: string
+  priceUsdCents: number | null
   _count: { orders: number }
   bundle: {
     id: string
@@ -45,6 +46,11 @@ function formatUSD(mist: string, suiPrice: number | null): string | null {
   const sui = Number(BigInt(mist)) / 1e9
   const usd = sui * suiPrice
   return usd < 0.01 ? '< $0.01' : `$${usd.toFixed(2)}`
+}
+
+function formatUsdCents(cents: number | null): string | null {
+  if (cents === null) return null
+  return `$${(cents / 100).toFixed(2)}`
 }
 
 export default function MarketDetailPage() {
@@ -127,9 +133,9 @@ export default function MarketDetailPage() {
           <div className="animate-fade-up" style={{ animationDelay: '100ms' }}>
             <div className="glass-card p-6 sticky top-24">
               <div className="text-2xl font-bold mb-0.5" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
-                {formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
+                {formatUsdCents(listing.priceUsdCents) ?? formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
               </div>
-              {suiPrice && (
+              {(listing.priceUsdCents !== null || suiPrice) && (
                 <p className="text-xs mb-1" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                   {formatSUI(listing.priceMist)} SUI
                 </p>
@@ -142,7 +148,6 @@ export default function MarketDetailPage() {
 
               <PurchaseButton
                 listingId={listing.id}
-                priceMist={listing.priceMist}
                 onSuccess={() => router.push('/market/my')}
               />
 

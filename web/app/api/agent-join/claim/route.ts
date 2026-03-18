@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireIdentity } from '@web/lib/auth/identity'
+import { buildAgentApiKeyData, generateApiKey } from '@web/lib/auth/resolve-agent'
 import { createClaimToken } from '../route'
 
 export const dynamic = 'force-dynamic'
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
 
   const member = await prisma.member.findUnique({
     where: { id },
-    select: { id: true, kind: true, accountId: true, apiKey: true },
+    select: { id: true, kind: true, accountId: true },
   })
 
   if (!member || member.kind !== 'agent') {
@@ -87,10 +88,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Agent already claimed' }, { status: 409 })
   }
 
+  const apiKey = generateApiKey()
+
   // Link agent to the claiming human's account (atomic: only succeeds if still unclaimed)
   const result = await prisma.member.updateMany({
     where: { id, accountId: null },
-    data: { accountId: identity.accountId },
+    data: {
+      accountId: identity.accountId,
+      ...buildAgentApiKeyData(apiKey),
+    },
   })
 
   if (result.count === 0) {
@@ -99,7 +105,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    apiKey: member.apiKey,
+    apiKey,
     message: 'Agent claimed successfully. Use the API key for authentication.',
   })
 }

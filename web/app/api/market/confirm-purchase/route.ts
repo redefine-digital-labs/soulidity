@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
+import { verifySolanaTransaction } from '@web/lib/solana-verify'
 import { suiClient } from '@web/lib/sui'
 
 export async function POST(request: NextRequest) {
@@ -14,6 +15,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing intentId or txDigest' }, { status: 400 })
   }
 
+  const beneficiaryMemberId = identity.kind === 'agent'
+    ? identity.ownerMemberId ?? identity.memberId
+    : identity.memberId
+
   // Load intent and validate ownership
   const intent = await prisma.purchaseIntent.findUnique({
     where: { id: intentId },
@@ -25,7 +30,7 @@ export async function POST(request: NextRequest) {
   if (!intent) {
     return NextResponse.json({ error: 'Intent not found' }, { status: 404 })
   }
-  if (intent.memberId !== identity.memberId) {
+  if (intent.memberId !== beneficiaryMemberId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (intent.status !== 'pending') {
@@ -42,49 +47,79 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Transaction already used' }, { status: 409 })
   }
 
-  // Verify on-chain transaction
-  let txBlock
-  try {
-    txBlock = await suiClient.getTransactionBlock({
-      digest: txDigest,
-      options: { showEffects: true, showBalanceChanges: true, showInput: true },
-    })
-  } catch {
-    return NextResponse.json({ error: 'Transaction not found on chain' }, { status: 400 })
-  }
+  if (intent.chain === 'solana') {
+    if (intent.expectedAmount === null) {
+      return NextResponse.json({ error: 'Solana intent missing expected amount' }, { status: 400 })
+    }
 
-  // 1. Transaction must have succeeded
-  const status = txBlock.effects?.status?.status
-  if (status !== 'success') {
-    return NextResponse.json({ error: `Transaction failed: ${status}` }, { status: 400 })
-  }
+    const expectedRecipient = intent.currency === 'USDC'
+      ? intent.recipientTokenAccount || intent.recipientAddress
+      : intent.recipientAddress
 
-  // 2. Sender must match bound wallet
-  const sender = txBlock.transaction?.data?.sender
-  if (sender !== intent.walletBinding.address) {
-    return NextResponse.json({ error: 'Transaction sender does not match bound wallet' }, { status: 400 })
-  }
+    const result = await verifySolanaTransaction(
+      txDigest,
+      intent.walletBinding.address,
+      expectedRecipient,
+      intent.expectedAmount,
+      intent.currency as 'SOL' | 'USDC',
+    )
 
-  // 3. Verify balance changes — recipient received expected amount
-  const balanceChanges = txBlock.balanceChanges || []
-  const recipientChange = balanceChanges.find(
-    (bc) =>
-      bc.owner &&
-      typeof bc.owner === 'object' &&
-      'AddressOwner' in bc.owner &&
-      bc.owner.AddressOwner === intent.recipientAddress &&
-      bc.coinType === '0x2::sui::SUI',
-  )
-  if (!recipientChange || BigInt(recipientChange.amount) < intent.expectedPriceMist) {
-    return NextResponse.json({ error: 'Payment amount insufficient or recipient mismatch' }, { status: 400 })
-  }
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 })
+    }
 
-  // 4. Transaction must post-date the intent creation (prevent replay of old transfers)
-  // Allow 60s clock skew between Postgres and Sui checkpoint timestamps
-  const CLOCK_SKEW_MS = 60_000
-  const txTimestamp = txBlock.timestampMs
-  if (!txTimestamp || Number(txTimestamp) < intent.createdAt.getTime() - CLOCK_SKEW_MS) {
-    return NextResponse.json({ error: 'Transaction predates purchase intent' }, { status: 400 })
+    const CLOCK_SKEW_MS = 60_000
+    if (typeof result.verification.timestampMs !== 'number') {
+      return NextResponse.json({ error: 'Transaction missing timestamp' }, { status: 400 })
+    }
+    if (result.verification.timestampMs < intent.createdAt.getTime() - CLOCK_SKEW_MS) {
+      return NextResponse.json({ error: 'Transaction predates purchase intent' }, { status: 400 })
+    }
+  } else {
+    // Verify on-chain transaction
+    let txBlock
+    try {
+      txBlock = await suiClient.getTransactionBlock({
+        digest: txDigest,
+        options: { showEffects: true, showBalanceChanges: true, showInput: true },
+      })
+    } catch {
+      return NextResponse.json({ error: 'Transaction not found on chain' }, { status: 400 })
+    }
+
+    // 1. Transaction must have succeeded
+    const status = txBlock.effects?.status?.status
+    if (status !== 'success') {
+      return NextResponse.json({ error: `Transaction failed: ${status}` }, { status: 400 })
+    }
+
+    // 2. Sender must match bound wallet
+    const sender = txBlock.transaction?.data?.sender
+    if (sender !== intent.walletBinding.address) {
+      return NextResponse.json({ error: 'Transaction sender does not match bound wallet' }, { status: 400 })
+    }
+
+    // 3. Verify balance changes — recipient received expected amount
+    const balanceChanges = txBlock.balanceChanges || []
+    const recipientChange = balanceChanges.find(
+      (bc) =>
+        bc.owner &&
+        typeof bc.owner === 'object' &&
+        'AddressOwner' in bc.owner &&
+        bc.owner.AddressOwner === intent.recipientAddress &&
+        bc.coinType === '0x2::sui::SUI',
+    )
+    if (!recipientChange || BigInt(recipientChange.amount) < intent.expectedPriceMist) {
+      return NextResponse.json({ error: 'Payment amount insufficient or recipient mismatch' }, { status: 400 })
+    }
+
+    // 4. Transaction must post-date the intent creation (prevent replay of old transfers)
+    // Allow 60s clock skew between Postgres and Sui checkpoint timestamps
+    const CLOCK_SKEW_MS = 60_000
+    const txTimestamp = txBlock.timestampMs
+    if (!txTimestamp || Number(txTimestamp) < intent.createdAt.getTime() - CLOCK_SKEW_MS) {
+      return NextResponse.json({ error: 'Transaction predates purchase intent' }, { status: 400 })
+    }
   }
 
   // All checks passed — atomically create Order + Entitlement
@@ -97,10 +132,14 @@ export async function POST(request: NextRequest) {
     const order = await tx.order.create({
       data: {
         listingId: intent.listingId,
-        buyerId: identity.memberId,
+        buyerId: intent.memberId,
+        agentMemberId: intent.agentMemberId,
         walletBindingId: intent.walletBindingId,
         purchaseIntentId: intentId,
         priceMist: intent.expectedPriceMist,
+        chain: intent.chain,
+        currency: intent.currency,
+        paymentRequestId: intent.paymentRequestId,
         txDigest,
       },
     })
@@ -109,7 +148,7 @@ export async function POST(request: NextRequest) {
       data: {
         bundleId: intent.listing.bundleId,
         orderId: order.id,
-        memberId: identity.memberId,
+        memberId: intent.memberId,
         walletBindingId: intent.walletBindingId,
       },
     })
