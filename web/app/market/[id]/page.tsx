@@ -10,6 +10,7 @@ interface ListingDetail {
   id: string
   priceMist: string
   priceUsdCents: number | null
+  currency: string
   _count: { orders: number }
   bundle: {
     id: string
@@ -135,7 +136,7 @@ export default function MarketDetailPage() {
               <div className="text-2xl font-bold mb-0.5" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
                 {formatUsdCents(listing.priceUsdCents) ?? formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
               </div>
-              {(listing.priceUsdCents !== null || suiPrice) && (
+              {listing.currency !== 'USDC' && (listing.priceUsdCents !== null || suiPrice) && (
                 <p className="text-xs mb-1" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                   {formatSUI(listing.priceMist)} SUI
                 </p>

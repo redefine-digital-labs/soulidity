@@ -8,6 +8,7 @@ interface ListingItem {
   id: string
   priceMist: string
   priceUsdCents: number | null
+  currency: string
   bundle: {
     id: string
     name: string
@@ -142,7 +143,7 @@ export default function MarketPage() {
                       <span className="font-semibold block" style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
                         {formatUsdCents(listing.priceUsdCents) ?? formatUSD(listing.priceMist, suiPrice) ?? `${formatSUI(listing.priceMist)} SUI`}
                       </span>
-                      {(listing.priceUsdCents !== null || suiPrice) && (
+                      {listing.currency !== 'USDC' && (listing.priceUsdCents !== null || suiPrice) && (
                         <span className="text-[10px]" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                           {formatSUI(listing.priceMist)} SUI
                         </span>

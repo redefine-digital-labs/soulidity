@@ -3,13 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PublicNav } from '@web/components/public-nav'
-import { WalletConnect } from '@web/components/market/wallet-connect'
 import { useAuth } from '@web/components/auth-provider'
 
 export default function PublishPage() {
   const { user, getAuthHeaders } = useAuth()
   const router = useRouter()
-  const [form, setForm] = useState({ name: '', description: '', category: '', tags: '', readme: '', priceSUI: '' })
+  const [form, setForm] = useState({ name: '', description: '', category: '', tags: '', readme: '', priceUSDC: '' })
   const [bundlePath, setBundlePath] = useState('')
   const [contentHash, setContentHash] = useState('')
   const [previewPaths, setPreviewPaths] = useState<string[]>([])
@@ -70,7 +69,7 @@ export default function PublishPage() {
     setPublishing(true)
     setError('')
     try {
-      const priceMist = String(BigInt(Math.round(parseFloat(form.priceSUI) * 1e9)))
+      const priceUsdCents = Math.round(parseFloat(form.priceUSDC) * 100)
       const authHeaders = await getAuthHeaders()
       const res = await fetch('/api/market/publish', {
         method: 'POST',
@@ -84,7 +83,7 @@ export default function PublishPage() {
           contentHash,
           previewImages: previewPaths,
           readme: form.readme || null,
-          priceMist,
+          priceUsdCents,
         }),
       })
       const data = await res.json()
@@ -111,7 +110,7 @@ export default function PublishPage() {
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }))
 
-  const canPublish = form.name && form.description && form.category && form.priceSUI && bundlePath && !uploading && !publishing
+  const canPublish = form.name && form.description && form.category && form.priceUSDC && bundlePath && !uploading && !publishing
 
   return (
     <div className="min-h-screen">
@@ -120,10 +119,6 @@ export default function PublishPage() {
         <h1 className="text-2xl font-bold mb-6 animate-fade-up" style={{ fontFamily: 'var(--font-display)' }}>
           <span className="text-gradient">发布模板</span>
         </h1>
-
-        <div className="mb-6 animate-fade-up" style={{ animationDelay: '50ms' }}>
-          <WalletConnect />
-        </div>
 
         <div className="space-y-4 animate-fade-up" style={{ animationDelay: '100ms' }}>
           <div>
@@ -143,8 +138,8 @@ export default function PublishPage() {
             <input value={form.tags} onChange={set('tags')} className="input-dark w-full" placeholder="AI, 新闻, 自动化" />
           </div>
           <div>
-            <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>价格 (SUI) *</label>
-            <input value={form.priceSUI} onChange={set('priceSUI')} type="number" step="0.01" min="0.01" className="input-dark w-full" placeholder="1.00" />
+            <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>价格 (USDC) *</label>
+            <input value={form.priceUSDC} onChange={set('priceUSDC')} type="number" step="0.01" min="0.01" className="input-dark w-full" placeholder="1.00" />
           </div>
           <div>
             <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>模板包 (.zip) *</label>

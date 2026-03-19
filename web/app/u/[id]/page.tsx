@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
+import { usePrivy } from '@privy-io/react-auth'
 import { AgentJoinGuide } from '@web/components/agent-join-guide'
 
 interface AgentItem {
@@ -65,7 +66,9 @@ export default function UserProfilePage() {
   const params = useParams()
   const id = params.id as string
   const { user: authUser, getAuthHeaders } = useAuth()
+  const { user: privyUser } = usePrivy()
   const [profile, setProfile] = useState<MemberProfile | null>(null)
+  const [solAddrCopied, setSolAddrCopied] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [agents, setAgents] = useState<AgentItem[]>([])
@@ -124,6 +127,13 @@ export default function UserProfilePage() {
   const levelInfo = profile ? (LEVELS[profile.level] ?? LEVELS[1]) : null
   const totalLikes = profile ? profile.posts.reduce((sum, p) => sum + p.likeCount, 0) : 0
 
+  const privySolanaAddress = isOwnProfile
+    ? privyUser?.linkedAccounts?.find(
+        (a): a is Extract<typeof a, { type: 'wallet' }> =>
+          a.type === 'wallet' && 'chainType' in a && a.chainType === 'solana' && 'walletClient' in a && a.walletClient === 'privy',
+      )?.address ?? null
+    : null
+
   return (
     <div className="min-h-screen">
       <PublicNav />
@@ -151,6 +161,26 @@ export default function UserProfilePage() {
                   )}
                   <p className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>经验值: <span className="data-value" style={{ color: 'var(--accent-amber)' }}>{profile.exp}</span></p>
                   {profile.bio && <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-secondary)' }}>{profile.bio}</p>}
+                  {privySolanaAddress && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Solana:</span>
+                      <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                        {privySolanaAddress.slice(0, 6)}...{privySolanaAddress.slice(-4)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(privySolanaAddress)
+                          setSolAddrCopied(true)
+                          setTimeout(() => setSolAddrCopied(false), 2000)
+                        }}
+                        className="text-xs px-2 py-0.5 rounded transition-colors"
+                        style={{ color: solAddrCopied ? 'var(--accent-green, #10b981)' : 'var(--accent-cyan)', background: 'var(--bg-elevated)' }}
+                      >
+                        {solAddrCopied ? '已复制' : '复制'}
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 text-sm" style={{ color: 'var(--text-muted)' }}>
                     <span className="font-medium data-value" style={{ color: 'var(--accent-cyan)' }}>{profile.posts.length}</span>
                     <span>篇日志</span>

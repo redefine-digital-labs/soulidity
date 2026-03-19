@@ -8,8 +8,11 @@ import { useState } from 'react'
 import { useAuth } from '@web/components/auth-provider'
 import { USDC_DECIMALS } from '@web/lib/solana'
 import {
+  createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddress,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
 } from '@web/lib/solana-spl'
 
 interface PurchaseButtonProps {
@@ -63,12 +66,29 @@ export function PurchaseButton({ listingId, disabled, onSuccess }: PurchaseButto
 
         const transaction = new SolanaTransaction()
         const mint = new PublicKey(intent.mint)
+        const recipientAta = new PublicKey(intent.recipientTokenAccount)
+        const recipientOwner = new PublicKey(intent.recipientAddress)
         const sourceAta = await getAssociatedTokenAddress(mint, publicKey)
+
+        // Create seller's ATA idempotently (no-op if it already exists).
+        // Fresh Privy embedded wallets may not have a USDC ATA yet.
+        // Buyer pays ~0.002 SOL rent if the account needs to be created.
+        transaction.add(
+          createAssociatedTokenAccountIdempotentInstruction(
+            publicKey,           // payer
+            recipientAta,        // ATA address
+            recipientOwner,      // owner of the ATA
+            mint,                // token mint
+            TOKEN_PROGRAM_ID,
+            ASSOCIATED_TOKEN_PROGRAM_ID,
+          ),
+        )
+
         transaction.add(
           createTransferCheckedInstruction(
             sourceAta,
             mint,
-            new PublicKey(intent.recipientTokenAccount),
+            recipientAta,
             publicKey,
             BigInt(intent.amount),
             USDC_DECIMALS,
