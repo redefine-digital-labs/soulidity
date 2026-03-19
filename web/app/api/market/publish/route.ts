@@ -19,13 +19,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Account not linked to Privy' }, { status: 400 })
   }
 
-  const privyUser = await privy.getUser(account.privyDid)
-  const solanaWallet = privyUser.linkedAccounts.find(
+  let privyUser = await privy.getUser(account.privyDid)
+  let solanaWallet = privyUser.linkedAccounts.find(
     (a): a is Extract<typeof a, { type: 'wallet' }> =>
       a.type === 'wallet' && 'chainType' in a && a.chainType === 'solana' && 'walletClient' in a && a.walletClient === 'privy',
   )
   if (!solanaWallet) {
-    return NextResponse.json({ error: 'No Privy Solana embedded wallet found. Please re-login.' }, { status: 400 })
+    // Auto-create embedded Solana wallet for users who registered before it was configured
+    privyUser = await privy.createWallets({ userId: account.privyDid, createSolanaWallet: true })
+    solanaWallet = privyUser.linkedAccounts.find(
+      (a): a is Extract<typeof a, { type: 'wallet' }> =>
+        a.type === 'wallet' && 'chainType' in a && a.chainType === 'solana' && 'walletClient' in a && a.walletClient === 'privy',
+    )
+    if (!solanaWallet) {
+      return NextResponse.json({ error: 'Failed to create Solana wallet. Please try again.' }, { status: 500 })
+    }
   }
   const sellerSolanaAddress = solanaWallet.address
 
