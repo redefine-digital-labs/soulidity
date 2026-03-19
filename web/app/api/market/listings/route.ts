@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
     ...l,
     priceMist: l.priceMist.toString(),
     priceUsdCents: l.priceUsdCents,
+    currency: l.currency,
   }))
 
   return NextResponse.json({ listings: serialized, total, page, limit })

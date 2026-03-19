@@ -6,7 +6,6 @@ import { getCoingeckoUsdPrice } from '@web/lib/coingecko'
 import { prisma } from '@web/lib/prisma'
 import {
   getUsdcMint,
-  solanaConnection,
   usdCentsToUsdcAtomicUnits,
 } from '@web/lib/solana'
 import { getAssociatedTokenAddress } from '@web/lib/solana-spl'
@@ -91,10 +90,9 @@ export async function POST(request: NextRequest) {
       getUsdcMint(),
       new PublicKey(sellerWallet.address),
     )
-    const tokenAccountInfo = await solanaConnection.getAccountInfo(tokenAccount, 'confirmed')
-    if (!tokenAccountInfo) {
-      return NextResponse.json({ error: 'Seller USDC token account not found' }, { status: 400 })
-    }
+    // Return the derived ATA address without checking on-chain existence.
+    // Fresh Privy embedded wallets may not have an ATA yet — the buyer's
+    // transaction will create it idempotently.
     recipientTokenAccount = tokenAccount.toBase58()
     expectedAmount = usdCentsToUsdcAtomicUnits(listingUsdCents)
   }

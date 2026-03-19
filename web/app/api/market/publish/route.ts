@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
-import { getCoingeckoUsdPrice } from '@web/lib/coingecko'
+import { privy } from '@web/lib/auth/privy'
 import { prisma } from '@web/lib/prisma'
-
-async function resolvePriceUsdCents(priceMist: bigint): Promise<number> {
-  const suiPriceUsd = await getCoingeckoUsdPrice('sui')
-  const suiAmount = Number(priceMist) / 1_000_000_000
-  return Math.max(1, Math.ceil(suiAmount * suiPriceUsd * 100))
-}
+import { usdCentsToUsdcAtomicUnits } from '@web/lib/solana'
 
 export async function POST(request: NextRequest) {
   const identity = await resolveIdentity()
@@ -15,18 +10,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
-  // Seller must have a primary Sui wallet bound
-  const wallet = await prisma.walletBinding.findFirst({
-    where: { memberId: identity.memberId, chain: 'sui', isPrimary: true },
+  // Get seller's Privy embedded Solana address
+  const account = await prisma.account.findFirst({
+    where: { members: { some: { id: identity.memberId } } },
+    select: { privyDid: true },
   })
-  if (!wallet) {
-    return NextResponse.json({ error: 'No Sui wallet bound. Please bind your wallet first.' }, { status: 400 })
+  if (!account?.privyDid) {
+    return NextResponse.json({ error: 'Account not linked to Privy' }, { status: 400 })
   }
 
-  const body = await request.json()
-  const { name, description, category, tags, storagePath, contentHash, previewImages, readme, priceMist } = body
+  const privyUser = await privy.getUser(account.privyDid)
+  const solanaWallet = privyUser.linkedAccounts.find(
+    (a): a is Extract<typeof a, { type: 'wallet' }> =>
+      a.type === 'wallet' && 'chainType' in a && a.chainType === 'solana' && 'walletClient' in a && a.walletClient === 'privy',
+  )
+  if (!solanaWallet) {
+    return NextResponse.json({ error: 'No Privy Solana embedded wallet found. Please re-login.' }, { status: 400 })
+  }
+  const sellerSolanaAddress = solanaWallet.address
 
-  if (!name || !description || !category || !storagePath || !contentHash || !priceMist) {
+  const body = await request.json()
+  const { name, description, category, tags, storagePath, contentHash, previewImages, readme, priceUsdCents } = body
+
+  if (!name || !description || !category || !storagePath || !contentHash || !priceUsdCents) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
@@ -35,27 +41,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid storage path' }, { status: 403 })
   }
 
-  let priceBigInt: bigint
-  try {
-    priceBigInt = BigInt(priceMist)
-  } catch {
-    return NextResponse.json({ error: 'priceMist must be a valid integer string' }, { status: 400 })
-  }
-  if (priceBigInt <= BigInt(0)) {
-    return NextResponse.json({ error: 'Price must be positive' }, { status: 400 })
+  const priceUsdCentsInt = parseInt(priceUsdCents, 10)
+  if (!Number.isFinite(priceUsdCentsInt) || priceUsdCentsInt <= 0) {
+    return NextResponse.json({ error: 'Price must be a positive integer (cents)' }, { status: 400 })
   }
 
-  let priceUsdCents: number
-  try {
-    priceUsdCents = await resolvePriceUsdCents(priceBigInt)
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to price listing in USD' },
-      { status: 502 },
-    )
-  }
+  const priceMist = usdCentsToUsdcAtomicUnits(priceUsdCentsInt)
 
   const result = await prisma.$transaction(async (tx) => {
+    // Upsert WalletBinding for solana so purchase flow can find it
+    await tx.walletBinding.upsert({
+      where: { chain_address: { chain: 'solana', address: sellerSolanaAddress } },
+      update: { isPrimary: true },
+      create: {
+        memberId: identity.memberId,
+        chain: 'solana',
+        address: sellerSolanaAddress,
+        isPrimary: true,
+      },
+    })
+
     const bundle = await tx.agentBundle.create({
       data: {
         sellerId: identity.memberId,
@@ -74,9 +79,10 @@ export async function POST(request: NextRequest) {
     const listing = await tx.listing.create({
       data: {
         bundleId: bundle.id,
-        sellerWalletAddress: wallet.address,
-        priceMist: priceBigInt,
-        priceUsdCents,
+        sellerWalletAddress: sellerSolanaAddress,
+        priceMist,
+        priceUsdCents: priceUsdCentsInt,
+        currency: 'USDC',
         status: 'active',
       },
     })
