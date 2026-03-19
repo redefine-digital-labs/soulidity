@@ -2,14 +2,12 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCreateWallet } from '@privy-io/react-auth/solana'
 import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
 
 export default function PublishPage() {
   const { user, getAuthHeaders } = useAuth()
   const router = useRouter()
-  const { createWallet } = useCreateWallet()
   const [form, setForm] = useState({ name: '', description: '', category: '', tags: '', readme: '', priceUSDC: '' })
   const [bundlePath, setBundlePath] = useState('')
   const [contentHash, setContentHash] = useState('')
@@ -74,8 +72,6 @@ export default function PublishPage() {
     setPublishing(true)
     setError('')
     try {
-      // Ensure Privy embedded Solana wallet exists (no-op if already created)
-      try { await createWallet() } catch { /* wallet already exists */ }
       const priceUsdCents = Math.round(parseFloat(form.priceUSDC) * 100)
       const authHeaders = await getAuthHeaders()
       const res = await fetch('/api/market/publish', {
