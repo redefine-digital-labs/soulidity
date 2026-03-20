@@ -150,4 +150,39 @@ describe('runAgentPipeline', () => {
     expect(reporterPrompt).toContain('审核建议摘要')
     expect(store.rawItems[0].content).toBe('Original tweet body with the source facts intact')
   })
+
+  it('repairs malformed analyst JSON instead of rejecting the raw item', async () => {
+    const { prisma, store } = createMockPrisma()
+
+    seedAgentRoles(store)
+
+    store.rawItems.push({
+      id: 'raw-malformed-analyst',
+      sourceType: 'rss',
+      sourceName: 'CoinDesk',
+      title: 'ETF Inflows Rise',
+      url: 'https://example.com/etf-inflows-rise',
+      content: 'ETF inflows rise as risk appetite returns',
+      language: 'en',
+      score: 6,
+      status: 'deduped',
+      createdAt: new Date(),
+    })
+
+    const llm = createMockLLM([
+      JSON.stringify({ title_zh: '测试标题', lead_zh: '据 CoinDesk 报道，ETF 资金流入扩大。' }),
+      `{
+  "body_zh": "CoinDesk 表示 "BTC ETF" 今日流入放大，机构风险偏好回升",
+  "tags": ["BTC", "ETF"],
+  "companies": []
+}`,
+      JSON.stringify({ title_zh: '最终标题', summary_zh: '最终摘要', analysis_zh: '最终分析', quality_score: 8, approved: true }),
+    ])
+
+    const result = await runAgentPipeline(prisma, llm, 'raw-malformed-analyst')
+
+    expect(result.success).toBe(true)
+    expect(store.rawItems[0].status).toBe('produced')
+    expect(store.articles).toHaveLength(1)
+  })
 })

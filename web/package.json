@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate --schema=../prisma/schema.prisma && next build",
+    "prisma:generate": "prisma generate --schema=../prisma/schema.prisma",
+    "typegen": "next typegen",
+    "typecheck": "npm run prisma:generate && npm run typegen && tsc -p tsconfig.json --noEmit",
+    "build": "npm run prisma:generate && next build",
     "start": "next start",
     "lint": "eslint"
   },
@@ -15,20 +18,9 @@
     "@prisma/client": "^7.4.2",
     "@privy-io/react-auth": "^3.17.0",
     "@privy-io/server-auth": "^1.32.5",
-    "@solana/spl-token": "^0.4.14",
-    "@solana/wallet-adapter-base": "^0.9.27",
-    "@solana/wallet-adapter-react": "^0.15.39",
-    "@solana/wallet-adapter-react-ui": "^0.9.39",
-    "@solana/wallet-adapter-wallets": "^0.19.37",
-    "@solana/web3.js": "^1.98.4",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.98.0",
     "@tanstack/react-query": "^5.90.21",
-    "@x402/core": "^2.7.0",
-    "@x402/fetch": "^2.7.0",
-    "@x402/next": "^2.7.0",
-    "@x402/svm": "^2.7.0",
-    "bs58": "^6.0.0",
     "cheerio": "^1.2.0",
     "dotenv": "^17.3.1",
     "grammy": "^1.40.1",
@@ -37,8 +29,7 @@
     "openai": "^6.25.0",
     "pg": "^8.19.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "tweetnacl": "^1.0.3"
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

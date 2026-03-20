@@ -19,22 +19,22 @@ describe('CoinGecko price cache', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: vi.fn().mockResolvedValue({ solana: { usd: 125 } }),
+        json: vi.fn().mockResolvedValue({ sui: { usd: 125 } }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: vi.fn().mockResolvedValue({ solana: { usd: 126 } }),
+        json: vi.fn().mockResolvedValue({ sui: { usd: 126 } }),
       })
 
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(getCoingeckoUsdPrice('solana')).resolves.toBe(125)
-    await expect(getCoingeckoUsdPrice('solana')).resolves.toBe(125)
+    await expect(getCoingeckoUsdPrice('sui')).resolves.toBe(125)
+    await expect(getCoingeckoUsdPrice('sui')).resolves.toBe(125)
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(60_001)
 
-    await expect(getCoingeckoUsdPrice('solana')).resolves.toBe(126)
+    await expect(getCoingeckoUsdPrice('sui')).resolves.toBe(126)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -44,7 +44,7 @@ describe('CoinGecko price cache', () => {
       vi.fn().mockResolvedValue({ ok: false }),
     )
 
-    await expect(getCoingeckoUsdPrice('solana')).rejects.toThrow('Failed to fetch solana price')
+    await expect(getCoingeckoUsdPrice('sui')).rejects.toThrow('Failed to fetch sui price')
   })
 
   it('throws when response JSON has no usd key', async () => {
@@ -52,24 +52,24 @@ describe('CoinGecko price cache', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: vi.fn().mockResolvedValue({ solana: {} }),
+        json: vi.fn().mockResolvedValue({ sui: {} }),
       }),
     )
 
-    await expect(getCoingeckoUsdPrice('solana')).rejects.toThrow('Missing solana USD price')
+    await expect(getCoingeckoUsdPrice('sui')).rejects.toThrow('Missing sui USD price')
   })
 
   it('deduplicates concurrent requests for the same asset', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ solana: { usd: 130 } }),
+      json: vi.fn().mockResolvedValue({ sui: { usd: 130 } }),
     })
 
     vi.stubGlobal('fetch', fetchMock)
 
     const [price1, price2] = await Promise.all([
-      getCoingeckoUsdPrice('solana'),
-      getCoingeckoUsdPrice('solana'),
+      getCoingeckoUsdPrice('sui'),
+      getCoingeckoUsdPrice('sui'),
     ])
 
     expect(price1).toBe(130)

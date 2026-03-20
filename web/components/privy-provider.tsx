@@ -11,11 +11,6 @@ export function PrivyProvider({ children }: { children: React.ReactNode }) {
         appearance: {
           showWalletLoginFirst: false,
         },
-        embeddedWallets: {
-          solana: {
-            createOnLogin: 'users-without-wallets',
-          },
-        },
       }}
     >
       {children}

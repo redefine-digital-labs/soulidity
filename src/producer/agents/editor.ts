@@ -1,3 +1,5 @@
+import { parseAgentJson } from './parse-json.js'
+
 export const EDITOR_SYSTEM_PROMPT = `你是一名资深新闻编辑。审核并润色新闻稿件，确保准确性、可读性和专业性。
 给出质量评分（1-10）和是否通过审核。
 必须只返回合法 JSON，不要 markdown 代码块。`
@@ -34,8 +36,7 @@ export interface EditorOutput {
 }
 
 export function parseEditorResponse(text: string): EditorOutput {
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  const parsed = JSON.parse(cleaned)
+  const parsed = parseAgentJson<Partial<EditorOutput>>(text)
   if (!parsed.title_zh) throw new Error('Missing required field: title_zh')
   if (!parsed.summary_zh) throw new Error('Missing required field: summary_zh')
   return {

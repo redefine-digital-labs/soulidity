@@ -1,4 +1,4 @@
-type CoingeckoAssetId = 'solana' | 'sui'
+type CoingeckoAssetId = 'sui'
 
 const PRICE_CACHE_TTL_MS = 60_000
 

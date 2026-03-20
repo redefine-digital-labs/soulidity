@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { requireAdmin } from '@web/lib/auth/admin'
 
 export async function GET() {
-  const members = await prisma.member.findMany({ orderBy: { joinedAt: 'desc' } })
+  const { error } = await requireAdmin()
+  if (error) return error
+
+  const members = await prisma.member.findMany({
+    orderBy: { joinedAt: 'desc' },
+    select: { id: true, tgId: true, tgName: true, level: true, joinedAt: true },
+  })
   return NextResponse.json(members)
 }

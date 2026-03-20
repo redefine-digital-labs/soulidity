@@ -1,3 +1,5 @@
+import { parseAgentJson } from './parse-json.js'
+
 export const ANALYST_SYSTEM_PROMPT = `你是一名资深加密货币行业分析师。根据新闻标题和导语，撰写深度分析正文，提取标签和相关公司。
 必须只返回合法 JSON，不要 markdown 代码块。`
 
@@ -35,8 +37,7 @@ export interface AnalystOutput {
 }
 
 export function parseAnalystResponse(text: string): AnalystOutput {
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  const parsed = JSON.parse(cleaned)
+  const parsed = parseAgentJson<Partial<AnalystOutput>>(text)
   if (!parsed.body_zh) throw new Error('Missing required field: body_zh')
   return {
     body_zh: parsed.body_zh,

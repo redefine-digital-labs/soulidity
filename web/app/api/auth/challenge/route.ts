@@ -18,7 +18,7 @@ export function buildChallengeMessage(
   expiresAt: Date
 ): string {
   return [
-    `${domain} wants you to sign in with your Solana account:`,
+    `${domain} wants you to sign in with your Sui account:`,
     address,
     '',
     'Clawnews authentication',

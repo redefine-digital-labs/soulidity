@@ -162,12 +162,8 @@ model Member {
   comments     Comment[]
   achievements MemberAchievement[]
   walletBindings  WalletBinding[]
-  soldBundles     AgentBundle[]
-  purchaseIntents PurchaseIntent[] @relation("PurchaseIntentBuyer")
-  agentPurchaseIntents PurchaseIntent[] @relation("PurchaseIntentAgent")
-  orders          Order[]         @relation("BuyerOrders")
-  agentOrders     Order[]         @relation("AgentOrders")
-  entitlements    Entitlement[]
+  authoredSoulSeries SoulSeries[] @relation("SoulSeriesAuthor")
+  ownedSoulPassSnapshots SoulPassSnapshot[] @relation("SoulPassSnapshotOwner")
 
   @@index([tgId])
   @@index([accountId, kind])
@@ -285,134 +281,111 @@ model WalletBinding {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  purchaseIntents PurchaseIntent[]
-  orders          Order[]
-  entitlements    Entitlement[]
-
   @@unique([chain, address])
   @@index([memberId, chain])
   @@map("wallet_bindings")
 }
 
-model AgentBundle {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sellerId      String   @map("seller_id") @db.Uuid
-  seller        Member   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  name          String
-  description   String
-  version       String   @default("1.0.0")
-  category      String
-  tags          String[]
-  storageBucket String   @default("agent-bundles") @map("storage_bucket")
-  storagePath   String   @map("storage_path")
-  contentHash   String   @map("content_hash")
-  previewImages String[] @map("preview_images")
-  readme        String?
-  status        String   @default("draft")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+// ============================================================
+// Soul Market Models
+// ============================================================
 
-  listings     Listing[]
-  entitlements Entitlement[]
+model SoulSeries {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId          String   @unique @map("on_chain_id")
+  authorMemberId     String?  @map("author_member_id") @db.Uuid
+  authorMember       Member?  @relation("SoulSeriesAuthor", fields: [authorMemberId], references: [id], onDelete: SetNull)
+  authorAddress      String   @map("author_address")
+  name               String
+  description        String
+  category           String
+  tags               String[]
+  previewImages      String[] @map("preview_images")
+  readme             String?
+  latestReleaseId    String?  @map("latest_release_id") @db.Uuid
+  latestRelease      SoulRelease? @relation("SoulSeriesLatestRelease", fields: [latestReleaseId], references: [id], onDelete: SetNull)
+  oneTimePriceUsdc   Int?     @map("one_time_price_usdc")
+  subPriceUsdc       Int?     @map("sub_price_usdc")
+  subPeriodDays      Int?     @map("sub_period_days")
+  status             String   @default("active")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@index([sellerId, status])
-  @@map("agent_bundles")
+  releases       SoulRelease[]
+  passSnapshots  SoulPassSnapshot[]
+
+  @@index([authorMemberId, status])
+  @@index([category])
+  @@index([createdAt(sort: Desc)])
+  @@map("soul_series")
 }
 
-model Listing {
-  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bundleId            String      @map("bundle_id") @db.Uuid
-  bundle              AgentBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
-  sellerWalletAddress String      @map("seller_wallet_address")
-  priceMist           BigInt      @map("price_mist")
-  currency            String      @default("SUI")
-  priceUsdCents       Int?        @map("price_usd_cents")
-  status              String      @default("active")
-  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model SoulRelease {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId     String     @unique @map("on_chain_id")
+  seriesId      String     @map("series_id") @db.Uuid
+  series        SoulSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  latestForSeries SoulSeries[] @relation("SoulSeriesLatestRelease")
+  version       String
+  walrusBlobRef    String     @map("walrus_blob_ref")
+  publicMetadataRef String?   @map("public_metadata_ref")
+  contentHash      String     @map("content_hash")
+  changelog        String?
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
-  purchaseIntents PurchaseIntent[]
-  orders          Order[]
-
-  @@index([bundleId, status])
-  @@map("listings")
+  @@index([seriesId, createdAt(sort: Desc)])
+  @@unique([seriesId, version])
+  @@map("soul_releases")
 }
 
-model PurchaseIntent {
-  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  listingId         String        @map("listing_id") @db.Uuid
-  listing           Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  memberId          String        @map("member_id") @db.Uuid
-  member            Member        @relation("PurchaseIntentBuyer", fields: [memberId], references: [id], onDelete: Cascade)
-  agentMemberId     String?       @map("agent_member_id") @db.Uuid
-  agentMember       Member?       @relation("PurchaseIntentAgent", fields: [agentMemberId], references: [id], onDelete: SetNull)
-  walletBindingId   String        @map("wallet_binding_id") @db.Uuid
-  walletBinding     WalletBinding @relation(fields: [walletBindingId], references: [id], onDelete: Cascade)
-  chain             String        @default("sui")
-  currency          String        @default("SUI")
-  expectedPriceMist BigInt        @map("expected_price_mist")
-  expectedAmount    BigInt?       @map("expected_amount")
-  recipientAddress  String        @map("recipient_address")
-  recipientTokenAccount String?   @map("recipient_token_account")
-  paymentRequestId  String?       @unique @map("payment_request_id")
-  nonce             String        @unique
-  expiresAt         DateTime      @map("expires_at") @db.Timestamptz
-  txDigest          String?       @unique @map("tx_digest")
-  status            String        @default("pending")
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model SoulPassSnapshot {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId       String     @unique @map("on_chain_id")
+  seriesId        String     @map("series_id") @db.Uuid
+  series          SoulSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  ownerAddress    String     @map("owner_address")
+  ownerMemberId   String?    @map("owner_member_id") @db.Uuid
+  ownerMember     Member?    @relation("SoulPassSnapshotOwner", fields: [ownerMemberId], references: [id], onDelete: SetNull)
+  passType        String     @map("pass_type")
+  lockedReleaseId String?    @map("locked_release_id")
+  expiresAt       DateTime?  @map("expires_at") @db.Timestamptz
+  agentGrant      String?    @map("agent_grant")
+  status          String     @default("active")
+  mintTxDigest    String     @map("mint_tx_digest")
+  lastSyncedAt    DateTime   @default(now()) @map("last_synced_at") @db.Timestamptz
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  order Order?
-
-  @@index([memberId, status])
-  @@index([agentMemberId, status])
-  @@index([listingId, status])
-  @@map("purchase_intents")
+  @@index([ownerMemberId, status])
+  @@index([ownerAddress, status])
+  @@index([seriesId, status])
+  @@index([seriesId, agentGrant, status])
+  @@map("soul_pass_snapshots")
 }
 
-model Order {
-  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  listingId        String         @map("listing_id") @db.Uuid
-  listing          Listing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  buyerId          String         @map("buyer_id") @db.Uuid
-  buyer            Member         @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Cascade)
-  agentMemberId    String?        @map("agent_member_id") @db.Uuid
-  agentMember      Member?        @relation("AgentOrders", fields: [agentMemberId], references: [id], onDelete: SetNull)
-  walletBindingId  String         @map("wallet_binding_id") @db.Uuid
-  walletBinding    WalletBinding  @relation(fields: [walletBindingId], references: [id], onDelete: Cascade)
-  purchaseIntentId String         @unique @map("purchase_intent_id") @db.Uuid
-  purchaseIntent   PurchaseIntent @relation(fields: [purchaseIntentId], references: [id], onDelete: Cascade)
-  priceMist        BigInt         @map("price_mist")
-  chain            String         @default("sui")
-  currency         String         @default("SUI")
-  paymentRequestId String?        @unique @map("payment_request_id")
-  txDigest         String         @unique @map("tx_digest")
-  status           String         @default("completed")
-  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
 
-  entitlement Entitlement?
+model IndexerDeadLetterEvent {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  moduleName   String   @map("module_name")
+  eventType    String   @map("event_type")
+  txDigest     String   @map("tx_digest")
+  eventSeq     String   @map("event_seq")
+  payload      Json
+  errorMessage String   @map("error_message")
+  failureCount Int      @map("failure_count")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@index([buyerId, createdAt(sort: Desc)])
-  @@index([agentMemberId, createdAt(sort: Desc)])
-  @@map("orders")
+  @@unique([moduleName, txDigest, eventSeq])
+  @@index([createdAt])
+  @@map("indexer_dead_letter_events")
 }
 
-model Entitlement {
-  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bundleId        String         @map("bundle_id") @db.Uuid
-  bundle          AgentBundle    @relation(fields: [bundleId], references: [id], onDelete: Cascade)
-  orderId         String         @unique @map("order_id") @db.Uuid
-  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  memberId        String         @map("member_id") @db.Uuid
-  member          Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  walletBindingId String?        @map("wallet_binding_id") @db.Uuid
-  walletBinding   WalletBinding? @relation(fields: [walletBindingId], references: [id], onDelete: SetNull)
-  accessType      String         @default("download") @map("access_type")
-  status          String         @default("active")
-  grantedAt       DateTime       @default(now()) @map("granted_at") @db.Timestamptz
-  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model IndexerCursor {
+  id         String   @id @default("sui-soul-events")
+  checkpoint BigInt   @default(0)
+  cursorData String?  @map("cursor_data")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@index([memberId, status])
-  @@index([bundleId, status])
-  @@map("entitlements")
+  @@map("indexer_cursors")
 }

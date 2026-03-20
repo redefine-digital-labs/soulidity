@@ -62,10 +62,14 @@ if (process.argv[1]?.endsWith('run.ts') || process.argv[1]?.endsWith('run.js')) 
   const mode = process.argv[2]
 
   if (mode === 'x') {
-    const { collectX } = await import('./x.js')
+    const { collectX, closePool } = await import('./x.js')
     console.log('Running X collector...')
-    const result = await collectX(prisma)
-    console.log(`Done. Total ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}, pending_review ${result.pendingReview}`)
+    try {
+      const result = await collectX(prisma)
+      console.log(`Done. Total ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}, pending_review ${result.pendingReview}`)
+    } finally {
+      await closePool()
+    }
   } else {
     console.log('Running collectors...')
     const result = await runCollectors(prisma, [collectRss, collectGithub])

@@ -8,7 +8,7 @@ const links = [
   { href: '/', label: '新闻' },
   { href: '/skills', label: '技能' },
   { href: '/community', label: '社区' },
-  { href: '/market', label: '市场' },
+  { href: '/souls', label: 'Souls' },
 ]
 
 export function PublicNav() {

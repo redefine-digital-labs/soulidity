@@ -1,0 +1,11 @@
+[package]
+name = "soul_market"
+edition = "2024.beta"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.41.1" }
+usdc = { local = "deps/usdc" }
+
+[addresses]
+soul_market = "0x0"
+usdc = "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7"

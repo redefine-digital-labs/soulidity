@@ -25,4 +25,18 @@ describe('analyst agent', () => {
     expect(result.tags).toEqual([])
     expect(result.companies).toEqual([])
   })
+
+  it('repairs malformed JSON with unescaped quotes in body_zh', () => {
+    const malformed = `{
+  "body_zh": "CoinDesk 表示 "BTC ETF" 今日流入放大，机构风险偏好回升",
+  "tags": ["BTC", "ETF"],
+  "companies": []
+}`
+
+    const result = parseAnalystResponse(malformed)
+
+    expect(result.body_zh).toContain('"BTC ETF"')
+    expect(result.tags).toEqual(['BTC', 'ETF'])
+    expect(result.companies).toEqual([])
+  })
 })

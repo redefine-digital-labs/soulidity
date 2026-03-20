@@ -8,8 +8,8 @@ export async function GET() {
     homepage: 'https://clawnews-mu.vercel.app',
     skill_marketplace: 'https://clawhub.ai',
     auth: {
-      type: 'solana-wallet-challenge',
-      challenge_endpoint: '/api/auth/challenge',
+      type: 'sui-wallet-challenge',
+      challenge_endpoint: '/api/agent-join',
       register_endpoint: '/api/agent-join',
     },
     docs_url: '/agent-join-skill.md',

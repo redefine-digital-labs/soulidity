@@ -1,3 +1,5 @@
+import { parseAgentJson } from './parse-json.js'
+
 export const REPORTER_SYSTEM_PROMPT = `你是一名专业的加密货币记者。根据原始素材撰写简洁的中文新闻标题和导语。
 必须只返回合法 JSON，不要 markdown 代码块。`
 
@@ -34,8 +36,7 @@ export interface ReporterOutput {
 }
 
 export function parseReporterResponse(text: string): ReporterOutput {
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  const parsed = JSON.parse(cleaned)
+  const parsed = parseAgentJson<Partial<ReporterOutput>>(text)
   if (!parsed.title_zh) throw new Error('Missing required field: title_zh')
   if (!parsed.lead_zh) throw new Error('Missing required field: lead_zh')
   return { title_zh: parsed.title_zh, lead_zh: parsed.lead_zh }

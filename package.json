@@ -7,6 +7,9 @@
     "dev": "tsx src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "typecheck:root": "npm run prisma:generate && tsc -p tsconfig.json --noEmit",
+    "typecheck": "npm run typecheck:root && npm --prefix web run typecheck",
     "collect": "tsx src/collector/run.ts",
     "collect:x": "tsx src/collector/run.ts x",
     "produce": "tsx src/producer/run.ts",
@@ -18,16 +21,15 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
-    "bs58": "^6.0.0",
     "dotenv": "^17.3.1",
     "grammy": "^1.30.0",
+    "jsonrepair": "^3.13.3",
     "node-cron": "^3.0.3",
     "openai": "^6.25.0",
     "p-limit": "^7.3.0",
     "pg": "^8.19.0",
     "prisma": "^7.4.2",
-    "rss-parser": "^3.13.0",
-    "tweetnacl": "^1.0.3"
+    "rss-parser": "^3.13.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

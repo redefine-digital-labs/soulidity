@@ -18,6 +18,11 @@ export async function POST(
   if (post.type !== 'question') return NextResponse.json({ error: 'Only questions can accept answers' }, { status: 400 })
   if (post.memberId !== identity!.memberId) return NextResponse.json({ error: 'Only author can accept' }, { status: 403 })
 
+  const comment = await prisma.comment.findUnique({ where: { id: commentId }, select: { postId: true } })
+  if (!comment || comment.postId !== id) {
+    return NextResponse.json({ error: 'Comment does not belong to this post' }, { status: 400 })
+  }
+
   await prisma.comment.updateMany({ where: { postId: id, isAccepted: true }, data: { isAccepted: false } })
   await prisma.comment.update({ where: { id: commentId }, data: { isAccepted: true } })
 

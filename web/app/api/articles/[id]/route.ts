@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { requireAdmin } from '@web/lib/auth/admin'
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -12,6 +13,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   })
   if (!article) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  if (article.status !== 'published') {
+    const { error } = await requireAdmin()
+    if (error) return error
+  }
+
   return NextResponse.json({
     ...article,
     source_url: article.rawItem?.url,
@@ -22,6 +28,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { error } = await requireAdmin()
+  if (error) return error
+
   const { id } = await params
   const body = await request.json()
 

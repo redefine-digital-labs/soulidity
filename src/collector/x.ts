@@ -2,6 +2,11 @@ import pg from 'pg'
 import type { PrismaClient } from '../db/database.js'
 import { getCollectorState, upsertCollectorState } from '../db/database.js'
 
+// Parse "timestamp without time zone" as UTC to avoid local-timezone offset
+// when the external DB stores wall-clock times in a non-tz column.
+const TIMESTAMP_OID = 1114
+const parseTimestampAsUTC = (val: string) => new Date(val + '+00')
+
 // --- Keyword filtering ---
 
 export const CORE_KEYWORDS = ['openclaw', 'openaiclaw']
@@ -80,9 +85,26 @@ function getPool(): pg.Pool {
   if (!xPool) {
     const connectionString = process.env.X_DATABASE_URL
     if (!connectionString) throw new Error('X_DATABASE_URL is not set')
-    xPool = new pg.Pool({ connectionString, max: 3 })
+    xPool = new pg.Pool({
+      connectionString,
+      max: 3,
+      idleTimeoutMillis: 20_000,
+      connectionTimeoutMillis: 10_000,
+      keepAlive: true,
+      types: { getTypeParser: (oid: number) => oid === TIMESTAMP_OID ? parseTimestampAsUTC : pg.types.getTypeParser(oid) },
+    })
+    xPool.on('error', (err) => {
+      console.error('X database pool error:', err.message)
+    })
   }
   return xPool
+}
+
+export async function closePool(): Promise<void> {
+  if (xPool) {
+    await xPool.end()
+    xPool = null
+  }
 }
 
 function createPgBatchFetcher(pool: pg.Pool) {

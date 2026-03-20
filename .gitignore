@@ -7,7 +7,16 @@ data/
 web/.next/
 web/node_modules/
 docs/screenshots/
+CLAUDE.md
+.claude/
 
 /generated/prisma
 .worktrees/
+.autoteam/
 review/
+state/
+runs/
+queue/done/
+queue/failed/
+queue/inflight/
+move/*/build/

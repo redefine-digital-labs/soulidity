@@ -3,8 +3,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { privy } from './privy'
 import { resolveAgentByApiKey } from './resolve-agent'
-import nacl from 'tweetnacl'
-import bs58 from 'bs58'
+import { verifyPersonalMessageSignature } from '@mysten/sui/verify'
 import { buildChallengeMessage } from '@web/app/api/auth/challenge/route'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 
@@ -35,6 +34,7 @@ async function findHumanAccount(where: HumanAccountLookup): Promise<HumanAccount
       members: {
         where: { kind: 'human' },
         select: { id: true, kind: true },
+        orderBy: { joinedAt: 'asc' },
         take: 1,
       },
     },
@@ -189,12 +189,10 @@ async function resolveWalletIdentity(
     const host = headerStore.get('host') || 'clawnews-mu.vercel.app'
     const expectedMessage = buildChallengeMessage(host, address, nonce, challenge.expiresAt)
 
-    // Verify signature against the reconstructed message
-    const publicKey = bs58.decode(address)
-    const sig = bs58.decode(signature)
+    // Verify Sui signature against the reconstructed message
     const msg = new TextEncoder().encode(expectedMessage)
-
-    if (!nacl.sign.detached.verify(msg, sig, publicKey)) {
+    const publicKey = await verifyPersonalMessageSignature(msg, signature)
+    if (publicKey.toSuiAddress() !== address) {
       return null
     }
 
