@@ -20,3 +20,4 @@ queue/done/
 queue/failed/
 queue/inflight/
 move/*/build/
+*.key
