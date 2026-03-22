@@ -1,0 +1,76 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
+const mockedUploadEncrypted = vi.hoisted(() => vi.fn())
+const mockedUploadPublic = vi.hoisted(() => vi.fn())
+
+vi.mock('@web/lib/auth/identity', () => ({
+  requireIdentity: mockedRequireIdentity,
+}))
+
+vi.mock('@web/lib/rate-limit', async () => {
+  const actual = await vi.importActual<typeof import('@web/lib/rate-limit')>('@web/lib/rate-limit')
+  return {
+    ...actual,
+    takeRateLimitToken: mockedTakeRateLimitToken,
+  }
+})
+
+vi.mock('@web/lib/services/walrus', () => ({
+  uploadEncrypted: mockedUploadEncrypted,
+  uploadPublic: mockedUploadPublic,
+}))
+
+describe('soul upload route', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.resetModules()
+
+    mockedRequireIdentity.mockResolvedValue({
+      error: null,
+      identity: { memberId: 'member-1', kind: 'human' },
+    })
+    mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
+    mockedUploadEncrypted.mockResolvedValue('blob-encrypted')
+    mockedUploadPublic.mockResolvedValue('blob-public')
+  })
+
+  it('rejects encrypted uploads while the secure release flow is disabled', async () => {
+    const { POST } = await import('../../web/app/api/souls/upload/route.ts')
+    const form = new FormData()
+    form.append('file', new File([Buffer.alloc(64, 7)], 'bundle.bin', { type: 'application/octet-stream' }))
+    form.append('type', 'encrypted')
+
+    const response = await POST(new Request('http://localhost/api/souls/upload', {
+      method: 'POST',
+      headers: { 'content-length': '256' },
+      body: form,
+    }) as any)
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining('release publishing'),
+    })
+    expect(mockedUploadEncrypted).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-file FormData values instead of crashing on arrayBuffer()', async () => {
+    const { POST } = await import('../../web/app/api/souls/upload/route.ts')
+    const form = new FormData()
+    form.append('file', 'not-a-file')
+    form.append('type', 'public')
+
+    const response = await POST(new Request('http://localhost/api/souls/upload', {
+      method: 'POST',
+      headers: { 'content-length': '128' },
+      body: form,
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'No file provided',
+    })
+    expect(mockedUploadPublic).not.toHaveBeenCalled()
+  })
+})

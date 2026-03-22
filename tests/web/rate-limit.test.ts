@@ -4,11 +4,13 @@ import { getRequestIp, resetRateLimitBucketsForTests } from '@web/lib/rate-limit
 describe('getRequestIp', () => {
   const originalVercel = process.env.VERCEL
   const originalVercelEnv = process.env.VERCEL_ENV
+  const originalTrustProxyHeaders = process.env.TRUST_PROXY_HEADERS
 
   beforeEach(() => {
     resetRateLimitBucketsForTests()
     delete process.env.VERCEL
     delete process.env.VERCEL_ENV
+    delete process.env.TRUST_PROXY_HEADERS
   })
 
   afterEach(() => {
@@ -22,21 +24,37 @@ describe('getRequestIp', () => {
     } else {
       process.env.VERCEL_ENV = originalVercelEnv
     }
+    if (originalTrustProxyHeaders === undefined) {
+      delete process.env.TRUST_PROXY_HEADERS
+    } else {
+      process.env.TRUST_PROXY_HEADERS = originalTrustProxyHeaders
+    }
   })
 
-  it('reads x-real-ip even when Vercel env vars are absent', () => {
+  it('ignores client-supplied proxy headers when proxy trust is not enabled', () => {
+    expect(getRequestIp(new Headers({
+      'x-real-ip': '203.0.113.10',
+      'x-forwarded-for': '203.0.113.11, 198.51.100.7',
+    }))).toBeNull()
+  })
+
+  it('uses proxy headers when explicit trusted-proxy config is enabled', () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
     expect(getRequestIp(new Headers({
       'x-real-ip': '203.0.113.10',
     }))).toBe('203.0.113.10')
   })
 
-  it('falls back to the first forwarded IP even when Vercel env vars are absent', () => {
+  it('uses forwarded IPs automatically on Vercel', () => {
+    process.env.VERCEL = '1'
+
     expect(getRequestIp(new Headers({
       'x-forwarded-for': '203.0.113.10, 198.51.100.7',
     }))).toBe('203.0.113.10')
   })
 
   it('returns an empty string when no proxy headers are present', () => {
-    expect(getRequestIp(new Headers())).toBe('')
+    expect(getRequestIp(new Headers())).toBeNull()
   })
 })

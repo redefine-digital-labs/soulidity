@@ -1,0 +1,356 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const AUTHOR_ADDRESS = `0x${'a'.repeat(64)}`
+const SERIES_ID = `0x${'1'.repeat(64)}`
+const RELEASE_ID = `0x${'2'.repeat(64)}`
+const ONETIME_PLAN_ID = `0x${'3'.repeat(64)}`
+const SUB_PLAN_ID = `0x${'4'.repeat(64)}`
+
+const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
+const mockedPrisma = vi.hoisted(() => ({
+  member: { findUnique: vi.fn() },
+}))
+const mockedDbCreateSeries = vi.hoisted(() => vi.fn())
+const mockedDbCreateRelease = vi.hoisted(() => vi.fn())
+const mockedDbUpdatePricingPlan = vi.hoisted(() => vi.fn())
+const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
+const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
+const mockedSuiClient = vi.hoisted(() => ({
+  getObject: vi.fn(),
+}))
+
+vi.mock('@web/lib/auth/identity', () => ({
+  requireIdentity: mockedRequireIdentity,
+}))
+
+vi.mock('@web/lib/rate-limit', () => ({
+  takeRateLimitToken: mockedTakeRateLimitToken,
+}))
+
+vi.mock('@web/lib/prisma', () => ({
+  prisma: mockedPrisma,
+}))
+
+vi.mock('@web/lib/souls/post-tx-db', () => ({
+  dbCreateSeries: mockedDbCreateSeries,
+  dbCreateRelease: mockedDbCreateRelease,
+  dbUpdatePricingPlan: mockedDbUpdatePricingPlan,
+}))
+
+vi.mock('@web/lib/souls/tx-sync', () => ({
+  getStoredSoulTxSync: mockedGetStoredSoulTxSync,
+  storeSoulTxSync: mockedStoreSoulTxSync,
+}))
+
+vi.mock('@web/lib/sui', () => ({
+  suiClient: mockedSuiClient,
+}))
+
+describe('soul publish route', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.resetModules()
+
+    mockedRequireIdentity.mockResolvedValue({
+      error: null,
+      identity: { memberId: 'member-1', kind: 'human' },
+    })
+    mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
+    mockedPrisma.member.findUnique.mockResolvedValue({
+      id: 'member-1',
+      wallet: AUTHOR_ADDRESS,
+      walletBindings: [{ address: AUTHOR_ADDRESS, chain: 'sui' }],
+    })
+    mockedSuiClient.getObject.mockImplementation(async ({ id }: { id: string }) => {
+      if (id === SERIES_ID) {
+        return {
+          data: {
+            objectId: SERIES_ID,
+            type: '0xpackage::series::SoulSeries',
+            content: {
+              dataType: 'moveObject',
+              type: '0xpackage::series::SoulSeries',
+              fields: {
+                name: 'On-chain Name',
+                description: 'On-chain Description',
+                category: 'Research',
+                tags: ['alpha', 'beta'],
+                preview_images: ['blob-1', 'blob-2'],
+                author: AUTHOR_ADDRESS,
+              },
+            },
+          },
+        }
+      }
+
+      if (id === RELEASE_ID) {
+        return {
+          data: {
+            objectId: RELEASE_ID,
+            type: '0xpackage::series::SoulRelease',
+            content: {
+              dataType: 'moveObject',
+              type: '0xpackage::series::SoulRelease',
+              fields: {
+                series_id: SERIES_ID,
+                version: '2.0.0',
+                encrypted_blob_id: 'blob-from-chain',
+                public_metadata_id: 'public-sidecar',
+                content_hash: [0xde, 0xad, 0xbe, 0xef],
+              },
+            },
+          },
+        }
+      }
+
+      if (id === ONETIME_PLAN_ID) {
+        return {
+          data: {
+            objectId: ONETIME_PLAN_ID,
+            type: '0xpackage::purchase::PricingPlan',
+            content: {
+              dataType: 'moveObject',
+              type: '0xpackage::purchase::PricingPlan',
+              fields: {
+                series_id: SERIES_ID,
+                plan_type: 0,
+                price_usdc: '2500000',
+                period_ms: '0',
+                active: true,
+              },
+            },
+          },
+        }
+      }
+
+      if (id === SUB_PLAN_ID) {
+        return {
+          data: {
+            objectId: SUB_PLAN_ID,
+            type: '0xpackage::purchase::PricingPlan',
+            content: {
+              dataType: 'moveObject',
+              type: '0xpackage::purchase::PricingPlan',
+              fields: {
+                series_id: SERIES_ID,
+                plan_type: 1,
+                price_usdc: '9990000',
+                period_ms: '2592000000',
+                active: true,
+              },
+            },
+          },
+        }
+      }
+
+      return { data: null }
+    })
+    mockedDbCreateSeries.mockResolvedValue({
+      id: 'series-db-1',
+      name: 'On-chain Name',
+      onChainId: SERIES_ID,
+    })
+    mockedDbCreateRelease.mockResolvedValue({
+      id: 'release-db-1',
+      onChainId: RELEASE_ID,
+      version: '2.0.0',
+    })
+    mockedDbUpdatePricingPlan.mockResolvedValue(undefined)
+    mockedGetStoredSoulTxSync.mockResolvedValue(null)
+    mockedStoreSoulTxSync.mockResolvedValue(undefined)
+  })
+
+  it('requires txDigest for durable publish idempotency', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seriesOnChainId: SERIES_ID }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'txDigest is required',
+    })
+    expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
+  })
+
+  it('rejects mirroring a series whose on-chain author does not match the authenticated wallet', async () => {
+    mockedSuiClient.getObject.mockImplementationOnce(async () => ({
+      data: {
+        objectId: SERIES_ID,
+        type: '0xpackage::series::SoulSeries',
+        content: {
+          dataType: 'moveObject',
+          type: '0xpackage::series::SoulSeries',
+          fields: {
+            name: 'Other Series',
+            description: 'Other Description',
+            category: 'Research',
+            tags: [],
+            preview_images: [],
+            author: `0x${'b'.repeat(64)}`,
+          },
+        },
+      },
+    }))
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: '0xtx-publish' }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'On-chain series author does not match the authenticated wallet',
+    })
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+  })
+
+  it('rejects oversized readme payloads before on-chain verification', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: '0xtx-publish',
+          seriesOnChainId: SERIES_ID,
+          readme: 'x'.repeat(50_001),
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'readme must be 50,000 characters or fewer',
+    })
+    expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
+  })
+
+  it('rate limits publish mirroring before on-chain verification work starts', async () => {
+    mockedTakeRateLimitToken.mockReturnValue({ limited: true, retryAfterSeconds: 300 })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: '0xtx-publish' }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('Retry-After')).toBe('300')
+    expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+  })
+
+  it('replays the stored publish response for an already-processed txDigest', async () => {
+    mockedGetStoredSoulTxSync.mockResolvedValue({
+      statusCode: 201,
+      body: {
+        id: 'series-db-cached',
+        name: 'Cached Soul',
+        onChainId: SERIES_ID,
+        releaseId: null,
+      },
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: '0xtx-publish' }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(201)
+    await expect(response.json()).resolves.toMatchObject({
+      id: 'series-db-cached',
+      name: 'Cached Soul',
+      onChainId: SERIES_ID,
+      releaseId: null,
+    })
+    expect(mockedGetStoredSoulTxSync).toHaveBeenCalledWith({
+      txDigest: '0xtx-publish',
+      routeKey: 'publish',
+      actorKey: 'member-1',
+    })
+    expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+  })
+
+  it('derives mirrored series, release, and pricing data from chain objects instead of request JSON', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: '0xtx-publish',
+          seriesOnChainId: SERIES_ID,
+          releaseOnChainId: RELEASE_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          subPlanOnChainId: SUB_PLAN_ID,
+          readme: 'off-chain readme is still allowed',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockedDbCreateSeries).toHaveBeenCalledWith({
+      seriesOnChainId: SERIES_ID,
+      authorAddress: AUTHOR_ADDRESS,
+      authorMemberId: 'member-1',
+      name: 'On-chain Name',
+      description: 'On-chain Description',
+      category: 'Research',
+      tags: ['alpha', 'beta'],
+      previewImages: ['blob-1', 'blob-2'],
+      readme: 'off-chain readme is still allowed',
+    })
+    expect(mockedDbCreateRelease).toHaveBeenCalledWith({
+      releaseOnChainId: RELEASE_ID,
+      seriesDbId: 'series-db-1',
+      version: '2.0.0',
+      walrusBlobRef: 'blob-from-chain',
+      publicMetadataRef: 'public-sidecar',
+      contentHash: 'deadbeef',
+    })
+    expect(mockedDbUpdatePricingPlan).toHaveBeenNthCalledWith(1, {
+      seriesOnChainId: SERIES_ID,
+      planType: 'onetime',
+      planOnChainId: ONETIME_PLAN_ID,
+      priceUsdc: 2500000n,
+    })
+    expect(mockedDbUpdatePricingPlan).toHaveBeenNthCalledWith(2, {
+      seriesOnChainId: SERIES_ID,
+      planType: 'subscription',
+      planOnChainId: SUB_PLAN_ID,
+      priceUsdc: 9990000n,
+      periodMs: 2592000000n,
+    })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith({
+      txDigest: '0xtx-publish',
+      routeKey: 'publish',
+      actorKey: 'member-1',
+      resourceKey: SERIES_ID,
+      statusCode: 201,
+      body: {
+        id: 'series-db-1',
+        name: 'On-chain Name',
+        onChainId: SERIES_ID,
+        releaseId: 'release-db-1',
+      },
+    })
+  })
+})

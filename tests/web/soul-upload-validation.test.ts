@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  FILE_TOO_LARGE_ERROR,
   validateSoulUploadFile,
   validateSoulUploadSignature,
 } from '../../web/lib/souls/upload-validation.ts'
 
 describe('Soul upload validation', () => {
-  it('rejects non-image public uploads', () => {
+  it('rejects unsupported public uploads', () => {
     expect(
       validateSoulUploadFile(
         {
@@ -16,10 +17,10 @@ describe('Soul upload validation', () => {
         } as File,
         'public',
       ),
-    ).toBe('Public uploads must be JPEG, PNG, WebP, or GIF images')
+    ).toBe('Public uploads must be JPEG, PNG, WebP, GIF images, or JSON metadata')
   })
 
-  it('accepts image previews and zip bundles', () => {
+  it('accepts image previews and opaque encrypted bundles', () => {
     expect(
       validateSoulUploadFile(
         {
@@ -34,7 +35,18 @@ describe('Soul upload validation', () => {
     expect(
       validateSoulUploadFile(
         {
-          name: 'bundle.zip',
+          name: 'metadata.json',
+          size: 1024,
+          type: 'application/json',
+        } as File,
+        'public',
+      ),
+    ).toBeNull()
+
+    expect(
+      validateSoulUploadFile(
+        {
+          name: 'bundle.sealed',
           size: 1024,
           type: 'application/octet-stream',
         } as File,
@@ -43,17 +55,41 @@ describe('Soul upload validation', () => {
     ).toBeNull()
   })
 
-  it('rejects non-zip encrypted uploads', () => {
+  it('rejects oversized public JSON metadata before decoding it', () => {
     expect(
       validateSoulUploadFile(
         {
-          name: 'bundle.tar',
-          size: 1024,
-          type: 'application/x-tar',
+          name: 'sidecar.json',
+          size: 6 * 1024 * 1024,
+          type: 'application/json',
         } as File,
-        'encrypted',
+        'public',
       ),
-    ).toBe('Encrypted uploads must be ZIP archives')
+    ).toBe('JSON metadata exceeds 5 MB limit')
+  })
+
+  it('rejects uploads above the overall 50 MB limit before MIME-specific checks', () => {
+    expect(
+      validateSoulUploadFile(
+        {
+          name: 'huge-preview.png',
+          size: 51 * 1024 * 1024,
+          type: 'image/png',
+        } as File,
+        'public',
+      ),
+    ).toBe(FILE_TOO_LARGE_ERROR)
+  })
+
+  it('accepts encrypted uploads with any MIME type (pre-Seal bundles can be any format)', () => {
+    for (const type of ['text/plain', 'application/json', 'application/octet-stream', 'image/png', '']) {
+      expect(
+        validateSoulUploadFile(
+          { name: 'bundle.bin', size: 1024, type } as File,
+          'encrypted',
+        ),
+      ).toBeNull()
+    }
   })
 
   it('rejects spoofed public uploads whose bytes are not an image', () => {
@@ -62,15 +98,41 @@ describe('Soul upload validation', () => {
         Buffer.from('PK\x03\x04not-an-image', 'binary'),
         'public',
       ),
-    ).toBe('Public uploads must be JPEG, PNG, WebP, or GIF images')
+    ).toBe('Public uploads must be JPEG, PNG, WebP, GIF images, or JSON metadata')
   })
 
-  it('rejects spoofed encrypted uploads whose bytes are not a zip archive', () => {
+  it('accepts public JSON sidecars', () => {
     expect(
       validateSoulUploadSignature(
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.from(JSON.stringify({ version: 1, mode: 'seal-envelope' })),
+        'public',
+        'application/json',
+      ),
+    ).toBeNull()
+  })
+
+  it('accepts opaque encrypted payload bytes without requiring a ZIP signature', () => {
+    expect(
+      validateSoulUploadSignature(
+        Buffer.alloc(32, 0x7),
         'encrypted',
       ),
-    ).toBe('Encrypted uploads must be ZIP archives')
+    ).toBeNull()
+  })
+
+  it('rejects encrypted payloads that are too small to be a sealed blob', () => {
+    expect(
+      validateSoulUploadSignature(
+        Buffer.alloc(16, 0x7),
+        'encrypted',
+      ),
+    ).toBe('Encrypted upload is too small (minimum 32 bytes)')
+
+    expect(
+      validateSoulUploadSignature(
+        Buffer.from([0x01, 0x02, 0x03, 0x04]),
+        'encrypted',
+      ),
+    ).toBe('Encrypted upload is too small (minimum 32 bytes)')
   })
 })

@@ -37,12 +37,18 @@ vi.mock('@web/lib/souls/serialization', () => ({
 vi.mock('@web/lib/services/seal', () => ({
   getSealSessionPerpetual: vi.fn(),
   getSealSessionSubscription: vi.fn(),
+  getSealRuntimeConfig: vi.fn(),
   hasSealSessionConfig: vi.fn(() => true),
+  hasCredentialedSealServerConfigs: vi.fn(() => false),
 }))
 
 vi.mock('@web/lib/services/walrus', () => ({
   getBlobUrl: vi.fn(),
   normalizeWalrusBlobId: vi.fn(),
+}))
+
+vi.mock('@web/lib/rate-limit', () => ({
+  takeRateLimitToken: vi.fn(() => ({ limited: false, retryAfterSeconds: 60 })),
 }))
 
 describe('soul detail routes ignore the UUID branch for on-chain ids', () => {
