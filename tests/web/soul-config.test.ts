@@ -12,12 +12,17 @@ describe('soul public config', () => {
     process.env = originalEnv
   })
 
-  it('throws a clear error when a required public env var is missing', async () => {
-    const { getRequiredPublicEnv } = await import('../../web/lib/souls/config.ts')
+  it('throws a generic public error while keeping the missing env name on the error object', async () => {
+    const { getRequiredPublicEnv, MissingPublicEnvError } = await import('../../web/lib/souls/config.ts')
 
-    expect(() => getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')).toThrow(
-      'NEXT_PUBLIC_SOUL_PACKAGE_ID is not configured',
-    )
+    try {
+      getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+      throw new Error('expected getRequiredPublicEnv to throw')
+    } catch (error) {
+      expect(error).toBeInstanceOf(MissingPublicEnvError)
+      expect((error as MissingPublicEnvError).message).toBe('Service temporarily unavailable')
+      expect((error as MissingPublicEnvError).envName).toBe('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+    }
   })
 
   it('trims configured public env values', async () => {

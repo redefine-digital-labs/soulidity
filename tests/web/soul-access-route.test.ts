@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const VALID_SERIES_ID = `0x${'11'.repeat(32)}`
 const VALID_RELEASE_ID = `0x${'33'.repeat(32)}`
 const VALID_PASS_ID = `0x${'44'.repeat(32)}`
+const AGENT_ADDRESS = `0x${'55'.repeat(32)}`
 
 const mockedPrisma = vi.hoisted(() => ({
   soulSeries: { findFirst: vi.fn() },
@@ -58,12 +59,14 @@ describe('Soul agent access route', () => {
       }],
     })
     mockedPrisma.member.findFirst.mockResolvedValue({
-      walletBindings: [{ address: '0xagentwallet' }],
+      walletBindings: [{ address: AGENT_ADDRESS }],
     })
     mockedPrisma.soulPassSnapshot.findFirst.mockResolvedValue({
       passType: 'perpetual',
       onChainId: VALID_PASS_ID,
       lockedReleaseId: VALID_RELEASE_ID,
+      ownerAddress: AGENT_ADDRESS,
+      agentGrant: null,
     })
     mockedPrisma.soulRelease.findFirst.mockResolvedValue({
       id: 'release-db-1',
@@ -196,6 +199,8 @@ describe('Soul agent access route', () => {
       passType: 'subscription',
       onChainId: VALID_PASS_ID,
       lockedReleaseId: null,
+      ownerAddress: AGENT_ADDRESS,
+      agentGrant: null,
     })
 
     const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')

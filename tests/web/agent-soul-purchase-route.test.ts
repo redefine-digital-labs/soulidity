@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const SERIES_ID = `0x${'1'.repeat(64)}`
+const SUB_PLAN_ID = `0x${'2'.repeat(64)}`
+const AGENT_ADDRESS = `0x${'3'.repeat(64)}`
+
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
@@ -8,6 +12,7 @@ const mockedPrisma = vi.hoisted(() => ({
 }))
 const mockedSuiClient = vi.hoisted(() => ({
   getCoins: vi.fn(),
+  getObject: vi.fn(),
 }))
 const mockedBuildBuyPerpetualTx = vi.hoisted(() => vi.fn())
 const mockedBuildBuySubscriptionTx = vi.hoisted(() => vi.fn())
@@ -56,24 +61,41 @@ describe('agent soul purchase prepare route', () => {
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedPrisma.soulSeries.findFirst.mockResolvedValue({
       id: 'series-db-1',
-      onChainId: '0xseries',
+      onChainId: SERIES_ID,
       status: 'active',
       releases: [],
       oneTimePlanOnChainId: null,
-      subPlanOnChainId: '0xplan-sub',
+      subPlanOnChainId: SUB_PLAN_ID,
       oneTimePriceUsdc: null,
       subPriceUsdc: 100,
     })
     mockedPrisma.member.findUnique.mockResolvedValue({
       id: 'agent-member-1',
-      wallet: '0xagent',
-      walletBindings: [{ address: '0xagent' }],
+      wallet: AGENT_ADDRESS,
+      walletBindings: [{ address: AGENT_ADDRESS }],
     })
     mockedSuiClient.getCoins.mockResolvedValue({
       data: [
         { coinObjectId: 'coin-a', balance: '400000' },
         { coinObjectId: 'coin-b', balance: '700000' },
       ],
+    })
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: SUB_PLAN_ID,
+        type: '0xpackage::purchase::PricingPlan',
+        content: {
+          dataType: 'moveObject',
+          type: '0xpackage::purchase::PricingPlan',
+          fields: {
+            series_id: SERIES_ID,
+            plan_type: 1,
+            price_usdc: '1000000',
+            period_ms: '2592000000',
+            active: true,
+          },
+        },
+      },
     })
     mockedTx.build.mockResolvedValue(new Uint8Array([1, 2, 3]))
     mockedBuildBuySubscriptionTx.mockReturnValue(mockedTx)
@@ -97,8 +119,8 @@ describe('agent soul purchase prepare route', () => {
     expect(response.status).toBe(200)
     expect(mockedBuildBuySubscriptionTx).toHaveBeenCalledWith({
       platformConfigId: expect.any(String),
-      planId: '0xplan-sub',
-      seriesId: '0xseries',
+      planId: SUB_PLAN_ID,
+      seriesId: SERIES_ID,
       paymentCoinIds: ['coin-a', 'coin-b'],
       amount: 1_000_000n,
     })
@@ -120,24 +142,24 @@ describe('agent soul purchase prepare route', () => {
       preparedPurchaseId: 'prepared-purchase-1',
       txBytes: expect.any(String),
       context: {
-        planOnChainId: '0xplan-sub',
+        planOnChainId: SUB_PLAN_ID,
         planType: 'subscription',
-        seriesOnChainId: '0xseries',
+        seriesOnChainId: SERIES_ID,
         releaseOnChainId: null,
         amount: '1000000',
-        agentAddress: '0xagent',
+        agentAddress: AGENT_ADDRESS,
         expiresAt: '2099-03-22T00:05:00.000Z',
       },
     })
     expect(mockedCreatePreparedSoulPurchase).toHaveBeenCalledWith({
       agentMemberId: 'agent-member-1',
-      agentAddress: '0xagent',
+      agentAddress: AGENT_ADDRESS,
       amountUsdc: 1_000_000n,
       txBytesBase64: Buffer.from([1, 2, 3]).toString('base64'),
-      planOnChainId: '0xplan-sub',
+      planOnChainId: SUB_PLAN_ID,
       planType: 'subscription',
       releaseOnChainId: null,
-      seriesOnChainId: '0xseries',
+      seriesOnChainId: SERIES_ID,
     })
   })
 
@@ -168,8 +190,8 @@ describe('agent soul purchase prepare route', () => {
     expect(mockedSuiClient.getCoins).toHaveBeenCalledTimes(2)
     expect(mockedBuildBuySubscriptionTx).toHaveBeenCalledWith({
       platformConfigId: expect.any(String),
-      planId: '0xplan-sub',
-      seriesId: '0xseries',
+      planId: SUB_PLAN_ID,
+      seriesId: SERIES_ID,
       paymentCoinIds: ['coin-a', 'coin-b'],
       amount: 1_000_000n,
     })
@@ -215,7 +237,7 @@ describe('agent soul purchase prepare route', () => {
 
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({
-      error: 'NEXT_PUBLIC_PLATFORM_CONFIG_ID is not configured',
+      error: 'Service temporarily unavailable',
     })
     expect(mockedSuiClient.getCoins).not.toHaveBeenCalled()
     expect(mockedBuildBuySubscriptionTx).not.toHaveBeenCalled()

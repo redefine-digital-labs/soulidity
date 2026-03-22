@@ -174,6 +174,7 @@ describe('auth challenge route', () => {
         address: NORMALIZED_ADDRESS,
         nonce: 'nonce-1',
         expiresAt: expect.any(Date),
+        domain: 'clawnews.example.com',
       },
     })
     const expiresAt = mockedPrisma.walletChallenge.create.mock.calls[0]?.[0]?.data?.expiresAt as Date

@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetRateLimitBucketsForTests } from '@web/lib/rate-limit'
+
+const AUTH_JSON_HEADERS = {
+  authorization: 'Bearer token',
+  'content-type': 'application/json',
+  'x-forwarded-for': '203.0.113.10',
+} as const
 
 const transactionMocks = vi.hoisted(() => ({
   account: {
@@ -41,9 +47,12 @@ vi.mock('@web/lib/auth/privy', () => ({
 }))
 
 describe('POST /api/register', () => {
+  const originalTrustProxyHeaders = process.env.TRUST_PROXY_HEADERS
+
   beforeEach(() => {
     vi.resetAllMocks()
     resetRateLimitBucketsForTests()
+    process.env.TRUST_PROXY_HEADERS = 'true'
 
     mockedPrivy.verifyAuthToken.mockResolvedValue({ userId: 'did:privy:123' })
     mockedPrivy.getUser.mockResolvedValue({
@@ -64,6 +73,14 @@ describe('POST /api/register', () => {
     mockedPrisma.$transaction.mockImplementation(async (callback: any) => callback(transactionMocks))
   })
 
+  afterEach(() => {
+    if (originalTrustProxyHeaders === undefined) {
+      delete process.env.TRUST_PROXY_HEADERS
+    } else {
+      process.env.TRUST_PROXY_HEADERS = originalTrustProxyHeaders
+    }
+  })
+
   it('returns a JSON 500 response for unexpected registration errors', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     mockedPrisma.$transaction.mockRejectedValue(new Error('boom'))
@@ -71,10 +88,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -92,10 +106,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -124,8 +135,8 @@ describe('POST /api/register', () => {
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
       headers: {
+        ...AUTH_JSON_HEADERS,
         authorization: 'Bearer invalid',
-        'content-type': 'application/json',
       },
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
@@ -138,10 +149,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({}),
     }) as any)
 
@@ -153,10 +161,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: '{',
     }) as any)
 
@@ -168,10 +173,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'not-a-code' }),
     }) as any)
 
@@ -185,10 +187,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -204,10 +203,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -221,10 +217,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -238,10 +231,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -260,10 +250,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -282,10 +269,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -299,10 +283,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -314,10 +295,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -349,10 +327,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -369,10 +344,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -389,10 +361,7 @@ describe('POST /api/register', () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 
@@ -406,10 +375,7 @@ describe('POST /api/register', () => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const response = await POST(new Request('http://localhost/api/register', {
         method: 'POST',
-        headers: {
-          authorization: 'Bearer token',
-          'content-type': 'application/json',
-        },
+        headers: AUTH_JSON_HEADERS,
         body: JSON.stringify({ code: 'ABCD1234' }),
       }) as any)
       expect(response.status).toBe(200)
@@ -417,10 +383,7 @@ describe('POST /api/register', () => {
 
     const limitedResponse = await POST(new Request('http://localhost/api/register', {
       method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'ABCD1234' }),
     }) as any)
 

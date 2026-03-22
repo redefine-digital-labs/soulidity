@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockedPrisma = vi.hoisted(() => ({
   soulPreparedPurchase: {
     create: vi.fn(),
+    findFirst: vi.fn(),
     findUnique: vi.fn(),
     updateMany: vi.fn(),
     update: vi.fn(),
   },
+  $transaction: vi.fn(),
 }))
 
 vi.mock('@web/lib/prisma', () => ({
@@ -40,6 +42,7 @@ describe('prepared purchase helpers', () => {
     })
     mockedPrisma.soulPreparedPurchase.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.soulPreparedPurchase.update.mockResolvedValue({})
+    mockedPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockedPrisma) => Promise<unknown>) => callback(mockedPrisma))
   })
 
   it('stores a hash alongside prepared tx bytes for integrity checks', async () => {

@@ -5,11 +5,15 @@ const SERIES_ID = `0x${'1'.repeat(64)}`
 const RELEASE_ID = `0x${'2'.repeat(64)}`
 const ONETIME_PLAN_ID = `0x${'3'.repeat(64)}`
 const SUB_PLAN_ID = `0x${'4'.repeat(64)}`
+const PUBLISH_TX_DIGEST = '0xtx-publish'
+const ONETIME_PLAN_TX_DIGEST = '0xtx-plan-onetime'
+const SUB_PLAN_TX_DIGEST = '0xtx-plan-subscription'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   member: { findUnique: vi.fn() },
+  $transaction: vi.fn(),
 }))
 const mockedDbCreateSeries = vi.hoisted(() => vi.fn())
 const mockedDbCreateRelease = vi.hoisted(() => vi.fn())
@@ -17,6 +21,7 @@ const mockedDbUpdatePricingPlan = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
+  getTransactionBlock: vi.fn(),
   getObject: vi.fn(),
 }))
 
@@ -61,6 +66,66 @@ describe('soul publish route', () => {
       id: 'member-1',
       wallet: AUTHOR_ADDRESS,
       walletBindings: [{ address: AUTHOR_ADDRESS, chain: 'sui' }],
+    })
+    mockedPrisma.$transaction.mockImplementation(async (callback: (tx: Record<string, never>) => Promise<unknown>) => callback({}))
+    mockedSuiClient.getTransactionBlock.mockImplementation(async ({ digest }: { digest: string }) => {
+      if (digest === PUBLISH_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [
+            {
+              type: 'created',
+              objectId: SERIES_ID,
+              objectType: '0xpackage::series::SoulSeries',
+              sender: AUTHOR_ADDRESS,
+              owner: { AddressOwner: AUTHOR_ADDRESS },
+            },
+          ],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
+      if (digest === ONETIME_PLAN_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [
+            {
+              type: 'created',
+              objectId: ONETIME_PLAN_ID,
+              objectType: '0xpackage::purchase::PricingPlan',
+              sender: AUTHOR_ADDRESS,
+              owner: { AddressOwner: AUTHOR_ADDRESS },
+            },
+          ],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
+      if (digest === SUB_PLAN_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [
+            {
+              type: 'created',
+              objectId: SUB_PLAN_ID,
+              objectType: '0xpackage::purchase::PricingPlan',
+              sender: AUTHOR_ADDRESS,
+              owner: { AddressOwner: AUTHOR_ADDRESS },
+            },
+          ],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
+      return {
+        digest,
+        effects: { status: { status: 'success' } },
+        objectChanges: [],
+        transaction: { data: { sender: AUTHOR_ADDRESS } },
+      }
     })
     mockedSuiClient.getObject.mockImplementation(async ({ id }: { id: string }) => {
       if (id === SERIES_ID) {
@@ -173,7 +238,7 @@ describe('soul publish route', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({
-      error: 'txDigest is required',
+      error: 'txDigest must be a valid transaction digest',
     })
     expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
   })
@@ -203,7 +268,7 @@ describe('soul publish route', () => {
       new Request('http://localhost/api/souls/publish', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: '0xtx-publish' }),
+        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: PUBLISH_TX_DIGEST }),
       }) as any,
     )
 
@@ -221,7 +286,7 @@ describe('soul publish route', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          txDigest: '0xtx-publish',
+          txDigest: PUBLISH_TX_DIGEST,
           seriesOnChainId: SERIES_ID,
           readme: 'x'.repeat(50_001),
         }),
@@ -243,7 +308,7 @@ describe('soul publish route', () => {
       new Request('http://localhost/api/souls/publish', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: '0xtx-publish' }),
+        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: PUBLISH_TX_DIGEST }),
       }) as any,
     )
 
@@ -269,7 +334,7 @@ describe('soul publish route', () => {
       new Request('http://localhost/api/souls/publish', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: '0xtx-publish' }),
+        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: PUBLISH_TX_DIGEST }),
       }) as any,
     )
 
@@ -281,9 +346,10 @@ describe('soul publish route', () => {
       releaseId: null,
     })
     expect(mockedGetStoredSoulTxSync).toHaveBeenCalledWith({
-      txDigest: '0xtx-publish',
+      txDigest: PUBLISH_TX_DIGEST,
       routeKey: 'publish',
       actorKey: 'member-1',
+      resourceKey: SERIES_ID,
     })
     expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
     expect(mockedDbCreateSeries).not.toHaveBeenCalled()
@@ -296,18 +362,20 @@ describe('soul publish route', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          txDigest: '0xtx-publish',
+          txDigest: PUBLISH_TX_DIGEST,
           seriesOnChainId: SERIES_ID,
           releaseOnChainId: RELEASE_ID,
           oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
           subPlanOnChainId: SUB_PLAN_ID,
+          subPlanTxDigest: SUB_PLAN_TX_DIGEST,
           readme: 'off-chain readme is still allowed',
         }),
       }) as any,
     )
 
     expect(response.status).toBe(201)
-    expect(mockedDbCreateSeries).toHaveBeenCalledWith({
+    expect(mockedDbCreateSeries).toHaveBeenCalledWith(expect.objectContaining({
       seriesOnChainId: SERIES_ID,
       authorAddress: AUTHOR_ADDRESS,
       authorMemberId: 'member-1',
@@ -317,30 +385,30 @@ describe('soul publish route', () => {
       tags: ['alpha', 'beta'],
       previewImages: ['blob-1', 'blob-2'],
       readme: 'off-chain readme is still allowed',
-    })
-    expect(mockedDbCreateRelease).toHaveBeenCalledWith({
+    }))
+    expect(mockedDbCreateRelease).toHaveBeenCalledWith(expect.objectContaining({
       releaseOnChainId: RELEASE_ID,
       seriesDbId: 'series-db-1',
       version: '2.0.0',
       walrusBlobRef: 'blob-from-chain',
       publicMetadataRef: 'public-sidecar',
       contentHash: 'deadbeef',
-    })
-    expect(mockedDbUpdatePricingPlan).toHaveBeenNthCalledWith(1, {
+    }))
+    expect(mockedDbUpdatePricingPlan).toHaveBeenNthCalledWith(1, expect.objectContaining({
       seriesOnChainId: SERIES_ID,
       planType: 'onetime',
       planOnChainId: ONETIME_PLAN_ID,
       priceUsdc: 2500000n,
-    })
-    expect(mockedDbUpdatePricingPlan).toHaveBeenNthCalledWith(2, {
+    }))
+    expect(mockedDbUpdatePricingPlan).toHaveBeenNthCalledWith(2, expect.objectContaining({
       seriesOnChainId: SERIES_ID,
       planType: 'subscription',
       planOnChainId: SUB_PLAN_ID,
       priceUsdc: 9990000n,
       periodMs: 2592000000n,
-    })
+    }))
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith({
-      txDigest: '0xtx-publish',
+      txDigest: PUBLISH_TX_DIGEST,
       routeKey: 'publish',
       actorKey: 'member-1',
       resourceKey: SERIES_ID,

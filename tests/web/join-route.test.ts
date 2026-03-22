@@ -18,11 +18,13 @@ vi.mock('@shared/app-config', () => ({
 describe('POST /api/join', () => {
   const originalBotToken = process.env.TG_BOT_TOKEN
   const originalGroupId = process.env.TG_GROUP_ID
+  const originalTrustProxyHeaders = process.env.TRUST_PROXY_HEADERS
 
   beforeEach(() => {
     vi.resetAllMocks()
     process.env.TG_BOT_TOKEN = 'bot-token'
     process.env.TG_GROUP_ID = '-100123'
+    process.env.TRUST_PROXY_HEADERS = 'true'
   })
 
   afterEach(() => {
@@ -36,6 +38,11 @@ describe('POST /api/join', () => {
       delete process.env.TG_GROUP_ID
     } else {
       process.env.TG_GROUP_ID = originalGroupId
+    }
+    if (originalTrustProxyHeaders === undefined) {
+      delete process.env.TRUST_PROXY_HEADERS
+    } else {
+      process.env.TRUST_PROXY_HEADERS = originalTrustProxyHeaders
     }
   })
 
@@ -64,6 +71,7 @@ describe('POST /api/join', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        'x-forwarded-for': '203.0.113.10',
       },
       body: JSON.stringify({ tg_id: '123456', invite_code: 'ABCD1234' }),
     }) as any)

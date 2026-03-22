@@ -85,12 +85,14 @@ describe('resolveIdentity', () => {
       kind: 'human',
     })
     expect(mockedPrivy.createWallets).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletBinding.create).toHaveBeenCalledWith({
-      data: {
-        memberId: 'member-1',
-        chain: 'sui',
-        address: NORMALIZED_ABC,
-      },
+    await vi.waitFor(() => {
+      expect(mockedPrisma.walletBinding.create).toHaveBeenCalledWith({
+        data: {
+          memberId: 'member-1',
+          chain: 'sui',
+          address: NORMALIZED_ABC,
+        },
+      })
     })
   })
 
@@ -184,14 +186,16 @@ describe('resolveIdentity', () => {
       memberId: 'member-1',
       kind: 'human',
     })
-    expect(consoleWarn).toHaveBeenCalledWith(
-      'Canonical Sui wallet binding already belongs to another member',
-      {
-        address: NORMALIZED_ABC,
-        currentMemberId: 'member-1',
-        existingMemberId: 'member-elsewhere',
-      },
-    )
+    await vi.waitFor(() => {
+      expect(consoleWarn).toHaveBeenCalledWith(
+        'Canonical Sui wallet binding already belongs to another member',
+        {
+          address: NORMALIZED_ABC,
+          currentMemberId: 'member-1',
+          existingMemberId: 'member-elsewhere',
+        },
+      )
+    })
 
     consoleWarn.mockRestore()
   })
@@ -223,14 +227,16 @@ describe('resolveIdentity', () => {
       kind: 'human',
     })
     expect(mockedPrisma.walletBinding.create).not.toHaveBeenCalled()
-    expect(consoleWarn).toHaveBeenCalledWith(
-      'Privy Sui wallet is already bound to another member',
-      {
-        address: NORMALIZED_ABC,
-        currentMemberId: 'member-1',
-        existingMemberId: 'member-elsewhere',
-      },
-    )
+    await vi.waitFor(() => {
+      expect(consoleWarn).toHaveBeenCalledWith(
+        'Privy Sui wallet is already bound to another member',
+        {
+          address: NORMALIZED_ABC,
+          currentMemberId: 'member-1',
+          existingMemberId: 'member-elsewhere',
+        },
+      )
+    })
 
     consoleWarn.mockRestore()
   })

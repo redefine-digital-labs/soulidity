@@ -198,7 +198,7 @@ describe('agent soul purchase execute route', () => {
     expect(mockedSuiClient.executeTransactionBlock).toHaveBeenCalledWith({
       transactionBlock: 'c2VydmVyLXR4LWJ5dGVz',
       signature: 'c2ln',
-      options: { showEffects: true, showObjectChanges: true },
+      options: { showEffects: true, showInput: true, showObjectChanges: true },
     })
   })
 

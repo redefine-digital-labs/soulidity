@@ -135,7 +135,7 @@ describe('soul pass grant route', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({
-      error: 'txDigest is required',
+      error: 'txDigest must be a valid transaction digest',
     })
     expect(mockedDbSetAgentGrant).not.toHaveBeenCalled()
   })
@@ -272,7 +272,7 @@ describe('soul pass grant route', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({
-      error: 'txDigest is required',
+      error: 'txDigest must be a valid transaction digest',
     })
     expect(mockedDbRevokeAgentGrant).not.toHaveBeenCalled()
   })

@@ -197,6 +197,7 @@ describe('Soul purchase route', () => {
       txDigest: 'ABC123',
       routeKey: 'purchase',
       actorKey: 'member-1',
+      resourceKey: PASS_ID,
     })
     expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
     expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
