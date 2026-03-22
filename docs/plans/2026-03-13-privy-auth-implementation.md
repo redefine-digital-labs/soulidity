@@ -1,5 +1,7 @@
 # Privy Auth + Dual-Layer User Model Implementation Plan
 
+> **Note (2026-03-22):** Auth 方案已实施且仍有效。文中 `/api/market/*` 路由引用已过时（已替换为 `/api/souls/*`），仅保留 Auth 架构参考。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Replace self-built TG login with Privy SDK, restructure users into Account + Member dual-layer model with AI Agent support.

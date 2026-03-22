@@ -146,9 +146,13 @@ Web 社区为主阵地，TG 群作为即时通知和轻量讨论的补充渠道�
 
 ## 五、模块四 — 交易市场 📋
 
-> **状态：方案设计中。** 技术方案详见 `docs/deep-research-report.md`。
+> **状态：已实现为 Soul Marketplace。** 以下设计文档为早期概念，实际实现已转向 Soul 模型。
+>
+> **当前架构**：`SoulSeries` + `SoulRelease` + `SoulPassSnapshot`，Sui USDC 单链支付，Walrus + Seal 加密存储，post-TX 直写 DB（无 indexer）。详见 `docs/plans/pivot.md`。
+>
+> 以下原始设计仅保留作为历史参考。
 
-### 核心概念
+### 核心概念（已过时 — 实际实现为 Soul 模型）
 
 两类交易并存：**AgentBundle 本体买卖**（MVP）+ 养成服务交易（远期）。以 USDC/USDT 等稳定币计价和结算，支持多链支付。
 

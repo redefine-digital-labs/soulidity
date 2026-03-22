@@ -18,8 +18,8 @@
   人类购买时，SoulPass 归 owner，grant 默认为空；agent 购买时，SoulPass 仍归 owner，但自动把当前购买 agent 设为该 Soul 的 active grant。
 - 定价模型固定为两类 plan：
   `one-time` 为某个 release 的永久买断；`subscription` 为手动链上续费的周期许可，首版支持固定周期档位，订阅有效期内访问 latest release。
-- 支付轨道固定为 `双链并行 + Sui 记账`：
-  Sui 侧直接用 `Sui USDC` 完成购买/续费并原子更新 Soul 状态；Solana 侧用 `Solana USDC` 支付，由支付验证与 relayer 服务把已确认结果提交到 Sui 链上完成铸造/续费。首版明确接受该 Solana->Sui settlement 依赖受信 relayer，而不是做信任最小化跨链桥。
+- 支付轨道固定为 `Sui USDC`：
+  直接用 `Sui USDC` 完成购买/续费并原子更新 Soul 状态。Solana 支付已移除。
 - 仓库结构调整为三块：
   新增 Move 包目录用于 `SoulSeries / SoulRelease / SoulPass / SoulGrant / Seal approve`；`[prisma/schema.prisma](/Users/admin/Desktop/nao/clawnews/prisma/schema.prisma)` 改成链上事件索引读模型；`web/app` 下的 `market`/`api/market`/`api/agent/bundles` 全部替换为 `souls`/`api/souls`/`api/agent/souls`。
 - 对外接口统一改名：
@@ -33,8 +33,8 @@
   在新 Move 包中实现 `SoulSeries` 创建、release 发布、latest 指针更新、one-time 购买铸造 `PerpetualPass`、subscription 开通/续费/过期、SoulPass 转移、single active agent grant、以及供 Seal 调用的 `seal_approve_*` 访问策略。
 - 存储与发布层：
   发布页改为先生成/校验 bundle manifest，再加密 bundle、上传 Walrus、拿到 blob 引用后提交上链发布 release；预览图和公开元数据同样脱离 Supabase，统一收敛到 Walrus/public metadata 引用。
-- 结算与索引层：
-  后端新增 Sui settlement 执行器、Solana 支付验证与 relayer、Sui 事件索引器；Postgres 只缓存 `SoulSeries`、`SoulRelease`、`SoulPassSnapshot`、`SoulGrantSnapshot`、`SettlementEvent` 等读模型，所有权限判断以链上结果为准。
+- 结算与 DB 同步层：
+  每个链上操作（发布、购买、授权）成功后，前端/API 从 TX result 提取真实 on-chain ID 直接写 DB（`web/lib/souls/post-tx-db.ts`）。Postgres 缓存 `SoulSeries`、`SoulRelease`、`SoulPassSnapshot` 三类业务读模型，用 `SoulPassSnapshot.agentGrant` 投影当前授权状态；所有权限判断以链上结果为准。不使用独立 indexer 进程。
 - 前端与 agent 层：
   发布、列表、详情、我的资产、续费、切换授权 agent 全部改为 Soul 语义；agent 搜索和详情 API 保留，但购买后访问流程改成“验证 active grant -> 获取 Seal 会话 -> 拉 Walrus 密文 -> 由 agent 解密/导入”。
 - 数据迁移：
@@ -59,4 +59,4 @@
 - `Soul` 是用户可见名称；内部允许拆成 `SoulSeries + SoulPass` 两层实现，以支撑一份内容被多次售卖且买家持有可转让资产。
 - 首版只做作者主导的 primary sale，不做 UI 级二级市场撮合；`可转让` 先通过链上转移支持，后续再补 resale marketplace。
 - agent 真实访问 Seal/Walrus 前必须有可识别的钱包/链上身份；现有 agent API key 继续用于应用层身份，链上 grant 绑定到该 agent 的 Sui 身份。
-- Solana 支付到 Sui 状态映射首版接受受信 relayer；如果后续要做 trust-minimized bridge，再单独立项。
+- ~~Solana 支付已移除，仅保留 Sui USDC 单链支付。~~
