@@ -4,6 +4,7 @@ const SERIES_OBJECT_ID = `0x${'11'.repeat(32)}`
 const RELEASE_OBJECT_ID = `0x${'22'.repeat(32)}`
 const FIXED_NONCE = Uint8Array.from({ length: 16 }, (_, index) => index)
 const VALID_IV_BASE64 = 'AAAAAAAAAAAAAAAA'
+const VALID_CONTENT_HASH = 'a'.repeat(64)
 
 describe('Seal envelope crypto', () => {
   it('prefixes the document id with the series object id bytes', async () => {
@@ -41,7 +42,7 @@ describe('Seal envelope crypto', () => {
         cipher: 'AES-GCM-256',
         mimeType: 'application/zip',
         fileName: 'bundle.zip',
-        contentHash: 'deadbeef',
+        contentHash: VALID_CONTENT_HASH,
       }),
     ).toThrow('Seal envelope sidecar documentId is invalid')
   })
@@ -59,9 +60,46 @@ describe('Seal envelope crypto', () => {
         cipher: 'AES-GCM-256',
         mimeType: 'application/zip',
         fileName: 'bundle.zip',
-        contentHash: 'deadbeef',
+        contentHash: VALID_CONTENT_HASH,
       }),
     ).toThrow('Seal envelope sidecar encryptedDek is invalid base64')
+  })
+
+  it('accepts unpadded base64 in encryptedDek sidecars', async () => {
+    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
+
+    expect(parseSealEnvelopeSidecar({
+      version: 1,
+      mode: 'seal-envelope',
+      documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
+      encryptedDek: 'AQI',
+      iv: VALID_IV_BASE64,
+      cipher: 'AES-GCM-256',
+      mimeType: 'application/zip',
+      fileName: 'bundle.zip',
+      contentHash: VALID_CONTENT_HASH,
+    })).toMatchObject({
+      encryptedDek: 'AQI',
+      iv: VALID_IV_BASE64,
+    })
+  })
+
+  it('rejects sidecars whose content hash is not a 64-character hex string', async () => {
+    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
+
+    expect(() =>
+      parseSealEnvelopeSidecar({
+        version: 1,
+        mode: 'seal-envelope',
+        documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
+        encryptedDek: 'AQI',
+        iv: VALID_IV_BASE64,
+        cipher: 'AES-GCM-256',
+        mimeType: 'application/zip',
+        fileName: 'bundle.zip',
+        contentHash: 'not-hex',
+      }),
+    ).toThrow('contentHash must be a 64-character hex string')
   })
 
   it('rejects sidecars whose iv does not decode to 12 bytes', async () => {
@@ -77,9 +115,27 @@ describe('Seal envelope crypto', () => {
         cipher: 'AES-GCM-256',
         mimeType: 'application/zip',
         fileName: 'bundle.zip',
-        contentHash: 'deadbeef',
+        contentHash: VALID_CONTENT_HASH,
       }),
     ).toThrow('Seal envelope sidecar iv must decode to 12 bytes')
+  })
+
+  it('rejects sidecars whose encrypted DEK exceeds the size cap', async () => {
+    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
+
+    expect(() =>
+      parseSealEnvelopeSidecar({
+        version: 1,
+        mode: 'seal-envelope',
+        documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
+        encryptedDek: 'A'.repeat(16388),
+        iv: VALID_IV_BASE64,
+        cipher: 'AES-GCM-256',
+        mimeType: 'application/zip',
+        fileName: 'bundle.zip',
+        contentHash: VALID_CONTENT_HASH,
+      }),
+    ).toThrow('Seal envelope sidecar encryptedDek exceeds the size limit')
   })
 
   it('requires a release object id when encrypting a perpetual bundle', async () => {
@@ -163,6 +219,8 @@ describe('Seal envelope crypto', () => {
       txBytes: new Uint8Array([1, 2, 3]),
       encryptedData,
       sidecar,
+      expectedSeriesObjectId: SERIES_OBJECT_ID,
+      expectedReleaseObjectId: RELEASE_OBJECT_ID,
     })
 
     expect(decrypted).toEqual(plaintext)
@@ -173,6 +231,51 @@ describe('Seal envelope crypto', () => {
         txBytes: new Uint8Array([1, 2, 3]),
       }),
     )
+  })
+
+  it('rejects decrypting a sidecar whose document id is outside the expected series namespace', async () => {
+    const { decryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
+
+    await expect(() =>
+      decryptBundle({
+        sealClient: {
+          decrypt: vi.fn(async () => new Uint8Array(64)),
+        } as never,
+        sessionKey: { key: 'session' } as never,
+        txBytes: new Uint8Array([1, 2, 3]),
+        encryptedData: new Uint8Array([4, 5, 6]),
+        sidecar: {
+          version: 1,
+          mode: 'seal-envelope',
+          documentId: `0x${'33'.repeat(32)}${'44'.repeat(16)}`,
+          encryptedDek: 'AQI',
+          iv: VALID_IV_BASE64,
+          cipher: 'AES-GCM-256',
+          mimeType: 'application/zip',
+          fileName: 'bundle.zip',
+          contentHash: VALID_CONTENT_HASH,
+        },
+        expectedSeriesObjectId: SERIES_OBJECT_ID,
+      }),
+    ).rejects.toThrow('Seal documentId does not belong to the expected series')
+  })
+
+  it('rejects building an approval tx when the document id is not bound to the requested release', async () => {
+    const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
+
+    await expect(() =>
+      buildSealApprovalTxBytes({
+        accessPolicy: {
+          packageId: '0xsoul',
+          moduleName: 'seal_policy',
+          functionName: 'seal_approve_perpetual',
+          seriesObjectId: SERIES_OBJECT_ID,
+        },
+        documentId: generateOtherSeriesDocumentId(),
+        passObjectId: `0x${'55'.repeat(32)}`,
+        releaseObjectId: RELEASE_OBJECT_ID,
+      }),
+    ).rejects.toThrow('Seal documentId does not belong to the expected release')
   })
 
   it('zeroes the in-memory DEK buffer after encrypting it for Seal', async () => {
@@ -206,6 +309,10 @@ describe('Seal envelope crypto', () => {
     })
 
     expect(capturedDek).not.toBeNull()
-    expect(Array.from(capturedDek!)).toEqual(new Array(32).fill(0))
+    expect(Array.from(capturedDek!)).toEqual(new Array(64).fill(0))
   })
 })
+
+function generateOtherSeriesDocumentId() {
+  return `0x${'33'.repeat(32)}${'22'.repeat(32)}${Array.from(FIXED_NONCE, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+}

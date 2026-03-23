@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedPrisma = vi.hoisted(() => ({
   soulTxSync: {
-    findFirst: vi.fn(),
+    findUnique: vi.fn(),
     upsert: vi.fn(),
   },
 }))
@@ -15,7 +15,7 @@ describe('soul tx sync storage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
-    mockedPrisma.soulTxSync.findFirst.mockResolvedValue(null)
+    mockedPrisma.soulTxSync.findUnique.mockResolvedValue(null)
     mockedPrisma.soulTxSync.upsert.mockResolvedValue({})
   })
 
@@ -29,12 +29,14 @@ describe('soul tx sync storage', () => {
       resourceKey: '0xresource',
     })
 
-    expect(mockedPrisma.soulTxSync.findFirst).toHaveBeenCalledWith({
+    expect(mockedPrisma.soulTxSync.findUnique).toHaveBeenCalledWith({
       where: {
-        routeKey: 'purchase',
-        txDigest: '0xtx',
-        actorKey: 'member-1',
-        resourceKey: '0xresource',
+        routeKey_txDigest_actorKey_resourceKey: {
+          routeKey: 'purchase',
+          txDigest: '0xtx',
+          actorKey: 'member-1',
+          resourceKey: '0xresource',
+        },
       },
       select: {
         statusCode: true,

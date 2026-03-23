@@ -13,6 +13,7 @@ describe('Walrus blob validation', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     process.env = { ...originalEnv }
     global.fetch = originalFetch
   })
@@ -117,7 +118,10 @@ describe('Walrus blob validation', () => {
     global.fetch = vi.fn(async () => {
       attempts += 1
       if (attempts < 3) {
-        return new Response('slow down', { status: 429 })
+        return new Response('slow down', {
+          status: 429,
+          headers: { 'Retry-After': '0' },
+        })
       }
 
       return new Response(
@@ -136,5 +140,76 @@ describe('Walrus blob validation', () => {
 
     await expect(uploadPublic(Buffer.from('payload'))).resolves.toBe('blob-123')
     expect(global.fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('waits for retry-after before retrying 429 responses', async () => {
+    vi.useFakeTimers()
+    let attempts = 0
+    global.fetch = vi.fn(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        return new Response('slow down', {
+          status: 429,
+          headers: { 'Retry-After': '1' },
+        })
+      }
+
+      return new Response(
+        JSON.stringify({
+          newlyCreated: {
+            blobObject: {
+              blobId: 'blob-123',
+              id: 'walrus-object-1',
+            },
+          },
+        }),
+      )
+    }) as typeof fetch
+
+    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+
+    const uploadPromise = uploadPublic(Buffer.from('payload'))
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(uploadPromise).resolves.toBe('blob-123')
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('waits a minimal backoff before retrying 5xx responses', async () => {
+    vi.useFakeTimers()
+    let attempts = 0
+    global.fetch = vi.fn(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        return new Response('server error', { status: 503 })
+      }
+
+      return new Response(
+        JSON.stringify({
+          newlyCreated: {
+            blobObject: {
+              blobId: 'blob-123',
+              id: 'walrus-object-1',
+            },
+          },
+        }),
+      )
+    }) as typeof fetch
+
+    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+
+    const uploadPromise = uploadPublic(Buffer.from('payload'))
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(499)
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(uploadPromise).resolves.toBe('blob-123')
+    expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 })

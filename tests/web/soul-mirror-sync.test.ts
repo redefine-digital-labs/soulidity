@@ -43,4 +43,36 @@ describe('mirrorRouteRequest', () => {
       chainSucceeded: true,
     })
   })
+
+  it('surfaces plain-text server errors without double-consuming the response body', async () => {
+    let bodyUsed = false
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: vi.fn().mockImplementation(async () => {
+        bodyUsed = true
+        throw new Error('Unexpected token')
+      }),
+      text: vi.fn().mockImplementation(async () => {
+        if (bodyUsed) {
+          throw new TypeError('body used already')
+        }
+        bodyUsed = true
+        return 'Plain-text upstream error'
+      }),
+    })
+
+    await expect(() =>
+      mirrorRouteRequest({
+        fetchImpl,
+        input: '/api/souls/passes/0xpass/grant',
+        init: { method: 'POST' },
+        maxAttempts: 1,
+      }),
+    ).rejects.toMatchObject<Partial<MirrorSyncError>>({
+      message: 'Plain-text upstream error',
+      status: 500,
+      retryable: true,
+    })
+  })
 })

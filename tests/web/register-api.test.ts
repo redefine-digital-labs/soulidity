@@ -145,6 +145,23 @@ describe('POST /api/register', () => {
     await expect(response.json()).resolves.toEqual({ error: '无效的认证令牌' })
   })
 
+  it('rejects requests without a trusted client IP before calling Privy', async () => {
+    const { POST } = await import('../../web/app/api/register/route.ts')
+    const response = await POST(new Request('http://localhost/api/register', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ code: 'ABCD1234' }),
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Unable to determine client IP' })
+    expect(mockedPrivy.verifyAuthToken).not.toHaveBeenCalled()
+    expect(mockedPrisma.account.findUnique).not.toHaveBeenCalled()
+  })
+
   it('rejects missing invite codes', async () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {

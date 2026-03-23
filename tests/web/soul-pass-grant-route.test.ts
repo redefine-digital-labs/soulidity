@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const CANONICAL_AGENT = `0x${'0'.repeat(61)}abc`
 const OTHER_AGENT = `0x${'0'.repeat(61)}def`
 const OWNER_ADDRESS = `0x${'1'.repeat(64)}`
+const VALID_TX_DIGEST = '11111111111111111111111111111111'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
+  $transaction: vi.fn(),
   soulPassSnapshot: { findFirst: vi.fn() },
   member: { findUnique: vi.fn() },
 }))
@@ -54,6 +56,7 @@ describe('soul pass grant route', () => {
       error: null,
       identity: { memberId: 'member-1', kind: 'human' },
     })
+    mockedPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockedPrisma) => Promise<unknown>) => callback(mockedPrisma))
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedPrisma.soulPassSnapshot.findFirst.mockResolvedValue({
       id: 'pass-db-1',
@@ -109,7 +112,7 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agentAddress: '0xabc', txDigest: '0xtx' }),
+        body: JSON.stringify({ agentAddress: '0xabc', txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
@@ -146,7 +149,7 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agentAddress: '0xabc', txDigest: '0xtx' }),
+        body: JSON.stringify({ agentAddress: '0xabc', txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
@@ -154,7 +157,7 @@ describe('soul pass grant route', () => {
     expect(response.status).toBe(422)
     expect(mockedPrisma.soulPassSnapshot.findFirst).toHaveBeenCalledWith({
       where: {
-        OR: [{ id: '0xpass' }, { onChainId: '0xpass' }],
+        onChainId: '0xpass',
         ownerMemberId: 'member-1',
         status: 'active',
       },
@@ -167,7 +170,7 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agentAddress: OTHER_AGENT, txDigest: '0xtx' }),
+        body: JSON.stringify({ agentAddress: OTHER_AGENT, txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
@@ -203,15 +206,26 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agentAddress: '0xabc', txDigest: '0xtx' }),
+        body: JSON.stringify({ agentAddress: '0xabc', txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
 
     expect(response.status).toBe(200)
+    expect(mockedPrisma.$transaction).toHaveBeenCalledTimes(1)
     expect(mockedDbSetAgentGrant).toHaveBeenCalledWith({
+      db: mockedPrisma,
       passOnChainId: '0xpass',
       agentAddress: CANONICAL_AGENT,
+    })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith({
+      db: mockedPrisma,
+      txDigest: VALID_TX_DIGEST,
+      routeKey: 'grant:set',
+      actorKey: 'member-1',
+      resourceKey: '0xpass',
+      statusCode: 200,
+      body: { ok: true, agentGrant: CANONICAL_AGENT },
     })
   })
 
@@ -221,7 +235,7 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agentAddress: 'not-a-wallet', txDigest: '0xtx' }),
+        body: JSON.stringify({ agentAddress: 'not-a-wallet', txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
@@ -247,7 +261,7 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agentAddress: '0xabc', txDigest: '0xtx' }),
+        body: JSON.stringify({ agentAddress: '0xabc', txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
@@ -285,7 +299,7 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'DELETE',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ txDigest: '0xtx' }),
+        body: JSON.stringify({ txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
@@ -309,7 +323,7 @@ describe('soul pass grant route', () => {
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
         method: 'DELETE',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ txDigest: '0xtx' }),
+        body: JSON.stringify({ txDigest: VALID_TX_DIGEST }),
       }) as any,
       { params: Promise.resolve({ passId: '0xpass' }) },
     )
@@ -318,5 +332,33 @@ describe('soul pass grant route', () => {
     await expect(response.json()).resolves.toMatchObject({ ok: true })
     expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
     expect(mockedDbRevokeAgentGrant).not.toHaveBeenCalled()
+  })
+
+  it('wraps revoke mirroring and tx-sync persistence in one transaction', async () => {
+    const { DELETE } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
+    const response = await DELETE(
+      new Request('http://localhost/api/souls/passes/0xpass/grant', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: VALID_TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ passId: '0xpass' }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedPrisma.$transaction).toHaveBeenCalledTimes(1)
+    expect(mockedDbRevokeAgentGrant).toHaveBeenCalledWith({
+      db: mockedPrisma,
+      passOnChainId: '0xpass',
+    })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith({
+      db: mockedPrisma,
+      txDigest: VALID_TX_DIGEST,
+      routeKey: 'grant:revoke',
+      actorKey: 'member-1',
+      resourceKey: '0xpass',
+      statusCode: 200,
+      body: { ok: true },
+    })
   })
 })

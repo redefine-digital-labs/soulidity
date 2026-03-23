@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetRateLimitBucketsForTests } from '../../web/lib/rate-limit.ts'
 
 const NORMALIZED_ABC = `0x${'0'.repeat(61)}abc`
 
@@ -8,6 +9,7 @@ const mockedPrisma = vi.hoisted(() => ({
     update: vi.fn(),
   },
   member: {
+    findFirst: vi.fn(),
     findUnique: vi.fn(),
   },
   walletChallenge: {
@@ -18,6 +20,7 @@ const mockedPrisma = vi.hoisted(() => ({
     findFirst: vi.fn(),
     findUnique: vi.fn(),
     create: vi.fn(),
+    deleteMany: vi.fn(),
     update: vi.fn(),
   },
 }))
@@ -52,11 +55,15 @@ describe('resolveIdentity', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    resetRateLimitBucketsForTests()
     process.env.NEXT_PUBLIC_BASE_URL = 'https://clawnews.example.com'
+    delete process.env.TRUST_PROXY_HEADERS
     mockedPrivy.verifyAuthToken.mockResolvedValue({ userId: 'did:privy:123' })
     mockedPrisma.member.findUnique.mockResolvedValue(null)
+    mockedPrisma.member.findFirst.mockResolvedValue(null)
     mockedPrisma.walletBinding.findFirst.mockResolvedValue(null)
     mockedPrisma.walletBinding.findUnique.mockResolvedValue(null)
+    mockedPrisma.walletBinding.deleteMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.update.mockResolvedValue({ id: 'binding-1' })
     mockedPrivy.createWallets.mockResolvedValue({
       linkedAccounts: [{ type: 'wallet', chainType: 'sui', address: '0xdef' }],
@@ -190,14 +197,61 @@ describe('resolveIdentity', () => {
       expect(consoleWarn).toHaveBeenCalledWith(
         'Canonical Sui wallet binding already belongs to another member',
         {
-          address: NORMALIZED_ABC,
-          currentMemberId: 'member-1',
-          existingMemberId: 'member-elsewhere',
+          address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
         },
       )
     })
 
     consoleWarn.mockRestore()
+  })
+
+  it('drops a stale short-form Sui binding when the canonical row already belongs to the same member', async () => {
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    mockedPrisma.account.findUnique.mockResolvedValue({
+      id: 'account-1',
+      privyDid: 'did:privy:123',
+      tgName: 'openclaw',
+      email: 'user@example.com',
+      members: [{ id: 'member-1', kind: 'human' }],
+    })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      id: 'binding-1',
+      address: '0xabc',
+    })
+    mockedPrisma.walletBinding.update.mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: ['chain', 'address'] },
+      }),
+    )
+    mockedPrisma.walletBinding.findUnique.mockResolvedValue({
+      memberId: 'member-1',
+    })
+
+    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
+    const identity = await resolvePrivyIdentity('token')
+
+    expect(identity).toEqual({
+      accountId: 'account-1',
+      memberId: 'member-1',
+      kind: 'human',
+    })
+    await vi.waitFor(() => {
+      expect(mockedPrisma.walletBinding.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'binding-1' },
+      })
+    })
+    expect(consoleInfo).toHaveBeenCalledWith(
+      'Removed duplicate non-canonical Sui wallet binding after canonicalization',
+      {
+        memberId: 'member-1',
+        address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
+      },
+    )
+    expect(mockedPrivy.getUser).not.toHaveBeenCalled()
+    expect(mockedPrivy.createWallets).not.toHaveBeenCalled()
+    consoleInfo.mockRestore()
   })
 
   it('does not silently no-op when the Privy Sui wallet is already bound to another member', async () => {
@@ -231,9 +285,7 @@ describe('resolveIdentity', () => {
       expect(consoleWarn).toHaveBeenCalledWith(
         'Privy Sui wallet is already bound to another member',
         {
-          address: NORMALIZED_ABC,
-          currentMemberId: 'member-1',
-          existingMemberId: 'member-elsewhere',
+          address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
         },
       )
     })
@@ -576,6 +628,20 @@ describe('resolveIdentity', () => {
 
   it('rejects oversized wallet auth headers before any DB or signature work', async () => {
     mockedHeaders.mockResolvedValue(new Headers({
+      'x-agent-address': `0x${'a'.repeat(129)}`,
+      'x-agent-signature': 'signature',
+      'x-agent-message': 'nonce-ok',
+    }))
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
+    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
+  })
+
+  it('rejects oversized wallet signature and nonce headers before any DB or signature work', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({
       'x-agent-address': '0xabc',
       'x-agent-signature': 's'.repeat(513),
       'x-agent-message': 'n'.repeat(129),
@@ -586,6 +652,70 @@ describe('resolveIdentity', () => {
     await expect(resolveIdentity()).resolves.toBeNull()
     expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
     expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
+  })
+
+  it('rate limits repeated wallet identity probes before extra challenge lookups', async () => {
+    const nonce = 'nonce-rate-limit'
+    const normalizedAddress = `0x${'0'.repeat(63)}1`
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': '0x1',
+      'x-agent-signature': 'signature',
+      'x-agent-message': nonce,
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: normalizedAddress,
+      nonce,
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      member: {
+        id: 'member-wallet',
+        accountId: 'account-wallet',
+        kind: 'human',
+      },
+    })
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => normalizedAddress,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await expect(resolveIdentity()).resolves.toEqual({
+        accountId: 'account-wallet',
+        memberId: 'member-wallet',
+        kind: 'human',
+      })
+    }
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrisma.walletChallenge.findUnique).toHaveBeenCalledTimes(10)
+  })
+
+  it('rejects trivially short agent API keys before hashing or DB lookup', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({
+      authorization: 'Bearer sk-',
+    }))
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrisma.member.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('rejects empty bearer tokens before attempting Privy verification', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({
+      authorization: 'Bearer ',
+    }))
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrivy.verifyAuthToken).not.toHaveBeenCalled()
   })
 
   it('skips repeated wallet sync attempts for the same member within the sync TTL', async () => {

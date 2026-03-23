@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const AGENT_WALLET = `0x${'0'.repeat(63)}1`
+
 const mockedPrisma = vi.hoisted(() => ({
   walletChallenge: {
     create: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('@web/lib/rate-limit', () => ({
 }))
 
 vi.mock('@mysten/sui/verify', () => mockedVerify)
+vi.mock('@web/lib/sui-verify', () => mockedVerify)
 
 describe('agent join route hardening', () => {
   beforeEach(() => {
@@ -48,6 +51,9 @@ describe('agent join route hardening', () => {
     mockedPrisma.walletChallenge.deleteMany.mockResolvedValue({ count: 0 })
     mockedPrisma.walletChallenge.create.mockResolvedValue({
       nonce: 'nonce-1',
+    })
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => AGENT_WALLET,
     })
   })
 
@@ -175,7 +181,7 @@ describe('agent join route hardening', () => {
   it('rejects agent registration names longer than 100 characters', async () => {
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
       nonce: 'nonce-1',
-      address: `0x${'0'.repeat(63)}1`,
+      address: AGENT_WALLET,
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
     })
@@ -198,6 +204,42 @@ describe('agent join route hardening', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
       error: 'name must be 100 characters or fewer',
+    })
+  })
+
+  it('returns 409 when a concurrent join request wins the wallet binding race', async () => {
+    const conflict = new Error('Unique constraint failed')
+    ;(conflict as Error & { code?: string }).code = 'P2002'
+
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      nonce: 'nonce-1',
+      address: AGENT_WALLET,
+      domain: 'localhost',
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findUnique.mockResolvedValue(null)
+    mockedPrisma.member.create.mockRejectedValue(conflict)
+
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: AGENT_WALLET,
+          chain: 'sui',
+          name: 'Concurrent Agent',
+          nonce: 'nonce-1',
+          signature: 'signature',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'This wallet address is already registered',
     })
   })
 })

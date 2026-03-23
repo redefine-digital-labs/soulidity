@@ -5,9 +5,9 @@ const SERIES_ID = `0x${'1'.repeat(64)}`
 const RELEASE_ID = `0x${'2'.repeat(64)}`
 const ONETIME_PLAN_ID = `0x${'3'.repeat(64)}`
 const SUB_PLAN_ID = `0x${'4'.repeat(64)}`
-const PUBLISH_TX_DIGEST = '0xtx-publish'
-const ONETIME_PLAN_TX_DIGEST = '0xtx-plan-onetime'
-const SUB_PLAN_TX_DIGEST = '0xtx-plan-subscription'
+const PUBLISH_TX_DIGEST = 'FruqTGvpFsoobpBYWWgTgpsQ8S6v2zkCm8fn1Y5cppSN'
+const ONETIME_PLAN_TX_DIGEST = '3PvcMdm21RaeePjxCgqcvK4VDm2G9y8zJG33fPYWS9n7'
+const SUB_PLAN_TX_DIGEST = 'DV9VuHnbUJNAGsEZe5BFTBx3LU53u13MKx7FvgwYdAYc'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -408,6 +408,7 @@ describe('soul publish route', () => {
       periodMs: 2592000000n,
     }))
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith({
+      db: expect.any(Object),
       txDigest: PUBLISH_TX_DIGEST,
       routeKey: 'publish',
       actorKey: 'member-1',

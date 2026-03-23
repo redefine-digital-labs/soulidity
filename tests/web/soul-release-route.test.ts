@@ -49,6 +49,7 @@ describe('soul release route', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: expect.stringContaining('release publishing'),
     })
+    expect(mockedRequireIdentity).toHaveBeenCalledTimes(1)
     expect(mockedPrisma.soulSeries.findUnique).not.toHaveBeenCalled()
     expect(mockedDbCreateRelease).not.toHaveBeenCalled()
   })

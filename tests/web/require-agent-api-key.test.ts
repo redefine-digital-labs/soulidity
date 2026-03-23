@@ -24,7 +24,7 @@ describe('requireAgentApiKey', () => {
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
   })
 
-  it('returns 400 when a failed API-key auth attempt has no trusted client IP', async () => {
+  it('falls back to an unknown-IP bucket when a failed API-key auth attempt has no trusted client IP', async () => {
     mockedGetRequestIp.mockReturnValue(null)
 
     const { requireAgentApiKey } = await import('../../web/lib/auth/require-agent-api-key.ts')
@@ -35,10 +35,13 @@ describe('requireAgentApiKey', () => {
     )
 
     expect(result.agent).toBeNull()
-    expect(result.response?.status).toBe(400)
+    expect(result.response?.status).toBe(401)
     await expect(result.response?.json()).resolves.toEqual({
-      error: 'Unable to determine client IP',
+      error: 'Invalid API key',
     })
-    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'agent-auth-failed:unknown',
+      { max: 60, windowMs: 60 * 1000 },
+    )
   })
 })

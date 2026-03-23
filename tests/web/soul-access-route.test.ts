@@ -190,7 +190,7 @@ describe('Soul agent access route', () => {
 
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({
-      error: 'No active pass with agent grant',
+      error: 'No active pass or direct ownership for this Soul',
     })
   })
 

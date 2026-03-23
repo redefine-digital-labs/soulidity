@@ -20,6 +20,12 @@ describe('selectCoinObjectIdsForAmount', () => {
       { coinObjectId: 'coin-b', balance: '500000' },
     ], 1_000_000n)).toBeNull()
   })
+
+  it('rejects unsafe numeric balances before converting them to bigint', () => {
+    expect(() => selectCoinObjectIdsForAmount([
+      { coinObjectId: 'coin-a', balance: Number.MAX_SAFE_INTEGER + 10 },
+    ], 1n)).toThrow('Coin balance number is outside the safe integer range')
+  })
 })
 
 describe('selectCoinObjectIdsForAmountAcrossPages', () => {

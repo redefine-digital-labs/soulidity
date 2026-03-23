@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ORIGINAL_ENV = { ...process.env }
 
+vi.mock('server-only', () => ({}))
+
 describe('Seal service configuration', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -73,6 +75,7 @@ describe('Seal service configuration', () => {
       },
     ])
 
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const mod = await import('../../web/lib/services/seal.ts')
 
     expect(mod.getSealRuntimeConfig()).toEqual({
@@ -88,6 +91,8 @@ describe('Seal service configuration', () => {
       ],
     })
     expect(mod.hasCredentialedSealServerConfigs()).toBe(true)
+    expect(consoleWarn).toHaveBeenCalledWith('Seal threshold is 1-of-1 on mainnet')
+    consoleWarn.mockRestore()
   })
 
   it('never trusts key server credentials from NEXT_PUBLIC seal config', async () => {

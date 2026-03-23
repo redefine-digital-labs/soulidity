@@ -4,12 +4,15 @@ const BUYER_ADDRESS = `0x${'b'.repeat(64)}`
 const SERIES_ID = `0x${'1'.repeat(64)}`
 const PASS_ID = `0x${'2'.repeat(64)}`
 const RELEASE_ID = `0x${'3'.repeat(64)}`
+const VALID_TX_DIGEST = '11111111111111111111111111111111'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulSeries: { findFirst: vi.fn() },
   member: { findUnique: vi.fn() },
+  soulTxSync: { upsert: vi.fn() },
+  $transaction: vi.fn(),
 }))
 const mockedDbCreatePass = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
@@ -64,7 +67,7 @@ describe('Soul purchase route', () => {
       walletBindings: [{ address: BUYER_ADDRESS, chain: 'sui' }],
     })
     mockedSuiClient.getTransactionBlock.mockResolvedValue({
-      digest: 'ABC123',
+      digest: VALID_TX_DIGEST,
       effects: { status: { status: 'success' } },
       objectChanges: [
         {
@@ -100,6 +103,7 @@ describe('Soul purchase route', () => {
     })
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
     mockedStoreSoulTxSync.mockResolvedValue(undefined)
+    mockedPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockedPrisma) => Promise<unknown>) => callback(mockedPrisma))
   })
 
   it('returns 400 for invalid JSON', async () => {
@@ -125,7 +129,7 @@ describe('Soul purchase route', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           passOnChainId: PASS_ID,
-          txDigest: 'ABC123',
+          txDigest: VALID_TX_DIGEST,
         }),
       }) as any,
       { params: Promise.resolve({ id: SERIES_ID }) },
@@ -139,7 +143,7 @@ describe('Soul purchase route', () => {
 
   it('rejects mirroring when the submitted transaction never created the requested pass', async () => {
     mockedSuiClient.getTransactionBlock.mockResolvedValue({
-      digest: 'ABC123',
+      digest: VALID_TX_DIGEST,
       effects: { status: { status: 'success' } },
       objectChanges: [],
     })
@@ -151,7 +155,7 @@ describe('Soul purchase route', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           passOnChainId: PASS_ID,
-          txDigest: 'ABC123',
+          txDigest: VALID_TX_DIGEST,
         }),
       }) as any,
       { params: Promise.resolve({ id: SERIES_ID }) },
@@ -181,7 +185,7 @@ describe('Soul purchase route', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           passOnChainId: PASS_ID,
-          txDigest: 'ABC123',
+          txDigest: VALID_TX_DIGEST,
         }),
       }) as any,
       { params: Promise.resolve({ id: SERIES_ID }) },
@@ -194,7 +198,7 @@ describe('Soul purchase route', () => {
       passType: 'perpetual',
     })
     expect(mockedGetStoredSoulTxSync).toHaveBeenCalledWith({
-      txDigest: 'ABC123',
+      txDigest: VALID_TX_DIGEST,
       routeKey: 'purchase',
       actorKey: 'member-1',
       resourceKey: PASS_ID,
@@ -212,7 +216,7 @@ describe('Soul purchase route', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           passOnChainId: PASS_ID,
-          txDigest: 'ABC123',
+          txDigest: VALID_TX_DIGEST,
           planType: 'subscription',
           lockedReleaseId: '0xspoofed-release',
         }),
@@ -222,16 +226,18 @@ describe('Soul purchase route', () => {
 
     expect(response.status).toBe(201)
     expect(mockedDbCreatePass).toHaveBeenCalledWith({
+      db: mockedPrisma,
       passOnChainId: PASS_ID,
       seriesOnChainId: SERIES_ID,
       ownerAddress: BUYER_ADDRESS,
       ownerMemberId: 'member-1',
       passType: 'perpetual',
       lockedReleaseId: RELEASE_ID,
-      mintTxDigest: 'ABC123',
+      mintTxDigest: VALID_TX_DIGEST,
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith({
-      txDigest: 'ABC123',
+      db: mockedPrisma,
+      txDigest: VALID_TX_DIGEST,
       routeKey: 'purchase',
       actorKey: 'member-1',
       resourceKey: PASS_ID,
@@ -242,6 +248,7 @@ describe('Soul purchase route', () => {
         passType: 'perpetual',
       },
     })
+    expect(mockedPrisma.$transaction).toHaveBeenCalledTimes(1)
   })
 
   it('returns 503 for renew requests (not yet implemented)', async () => {
