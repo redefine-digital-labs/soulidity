@@ -146,7 +146,7 @@ describe('prepared purchase helpers', () => {
     expect(mockedPrisma.soulPreparedPurchase.create).toHaveBeenCalled()
   })
 
-  it('refreshes finalized prepared purchases instead of returning an already-expired execute window', async () => {
+  it('returns finalized prepared purchases as-is instead of extending their expired execute window', async () => {
     const conflict = new Error('Unique constraint failed')
     ;(conflict as Error & { code?: string }).code = 'P2002'
     mockedPrisma.soulPreparedPurchase.create.mockRejectedValueOnce(conflict)
@@ -156,11 +156,6 @@ describe('prepared purchase helpers', () => {
       executedAt: new Date('2000-01-01T00:01:00.000Z'),
       resultStatusCode: 200,
     })
-    mockedPrisma.soulPreparedPurchase.update.mockResolvedValueOnce({
-      id: 'prepared-1',
-      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
-    })
-
     const { createPreparedSoulPurchase } = await import('../../web/lib/souls/prepared-purchase.ts')
 
     const prepared = await createPreparedSoulPurchase({
@@ -176,18 +171,11 @@ describe('prepared purchase helpers', () => {
 
     expect(prepared).toEqual({
       id: 'prepared-1',
-      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2000-01-01T00:00:00.000Z'),
+      executedAt: new Date('2000-01-01T00:01:00.000Z'),
+      resultStatusCode: 200,
     })
-    expect(mockedPrisma.soulPreparedPurchase.update).toHaveBeenCalledWith({
-      where: { id: 'prepared-1' },
-      data: {
-        expiresAt: expect.any(Date),
-      },
-      select: {
-        id: true,
-        expiresAt: true,
-      },
-    })
+    expect(mockedPrisma.soulPreparedPurchase.update).not.toHaveBeenCalled()
   })
 
   it('guards prepared purchase conflict refreshes against rows claimed mid-flight', async () => {
@@ -235,6 +223,58 @@ describe('prepared purchase helpers', () => {
         agentAddress: AGENT_ADDRESS,
         amountUsdc: 1_000_000n,
         txBytesBase64: 'c2VydmVyLXR4',
+        expiresAt: expect.any(Date),
+      },
+    })
+  })
+
+  it('reclaims expired claimed prepares that never finalized so the same tx hash can be retried', async () => {
+    const conflict = new Error('Unique constraint failed')
+    ;(conflict as Error & { code?: string }).code = 'P2002'
+    mockedPrisma.soulPreparedPurchase.create.mockRejectedValueOnce(conflict)
+    mockedPrisma.soulPreparedPurchase.findFirst.mockResolvedValueOnce({
+      id: 'prepared-1',
+      expiresAt: new Date('2000-01-01T00:00:00.000Z'),
+      executedAt: new Date('2000-01-01T00:01:00.000Z'),
+      executionTxDigest: null,
+      resultStatusCode: null,
+    })
+    mockedPrisma.soulPreparedPurchase.updateMany.mockResolvedValueOnce({ count: 1 })
+
+    const { createPreparedSoulPurchase } = await import('../../web/lib/souls/prepared-purchase.ts')
+
+    const prepared = await createPreparedSoulPurchase({
+      agentMemberId: 'agent-1',
+      seriesOnChainId: SERIES_OBJECT_ID,
+      planOnChainId: PLAN_OBJECT_ID,
+      planType: 'onetime',
+      releaseOnChainId: RELEASE_OBJECT_ID,
+      agentAddress: AGENT_ADDRESS,
+      amountUsdc: 1_000_000n,
+      txBytesBase64: 'c2VydmVyLXR4',
+    })
+
+    expect(prepared).toEqual({
+      id: 'prepared-1',
+      expiresAt: expect.any(Date),
+    })
+    expect(mockedPrisma.soulPreparedPurchase.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'prepared-1',
+        executedAt: { not: null },
+        executionTxDigest: null,
+        resultStatusCode: null,
+        expiresAt: { lte: expect.any(Date) },
+      },
+      data: {
+        seriesOnChainId: SERIES_OBJECT_ID,
+        planOnChainId: PLAN_OBJECT_ID,
+        planType: 'onetime',
+        releaseOnChainId: RELEASE_OBJECT_ID,
+        agentAddress: AGENT_ADDRESS,
+        amountUsdc: 1_000_000n,
+        txBytesBase64: 'c2VydmVyLXR4',
+        executedAt: null,
         expiresAt: expect.any(Date),
       },
     })

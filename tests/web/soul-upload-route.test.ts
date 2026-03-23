@@ -73,4 +73,18 @@ describe('soul upload route', () => {
     })
     expect(mockedUploadPublic).not.toHaveBeenCalled()
   })
+
+  it('returns 400 when multipart parsing fails before file validation', async () => {
+    const { POST } = await import('../../web/app/api/souls/upload/route.ts')
+    const response = await POST({
+      headers: new Headers({ 'content-length': '128' }),
+      formData: vi.fn().mockRejectedValue(new Error('bad multipart body')),
+    } as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Invalid multipart form data',
+    })
+    expect(mockedUploadPublic).not.toHaveBeenCalled()
+  })
 })

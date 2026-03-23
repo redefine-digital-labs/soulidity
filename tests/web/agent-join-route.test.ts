@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const AGENT_WALLET = `0x${'0'.repeat(63)}1`
+const CHALLENGE_NONCE = '550e8400-e29b-41d4-a716-446655440000'
 
 const mockedPrisma = vi.hoisted(() => ({
+  $transaction: vi.fn(),
   walletChallenge: {
     create: vi.fn(),
     deleteMany: vi.fn(),
@@ -52,6 +54,7 @@ describe('agent join route hardening', () => {
     mockedPrisma.walletChallenge.create.mockResolvedValue({
       nonce: 'nonce-1',
     })
+    mockedPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockedPrisma) => Promise<unknown>) => callback(mockedPrisma))
     mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
       toSuiAddress: () => AGENT_WALLET,
     })
@@ -195,7 +198,7 @@ describe('agent join route hardening', () => {
           wallet: '0x1',
           chain: 'sui',
           name: 'x'.repeat(101),
-          nonce: 'nonce-1',
+          nonce: CHALLENGE_NONCE,
           signature: 'signature',
         }),
       }) as any,
@@ -207,12 +210,58 @@ describe('agent join route hardening', () => {
     })
   })
 
+  it('rejects signatures longer than the route limit before verification work starts', async () => {
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: '0x1',
+          chain: 'sui',
+          name: 'Agent Smith',
+          nonce: CHALLENGE_NONCE,
+          signature: 's'.repeat(1025),
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'signature must be 1024 characters or fewer',
+    })
+    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-uuid challenge nonces before any DB lookup', async () => {
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: '0x1',
+          chain: 'sui',
+          name: 'Agent Smith',
+          nonce: 'not-a-uuid',
+          signature: 'signature',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'nonce must be a valid UUID from GET /api/agent-join',
+    })
+    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
+  })
+
   it('returns 409 when a concurrent join request wins the wallet binding race', async () => {
     const conflict = new Error('Unique constraint failed')
     ;(conflict as Error & { code?: string }).code = 'P2002'
 
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      nonce: 'nonce-1',
+      nonce: CHALLENGE_NONCE,
       address: AGENT_WALLET,
       domain: 'localhost',
       usedAt: null,
@@ -231,7 +280,7 @@ describe('agent join route hardening', () => {
           wallet: AGENT_WALLET,
           chain: 'sui',
           name: 'Concurrent Agent',
-          nonce: 'nonce-1',
+          nonce: CHALLENGE_NONCE,
           signature: 'signature',
         }),
       }) as any,
@@ -246,7 +295,7 @@ describe('agent join route hardening', () => {
   it('creates pending agent members without writing the legacy member.wallet field', async () => {
     process.env.AUTH_SECRET = 'test-auth-secret'
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      nonce: 'nonce-1',
+      nonce: CHALLENGE_NONCE,
       address: AGENT_WALLET,
       domain: 'localhost',
       usedAt: null,
@@ -268,7 +317,7 @@ describe('agent join route hardening', () => {
           wallet: AGENT_WALLET,
           chain: 'sui',
           name: 'Agent Smith',
-          nonce: 'nonce-1',
+          nonce: CHALLENGE_NONCE,
           signature: 'signature',
         }),
       }) as any,

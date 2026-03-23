@@ -3,6 +3,11 @@ import { resetRateLimitBucketsForTests } from '../../web/lib/rate-limit.ts'
 
 const NORMALIZED_ABC = `0x${'0'.repeat(61)}abc`
 
+function normalizeTestSuiAddress(value: string): string {
+  const hex = value.trim().toLowerCase().replace(/^0x/, '')
+  return `0x${hex.padStart(64, '0')}`
+}
+
 const mockedPrisma = vi.hoisted(() => ({
   account: {
     findUnique: vi.fn(),
@@ -429,11 +434,13 @@ describe('resolveIdentity', () => {
   })
 
   it('verifies wallet challenges against the configured app domain instead of the request host', async () => {
-    const nonce = 'nonce-123'
+    const nonce = '11111111-1111-4111-8111-111111111111'
     const normalizedAddress = `0x${'0'.repeat(63)}1`
+    process.env.TRUST_PROXY_HEADERS = 'true'
 
     mockedHeaders.mockResolvedValue(new Headers({
       host: 'evil.example.com',
+      'x-forwarded-for': '203.0.113.10',
       'x-agent-address': '0x1',
       'x-agent-signature': 'signature',
       'x-agent-message': nonce,
@@ -485,14 +492,16 @@ describe('resolveIdentity', () => {
   })
 
   it('rejects expired wallet challenges before verifying signatures', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
     mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
       'x-agent-address': '0x1',
       'x-agent-signature': 'signature',
-      'x-agent-message': 'nonce-expired',
+      'x-agent-message': '22222222-2222-4222-8222-222222222222',
     }))
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
       address: `0x${'0'.repeat(63)}1`,
-      nonce: 'nonce-expired',
+      nonce: '22222222-2222-4222-8222-222222222222',
       usedAt: null,
       expiresAt: new Date('2000-01-01T00:00:00.000Z'),
     })
@@ -505,14 +514,16 @@ describe('resolveIdentity', () => {
   })
 
   it('rejects replayed wallet challenges that were already used', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
     mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
       'x-agent-address': '0x1',
       'x-agent-signature': 'signature',
-      'x-agent-message': 'nonce-used',
+      'x-agent-message': '33333333-3333-4333-8333-333333333333',
     }))
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
       address: `0x${'0'.repeat(63)}1`,
-      nonce: 'nonce-used',
+      nonce: '33333333-3333-4333-8333-333333333333',
       usedAt: new Date('2099-03-21T00:00:00.000Z'),
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
     })
@@ -525,14 +536,16 @@ describe('resolveIdentity', () => {
   })
 
   it('rejects wallet challenges whose stored address no longer matches the signer address', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
     mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
       'x-agent-address': '0x1',
       'x-agent-signature': 'signature',
-      'x-agent-message': 'nonce-mismatch',
+      'x-agent-message': '44444444-4444-4444-8444-444444444444',
     }))
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
       address: `0x${'0'.repeat(63)}2`,
-      nonce: 'nonce-mismatch',
+      nonce: '44444444-4444-4444-8444-444444444444',
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
     })
@@ -547,11 +560,13 @@ describe('resolveIdentity', () => {
   it('logs unexpected wallet identity failures before failing closed', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const dbError = new Error('db unavailable')
+    process.env.TRUST_PROXY_HEADERS = 'true'
 
     mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
       'x-agent-address': '0xabc',
       'x-agent-signature': 'signature',
-      'x-agent-message': 'nonce-db-error',
+      'x-agent-message': '55555555-5555-4555-8555-555555555555',
     }))
     mockedPrisma.walletChallenge.findUnique.mockRejectedValue(dbError)
 
@@ -562,7 +577,7 @@ describe('resolveIdentity', () => {
       'Unexpected wallet identity resolution failure',
       expect.objectContaining({
         address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
-        nonce: 'nonce-db-error',
+        nonce: '55555555-5555-4555-8555-555555555555',
         error: dbError,
       }),
     )
@@ -572,15 +587,17 @@ describe('resolveIdentity', () => {
 
   it('treats invalid wallet signatures as expected auth failures without error logging', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.TRUST_PROXY_HEADERS = 'true'
 
     mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
       'x-agent-address': '0xabc',
       'x-agent-signature': 'bad-signature',
-      'x-agent-message': 'nonce-bad-signature',
+      'x-agent-message': '66666666-6666-4666-8666-666666666666',
     }))
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
       address: NORMALIZED_ABC,
-      nonce: 'nonce-bad-signature',
+      nonce: '66666666-6666-4666-8666-666666666666',
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
     })
@@ -594,6 +611,31 @@ describe('resolveIdentity', () => {
     expect(mockedPrisma.walletBinding.findFirst).not.toHaveBeenCalled()
 
     consoleError.mockRestore()
+  })
+
+  it('does not consume the wallet challenge after signature verification fails', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': '0xabc',
+      'x-agent-signature': 'bad-signature',
+      'x-agent-message': '77777777-7777-4777-8777-777777777777',
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: NORMALIZED_ABC,
+      nonce: '77777777-7777-4777-8777-777777777777',
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedVerify.verifyPersonalMessageSignature.mockRejectedValue(new Error('Invalid signature'))
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
+    expect(mockedPrisma.walletBinding.findFirst).not.toHaveBeenCalled()
   })
 
   it('logs privy verification failures before failing closed', async () => {
@@ -630,7 +672,7 @@ describe('resolveIdentity', () => {
     mockedHeaders.mockResolvedValue(new Headers({
       'x-agent-address': `0x${'a'.repeat(129)}`,
       'x-agent-signature': 'signature',
-      'x-agent-message': 'nonce-ok',
+      'x-agent-message': '88888888-8888-4888-8888-888888888888',
     }))
 
     const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
@@ -654,8 +696,99 @@ describe('resolveIdentity', () => {
     expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
   })
 
+  it('rejects non-uuid wallet nonces before any DB or signature work', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': '0xabc',
+      'x-agent-signature': 'signature',
+      'x-agent-message': 'not-a-uuid',
+    }))
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
+    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
+  })
+
+  it('prefers wallet auth over bearer tokens when both are present', async () => {
+    const nonce = '12121212-1212-4212-8212-121212121212'
+    const normalizedAddress = `0x${'0'.repeat(63)}1`
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      authorization: 'Bearer privy-token',
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': '0x1',
+      'x-agent-signature': 'signature',
+      'x-agent-message': nonce,
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: normalizedAddress,
+      nonce,
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      member: {
+        id: 'member-wallet',
+        accountId: 'account-wallet',
+        kind: 'human',
+      },
+    })
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => normalizedAddress,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    const identity = await resolveIdentity()
+
+    expect(identity).toEqual({
+      accountId: 'account-wallet',
+      memberId: 'member-wallet',
+      kind: 'human',
+    })
+    expect(mockedPrivy.verifyAuthToken).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when wallet auth resolves a member kind outside the supported union', async () => {
+    const nonce = '13131313-1313-4313-8313-131313131313'
+    const normalizedAddress = NORMALIZED_ABC
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': '0xabc',
+      'x-agent-signature': 'signature',
+      'x-agent-message': nonce,
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: normalizedAddress,
+      nonce,
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      member: {
+        id: 'member-wallet',
+        accountId: 'account-wallet',
+        kind: 'service',
+      },
+    })
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => normalizedAddress,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+  })
+
   it('rate limits repeated wallet identity probes before extra challenge lookups', async () => {
-    const nonce = 'nonce-rate-limit'
+    const nonce = '99999999-9999-4999-8999-999999999999'
     const normalizedAddress = `0x${'0'.repeat(63)}1`
     process.env.TRUST_PROXY_HEADERS = 'true'
 
@@ -694,6 +827,21 @@ describe('resolveIdentity', () => {
     }
     await expect(resolveIdentity()).resolves.toBeNull()
     expect(mockedPrisma.walletChallenge.findUnique).toHaveBeenCalledTimes(10)
+  })
+
+  it('fails closed for wallet auth when proxy IP headers are unavailable', async () => {
+    delete process.env.TRUST_PROXY_HEADERS
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-agent-address': '0x1',
+      'x-agent-signature': 'signature-missing-ip',
+      'x-agent-message': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    }))
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
+    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
   })
 
   it('rejects trivially short agent API keys before hashing or DB lookup', async () => {

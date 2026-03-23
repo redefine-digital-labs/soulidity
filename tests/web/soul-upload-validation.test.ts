@@ -55,6 +55,19 @@ describe('Soul upload validation', () => {
     ).toBeNull()
   })
 
+  it('rejects encrypted uploads that are too small before signature validation runs', () => {
+    expect(
+      validateSoulUploadFile(
+        {
+          name: 'bundle.sealed',
+          size: 16,
+          type: 'application/octet-stream',
+        } as File,
+        'encrypted',
+      ),
+    ).toBe('Encrypted upload is too small (minimum 32 bytes)')
+  })
+
   it('rejects oversized public JSON metadata before decoding it', () => {
     expect(
       validateSoulUploadFile(

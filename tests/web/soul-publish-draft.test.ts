@@ -124,6 +124,38 @@ describe('soul publish draft', () => {
     expect(storage.getItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`)).not.toBeNull()
   })
 
+  it('does not fall back to a legacy draft when the wallet-scoped draft is already mirrored', () => {
+    const storage = new MemoryStorage()
+    const draft = createSoulPublishDraft({
+      walletAddress: '0xabc',
+      name: 'Scoped draft',
+      description: 'Recovered draft',
+      category: 'Research',
+      tags: [],
+      pricingType: 'onetime',
+      oneTimePrice: '10.00',
+      subPrice: '',
+      subPeriodDays: '30',
+    })
+
+    writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
+      dbMirroredAt: '2026-03-23T12:00:00.000Z',
+    }))
+    storage.setItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY, JSON.stringify(createSoulPublishDraft({
+      walletAddress: '0xabc',
+      name: 'Legacy fallback',
+      description: 'Recovered draft',
+      category: 'Research',
+      tags: [],
+      pricingType: 'onetime',
+      oneTimePrice: '12.00',
+      subPrice: '',
+      subPeriodDays: '30',
+    })))
+
+    expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
+  })
+
   it('does not overwrite a newer wallet-scoped draft while migrating a legacy draft', () => {
     const walletKey = `${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`
     const storage = new MemoryStorage()

@@ -95,6 +95,27 @@ describe('Seal service configuration', () => {
     consoleWarn.mockRestore()
   })
 
+  it('rejects malformed threshold env values instead of partially parsing them', async () => {
+    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xsoul'
+    process.env.NEXT_PUBLIC_SEAL_THRESHOLD = '1abc'
+    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([
+      { objectId: '0xabc', weight: 1 },
+      { objectId: '0xdef', weight: 1 },
+    ])
+
+    const mod = await import('../../web/lib/services/seal.ts')
+
+    expect(mod.getSealRuntimeConfig()).toEqual({
+      network: 'testnet',
+      threshold: 2,
+      verifyKeyServers: true,
+      serverConfigs: [
+        { objectId: '0xabc', weight: 1 },
+        { objectId: '0xdef', weight: 1 },
+      ],
+    })
+  })
+
   it('never trusts key server credentials from NEXT_PUBLIC seal config', async () => {
     process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xoverride'
     process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([

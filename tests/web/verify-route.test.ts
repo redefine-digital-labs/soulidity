@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedPrisma = vi.hoisted(() => ({
+  $transaction: vi.fn(),
   inviteCode: {
     updateMany: vi.fn(),
   },
@@ -31,6 +32,7 @@ describe('verify route', () => {
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedPrisma.inviteCode.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.member.upsert.mockResolvedValue({})
+    mockedPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockedPrisma) => Promise<unknown>) => callback(mockedPrisma))
   })
 
   it('returns 400 for malformed JSON bodies', async () => {
@@ -119,6 +121,7 @@ describe('verify route', () => {
       where: { code: 'JOIN1234', active: 1, usedBy: null },
       data: { usedBy: '123456', active: 0 },
     })
+    expect(mockedPrisma.$transaction).toHaveBeenCalledTimes(1)
     expect(mockedPrisma.member.upsert).toHaveBeenCalledWith({
       where: { tgId: '123456' },
       create: { tgId: '123456', tgName: 'openclaw', inviteCode: 'JOIN1234' },

@@ -5,11 +5,14 @@ const SERIES_ID = `0x${'1'.repeat(64)}`
 const RELEASE_ID = `0x${'2'.repeat(64)}`
 const ONETIME_PLAN_ID = `0x${'3'.repeat(64)}`
 const SUB_PLAN_ID = `0x${'4'.repeat(64)}`
+const PACKAGE_ID = `0x${'9'.repeat(64)}`
+const COUNTERFEIT_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const PUBLISH_TX_DIGEST = 'FruqTGvpFsoobpBYWWgTgpsQ8S6v2zkCm8fn1Y5cppSN'
 const ONETIME_PLAN_TX_DIGEST = '3PvcMdm21RaeePjxCgqcvK4VDm2G9y8zJG33fPYWS9n7'
 const SUB_PLAN_TX_DIGEST = 'DV9VuHnbUJNAGsEZe5BFTBx3LU53u13MKx7FvgwYdAYc'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   member: { findUnique: vi.fn() },
@@ -27,6 +30,10 @@ const mockedSuiClient = vi.hoisted(() => ({
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
+}))
+
+vi.mock('@web/lib/auth/sui-wallet', () => ({
+  getMemberPrimarySuiWalletAddress: mockedGetMemberPrimarySuiWalletAddress,
 }))
 
 vi.mock('@web/lib/rate-limit', () => ({
@@ -56,11 +63,13 @@ describe('soul publish route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = PACKAGE_ID
 
     mockedRequireIdentity.mockResolvedValue({
       error: null,
       identity: { memberId: 'member-1', kind: 'human' },
     })
+    mockedGetMemberPrimarySuiWalletAddress.mockResolvedValue(AUTHOR_ADDRESS)
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedPrisma.member.findUnique.mockResolvedValue({
       id: 'member-1',
@@ -77,7 +86,14 @@ describe('soul publish route', () => {
             {
               type: 'created',
               objectId: SERIES_ID,
-              objectType: '0xpackage::series::SoulSeries',
+              objectType: `${PACKAGE_ID}::series::SoulSeries`,
+              sender: AUTHOR_ADDRESS,
+              owner: { AddressOwner: AUTHOR_ADDRESS },
+            },
+            {
+              type: 'created',
+              objectId: RELEASE_ID,
+              objectType: `${PACKAGE_ID}::series::SoulRelease`,
               sender: AUTHOR_ADDRESS,
               owner: { AddressOwner: AUTHOR_ADDRESS },
             },
@@ -94,7 +110,7 @@ describe('soul publish route', () => {
             {
               type: 'created',
               objectId: ONETIME_PLAN_ID,
-              objectType: '0xpackage::purchase::PricingPlan',
+              objectType: `${PACKAGE_ID}::purchase::PricingPlan`,
               sender: AUTHOR_ADDRESS,
               owner: { AddressOwner: AUTHOR_ADDRESS },
             },
@@ -111,7 +127,7 @@ describe('soul publish route', () => {
             {
               type: 'created',
               objectId: SUB_PLAN_ID,
-              objectType: '0xpackage::purchase::PricingPlan',
+              objectType: `${PACKAGE_ID}::purchase::PricingPlan`,
               sender: AUTHOR_ADDRESS,
               owner: { AddressOwner: AUTHOR_ADDRESS },
             },
@@ -132,10 +148,10 @@ describe('soul publish route', () => {
         return {
           data: {
             objectId: SERIES_ID,
-            type: '0xpackage::series::SoulSeries',
+            type: `${PACKAGE_ID}::series::SoulSeries`,
             content: {
               dataType: 'moveObject',
-              type: '0xpackage::series::SoulSeries',
+              type: `${PACKAGE_ID}::series::SoulSeries`,
               fields: {
                 name: 'On-chain Name',
                 description: 'On-chain Description',
@@ -153,10 +169,10 @@ describe('soul publish route', () => {
         return {
           data: {
             objectId: RELEASE_ID,
-            type: '0xpackage::series::SoulRelease',
+            type: `${PACKAGE_ID}::series::SoulRelease`,
             content: {
               dataType: 'moveObject',
-              type: '0xpackage::series::SoulRelease',
+              type: `${PACKAGE_ID}::series::SoulRelease`,
               fields: {
                 series_id: SERIES_ID,
                 version: '2.0.0',
@@ -173,10 +189,10 @@ describe('soul publish route', () => {
         return {
           data: {
             objectId: ONETIME_PLAN_ID,
-            type: '0xpackage::purchase::PricingPlan',
+            type: `${PACKAGE_ID}::purchase::PricingPlan`,
             content: {
               dataType: 'moveObject',
-              type: '0xpackage::purchase::PricingPlan',
+              type: `${PACKAGE_ID}::purchase::PricingPlan`,
               fields: {
                 series_id: SERIES_ID,
                 plan_type: 0,
@@ -193,10 +209,10 @@ describe('soul publish route', () => {
         return {
           data: {
             objectId: SUB_PLAN_ID,
-            type: '0xpackage::purchase::PricingPlan',
+            type: `${PACKAGE_ID}::purchase::PricingPlan`,
             content: {
               dataType: 'moveObject',
-              type: '0xpackage::purchase::PricingPlan',
+              type: `${PACKAGE_ID}::purchase::PricingPlan`,
               fields: {
                 series_id: SERIES_ID,
                 plan_type: 1,
@@ -243,14 +259,65 @@ describe('soul publish route', () => {
     expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
   })
 
+  it('returns 503 when the soul package id env is missing before on-chain verification', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Service temporarily unavailable',
+    })
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+  })
+
+  it('returns structured 500 JSON when publish mirroring hits an unexpected sync error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockedSuiClient.getTransactionBlock.mockRejectedValueOnce(new Error('rpc down'))
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Sync failed',
+    })
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
   it('rejects mirroring a series whose on-chain author does not match the authenticated wallet', async () => {
     mockedSuiClient.getObject.mockImplementationOnce(async () => ({
       data: {
         objectId: SERIES_ID,
-        type: '0xpackage::series::SoulSeries',
+        type: `${PACKAGE_ID}::series::SoulSeries`,
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::series::SoulSeries',
+          type: `${PACKAGE_ID}::series::SoulSeries`,
           fields: {
             name: 'Other Series',
             description: 'Other Description',
@@ -268,7 +335,12 @@ describe('soul publish route', () => {
       new Request('http://localhost/api/souls/publish', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ seriesOnChainId: SERIES_ID, txDigest: PUBLISH_TX_DIGEST }),
+        body: JSON.stringify({
+          seriesOnChainId: SERIES_ID,
+          txDigest: PUBLISH_TX_DIGEST,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
       }) as any,
     )
 
@@ -298,6 +370,108 @@ describe('soul publish route', () => {
       error: 'readme must be 50,000 characters or fewer',
     })
     expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
+  })
+
+  it('requires at least one pricing plan before any on-chain verification work starts', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'At least one pricing plan must be provided',
+    })
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+  })
+
+  it('rejects release mirrors whose submitted publish tx did not create the release object', async () => {
+    mockedSuiClient.getTransactionBlock.mockImplementationOnce(async ({ digest }: { digest: string }) => {
+      expect(digest).toBe(PUBLISH_TX_DIGEST)
+      return {
+        digest,
+        effects: { status: { status: 'success' } },
+        objectChanges: [
+          {
+            type: 'created',
+            objectId: SERIES_ID,
+            objectType: `${PACKAGE_ID}::series::SoulSeries`,
+            sender: AUTHOR_ADDRESS,
+            owner: { AddressOwner: AUTHOR_ADDRESS },
+          },
+        ],
+        transaction: { data: { sender: AUTHOR_ADDRESS } },
+      }
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          releaseOnChainId: RELEASE_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction did not create the submitted Soul release',
+    })
+    expect(mockedDbCreateRelease).not.toHaveBeenCalled()
+  })
+
+  it('rejects publish tx object changes from a counterfeit package id', async () => {
+    mockedSuiClient.getTransactionBlock.mockImplementationOnce(async ({ digest }: { digest: string }) => {
+      expect(digest).toBe(PUBLISH_TX_DIGEST)
+      return {
+        digest,
+        effects: { status: { status: 'success' } },
+        objectChanges: [
+          {
+            type: 'created',
+            objectId: SERIES_ID,
+            objectType: `${COUNTERFEIT_PACKAGE_ID}::series::SoulSeries`,
+            sender: AUTHOR_ADDRESS,
+            owner: { AddressOwner: AUTHOR_ADDRESS },
+          },
+        ],
+        transaction: { data: { sender: AUTHOR_ADDRESS } },
+      }
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction did not create the submitted Soul series',
+    })
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
   })
 
   it('rate limits publish mirroring before on-chain verification work starts', async () => {
@@ -421,5 +595,6 @@ describe('soul publish route', () => {
         releaseId: 'release-db-1',
       },
     })
+    expect(mockedGetMemberPrimarySuiWalletAddress).toHaveBeenCalledWith('member-1')
   })
 })

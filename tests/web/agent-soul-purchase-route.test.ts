@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const SERIES_ID = `0x${'1'.repeat(64)}`
 const SUB_PLAN_ID = `0x${'2'.repeat(64)}`
 const AGENT_ADDRESS = `0x${'3'.repeat(64)}`
+const PACKAGE_ID = `0x${'9'.repeat(64)}`
 
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -52,6 +53,7 @@ describe('agent soul purchase prepare route', () => {
     vi.resetAllMocks()
     vi.resetModules()
     process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ID = '0xplatform'
+    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = PACKAGE_ID
     process.env.NEXT_PUBLIC_USDC_COIN_TYPE = '0xusdc::coin::USDC'
 
     mockedRequireAgentApiKey.mockResolvedValue({
@@ -83,10 +85,10 @@ describe('agent soul purchase prepare route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: SUB_PLAN_ID,
-        type: '0xpackage::purchase::PricingPlan',
+        type: `${PACKAGE_ID}::purchase::PricingPlan`,
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::purchase::PricingPlan',
+          type: `${PACKAGE_ID}::purchase::PricingPlan`,
           fields: {
             series_id: SERIES_ID,
             plan_type: 1,

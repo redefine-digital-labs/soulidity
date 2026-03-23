@@ -5,6 +5,7 @@ const SERIES_ID = `0x${'b'.repeat(64)}`
 const OTHER_SERIES_ID = `0x${'c'.repeat(64)}`
 const RELEASE_ID = `0x${'d'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
+const PACKAGE_ID = `0x${'9'.repeat(64)}`
 
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -62,6 +63,7 @@ describe('agent soul purchase execute route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = PACKAGE_ID
 
     mockedRequireAgentApiKey.mockResolvedValue({
       agent: { agentMemberId: 'agent-member-1' },
@@ -84,7 +86,7 @@ describe('agent soul purchase execute route', () => {
         {
           type: 'created',
           objectId: '0xpass',
-          objectType: '0xpackage::pass::PerpetualPass',
+          objectType: `${PACKAGE_ID}::pass::PerpetualPass`,
           sender: AGENT_ADDRESS,
           owner: { AddressOwner: AGENT_ADDRESS },
         },
@@ -94,13 +96,13 @@ describe('agent soul purchase execute route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: AGENT_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
-            series_id: OTHER_SERIES_ID,
+            series_id: SERIES_ID,
             release_id: RELEASE_ID,
             owner: AGENT_ADDRESS,
             agent_grant: { vec: [] },
@@ -189,6 +191,30 @@ describe('agent soul purchase execute route', () => {
     expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
   })
 
+  it('returns 503 when the soul package id env is missing before pass verification', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          signature: 'c2ln',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Service temporarily unavailable',
+    })
+    expect(mockedPrisma.soulSeries.findFirst).not.toHaveBeenCalled()
+    expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
+  })
+
   it('resolves UUID route params against the primary series id only', async () => {
     const seriesUuid = '550e8400-e29b-41d4-a716-446655440001'
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
@@ -212,6 +238,24 @@ describe('agent soul purchase execute route', () => {
   })
 
   it('rejects a created pass whose verified on-chain series does not match the route series', async () => {
+    mockedSuiClient.getObject.mockResolvedValueOnce({
+      data: {
+        objectId: '0xpass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
+        owner: { AddressOwner: AGENT_ADDRESS },
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          fields: {
+            series_id: OTHER_SERIES_ID,
+            release_id: RELEASE_ID,
+            owner: AGENT_ADDRESS,
+            agent_grant: { vec: [] },
+          },
+        },
+      },
+    })
+
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
     const response = await POST(
       new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
@@ -232,15 +276,78 @@ describe('agent soul purchase execute route', () => {
     expect(mockedDbCreatePass).not.toHaveBeenCalled()
   })
 
+  it('rejects successful transactions that do not create a Soul pass object', async () => {
+    mockedSuiClient.executeTransactionBlock.mockResolvedValueOnce({
+      digest: '0xdigest',
+      effects: { status: { status: 'success' } },
+      objectChanges: [],
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          signature: 'c2ln',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Transaction succeeded on chain, but no Soul pass object was created',
+      digest: '0xdigest',
+      dbSynced: false,
+      onChainSuccess: true,
+    })
+    expect(mockedDbCreatePass).not.toHaveBeenCalled()
+  })
+
+  it('releases the prepared purchase claim when finalization fails after a successful chain submit', async () => {
+    mockedFinalizePreparedSoulPurchaseExecution.mockRejectedValueOnce(new Error('prepared update failed'))
+    mockedSuiClient.executeTransactionBlock.mockResolvedValueOnce({
+      digest: '0xdigest',
+      effects: { status: { status: 'success' } },
+      objectChanges: [],
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          signature: 'c2ln',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction submitted, but local execution finalization failed',
+      digest: '0xdigest',
+      onChainSuccess: true,
+      dbSynced: false,
+    })
+    expect(mockedReleasePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+    })
+  })
+
   it('submits the server-prepared tx bytes instead of caller-supplied bytes', async () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: AGENT_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
             series_id: SERIES_ID,
             release_id: RELEASE_ID,
@@ -287,11 +394,11 @@ describe('agent soul purchase execute route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: AGENT_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
             series_id: SERIES_ID,
             release_id: RELEASE_ID,
@@ -351,11 +458,11 @@ describe('agent soul purchase execute route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: AGENT_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
             series_id: SERIES_ID,
             release_id: RELEASE_ID,
@@ -420,11 +527,11 @@ describe('agent soul purchase execute route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: AGENT_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
             series_id: SERIES_ID,
             release_id: RELEASE_ID,
@@ -526,11 +633,11 @@ describe('agent soul purchase execute route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: AGENT_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
             series_id: SERIES_ID,
             release_id: RELEASE_ID,

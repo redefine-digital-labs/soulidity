@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const CANONICAL_AGENT = `0x${'0'.repeat(61)}abc`
 const OTHER_AGENT = `0x${'0'.repeat(61)}def`
 const OWNER_ADDRESS = `0x${'1'.repeat(64)}`
+const PACKAGE_ID = `0x${'9'.repeat(64)}`
 const VALID_TX_DIGEST = '11111111111111111111111111111111'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
@@ -51,6 +52,7 @@ describe('soul pass grant route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = PACKAGE_ID
 
     mockedRequireIdentity.mockResolvedValue({
       error: null,
@@ -75,7 +77,7 @@ describe('soul pass grant route', () => {
         {
           type: 'mutated',
           objectId: '0xpass',
-          objectType: '0xpackage::pass::PerpetualPass',
+          objectType: `${PACKAGE_ID}::pass::PerpetualPass`,
           sender: OWNER_ADDRESS,
           owner: { AddressOwner: OWNER_ADDRESS },
           previousVersion: '1',
@@ -86,11 +88,11 @@ describe('soul pass grant route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: OWNER_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
             series_id: '0xseries',
             release_id: '0xrelease',
@@ -210,11 +212,11 @@ describe('soul pass grant route', () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xpass',
-        type: '0xpackage::pass::PerpetualPass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
         owner: { AddressOwner: OWNER_ADDRESS },
         content: {
           dataType: 'moveObject',
-          type: '0xpackage::pass::PerpetualPass',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
           fields: {
             series_id: '0xseries',
             release_id: '0xrelease',
@@ -271,6 +273,28 @@ describe('soul pass grant route', () => {
     expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
   })
 
+  it('returns structured 500 JSON when grant mirroring hits an unexpected sync error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockedSuiClient.getTransactionBlock.mockRejectedValueOnce(new Error('rpc down'))
+
+    const { POST } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/passes/0xpass/grant', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agentAddress: CANONICAL_AGENT, txDigest: VALID_TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ passId: '0xpass' }) },
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Sync failed',
+    })
+    expect(mockedDbSetAgentGrant).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
   it('replays the stored grant response for an already-processed txDigest', async () => {
     mockedGetStoredSoulTxSync.mockResolvedValue({
       statusCode: 200,
@@ -294,6 +318,27 @@ describe('soul pass grant route', () => {
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       agentGrant: CANONICAL_AGENT,
+    })
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedDbSetAgentGrant).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 for grant mirroring when the soul package id env is missing', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID
+
+    const { POST } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/passes/0xpass/grant', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agentAddress: '0xabc', txDigest: VALID_TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ passId: '0xpass' }) },
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Service temporarily unavailable',
     })
     expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
     expect(mockedDbSetAgentGrant).not.toHaveBeenCalled()
@@ -378,6 +423,27 @@ describe('soul pass grant route', () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ ok: true })
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedDbRevokeAgentGrant).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 for revoke mirroring when the soul package id env is missing', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID
+
+    const { DELETE } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
+    const response = await DELETE(
+      new Request('http://localhost/api/souls/passes/0xpass/grant', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: VALID_TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ passId: '0xpass' }) },
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Service temporarily unavailable',
+    })
     expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
     expect(mockedDbRevokeAgentGrant).not.toHaveBeenCalled()
   })
