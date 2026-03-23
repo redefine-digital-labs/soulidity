@@ -141,6 +141,33 @@ describe('Soul purchase route', () => {
     expect(mockedDbCreatePass).not.toHaveBeenCalled()
   })
 
+  it('rejects agent identities from using the human purchase mirror route', async () => {
+    mockedRequireIdentity.mockResolvedValue({
+      error: null,
+      identity: { memberId: 'agent-member-1', kind: 'agent' },
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/souls/${SERIES_ID}/purchase`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          passOnChainId: PASS_ID,
+          txDigest: VALID_TX_DIGEST,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Use the agent purchase API',
+    })
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
+    expect(mockedPrisma.soulSeries.findFirst).not.toHaveBeenCalled()
+  })
+
   it('rejects mirroring when the submitted transaction never created the requested pass', async () => {
     mockedSuiClient.getTransactionBlock.mockResolvedValue({
       digest: VALID_TX_DIGEST,

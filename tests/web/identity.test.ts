@@ -561,7 +561,7 @@ describe('resolveIdentity', () => {
     expect(consoleError).toHaveBeenCalledWith(
       'Unexpected wallet identity resolution failure',
       expect.objectContaining({
-        address: NORMALIZED_ABC,
+        address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
         nonce: 'nonce-db-error',
         error: dbError,
       }),

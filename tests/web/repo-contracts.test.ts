@@ -204,11 +204,27 @@ describe('repository contract guards', () => {
     expect(seriesStatusMigration).toContain(`CHECK ("status" IN ('active', 'inactive'))`)
   })
 
+  it('keeps Soul author/access lookup indexes and unit comments aligned in schema + migrations', () => {
+    const schema = readFileSync(join(repoRoot, 'prisma', 'schema.prisma'), 'utf8')
+    const indexMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260323150000_add_soul_author_and_access_indexes', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(schema).toContain('@@index([authorAddress])')
+    expect(schema).toContain('@@index([seriesId, ownerAddress, status])')
+    expect(schema).toContain('Stored in display cents, not atomic 6-decimal USDC units.')
+    expect(schema).toContain('Stored in atomic 6-decimal USDC units so prepared execution can be verified losslessly.')
+    expect(indexMigration).toContain('"soul_series_author_address_idx"')
+    expect(indexMigration).toContain('"soul_pass_snapshots_series_id_owner_address_status_idx"')
+  })
+
   it('prevents agent claim tokens in the URL from leaking via Referer headers', () => {
     const agentClaimLayout = readFileSync(join(repoRoot, 'web', 'app', 'agent-claim', 'layout.tsx'), 'utf8')
     const agentClaimPage = readFileSync(join(repoRoot, 'web', 'app', 'agent-claim', 'page.tsx'), 'utf8')
 
     expect(agentClaimLayout).toContain("referrer: 'no-referrer'")
+    expect(agentClaimLayout).toContain('index: false')
     expect(agentClaimPage).toContain('new URLSearchParams({ id, token }).toString()')
   })
 

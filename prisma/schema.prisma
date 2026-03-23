@@ -145,7 +145,6 @@ model Member {
   account     Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tgId        String?  @unique @map("tg_id")
   tgName      String?  @map("tg_name")
-  wallet      String?
   level       Int      @default(1)
   inviteCode  String?  @map("invite_code")
   avatar      String?
@@ -164,6 +163,7 @@ model Member {
   walletBindings  WalletBinding[]
   authoredSoulSeries SoulSeries[] @relation("SoulSeriesAuthor")
   ownedSoulPassSnapshots SoulPassSnapshot[] @relation("SoulPassSnapshotOwner")
+  preparedSoulPurchases SoulPreparedPurchase[] @relation("SoulPreparedPurchaseAgentMember")
 
   @@index([tgId])
   @@index([accountId, kind])
@@ -261,6 +261,7 @@ model Skill {
 model WalletChallenge {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   address   String
+  domain    String?
   nonce     String   @unique
   expiresAt DateTime @map("expires_at") @db.Timestamptz
   usedAt    DateTime? @map("used_at") @db.Timestamptz
@@ -304,9 +305,16 @@ model SoulSeries {
   readme             String?
   latestReleaseId    String?  @map("latest_release_id") @db.Uuid
   latestRelease      SoulRelease? @relation("SoulSeriesLatestRelease", fields: [latestReleaseId], references: [id], onDelete: SetNull)
-  oneTimePriceUsdc   Int?     @map("one_time_price_usdc")
-  subPriceUsdc       Int?     @map("sub_price_usdc")
-  subPeriodDays      Int?     @map("sub_period_days")
+  /// Stored in display cents, not atomic 6-decimal USDC units.
+  /// DB CHECKs in `20260322223000_review_batch_constraints` require one-time plan id and price to appear together.
+  oneTimePriceUsdc      Int?     @map("one_time_price_usdc")
+  oneTimePlanOnChainId  String?  @map("one_time_plan_on_chain_id")
+  /// Stored in display cents, not atomic 6-decimal USDC units.
+  /// DB CHECKs in `20260322223000_review_batch_constraints` require subscription price, period, and plan id to stay coupled.
+  subPriceUsdc          Int?     @map("sub_price_usdc")
+  subPlanOnChainId      String?  @map("sub_plan_on_chain_id")
+  subPeriodDays         Int?     @map("sub_period_days")
+  /// `20260323143000_add_soul_series_status_check` restricts status to the allowed enum-like values at the SQL layer.
   status             String   @default("active")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -315,6 +323,7 @@ model SoulSeries {
   passSnapshots  SoulPassSnapshot[]
 
   @@index([authorMemberId, status])
+  @@index([authorAddress])
   @@index([category])
   @@index([createdAt(sort: Desc)])
   @@map("soul_series")
@@ -359,33 +368,54 @@ model SoulPassSnapshot {
   @@index([ownerMemberId, status])
   @@index([ownerAddress, status])
   @@index([seriesId, status])
+  @@index([seriesId, ownerAddress, status])
   @@index([seriesId, agentGrant, status])
   @@map("soul_pass_snapshots")
 }
 
+model SoulTxSync {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routeKey    String   @map("route_key")
+  txDigest    String   @map("tx_digest")
+  actorKey    String   @map("actor_key")
+  resourceKey String   @map("resource_key")
+  statusCode  Int      @map("status_code")
+  responseBody Json    @map("response_body")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-model IndexerDeadLetterEvent {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  moduleName   String   @map("module_name")
-  eventType    String   @map("event_type")
-  txDigest     String   @map("tx_digest")
-  eventSeq     String   @map("event_seq")
-  payload      Json
-  errorMessage String   @map("error_message")
-  failureCount Int      @map("failure_count")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@unique([moduleName, txDigest, eventSeq])
-  @@index([createdAt])
-  @@map("indexer_dead_letter_events")
+  @@unique([routeKey, txDigest, actorKey, resourceKey])
+  @@index([resourceKey, createdAt(sort: Desc)])
+  @@map("soul_tx_syncs")
 }
 
-model IndexerCursor {
-  id         String   @id @default("sui-soul-events")
-  checkpoint BigInt   @default(0)
-  cursorData String?  @map("cursor_data")
-  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model SoulPreparedPurchase {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentMemberId    String   @map("agent_member_id") @db.Uuid
+  agentMember      Member   @relation("SoulPreparedPurchaseAgentMember", fields: [agentMemberId], references: [id], onDelete: Cascade)
+  seriesOnChainId  String   @map("series_on_chain_id")
+  planOnChainId    String   @map("plan_on_chain_id")
+  /// `20260322233000_add_soul_enum_checks` constrains plan_type to the supported values in SQL.
+  planType         String   @map("plan_type")
+  releaseOnChainId String?  @map("release_on_chain_id")
+  agentAddress     String   @map("agent_address")
+  /// Stored in atomic 6-decimal USDC units so prepared execution can be verified losslessly.
+  /// `20260323090000_add_prepared_purchase_amount_check` enforces strictly positive prepared purchase amounts.
+  amountUsdc       BigInt   @map("amount_usdc") @db.BigInt
+  /// `20260322123000_add_soul_tx_sync_and_prepared_purchase` caps the stored tx bytes payload length in SQL.
+  txBytesBase64    String   @map("tx_bytes_base64")
+  txBytesHash      String   @map("tx_bytes_hash")
+  expiresAt        DateTime @map("expires_at") @db.Timestamptz
+  executedAt       DateTime? @map("executed_at") @db.Timestamptz
+  executionTxDigest String? @map("execution_tx_digest")
+  resultStatusCode Int?     @map("result_status_code")
+  resultBody       Json?    @map("result_body")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@map("indexer_cursors")
+  @@index([agentMemberId, expiresAt])
+  @@index([seriesOnChainId, createdAt(sort: Desc)])
+  @@index([executionTxDigest])
+  @@unique([agentMemberId, txBytesHash])
+  @@map("soul_prepared_purchases")
 }

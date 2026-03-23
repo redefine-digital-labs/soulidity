@@ -260,6 +260,34 @@ describe('Seal envelope crypto', () => {
     ).rejects.toThrow('Seal documentId does not belong to the expected series')
   })
 
+  it('rejects decrypting a sidecar with an unsupported cipher label', async () => {
+    const { decryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
+
+    await expect(() =>
+      decryptBundle({
+        sealClient: {
+          decrypt: vi.fn(async () => new Uint8Array(64)),
+        } as never,
+        sessionKey: { key: 'session' } as never,
+        txBytes: new Uint8Array([1, 2, 3]),
+        encryptedData: new Uint8Array([4, 5, 6]),
+        sidecar: {
+          version: 1,
+          mode: 'seal-envelope',
+          documentId: `0x${'11'.repeat(32)}${'22'.repeat(32)}${'33'.repeat(16)}`,
+          encryptedDek: 'AQI',
+          iv: VALID_IV_BASE64,
+          cipher: 'CHACHA20-POLY1305',
+          mimeType: 'application/zip',
+          fileName: 'bundle.zip',
+          contentHash: VALID_CONTENT_HASH,
+        },
+        expectedSeriesObjectId: SERIES_OBJECT_ID,
+        expectedReleaseObjectId: RELEASE_OBJECT_ID,
+      }),
+    ).rejects.toThrow('Unsupported Seal envelope cipher')
+  })
+
   it('rejects building an approval tx when the document id is not bound to the requested release', async () => {
     const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
 

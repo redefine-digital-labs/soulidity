@@ -94,7 +94,10 @@ describe('POST /api/register', () => {
 
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.toEqual({ error: '注册失败，请稍后重试' })
-    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', expect.any(Error))
+    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', {
+      name: 'Error',
+      message: 'boom',
+    })
 
     consoleError.mockRestore()
   })
@@ -112,7 +115,10 @@ describe('POST /api/register', () => {
 
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.toEqual({ error: '注册失败，请稍后重试' })
-    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', expect.any(Error))
+    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', {
+      name: 'Error',
+      message: 'privy unavailable',
+    })
 
     consoleError.mockRestore()
   })

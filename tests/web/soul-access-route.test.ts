@@ -91,7 +91,7 @@ describe('Soul agent access route', () => {
       network: 'testnet',
       threshold: 2,
       verifyKeyServers: true,
-      serverConfigs: [{ objectId: '0xkeyserver', weight: 1 }],
+      serverConfigs: [{ objectId: '0xkeyserver', weight: 1, aggregatorUrl: 'https://aggregator.internal' }],
     })
     mockedHasCredentialedSealServerConfigs.mockReturnValue(false)
     mockedHasSealSessionConfig.mockReturnValue(true)

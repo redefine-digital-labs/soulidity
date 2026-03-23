@@ -242,4 +242,52 @@ describe('agent join route hardening', () => {
       error: 'This wallet address is already registered',
     })
   })
+
+  it('creates pending agent members without writing the legacy member.wallet field', async () => {
+    process.env.AUTH_SECRET = 'test-auth-secret'
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      nonce: 'nonce-1',
+      address: AGENT_WALLET,
+      domain: 'localhost',
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findUnique.mockResolvedValue(null)
+    mockedPrisma.member.create.mockResolvedValue({
+      id: 'member-agent-1',
+      displayName: 'Agent Smith',
+    })
+
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: AGENT_WALLET,
+          chain: 'sui',
+          name: 'Agent Smith',
+          nonce: 'nonce-1',
+          signature: 'signature',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockedPrisma.member.create).toHaveBeenCalledWith({
+      data: {
+        kind: 'agent',
+        displayName: 'Agent Smith',
+        walletBindings: {
+          create: {
+            chain: 'sui',
+            address: AGENT_WALLET,
+            isPrimary: true,
+          },
+        },
+      },
+      select: { id: true, displayName: true },
+    })
+  })
 })

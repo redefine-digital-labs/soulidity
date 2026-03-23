@@ -125,6 +125,30 @@ describe('soul pass grant route', () => {
     expect(mockedPrisma.soulPassSnapshot.findFirst).not.toHaveBeenCalled()
   })
 
+  it('rejects agent identities from setting grants through the human mirror route', async () => {
+    mockedRequireIdentity.mockResolvedValue({
+      error: null,
+      identity: { memberId: 'agent-member-1', kind: 'agent' },
+    })
+
+    const { POST } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/passes/0xpass/grant', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agentAddress: OTHER_AGENT, txDigest: VALID_TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ passId: '0xpass' }) },
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Only human accounts can manage agent grants',
+    })
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
+    expect(mockedPrisma.soulPassSnapshot.findFirst).not.toHaveBeenCalled()
+  })
+
   it('requires txDigest when setting an agent grant mirror', async () => {
     const { POST } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
     const response = await POST(
@@ -273,6 +297,30 @@ describe('soul pass grant route', () => {
     })
     expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
     expect(mockedDbSetAgentGrant).not.toHaveBeenCalled()
+  })
+
+  it('rejects agent identities from revoking grants through the human mirror route', async () => {
+    mockedRequireIdentity.mockResolvedValue({
+      error: null,
+      identity: { memberId: 'agent-member-1', kind: 'agent' },
+    })
+
+    const { DELETE } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
+    const response = await DELETE(
+      new Request('http://localhost/api/souls/passes/0xpass/grant', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: VALID_TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ passId: '0xpass' }) },
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Only human accounts can manage agent grants',
+    })
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
+    expect(mockedPrisma.soulPassSnapshot.findFirst).not.toHaveBeenCalled()
   })
 
   it('requires txDigest when revoking an agent grant mirror', async () => {
