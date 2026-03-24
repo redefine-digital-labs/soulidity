@@ -287,7 +287,7 @@ export async function POST(request: NextRequest) {
       })
 
       return responseBody
-    })
+    }, { timeout: 30_000 })
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {

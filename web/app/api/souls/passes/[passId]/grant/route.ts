@@ -155,7 +155,7 @@ export async function POST(
         statusCode: 200,
         body: responseBody,
       })
-    })
+    }, { timeout: 30_000 })
 
     return NextResponse.json(responseBody)
   } catch (error) {
@@ -270,7 +270,7 @@ export async function DELETE(
         statusCode: 200,
         body: responseBody,
       })
-    })
+    }, { timeout: 30_000 })
 
     return NextResponse.json(responseBody)
   } catch (error) {

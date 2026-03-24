@@ -187,7 +187,7 @@ export async function POST(
       })
 
       return nextResponseBody
-    })
+    }, { timeout: 30_000 })
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {
