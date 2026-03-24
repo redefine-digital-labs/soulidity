@@ -10,7 +10,7 @@ vi.mock('@web/lib/prisma', () => ({
   prisma: mockedPrisma,
 }))
 
-describe('getMemberPrimarySuiWalletAddress', () => {
+describe('sui wallet helpers', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
@@ -41,6 +41,33 @@ describe('getMemberPrimarySuiWalletAddress', () => {
     })
   })
 
+  it('returns all bound Sui wallets in primary-first order', async () => {
+    mockedPrisma.member.findUnique.mockResolvedValue({
+      walletBindings: [{ address: '0xprimary' }, { address: '0xsecondary' }],
+    })
+
+    const { getMemberSuiWalletAddresses } = await import('../../web/lib/auth/sui-wallet.ts')
+    await expect(getMemberSuiWalletAddresses('member-1')).resolves.toEqual([
+      '0xprimary',
+      '0xsecondary',
+    ])
+
+    expect(mockedPrisma.member.findUnique).toHaveBeenCalledWith({
+      where: { id: 'member-1' },
+      select: {
+        walletBindings: {
+          where: { chain: 'sui' },
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' },
+            { id: 'asc' },
+          ],
+          select: { address: true },
+        },
+      },
+    })
+  })
+
   it('returns null when no Sui binding exists', async () => {
     mockedPrisma.member.findUnique.mockResolvedValue({
       walletBindings: [],
@@ -55,5 +82,12 @@ describe('getMemberPrimarySuiWalletAddress', () => {
 
     const { getMemberPrimarySuiWalletAddress } = await import('../../web/lib/auth/sui-wallet.ts')
     await expect(getMemberPrimarySuiWalletAddress('member-1')).resolves.toBeNull()
+  })
+
+  it('returns an empty array when the member has no bound Sui wallets', async () => {
+    mockedPrisma.member.findUnique.mockResolvedValue(null)
+
+    const { getMemberSuiWalletAddresses } = await import('../../web/lib/auth/sui-wallet.ts')
+    await expect(getMemberSuiWalletAddresses('member-1')).resolves.toEqual([])
   })
 })

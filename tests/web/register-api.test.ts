@@ -204,6 +204,18 @@ describe('POST /api/register', () => {
     await expect(response.json()).resolves.toEqual({ error: '邀请码格式无效' })
   })
 
+  it('rejects non-string invite codes instead of coercing arrays into valid codes', async () => {
+    const { POST } = await import('../../web/app/api/register/route.ts')
+    const response = await POST(new Request('http://localhost/api/register', {
+      method: 'POST',
+      headers: AUTH_JSON_HEADERS,
+      body: JSON.stringify({ code: ['ABCD1234'] }),
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: '邀请码格式无效' })
+  })
+
   it('rejects already-registered accounts', async () => {
     mockedPrisma.account.findUnique.mockResolvedValueOnce({ id: 'existing-account' })
 

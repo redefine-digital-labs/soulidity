@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const BUYER_ADDRESS = `0x${'b'.repeat(64)}`
+const PRIMARY_BOUND_ADDRESS = `0x${'c'.repeat(64)}`
 const SERIES_ID = `0x${'1'.repeat(64)}`
 const PASS_ID = `0x${'2'.repeat(64)}`
 const RELEASE_ID = `0x${'3'.repeat(64)}`
+const ONETIME_PLAN_ID = `0x${'4'.repeat(64)}`
+const PLATFORM_CONFIG_ID = `0x${'5'.repeat(64)}`
+const PAYMENT_COIN_ID = `0x${'6'.repeat(64)}`
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
 const VALID_TX_DIGEST = '11111111111111111111111111111111'
 
@@ -13,7 +17,79 @@ function normalizeTestSuiAddress(value: string): string {
 }
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
-const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
+function buildObjectInput(objectId: string, objectType: 'sharedObject' | 'immOrOwnedObject' = 'sharedObject') {
+  if (objectType === 'sharedObject') {
+    return {
+      type: 'object',
+      objectId,
+      objectType: 'sharedObject' as const,
+      initialSharedVersion: '1',
+      mutable: true,
+    }
+  }
+
+  return {
+    type: 'object',
+    objectId,
+    objectType: 'immOrOwnedObject' as const,
+    version: '1',
+    digest: 'input-digest',
+  }
+}
+
+function buildPurchaseTransactionData(params?: {
+  functionName?: 'buy_perpetual' | 'buy_subscription'
+  planId?: string
+  releaseId?: string
+  sender?: string
+  seriesId?: string
+}) {
+  const functionName = params?.functionName ?? 'buy_perpetual'
+  const planId = params?.planId ?? ONETIME_PLAN_ID
+  const seriesId = params?.seriesId ?? SERIES_ID
+  const sender = params?.sender ?? BUYER_ADDRESS
+  const inputs = functionName === 'buy_perpetual'
+    ? [
+        buildObjectInput(PLATFORM_CONFIG_ID),
+        buildObjectInput(planId),
+        buildObjectInput(seriesId),
+        buildObjectInput(params?.releaseId ?? RELEASE_ID),
+        buildObjectInput(PAYMENT_COIN_ID, 'immOrOwnedObject'),
+      ]
+    : [
+        buildObjectInput(PLATFORM_CONFIG_ID),
+        buildObjectInput(planId),
+        buildObjectInput(seriesId),
+        buildObjectInput(PAYMENT_COIN_ID, 'immOrOwnedObject'),
+        buildObjectInput(`0x${'7'.repeat(64)}`),
+      ]
+
+  const argumentsList = functionName === 'buy_perpetual'
+    ? [{ Input: 0 }, { Input: 1 }, { Input: 2 }, { Input: 3 }, { Input: 4 }]
+    : [{ Input: 0 }, { Input: 1 }, { Input: 2 }, { Input: 3 }, { Input: 4 }]
+
+  return {
+    data: {
+      sender,
+      transaction: {
+        kind: 'ProgrammableTransaction',
+        inputs,
+        transactions: [
+          {
+            MoveCall: {
+              package: PACKAGE_ID,
+              module: 'purchase',
+              function: functionName,
+              arguments: argumentsList,
+            },
+          },
+        ],
+      },
+    },
+  }
+}
+
+const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulSeries: { findFirst: vi.fn() },
@@ -34,7 +110,7 @@ vi.mock('@web/lib/auth/identity', () => ({
 }))
 
 vi.mock('@web/lib/auth/sui-wallet', () => ({
-  getMemberPrimarySuiWalletAddress: mockedGetMemberPrimarySuiWalletAddress,
+  getMemberSuiWalletAddresses: mockedGetMemberSuiWalletAddresses,
 }))
 
 vi.mock('@web/lib/rate-limit', () => ({
@@ -68,7 +144,7 @@ describe('Soul purchase route', () => {
       error: null,
       identity: { memberId: 'member-1', kind: 'human' },
     })
-    mockedGetMemberPrimarySuiWalletAddress.mockResolvedValue(BUYER_ADDRESS)
+    mockedGetMemberSuiWalletAddresses.mockResolvedValue([BUYER_ADDRESS])
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedPrisma.soulSeries.findFirst.mockResolvedValue({
       id: 'series-db-1',
@@ -91,23 +167,50 @@ describe('Soul purchase route', () => {
           owner: { AddressOwner: BUYER_ADDRESS },
         },
       ],
+      transaction: buildPurchaseTransactionData(),
     })
-    mockedSuiClient.getObject.mockResolvedValue({
-      data: {
-        objectId: PASS_ID,
-        type: `${PACKAGE_ID}::pass::PerpetualPass`,
-        owner: { AddressOwner: BUYER_ADDRESS },
-        content: {
-          dataType: 'moveObject',
-          type: `${PACKAGE_ID}::pass::PerpetualPass`,
-          fields: {
-            series_id: SERIES_ID,
-            release_id: RELEASE_ID,
-            owner: BUYER_ADDRESS,
-            agent_grant: { vec: [] },
+    mockedSuiClient.getObject.mockImplementation(async ({ id }: { id: string }) => {
+      if (id === PASS_ID) {
+        return {
+          data: {
+            objectId: PASS_ID,
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            owner: { AddressOwner: BUYER_ADDRESS },
+            content: {
+              dataType: 'moveObject',
+              type: `${PACKAGE_ID}::pass::PerpetualPass`,
+              fields: {
+                series_id: SERIES_ID,
+                release_id: RELEASE_ID,
+                owner: BUYER_ADDRESS,
+                agent_grant: { vec: [] },
+              },
+            },
           },
-        },
-      },
+        }
+      }
+
+      if (id === ONETIME_PLAN_ID) {
+        return {
+          data: {
+            objectId: ONETIME_PLAN_ID,
+            type: `${PACKAGE_ID}::purchase::PricingPlan`,
+            content: {
+              dataType: 'moveObject',
+              type: `${PACKAGE_ID}::purchase::PricingPlan`,
+              fields: {
+                series_id: SERIES_ID,
+                plan_type: 0,
+                price_usdc: '1000000',
+                period_ms: '0',
+                active: true,
+              },
+            },
+          },
+        }
+      }
+
+      return { data: null }
     })
     mockedDbCreatePass.mockResolvedValue({
       id: 'pass-db-1',
@@ -297,6 +400,82 @@ describe('Soul purchase route', () => {
     consoleError.mockRestore()
   })
 
+  it('accepts mirroring after the purchased pricing plan has since been deactivated', async () => {
+    mockedSuiClient.getObject.mockImplementation(async ({ id }: { id: string }) => {
+      if (id === PASS_ID) {
+        return {
+          data: {
+            objectId: PASS_ID,
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            owner: { AddressOwner: BUYER_ADDRESS },
+            content: {
+              dataType: 'moveObject',
+              type: `${PACKAGE_ID}::pass::PerpetualPass`,
+              fields: {
+                series_id: SERIES_ID,
+                release_id: RELEASE_ID,
+                owner: BUYER_ADDRESS,
+                agent_grant: { vec: [] },
+              },
+            },
+          },
+        }
+      }
+
+      if (id === ONETIME_PLAN_ID) {
+        return {
+          data: {
+            objectId: ONETIME_PLAN_ID,
+            type: `${PACKAGE_ID}::purchase::PricingPlan`,
+            content: {
+              dataType: 'moveObject',
+              type: `${PACKAGE_ID}::purchase::PricingPlan`,
+              fields: {
+                series_id: SERIES_ID,
+                plan_type: 0,
+                price_usdc: '1000000',
+                period_ms: '0',
+                active: false,
+              },
+            },
+          },
+        }
+      }
+
+      return { data: null }
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/souls/${SERIES_ID}/purchase`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          passOnChainId: PASS_ID,
+          txDigest: VALID_TX_DIGEST,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(201)
+    await expect(response.json()).resolves.toEqual({
+      id: 'pass-db-1',
+      onChainId: '0xpass',
+      passType: 'perpetual',
+    })
+    expect(mockedDbCreatePass).toHaveBeenCalledWith({
+      db: mockedPrisma,
+      passOnChainId: PASS_ID,
+      seriesOnChainId: SERIES_ID,
+      ownerAddress: BUYER_ADDRESS,
+      ownerMemberId: 'member-1',
+      passType: 'perpetual',
+      lockedReleaseId: RELEASE_ID,
+      mintTxDigest: VALID_TX_DIGEST,
+    })
+  })
+
   it('derives pass type and locked release from verified chain state instead of request JSON', async () => {
     const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -338,7 +517,74 @@ describe('Soul purchase route', () => {
       },
     })
     expect(mockedPrisma.$transaction).toHaveBeenCalledTimes(1)
-    expect(mockedGetMemberPrimarySuiWalletAddress).toHaveBeenCalledWith('member-1')
+    expect(mockedGetMemberSuiWalletAddresses).toHaveBeenCalledWith('member-1')
+  })
+
+  it('accepts purchases made with a non-primary wallet that is still bound to the same member', async () => {
+    mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([PRIMARY_BOUND_ADDRESS, BUYER_ADDRESS])
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/souls/${SERIES_ID}/purchase`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          passOnChainId: PASS_ID,
+          txDigest: VALID_TX_DIGEST,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockedDbCreatePass).toHaveBeenCalledWith({
+      db: mockedPrisma,
+      passOnChainId: PASS_ID,
+      seriesOnChainId: SERIES_ID,
+      ownerAddress: BUYER_ADDRESS,
+      ownerMemberId: 'member-1',
+      passType: 'perpetual',
+      lockedReleaseId: RELEASE_ID,
+      mintTxDigest: VALID_TX_DIGEST,
+    })
+  })
+
+  it('rejects mirroring when the verified pass does not match the purchase call recorded in the transaction', async () => {
+    mockedSuiClient.getTransactionBlock.mockResolvedValueOnce({
+      digest: VALID_TX_DIGEST,
+      effects: { status: { status: 'success' } },
+      objectChanges: [
+        {
+          type: 'created',
+          objectId: PASS_ID,
+          objectType: `${PACKAGE_ID}::pass::PerpetualPass`,
+          sender: BUYER_ADDRESS,
+          owner: { AddressOwner: BUYER_ADDRESS },
+        },
+      ],
+      transaction: buildPurchaseTransactionData({
+        functionName: 'buy_subscription',
+      }),
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/souls/${SERIES_ID}/purchase`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          passOnChainId: PASS_ID,
+          txDigest: VALID_TX_DIGEST,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction does not contain a matching Soul purchase for the verified pass',
+    })
+    expect(mockedDbCreatePass).not.toHaveBeenCalled()
   })
 
   it('stores purchase sync results under the normalized request pass id even if RPC returns a different casing', async () => {
@@ -358,7 +604,9 @@ describe('Soul purchase route', () => {
           owner: { AddressOwner: BUYER_ADDRESS },
         },
       ],
-      transaction: { data: { sender: BUYER_ADDRESS } },
+      transaction: buildPurchaseTransactionData({
+        sender: BUYER_ADDRESS,
+      }),
     })
     mockedSuiClient.getObject.mockResolvedValueOnce({
       data: {

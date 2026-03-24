@@ -1,3 +1,5 @@
+import { normalizeSuiAddress } from '@mysten/sui/utils'
+
 export const SOUL_PUBLISH_DRAFT_STORAGE_KEY = 'soul-publish-draft'
 
 const SOUL_PUBLISH_DRAFT_VERSION = 1 as const
@@ -52,6 +54,23 @@ type SoulPublishDraftInput = {
 
 function nowIso() {
   return new Date().toISOString()
+}
+
+function getWalletScopedDraftStorageKey(walletAddress: string): string {
+  return `${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${normalizeDraftWalletAddress(walletAddress)}`
+}
+
+function normalizeDraftWalletAddress(walletAddress: string): string {
+  const trimmed = walletAddress.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  try {
+    return normalizeSuiAddress(trimmed)
+  } catch {
+    return trimmed.toLowerCase()
+  }
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -146,18 +165,49 @@ export function readSoulPublishDraft(
   storage: StorageLike,
   walletAddress: string,
 ): SoulPublishDraft | null {
-  const draft = parseSoulPublishDraft(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY))
-  if (!draft || draft.walletAddress !== walletAddress || draft.dbMirroredAt) {
+  const walletKey = getWalletScopedDraftStorageKey(walletAddress)
+  const draft = parseSoulPublishDraft(storage.getItem(walletKey))
+  const normalizedWalletAddress = normalizeDraftWalletAddress(walletAddress)
+  if (
+    draft
+    && normalizeDraftWalletAddress(draft.walletAddress) === normalizedWalletAddress
+  ) {
+    return draft.dbMirroredAt ? null : draft
+  }
+
+  const legacyDraft = parseSoulPublishDraft(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY))
+  if (
+    !legacyDraft
+    || normalizeDraftWalletAddress(legacyDraft.walletAddress) !== normalizedWalletAddress
+    || legacyDraft.dbMirroredAt
+  ) {
     return null
   }
-  return draft
+
+  if (storage.getItem(walletKey) == null) {
+    storage.setItem(walletKey, JSON.stringify(legacyDraft))
+  }
+  storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
+  return legacyDraft
 }
 
 export function writeSoulPublishDraft(storage: StorageLike, draft: SoulPublishDraft) {
-  storage.setItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY, JSON.stringify(draft))
+  storage.setItem(getWalletScopedDraftStorageKey(draft.walletAddress), JSON.stringify(draft))
+  storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
 }
 
-export function clearSoulPublishDraft(storage: StorageLike) {
+export function clearSoulPublishDraft(storage: StorageLike, walletAddress?: string) {
+  if (walletAddress) {
+    storage.removeItem(getWalletScopedDraftStorageKey(walletAddress))
+    const legacyDraft = parseSoulPublishDraft(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY))
+    if (
+      legacyDraft
+      && normalizeDraftWalletAddress(legacyDraft.walletAddress) === normalizeDraftWalletAddress(walletAddress)
+    ) {
+      storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
+    }
+    return
+  }
   storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
 }
 

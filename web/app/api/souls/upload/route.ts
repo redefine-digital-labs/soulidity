@@ -3,11 +3,14 @@ import { createHash } from 'node:crypto'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import {
+  FILE_TOO_LARGE_ERROR,
+  JSON_METADATA_TOO_LARGE_ERROR,
   MAX_SOUL_UPLOAD_BYTES,
   validateSoulUploadFile,
   validateSoulUploadSignature,
 } from '@web/lib/souls/upload-validation'
-import { uploadEncrypted, uploadPublic } from '@web/lib/services/walrus'
+import { SOUL_RELEASE_FLOW_DISABLED_MESSAGE } from '@web/lib/souls/publish-status'
+import { uploadPublic } from '@web/lib/services/walrus'
 
 const MAX_UPLOAD_FORMDATA_BYTES = MAX_SOUL_UPLOAD_BYTES + 1_024 * 1_024
 const SOUL_UPLOAD_RATE_LIMIT = {
@@ -55,31 +58,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'File exceeds 50 MB limit' }, { status: 413 })
   }
 
-  const formData = await req.formData()
-  const file = formData.get('file') as File | null
-  const type = formData.get('type') as string | null // 'encrypted' or 'public'
+  let formData: FormData
+  try {
+    formData = await req.formData()
+  } catch {
+    return NextResponse.json({ error: 'Invalid multipart form data' }, { status: 400 })
+  }
+  const file = formData.get('file')
+  const type = formData.get('type')
 
-  if (!file) {
+  if (!(file instanceof File)) {
     return NextResponse.json({ error: 'No file provided' }, { status: 400 })
   }
   if (type !== 'public' && type !== 'encrypted') {
     return NextResponse.json({ error: 'Invalid upload type' }, { status: 400 })
   }
+  if (type === 'encrypted') {
+    return NextResponse.json({ error: SOUL_RELEASE_FLOW_DISABLED_MESSAGE }, { status: 409 })
+  }
 
   const validationError = validateSoulUploadFile(file, type)
   if (validationError) {
-    const status = validationError === 'File exceeds 50 MB limit' ? 413 : 400
+    const status =
+      validationError === FILE_TOO_LARGE_ERROR || validationError === JSON_METADATA_TOO_LARGE_ERROR
+        ? 413
+        : 400
     return NextResponse.json({ error: validationError }, { status })
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const signatureError = validateSoulUploadSignature(buffer, type)
+  const signatureError = validateSoulUploadSignature(buffer, type, file.type)
   if (signatureError) {
     return NextResponse.json({ error: signatureError }, { status: 400 })
   }
   const contentHash = createHash('sha256').update(buffer).digest('hex')
-  const uploadFn = type === 'public' ? uploadPublic : uploadEncrypted
-  const blobId = await uploadFn(buffer)
+  const blobId = await uploadPublic(buffer)
 
   return NextResponse.json({ blobId, contentHash })
 }

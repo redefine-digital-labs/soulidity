@@ -120,6 +120,28 @@ describe('auth challenge route', () => {
     expect(mockedPrisma.walletChallenge.create).toHaveBeenCalled()
   })
 
+  it('sanitizes stale challenge cleanup failures before logging them', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockedPrisma.walletChallenge.deleteMany.mockRejectedValue(new Error('postgres://secret@db'))
+
+    const { GET } = await import('../../web/app/api/auth/challenge/route.ts')
+    const response = await GET(
+      {
+        nextUrl: new URL('http://localhost/api/auth/challenge?address=0x1'),
+        headers: new Headers({ host: 'evil.example.com' }),
+      } as any,
+    )
+
+    expect(response.status).toBe(200)
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith('Failed to cleanup stale wallet challenges', {
+        errorName: 'Error',
+      })
+    })
+
+    consoleError.mockRestore()
+  })
+
   it('rate limits challenge creation before writing wallet_challenges rows', async () => {
     mockedRateLimit.takeRateLimitToken.mockReturnValue({
       limited: true,

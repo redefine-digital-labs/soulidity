@@ -3,9 +3,13 @@ type RateLimitEntry = {
   resetAt: number
 }
 
+export const MISSING_CLIENT_IP_ERROR = 'Unable to determine client IP'
+
 const globalRateLimitState = globalThis as typeof globalThis & {
   __clawnewsRateLimitBuckets?: Map<string, RateLimitEntry>
+  __clawnewsRateLimitLastPruneAt?: number
 }
+const RATE_LIMIT_PRUNE_INTERVAL_MS = 10_000
 
 const buckets = globalRateLimitState.__clawnewsRateLimitBuckets ?? new Map<string, RateLimitEntry>()
 
@@ -14,6 +18,12 @@ if (!globalRateLimitState.__clawnewsRateLimitBuckets) {
 }
 
 function pruneExpiredEntries(now: number) {
+  const lastPruneAt = globalRateLimitState.__clawnewsRateLimitLastPruneAt ?? 0
+  if (now - lastPruneAt < RATE_LIMIT_PRUNE_INTERVAL_MS) {
+    return
+  }
+
+  globalRateLimitState.__clawnewsRateLimitLastPruneAt = now
   for (const [key, entry] of buckets.entries()) {
     if (entry.resetAt <= now) {
       buckets.delete(key)
@@ -21,7 +31,18 @@ function pruneExpiredEntries(now: number) {
   }
 }
 
-export function getRequestIp(headers: Headers): string {
+function trustsProxyHeaders(): boolean {
+  return process.env.TRUST_PROXY_HEADERS === 'true'
+    || process.env.VERCEL === '1'
+    || process.env.VERCEL === 'true'
+    || Boolean(process.env.VERCEL_ENV)
+}
+
+export function getRequestIp(headers: Headers): string | null {
+  if (!trustsProxyHeaders()) {
+    return null
+  }
+
   const realIp = headers.get('x-real-ip')?.trim()
   if (realIp) return realIp
 
@@ -31,11 +52,12 @@ export function getRequestIp(headers: Headers): string {
     if (first) return first
   }
 
-  return ''
+  return null
 }
 
 export function resetRateLimitBucketsForTests(): void {
   buckets.clear()
+  globalRateLimitState.__clawnewsRateLimitLastPruneAt = 0
 }
 
 export function takeRateLimitToken(

@@ -129,6 +129,28 @@ describe('agent join route hardening', () => {
     expect(mockedPrisma.walletChallenge.create).toHaveBeenCalled()
   })
 
+  it('sanitizes stale wallet challenge cleanup failures before logging them', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockedPrisma.walletChallenge.deleteMany.mockRejectedValue(new Error('postgres://secret@db'))
+
+    const { GET } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await GET(
+      {
+        nextUrl: new URL('http://localhost/api/agent-join?address=0xabc'),
+        headers: new Headers({ host: 'localhost' }),
+      } as any,
+    )
+
+    expect(response.status).toBe(200)
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith('Failed to cleanup stale wallet challenges', {
+        errorName: 'Error',
+      })
+    })
+
+    consoleError.mockRestore()
+  })
+
   it('rate limits challenge issuance before writing wallet_challenges rows', async () => {
     mockedRateLimit.takeRateLimitToken.mockReturnValue({
       limited: true,

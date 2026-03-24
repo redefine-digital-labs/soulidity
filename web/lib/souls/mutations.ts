@@ -8,12 +8,12 @@ export function useSetAgentGrant(passId: string) {
   const { getAuthHeaders } = useAuth()
 
   return useMutation({
-    mutationFn: async (agentAddress: string) => {
+    mutationFn: async (params: { agentAddress: string; txDigest: string }) => {
       const headers = await getAuthHeaders()
       const res = await fetch(`/api/souls/passes/${passId}/grant`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({ agentAddress }),
+        body: JSON.stringify(params),
       })
       if (!res.ok) throw new Error('Failed to set grant')
       return res.json()
@@ -29,11 +29,12 @@ export function useRevokeAgentGrant(passId: string) {
   const { getAuthHeaders } = useAuth()
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (params: { txDigest: string }) => {
       const headers = await getAuthHeaders()
       const res = await fetch(`/api/souls/passes/${passId}/grant`, {
         method: 'DELETE',
-        headers: headers,
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(params),
       })
       if (!res.ok) throw new Error('Failed to revoke grant')
       return res.json()

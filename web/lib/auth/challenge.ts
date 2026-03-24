@@ -84,3 +84,15 @@ export function shouldCleanupWalletChallenges(now = Date.now()): boolean {
   lastWalletChallengeCleanupAt = now
   return true
 }
+
+export function cleanupStaleWalletChallengesBestEffort(cleanup: () => Promise<unknown>, now = Date.now()): void {
+  if (!shouldCleanupWalletChallenges(now)) {
+    return
+  }
+
+  void cleanup().catch((error) => {
+    console.error('Failed to cleanup stale wallet challenges', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    })
+  })
+}

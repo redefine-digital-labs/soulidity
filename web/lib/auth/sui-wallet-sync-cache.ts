@@ -5,14 +5,22 @@ export type SuiWalletSyncState = {
 
 export const SUI_WALLET_SYNC_TTL_MS = 5 * 60 * 1000
 export const SUI_WALLET_SYNC_MAX_ENTRIES = 1024
+export const SUI_WALLET_SYNC_IN_FLIGHT_TIMEOUT_MS = 30_000
+const SUI_WALLET_SYNC_PRUNE_INTERVAL_MS = 10_000
 
 const suiWalletSyncCache = new Map<string, SuiWalletSyncState>()
+let lastSuiWalletSyncCachePruneAt = 0
 
 function isStale(state: SuiWalletSyncState, now: number) {
   return state.inFlight === null && now - state.lastAttemptAt >= SUI_WALLET_SYNC_TTL_MS
 }
 
 function pruneSuiWalletSyncCache(now: number) {
+  if (now - lastSuiWalletSyncCachePruneAt < SUI_WALLET_SYNC_PRUNE_INTERVAL_MS) {
+    return
+  }
+
+  lastSuiWalletSyncCachePruneAt = now
   for (const [memberId, state] of suiWalletSyncCache.entries()) {
     if (isStale(state, now)) {
       suiWalletSyncCache.delete(memberId)
@@ -39,7 +47,12 @@ function enforceSuiWalletSyncCacheCap() {
 
 export function getSuiWalletSyncCacheEntry(memberId: string, now = Date.now()) {
   pruneSuiWalletSyncCache(now)
-  return suiWalletSyncCache.get(memberId)
+  const state = suiWalletSyncCache.get(memberId)
+  if (state && isStale(state, now)) {
+    suiWalletSyncCache.delete(memberId)
+    return undefined
+  }
+  return state
 }
 
 export function setSuiWalletSyncCacheEntry(
@@ -59,4 +72,5 @@ export function getSuiWalletSyncCacheSize(now = Date.now()) {
 
 export function resetSuiWalletSyncCacheForTests() {
   suiWalletSyncCache.clear()
+  lastSuiWalletSyncCachePruneAt = 0
 }

@@ -169,7 +169,7 @@ describe('soul pass grant route', () => {
     expect(mockedDbSetAgentGrant).not.toHaveBeenCalled()
   })
 
-  it('only looks up active passes when mirroring grant changes', async () => {
+  it('only looks up active, unexpired passes when mirroring grant changes', async () => {
     const { POST } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
     const response = await POST(
       new Request('http://localhost/api/souls/passes/0xpass/grant', {
@@ -186,6 +186,10 @@ describe('soul pass grant route', () => {
         onChainId: '0xpass',
         ownerMemberId: 'member-1',
         status: 'active',
+        NOT: {
+          passType: 'subscription',
+          expiresAt: { lt: expect.any(Date) },
+        },
       },
     })
   })

@@ -164,10 +164,30 @@ describe('Seal service configuration', () => {
       verifyKeyServers: true,
       serverConfigs: [],
     })
-    expect(consoleWarn).toHaveBeenCalledWith(
-      'Failed to parse NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
-      expect.any(SyntaxError),
-    )
+    expect(consoleWarn).toHaveBeenCalledWith('Failed to parse NEXT_PUBLIC_SEAL_SERVER_CONFIGS')
+
+    consoleWarn.mockRestore()
+  })
+
+  it('does not include parser errors when credentialed seal config JSON is invalid', async () => {
+    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xsoul'
+    process.env.SEAL_SERVER_CONFIGS = '{invalid-json'
+
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const mod = await import('../../web/lib/services/seal.ts')
+
+    expect(mod.getSealRuntimeConfig()).toEqual({
+      network: 'testnet',
+      threshold: 1,
+      verifyKeyServers: true,
+      serverConfigs: [
+        {
+          objectId: '0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75',
+          weight: 1,
+        },
+      ],
+    })
+    expect(consoleWarn).toHaveBeenCalledWith('Failed to parse SEAL_SERVER_CONFIGS')
 
     consoleWarn.mockRestore()
   })

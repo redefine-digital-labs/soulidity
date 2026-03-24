@@ -450,6 +450,7 @@ describe('resolveIdentity', () => {
       nonce,
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
@@ -504,6 +505,7 @@ describe('resolveIdentity', () => {
       nonce: '22222222-2222-4222-8222-222222222222',
       usedAt: null,
       expiresAt: new Date('2000-01-01T00:00:00.000Z'),
+      domain: 'clawnews.example.com',
     })
 
     const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
@@ -526,6 +528,7 @@ describe('resolveIdentity', () => {
       nonce: '33333333-3333-4333-8333-333333333333',
       usedAt: new Date('2099-03-21T00:00:00.000Z'),
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
 
     const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
@@ -548,6 +551,7 @@ describe('resolveIdentity', () => {
       nonce: '44444444-4444-4444-8444-444444444444',
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
 
     const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
@@ -600,6 +604,7 @@ describe('resolveIdentity', () => {
       nonce: '66666666-6666-4666-8666-666666666666',
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
     mockedVerify.verifyPersonalMessageSignature.mockRejectedValue(new Error('Invalid signature'))
 
@@ -627,6 +632,7 @@ describe('resolveIdentity', () => {
       nonce: '77777777-7777-4777-8777-777777777777',
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedVerify.verifyPersonalMessageSignature.mockRejectedValue(new Error('Invalid signature'))
@@ -636,6 +642,30 @@ describe('resolveIdentity', () => {
     await expect(resolveIdentity()).resolves.toBeNull()
     expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
     expect(mockedPrisma.walletBinding.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('rejects wallet challenges that are missing the stored domain', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': '0xabc',
+      'x-agent-signature': 'signature',
+      'x-agent-message': '78787878-7878-4878-8878-787878787878',
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: NORMALIZED_ABC,
+      nonce: '78787878-7878-4878-8878-787878787878',
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: null,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
+    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
   })
 
   it('logs privy verification failures before failing closed', async () => {
@@ -729,6 +759,7 @@ describe('resolveIdentity', () => {
       nonce,
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
@@ -769,6 +800,7 @@ describe('resolveIdentity', () => {
       nonce,
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
@@ -803,6 +835,7 @@ describe('resolveIdentity', () => {
       nonce,
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
@@ -830,6 +863,7 @@ describe('resolveIdentity', () => {
   })
 
   it('fails closed for wallet auth when proxy IP headers are unavailable', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     delete process.env.TRUST_PROXY_HEADERS
     mockedHeaders.mockResolvedValue(new Headers({
       'x-agent-address': '0x1',
@@ -842,6 +876,13 @@ describe('resolveIdentity', () => {
     await expect(resolveIdentity()).resolves.toBeNull()
     expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
     expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
+    expect(consoleWarn).toHaveBeenCalledWith(
+      'Wallet auth requires a trusted client IP; check proxy forwarding or TRUST_PROXY_HEADERS',
+      {
+        address: '0x00000000...0001',
+      },
+    )
+    consoleWarn.mockRestore()
   })
 
   it('rejects trivially short agent API keys before hashing or DB lookup', async () => {

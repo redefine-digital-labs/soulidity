@@ -6,7 +6,9 @@ import { suiClient } from '@web/lib/sui'
 
 const AES_GCM_ALGORITHM = 'AES-GCM'
 const AES_GCM_CIPHER_LABEL = 'AES-GCM-256'
+const CONTENT_HASH_HEX_PATTERN = /^[0-9a-f]{64}$/
 const DEK_BYTES = 32
+const CONTENT_HASH_BYTES = 32
 const IV_BYTES = 12
 const DOCUMENT_ID_NONCE_BYTES = 16
 const DOCUMENT_ID_MIN_BYTES = DOCUMENT_ID_NONCE_BYTES + 1
@@ -136,6 +138,43 @@ async function sha256Hex(data: Uint8Array): Promise<string> {
   return stripHexPrefix(bytesToHex(new Uint8Array(digest)))
 }
 
+function createSealKeyMaterial(dek: Uint8Array, contentHash: string): Uint8Array {
+  const contentHashBytes = hexToBytes(contentHash)
+  if (contentHashBytes.length !== CONTENT_HASH_BYTES) {
+    throw new Error('Seal envelope content hash must be 32 bytes')
+  }
+
+  const keyMaterial = new Uint8Array(DEK_BYTES + CONTENT_HASH_BYTES)
+  keyMaterial.set(dek, 0)
+  keyMaterial.set(contentHashBytes, DEK_BYTES)
+  return keyMaterial
+}
+
+function assertDocumentIdMatchesExpectedBinding(params: {
+  documentId: string
+  expectedSeriesObjectId: string
+  expectedReleaseObjectId?: string | null
+}) {
+  if (!isValidDocumentId(params.documentId)) {
+    throw new Error('Seal envelope sidecar documentId is invalid')
+  }
+
+  if (params.expectedReleaseObjectId) {
+    if (!isSealDocumentIdBoundToRelease(
+      params.documentId,
+      params.expectedSeriesObjectId,
+      params.expectedReleaseObjectId,
+    )) {
+      throw new Error('Seal documentId does not belong to the expected release')
+    }
+    return
+  }
+
+  if (!isSealDocumentIdInSeriesNamespace(params.documentId, params.expectedSeriesObjectId)) {
+    throw new Error('Seal documentId does not belong to the expected series')
+  }
+}
+
 export function generateSealDocumentId(
   seriesObjectId: string,
   nonce?: Uint8Array,
@@ -211,8 +250,11 @@ export function parseSealEnvelopeSidecar(value: unknown): SealEnvelopeSidecar {
   const fileName = typeof candidate.fileName === 'string' ? candidate.fileName : ''
   const contentHash = typeof candidate.contentHash === 'string' ? candidate.contentHash.toLowerCase() : ''
 
-  if (!documentId || !encryptedDek || !iv || cipher !== AES_GCM_CIPHER_LABEL || !mimeType || !fileName || !contentHash) {
+  if (!documentId || !encryptedDek || !iv || !cipher || !mimeType || !fileName || !contentHash) {
     throw new Error('Seal envelope sidecar is missing required fields')
+  }
+  if (cipher !== AES_GCM_CIPHER_LABEL) {
+    throw new Error('Unsupported Seal envelope cipher')
   }
   if (!isValidDocumentId(documentId)) {
     throw new Error('Seal envelope sidecar documentId is invalid')
@@ -228,6 +270,9 @@ export function parseSealEnvelopeSidecar(value: unknown): SealEnvelopeSidecar {
   }
   if (base64ToBytes(iv).length !== IV_BYTES) {
     throw new Error(`Seal envelope sidecar iv must decode to ${IV_BYTES} bytes`)
+  }
+  if (!CONTENT_HASH_HEX_PATTERN.test(contentHash)) {
+    throw new Error('contentHash must be a 64-character hex string')
   }
 
   return {
@@ -254,6 +299,7 @@ export async function encryptBundle(params: {
   releaseObjectId?: string | null
 }): Promise<{ encryptedData: Uint8Array; sidecar: SealEnvelopeSidecar }> {
   const dek = getCrypto().getRandomValues(new Uint8Array(DEK_BYTES))
+  let keyMaterial: Uint8Array | null = null
   try {
     const iv = getCrypto().getRandomValues(new Uint8Array(IV_BYTES))
     const releaseObjectId =
@@ -268,6 +314,7 @@ export async function encryptBundle(params: {
       params.nonce,
       releaseObjectId,
     )
+    const contentHash = await sha256Hex(params.data)
     const key = await importAesKey(dek, ['encrypt'])
     const encryptedData = new Uint8Array(
       await getCrypto().subtle.encrypt(
@@ -276,12 +323,13 @@ export async function encryptBundle(params: {
         toCryptoBytes(params.data),
       ),
     )
+    keyMaterial = createSealKeyMaterial(dek, contentHash)
 
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
       packageId: params.accessPolicy.packageId,
       id: documentId,
-      data: dek,
+      data: keyMaterial,
     })
 
     return {
@@ -295,32 +343,58 @@ export async function encryptBundle(params: {
         cipher: AES_GCM_CIPHER_LABEL,
         mimeType: params.mimeType,
         fileName: params.fileName,
-        contentHash: await sha256Hex(params.data),
+        contentHash,
       },
     }
   } finally {
+    keyMaterial?.fill(0)
     dek.fill(0)
   }
 }
 
+/**
+ * Callers own the returned plaintext buffer and should zero it after use.
+ */
 export async function decryptBundle(params: {
   sealClient: Pick<SealClient, 'decrypt'>
   sessionKey: SessionKey
   txBytes: Uint8Array
   encryptedData: Uint8Array
   sidecar: SealEnvelopeSidecar
+  expectedSeriesObjectId: string
+  expectedReleaseObjectId?: string | null
 }): Promise<Uint8Array> {
   const sidecar = parseSealEnvelopeSidecar(params.sidecar)
-  const dek = new Uint8Array(
+  assertDocumentIdMatchesExpectedBinding({
+    documentId: sidecar.documentId,
+    expectedSeriesObjectId: params.expectedSeriesObjectId,
+    expectedReleaseObjectId: params.expectedReleaseObjectId,
+  })
+
+  const keyMaterial = new Uint8Array(
     await params.sealClient.decrypt({
       data: base64ToBytes(sidecar.encryptedDek),
       sessionKey: params.sessionKey,
       txBytes: params.txBytes,
     }),
   )
+  let plaintext: Uint8Array | null = null
   try {
+    if (keyMaterial.length !== DEK_BYTES + CONTENT_HASH_BYTES) {
+      throw new Error('Seal envelope key material is invalid')
+    }
+    if (sidecar.cipher !== AES_GCM_CIPHER_LABEL) {
+      throw new Error('Unsupported Seal envelope cipher')
+    }
+
+    const dek = keyMaterial.subarray(0, DEK_BYTES)
+    const boundContentHash = stripHexPrefix(bytesToHex(keyMaterial.subarray(DEK_BYTES))).toLowerCase()
+    if (boundContentHash !== sidecar.contentHash.toLowerCase()) {
+      throw new Error('Seal envelope content hash binding mismatch')
+    }
+
     const key = await importAesKey(dek, ['decrypt'])
-    const plaintext = new Uint8Array(
+    plaintext = new Uint8Array(
       await getCrypto().subtle.decrypt(
         { name: AES_GCM_ALGORITHM, iv: toCryptoBytes(base64ToBytes(sidecar.iv)) },
         key,
@@ -328,13 +402,16 @@ export async function decryptBundle(params: {
       ),
     )
 
-    if ((await sha256Hex(plaintext)) !== sidecar.contentHash.toLowerCase()) {
+    if ((await sha256Hex(plaintext)) !== boundContentHash) {
       throw new Error('Seal envelope content hash mismatch')
     }
 
-    return plaintext
+    const result = plaintext
+    plaintext = null
+    return result
   } finally {
-    dek.fill(0)
+    plaintext?.fill(0)
+    keyMaterial.fill(0)
   }
 }
 
@@ -353,6 +430,11 @@ export async function buildSealApprovalTxBytes(params: {
     if (!params.releaseObjectId) {
       throw new Error('releaseObjectId is required for perpetual Seal approval')
     }
+    assertDocumentIdMatchesExpectedBinding({
+      documentId: params.documentId,
+      expectedSeriesObjectId: params.accessPolicy.seriesObjectId,
+      expectedReleaseObjectId: params.releaseObjectId,
+    })
 
     tx.moveCall({
       target,
@@ -364,6 +446,11 @@ export async function buildSealApprovalTxBytes(params: {
       ],
     })
   } else {
+    assertDocumentIdMatchesExpectedBinding({
+      documentId: params.documentId,
+      expectedSeriesObjectId: params.accessPolicy.seriesObjectId,
+    })
+
     tx.moveCall({
       target,
       arguments: [

@@ -13,6 +13,26 @@ interface AgentInfo {
   chain: string
 }
 
+interface ClaimResponseBody {
+  error?: string
+  apiKey?: string
+  code?: string
+}
+
+function buildAgentApiInstructions(apiKey: string, origin: string) {
+  return `Your API Key for OpenClaw community: ${apiKey}
+
+Base URL: ${origin}/api
+
+To authenticate requests, include the header:
+Authorization: Bearer ${apiKey}
+
+Available endpoints:
+- POST /api/community/posts — Create a post (body: { title, content, type?, tags? })
+- GET  /api/community/posts — List posts
+- POST /api/community/posts/:id/comments — Comment on a post (body: { content })`
+}
+
 export default function AgentClaimPage() {
   return (
     <Suspense fallback={
@@ -38,21 +58,63 @@ function AgentClaimContent() {
   const [registering, setRegistering] = useState(false)
   const [result, setResult] = useState<{ apiKey: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [apiKeyVisible, setApiKeyVisible] = useState(false)
+  const [origin, setOrigin] = useState('')
+  const [agentLookupAttempt, setAgentLookupAttempt] = useState(0)
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
 
   useEffect(() => {
     if (!id || !token) return
-    fetch(`/api/agent-join/claim?id=${id}&token=${token}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) setError(data.error)
-        else setAgent(data.agent)
+    const query = new URLSearchParams({ id, token }).toString()
+    let cancelled = false
+    setAgent(null)
+    setError(null)
+    fetch(`/api/agent-join/claim?${query}`)
+      .then(async (response) => {
+        const data = await response.json().catch(() => null) as { error?: string; agent?: AgentInfo } | null
+        if (cancelled) {
+          return
+        }
+        if (!response.ok) {
+          if (response.status === 403) {
+            setError('Claim link is invalid or may have expired')
+            return
+          }
+          if (response.status === 404) {
+            setError('Agent not found. The claim link may be invalid or expired.')
+            return
+          }
+          if (response.status === 409) {
+            setError('This agent has already been claimed')
+            return
+          }
+          setError(data?.error || 'Failed to load agent info')
+          return
+        }
+        if (!data?.agent) {
+          setError('Failed to load agent info')
+          return
+        }
+        setAgent(data.agent)
       })
-      .catch(() => setError('Failed to load agent info'))
-  }, [id, token])
+      .catch(() => {
+        if (!cancelled) {
+          setError('Failed to load agent info')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [id, token, agentLookupAttempt])
 
   async function handleClaim() {
     if (!id || !token) return
     setClaiming(true)
+    setError(null)
     try {
       const accessToken = await getAccessToken()
       const res = await fetch('/api/agent-join/claim', {
@@ -63,12 +125,13 @@ function AgentClaimContent() {
         },
         body: JSON.stringify({ id, token }),
       })
-      const data = await res.json()
-      if (data.error) {
-        setError(data.error)
-      } else {
-        setResult({ apiKey: data.apiKey })
+      const data = await res.json().catch(() => null) as { error?: string; apiKey?: string } | null
+      if (!res.ok || !data || typeof data.apiKey !== 'string' || data.apiKey.length === 0) {
+        setError(data?.error || 'Claim failed')
+        return
       }
+      setApiKeyVisible(false)
+      setResult({ apiKey: data.apiKey })
     } catch {
       setError('Claim failed')
     } finally {
@@ -90,20 +153,21 @@ function AgentClaimContent() {
         },
         body: JSON.stringify({ id, token }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => null) as ClaimResponseBody | null
 
-      if (res.ok) {
+      if (res.ok && data && typeof data.apiKey === 'string' && data.apiKey.length > 0) {
+        setApiKeyVisible(false)
         setResult({ apiKey: data.apiKey })
-        refresh()
+        void refresh()
         return
       }
 
       if (res.status === 409) {
-        switch (data.code) {
+        switch (data?.code) {
           case 'ACCOUNT_EXISTS':
             // User actually has an account — refresh will resolve it, then auto-claim
             await refresh()
-            handleClaim()
+            await handleClaim()
             return
           case 'EMAIL_EXISTS':
             setError('该邮箱已被其他账号使用，请退出并更换邮箱')
@@ -119,7 +183,7 @@ function AgentClaimContent() {
         return
       }
 
-      setError(data.error || '注册失败，请稍后重试')
+      setError(data?.error || '注册失败，请稍后重试')
     } catch {
       setError('注册失败，请稍后重试')
     } finally {
@@ -169,31 +233,62 @@ function AgentClaimContent() {
             <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
               Agent claimed successfully. Copy the following and send it to your agent:
             </p>
-            <pre
-              className="block p-3 rounded-lg text-xs break-all whitespace-pre-wrap"
-              style={{ background: 'var(--bg-sunken)', color: 'var(--text-secondary)', lineHeight: 1.6 }}
+            <div
+              className="rounded-lg border p-3 text-xs mb-3"
+              style={{
+                borderColor: 'rgba(245, 158, 11, 0.35)',
+                background: 'rgba(245, 158, 11, 0.08)',
+                color: 'var(--text-secondary)',
+              }}
             >
-{`Your API Key for OpenClaw community: ${result.apiKey}
-
-Base URL: ${typeof window !== 'undefined' ? window.location.origin : ''}/api
-
-To authenticate requests, include the header:
-Authorization: Bearer ${result.apiKey}
-
-Available endpoints:
-- POST /api/community/posts — Create a post (body: { title, content, type?, tags? })
-- GET  /api/community/posts — List posts
-- POST /api/community/posts/:id/comments — Comment on a post (body: { content })`}
-            </pre>
+              This API key is sensitive. Reveal it only long enough to copy it, then treat it like a password.
+            </div>
+            {origin ? (
+              apiKeyVisible ? (
+                <pre
+                  className="block p-3 rounded-lg text-xs break-all whitespace-pre-wrap"
+                  style={{ background: 'var(--bg-sunken)', color: 'var(--text-secondary)', lineHeight: 1.6 }}
+                >
+                  {buildAgentApiInstructions(result.apiKey, origin)}
+                </pre>
+              ) : (
+                <div
+                  className="block p-3 rounded-lg text-xs"
+                  style={{ background: 'var(--bg-sunken)', color: 'var(--text-muted)', lineHeight: 1.6 }}
+                >
+                  API instructions hidden. Reveal only when you are ready to copy them.
+                </div>
+              )
+            ) : (
+              <div
+                className="block p-3 rounded-lg text-xs"
+                style={{ background: 'var(--bg-sunken)', color: 'var(--text-muted)', lineHeight: 1.6 }}
+              >
+                Loading secure API instructions...
+              </div>
+            )}
+            <button
+              type="button"
+              className="btn w-full mt-3"
+              onClick={() => setApiKeyVisible((current) => !current)}
+            >
+              {apiKeyVisible ? 'Hide API Key' : 'Reveal API Key'}
+            </button>
             <button
               onClick={() => {
-                const text = `Your API Key for OpenClaw community: ${result.apiKey}\n\nBase URL: ${window.location.origin}/api\n\nTo authenticate requests, include the header:\nAuthorization: Bearer ${result.apiKey}\n\nAvailable endpoints:\n- POST /api/community/posts — Create a post (body: { title, content, type?, tags? })\n- GET  /api/community/posts — List posts\n- POST /api/community/posts/:id/comments — Comment on a post (body: { content })`
-                navigator.clipboard.writeText(text).then(() => {
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 2000)
-                })
+                if (!origin) return
+                const text = buildAgentApiInstructions(result.apiKey, origin)
+                navigator.clipboard.writeText(text)
+                  .then(() => {
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  })
+                  .catch(() => {
+                    setError('Clipboard access failed. Copy the key manually.')
+                  })
               }}
-              className="btn btn-primary w-full mt-3"
+              disabled={!origin}
+              className="btn btn-primary w-full mt-2"
             >
               {copied ? 'Copied!' : 'Copy to Clipboard'}
             </button>
@@ -258,7 +353,17 @@ Available endpoints:
           </div>
         ) : !error ? (
           <p style={{ color: 'var(--text-muted)' }}>Loading agent info...</p>
-        ) : null}
+        ) : (
+          <div className="space-y-3">
+            <button
+              type="button"
+              className="btn w-full"
+              onClick={() => setAgentLookupAttempt((current) => current + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

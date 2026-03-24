@@ -25,8 +25,11 @@ public struct SubscriptionRenewed has copy, drop {
 
 // === Structs ===
 
-/// Permanent access pass, locked to a specific release
-public struct PerpetualPass has key, store {
+/// Permanent access pass, locked to a specific release.
+/// `owner` mirrors the Sui object owner so events and off-chain mirrors can
+/// read ownership without re-parsing object metadata. Package transfer helpers
+/// must keep both sources of truth in sync.
+public struct PerpetualPass has key {
     id: UID,
     series_id: ID,
     release_id: ID,
@@ -34,8 +37,10 @@ public struct PerpetualPass has key, store {
     agent_grant: Option<address>,
 }
 
-/// Time-limited subscription pass
-public struct SubscriptionPass has key, store {
+/// Time-limited subscription pass.
+/// `owner` mirrors the Sui object owner for the same reason as
+/// `PerpetualPass.owner`, and must only change through package transfer helpers.
+public struct SubscriptionPass has key {
     id: UID,
     series_id: ID,
     owner: address,
@@ -44,7 +49,7 @@ public struct SubscriptionPass has key, store {
     agent_grant: Option<address>,
 }
 
-// === Internal Mint Functions (called by purchase/relayer) ===
+// === Internal Mint Functions (called by purchase) ===
 
 /// Mint a perpetual pass (package-level visibility)
 public(package) fun mint_perpetual(
@@ -137,10 +142,39 @@ public(package) fun subscription_agent_grant_mut(pass: &mut SubscriptionPass): &
     &mut pass.agent_grant
 }
 
-public(package) fun set_perpetual_owner(pass: &mut PerpetualPass, new_owner: address) {
-    pass.owner = new_owner;
+public(package) fun transfer_perpetual(mut pass: PerpetualPass, recipient: address) {
+    pass.owner = recipient;
+    transfer::transfer(pass, recipient);
 }
 
-public(package) fun set_subscription_owner(pass: &mut SubscriptionPass, new_owner: address) {
-    pass.owner = new_owner;
+public(package) fun transfer_subscription(mut pass: SubscriptionPass, recipient: address) {
+    pass.owner = recipient;
+    transfer::transfer(pass, recipient);
+}
+
+// === Test Helpers ===
+
+#[test_only]
+public(package) fun destroy_perpetual_for_testing(pass: PerpetualPass) {
+    let PerpetualPass {
+        id,
+        series_id: _,
+        release_id: _,
+        owner: _,
+        agent_grant: _,
+    } = pass;
+    id.delete();
+}
+
+#[test_only]
+public(package) fun destroy_subscription_for_testing(pass: SubscriptionPass) {
+    let SubscriptionPass {
+        id,
+        series_id: _,
+        owner: _,
+        expires_at: _,
+        period_ms: _,
+        agent_grant: _,
+    } = pass;
+    id.delete();
 }

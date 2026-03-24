@@ -4,6 +4,8 @@ import { createNetworkConfig, SuiClientProvider, WalletProvider } from '@mysten/
 import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
+import { PublicNav } from '@web/components/public-nav'
+import { resolveSuiNetwork } from '@web/lib/sui-network'
 import '@mysten/dapp-kit/dist/index.css'
 
 const { networkConfig } = createNetworkConfig({
@@ -11,7 +13,7 @@ const { networkConfig } = createNetworkConfig({
   mainnet: { url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' },
 })
 
-const defaultNetwork = (process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet') as keyof typeof networkConfig
+const defaultNetwork = resolveSuiNetwork(process.env.NEXT_PUBLIC_SUI_NETWORK) as keyof typeof networkConfig
 
 export default function SoulsLayout({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
@@ -20,6 +22,7 @@ export default function SoulsLayout({ children }: { children: React.ReactNode })
     <QueryClientProvider client={queryClient}>
       <SuiClientProvider networks={networkConfig} defaultNetwork={defaultNetwork}>
         <WalletProvider autoConnect>
+          <PublicNav />
           {children}
         </WalletProvider>
       </SuiClientProvider>

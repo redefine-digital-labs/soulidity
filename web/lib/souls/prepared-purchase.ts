@@ -1,15 +1,51 @@
 import { createHash } from 'node:crypto'
 import { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
+import { sameSuiValue } from '@web/lib/souls/on-chain-verification'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 
 const PREPARED_PURCHASE_TTL_MS = 5 * 60 * 1000
+const PREPARED_PURCHASE_STALE_RETENTION_MS = PREPARED_PURCHASE_TTL_MS
+const PREPARED_PURCHASE_CLEANUP_THROTTLE_MS = 60 * 1000
 const MAX_PREPARED_TX_BYTES_BASE64 = 64 * 1024
 
 type PreparedPurchaseResultBody = Record<string, unknown>
+type PreparedPurchaseDbClient = typeof prisma | Prisma.TransactionClient
+
+let lastPreparedPurchaseCleanupAt = 0
 
 export function hashPreparedSoulPurchaseTxBytes(txBytesBase64: string): string {
   return createHash('sha256').update(txBytesBase64).digest('hex')
+}
+
+function getPreparedPurchaseCleanupCutoff(now = Date.now()): Date {
+  return new Date(now - PREPARED_PURCHASE_STALE_RETENTION_MS)
+}
+
+function shouldCleanupPreparedPurchases(now = Date.now()): boolean {
+  if (now - lastPreparedPurchaseCleanupAt < PREPARED_PURCHASE_CLEANUP_THROTTLE_MS) {
+    return false
+  }
+
+  lastPreparedPurchaseCleanupAt = now
+  return true
+}
+
+function cleanupExpiredPreparedPurchases(): void {
+  if (!shouldCleanupPreparedPurchases()) {
+    return
+  }
+
+  void prisma.soulPreparedPurchase.deleteMany({
+    where: {
+      expiresAt: { lt: getPreparedPurchaseCleanupCutoff() },
+      executedAt: null,
+      resultStatusCode: null,
+      executionTxDigest: null,
+    },
+  }).catch((error) => {
+    console.error('Failed to cleanup expired prepared purchases', { error })
+  })
 }
 
 export async function createPreparedSoulPurchase(params: {
@@ -25,6 +61,8 @@ export async function createPreparedSoulPurchase(params: {
   if (Buffer.byteLength(params.txBytesBase64, 'utf8') > MAX_PREPARED_TX_BYTES_BASE64) {
     throw new Error('Prepared purchase txBytesBase64 exceeds the size limit')
   }
+
+  cleanupExpiredPreparedPurchases()
 
   const expiresAt = new Date(Date.now() + PREPARED_PURCHASE_TTL_MS)
   const txBytesHash = hashPreparedSoulPurchaseTxBytes(params.txBytesBase64)
@@ -64,13 +102,18 @@ export async function createPreparedSoulPurchase(params: {
         id: true,
         expiresAt: true,
         executedAt: true,
+        executionTxDigest: true,
         resultStatusCode: true,
       },
     })
     if (existing) {
       if (!existing.executedAt && existing.resultStatusCode == null) {
-        return prisma.soulPreparedPurchase.update({
-          where: { id: existing.id },
+        const updated = await prisma.soulPreparedPurchase.updateMany({
+          where: {
+            id: existing.id,
+            executedAt: null,
+            resultStatusCode: null,
+          },
           data: {
             seriesOnChainId: params.seriesOnChainId,
             planOnChainId: params.planOnChainId,
@@ -81,11 +124,48 @@ export async function createPreparedSoulPurchase(params: {
             txBytesBase64: params.txBytesBase64,
             expiresAt,
           },
-          select: {
-            id: true,
-            expiresAt: true,
+        })
+        if (updated.count === 0) {
+          return existing
+        }
+        return {
+          id: existing.id,
+          expiresAt,
+        }
+      }
+
+      if (
+        existing.executedAt
+        && existing.executionTxDigest == null
+        && existing.resultStatusCode == null
+        && existing.expiresAt.getTime() <= Date.now()
+      ) {
+        const reclaimed = await prisma.soulPreparedPurchase.updateMany({
+          where: {
+            id: existing.id,
+            executedAt: { not: null },
+            executionTxDigest: null,
+            resultStatusCode: null,
+            expiresAt: { lte: new Date() },
+          },
+          data: {
+            seriesOnChainId: params.seriesOnChainId,
+            planOnChainId: params.planOnChainId,
+            planType: params.planType,
+            releaseOnChainId: params.releaseOnChainId,
+            agentAddress: params.agentAddress,
+            amountUsdc: params.amountUsdc,
+            txBytesBase64: params.txBytesBase64,
+            executedAt: null,
+            expiresAt,
           },
         })
+        if (reclaimed.count > 0) {
+          return {
+            id: existing.id,
+            expiresAt,
+          }
+        }
       }
 
       return existing
@@ -140,8 +220,8 @@ export async function getPreparedSoulPurchaseForExecution(params: {
 
   if (
     prepared.agentMemberId !== params.agentMemberId
-    || prepared.seriesOnChainId !== params.seriesOnChainId
-    || prepared.expiresAt.getTime() <= Date.now()
+    || !sameSuiValue(prepared.seriesOnChainId, params.seriesOnChainId)
+    || (prepared.expiresAt.getTime() <= Date.now() && prepared.resultStatusCode == null)
   ) {
     return null
   }
@@ -183,11 +263,30 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
 } | null> {
   return prisma.$transaction(async (tx) => {
     const now = new Date()
+    const current = await tx.soulPreparedPurchase.findUnique({
+      where: { id: params.preparedPurchaseId },
+      select: {
+        id: true,
+        agentMemberId: true,
+        seriesOnChainId: true,
+        executedAt: true,
+        expiresAt: true,
+      },
+    })
+
+    if (
+      !current
+      || current.agentMemberId !== params.agentMemberId
+      || !sameSuiValue(current.seriesOnChainId, params.seriesOnChainId)
+      || current.executedAt
+      || current.expiresAt.getTime() <= now.getTime()
+    ) {
+      return null
+    }
+
     const claimed = await tx.soulPreparedPurchase.updateMany({
       where: {
         id: params.preparedPurchaseId,
-        agentMemberId: params.agentMemberId,
-        seriesOnChainId: params.seriesOnChainId,
         executedAt: null,
         expiresAt: { gt: now },
       },
@@ -244,8 +343,10 @@ export async function finalizePreparedSoulPurchaseExecution(params: {
   txDigest: string
   resultStatusCode: number
   resultBody: PreparedPurchaseResultBody
+  db?: PreparedPurchaseDbClient
 }): Promise<void> {
-  await prisma.soulPreparedPurchase.update({
+  const db = params.db ?? prisma
+  await db.soulPreparedPurchase.update({
     where: { id: params.preparedPurchaseId },
     data: {
       executionTxDigest: params.txDigest,

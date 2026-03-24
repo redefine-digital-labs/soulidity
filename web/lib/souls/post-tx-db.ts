@@ -7,12 +7,26 @@
  */
 
 import { Prisma } from '../../../generated/prisma/client'
+import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { prisma } from '@web/lib/prisma'
 
 const USDC_ATOMIC_TO_CENTS = 10_000n
 const HALF_CENT_IN_ATOMIC_USDC = 5_000n
 const MS_PER_DAY = 86_400_000
+const MAX_SAFE_PERIOD_MS = BigInt(Number.MAX_SAFE_INTEGER)
 type SoulDbClient = typeof prisma | Prisma.TransactionClient
+
+function sameSuiAddress(left: string, right: string): boolean {
+  try {
+    const normalizedLeft = normalizeSuiAddress(left)
+    const normalizedRight = normalizeSuiAddress(right)
+    return isValidSuiAddress(normalizedLeft)
+      && isValidSuiAddress(normalizedRight)
+      && normalizedLeft === normalizedRight
+  } catch {
+    return false
+  }
+}
 
 function atomicUsdcToRoundedCents(amountUsdc: bigint): number {
   if (amountUsdc <= 0n) {
@@ -51,6 +65,23 @@ export async function dbCreateSeries(params: {
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
+  const existingSeries = await db.soulSeries.findUnique({
+    where: { onChainId: params.seriesOnChainId },
+    select: {
+      authorMemberId: true,
+      authorAddress: true,
+    },
+  })
+  if (
+    existingSeries
+    && (
+      existingSeries.authorMemberId !== params.authorMemberId
+      || !sameSuiAddress(existingSeries.authorAddress, params.authorAddress)
+    )
+  ) {
+    throw new Error('existing Soul series author does not match the submitted on-chain author')
+  }
+
   return db.soulSeries.upsert({
     where: { onChainId: params.seriesOnChainId },
     create: {
@@ -65,7 +96,6 @@ export async function dbCreateSeries(params: {
       readme: params.readme ?? null,
     },
     update: {
-      authorMemberId: params.authorMemberId,
       authorAddress: params.authorAddress,
       name: params.name,
       description: params.description,
@@ -104,6 +134,7 @@ export async function dbCreateRelease(params: {
       changelog: params.changelog ?? null,
     },
     update: {
+      seriesId: params.seriesDbId,
       version: params.version,
       walrusBlobRef: params.walrusBlobRef,
       publicMetadataRef: params.publicMetadataRef ?? null,
@@ -145,7 +176,13 @@ export async function dbUpdatePricingPlan(params: {
       },
     })
   } else {
-    const periodDays = Math.ceil(Number(params.periodMs ?? 0n) / MS_PER_DAY)
+    if (params.periodMs == null || params.periodMs <= 0n) {
+      throw new Error('subscription pricing plans require a positive periodMs')
+    }
+    if (params.periodMs > MAX_SAFE_PERIOD_MS) {
+      throw new Error('subscription periodMs exceeds supported range')
+    }
+    const periodDays = Math.ceil(Number(params.periodMs) / MS_PER_DAY)
     await db.soulSeries.updateMany({
       where: { onChainId: params.seriesOnChainId },
       data: {
@@ -173,6 +210,13 @@ export async function dbCreatePass(params: {
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
+  if (params.passType === 'perpetual' && !params.lockedReleaseId) {
+    throw new Error('perpetual passes require a lockedReleaseId')
+  }
+  if (params.passType === 'subscription' && params.lockedReleaseId != null) {
+    throw new Error('subscription passes cannot set lockedReleaseId')
+  }
+
   // Resolve ownerMemberId if not provided
   const ownerMemberId = params.ownerMemberId ?? (await resolveOwnerMemberId(db, params.ownerAddress))
 

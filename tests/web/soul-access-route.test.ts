@@ -4,6 +4,7 @@ const VALID_SERIES_ID = `0x${'11'.repeat(32)}`
 const VALID_RELEASE_ID = `0x${'33'.repeat(32)}`
 const VALID_PASS_ID = `0x${'44'.repeat(32)}`
 const AGENT_ADDRESS = `0x${'55'.repeat(32)}`
+const PACKAGE_ID = `0x${'66'.repeat(32)}`
 
 const mockedPrisma = vi.hoisted(() => ({
   soulSeries: { findFirst: vi.fn() },
@@ -21,6 +22,9 @@ const mockedHasSealSessionConfig = vi.hoisted(() => vi.fn())
 const mockedNormalizeWalrusBlobId = vi.hoisted(() => vi.fn())
 const mockedGetBlobUrl = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
+const mockedSuiClient = vi.hoisted(() => ({
+  getObject: vi.fn(),
+}))
 
 vi.mock('@web/lib/prisma', () => ({ prisma: mockedPrisma }))
 vi.mock('@web/lib/auth/require-agent-api-key', () => ({ requireAgentApiKey: mockedRequireAgentApiKey }))
@@ -36,11 +40,13 @@ vi.mock('@web/lib/services/walrus', () => ({
   normalizeWalrusBlobId: mockedNormalizeWalrusBlobId,
 }))
 vi.mock('@web/lib/rate-limit', () => ({ takeRateLimitToken: mockedTakeRateLimitToken }))
+vi.mock('@web/lib/sui', () => ({ suiClient: mockedSuiClient }))
 
 describe('Soul agent access route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = PACKAGE_ID
 
     mockedRequireAgentApiKey.mockResolvedValue({
       agent: { agentMemberId: 'agent-member-1' },
@@ -100,6 +106,23 @@ describe('Soul agent access route', () => {
     mockedGetBlobUrl.mockImplementation(
       (blobId: string) => `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${blobId}`,
     )
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: VALID_PASS_ID,
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
+        owner: { AddressOwner: AGENT_ADDRESS },
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          fields: {
+            owner: AGENT_ADDRESS,
+            series_id: VALID_SERIES_ID,
+            release_id: VALID_RELEASE_ID,
+            agent_grant: { vec: [] },
+          },
+        },
+      },
+    })
   })
 
   it('rate limits before doing the heavy read path', async () => {
@@ -202,6 +225,23 @@ describe('Soul agent access route', () => {
       ownerAddress: AGENT_ADDRESS,
       agentGrant: null,
     })
+    mockedSuiClient.getObject.mockResolvedValueOnce({
+      data: {
+        objectId: VALID_PASS_ID,
+        type: `${PACKAGE_ID}::pass::SubscriptionPass`,
+        owner: { AddressOwner: AGENT_ADDRESS },
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::pass::SubscriptionPass`,
+          fields: {
+            owner: AGENT_ADDRESS,
+            series_id: VALID_SERIES_ID,
+            expires_at: `${Date.now() + 60_000}`,
+            agent_grant: { vec: [] },
+          },
+        },
+      },
+    })
 
     const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')
     const response = await GET(
@@ -214,6 +254,44 @@ describe('Soul agent access route', () => {
     expect(body.accessPolicy.functionName).toBe('seal_approve_subscription')
     expect(body.accessPolicy.clockObjectId).toBe('0x6')
     expect(body.passType).toBe('subscription')
+  })
+
+  it('fails closed when the DB grant is stale but the on-chain pass no longer grants or owns access', async () => {
+    mockedPrisma.soulPassSnapshot.findFirst.mockResolvedValue({
+      passType: 'perpetual',
+      onChainId: VALID_PASS_ID,
+      lockedReleaseId: VALID_RELEASE_ID,
+      ownerAddress: `0x${'77'.repeat(32)}`,
+      agentGrant: AGENT_ADDRESS,
+    })
+    mockedSuiClient.getObject.mockResolvedValueOnce({
+      data: {
+        objectId: VALID_PASS_ID,
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
+        owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          fields: {
+            owner: `0x${'77'.repeat(32)}`,
+            series_id: VALID_SERIES_ID,
+            release_id: VALID_RELEASE_ID,
+            agent_grant: { vec: [] },
+          },
+        },
+      },
+    })
+
+    const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')
+    const response = await GET(
+      new Request(`http://localhost/api/agent/souls/${VALID_SERIES_ID}/access`) as any,
+      { params: Promise.resolve({ id: VALID_SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'No active pass or direct ownership for this Soul',
+    })
   })
 
   it('normalizes 0x-prefixed contentHash', async () => {

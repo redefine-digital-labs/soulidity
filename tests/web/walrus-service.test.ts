@@ -68,6 +68,18 @@ describe('Walrus blob validation', () => {
     )
   })
 
+  it('recomputes runtime config on each call during development', async () => {
+    process.env.NODE_ENV = 'development'
+    process.env.WALRUS_AGGREGATOR_URL = 'https://aggregator.dev-1.example'
+
+    const { getWalrusRuntimeConfig } = await import('../../web/lib/services/walrus.ts')
+
+    expect(getWalrusRuntimeConfig().aggregatorUrl).toBe('https://aggregator.dev-1.example')
+
+    process.env.WALRUS_AGGREGATOR_URL = 'https://aggregator.dev-2.example'
+    expect(getWalrusRuntimeConfig().aggregatorUrl).toBe('https://aggregator.dev-2.example')
+  })
+
   it('caps upload retries instead of walking every testnet publisher twice', async () => {
     global.fetch = vi.fn(async () => {
       throw new Error('publisher down')
@@ -172,6 +184,80 @@ describe('Walrus blob validation', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(999)
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(uploadPromise).resolves.toBe('blob-123')
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('caps 429 retry delays to ten seconds per attempt', async () => {
+    vi.useFakeTimers()
+    let attempts = 0
+    global.fetch = vi.fn(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        return new Response('slow down', {
+          status: 429,
+          headers: { 'Retry-After': '999999' },
+        })
+      }
+
+      return new Response(
+        JSON.stringify({
+          newlyCreated: {
+            blobObject: {
+              blobId: 'blob-123',
+              id: 'walrus-object-1',
+            },
+          },
+        }),
+      )
+    }) as typeof fetch
+
+    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+
+    const uploadPromise = uploadPublic(Buffer.from('payload'))
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(uploadPromise).resolves.toBe('blob-123')
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses a minimal backoff for past Retry-After HTTP-date values', async () => {
+    vi.useFakeTimers()
+    let attempts = 0
+    global.fetch = vi.fn(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        return new Response('slow down', {
+          status: 429,
+          headers: { 'Retry-After': 'Wed, 21 Oct 2015 07:28:00 GMT' },
+        })
+      }
+
+      return new Response(
+        JSON.stringify({
+          newlyCreated: {
+            blobObject: {
+              blobId: 'blob-123',
+              id: 'walrus-object-1',
+            },
+          },
+        }),
+      )
+    }) as typeof fetch
+
+    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+
+    const uploadPromise = uploadPublic(Buffer.from('payload'))
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(499)
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(1)

@@ -7,6 +7,53 @@ import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 
 const CLOCK = '0x6'
+const MAX_NAME_BYTES = 256
+const MAX_DESCRIPTION_BYTES = 4096
+const MAX_CATEGORY_BYTES = 64
+const MAX_TAGS = 10
+const MAX_TAG_BYTES = 64
+const MAX_PREVIEW_IMAGES = 10
+const MAX_PREVIEW_IMAGE_BYTES = 512
+
+function getUtf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length
+}
+
+function assertMaxUtf8Bytes(value: string, maxBytes: number, label: string) {
+  if (getUtf8ByteLength(value) > maxBytes) {
+    throw new Error(`${label} exceeds the ${maxBytes}-byte limit`)
+  }
+}
+
+function validateCreateSeriesParams(params: {
+  name: string
+  description: string
+  category: string
+  tags: string[]
+  previewImages: string[]
+}) {
+  if (params.name.trim().length === 0) {
+    throw new Error('Soul name is required')
+  }
+  assertMaxUtf8Bytes(params.name, MAX_NAME_BYTES, 'Soul name')
+  assertMaxUtf8Bytes(params.description, MAX_DESCRIPTION_BYTES, 'Soul description')
+  if (params.category.trim().length === 0) {
+    throw new Error('Soul category is required')
+  }
+  assertMaxUtf8Bytes(params.category, MAX_CATEGORY_BYTES, 'Soul category')
+  if (params.tags.length > MAX_TAGS) {
+    throw new Error(`Soul tags exceed the ${MAX_TAGS}-tag limit`)
+  }
+  params.tags.forEach((tag) => {
+    assertMaxUtf8Bytes(tag, MAX_TAG_BYTES, 'Soul tag')
+  })
+  if (params.previewImages.length > MAX_PREVIEW_IMAGES) {
+    throw new Error(`Soul preview images exceed the ${MAX_PREVIEW_IMAGES}-item limit`)
+  }
+  params.previewImages.forEach((previewImage) => {
+    assertMaxUtf8Bytes(previewImage, MAX_PREVIEW_IMAGE_BYTES, 'Soul preview image reference')
+  })
+}
 
 // ─── Series ────────────────────────────────────────────────────
 
@@ -17,6 +64,7 @@ export function buildCreateSeriesTx(params: {
   tags: string[]
   previewImages: string[]
 }): Transaction {
+  validateCreateSeriesParams(params)
   const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
@@ -40,6 +88,9 @@ export function buildPublishReleaseTx(params: {
   publicMetadataId: string
   contentHash: Uint8Array
 }): Transaction {
+  if (params.contentHash.length !== 32) {
+    throw new Error('contentHash must be 32 bytes')
+  }
   const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
@@ -66,6 +117,12 @@ export function buildCreatePricingPlanTx(params: {
   priceUsdc: bigint // atomic units (6 decimals)
   periodMs: bigint // 0 for onetime
 }): Transaction {
+  if (params.priceUsdc < 0n) {
+    throw new Error('priceUsdc must be non-negative')
+  }
+  if (params.periodMs < 0n) {
+    throw new Error('periodMs must be non-negative')
+  }
   const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({

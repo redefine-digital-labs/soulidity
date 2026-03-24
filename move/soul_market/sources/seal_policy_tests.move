@@ -22,6 +22,12 @@ fun append_test_nonce(document_id: &mut vector<u8>) {
     };
 }
 
+fun subscription_document_id(series: &soul_market::series::SoulSeries): vector<u8> {
+    let mut document_id = object::id(series).to_bytes();
+    append_test_nonce(&mut document_id);
+    document_id
+}
+
 #[test]
 fun perpetual_owner_can_approve_matching_release() {
     let mut ctx = sui::tx_context::dummy();
@@ -230,7 +236,7 @@ fun subscription_owner_can_approve_active_pass() {
     clock.set_for_testing(100);
 
     seal_policy::seal_approve_subscription_for_testing(
-        object::id(&series).to_bytes(),
+        subscription_document_id(&series),
         &pass,
         &series,
         &clock,
@@ -255,6 +261,64 @@ fun subscription_agent_can_approve_active_pass() {
         &mut ctx,
     );
     *soul_market::pass::subscription_agent_grant_mut(&mut pass) = option::some(caller);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(100);
+
+    seal_policy::seal_approve_subscription_for_testing(
+        subscription_document_id(&series),
+        &pass,
+        &series,
+        &clock,
+        &ctx,
+    );
+
+    clock.destroy_for_testing();
+    soul_market::pass::destroy_subscription_for_testing(pass);
+    soul_market::series::destroy_series_for_testing(series);
+}
+
+#[test]
+#[expected_failure(abort_code = seal_policy::EIdPrefixMismatch)]
+fun subscription_rejects_invalid_document_prefix() {
+    let mut ctx = sui::tx_context::dummy();
+    let caller = ctx.sender();
+    let series = soul_market::series::new_series_for_testing(caller, &mut ctx);
+    let pass = soul_market::pass::mint_subscription(
+        object::id(&series),
+        caller,
+        100,
+        10,
+        &mut ctx,
+    );
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(100);
+
+    seal_policy::seal_approve_subscription_for_testing(
+        vector[1],
+        &pass,
+        &series,
+        &clock,
+        &ctx,
+    );
+
+    clock.destroy_for_testing();
+    soul_market::pass::destroy_subscription_for_testing(pass);
+    soul_market::series::destroy_series_for_testing(series);
+}
+
+#[test]
+#[expected_failure(abort_code = seal_policy::EDocumentReleaseMismatch)]
+fun subscription_rejects_document_id_without_nonce_suffix() {
+    let mut ctx = sui::tx_context::dummy();
+    let caller = ctx.sender();
+    let series = soul_market::series::new_series_for_testing(caller, &mut ctx);
+    let pass = soul_market::pass::mint_subscription(
+        object::id(&series),
+        caller,
+        100,
+        10,
+        &mut ctx,
+    );
     let mut clock = sui::clock::create_for_testing(&mut ctx);
     clock.set_for_testing(100);
 
@@ -316,7 +380,7 @@ fun subscription_rejects_expired_pass() {
     clock.set_for_testing(101);
 
     seal_policy::seal_approve_subscription_for_testing(
-        object::id(&series).to_bytes(),
+        subscription_document_id(&series),
         &pass,
         &series,
         &clock,

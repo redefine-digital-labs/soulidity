@@ -18,7 +18,12 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
 
   if (isLoading) {
     return (
-      <div className="max-w-4xl mx-auto px-6 py-12 text-center" style={{ color: 'var(--text-muted)' }}>
+      <div
+        role="status"
+        aria-live="polite"
+        className="max-w-4xl mx-auto px-6 py-12 text-center"
+        style={{ color: 'var(--text-muted)' }}
+      >
         Loading...
       </div>
     )
@@ -71,7 +76,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                 <img
                   key={i}
                   src={img}
-                  alt=""
+                  alt={`Preview image ${i + 1} for ${soul.name}`}
                   loading="lazy"
                   decoding="async"
                   className="h-40 rounded-lg object-cover flex-shrink-0"
@@ -86,7 +91,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               <h2 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
                 README
               </h2>
-              <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+              <div className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: 'var(--text-secondary)' }}>
                 {soul.readme}
               </div>
             </div>
@@ -125,6 +130,18 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
 
                 <PurchaseButton
                   planType={effectivePlanType}
+                  seriesOnChainId={soul.onChainId}
+                  releaseOnChainId={soul.releases?.[0]?.onChainId ?? null}
+                  planId={
+                    effectivePlanType === 'onetime'
+                      ? (soul.oneTimePlanOnChainId ?? '')
+                      : (soul.subPlanOnChainId ?? '')
+                  }
+                  priceCents={
+                    effectivePlanType === 'onetime'
+                      ? (soul.oneTimePriceUsdc ?? 0)
+                      : (soul.subPriceUsdc ?? 0)
+                  }
                 />
               </>
             )}

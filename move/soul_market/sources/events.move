@@ -6,5 +6,3 @@ module soul_market::events;
 // - grant.move: AgentGrantSet, AgentGrantRevoked, PassTransferred
 // - purchase.move: PricingPlanCreated, PricingPlanDeactivated,
 //                  PlatformAdminTransferProposed, PlatformAdminTransferAccepted
-// - relayer.move: SolanaSettlement, RelayerAdminTransferProposed,
-//                 RelayerAdminTransferAccepted, RelayerRegistryPaused, RelayerRegistryUnpaused

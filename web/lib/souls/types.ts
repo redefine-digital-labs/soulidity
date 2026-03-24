@@ -7,7 +7,9 @@ export interface SoulSeriesListItem {
   tags: string[]
   previewImages: string[]
   oneTimePriceUsdc: number | null
+  oneTimePlanOnChainId: string | null
   subPriceUsdc: number | null
+  subPlanOnChainId: string | null
   subPeriodDays: number | null
   createdAt: string
   releases: { id: string; version: string; createdAt: string }[]

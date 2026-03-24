@@ -9,6 +9,10 @@ import { selectCoinObjectIdsForAmountAcrossPages } from '@web/lib/souls/coin-sel
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import { getVerifiedPricingPlanState, OnChainVerificationError, sameSuiValue } from '@web/lib/souls/on-chain-verification'
 import { createPreparedSoulPurchase } from '@web/lib/souls/prepared-purchase'
+import {
+  getClientSafeOnChainVerificationErrorMessage,
+  toSafeErrorDetails,
+} from '@web/lib/souls/route-safety'
 import { buildBuyPerpetualTx, buildBuySubscriptionTx } from '@web/lib/souls/tx-builder'
 
 export const dynamic = 'force-dynamic'
@@ -53,9 +57,11 @@ export async function POST(
   }
 
   let platformConfigId: string
+  let soulPackageId: string
   let usdcCoinType: string
   try {
     platformConfigId = getRequiredPublicEnv('NEXT_PUBLIC_PLATFORM_CONFIG_ID')
+    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
     usdcCoinType = getRequiredPublicEnv('NEXT_PUBLIC_USDC_COIN_TYPE')
   } catch (error) {
     return NextResponse.json(
@@ -88,10 +94,13 @@ export async function POST(
 
   let pricingPlan
   try {
-    pricingPlan = await getVerifiedPricingPlanState(planOnChainId)
+    pricingPlan = await getVerifiedPricingPlanState(planOnChainId, soulPackageId)
   } catch (error) {
     if (error instanceof OnChainVerificationError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return NextResponse.json(
+        { error: getClientSafeOnChainVerificationErrorMessage(error) },
+        { status: error.status },
+      )
     }
     throw error
   }
@@ -121,7 +130,10 @@ export async function POST(
       requiredAmount: amountAtomic,
     })
   } catch (error) {
-    console.error('[agent-purchase] Failed to load agent coin balances', { error, agentMemberId: agent.agentMemberId })
+    console.error('[agent-purchase] Failed to load agent coin balances', {
+      error: toSafeErrorDetails(error),
+      agentMemberId: agent.agentMemberId,
+    })
     return NextResponse.json(
       { error: 'Unable to read the agent wallet balance from chain right now. Please retry.' },
       { status: 503 },

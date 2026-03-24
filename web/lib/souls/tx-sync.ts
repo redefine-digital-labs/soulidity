@@ -4,7 +4,9 @@ import { prisma } from '@web/lib/prisma'
 export type SoulTxSyncRouteKey = 'purchase' | 'publish' | 'grant:set' | 'grant:revoke'
 
 type SoulTxSyncBody = Record<string, unknown>
+type SoulTxSyncDbClient = typeof prisma | Prisma.TransactionClient
 const MAX_SOUL_TX_SYNC_BODY_BYTES = 64 * 1024
+const SOUL_TX_SYNC_CROSS_ACTOR_CONFLICT = 'txDigest has already been processed by another account'
 
 function stringifySoulTxSyncBody(body: SoulTxSyncBody): string {
   return JSON.stringify(body)
@@ -16,12 +18,14 @@ export async function getStoredSoulTxSync(params: {
   actorKey: string
   resourceKey: string
 }): Promise<{ statusCode: number; body: SoulTxSyncBody } | null> {
-  const record = await prisma.soulTxSync.findFirst({
+  const record = await prisma.soulTxSync.findUnique({
     where: {
-      routeKey: params.routeKey,
-      txDigest: params.txDigest,
-      actorKey: params.actorKey,
-      resourceKey: params.resourceKey,
+      routeKey_txDigest_actorKey_resourceKey: {
+        routeKey: params.routeKey,
+        txDigest: params.txDigest,
+        actorKey: params.actorKey,
+        resourceKey: params.resourceKey,
+      },
     },
     select: {
       statusCode: true,
@@ -30,7 +34,24 @@ export async function getStoredSoulTxSync(params: {
   })
 
   if (!record) {
-    return null
+    const crossActorRecord = await prisma.soulTxSync.findFirst({
+      where: {
+        txDigest: params.txDigest,
+        NOT: { actorKey: params.actorKey },
+      },
+      select: {
+        actorKey: true,
+      },
+    })
+
+    if (!crossActorRecord) {
+      return null
+    }
+
+    return {
+      statusCode: 409,
+      body: { error: SOUL_TX_SYNC_CROSS_ACTOR_CONFLICT },
+    }
   }
 
   return {
@@ -46,13 +67,15 @@ export async function storeSoulTxSync(params: {
   resourceKey: string
   statusCode: number
   body: SoulTxSyncBody
+  db?: SoulTxSyncDbClient
 }): Promise<void> {
+  const db = params.db ?? prisma
   const serializedBody = stringifySoulTxSyncBody(params.body)
   if (Buffer.byteLength(serializedBody, 'utf8') > MAX_SOUL_TX_SYNC_BODY_BYTES) {
     throw new Error('Soul tx sync body exceeds the size limit')
   }
 
-  await prisma.soulTxSync.upsert({
+  await db.soulTxSync.upsert({
     where: {
       routeKey_txDigest_actorKey_resourceKey: {
         routeKey: params.routeKey,

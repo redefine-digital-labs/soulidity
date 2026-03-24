@@ -3,6 +3,39 @@ module soul_market::series_tests;
 
 use std::string;
 use soul_market::series;
+use sui::test_scenario::{Self as ts};
+
+#[test]
+fun create_series_entry_shares_series_and_transfers_author_cap_to_sender() {
+    let author = @0xBEEF;
+    let mut scenario = ts::begin(@0x0);
+
+    {
+        ts::next_tx(&mut scenario, author);
+        series::create_series_entry(
+            string::utf8(b"Signal Soul"),
+            string::utf8(b"Description"),
+            string::utf8(b"Research"),
+            vector[string::utf8(b"alpha"), string::utf8(b"beta")],
+            vector[string::utf8(b"https://example.com/cover.png")],
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    ts::next_tx(&mut scenario, author);
+    {
+        let series_obj: series::SoulSeries = ts::take_shared(&scenario);
+        let cap: series::AuthorCap = ts::take_from_sender(&scenario);
+
+        assert!(series::series_author(&series_obj) == author, 0);
+        assert!(series::author_cap_series_id(&cap) == series::series_id(&series_obj), 1);
+
+        series::destroy_author_cap_for_testing(cap);
+        series::destroy_series_for_testing(series_obj);
+    };
+
+    ts::end(scenario);
+}
 
 #[test]
 fun publish_release_sets_latest_release() {
@@ -32,15 +65,271 @@ fun publish_release_sets_latest_release() {
 }
 
 #[test]
+#[expected_failure(abort_code = series::E_RELEASE_VERSION_TOO_LONG)]
+fun publish_release_rejects_too_long_version() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(123);
+
+    series::publish_release(
+        &cap,
+        &mut series_obj,
+        string::utf8(b"12345678901234567890123456789012345678901234567890123456789012345"),
+        string::utf8(b"encrypted"),
+        string::utf8(b"public"),
+        b"content-hash",
+        &clock,
+        &mut ctx,
+    );
+
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_RELEASE_VERSION_EMPTY)]
+fun publish_release_rejects_empty_version() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(123);
+
+    series::publish_release(
+        &cap,
+        &mut series_obj,
+        string::utf8(b""),
+        string::utf8(b"encrypted"),
+        string::utf8(b"public"),
+        b"content-hash",
+        &clock,
+        &mut ctx,
+    );
+
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_RELEASE_BLOB_ID_EMPTY)]
+fun publish_release_rejects_empty_encrypted_blob_id() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(123);
+
+    series::publish_release(
+        &cap,
+        &mut series_obj,
+        string::utf8(b"v1"),
+        string::utf8(b""),
+        string::utf8(b"public"),
+        b"content-hash",
+        &clock,
+        &mut ctx,
+    );
+
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_RELEASE_PUBLIC_METADATA_ID_EMPTY)]
+fun publish_release_rejects_empty_public_metadata_id() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(123);
+
+    series::publish_release(
+        &cap,
+        &mut series_obj,
+        string::utf8(b"v1"),
+        string::utf8(b"encrypted"),
+        string::utf8(b""),
+        b"content-hash",
+        &clock,
+        &mut ctx,
+    );
+
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_RELEASE_CONTENT_HASH_TOO_LONG)]
+fun publish_release_rejects_too_long_content_hash() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(123);
+
+    series::publish_release(
+        &cap,
+        &mut series_obj,
+        string::utf8(b"v1"),
+        string::utf8(b"encrypted"),
+        string::utf8(b"public"),
+        b"01234567890123456789012345678901234567890123456789012345678901234",
+        &clock,
+        &mut ctx,
+    );
+
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_RELEASE_CONTENT_HASH_EMPTY)]
+fun publish_release_rejects_empty_content_hash() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(123);
+
+    series::publish_release(
+        &cap,
+        &mut series_obj,
+        string::utf8(b"v1"),
+        string::utf8(b"encrypted"),
+        string::utf8(b"public"),
+        b"",
+        &clock,
+        &mut ctx,
+    );
+
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
 fun transfer_author_cap_updates_series_author() {
     let mut ctx = sui::tx_context::dummy();
     let author = ctx.sender();
     let mut series_obj = series::new_series_for_testing(author, &mut ctx);
     let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
 
-    series::transfer_author_cap(cap, &mut series_obj, @0xBEEF);
+    series::transfer_author_cap(cap, &mut series_obj, @0xBEEF, &ctx);
 
     assert!(series::series_author(&series_obj) == @0xBEEF, 0);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_INVALID_RECIPIENT)]
+fun transfer_author_cap_rejects_zero_address() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+
+    series::transfer_author_cap(cap, &mut series_obj, @0x0, &ctx);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_SELF_TRANSFER)]
+fun transfer_author_cap_rejects_self_transfer() {
+    let author = @0xBEEF;
+    let mut scenario = ts::begin(@0x0);
+
+    {
+        ts::next_tx(&mut scenario, author);
+        series::create_series_entry(
+            string::utf8(b"Signal Soul"),
+            string::utf8(b"Description"),
+            string::utf8(b"Research"),
+            vector[],
+            vector[],
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    ts::next_tx(&mut scenario, author);
+    {
+        let mut series_obj: series::SoulSeries = ts::take_shared(&scenario);
+        let cap: series::AuthorCap = ts::take_from_sender(&scenario);
+
+        series::transfer_author_cap(cap, &mut series_obj, author, ts::ctx(&mut scenario));
+        series::destroy_series_for_testing(series_obj);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_NOT_AUTHOR)]
+fun transfer_author_cap_requires_sender_to_match_series_author() {
+    let mut ctx = sui::tx_context::dummy();
+    let mut series_obj = series::new_series_for_testing(@0xCAFE, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+
+    series::transfer_author_cap(cap, &mut series_obj, @0xBEEF, &ctx);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_NOT_AUTHOR)]
+fun publish_release_requires_sender_to_match_series_author() {
+    let mut ctx = sui::tx_context::dummy();
+    let mut series_obj = series::new_series_for_testing(@0xCAFE, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(123);
+
+    series::publish_release(
+        &cap,
+        &mut series_obj,
+        string::utf8(b"v1"),
+        string::utf8(b"encrypted"),
+        string::utf8(b"public"),
+        b"content-hash",
+        &clock,
+        &mut ctx,
+    );
+
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_NOT_AUTHOR)]
+fun update_series_metadata_requires_sender_to_match_series_author() {
+    let mut ctx = sui::tx_context::dummy();
+    let mut series_obj = series::new_series_for_testing(@0xCAFE, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+
+    series::update_series_metadata(
+        &cap,
+        &mut series_obj,
+        string::utf8(b"Signal Soul"),
+        string::utf8(b"Description"),
+        string::utf8(b"Research"),
+        vector[string::utf8(b"1")],
+        vector[],
+        &ctx,
+    );
+
+    series::destroy_author_cap_for_testing(cap);
     series::destroy_series_for_testing(series_obj);
 }
 
@@ -72,6 +361,7 @@ fun update_series_metadata_rejects_too_many_tags() {
             string::utf8(b"11"),
         ],
         vector[],
+        &ctx,
     );
 
     series::destroy_author_cap_for_testing(cap);

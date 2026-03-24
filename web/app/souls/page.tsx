@@ -1,12 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useSoulsList } from '@web/lib/souls/queries'
 import { SoulCard } from '@web/components/souls/soul-card'
+import { useAuth } from '@web/components/auth-provider'
 
 const CATEGORIES = ['All', 'Trading', 'Research', 'Social', 'DeFi', 'NFT', 'Infrastructure', 'Other']
 
 export default function SoulsPage() {
+  const { user, loading } = useAuth()
   const [page, setPage] = useState(1)
   const [category, setCategory] = useState('')
   const [search, setSearch] = useState('')
@@ -24,7 +27,20 @@ export default function SoulsPage() {
         <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
           Soul Market
         </h1>
-        <span className="badge badge-muted text-xs">Publishing temporarily disabled until on-chain flow is wired</span>
+        {user ? (
+          <div className="flex gap-2">
+            <Link href="/souls/my" className="btn btn-surface text-sm">
+              My Souls
+            </Link>
+            <Link href="/souls/publish" className="btn btn-primary text-sm">
+              Publish
+            </Link>
+          </div>
+        ) : !loading ? (
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            登录后可查看 My Souls 并发布新作品。
+          </p>
+        ) : null}
       </div>
 
       {/* Search */}
@@ -36,7 +52,9 @@ export default function SoulsPage() {
             setPage(1)
           }}
         >
+          <label htmlFor="souls-search" className="sr-only">Search Souls</label>
           <input
+            id="souls-search"
             type="text"
             placeholder="Search souls..."
             value={searchInput}
@@ -48,12 +66,15 @@ export default function SoulsPage() {
       </div>
 
       {/* Categories */}
-      <div className="flex gap-2 mb-6 flex-wrap">
+      <div className="flex gap-2 mb-6 flex-wrap" role="radiogroup" aria-label="Filter Souls by category">
         {CATEGORIES.map((cat) => {
           const active = cat === 'All' ? !category : category === cat
           return (
             <button
               key={cat}
+              type="button"
+              role="radio"
+              aria-checked={active}
               onClick={() => {
                 setCategory(cat === 'All' ? '' : cat)
                 setPage(1)
@@ -68,7 +89,14 @@ export default function SoulsPage() {
 
       {/* Grid */}
       {isLoading ? (
-        <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+        <div
+          role="status"
+          aria-live="polite"
+          className="text-center py-12"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          Loading...
+        </div>
       ) : data?.items.length === 0 ? (
         <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No souls found</div>
       ) : (

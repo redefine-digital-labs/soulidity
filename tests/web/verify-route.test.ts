@@ -128,4 +128,24 @@ describe('verify route', () => {
       update: {},
     })
   })
+
+  it('stores null when tg_name becomes empty after trimming', async () => {
+    const { POST } = await import('../../web/app/api/verify/route.ts')
+    const response = await POST(new Request('http://localhost/api/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        code: 'JOIN1234',
+        tg_id: '123456',
+        tg_name: '   ',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(200)
+    expect(mockedPrisma.member.upsert).toHaveBeenCalledWith({
+      where: { tgId: '123456' },
+      create: { tgId: '123456', tgName: null, inviteCode: 'JOIN1234' },
+      update: {},
+    })
+  })
 })

@@ -1,53 +1,35 @@
-import { createHmac, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
+
+import { createClaimToken } from '@web/lib/auth/agent-claim-token'
 import { prisma } from '@web/lib/prisma'
-import { verifyPersonalMessageSignature } from '@mysten/sui/verify'
-import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { getRequestIp, MISSING_CLIENT_IP_ERROR, takeRateLimitToken } from '@web/lib/rate-limit'
+import { isUniqueConstraintError } from '@shared/prisma-errors'
+import {
+  buildAgentJoinChallengeMessage,
+  cleanupStaleWalletChallengesBestEffort,
+  getWalletChallengeCleanupCutoff,
+  getTrustedAppDomain,
+  normalizeSuiWalletAddress,
+} from '@web/lib/auth/challenge'
+import { verifyPersonalMessageSignature } from '@web/lib/sui-verify'
+import { getAppBaseUrl } from '@shared/app-config'
+import { isUuid } from '@web/lib/is-uuid'
 
 export const dynamic = 'force-dynamic'
 
-function getAuthSecret(): string {
-  const secret = process.env.AUTH_SECRET
-  if (!secret) throw new Error('AUTH_SECRET environment variable is required')
-  return secret
-}
-
-export function createClaimToken(memberId: string): string {
-  return createHmac('sha256', getAuthSecret())
-    .update(`agent-claim:${memberId}`)
-    .digest('hex')
-    .slice(0, 32)
-}
-
 const CHALLENGE_TTL_MS = 5 * 60 * 1000
 
-/**
- * Purpose-bound challenge message for agent registration.
- * Distinct from buildChallengeMessage() used for login, preventing
- * a login signature from being replayed to create an agent.
- */
-export function buildAgentJoinChallengeMessage(
-  domain: string,
-  address: string,
-  nonce: string,
-  expiresAt: Date,
-): string {
-  return [
-    `${domain} wants you to register an agent with your Sui account:`,
-    address,
-    '',
-    'Clawnews agent registration',
-    '',
-    `Nonce: ${nonce}`,
-    `Expiration Time: ${expiresAt.toISOString()}`,
-  ].join('\n')
-}
-
 const AGENT_JOIN_RATE_LIMIT = { max: 5, windowMs: 15 * 60 * 1000 } as const
+const MAX_AGENT_JOIN_SIGNATURE_LENGTH = 1024
 
 // GET /api/agent-join — issue a purpose-bound challenge nonce for agent registration
 export async function GET(request: NextRequest) {
   const ip = getRequestIp(request.headers)
+  if (!ip) {
+    return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
+  }
+
   const rl = takeRateLimitToken(`agent-join-challenge:${ip}`, AGENT_JOIN_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
@@ -56,20 +38,28 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const address = request.nextUrl.searchParams.get('address')
+  const address = normalizeSuiWalletAddress(request.nextUrl.searchParams.get('address'))
   if (!address) {
-    return NextResponse.json({ error: 'address is required' }, { status: 400 })
+    return NextResponse.json({ error: 'address must be a valid Sui address' }, { status: 400 })
   }
 
   const nonce = randomUUID()
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS)
-  const host = request.headers.get('host') || 'clawnews-mu.vercel.app'
+  const domain = getTrustedAppDomain()
+
+  cleanupStaleWalletChallengesBestEffort(() =>
+    prisma.walletChallenge.deleteMany({
+      where: {
+        expiresAt: { lt: getWalletChallengeCleanupCutoff() },
+      },
+    }),
+  )
 
   await prisma.walletChallenge.create({
-    data: { address, nonce, expiresAt },
+    data: { address, nonce, expiresAt, domain },
   })
 
-  const message = buildAgentJoinChallengeMessage(host, address, nonce, expiresAt)
+  const message = buildAgentJoinChallengeMessage(domain, address, nonce, expiresAt)
 
   return NextResponse.json({ nonce, message, expiresAt: expiresAt.toISOString() })
 }
@@ -77,6 +67,10 @@ export async function GET(request: NextRequest) {
 // POST /api/agent-join — agent submits wallet + signed challenge to request joining
 export async function POST(request: NextRequest) {
   const ip = getRequestIp(request.headers)
+  if (!ip) {
+    return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
+  }
+
   const rl = takeRateLimitToken(`agent-join:${ip}`, AGENT_JOIN_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
@@ -101,15 +95,27 @@ export async function POST(request: NextRequest) {
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 })
   }
+  if (name.trim().length > 100) {
+    return NextResponse.json({ error: 'name must be 100 characters or fewer' }, { status: 400 })
+  }
   if (!nonce || typeof nonce !== 'string') {
     return NextResponse.json({ error: 'nonce is required (GET /api/agent-join?address=... first)' }, { status: 400 })
+  }
+  if (!isUuid(nonce)) {
+    return NextResponse.json({ error: 'nonce must be a valid UUID from GET /api/agent-join' }, { status: 400 })
   }
   if (!signature || typeof signature !== 'string') {
     return NextResponse.json({ error: 'signature is required' }, { status: 400 })
   }
+  if (signature.length > MAX_AGENT_JOIN_SIGNATURE_LENGTH) {
+    return NextResponse.json({ error: 'signature must be 1024 characters or fewer' }, { status: 400 })
+  }
 
   // Verify wallet ownership: validate signature against the structured challenge message
-  const address = wallet.trim()
+  const address = normalizeSuiWalletAddress(wallet)
+  if (!address) {
+    return NextResponse.json({ error: 'wallet must be a valid Sui address' }, { status: 400 })
+  }
 
   // Look up challenge first — need expiresAt to reconstruct the message
   const challenge = await prisma.walletChallenge.findUnique({
@@ -123,13 +129,17 @@ export async function POST(request: NextRequest) {
   }
 
   // Reconstruct the purpose-bound agent registration message
-  const host = request.headers.get('host') || 'clawnews-mu.vercel.app'
-  const expectedMessage = buildAgentJoinChallengeMessage(host, address, nonce, challenge.expiresAt)
+  const expectedMessage = buildAgentJoinChallengeMessage(
+    challenge.domain ?? getTrustedAppDomain(),
+    address,
+    nonce,
+    challenge.expiresAt,
+  )
 
   try {
     const messageBytes = new TextEncoder().encode(expectedMessage)
     const publicKey = await verifyPersonalMessageSignature(messageBytes, signature)
-    const signerAddress = publicKey.toSuiAddress()
+    const signerAddress = normalizeSuiWalletAddress(publicKey.toSuiAddress())
     if (signerAddress !== address) {
       return NextResponse.json({ error: 'Signature does not match wallet address' }, { status: 403 })
     }
@@ -146,39 +156,54 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Challenge already used' }, { status: 409 })
   }
 
-  // Check if wallet is already bound
-  const existingBinding = await prisma.walletBinding.findUnique({
-    where: { chain_address: { chain, address } },
-  })
-  if (existingBinding) {
-    return NextResponse.json(
-      { error: 'This wallet address is already registered' },
-      { status: 409 }
-    )
+  let member: { id: string; displayName: string | null }
+  try {
+    const createdMember = await prisma.$transaction(async (tx) => {
+      const existingBinding = await tx.walletBinding.findUnique({
+        where: { chain_address: { chain, address } },
+      })
+      if (existingBinding) {
+        return null
+      }
+
+      // Create pending agent member (no account yet) + wallet binding.
+      // API keys are issued only when the agent is claimed so we never persist
+      // plaintext secrets for pending records.
+      return tx.member.create({
+        data: {
+          kind: 'agent',
+          displayName: name.trim(),
+          walletBindings: {
+            create: {
+              chain,
+              address,
+              isPrimary: true,
+            },
+          },
+        },
+        select: { id: true, displayName: true },
+      })
+    })
+    if (!createdMember) {
+      return NextResponse.json(
+        { error: 'This wallet address is already registered' },
+        { status: 409 },
+      )
+    }
+    member = createdMember
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return NextResponse.json(
+        { error: 'This wallet address is already registered' },
+        { status: 409 },
+      )
+    }
+
+    throw error
   }
 
-  // Create pending agent member (no account yet) + wallet binding.
-  // API keys are issued only when the agent is claimed so we never persist
-  // plaintext secrets for pending records.
-  const member = await prisma.member.create({
-    data: {
-      kind: 'agent',
-      displayName: name.trim(),
-      wallet: address,
-      walletBindings: {
-        create: {
-          chain,
-          address,
-          isPrimary: true,
-        },
-      },
-    },
-    select: { id: true, displayName: true },
-  })
-
   const token = createClaimToken(member.id)
-  const protocol = host.startsWith('localhost') ? 'http' : 'https'
-  const claimUrl = `${protocol}://${host}/agent-claim?id=${member.id}&token=${token}`
+  const claimUrl = `${getAppBaseUrl()}/agent-claim?id=${member.id}&token=${token}`
 
   return NextResponse.json({
     claimUrl,

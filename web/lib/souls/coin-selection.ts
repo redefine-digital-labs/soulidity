@@ -21,7 +21,13 @@ const MAX_COIN_SELECTION_PAGES = 10
 
 function toCoinBalance(value: string | number | bigint): bigint {
   if (typeof value === 'bigint') return value
-  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value))
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const truncated = Math.trunc(value)
+    if (!Number.isSafeInteger(truncated)) {
+      throw new Error('Coin balance number is outside the safe integer range')
+    }
+    return BigInt(truncated)
+  }
   if (typeof value === 'string' && value.trim().length > 0) return BigInt(value.trim())
   return 0n
 }
