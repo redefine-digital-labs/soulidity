@@ -17,6 +17,37 @@ interface PurchaseButtonProps {
   priceCents: number // price in cents from DB (e.g. 100 = $1.00)
 }
 
+function readAtomicUsdcFromPricingPlanFields(fields: Record<string, unknown>): bigint | null {
+  const raw = fields.price_usdc
+  if (typeof raw === 'bigint') return raw
+  if (typeof raw === 'number' && Number.isFinite(raw)) return BigInt(Math.trunc(raw))
+  if (typeof raw === 'string' && raw.trim().length > 0) {
+    try {
+      return BigInt(raw.trim())
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+async function getPlanAmountAtomic(
+  suiClient: ReturnType<typeof useSuiClient>,
+  planId: string,
+): Promise<bigint> {
+  const planObject = await suiClient.getObject({
+    id: planId,
+    options: { showContent: true },
+  })
+
+  const fields = (planObject.data?.content as { fields?: Record<string, unknown> } | undefined)?.fields
+  const amount = fields ? readAtomicUsdcFromPricingPlanFields(fields) : null
+  if (!amount || amount <= 0n) {
+    throw new Error('Pricing plan amount is invalid on chain. Please refresh and retry.')
+  }
+  return amount
+}
+
 export function PurchaseButton({
   planType,
   seriesOnChainId,
@@ -32,7 +63,6 @@ export function PurchaseButton({
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const purchaseInFlightRef = useRef(false)
-  const hasValidPrice = Number.isInteger(priceCents) && priceCents > 0
 
   if (!user) {
     return (
@@ -81,24 +111,6 @@ export function PurchaseButton({
     )
   }
 
-  if (!hasValidPrice) {
-    return (
-      <div className="space-y-3">
-        <button
-          type="button"
-          disabled
-          className="glass-card px-6 py-3 text-sm font-semibold w-full"
-          style={{ color: 'var(--text-muted)', opacity: 0.5 }}
-        >
-          Price unavailable
-        </button>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Refresh the page or wait for the author to finish syncing pricing.
-        </p>
-      </div>
-    )
-  }
-
   async function handlePurchase() {
     if (!suiWallet || purchaseInFlightRef.current) return
     purchaseInFlightRef.current = true
@@ -110,7 +122,13 @@ export function PurchaseButton({
       setStatus('pending')
       const platformConfigId = getRequiredPublicEnv('NEXT_PUBLIC_PLATFORM_CONFIG_ID')
       const usdcCoinType = getRequiredPublicEnv('NEXT_PUBLIC_USDC_COIN_TYPE')
-      const amount = BigInt(priceCents) * 10_000n
+      const fallbackAmount = Number.isInteger(priceCents) && priceCents > 0
+        ? BigInt(priceCents) * 10_000n
+        : null
+      const amount = await getPlanAmountAtomic(suiClient, planId).catch((error) => {
+        if (fallbackAmount) return fallbackAmount
+        throw error
+      })
       let paymentCoinIds: string[] | null
       try {
         paymentCoinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {

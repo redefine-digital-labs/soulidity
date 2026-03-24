@@ -3,10 +3,30 @@
 import { use, useState } from 'react'
 import Link from 'next/link'
 import { useSuiClient } from '@mysten/dapp-kit'
+import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { useAuth } from '@web/components/auth-provider'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
 import { buildPublishReleaseTx } from '@web/lib/souls/tx-builder'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
+
+
+function readSuiId(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim().length > 0) return value.trim()
+  if (value && typeof value === 'object') {
+    const id = (value as { id?: unknown }).id
+    if (typeof id === 'string' && id.trim().length > 0) return id.trim()
+  }
+  return null
+}
+
+function sameObjectId(left: string | null, right: string): boolean {
+  if (!left) return false
+  try {
+    return normalizeSuiAddress(left) === normalizeSuiAddress(right)
+  } catch {
+    return false
+  }
+}
 
 function findCreatedObjectId(
   result: { objectChanges?: Array<{ type: string; objectType?: string; objectId?: string }> },
@@ -41,7 +61,7 @@ async function findAuthorCap(
 
     for (const item of page.data) {
       const fields = (item.data?.content as { fields?: Record<string, unknown> })?.fields
-      if (fields && String(fields.series_id) === seriesOnChainId) {
+      if (fields && sameObjectId(readSuiId(fields.series_id), seriesOnChainId)) {
         return item.data!.objectId
       }
     }
