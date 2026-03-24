@@ -280,8 +280,12 @@ function readObjectInputIdFromArgument(
   fieldName: string,
 ): string {
   const argumentRecord = asRecord(argument)
-  const inputIndex = argumentRecord?.Input
-  if (!Number.isInteger(inputIndex) || inputIndex < 0 || inputIndex >= inputs.length) {
+  const rawIndex = argumentRecord?.Input
+  if (!Number.isInteger(rawIndex)) {
+    throw new OnChainVerificationError(`${fieldName} is missing from the transaction inputs`)
+  }
+  const inputIndex = rawIndex as number
+  if (inputIndex < 0 || inputIndex >= inputs.length) {
     throw new OnChainVerificationError(`${fieldName} is missing from the transaction inputs`)
   }
 
