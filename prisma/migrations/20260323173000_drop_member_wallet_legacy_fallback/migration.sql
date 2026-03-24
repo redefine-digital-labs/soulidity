@@ -17,7 +17,7 @@ BEGIN
     WITH legacy_wallets AS (
       SELECT
         m.id AS member_id,
-        '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '')), 64, '0') AS canonical_address
+        '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '', 'i')), 64, '0') AS canonical_address
       FROM members m
       WHERE m.wallet IS NOT NULL
     )
@@ -33,14 +33,14 @@ BEGIN
     WITH legacy_wallets AS (
       SELECT
         m.id AS member_id,
-        '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '')), 64, '0') AS canonical_address
+        '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '', 'i')), 64, '0') AS canonical_address
       FROM members m
       WHERE m.wallet IS NOT NULL
     ),
     existing_bindings AS (
       SELECT
         wb.member_id,
-        '0x' || lpad(lower(regexp_replace(wb.address, '^0x', '')), 64, '0') AS canonical_address
+        '0x' || lpad(lower(regexp_replace(wb.address, '^0x', '', 'i')), 64, '0') AS canonical_address
       FROM wallet_bindings wb
       WHERE wb.chain = 'sui'
     )
@@ -56,14 +56,14 @@ BEGIN
     WITH legacy_wallets AS (
       SELECT
         m.id AS member_id,
-        '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '')), 64, '0') AS canonical_address
+        '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '', 'i')), 64, '0') AS canonical_address
       FROM members m
       WHERE m.wallet IS NOT NULL
     ),
     existing_bindings AS (
       SELECT
         wb.member_id,
-        '0x' || lpad(lower(regexp_replace(wb.address, '^0x', '')), 64, '0') AS canonical_address
+        '0x' || lpad(lower(regexp_replace(wb.address, '^0x', '', 'i')), 64, '0') AS canonical_address
       FROM wallet_bindings wb
       WHERE wb.chain = 'sui'
     )
@@ -89,7 +89,7 @@ WITH legacy_wallets AS (
   SELECT
     m.id AS member_id,
     m.joined_at,
-    '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '')), 64, '0') AS canonical_address
+    '0x' || lpad(lower(regexp_replace(m.wallet, '^0x', '', 'i')), 64, '0') AS canonical_address
   FROM members m
   WHERE m.wallet IS NOT NULL
 )
@@ -118,7 +118,7 @@ WHERE NOT EXISTS (
   FROM wallet_bindings wb
   WHERE wb.member_id = lw.member_id
     AND wb.chain = 'sui'
-    AND '0x' || lpad(lower(regexp_replace(wb.address, '^0x', '')), 64, '0') = lw.canonical_address
+    AND '0x' || lpad(lower(regexp_replace(wb.address, '^0x', '', 'i')), 64, '0') = lw.canonical_address
 );
 
 ALTER TABLE members DROP COLUMN wallet;
