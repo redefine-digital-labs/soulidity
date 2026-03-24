@@ -16,6 +16,10 @@ const MS_PER_DAY = 86_400_000
 const MAX_SAFE_PERIOD_MS = BigInt(Number.MAX_SAFE_INTEGER)
 type SoulDbClient = typeof prisma | Prisma.TransactionClient
 
+function isPrismaUniqueConstraintError(error: unknown): error is { code: string } {
+  return typeof error === 'object' && error != null && 'code' in error && typeof error.code === 'string'
+}
+
 function sameSuiAddress(left: string, right: string): boolean {
   try {
     const normalizedLeft = normalizeSuiAddress(left)
@@ -114,6 +118,7 @@ export async function dbCreateSeries(params: {
 export async function dbCreateRelease(params: {
   releaseOnChainId: string
   seriesDbId: string
+  seriesLatestReleaseOnChainId: string | null
   version: string
   walrusBlobRef: string
   publicMetadataRef?: string | null
@@ -122,32 +127,59 @@ export async function dbCreateRelease(params: {
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
-  const release = await db.soulRelease.upsert({
-    where: { onChainId: params.releaseOnChainId },
-    create: {
-      onChainId: params.releaseOnChainId,
-      seriesId: params.seriesDbId,
-      version: params.version,
-      walrusBlobRef: params.walrusBlobRef,
-      publicMetadataRef: params.publicMetadataRef ?? null,
-      contentHash: params.contentHash,
-      changelog: params.changelog ?? null,
-    },
-    update: {
-      seriesId: params.seriesDbId,
-      version: params.version,
-      walrusBlobRef: params.walrusBlobRef,
-      publicMetadataRef: params.publicMetadataRef ?? null,
-      contentHash: params.contentHash,
-      changelog: params.changelog ?? null,
-    },
-  })
+  let release
+  try {
+    release = await db.soulRelease.upsert({
+      where: { onChainId: params.releaseOnChainId },
+      create: {
+        onChainId: params.releaseOnChainId,
+        seriesId: params.seriesDbId,
+        version: params.version,
+        walrusBlobRef: params.walrusBlobRef,
+        publicMetadataRef: params.publicMetadataRef ?? null,
+        contentHash: params.contentHash,
+        changelog: params.changelog ?? null,
+      },
+      update: {
+        seriesId: params.seriesDbId,
+        version: params.version,
+        walrusBlobRef: params.walrusBlobRef,
+        publicMetadataRef: params.publicMetadataRef ?? null,
+        contentHash: params.contentHash,
+        changelog: params.changelog ?? null,
+      },
+    })
+  } catch (error) {
+    if (!isPrismaUniqueConstraintError(error) || error.code !== 'P2002') {
+      throw error
+    }
 
-  // Update series latestReleaseId
-  await db.soulSeries.update({
-    where: { id: params.seriesDbId },
-    data: { latestReleaseId: release.id },
-  })
+    release = await db.soulRelease.update({
+      where: {
+        seriesId_version: {
+          seriesId: params.seriesDbId,
+          version: params.version,
+        },
+      },
+      data: {
+        onChainId: params.releaseOnChainId,
+        walrusBlobRef: params.walrusBlobRef,
+        publicMetadataRef: params.publicMetadataRef ?? null,
+        contentHash: params.contentHash,
+        changelog: params.changelog ?? null,
+      },
+    })
+  }
+
+  if (
+    params.seriesLatestReleaseOnChainId
+    && sameSuiAddress(params.seriesLatestReleaseOnChainId, params.releaseOnChainId)
+  ) {
+    await db.soulSeries.update({
+      where: { id: params.seriesDbId },
+      data: { latestReleaseId: release.id },
+    })
+  }
 
   return release
 }

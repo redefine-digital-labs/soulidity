@@ -241,6 +241,7 @@ export async function POST(request: NextRequest) {
           db: tx,
           releaseOnChainId: releaseState.objectId,
           seriesDbId: series.id,
+          seriesLatestReleaseOnChainId: seriesState.latestReleaseId,
           version: releaseState.version,
           walrusBlobRef: releaseState.walrusBlobRef,
           publicMetadataRef: releaseState.publicMetadataRef,

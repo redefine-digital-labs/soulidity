@@ -7,10 +7,15 @@ import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import {
   getVerifiedPassState,
+  getVerifiedSeriesState,
   OnChainVerificationError,
   sameSuiValue,
 } from '@web/lib/souls/on-chain-verification'
-import { toSafeErrorDetails } from '@web/lib/souls/route-safety'
+import { resolveLatestSeriesRelease, resolveReleaseByOnChainId } from '@web/lib/souls/release-resolution'
+import {
+  getClientSafeOnChainVerificationErrorMessage,
+  toSafeErrorDetails,
+} from '@web/lib/souls/route-safety'
 import {
   hasCredentialedSealServerConfigs,
   getSealRuntimeConfig,
@@ -60,12 +65,7 @@ export async function GET(
     ? { OR: [{ id }, { onChainId: id }], status: 'active' as const }
     : { onChainId: id, status: 'active' as const }
 
-  const series = await prisma.soulSeries.findFirst({
-    where,
-    include: {
-      releases: { orderBy: { version: 'desc' }, take: 1 },
-    },
-  })
+  const series = await prisma.soulSeries.findFirst({ where })
 
   if (!series) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -100,7 +100,6 @@ export async function GET(
       { expiresAt: 'desc' },
       { createdAt: 'desc' },
     ],
-    take: 10,
   })
 
   if (candidatePasses.length === 0) {
@@ -152,23 +151,58 @@ export async function GET(
   }
 
   // Resolve the correct release
-  let targetRelease: typeof series.releases[0] | undefined
+  let targetRelease: Awaited<ReturnType<typeof resolveLatestSeriesRelease>> | null = null
 
   if (verifiedPassState.passType === 'perpetual') {
     if (!verifiedPassState.lockedReleaseId) {
       return NextResponse.json({ error: 'Locked release missing for perpetual pass' }, { status: 404 })
     }
-    const lockedRelease = await prisma.soulRelease.findFirst({
-      where: { onChainId: verifiedPassState.lockedReleaseId, seriesId: series.id },
-    })
-    if (!lockedRelease) {
-      return NextResponse.json({ error: 'Locked release not found' }, { status: 404 })
+    try {
+      targetRelease = await resolveReleaseByOnChainId({
+        releaseOnChainId: verifiedPassState.lockedReleaseId,
+        seriesDbId: series.id,
+        seriesOnChainId: series.onChainId,
+        seriesLatestReleaseOnChainId: null,
+        soulPackageId,
+      })
+    } catch (error) {
+      if (error instanceof OnChainVerificationError) {
+        return NextResponse.json(
+          { error: getClientSafeOnChainVerificationErrorMessage(error) },
+          { status: error.status },
+        )
+      }
+      console.error('[agent-access] Failed to resolve perpetual release', {
+        agentMemberId: agent.agentMemberId,
+        seriesId: series.id,
+        releaseOnChainId: verifiedPassState.lockedReleaseId,
+        error: toSafeErrorDetails(error),
+      })
+      return NextResponse.json({ error: 'Unable to load the locked release right now' }, { status: 503 })
     }
-    targetRelease = lockedRelease
-  }
-
-  if (!targetRelease) {
-    targetRelease = series.releases[0]
+  } else {
+    try {
+      const seriesState = await getVerifiedSeriesState(series.onChainId, soulPackageId)
+      targetRelease = await resolveLatestSeriesRelease({
+        seriesDbId: series.id,
+        seriesOnChainId: series.onChainId,
+        latestReleaseOnChainId: seriesState.latestReleaseId,
+        soulPackageId,
+      })
+    } catch (error) {
+      if (error instanceof OnChainVerificationError) {
+        return NextResponse.json(
+          { error: getClientSafeOnChainVerificationErrorMessage(error) },
+          { status: error.status },
+        )
+      }
+      console.error('[agent-access] Failed to resolve latest subscription release', {
+        agentMemberId: agent.agentMemberId,
+        seriesId: series.id,
+        error: toSafeErrorDetails(error),
+      })
+      return NextResponse.json({ error: 'Unable to load the latest release right now' }, { status: 503 })
+    }
   }
 
   if (!targetRelease) {

@@ -14,6 +14,7 @@
     "collect:x": "tsx src/collector/run.ts x",
     "produce": "tsx src/producer/run.ts",
     "publish": "tsx src/publisher/run.ts",
+    "soul:reconcile-latest-releases": "tsx src/db/reconcile-soul-latest-releases.ts",
     "seed:achievements": "tsx src/db/seed-achievements.ts",
     "scan:skills": "tsx src/collector/scan-skills.ts"
   },

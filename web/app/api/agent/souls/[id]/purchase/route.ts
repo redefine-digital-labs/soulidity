@@ -7,7 +7,13 @@ import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { suiClient } from '@web/lib/sui'
 import { selectCoinObjectIdsForAmountAcrossPages } from '@web/lib/souls/coin-selection'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
-import { getVerifiedPricingPlanState, OnChainVerificationError, sameSuiValue } from '@web/lib/souls/on-chain-verification'
+import { resolveLatestSeriesRelease } from '@web/lib/souls/release-resolution'
+import {
+  getVerifiedPricingPlanState,
+  getVerifiedSeriesState,
+  OnChainVerificationError,
+  sameSuiValue,
+} from '@web/lib/souls/on-chain-verification'
 import { createPreparedSoulPurchase } from '@web/lib/souls/prepared-purchase'
 import {
   getClientSafeOnChainVerificationErrorMessage,
@@ -74,9 +80,6 @@ export async function POST(
   const { id } = await params
   const series = await prisma.soulSeries.findFirst({
     where: isUuid(id) ? { id } : { onChainId: id },
-    include: {
-      releases: { orderBy: { version: 'desc' }, take: 1 },
-    },
   })
 
   if (!series || series.status !== 'active') {
@@ -113,6 +116,31 @@ export async function POST(
   }
   if (!pricingPlan.active) {
     return NextResponse.json({ error: 'Pricing plan is not active on chain' }, { status: 422 })
+  }
+
+  let latestRelease: Awaited<ReturnType<typeof resolveLatestSeriesRelease>> = null
+  if (planType === 'onetime') {
+    try {
+      const seriesState = await getVerifiedSeriesState(series.onChainId, soulPackageId)
+      latestRelease = await resolveLatestSeriesRelease({
+        seriesDbId: series.id,
+        seriesOnChainId: series.onChainId,
+        latestReleaseOnChainId: seriesState.latestReleaseId,
+        soulPackageId,
+      })
+    } catch (error) {
+      if (error instanceof OnChainVerificationError) {
+        return NextResponse.json(
+          { error: getClientSafeOnChainVerificationErrorMessage(error) },
+          { status: error.status },
+        )
+      }
+      throw error
+    }
+
+    if (!latestRelease) {
+      return NextResponse.json({ error: 'No release available for purchase' }, { status: 404 })
+    }
   }
 
   // Resolve agent wallet
@@ -152,15 +180,15 @@ export async function POST(
   // Build TX
   let tx
   if (planType === 'onetime') {
-    const latestRelease = series.releases[0]
-    if (!latestRelease?.onChainId) {
+    const onetimeRelease = latestRelease
+    if (!onetimeRelease) {
       return NextResponse.json({ error: 'No release available for purchase' }, { status: 404 })
     }
     tx = buildBuyPerpetualTx({
       platformConfigId,
       planId: planOnChainId,
       seriesId: series.onChainId,
-      releaseId: latestRelease.onChainId,
+      releaseId: onetimeRelease.onChainId,
       paymentCoinIds,
       amount: amountAtomic,
     })
@@ -179,7 +207,7 @@ export async function POST(
 
   const txBytes = await tx.build({ client: suiClient })
   const txBytesBase64 = Buffer.from(txBytes).toString('base64')
-  const releaseOnChainId = planType === 'onetime' ? (series.releases[0]?.onChainId ?? null) : null
+  const releaseOnChainId = planType === 'onetime' ? latestRelease?.onChainId ?? null : null
   const preparedPurchase = await createPreparedSoulPurchase({
     agentMemberId: agent.agentMemberId,
     agentAddress,

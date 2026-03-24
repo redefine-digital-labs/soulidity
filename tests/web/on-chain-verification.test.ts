@@ -131,6 +131,58 @@ describe('on-chain verification helpers', () => {
     await expect(getVerifiedPassState('0xpass')).rejects.toThrow(OnChainVerificationError)
   })
 
+  it('normalizes agent grant addresses before returning verified pass state', async () => {
+    const canonicalAgentGrant = `0x${'ab'.repeat(32)}`
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: '0xpass',
+        owner: { AddressOwner: `0x${'1'.repeat(64)}` },
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          fields: {
+            owner: `0x${'1'.repeat(64)}`,
+            series_id: `0x${'2'.repeat(64)}`,
+            release_id: `0x${'3'.repeat(64)}`,
+            agent_grant: { vec: [canonicalAgentGrant.toUpperCase()] },
+          },
+        },
+      },
+    })
+
+    const { getVerifiedPassState } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedPassState('0xpass', PACKAGE_ID)).resolves.toMatchObject({
+      objectId: '0xpass',
+      agentGrant: canonicalAgentGrant,
+    })
+  })
+
+  it('rejects malformed agent grant addresses instead of passing raw strings through', async () => {
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: '0xpass',
+        owner: { AddressOwner: `0x${'1'.repeat(64)}` },
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          fields: {
+            owner: `0x${'1'.repeat(64)}`,
+            series_id: `0x${'2'.repeat(64)}`,
+            release_id: `0x${'3'.repeat(64)}`,
+            agent_grant: { vec: ['not-an-address'] },
+          },
+        },
+      },
+    })
+
+    const { getVerifiedPassState, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedPassState('0xpass', PACKAGE_ID)).rejects.toThrow(OnChainVerificationError)
+  })
+
   it('rejects pass objects from a counterfeit package when a package id is expected', async () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
@@ -170,6 +222,62 @@ describe('on-chain verification helpers', () => {
             tags: [],
             preview_images: [],
             author: 123,
+          },
+        },
+      },
+    })
+
+    const { getVerifiedSeriesState, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedSeriesState('0xseries', PACKAGE_ID)).rejects.toThrow(OnChainVerificationError)
+  })
+
+  it('reads the chain latest release id from Soul series objects', async () => {
+    const latestReleaseId = `0x${'3'.repeat(64)}`
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: '0xseries',
+        type: `${PACKAGE_ID}::series::SoulSeries`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::series::SoulSeries`,
+          fields: {
+            name: 'Soul',
+            description: 'Desc',
+            category: 'Research',
+            tags: [],
+            preview_images: [],
+            author: `0x${'1'.repeat(64)}`,
+            latest_release_id: { vec: [latestReleaseId] },
+          },
+        },
+      },
+    })
+
+    const { getVerifiedSeriesState } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedSeriesState('0xseries', PACKAGE_ID)).resolves.toMatchObject({
+      objectId: '0xseries',
+      latestReleaseId,
+    })
+  })
+
+  it('rejects malformed chain latest release ids instead of silently dropping them', async () => {
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: '0xseries',
+        type: `${PACKAGE_ID}::series::SoulSeries`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::series::SoulSeries`,
+          fields: {
+            name: 'Soul',
+            description: 'Desc',
+            category: 'Research',
+            tags: [],
+            preview_images: [],
+            author: `0x${'1'.repeat(64)}`,
+            latest_release_id: { vec: [123] },
           },
         },
       },

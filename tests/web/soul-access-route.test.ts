@@ -242,6 +242,25 @@ describe('Soul agent access route', () => {
         },
       },
     })
+    mockedSuiClient.getObject.mockResolvedValueOnce({
+      data: {
+        objectId: VALID_SERIES_ID,
+        type: `${PACKAGE_ID}::series::SoulSeries`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::series::SoulSeries`,
+          fields: {
+            name: 'Soul',
+            description: 'Desc',
+            category: 'Research',
+            tags: [],
+            preview_images: [],
+            author: AGENT_ADDRESS,
+            latest_release_id: { vec: [VALID_RELEASE_ID] },
+          },
+        },
+      },
+    })
 
     const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')
     const response = await GET(
@@ -322,5 +341,226 @@ describe('Soul agent access route', () => {
     )
 
     expect(response.status).toBe(200)
+  })
+
+  it('keeps scanning candidate passes beyond the first 10 snapshots before denying access', async () => {
+    const stalePasses = Array.from({ length: 10 }, (_, index) => ({
+      passType: 'perpetual',
+      onChainId: `0x${String(index + 10).padStart(64, '9')}`,
+      lockedReleaseId: VALID_RELEASE_ID,
+      ownerAddress: `0x${'77'.repeat(32)}`,
+      agentGrant: null,
+    }))
+    const validPass = {
+      passType: 'perpetual',
+      onChainId: `0x${'88'.repeat(32)}`,
+      lockedReleaseId: VALID_RELEASE_ID,
+      ownerAddress: AGENT_ADDRESS,
+      agentGrant: null,
+    }
+
+    mockedPrisma.soulPassSnapshot.findMany.mockResolvedValueOnce([...stalePasses, validPass])
+    mockedSuiClient.getObject
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[0].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[1].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[2].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[3].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[4].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[5].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[6].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[7].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[8].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: stalePasses[9].onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: `0x${'77'.repeat(32)}` },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: `0x${'77'.repeat(32)}`,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        data: {
+          objectId: validPass.onChainId,
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          owner: { AddressOwner: AGENT_ADDRESS },
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::pass::PerpetualPass`,
+            fields: {
+              owner: AGENT_ADDRESS,
+              series_id: VALID_SERIES_ID,
+              release_id: VALID_RELEASE_ID,
+              agent_grant: { vec: [] },
+            },
+          },
+        },
+      }))
+
+    const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')
+    const response = await GET(
+      new Request(`http://localhost/api/agent/souls/${VALID_SERIES_ID}/access`) as any,
+      { params: Promise.resolve({ id: VALID_SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedPrisma.soulPassSnapshot.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.any(Object),
+      orderBy: expect.any(Array),
+    }))
+    const findManyArgs = mockedPrisma.soulPassSnapshot.findMany.mock.calls[0]?.[0]
+    expect(findManyArgs).not.toHaveProperty('take')
   })
 })

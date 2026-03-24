@@ -137,6 +137,7 @@ export async function POST(
     const release = await dbCreateRelease({
       releaseOnChainId: releaseState.objectId,
       seriesDbId: series.id,
+      seriesLatestReleaseOnChainId: seriesState.latestReleaseId,
       version: releaseState.version,
       walrusBlobRef: releaseState.walrusBlobRef,
       publicMetadataRef: releaseState.publicMetadataRef,

@@ -2,14 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const SERIES_ID = `0x${'1'.repeat(64)}`
 const SUB_PLAN_ID = `0x${'2'.repeat(64)}`
+const ONE_TIME_PLAN_ID = `0x${'4'.repeat(64)}`
 const AGENT_ADDRESS = `0x${'3'.repeat(64)}`
+const STALE_RELEASE_ID = `0x${'5'.repeat(64)}`
+const LATEST_RELEASE_ID = `0x${'6'.repeat(64)}`
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
 
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
-  soulSeries: { findFirst: vi.fn() },
+  soulSeries: { findFirst: vi.fn(), update: vi.fn() },
   member: { findUnique: vi.fn() },
+  soulRelease: { findFirst: vi.fn(), upsert: vi.fn() },
 }))
 const mockedSuiClient = vi.hoisted(() => ({
   getCoins: vi.fn(),
@@ -71,10 +75,19 @@ describe('agent soul purchase prepare route', () => {
       oneTimePriceUsdc: null,
       subPriceUsdc: 100,
     })
+    mockedPrisma.soulSeries.update.mockResolvedValue({})
     mockedPrisma.member.findUnique.mockResolvedValue({
       id: 'agent-member-1',
       wallet: AGENT_ADDRESS,
       walletBindings: [{ address: AGENT_ADDRESS }],
+    })
+    mockedPrisma.soulRelease.findFirst.mockResolvedValue(null)
+    mockedPrisma.soulRelease.upsert.mockResolvedValue({
+      id: 'release-db-latest',
+      onChainId: LATEST_RELEASE_ID,
+      version: '1.10.0',
+      walrusBlobRef: 'blob-latest',
+      contentHash: 'deadbeef',
     })
     mockedSuiClient.getCoins.mockResolvedValue({
       data: [
@@ -243,5 +256,105 @@ describe('agent soul purchase prepare route', () => {
     })
     expect(mockedSuiClient.getCoins).not.toHaveBeenCalled()
     expect(mockedBuildBuySubscriptionTx).not.toHaveBeenCalled()
+  })
+
+  it('uses the chain latest release id instead of lexicographic version sorting for one-time purchases', async () => {
+    mockedPrisma.soulSeries.findFirst.mockResolvedValueOnce({
+      id: 'series-db-1',
+      onChainId: SERIES_ID,
+      status: 'active',
+      releases: [{
+        id: 'release-db-stale',
+        onChainId: STALE_RELEASE_ID,
+        version: '1.9.0',
+        walrusBlobRef: 'blob-stale',
+        contentHash: 'stalebeef',
+      }],
+      oneTimePlanOnChainId: ONE_TIME_PLAN_ID,
+      subPlanOnChainId: null,
+      oneTimePriceUsdc: 100,
+      subPriceUsdc: null,
+    })
+    mockedSuiClient.getObject
+      .mockResolvedValueOnce({
+        data: {
+          objectId: ONE_TIME_PLAN_ID,
+          type: `${PACKAGE_ID}::purchase::PricingPlan`,
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::purchase::PricingPlan`,
+            fields: {
+              series_id: SERIES_ID,
+              plan_type: 0,
+              price_usdc: '1000000',
+              period_ms: '0',
+              active: true,
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          objectId: SERIES_ID,
+          type: `${PACKAGE_ID}::series::SoulSeries`,
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::series::SoulSeries`,
+            fields: {
+              name: 'Soul',
+              description: 'Desc',
+              category: 'Research',
+              tags: [],
+              preview_images: [],
+              author: AGENT_ADDRESS,
+              latest_release_id: { vec: [LATEST_RELEASE_ID] },
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          objectId: LATEST_RELEASE_ID,
+          type: `${PACKAGE_ID}::series::SoulRelease`,
+          content: {
+            dataType: 'moveObject',
+            type: `${PACKAGE_ID}::series::SoulRelease`,
+            fields: {
+              series_id: SERIES_ID,
+              version: '1.10.0',
+              encrypted_blob_id: 'blob-latest',
+              public_metadata_id: null,
+              content_hash: [0xde, 0xad],
+            },
+          },
+        },
+      })
+    mockedBuildBuyPerpetualTx.mockReturnValueOnce(mockedTx)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xseries/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ planType: 'onetime' }),
+      }) as any,
+      { params: Promise.resolve({ id: '0xseries' }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedBuildBuyPerpetualTx).toHaveBeenCalledWith({
+      platformConfigId: expect.any(String),
+      planId: ONE_TIME_PLAN_ID,
+      seriesId: SERIES_ID,
+      releaseId: LATEST_RELEASE_ID,
+      paymentCoinIds: ['coin-a', 'coin-b'],
+      amount: 1_000_000n,
+    })
+    expect(mockedCreatePreparedSoulPurchase).toHaveBeenCalledWith(expect.objectContaining({
+      planOnChainId: ONE_TIME_PLAN_ID,
+      planType: 'onetime',
+      releaseOnChainId: LATEST_RELEASE_ID,
+      seriesOnChainId: SERIES_ID,
+    }))
   })
 })

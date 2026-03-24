@@ -55,6 +55,7 @@ export interface VerifiedSeriesState {
   tags: string[]
   previewImages: string[]
   authorAddress: string
+  latestReleaseId: string | null
 }
 
 export interface VerifiedReleaseState {
@@ -191,25 +192,38 @@ function readBoolean(value: unknown, fieldName: string): boolean {
 }
 
 const OPTIONAL_ADDRESS_MAX_DEPTH = 4
+const OPTIONAL_OBJECT_ID_MAX_DEPTH = 4
 
 function readOptionalAddress(value: unknown, depth = 0): string | null {
   if (depth > OPTIONAL_ADDRESS_MAX_DEPTH) {
     throw new OnChainVerificationError('Pass agent_grant nesting exceeds the supported on-chain depth')
   }
 
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value.trim()
+  if (typeof value === 'string') {
+    const normalized = normalizeSuiValue(value)
+    if (!normalized) {
+      throw new OnChainVerificationError('Pass agent_grant is malformed on chain')
+    }
+    return normalized
   }
 
   if (Array.isArray(value)) {
+    if (value.length === 0) return null
     return readOptionalAddress(value[0], depth + 1)
   }
 
   const record = asRecord(value)
   if (!record) return null
 
-  if (typeof record.id === 'string' && record.id.trim().length > 0) {
-    return record.id.trim()
+  if ('id' in record) {
+    if (typeof record.id !== 'string') {
+      throw new OnChainVerificationError('Pass agent_grant is malformed on chain')
+    }
+    const normalized = normalizeSuiValue(record.id)
+    if (!normalized) {
+      throw new OnChainVerificationError('Pass agent_grant is malformed on chain')
+    }
+    return normalized
   }
 
   if (Array.isArray(record.vec)) {
@@ -217,6 +231,61 @@ function readOptionalAddress(value: unknown, depth = 0): string | null {
   }
 
   return null
+}
+
+function readOptionalObjectId(value: unknown, fieldName: string, depth = 0): string | null {
+  if (depth > OPTIONAL_OBJECT_ID_MAX_DEPTH) {
+    throw new OnChainVerificationError(`${fieldName} nesting exceeds the supported on-chain depth`)
+  }
+
+  if (value == null) {
+    return null
+  }
+
+  if (typeof value === 'string') {
+    const normalized = normalizeSuiValue(value)
+    if (!normalized) {
+      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+    }
+    return normalized
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null
+    if (value.length !== 1) {
+      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+    }
+    return readOptionalObjectId(value[0], fieldName, depth + 1)
+  }
+
+  const record = asRecord(value)
+  if (!record) {
+    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+  }
+
+  if ('id' in record) {
+    if (typeof record.id !== 'string') {
+      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+    }
+    const normalized = normalizeSuiValue(record.id)
+    if (!normalized) {
+      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+    }
+    return normalized
+  }
+
+  if ('vec' in record) {
+    if (!Array.isArray(record.vec)) {
+      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+    }
+    if (record.vec.length === 0) return null
+    if (record.vec.length !== 1) {
+      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+    }
+    return readOptionalObjectId(record.vec[0], fieldName, depth + 1)
+  }
+
+  throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
 }
 
 function bytesToHex(value: unknown): string {
@@ -462,6 +531,7 @@ function readSeriesStateFromObject(object: ObjectLike, expectedPackageId?: strin
     tags: readStringArray(fields.tags),
     previewImages: readStringArray(fields.preview_images),
     authorAddress: readString(fields.author, 'Series author'),
+    latestReleaseId: readOptionalObjectId(fields.latest_release_id, 'Series latest_release_id'),
   }
 }
 

@@ -12,6 +12,7 @@ const mockedPrisma = vi.hoisted(() => ({
   },
   soulRelease: {
     upsert: vi.fn(),
+    update: vi.fn(),
   },
   soulPassSnapshot: {
     upsert: vi.fn(),
@@ -39,6 +40,7 @@ describe('post-tx db pricing mirror', () => {
     mockedPrisma.soulSeries.update.mockResolvedValue({})
     mockedPrisma.soulSeries.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.soulRelease.upsert.mockResolvedValue({ id: 'release-db-1' })
+    mockedPrisma.soulRelease.update.mockResolvedValue({ id: 'release-db-1' })
     mockedPrisma.soulPassSnapshot.upsert.mockResolvedValue({})
     mockedPrisma.soulPassSnapshot.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue(null)
@@ -249,8 +251,9 @@ describe('post-tx db pricing mirror', () => {
     const { dbCreateRelease } = await import('../../web/lib/souls/post-tx-db.ts')
 
     await dbCreateRelease({
-      releaseOnChainId: '0xrelease',
+      releaseOnChainId: `0x${'1'.repeat(64)}`,
       seriesDbId: 'series-db-2',
+      seriesLatestReleaseOnChainId: `0x${'1'.repeat(64)}`,
       version: '1.1.0',
       walrusBlobRef: 'blob-2',
       publicMetadataRef: 'meta-2',
@@ -259,9 +262,9 @@ describe('post-tx db pricing mirror', () => {
     })
 
     expect(mockedPrisma.soulRelease.upsert).toHaveBeenCalledWith({
-      where: { onChainId: '0xrelease' },
+      where: { onChainId: `0x${'1'.repeat(64)}` },
       create: {
-        onChainId: '0xrelease',
+        onChainId: `0x${'1'.repeat(64)}`,
         seriesId: 'series-db-2',
         version: '1.1.0',
         walrusBlobRef: 'blob-2',
@@ -276,6 +279,80 @@ describe('post-tx db pricing mirror', () => {
         publicMetadataRef: 'meta-2',
         contentHash: 'deadbeef',
         changelog: 'Patch release',
+      },
+    })
+    expect(mockedPrisma.soulSeries.update).toHaveBeenCalledWith({
+      where: { id: 'series-db-2' },
+      data: { latestReleaseId: 'release-db-1' },
+    })
+  })
+
+  it('does not overwrite the stored latest release pointer when backfilling an older release mirror', async () => {
+    const { dbCreateRelease } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbCreateRelease({
+      releaseOnChainId: `0x${'2'.repeat(64)}`,
+      seriesDbId: 'series-db-2',
+      seriesLatestReleaseOnChainId: `0x${'3'.repeat(64)}`,
+      version: '1.0.0',
+      walrusBlobRef: 'blob-older',
+      publicMetadataRef: 'meta-older',
+      contentHash: 'beadfeed',
+      changelog: 'Backfilled older release',
+    })
+
+    expect(mockedPrisma.soulRelease.upsert).toHaveBeenCalledWith({
+      where: { onChainId: `0x${'2'.repeat(64)}` },
+      create: {
+        onChainId: `0x${'2'.repeat(64)}`,
+        seriesId: 'series-db-2',
+        version: '1.0.0',
+        walrusBlobRef: 'blob-older',
+        publicMetadataRef: 'meta-older',
+        contentHash: 'beadfeed',
+        changelog: 'Backfilled older release',
+      },
+      update: {
+        seriesId: 'series-db-2',
+        version: '1.0.0',
+        walrusBlobRef: 'blob-older',
+        publicMetadataRef: 'meta-older',
+        contentHash: 'beadfeed',
+        changelog: 'Backfilled older release',
+      },
+    })
+    expect(mockedPrisma.soulSeries.update).not.toHaveBeenCalled()
+  })
+
+  it('rebinds an existing same-version release row when on-chain ids drift in development data', async () => {
+    mockedPrisma.soulRelease.upsert.mockRejectedValueOnce({ code: 'P2002' })
+
+    const { dbCreateRelease } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbCreateRelease({
+      releaseOnChainId: `0x${'4'.repeat(64)}`,
+      seriesDbId: 'series-db-2',
+      seriesLatestReleaseOnChainId: `0x${'4'.repeat(64)}`,
+      version: '1.2.0',
+      walrusBlobRef: 'blob-rebound',
+      publicMetadataRef: 'meta-rebound',
+      contentHash: 'cafebabe',
+      changelog: 'Rebound latest release',
+    })
+
+    expect(mockedPrisma.soulRelease.update).toHaveBeenCalledWith({
+      where: {
+        seriesId_version: {
+          seriesId: 'series-db-2',
+          version: '1.2.0',
+        },
+      },
+      data: {
+        onChainId: `0x${'4'.repeat(64)}`,
+        walrusBlobRef: 'blob-rebound',
+        publicMetadataRef: 'meta-rebound',
+        contentHash: 'cafebabe',
+        changelog: 'Rebound latest release',
       },
     })
     expect(mockedPrisma.soulSeries.update).toHaveBeenCalledWith({
