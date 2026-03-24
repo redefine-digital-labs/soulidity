@@ -6,7 +6,6 @@ import { useSoulDetail } from '@web/lib/souls/queries'
 import { SoulPricing } from '@web/components/souls/soul-pricing'
 import { PlanSelector } from '@web/components/souls/plan-selector'
 import { PurchaseButton } from '@web/components/souls/purchase-button'
-import { WalletConnect } from '@web/components/souls/wallet-connect'
 import { ReleaseList } from '@web/components/souls/release-list'
 import { PassStatus } from '@web/components/souls/pass-status'
 
@@ -125,8 +124,6 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                   selected={effectivePlanType}
                   onChange={setPlanType}
                 />
-
-                <WalletConnect />
 
                 <PurchaseButton
                   planType={effectivePlanType}
