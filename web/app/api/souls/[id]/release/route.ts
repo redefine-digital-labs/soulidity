@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
+import { isUuid } from '@web/lib/is-uuid'
 import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
@@ -74,7 +75,7 @@ export async function POST(
     where: {
       OR: [
         ...(seriesIdParam.startsWith('0x') ? [{ onChainId: seriesIdParam }] : []),
-        ...(seriesIdParam.match(/^[0-9a-f-]{36}$/i) ? [{ id: seriesIdParam }] : []),
+        ...(isUuid(seriesIdParam) ? [{ id: seriesIdParam }] : []),
       ],
     },
   })
