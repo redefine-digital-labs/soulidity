@@ -9,7 +9,7 @@ import {
   validateSoulUploadFile,
   validateSoulUploadSignature,
 } from '@web/lib/souls/upload-validation'
-import { SOUL_RELEASE_FLOW_DISABLED_MESSAGE } from '@web/lib/souls/publish-status'
+
 import { uploadPublic } from '@web/lib/services/walrus'
 
 const MAX_UPLOAD_FORMDATA_BYTES = MAX_SOUL_UPLOAD_BYTES + 1_024 * 1_024
@@ -73,9 +73,7 @@ export async function POST(req: NextRequest) {
   if (type !== 'public' && type !== 'encrypted') {
     return NextResponse.json({ error: 'Invalid upload type' }, { status: 400 })
   }
-  if (type === 'encrypted') {
-    return NextResponse.json({ error: SOUL_RELEASE_FLOW_DISABLED_MESSAGE }, { status: 409 })
-  }
+
 
   const validationError = validateSoulUploadFile(file, type)
   if (validationError) {

@@ -15,8 +15,7 @@ import {
 } from '@web/lib/souls/publish-draft'
 import { parseSubscriptionPeriodDaysToMs, parseUsdPriceToAtomic } from '@web/lib/souls/pricing-input'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
-import { buildCreateSeriesTx, buildCreatePricingPlanTx } from '@web/lib/souls/tx-builder'
-import { SOUL_RELEASE_FLOW_DISABLED_MESSAGE } from '@web/lib/souls/publish-status'
+import { buildCreateSeriesTx, buildCreatePricingPlanTx, buildPublishReleaseTx } from '@web/lib/souls/tx-builder'
 import {
   FILE_TOO_LARGE_ERROR,
   JSON_METADATA_TOO_LARGE_ERROR,
@@ -55,6 +54,8 @@ export default function PublishSoulPage() {
   const [category, setCategory] = useState(CATEGORIES[0])
   const [tags, setTags] = useState('')
   const [previewFile, setPreviewFile] = useState<File | null>(null)
+  const [bundleFile, setBundleFile] = useState<File | null>(null)
+  const [releaseVersion, setReleaseVersion] = useState('1.0.0')
   const [pricingType, setPricingType] = useState<'onetime' | 'subscription' | 'both'>('onetime')
   const [oneTimePrice, setOneTimePrice] = useState('')
   const [subPrice, setSubPrice] = useState('')
@@ -136,10 +137,7 @@ export default function PublishSoulPage() {
         <div className="glass-card p-6 space-y-4">
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Soul Created</h1>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Soul series and pricing were created on-chain successfully.
-          </p>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {SOUL_RELEASE_FLOW_DISABLED_MESSAGE}
+            Soul was created on-chain and mirrored to the database successfully.
           </p>
           <p className="text-xs font-mono break-all" style={{ color: 'var(--text-muted)' }}>
             Tx: {txDigest}
@@ -382,6 +380,43 @@ export default function PublishSoulPage() {
         persistDraft(currentDraft)
       }
 
+      if (bundleFile && !currentDraft.releaseId && !currentDraft.releaseTxDigest) {
+        setStatus('Uploading Soul bundle...')
+        const uploadForm = new FormData()
+        uploadForm.append('file', bundleFile)
+        uploadForm.append('type', 'encrypted')
+        const uploadRes = await fetch('/api/souls/upload', { method: 'POST', headers, body: uploadForm })
+        if (!uploadRes.ok) {
+          const data = await uploadRes.json().catch(() => ({}))
+          throw new Error(data.error || 'Bundle upload failed')
+        }
+        const { blobId: encryptedBlobId, contentHash } = await uploadRes.json()
+
+        setStatus('Creating release on-chain...')
+        const contentHashBytes = new Uint8Array(
+          contentHash.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)),
+        )
+        const releaseTx = buildPublishReleaseTx({
+          authorCapId,
+          seriesId,
+          version: releaseVersion.trim() || '1.0.0',
+          encryptedBlobId,
+          publicMetadataId: encryptedBlobId,
+          contentHash: contentHashBytes,
+        })
+        const releaseResult = await signAndExecute(releaseTx)
+        const releaseId = findCreatedObjectId(releaseResult, '::series::SoulRelease')
+        if (!releaseId) {
+          throw new Error('Failed to find created SoulRelease in TX result')
+        }
+
+        currentDraft = patchSoulPublishDraft(currentDraft, {
+          releaseId,
+          releaseTxDigest: releaseResult.digest,
+        })
+        persistDraft(currentDraft)
+      }
+
       if (!currentDraft.dbMirroredAt) {
         setStatus('Saving to database...')
         const publishRes = await fetch('/api/souls/publish', {
@@ -390,6 +425,8 @@ export default function PublishSoulPage() {
           body: JSON.stringify({
             txDigest: createTxDigest,
             seriesOnChainId: seriesId,
+            releaseOnChainId: currentDraft.releaseId,
+            releaseTxDigest: currentDraft.releaseTxDigest,
             oneTimePlanOnChainId: currentDraft.oneTimePlanId,
             oneTimePlanTxDigest: currentDraft.oneTimePlanTxDigest,
             subPlanOnChainId: currentDraft.subPlanId,
@@ -443,15 +480,6 @@ export default function PublishSoulPage() {
           <Link href="/souls" className="text-sm" style={{ color: 'var(--text-muted)' }}>Cancel</Link>
         </div>
 
-        <div className="glass-card p-4 space-y-2" style={{ borderColor: 'var(--border-subtle)' }}>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {SOUL_RELEASE_FLOW_DISABLED_MESSAGE}
-          </p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            This form currently creates the series, preview image, and pricing only. Release bundle publishing will return in a safer flow.
-          </p>
-        </div>
-
         {hasRecoverableDraft && (
           <div className="glass-card p-4 space-y-3" style={{ borderColor: 'var(--border-subtle)' }}>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -497,6 +525,16 @@ export default function PublishSoulPage() {
             <input id="soul-preview-image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="input-dark w-full text-xs" onChange={handlePreviewFileChange} disabled={lockPublishConfig} />
           </div>
 
+          <div className="space-y-1">
+            <label htmlFor="soul-bundle" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Soul Bundle <span style={{ fontWeight: 400 }}>(the content file buyers will access)</span></label>
+            <input id="soul-bundle" type="file" className="input-dark w-full text-xs" onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)} disabled={lockPublishConfig} />
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="soul-version" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Version</label>
+            <input id="soul-version" type="text" className="input-dark w-full" placeholder="1.0.0" value={releaseVersion} onChange={(e) => setReleaseVersion(e.target.value)} disabled={lockPublishConfig} maxLength={32} />
+          </div>
+
           <div className="space-y-2">
             <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Pricing</label>
             <div className="flex gap-2">
@@ -513,11 +551,6 @@ export default function PublishSoulPage() {
                 </button>
               ))}
             </div>
-            {(pricingType === 'onetime' || pricingType === 'both') && (
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                One-time pricing can be created now, but it will not be purchasable until the safer release flow is back and a release exists on chain.
-              </p>
-            )}
           </div>
 
           {(pricingType === 'onetime' || pricingType === 'both') && (

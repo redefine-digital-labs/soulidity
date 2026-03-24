@@ -36,7 +36,7 @@ describe('soul upload route', () => {
     mockedUploadPublic.mockResolvedValue('blob-public')
   })
 
-  it('rejects encrypted uploads while the secure release flow is disabled', async () => {
+  it('accepts encrypted uploads and returns blobId with contentHash', async () => {
     const { POST } = await import('../../web/app/api/souls/upload/route.ts')
     const form = new FormData()
     form.append('file', new File([Buffer.alloc(64, 7)], 'bundle.bin', { type: 'application/octet-stream' }))
@@ -48,11 +48,10 @@ describe('soul upload route', () => {
       body: form,
     }) as any)
 
-    expect(response.status).toBe(409)
-    await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringContaining('release publishing'),
-    })
-    expect(mockedUploadEncrypted).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.blobId).toBe('blob-public')
+    expect(body.contentHash).toBeDefined()
   })
 
   it('rejects non-file FormData values instead of crashing on arrayBuffer()', async () => {

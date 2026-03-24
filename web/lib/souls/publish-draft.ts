@@ -26,6 +26,8 @@ export type SoulPublishDraft = {
   oneTimePlanId: string | null
   subPlanTxDigest: string | null
   subPlanId: string | null
+  releaseId: string | null
+  releaseTxDigest: string | null
   dbMirroredAt: string | null
   updatedAt: string
 }
@@ -106,6 +108,8 @@ export function createSoulPublishDraft(input: SoulPublishDraftInput): SoulPublis
     oneTimePlanId: null,
     subPlanTxDigest: null,
     subPlanId: null,
+    releaseId: null,
+    releaseTxDigest: null,
     dbMirroredAt: null,
     updatedAt: nowIso(),
   }
@@ -153,6 +157,14 @@ export function parseSoulPublishDraft(raw: string | null): SoulPublishDraft | nu
       || typeof parsed.updatedAt !== 'string'
     ) {
       return null
+    }
+
+    // Backfill fields added after the initial draft version
+    if (!('releaseId' in parsed)) {
+      ;(parsed as Record<string, unknown>).releaseId = null
+    }
+    if (!('releaseTxDigest' in parsed)) {
+      ;(parsed as Record<string, unknown>).releaseTxDigest = null
     }
 
     return parsed as SoulPublishDraft
@@ -212,5 +224,5 @@ export function clearSoulPublishDraft(storage: StorageLike, walletAddress?: stri
 }
 
 export function draftHasOnChainProgress(draft: SoulPublishDraft | null) {
-  return Boolean(draft?.seriesId || draft?.oneTimePlanId || draft?.subPlanId)
+  return Boolean(draft?.seriesId || draft?.oneTimePlanId || draft?.subPlanId || draft?.releaseId)
 }

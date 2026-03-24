@@ -62,15 +62,13 @@ describe('repository contract guards', () => {
     expect(pivotPlan.includes('SettlementEvent')).toBe(schema.includes('model SettlementEvent'))
   })
 
-  it('keeps unsafe release publishing UI turned off while the Seal flow is fail-closed', () => {
+  it('includes release publishing in the publish and release pages', () => {
     const publishPage = readFileSync(join(repoRoot, 'web', 'app', 'souls', 'publish', 'page.tsx'), 'utf8')
     const releasePage = readFileSync(join(repoRoot, 'web', 'app', 'souls', '[id]', 'release', 'page.tsx'), 'utf8')
 
-    expect(publishPage).not.toContain('buildPublishReleaseTx')
-    expect(publishPage).not.toContain('SealClient')
-    expect(releasePage).toContain('SOUL_RELEASE_FLOW_DISABLED_MESSAGE')
-    expect(releasePage).not.toContain('useSignAndExecuteTransaction')
-    expect(releasePage).not.toContain('UploadWalrus')
+    expect(publishPage).toContain('buildPublishReleaseTx')
+    expect(releasePage).toContain('buildPublishReleaseTx')
+    expect(releasePage).not.toContain('SOUL_RELEASE_FLOW_DISABLED_MESSAGE')
   })
 
   it('does not swallow client-side Soul mirror sync failures', () => {

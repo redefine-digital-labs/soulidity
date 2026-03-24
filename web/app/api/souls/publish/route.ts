@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
   const txDigest = parseRequiredTxDigest(body.txDigest)
   const seriesOnChainId = parseRequiredObjectId(body.seriesOnChainId)
   const releaseOnChainId = parseOptionalObjectId(body.releaseOnChainId)
+  const releaseTxDigest = parseOptionalTxDigest(body.releaseTxDigest)
   const oneTimePlanOnChainId = parseOptionalObjectId(body.oneTimePlanOnChainId)
   const oneTimePlanTxDigest = parseOptionalTxDigest(body.oneTimePlanTxDigest)
   const subPlanOnChainId = parseOptionalObjectId(body.subPlanOnChainId)
@@ -168,7 +169,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (releaseOnChainId) {
-      assertCreatedObjectChange(seriesTransaction, {
+      // Release may have been created in the same TX as the series or in a
+      // separate TX. Use releaseTxDigest when provided; fall back to the
+      // series TX for backward compatibility with single-TX publish flows.
+      const releaseTransaction = releaseTxDigest
+        ? await getSuccessfulTransaction(releaseTxDigest)
+        : seriesTransaction
+      assertCreatedObjectChange(releaseTransaction, {
         objectOnChainId: releaseOnChainId,
         errorMessage: 'Transaction did not create the submitted Soul release',
         expectedType: 'series::SoulRelease',

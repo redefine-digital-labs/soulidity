@@ -26,9 +26,9 @@ describe('soul release seal route', () => {
       }) as any,
     )
 
-    expect(response.status).toBe(409)
+    expect(response.status).toBe(501)
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringContaining('release publishing'),
+      error: expect.stringContaining('not yet implemented'),
     })
     expect(mockedRequireIdentity).toHaveBeenCalledTimes(1)
   })
