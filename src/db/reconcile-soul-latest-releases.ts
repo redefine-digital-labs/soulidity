@@ -94,6 +94,10 @@ export async function reconcileSoulLatestReleases(params: {
         summary.backfilled += 1
       }
       if (series.latestReleaseId !== resolvedRelease.id) {
+        await params.prisma.soulSeries.update({
+          where: { id: series.id },
+          data: { latestReleaseId: resolvedRelease.id },
+        })
         summary.updated += 1
       }
     } catch (error) {

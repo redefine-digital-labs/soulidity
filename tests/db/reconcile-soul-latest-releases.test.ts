@@ -54,6 +54,10 @@ describe('reconcileSoulLatestReleases', () => {
       seriesLatestReleaseOnChainId: `0x${'3'.repeat(64)}`,
       soulPackageId: `0x${'9'.repeat(64)}`,
     })
+    expect(prisma.soulSeries.update).toHaveBeenCalledWith({
+      where: { id: 'series-db-2' },
+      data: { latestReleaseId: 'release-db-latest' },
+    })
     expect(onSeriesError).toHaveBeenCalledWith({
       series: {
         id: 'series-db-1',
