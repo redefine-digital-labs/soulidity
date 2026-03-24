@@ -68,11 +68,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid claim link' }, { status: 403 })
   }
 
-  // Get Privy user email
+  // Get Privy user email (require verified)
   const privyUser = await privy.getUser(privyDid)
-  const email = privyUser.email?.address?.toLowerCase()
+  const email = privyUser.email?.firstVerifiedAt
+    ? privyUser.email.address.toLowerCase()
+    : null
   if (!email) {
-    return NextResponse.json({ error: 'No email found' }, { status: 400 })
+    return NextResponse.json({ error: 'No verified email found' }, { status: 400 })
   }
 
   // Pre-check: account with this privyDid already exists

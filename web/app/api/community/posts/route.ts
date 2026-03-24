@@ -41,8 +41,17 @@ export async function POST(request: NextRequest) {
   if (error) return error
 
   const body = await request.json()
-  if (!body.title || !body.content) {
+  if (!body.title || typeof body.title !== 'string' || !body.content || typeof body.content !== 'string') {
     return NextResponse.json({ error: 'title, content required' }, { status: 400 })
+  }
+
+  const title = body.title.trim()
+  const content = body.content.trim()
+  if (title.length === 0 || title.length > 500) {
+    return NextResponse.json({ error: 'title must be 1-500 characters' }, { status: 400 })
+  }
+  if (content.length === 0 || content.length > 50_000) {
+    return NextResponse.json({ error: 'content must be 1-50000 characters' }, { status: 400 })
   }
 
   let normalizedTags: string | null = null
@@ -63,8 +72,8 @@ export async function POST(request: NextRequest) {
   const post = await prisma.post.create({
     data: {
       memberId: identity!.memberId,
-      title: body.title,
-      content: body.content,
+      title,
+      content,
       tags: normalizedTags,
       type: body.type ?? 'log',
     },

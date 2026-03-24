@@ -55,6 +55,7 @@ model Article {
   companies      ArticleCompany[]
   processLogs    AgentProcessLog[]
   @@index([status])
+  @@index([pipelineStatus])
   @@map("articles")
 }
 

@@ -87,9 +87,11 @@ export async function POST(request: NextRequest) {
     // Get Privy user email inside the guarded block so upstream failures
     // return the route's standard JSON error shape.
     const privyUser = await privy.getUser(privyDid)
-    const email = privyUser.email?.address?.toLowerCase()
+    const email = privyUser.email?.firstVerifiedAt
+      ? privyUser.email.address.toLowerCase()
+      : null
     if (!email) {
-      return NextResponse.json({ error: '未找到邮箱信息' }, { status: 400 })
+      return NextResponse.json({ error: '未找到已验证的邮箱信息' }, { status: 400 })
     }
 
     // Check email not taken by another account

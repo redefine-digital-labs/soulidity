@@ -36,6 +36,7 @@ export async function collectGithub(): Promise<CollectedItem[]> {
             'Accept': 'application/vnd.github+json',
             'User-Agent': 'CryptoOpenClaw/0.1',
           },
+          signal: AbortSignal.timeout(15_000),
         }
       )
 

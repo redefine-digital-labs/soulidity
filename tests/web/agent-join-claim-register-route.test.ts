@@ -51,7 +51,7 @@ describe('agent join claim-register route', () => {
     mockedRateLimit.getRequestIp.mockReturnValue('127.0.0.1')
     mockedRateLimit.takeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedPrivy.verifyAuthToken.mockResolvedValue({ userId: 'did:privy:123' })
-    mockedPrivy.getUser.mockResolvedValue({ email: { address: 'user@example.com' } })
+    mockedPrivy.getUser.mockResolvedValue({ email: { address: 'user@example.com', firstVerifiedAt: new Date() } })
     mockedPrisma.account.findUnique.mockResolvedValue(null)
     mockedPrisma.$transaction.mockResolvedValue({ apiKey: 'sk-agent-key' })
     mockedIsValidClaimToken.mockReturnValue(true)

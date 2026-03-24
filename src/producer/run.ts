@@ -14,7 +14,7 @@ const prisma = createPrisma()
 const llm = createZaiAdapter(apiKey)
 
 console.log('Producing articles...')
-const result = await produceArticles(prisma, llm)
+const result = await produceArticles(prisma, llm, 10, 3)
 console.log(`Done. Processed ${result.processed}, succeeded ${result.succeeded}, failed ${result.failed}.`)
 
 console.log('Auto-publishing drafts older than 10 minutes...')

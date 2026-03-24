@@ -325,7 +325,9 @@ export async function resolvePrivyIdentity(token: string): Promise<Identity | nu
   const tgId = telegramTgId !== undefined && telegramTgId !== null
     ? String(telegramTgId)
     : null
-  const email = privyUser.email?.address?.trim().toLowerCase() || null
+  const email = privyUser.email?.firstVerifiedAt
+    ? privyUser.email.address.trim().toLowerCase()
+    : null
   const tgName = privyUser.telegram?.username?.trim() || null
 
   const candidates: HumanAccountLookup[] = []

@@ -322,6 +322,7 @@ describe('resolveIdentity', () => {
       },
       email: {
         address: 'legacy@example.com',
+        firstVerifiedAt: new Date(),
       },
       linkedAccounts: [],
     })
@@ -370,7 +371,7 @@ describe('resolveIdentity', () => {
 
     mockedPrivy.getUser.mockResolvedValue({
       telegram: { telegramUserId: 123456, username: 'legacy_member' },
-      email: { address: 'claimed@example.com' },
+      email: { address: 'claimed@example.com', firstVerifiedAt: new Date() },
       linkedAccounts: [],
     })
 
@@ -413,6 +414,7 @@ describe('resolveIdentity', () => {
     mockedPrivy.getUser.mockResolvedValue({
       email: {
         address: 'USER@example.com',
+        firstVerifiedAt: new Date(),
       },
       linkedAccounts: [],
     })

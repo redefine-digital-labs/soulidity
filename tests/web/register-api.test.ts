@@ -56,7 +56,7 @@ describe('POST /api/register', () => {
 
     mockedPrivy.verifyAuthToken.mockResolvedValue({ userId: 'did:privy:123' })
     mockedPrivy.getUser.mockResolvedValue({
-      email: { address: 'user@example.com' },
+      email: { address: 'user@example.com', firstVerifiedAt: new Date() },
     })
     mockedPrisma.account.findUnique.mockResolvedValue(null)
     mockedPrisma.inviteCode.findUnique.mockResolvedValue({
