@@ -2,9 +2,11 @@
 
 import { use, useState } from 'react'
 import Link from 'next/link'
+import { useSuiClient } from '@mysten/dapp-kit'
 import { useAuth } from '@web/components/auth-provider'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
 import { buildPublishReleaseTx } from '@web/lib/souls/tx-builder'
+import { getRequiredPublicEnv } from '@web/lib/souls/config'
 
 function findCreatedObjectId(
   result: { objectChanges?: Array<{ type: string; objectType?: string; objectId?: string }> },
@@ -16,10 +18,46 @@ function findCreatedObjectId(
   return obj?.objectId ?? null
 }
 
+/**
+ * Query the author's owned AuthorCap objects on-chain and find the one
+ * matching the given series on-chain ID.
+ */
+async function findAuthorCap(
+  suiClient: ReturnType<typeof useSuiClient>,
+  ownerAddress: string,
+  seriesOnChainId: string,
+): Promise<string> {
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const structType = `${packageId}::series::AuthorCap`
+
+  let cursor: string | null | undefined = undefined
+  while (true) {
+    const page = await suiClient.getOwnedObjects({
+      owner: ownerAddress,
+      filter: { StructType: structType },
+      options: { showContent: true },
+      cursor,
+    })
+
+    for (const item of page.data) {
+      const fields = (item.data?.content as { fields?: Record<string, unknown> })?.fields
+      if (fields && String(fields.series_id) === seriesOnChainId) {
+        return item.data!.objectId
+      }
+    }
+
+    if (!page.hasNextPage || !page.nextCursor) break
+    cursor = page.nextCursor
+  }
+
+  throw new Error('AuthorCap not found — are you the author of this Soul?')
+}
+
 export default function NewReleasePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { getAuthHeaders } = useAuth()
   const { suiWallet, signAndExecute } = usePrivySuiSign()
+  const suiClient = useSuiClient()
 
   const [version, setVersion] = useState('')
   const [bundleFile, setBundleFile] = useState<File | null>(null)
@@ -38,11 +76,15 @@ export default function NewReleasePage({ params }: { params: Promise<{ id: strin
     try {
       const headers = await getAuthHeaders()
 
-      // Fetch series to get authorCapId
-      setStatus('Loading series info...')
+      // Fetch series info
+      setStatus('Loading series...')
       const seriesRes = await fetch(`/api/souls/${encodeURIComponent(id)}`, { headers })
       if (!seriesRes.ok) throw new Error('Failed to load Soul series')
       const series = await seriesRes.json()
+
+      // Find AuthorCap on-chain
+      setStatus('Looking up AuthorCap...')
+      const authorCapId = await findAuthorCap(suiClient, suiWallet.address, series.onChainId)
 
       // Upload bundle
       setStatus('Uploading bundle...')
@@ -62,7 +104,7 @@ export default function NewReleasePage({ params }: { params: Promise<{ id: strin
         contentHash.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)),
       )
       const tx = buildPublishReleaseTx({
-        authorCapId: series.authorCapOnChainId,
+        authorCapId,
         seriesId: series.onChainId,
         version: version.trim() || '1.0.0',
         encryptedBlobId: blobId,
@@ -117,7 +159,7 @@ export default function NewReleasePage({ params }: { params: Promise<{ id: strin
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <label htmlFor="release-version" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Version</label>
-            <input id="release-version" type="text" className="input-dark w-full" placeholder="1.0.0" value={version} onChange={(e) => setVersion(e.target.value)} disabled={submitting} maxLength={32} />
+            <input id="release-version" type="text" className="input-dark w-full" placeholder="2.0.0" value={version} onChange={(e) => setVersion(e.target.value)} disabled={submitting} maxLength={32} />
           </div>
 
           <div className="space-y-1">
