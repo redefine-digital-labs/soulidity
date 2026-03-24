@@ -75,7 +75,7 @@ export async function POST(
   const series = await prisma.soulSeries.findFirst({
     where: isUuid(id) ? { id } : { onChainId: id },
     include: {
-      releases: { orderBy: { createdAt: 'desc' }, take: 1 },
+      releases: { orderBy: { version: 'desc' }, take: 1 },
     },
   })
 

@@ -63,7 +63,7 @@ export async function GET(
   const series = await prisma.soulSeries.findFirst({
     where,
     include: {
-      releases: { orderBy: { createdAt: 'desc' }, take: 1 },
+      releases: { orderBy: { version: 'desc' }, take: 1 },
     },
   })
 
@@ -83,9 +83,9 @@ export async function GET(
     return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 403 })
   }
 
-  // Find pass: agent granted OR agent owns the pass (self-purchase)
+  // Find passes: agent granted OR agent owns the pass (self-purchase)
   const now = new Date()
-  const pass = await prisma.soulPassSnapshot.findFirst({
+  const candidatePasses = await prisma.soulPassSnapshot.findMany({
     where: {
       seriesId: series.id,
       status: 'active',
@@ -100,9 +100,10 @@ export async function GET(
       { expiresAt: 'desc' },
       { createdAt: 'desc' },
     ],
+    take: 10,
   })
 
-  if (!pass) {
+  if (candidatePasses.length === 0) {
     return NextResponse.json({ error: 'No active pass or direct ownership for this Soul' }, { status: 403 })
   }
 
@@ -113,32 +114,40 @@ export async function GET(
     return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
   }
 
-  let verifiedPassState
-  try {
-    verifiedPassState = await getVerifiedPassState(pass.onChainId, soulPackageId)
-  } catch (error) {
-    if (error instanceof OnChainVerificationError) {
-      return NextResponse.json({ error: 'No active pass or direct ownership for this Soul' }, { status: 403 })
-    }
+  let verifiedPassState: Awaited<ReturnType<typeof getVerifiedPassState>> | null = null
+  let lastVerifyError: unknown = null
+  for (const pass of candidatePasses) {
+    try {
+      const state = await getVerifiedPassState(pass.onChainId, soulPackageId)
+      const hasOnChainAccess =
+        sameSuiValue(state.ownerAddress, agentAddress)
+        || sameSuiValue(state.agentGrant, agentAddress)
+      const isExpiredOnChain =
+        state.passType === 'subscription'
+        && state.expiresAt != null
+        && state.expiresAt < now
 
-    console.error('[agent-access] Failed to verify pass access state', {
-      agentMemberId: agent.agentMemberId,
-      seriesId: series.id,
-      passOnChainId: pass.onChainId,
-      error: toSafeErrorDetails(error),
-    })
-    return NextResponse.json({ error: 'Unable to verify pass access right now' }, { status: 503 })
+      if (sameSuiValue(state.seriesId, series.onChainId) && hasOnChainAccess && !isExpiredOnChain) {
+        verifiedPassState = state
+        break
+      }
+    } catch (error) {
+      lastVerifyError = error
+      if (!(error instanceof OnChainVerificationError)) {
+        console.error('[agent-access] Failed to verify pass access state', {
+          agentMemberId: agent.agentMemberId,
+          seriesId: series.id,
+          passOnChainId: pass.onChainId,
+          error: toSafeErrorDetails(error),
+        })
+      }
+    }
   }
 
-  const hasOnChainAccess =
-    sameSuiValue(verifiedPassState.ownerAddress, agentAddress)
-    || sameSuiValue(verifiedPassState.agentGrant, agentAddress)
-  const isExpiredOnChain =
-    verifiedPassState.passType === 'subscription'
-    && verifiedPassState.expiresAt != null
-    && verifiedPassState.expiresAt < now
-
-  if (!sameSuiValue(verifiedPassState.seriesId, series.onChainId) || !hasOnChainAccess || isExpiredOnChain) {
+  if (!verifiedPassState) {
+    if (lastVerifyError && !(lastVerifyError instanceof OnChainVerificationError)) {
+      return NextResponse.json({ error: 'Unable to verify pass access right now' }, { status: 503 })
+    }
     return NextResponse.json({ error: 'No active pass or direct ownership for this Soul' }, { status: 403 })
   }
 

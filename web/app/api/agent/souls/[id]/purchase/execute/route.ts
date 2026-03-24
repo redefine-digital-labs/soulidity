@@ -108,6 +108,52 @@ export async function POST(
   if (!sameSuiValue(preparedPurchase.agentAddress, ownerAddress)) {
     return NextResponse.json({ error: 'Prepared purchase owner does not match the agent wallet' }, { status: 422 })
   }
+  // 207 = on-chain TX succeeded but DB sync failed — allow retry
+  if (preparedPurchase.resultStatusCode === 207 && preparedPurchase.resultBody) {
+    const prevBody = preparedPurchase.resultBody as Record<string, unknown>
+    const passOnChainId = typeof prevBody.passOnChainId === 'string' ? prevBody.passOnChainId : null
+    const digest = typeof prevBody.digest === 'string' ? prevBody.digest : null
+
+    if (passOnChainId && digest) {
+      try {
+        const passState = await getVerifiedPassState(passOnChainId, soulPackageId)
+        const syncedResponseBody = {
+          digest,
+          status: 'success',
+          passOnChainId,
+          onChainSuccess: true,
+          dbSynced: true,
+        }
+        await prisma.$transaction(async (tx) => {
+          await dbCreatePass({
+            db: tx,
+            passOnChainId: passState.objectId,
+            seriesOnChainId: series.onChainId,
+            ownerAddress,
+            ownerMemberId: agent.agentMemberId,
+            passType: passState.passType,
+            lockedReleaseId: passState.lockedReleaseId,
+            mintTxDigest: digest,
+            ...(passState.expiresAt ? { expiresAt: passState.expiresAt } : {}),
+          })
+          await finalizePreparedSoulPurchaseExecution({
+            db: tx,
+            preparedPurchaseId,
+            txDigest: digest,
+            resultStatusCode: 200,
+            resultBody: syncedResponseBody,
+          })
+        })
+        return NextResponse.json(syncedResponseBody, { status: 200 })
+      } catch (err) {
+        console.error('[agent-purchase-execute] DB sync retry failed', toSafeErrorDetails(err))
+        return NextResponse.json(prevBody, { status: 207 })
+      }
+    }
+
+    return NextResponse.json(prevBody, { status: 207 })
+  }
+
   if (preparedPurchase.resultStatusCode && preparedPurchase.resultBody) {
     return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
   }

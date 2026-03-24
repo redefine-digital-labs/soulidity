@@ -8,7 +8,7 @@ BEGIN
     SELECT 1
     FROM members
     WHERE wallet IS NOT NULL
-      AND lower(wallet) !~ '^0x?[0-9a-f]{1,64}$'
+      AND lower(wallet) !~ '^(0x)?[0-9a-f]{1,64}$'
   ) THEN
     RAISE EXCEPTION 'Cannot migrate members.wallet: found invalid legacy wallet values';
   END IF;

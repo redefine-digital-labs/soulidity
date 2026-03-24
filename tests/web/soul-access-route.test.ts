@@ -9,7 +9,7 @@ const PACKAGE_ID = `0x${'66'.repeat(32)}`
 const mockedPrisma = vi.hoisted(() => ({
   soulSeries: { findFirst: vi.fn() },
   member: { findFirst: vi.fn() },
-  soulPassSnapshot: { findFirst: vi.fn() },
+  soulPassSnapshot: { findFirst: vi.fn(), findMany: vi.fn() },
   soulRelease: { findFirst: vi.fn() },
 }))
 
@@ -67,13 +67,13 @@ describe('Soul agent access route', () => {
     mockedPrisma.member.findFirst.mockResolvedValue({
       walletBindings: [{ address: AGENT_ADDRESS }],
     })
-    mockedPrisma.soulPassSnapshot.findFirst.mockResolvedValue({
+    mockedPrisma.soulPassSnapshot.findMany.mockResolvedValue([{
       passType: 'perpetual',
       onChainId: VALID_PASS_ID,
       lockedReleaseId: VALID_RELEASE_ID,
       ownerAddress: AGENT_ADDRESS,
       agentGrant: null,
-    })
+    }])
     mockedPrisma.soulRelease.findFirst.mockResolvedValue({
       id: 'release-db-1',
       onChainId: VALID_RELEASE_ID,
@@ -203,7 +203,7 @@ describe('Soul agent access route', () => {
   })
 
   it('returns 403 when the agent has no active or granted pass for the series', async () => {
-    mockedPrisma.soulPassSnapshot.findFirst.mockResolvedValue(null)
+    mockedPrisma.soulPassSnapshot.findMany.mockResolvedValue([])
 
     const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')
     const response = await GET(
@@ -218,13 +218,13 @@ describe('Soul agent access route', () => {
   })
 
   it('returns subscription access with clockObjectId', async () => {
-    mockedPrisma.soulPassSnapshot.findFirst.mockResolvedValue({
+    mockedPrisma.soulPassSnapshot.findMany.mockResolvedValue([{
       passType: 'subscription',
       onChainId: VALID_PASS_ID,
       lockedReleaseId: null,
       ownerAddress: AGENT_ADDRESS,
       agentGrant: null,
-    })
+    }])
     mockedSuiClient.getObject.mockResolvedValueOnce({
       data: {
         objectId: VALID_PASS_ID,
@@ -257,13 +257,13 @@ describe('Soul agent access route', () => {
   })
 
   it('fails closed when the DB grant is stale but the on-chain pass no longer grants or owns access', async () => {
-    mockedPrisma.soulPassSnapshot.findFirst.mockResolvedValue({
+    mockedPrisma.soulPassSnapshot.findMany.mockResolvedValue([{
       passType: 'perpetual',
       onChainId: VALID_PASS_ID,
       lockedReleaseId: VALID_RELEASE_ID,
       ownerAddress: `0x${'77'.repeat(32)}`,
       agentGrant: AGENT_ADDRESS,
-    })
+    }])
     mockedSuiClient.getObject.mockResolvedValueOnce({
       data: {
         objectId: VALID_PASS_ID,
