@@ -5,8 +5,11 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
-import { usePrivy } from '@privy-io/react-auth'
 import { AgentJoinGuide } from '@web/components/agent-join-guide'
+import { SoulCard } from '@web/components/souls/soul-card'
+import type { SoulSeriesListItem } from '@web/lib/souls/types'
+import { formatSuiAddressDisplay } from '@web/lib/auth/sui-address-display'
+import { loadCommunityProfile } from '@web/lib/community/profile-client'
 
 interface AgentItem {
   id: string
@@ -42,6 +45,8 @@ interface MemberProfile {
     earnedAt: string
     achievement: { id: string; name: string; nameZh: string; description: string | null; icon: string; condition: string | null }
   }>
+  primarySuiAddress: string | null
+  uploadedSouls: SoulSeriesListItem[]
 }
 
 const LEVELS: Record<number, { emoji: string; label: string }> = {
@@ -66,10 +71,10 @@ export default function UserProfilePage() {
   const params = useParams()
   const id = params.id as string
   const { user: authUser, getAuthHeaders } = useAuth()
-  const { user: privyUser } = usePrivy()
   const [profile, setProfile] = useState<MemberProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
   const [agents, setAgents] = useState<AgentItem[]>([])
   const [agentsLoading, setAgentsLoading] = useState(false)
   const [agentsError, setAgentsError] = useState<string | null>(null)
@@ -78,12 +83,38 @@ export default function UserProfilePage() {
 
   useEffect(() => {
     if (!id) return
+    let cancelled = false
+
     setLoading(true)
-    fetch(`/api/community/profile/${id}`)
-      .then(r => { if (r.status === 404) { setNotFound(true); return null }; return r.ok ? r.json() : null })
-      .then(data => { if (data) setProfile(data) })
-      .finally(() => setLoading(false))
-  }, [id])
+    setNotFound(false)
+    setProfileError(null)
+    loadCommunityProfile<MemberProfile>(id, getAuthHeaders)
+      .then((result) => {
+        if (cancelled) return
+
+        if (result.kind === 'not-found') {
+          setNotFound(true)
+          setProfile(null)
+          return
+        }
+
+        if (result.kind === 'error') {
+          setNotFound(false)
+          setProfile(null)
+          setProfileError(result.message)
+          return
+        }
+
+        setProfile(result.profile)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [getAuthHeaders, id])
 
   useEffect(() => {
     if (!isOwnProfile) return
@@ -132,6 +163,8 @@ export default function UserProfilePage() {
       <div className="max-w-2xl mx-auto px-6 py-10">
         {loading ? (
           <div className="text-center py-24" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+        ) : profileError ? (
+          <div className="text-center py-24" style={{ color: '#ef4444' }}>{profileError}</div>
         ) : notFound || !profile ? (
           <div className="text-center py-24" style={{ color: 'var(--text-muted)' }}>用户不存在</div>
         ) : (
@@ -160,6 +193,22 @@ export default function UserProfilePage() {
                     <span className="font-medium data-value" style={{ color: 'var(--accent-amber)' }}>{totalLikes}</span>
                     <span>获赞</span>
                   </div>
+                  {isOwnProfile && (
+                    <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                      <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>
+                        Sui Address
+                      </p>
+                      {profile.primarySuiAddress ? (
+                        <p className="text-xs mt-1 break-all data-value" style={{ color: 'var(--text-secondary)' }}>
+                          {profile.primarySuiAddress}
+                        </p>
+                      ) : (
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                          当前账号还没有绑定 Sui 地址。
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -207,7 +256,7 @@ export default function UserProfilePage() {
                             {agent.bio && <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{agent.bio}</p>}
                             {agent.walletBindings[0] && (
                               <p className="text-xs mt-0.5 font-mono truncate" style={{ color: 'var(--text-muted)' }}>
-                                {agent.walletBindings[0].address.slice(0, 6)}...{agent.walletBindings[0].address.slice(-4)}
+                                {formatSuiAddressDisplay(agent.walletBindings[0].address)}
                               </p>
                             )}
                           </div>
@@ -218,6 +267,37 @@ export default function UserProfilePage() {
                 )}
               </div>
             )}
+
+            <div className="glass-panel p-6">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h2 className="text-base font-semibold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>Uploaded Souls</h2>
+                {isOwnProfile && profile.uploadedSouls.length > 0 && (
+                  <Link href="/souls/publish" className="text-xs font-medium transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-muted)' }}>
+                    发布新 Soul
+                  </Link>
+                )}
+              </div>
+              {profile.uploadedSouls.length === 0 ? (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {isOwnProfile ? '你还没有上传任何 Soul。' : '该用户还没有公开的 Soul。'}
+                  </p>
+                  {isOwnProfile && (
+                    <Link href="/souls/publish" className="btn btn-primary text-sm">
+                      上传第一个 Soul
+                    </Link>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {profile.uploadedSouls.map((soul) => (
+                    <div key={soul.id}>
+                      <SoulCard soul={soul} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Recent posts */}
             <div className="glass-panel p-6">

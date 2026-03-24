@@ -22,6 +22,10 @@ import {
   PUBLIC_UPLOAD_ERROR,
   validateSoulUploadFile,
 } from '@web/lib/souls/upload-validation'
+import {
+  getSoulPublishPricingState,
+  getVisibleSoulPublishPricingErrors,
+} from '@web/lib/souls/publish-ui'
 
 const CATEGORIES = ['Trading', 'Research', 'Social', 'DeFi', 'NFT', 'Infrastructure', 'Other']
 const PREVIEW_FILE_VALIDATION_ERRORS = new Set([
@@ -29,6 +33,11 @@ const PREVIEW_FILE_VALIDATION_ERRORS = new Set([
   JSON_METADATA_TOO_LARGE_ERROR,
   PUBLIC_UPLOAD_ERROR,
 ])
+const EMPTY_PRICING_TOUCHED_STATE = {
+  oneTimePrice: false,
+  subPrice: false,
+  subPeriodDays: false,
+}
 
 function findCreatedObjectId(
   result: { objectChanges?: Array<{ type: string; objectType?: string; objectId?: string }> },
@@ -60,6 +69,8 @@ export default function PublishSoulPage() {
   const [oneTimePrice, setOneTimePrice] = useState('')
   const [subPrice, setSubPrice] = useState('')
   const [subPeriodDays, setSubPeriodDays] = useState('30')
+  const [pricingTouched, setPricingTouched] = useState(EMPTY_PRICING_TOUCHED_STATE)
+  const [pricingSubmitAttempted, setPricingSubmitAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -98,6 +109,8 @@ export default function PublishSoulPage() {
     setOneTimePrice(restoredDraft.oneTimePrice)
     setSubPrice(restoredDraft.subPrice)
     setSubPeriodDays(restoredDraft.subPeriodDays)
+    setPricingTouched(EMPTY_PRICING_TOUCHED_STATE)
+    setPricingSubmitAttempted(false)
     setPreviewFile(null)
     setUploadedPreview(
       restoredDraft.previewBlobId
@@ -211,10 +224,20 @@ export default function PublishSoulPage() {
     setOneTimePrice('')
     setSubPrice('')
     setSubPeriodDays('30')
+    setPricingTouched(EMPTY_PRICING_TOUCHED_STATE)
+    setPricingSubmitAttempted(false)
     setUploadedPreview(null)
     setPublishDraft(null)
     setStatus('')
     setError(null)
+  }
+
+  function markPricingFieldTouched(field: keyof typeof EMPTY_PRICING_TOUCHED_STATE) {
+    setPricingTouched((current) => (
+      current[field]
+        ? current
+        : { ...current, [field]: true }
+    ))
   }
 
   function discardRecoveredDraft() {
@@ -224,6 +247,7 @@ export default function PublishSoulPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setPricingSubmitAttempted(true)
     if (!suiWallet) {
       setError('No Sui wallet found in your Privy account')
       return
@@ -462,15 +486,22 @@ export default function PublishSoulPage() {
   }
 
   const hasRecoverableDraft = draftHasOnChainProgress(publishDraft)
-  const requiresOneTimePrice = pricingType === 'onetime' || pricingType === 'both'
-  const requiresSubscription = pricingType === 'subscription' || pricingType === 'both'
+  const pricingState = getSoulPublishPricingState({
+    pricingType,
+    oneTimePrice,
+    subPrice,
+    subPeriodDays,
+  })
+  const visiblePricingErrors = getVisibleSoulPublishPricingErrors(pricingState, {
+    submitAttempted: pricingSubmitAttempted,
+    touched: pricingTouched,
+  })
   const lockPublishConfig = submitting || hasRecoverableDraft
   const isSubmitDisabled =
     submitting
     || !name.trim()
     || !suiWallet
-    || (requiresOneTimePrice && oneTimePrice.trim().length === 0)
-    || (requiresSubscription && (subPrice.trim().length === 0 || subPeriodDays.trim().length === 0))
+    || !pricingState.isComplete
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
@@ -522,12 +553,31 @@ export default function PublishSoulPage() {
 
           <div className="space-y-1">
             <label htmlFor="soul-preview-image" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Preview Image <span style={{ fontWeight: 400 }}>(optional)</span></label>
-            <input id="soul-preview-image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="input-dark w-full text-xs" onChange={handlePreviewFileChange} disabled={lockPublishConfig} />
+            <input
+              id="soul-preview-image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="input-file-prominent w-full text-xs"
+              onChange={handlePreviewFileChange}
+              disabled={lockPublishConfig}
+            />
+            <p className="text-xs" style={{ color: previewFile ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+              {previewFile ? `Selected: ${previewFile.name}` : uploadedPreview?.blobId ? 'Recovered preview image is already cached for this draft.' : 'Choose a JPEG, PNG, WebP, or GIF preview image.'}
+            </p>
           </div>
 
           <div className="space-y-1">
             <label htmlFor="soul-bundle" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Soul Bundle <span style={{ fontWeight: 400 }}>(the content file buyers will access)</span></label>
-            <input id="soul-bundle" type="file" className="input-dark w-full text-xs" onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)} disabled={lockPublishConfig} />
+            <input
+              id="soul-bundle"
+              type="file"
+              className="input-file-prominent w-full text-xs"
+              onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)}
+              disabled={lockPublishConfig}
+            />
+            <p className="text-xs" style={{ color: bundleFile ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+              {bundleFile ? `Selected: ${bundleFile.name}` : 'Choose the encrypted bundle file buyers will unlock after purchase.'}
+            </p>
           </div>
 
           <div className="space-y-1">
@@ -551,24 +601,85 @@ export default function PublishSoulPage() {
                 </button>
               ))}
             </div>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {pricingState.helperText}
+            </p>
           </div>
 
           {(pricingType === 'onetime' || pricingType === 'both') && (
             <div className="space-y-1">
-              <label htmlFor="soul-one-time-price" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>One-time Price (USD)</label>
-              <input id="soul-one-time-price" type="number" step="0.01" min="0.01" className="input-dark w-full" placeholder="10.00" value={oneTimePrice} onChange={(e) => setOneTimePrice(e.target.value)} disabled={lockPublishConfig} />
+              <label htmlFor="soul-one-time-price" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                One-time Price (USD) <span style={{ color: 'var(--accent-rose)' }}>Required</span>
+              </label>
+              <input
+                id="soul-one-time-price"
+                type="number"
+                step="0.01"
+                min="0.01"
+                className="input-dark w-full"
+                placeholder="10.00"
+                value={oneTimePrice}
+                onChange={(e) => {
+                  markPricingFieldTouched('oneTimePrice')
+                  setOneTimePrice(e.target.value)
+                }}
+                disabled={lockPublishConfig}
+              />
+              {visiblePricingErrors.oneTimePrice && (
+                <p className="text-xs" style={{ color: 'var(--color-error, #f87171)' }}>
+                  {visiblePricingErrors.oneTimePrice}
+                </p>
+              )}
             </div>
           )}
 
           {(pricingType === 'subscription' || pricingType === 'both') && (
             <>
               <div className="space-y-1">
-                <label htmlFor="soul-subscription-price" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Subscription Price (USD / period)</label>
-                <input id="soul-subscription-price" type="number" step="0.01" min="0.01" className="input-dark w-full" placeholder="5.00" value={subPrice} onChange={(e) => setSubPrice(e.target.value)} disabled={lockPublishConfig} />
+                <label htmlFor="soul-subscription-price" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                  Subscription Price (USD / period) <span style={{ color: 'var(--accent-rose)' }}>Required</span>
+                </label>
+                <input
+                  id="soul-subscription-price"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  className="input-dark w-full"
+                  placeholder="5.00"
+                  value={subPrice}
+                  onChange={(e) => {
+                    markPricingFieldTouched('subPrice')
+                    setSubPrice(e.target.value)
+                  }}
+                  disabled={lockPublishConfig}
+                />
+                {visiblePricingErrors.subPrice && (
+                  <p className="text-xs" style={{ color: 'var(--color-error, #f87171)' }}>
+                    {visiblePricingErrors.subPrice}
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
-                <label htmlFor="soul-subscription-period-days" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Period (days)</label>
-                <input id="soul-subscription-period-days" type="number" min="1" className="input-dark w-full" value={subPeriodDays} onChange={(e) => setSubPeriodDays(e.target.value)} disabled={lockPublishConfig} />
+                <label htmlFor="soul-subscription-period-days" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                  Period (days) <span style={{ color: 'var(--accent-rose)' }}>Required</span>
+                </label>
+                <input
+                  id="soul-subscription-period-days"
+                  type="number"
+                  min="1"
+                  className="input-dark w-full"
+                  value={subPeriodDays}
+                  onChange={(e) => {
+                    markPricingFieldTouched('subPeriodDays')
+                    setSubPeriodDays(e.target.value)
+                  }}
+                  disabled={lockPublishConfig}
+                />
+                {visiblePricingErrors.subPeriodDays && (
+                  <p className="text-xs" style={{ color: 'var(--color-error, #f87171)' }}>
+                    {visiblePricingErrors.subPeriodDays}
+                  </p>
+                )}
               </div>
             </>
           )}

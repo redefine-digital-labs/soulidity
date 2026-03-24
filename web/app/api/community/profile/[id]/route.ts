@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
+import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
+import { serializeSoulPreviewImageList } from '@web/lib/souls/serialization'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,6 +10,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+  const identity = await resolveIdentity()
+  const isOwnProfile = identity?.memberId === id
 
   const member = await prisma.member.findUnique({
     where: { id },
@@ -34,6 +38,29 @@ export async function GET(
           achievement: true,
         },
       },
+      walletBindings: {
+        where: { chain: 'sui' },
+        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        take: 1,
+        select: { address: true },
+      },
+      authoredSoulSeries: {
+        where: { status: 'active' },
+        include: {
+          releases: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              version: true,
+              createdAt: true,
+            },
+          },
+          _count: { select: { passSnapshots: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 12,
+      },
     },
   })
 
@@ -41,5 +68,11 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  return NextResponse.json(member)
+  const { walletBindings, authoredSoulSeries, ...rest } = member
+
+  return NextResponse.json({
+    ...rest,
+    primarySuiAddress: isOwnProfile ? (walletBindings[0]?.address ?? null) : null,
+    uploadedSouls: serializeSoulPreviewImageList(authoredSoulSeries),
+  })
 }
