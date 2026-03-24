@@ -130,36 +130,33 @@ export async function POST(
       return NextResponse.json({ error: 'Only the series author can publish releases' }, { status: 403 })
     }
 
-    const responseBody = await prisma.$transaction(async (tx) => {
-      const release = await dbCreateRelease({
-        db: tx,
-        releaseOnChainId: releaseState.objectId,
-        seriesDbId: series.id,
-        version: releaseState.version,
-        walrusBlobRef: releaseState.walrusBlobRef,
-        publicMetadataRef: releaseState.publicMetadataRef,
-        contentHash: releaseState.contentHash,
-      })
+    // Sequential writes instead of interactive transaction to avoid
+    // connection pool timeout after long on-chain RPC verification.
+    // Both writes are idempotent (upsert) and TX-sync prevents double-processing.
+    const release = await dbCreateRelease({
+      releaseOnChainId: releaseState.objectId,
+      seriesDbId: series.id,
+      version: releaseState.version,
+      walrusBlobRef: releaseState.walrusBlobRef,
+      publicMetadataRef: releaseState.publicMetadataRef,
+      contentHash: releaseState.contentHash,
+    })
 
-      const responseBody = {
-        id: release.id,
-        onChainId: release.onChainId,
-        version: release.version,
-        seriesId: series.id,
-      }
+    const responseBody = {
+      id: release.id,
+      onChainId: release.onChainId,
+      version: release.version,
+      seriesId: series.id,
+    }
 
-      await storeSoulTxSync({
-        db: tx,
-        txDigest,
-        routeKey: 'release',
-        actorKey: identity.memberId,
-        resourceKey: releaseOnChainId,
-        statusCode: 201,
-        body: responseBody,
-      })
-
-      return responseBody
-    }, { timeout: 30_000 })
+    await storeSoulTxSync({
+      txDigest,
+      routeKey: 'release',
+      actorKey: identity.memberId,
+      resourceKey: releaseOnChainId,
+      statusCode: 201,
+      body: responseBody,
+    })
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (err) {
