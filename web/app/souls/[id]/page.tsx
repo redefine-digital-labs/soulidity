@@ -128,16 +128,16 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                 <PurchaseButton
                   planType={effectivePlanType}
                   seriesOnChainId={soul.onChainId}
-                  releaseOnChainId={soul.releases?.[0]?.onChainId ?? null}
+                  releaseOnChainId={soul.latestRelease?.onChainId ?? null}
                   planId={
                     effectivePlanType === 'onetime'
                       ? (soul.oneTimePlanOnChainId ?? '')
                       : (soul.subPlanOnChainId ?? '')
                   }
-                  priceCents={
+                  amountAtomic={
                     effectivePlanType === 'onetime'
-                      ? (soul.oneTimePriceUsdc ?? 0)
-                      : (soul.subPriceUsdc ?? 0)
+                      ? soul.oneTimePriceUsdc
+                      : soul.subPriceUsdc
                   }
                 />
               </>

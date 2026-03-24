@@ -214,8 +214,11 @@ describe('repository contract guards', () => {
 
     expect(schema).toContain('@@index([authorAddress])')
     expect(schema).toContain('@@index([seriesId, ownerAddress, status])')
-    expect(schema).toContain('Stored in display cents, not atomic 6-decimal USDC units.')
-    expect(schema).toContain('Stored in atomic 6-decimal USDC units so prepared execution can be verified losslessly.')
+    expect(schema).toContain('Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.')
+    expect(schema).toContain('oneTimePriceUsdc      Decimal? @map("one_time_price_usdc") @db.Decimal(20, 0)')
+    expect(schema).toContain('subPriceUsdc          Decimal? @map("sub_price_usdc") @db.Decimal(20, 0)')
+    expect(schema).toContain('Stored in atomic 6-decimal USDC units as NUMERIC(20,0) so prepared execution can verify the full on-chain u64 range losslessly.')
+    expect(schema).toContain('amountUsdc       Decimal  @map("amount_usdc") @db.Decimal(20, 0)')
     expect(indexMigration).toContain('"soul_series_author_address_idx"')
     expect(indexMigration).toContain('"soul_pass_snapshots_series_id_owner_address_status_idx"')
   })

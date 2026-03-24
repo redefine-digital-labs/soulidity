@@ -306,13 +306,13 @@ model SoulSeries {
   readme             String?
   latestReleaseId    String?  @map("latest_release_id") @db.Uuid
   latestRelease      SoulRelease? @relation("SoulSeriesLatestRelease", fields: [latestReleaseId], references: [id], onDelete: SetNull)
-  /// Stored in display cents, not atomic 6-decimal USDC units.
+  /// Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.
   /// DB CHECKs in `20260322223000_review_batch_constraints` require one-time plan id and price to appear together.
-  oneTimePriceUsdc      Int?     @map("one_time_price_usdc")
+  oneTimePriceUsdc      Decimal? @map("one_time_price_usdc") @db.Decimal(20, 0)
   oneTimePlanOnChainId  String?  @map("one_time_plan_on_chain_id")
-  /// Stored in display cents, not atomic 6-decimal USDC units.
+  /// Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.
   /// DB CHECKs in `20260322223000_review_batch_constraints` require subscription price, period, and plan id to stay coupled.
-  subPriceUsdc          Int?     @map("sub_price_usdc")
+  subPriceUsdc          Decimal? @map("sub_price_usdc") @db.Decimal(20, 0)
   subPlanOnChainId      String?  @map("sub_plan_on_chain_id")
   subPeriodDays         Int?     @map("sub_period_days")
   /// `20260323143000_add_soul_series_status_check` restricts status to the allowed enum-like values at the SQL layer.
@@ -400,9 +400,9 @@ model SoulPreparedPurchase {
   planType         String   @map("plan_type")
   releaseOnChainId String?  @map("release_on_chain_id")
   agentAddress     String   @map("agent_address")
-  /// Stored in atomic 6-decimal USDC units so prepared execution can be verified losslessly.
+  /// Stored in atomic 6-decimal USDC units as NUMERIC(20,0) so prepared execution can verify the full on-chain u64 range losslessly.
   /// `20260323090000_add_prepared_purchase_amount_check` enforces strictly positive prepared purchase amounts.
-  amountUsdc       BigInt   @map("amount_usdc") @db.BigInt
+  amountUsdc       Decimal  @map("amount_usdc") @db.Decimal(20, 0)
   /// `20260322123000_add_soul_tx_sync_and_prepared_purchase` caps the stored tx bytes payload length in SQL.
   txBytesBase64    String   @map("tx_bytes_base64")
   txBytesHash      String   @map("tx_bytes_hash")

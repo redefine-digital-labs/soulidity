@@ -48,13 +48,19 @@ describe('community profile route', () => {
           category: 'Research',
           tags: ['alpha'],
           previewImages: ['blob-1'],
-          oneTimePriceUsdc: 1000,
+          oneTimePriceUsdc: '1000000000',
           oneTimePlanOnChainId: 'plan-1',
           subPriceUsdc: null,
           subPlanOnChainId: null,
           subPeriodDays: null,
           createdAt: '2026-03-20T00:00:00.000Z',
-          releases: [{ id: 'release-1', version: '1.0.0', createdAt: '2026-03-20T00:00:00.000Z' }],
+          latestRelease: {
+            id: 'release-latest',
+            onChainId: 'release-chain-latest',
+            version: '1.10.0',
+            changelog: null,
+            createdAt: '2026-03-19T00:00:00.000Z',
+          },
           _count: { passSnapshots: 3 },
         },
       ],
@@ -75,6 +81,10 @@ describe('community profile route', () => {
         {
           id: 'series-1',
           name: 'Alpha Soul',
+          latestRelease: {
+            onChainId: 'release-chain-latest',
+            version: '1.10.0',
+          },
         },
       ],
     })
@@ -92,6 +102,10 @@ describe('community profile route', () => {
         {
           id: 'series-1',
           name: 'Alpha Soul',
+          latestRelease: {
+            onChainId: 'release-chain-latest',
+            version: '1.10.0',
+          },
         },
       ],
     })
@@ -101,6 +115,9 @@ describe('community profile route', () => {
           walletBindings: expect.any(Object),
           authoredSoulSeries: expect.objectContaining({
             where: { status: 'active' },
+            include: expect.objectContaining({
+              latestRelease: expect.any(Object),
+            }),
           }),
         }),
       }),

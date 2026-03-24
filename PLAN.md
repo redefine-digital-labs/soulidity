@@ -1,0 +1,19 @@
+# Souls Latest Release And Atomic Price Plan
+
+1. 先补失败测试，覆盖：
+   - detail/list/profile/agent detail 返回 canonical `latestRelease`
+   - one-time 购买不再使用 `releases[0]`
+   - pricing mirror / prepared purchase 不再使用 `Int cents` / `BigInt`
+2. 更新 Prisma schema 与新 migration：
+   - Souls 价格与 prepared purchase amount 改为 `Decimal @db.Decimal(20,0)`
+   - 清理相关注释与契约测试
+3. 增加 Souls 价格序列化/反序列化 helper：
+   - DB Decimal -> API string
+   - API string -> 展示格式 / 业务 `bigint`
+4. 收口后端 API：
+   - 详情/列表/profile/my/agent detail 显式返回 `latestRelease`
+   - 路由不再用 `releases[0]` 代表最新版本
+5. 收口前端：
+   - SoulCard / SoulDetail / PurchaseButton / SoulPricing 改为 atomic price string + canonical latest release
+   - 删除旧 cents 语义与链上 plan price fallback
+6. 跑相关测试与 typecheck，确认无残留。

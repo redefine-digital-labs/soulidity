@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 import { sameSuiValue } from '@web/lib/souls/on-chain-verification'
+import { parseAtomicUsdcString, serializeAtomicUsdcAmount } from '@web/lib/souls/price-format'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 
 const PREPARED_PURCHASE_TTL_MS = 5 * 60 * 1000
@@ -76,7 +77,7 @@ export async function createPreparedSoulPurchase(params: {
         planType: params.planType,
         releaseOnChainId: params.releaseOnChainId,
         agentAddress: params.agentAddress,
-        amountUsdc: params.amountUsdc,
+        amountUsdc: params.amountUsdc.toString(),
         txBytesBase64: params.txBytesBase64,
         txBytesHash,
         expiresAt,
@@ -120,7 +121,7 @@ export async function createPreparedSoulPurchase(params: {
             planType: params.planType,
             releaseOnChainId: params.releaseOnChainId,
             agentAddress: params.agentAddress,
-            amountUsdc: params.amountUsdc,
+            amountUsdc: params.amountUsdc.toString(),
             txBytesBase64: params.txBytesBase64,
             expiresAt,
           },
@@ -154,7 +155,7 @@ export async function createPreparedSoulPurchase(params: {
             planType: params.planType,
             releaseOnChainId: params.releaseOnChainId,
             agentAddress: params.agentAddress,
-            amountUsdc: params.amountUsdc,
+            amountUsdc: params.amountUsdc.toString(),
             txBytesBase64: params.txBytesBase64,
             executedAt: null,
             expiresAt,
@@ -233,7 +234,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
     planType: prepared.planType,
     releaseOnChainId: prepared.releaseOnChainId,
     agentAddress: prepared.agentAddress,
-    amountUsdc: prepared.amountUsdc,
+    amountUsdc: parseAtomicUsdcString(serializeAtomicUsdcAmount(prepared.amountUsdc) ?? '0'),
     txBytesBase64: prepared.txBytesBase64,
     txBytesHash: prepared.txBytesHash,
     expiresAt: prepared.expiresAt,
@@ -328,7 +329,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
       planType: prepared.planType,
       releaseOnChainId: prepared.releaseOnChainId,
       agentAddress: prepared.agentAddress,
-      amountUsdc: prepared.amountUsdc,
+      amountUsdc: parseAtomicUsdcString(serializeAtomicUsdcAmount(prepared.amountUsdc) ?? '0'),
       txBytesBase64: prepared.txBytesBase64,
       txBytesHash: prepared.txBytesHash,
       executedAt: prepared.executedAt,

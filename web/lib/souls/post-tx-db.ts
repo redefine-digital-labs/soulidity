@@ -10,8 +10,6 @@ import { Prisma } from '../../../generated/prisma/client'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { prisma } from '@web/lib/prisma'
 
-const USDC_ATOMIC_TO_CENTS = 10_000n
-const HALF_CENT_IN_ATOMIC_USDC = 5_000n
 const MS_PER_DAY = 86_400_000
 const MAX_SAFE_PERIOD_MS = BigInt(Number.MAX_SAFE_INTEGER)
 type SoulDbClient = typeof prisma | Prisma.TransactionClient
@@ -30,15 +28,6 @@ function sameSuiAddress(left: string, right: string): boolean {
   } catch {
     return false
   }
-}
-
-function atomicUsdcToRoundedCents(amountUsdc: bigint): number {
-  if (amountUsdc <= 0n) {
-    return 0
-  }
-
-  const rounded = (amountUsdc + HALF_CENT_IN_ATOMIC_USDC) / USDC_ATOMIC_TO_CENTS
-  return Number(rounded === 0n ? 1n : rounded)
 }
 
 // ---------------------------------------------------------------------------
@@ -197,13 +186,13 @@ export async function dbUpdatePricingPlan(params: {
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
-  const priceCents = atomicUsdcToRoundedCents(params.priceUsdc)
+  const priceAtomic = new Prisma.Decimal(params.priceUsdc.toString())
 
   if (params.planType === 'onetime') {
     await db.soulSeries.updateMany({
       where: { onChainId: params.seriesOnChainId },
       data: {
-        oneTimePriceUsdc: priceCents,
+        oneTimePriceUsdc: priceAtomic,
         oneTimePlanOnChainId: params.planOnChainId,
       },
     })
@@ -218,7 +207,7 @@ export async function dbUpdatePricingPlan(params: {
     await db.soulSeries.updateMany({
       where: { onChainId: params.seriesOnChainId },
       data: {
-        subPriceUsdc: priceCents,
+        subPriceUsdc: priceAtomic,
         subPlanOnChainId: params.planOnChainId,
         subPeriodDays: periodDays,
       },

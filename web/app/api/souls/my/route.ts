@@ -13,9 +13,14 @@ export async function GET() {
     prisma.soulSeries.findMany({
       where: { authorMemberId: identity.memberId },
       include: {
-        releases: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
+        latestRelease: {
+          select: {
+            id: true,
+            onChainId: true,
+            version: true,
+            changelog: true,
+            createdAt: true,
+          },
         },
         _count: { select: { passSnapshots: true } },
       },

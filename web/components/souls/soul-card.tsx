@@ -5,7 +5,7 @@ import type { SoulSeriesListItem } from '@web/lib/souls/types'
 import { SoulPricing } from './soul-pricing'
 
 export function SoulCard({ soul }: { soul: SoulSeriesListItem }) {
-  const latestVersion = soul.releases[0]?.version || '-'
+  const latestVersion = soul.latestRelease?.version || '-'
   const previewImg = soul.previewImages[0]
 
   return (

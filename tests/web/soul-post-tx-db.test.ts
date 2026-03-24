@@ -120,7 +120,7 @@ describe('post-tx db pricing mirror', () => {
     expect(mockedPrisma.soulSeries.upsert).not.toHaveBeenCalled()
   })
 
-  it('rounds tiny positive atomic USDC values up to at least one cent in the mirror', async () => {
+  it('persists tiny positive atomic USDC values without rounding them to display cents', async () => {
     const { dbUpdatePricingPlan } = await import('../../web/lib/souls/post-tx-db.ts')
 
     await dbUpdatePricingPlan({
@@ -130,13 +130,28 @@ describe('post-tx db pricing mirror', () => {
       priceUsdc: 9_999n,
     })
 
-    expect(mockedPrisma.soulSeries.updateMany).toHaveBeenCalledWith({
+    const updateManyArgs = mockedPrisma.soulSeries.updateMany.mock.calls.at(-1)?.[0]
+    expect(updateManyArgs).toMatchObject({
       where: { onChainId: '0xseries' },
       data: {
-        oneTimePriceUsdc: 1,
         oneTimePlanOnChainId: '0xplan',
       },
     })
+    expect(updateManyArgs?.data.oneTimePriceUsdc?.toString()).toBe('9999')
+  })
+
+  it('persists the full atomic u64 price instead of converting it to display cents', async () => {
+    const { dbUpdatePricingPlan } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbUpdatePricingPlan({
+      seriesOnChainId: '0xseries',
+      planType: 'onetime',
+      planOnChainId: '0xplan',
+      priceUsdc: 18_446_744_073_709_551_615n,
+    })
+
+    const updateManyArgs = mockedPrisma.soulSeries.updateMany.mock.calls.at(-1)?.[0]
+    expect(updateManyArgs?.data.oneTimePriceUsdc?.toString()).toBe('18446744073709551615')
   })
 
   it('rejects subscription pricing plans without a positive period', async () => {

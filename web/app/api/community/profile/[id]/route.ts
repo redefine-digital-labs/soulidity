@@ -47,12 +47,12 @@ export async function GET(
       authoredSoulSeries: {
         where: { status: 'active' },
         include: {
-          releases: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
+          latestRelease: {
             select: {
               id: true,
+              onChainId: true,
               version: true,
+              changelog: true,
               createdAt: true,
             },
           },
