@@ -208,6 +208,43 @@ export function buildBuySubscriptionTx(params: {
   return tx
 }
 
+// ─── Renew ─────────────────────────────────────────────────────
+
+export function buildRenewSubscriptionTx(params: {
+  platformConfigId: string
+  planId: string
+  seriesId: string
+  passId: string
+  paymentCoinIds: string[]
+  amount: bigint
+}): Transaction {
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const tx = new Transaction()
+  if (params.paymentCoinIds.length === 0) {
+    throw new Error('paymentCoinIds is required')
+  }
+
+  const primaryCoin = tx.object(params.paymentCoinIds[0]!)
+  const extraCoins = params.paymentCoinIds.slice(1).map((coinId) => tx.object(coinId))
+  if (extraCoins.length > 0) {
+    tx.mergeCoins(primaryCoin, extraCoins)
+  }
+
+  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.amount)])
+  tx.moveCall({
+    target: `${packageId}::purchase::renew_subscription`,
+    arguments: [
+      tx.object(params.platformConfigId),
+      tx.object(params.planId),
+      tx.object(params.seriesId),
+      tx.object(params.passId),
+      paymentCoin,
+      tx.object(CLOCK),
+    ],
+  })
+  return tx
+}
+
 // ─── Agent Grant ───────────────────────────────────────────────
 
 export function buildSetAgentGrantPerpetualTx(params: {

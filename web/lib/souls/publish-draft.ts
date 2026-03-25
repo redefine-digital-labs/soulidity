@@ -28,6 +28,7 @@ export type SoulPublishDraft = {
   subPlanId: string | null
   releaseId: string | null
   releaseTxDigest: string | null
+  sealDekEnvelope: string | null
   dbMirroredAt: string | null
   updatedAt: string
 }
@@ -110,6 +111,7 @@ export function createSoulPublishDraft(input: SoulPublishDraftInput): SoulPublis
     subPlanId: null,
     releaseId: null,
     releaseTxDigest: null,
+    sealDekEnvelope: null,
     dbMirroredAt: null,
     updatedAt: nowIso(),
   }

@@ -14,6 +14,7 @@ export type ResolvedSoulRelease = {
   version: string
   walrusBlobRef: string
   contentHash: string
+  sealSidecar: unknown
 }
 
 function mapResolvedRelease(release: {
@@ -22,6 +23,7 @@ function mapResolvedRelease(release: {
   version: string
   walrusBlobRef: string
   contentHash: string
+  sealSidecar?: unknown
 }): ResolvedSoulRelease {
   return {
     id: release.id,
@@ -29,6 +31,7 @@ function mapResolvedRelease(release: {
     version: release.version,
     walrusBlobRef: release.walrusBlobRef,
     contentHash: release.contentHash,
+    sealSidecar: release.sealSidecar ?? null,
   }
 }
 
@@ -53,6 +56,7 @@ export async function resolveReleaseByOnChainId(params: {
       version: true,
       walrusBlobRef: true,
       contentHash: true,
+      sealSidecar: true,
     },
   })
   if (mirroredRelease) {

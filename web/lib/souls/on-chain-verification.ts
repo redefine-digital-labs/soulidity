@@ -83,6 +83,12 @@ export interface VerifiedSoulPurchaseIntent {
   seriesId: string
 }
 
+export interface VerifiedSoulRenewIntent {
+  planId: string
+  seriesId: string
+  passId: string
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
 }
@@ -416,6 +422,40 @@ function readPurchaseIntentFromMoveCall(
   return null
 }
 
+function readRenewIntentFromMoveCall(
+  moveCall: Record<string, unknown>,
+  inputs: unknown[],
+  expectedPackageId?: string | null,
+): VerifiedSoulRenewIntent | null {
+  const moveCallPackage = typeof moveCall.package === 'string' ? moveCall.package : null
+  const moveCallModule = typeof moveCall.module === 'string' ? moveCall.module : null
+  const moveCallFunction = typeof moveCall.function === 'string' ? moveCall.function : null
+  if (!moveCallPackage || !moveCallModule || !moveCallFunction) {
+    return null
+  }
+
+  if (expectedPackageId && !sameSuiValue(moveCallPackage, expectedPackageId)) {
+    return null
+  }
+  if (moveCallModule !== 'purchase') {
+    return null
+  }
+  if (moveCallFunction !== 'renew_subscription') {
+    return null
+  }
+
+  const argumentsList = Array.isArray(moveCall.arguments) ? moveCall.arguments : null
+  if (!argumentsList) {
+    throw new OnChainVerificationError('Transaction renew inputs are unavailable for verification', 503)
+  }
+
+  return {
+    planId: readObjectInputIdFromArgument(inputs, argumentsList[1], 'Renew pricing plan'),
+    seriesId: readObjectInputIdFromArgument(inputs, argumentsList[2], 'Renew series'),
+    passId: readObjectInputIdFromArgument(inputs, argumentsList[3], 'Renew pass'),
+  }
+}
+
 function getObjectFields(object: ObjectLike, label: string) {
   const data = object.data
   if (!data) {
@@ -669,6 +709,24 @@ export function getVerifiedSoulPurchaseIntents(
 
     const purchaseIntent = readPurchaseIntentFromMoveCall(moveCall, inputs, expectedPackageId)
     return purchaseIntent ? [purchaseIntent] : []
+  })
+}
+
+export function getVerifiedSoulRenewIntents(
+  transaction: TransactionLike,
+  expectedPackageId?: string | null,
+): VerifiedSoulRenewIntent[] {
+  const { inputs, transactions } = getProgrammableTransactionData(transaction)
+
+  return transactions.flatMap((entry) => {
+    const transactionRecord = asRecord(entry)
+    const moveCall = asRecord(transactionRecord?.MoveCall)
+    if (!moveCall) {
+      return []
+    }
+
+    const renewIntent = readRenewIntentFromMoveCall(moveCall, inputs, expectedPackageId)
+    return renewIntent ? [renewIntent] : []
   })
 }
 

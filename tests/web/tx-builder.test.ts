@@ -115,4 +115,34 @@ describe('tx builders', () => {
     expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(5)
     moveCallSpy.mockRestore()
   })
+
+  describe('buildRenewSubscriptionTx', () => {
+    it('returns a Transaction object for valid params', async () => {
+      const { buildRenewSubscriptionTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+      const result = buildRenewSubscriptionTx({
+        platformConfigId: '0xplatform',
+        planId: '0xplan',
+        seriesId: '0xseries',
+        passId: '0xpass',
+        paymentCoinIds: ['0xcoin'],
+        amount: 1_000_000n,
+      })
+
+      expect(result).toBeTruthy()
+    })
+
+    it('throws when paymentCoinIds is empty', async () => {
+      const { buildRenewSubscriptionTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+      expect(() => buildRenewSubscriptionTx({
+        platformConfigId: '0xplatform',
+        planId: '0xplan',
+        seriesId: '0xseries',
+        passId: '0xpass',
+        paymentCoinIds: [],
+        amount: 1_000_000n,
+      })).toThrow('paymentCoinIds is required')
+    })
+  })
 })

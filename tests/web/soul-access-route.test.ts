@@ -62,6 +62,7 @@ describe('Soul agent access route', () => {
         version: '1.0.0',
         walrusBlobRef: 'blob-123',
         contentHash: 'deadbeef',
+        sealSidecar: null,
       }],
     })
     mockedPrisma.member.findFirst.mockResolvedValue({
@@ -80,6 +81,7 @@ describe('Soul agent access route', () => {
       version: '1.0.0',
       walrusBlobRef: 'blob-123',
       contentHash: 'deadbeef',
+      sealSidecar: null,
     })
     mockedGetSealSessionPerpetual.mockReturnValue({
       packageId: '0xsoul',
@@ -169,6 +171,7 @@ describe('Soul agent access route', () => {
         verifyKeyServers: true,
         serverConfigs: [{ objectId: '0xkeyserver', weight: 1 }],
       },
+      sealSidecar: null,
       releaseId: VALID_RELEASE_ID,
       version: '1.0.0',
       passType: 'perpetual',
@@ -324,6 +327,7 @@ describe('Soul agent access route', () => {
         version: '1.0.0',
         walrusBlobRef: 'blob-123',
         contentHash: '0xDEADBEEF',
+        sealSidecar: null,
       }],
     })
     mockedPrisma.soulRelease.findFirst.mockResolvedValue({
@@ -332,6 +336,7 @@ describe('Soul agent access route', () => {
       version: '1.0.0',
       walrusBlobRef: 'blob-123',
       contentHash: '0xDEADBEEF',
+      sealSidecar: null,
     })
 
     const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')

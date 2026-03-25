@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useSuiClient } from '@mysten/dapp-kit'
 import { useAuth } from '@web/components/auth-provider'
 import { normalizeSuiWalletAddress } from '@web/lib/auth/challenge'
+import { selectCoinObjectIdsForAmountAcrossPages } from '@web/lib/souls/coin-selection'
+import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import { formatMirrorSyncError, mirrorRouteRequest } from '@web/lib/souls/mirror-sync'
 import {
   createPassGrantSingleFlight,
@@ -11,18 +14,28 @@ import {
   getPassGrantSuccessMessage,
   type PassGrantUiState,
 } from '@web/lib/souls/pass-grant-ui'
+import { formatAtomicUsdcForDisplay, parseAtomicUsdcString } from '@web/lib/souls/price-format'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
 import {
   buildSetAgentGrantPerpetualTx,
   buildSetAgentGrantSubscriptionTx,
   buildRevokeAgentGrantPerpetualTx,
   buildRevokeAgentGrantSubscriptionTx,
+  buildRenewSubscriptionTx,
 } from '@web/lib/souls/tx-builder'
 import type { SoulPassSnapshot } from '@web/lib/souls/types'
 
-export function PassStatus({ pass }: { pass: SoulPassSnapshot }) {
+interface PassStatusProps {
+  pass: SoulPassSnapshot
+  seriesOnChainId?: string
+  subPlanOnChainId?: string | null
+  subPriceUsdc?: string | null
+}
+
+export function PassStatus({ pass, seriesOnChainId, subPlanOnChainId, subPriceUsdc }: PassStatusProps) {
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
+  const suiClient = useSuiClient()
   const [, setExpiryTick] = useState(0)
 
   useEffect(() => {
@@ -52,7 +65,15 @@ export function PassStatus({ pass }: { pass: SoulPassSnapshot }) {
     pass.expiresAt != null &&
     new Date(pass.expiresAt) < new Date()
   const canManageAgentGrant = !isExpired
+  const canRenew = isExpired && !!seriesOnChainId && !!subPlanOnChainId && !!subPriceUsdc
 
+  // ─── Renew state ────────────────────────────────────────────
+  const [renewStatus, setRenewStatus] = useState<'idle' | 'pending' | 'done' | 'error'>('idle')
+  const [renewError, setRenewError] = useState<string | null>(null)
+  const [renewTxDigest, setRenewTxDigest] = useState<string | null>(null)
+  const renewInFlightRef = useRef(false)
+
+  // ─── Grant state ────────────────────────────────────────────
   const [grantState, setGrantState] = useState<PassGrantUiState>('idle')
   const [agentAddress, setAgentAddress] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -62,9 +83,76 @@ export function PassStatus({ pass }: { pass: SoulPassSnapshot }) {
   const isGrantPending = grantState === 'pending'
   const concurrentGrantMessage = 'Another agent access update is already in progress. Please wait.'
 
-  const { signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute } = usePrivySuiSign()
   const encodedPassOnChainId = encodeURIComponent(pass.onChainId)
 
+  // ─── Renew handler ──────────────────────────────────────────
+  async function handleRenew() {
+    if (!suiWallet || renewInFlightRef.current || !seriesOnChainId || !subPlanOnChainId || !subPriceUsdc) return
+    renewInFlightRef.current = true
+    setRenewError(null)
+    setRenewTxDigest(null)
+    let confirmedDigest: string | null = null
+    try {
+      setRenewStatus('pending')
+      const platformConfigId = getRequiredPublicEnv('NEXT_PUBLIC_PLATFORM_CONFIG_ID')
+      const usdcCoinType = getRequiredPublicEnv('NEXT_PUBLIC_USDC_COIN_TYPE')
+      const amount = parseAtomicUsdcString(subPriceUsdc)
+      if (amount <= 0n) {
+        throw new Error('Pricing plan amount is invalid. Please refresh and retry.')
+      }
+
+      let paymentCoinIds: string[] | null
+      try {
+        paymentCoinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
+          owner: suiWallet.address,
+          coinType: usdcCoinType,
+          requiredAmount: amount,
+        })
+      } catch {
+        throw new Error('Unable to read your USDC balance from chain right now. Please retry.')
+      }
+      if (paymentCoinIds?.length === 0) {
+        throw new Error('No USDC found in wallet. Please fund your wallet with USDC first.')
+      }
+      if (!paymentCoinIds) {
+        throw new Error('Not enough USDC to cover this renewal.')
+      }
+
+      const tx = buildRenewSubscriptionTx({
+        platformConfigId,
+        planId: subPlanOnChainId,
+        seriesId: seriesOnChainId,
+        passId: pass.onChainId,
+        paymentCoinIds,
+        amount,
+      })
+      const result = await signAndExecute(tx)
+      confirmedDigest = result.digest
+      setRenewTxDigest(result.digest)
+
+      const authHeaders = await getAuthHeaders()
+      await mirrorRouteRequest({
+        input: `/api/souls/${encodeURIComponent(seriesOnChainId)}/renew`,
+        init: {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passOnChainId: pass.onChainId, txDigest: result.digest }),
+        },
+      })
+
+      await queryClient.invalidateQueries({ queryKey: ['soul'] })
+      await queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+      setRenewStatus('done')
+    } catch (err) {
+      setRenewError(formatMirrorSyncError(err, confirmedDigest))
+      setRenewStatus('error')
+    } finally {
+      renewInFlightRef.current = false
+    }
+  }
+
+  // ─── Grant handlers ─────────────────────────────────────────
   function handleGrantClick() {
     if (!canManageAgentGrant) {
       return
@@ -237,6 +325,34 @@ export function PassStatus({ pass }: { pass: SoulPassSnapshot }) {
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
           {isExpired ? 'Expired' : 'Expires'}: {new Date(pass.expiresAt).toLocaleDateString()}
         </p>
+      )}
+
+      {/* Renew section */}
+      {canRenew && (
+        <div className="space-y-2 pt-1">
+          {renewStatus === 'done' && renewTxDigest ? (
+            <>
+              <p className="text-xs" style={{ color: 'var(--accent-cyan)' }}>Renewal confirmed</p>
+              <p className="text-xs break-all" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                Tx: {renewTxDigest}
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn btn-primary text-xs w-full"
+                disabled={renewStatus === 'pending'}
+                onClick={handleRenew}
+              >
+                {renewStatus === 'pending' ? 'Renewing…' : `Renew — ${formatAtomicUsdcForDisplay(subPriceUsdc)}`}
+              </button>
+              {renewStatus === 'error' && renewError && (
+                <p role="alert" className="text-xs" style={{ color: 'var(--accent-rose)' }}>{renewError}</p>
+              )}
+            </>
+          )}
+        </div>
       )}
 
       {/* Agent grant section */}

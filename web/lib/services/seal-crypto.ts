@@ -138,7 +138,7 @@ async function sha256Hex(data: Uint8Array): Promise<string> {
   return stripHexPrefix(bytesToHex(new Uint8Array(digest)))
 }
 
-function createSealKeyMaterial(dek: Uint8Array, contentHash: string): Uint8Array {
+export function createSealKeyMaterial(dek: Uint8Array, contentHash: string): Uint8Array {
   const contentHashBytes = hexToBytes(contentHash)
   if (contentHashBytes.length !== CONTENT_HASH_BYTES) {
     throw new Error('Seal envelope content hash must be 32 bytes')

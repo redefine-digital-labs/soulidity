@@ -115,7 +115,12 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
             />
 
             {soul.userPass ? (
-              <PassStatus pass={soul.userPass} />
+              <PassStatus
+                pass={soul.userPass}
+                seriesOnChainId={soul.onChainId}
+                subPlanOnChainId={soul.subPlanOnChainId}
+                subPriceUsdc={soul.subPriceUsdc}
+              />
             ) : (
               <>
                 <PlanSelector

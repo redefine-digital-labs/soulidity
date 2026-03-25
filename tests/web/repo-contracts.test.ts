@@ -234,7 +234,6 @@ describe('repository contract guards', () => {
 
   it('keeps disabled Soul release routes auth-gated and key Soul UI states accessible', () => {
     const releaseRoute = readFileSync(join(repoRoot, 'web', 'app', 'api', 'souls', '[id]', 'release', 'route.ts'), 'utf8')
-    const releaseSealRoute = readFileSync(join(repoRoot, 'web', 'app', 'api', 'souls', '[id]', 'release', 'seal', 'route.ts'), 'utf8')
     const loginPage = readFileSync(join(repoRoot, 'web', 'app', 'login', 'page.tsx'), 'utf8')
     const mySoulsPage = readFileSync(join(repoRoot, 'web', 'app', 'souls', 'my', 'page.tsx'), 'utf8')
     const publishPage = readFileSync(join(repoRoot, 'web', 'app', 'souls', 'publish', 'page.tsx'), 'utf8')
@@ -242,7 +241,6 @@ describe('repository contract guards', () => {
     const purchaseButton = readFileSync(join(repoRoot, 'web', 'components', 'souls', 'purchase-button.tsx'), 'utf8')
 
     expect(releaseRoute).toContain('await requireIdentity()')
-    expect(releaseSealRoute).toContain('await requireIdentity()')
     expect(loginPage).toContain('role="tablist"')
     expect(loginPage).toContain('role="tabpanel"')
     expect(mySoulsPage).toContain('role="tablist"')

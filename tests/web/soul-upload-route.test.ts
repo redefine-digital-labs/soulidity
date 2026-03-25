@@ -4,6 +4,7 @@ const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedUploadEncrypted = vi.hoisted(() => vi.fn())
 const mockedUploadPublic = vi.hoisted(() => vi.fn())
+const mockedSealDekEnvelope = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
@@ -22,6 +23,10 @@ vi.mock('@web/lib/services/walrus', () => ({
   uploadPublic: mockedUploadPublic,
 }))
 
+vi.mock('@web/lib/services/dek-envelope', () => ({
+  sealDekEnvelope: mockedSealDekEnvelope,
+}))
+
 describe('soul upload route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -34,6 +39,7 @@ describe('soul upload route', () => {
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedUploadEncrypted.mockResolvedValue('blob-encrypted')
     mockedUploadPublic.mockResolvedValue('blob-public')
+    mockedSealDekEnvelope.mockReturnValue('mock-envelope-token')
   })
 
   it('accepts encrypted uploads and returns blobId with contentHash', async () => {
@@ -52,6 +58,14 @@ describe('soul upload route', () => {
     const body = await response.json()
     expect(body.blobId).toBe('blob-public')
     expect(body.contentHash).toBeDefined()
+    expect(body.sealDekEnvelope).toBe('mock-envelope-token')
+    expect(mockedSealDekEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dek: expect.any(Buffer),
+        iv: expect.any(Buffer),
+        contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    )
   })
 
   it('rejects non-file FormData values instead of crashing on arrayBuffer()', async () => {

@@ -3,6 +3,7 @@ import { requireIdentity } from '@web/lib/auth/identity'
 import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
 import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { getSealRuntimeConfig, createSealClient } from '@web/lib/services/seal'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import { dbCreateSeries, dbCreateRelease, dbUpdatePricingPlan } from '@web/lib/souls/post-tx-db'
 import {
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
   const subPlanOnChainId = parseOptionalObjectId(body.subPlanOnChainId)
   const subPlanTxDigest = parseOptionalTxDigest(body.subPlanTxDigest)
   const readme = body.readme
+  const sealDekEnvelope = typeof body.sealDekEnvelope === 'string' ? body.sealDekEnvelope : null
 
   if (!seriesOnChainId) {
     return NextResponse.json({ error: 'seriesOnChainId must be a valid on-chain object id' }, { status: 400 })
@@ -289,6 +291,65 @@ export async function POST(request: NextRequest) {
 
       return responseBody
     }, { timeout: 30_000 })
+
+    // Seal-encrypt the DEK and store as sidecar on the release (after TX succeeds).
+    // This calls external Seal key servers so it must not run inside the DB transaction.
+    // Failure here is non-fatal: the release is already created and the sidecar can be retried.
+    if (sealDekEnvelope && releaseState) {
+      try {
+        const { unsealDekEnvelope } = await import('@web/lib/services/dek-envelope')
+        const { generateSealDocumentId, createSealKeyMaterial } = await import('@web/lib/services/seal-crypto')
+
+        const { dek, iv, contentHash: envelopeContentHash, mimeType, fileName } = unsealDekEnvelope(sealDekEnvelope)
+
+        // Verify content hash matches on-chain release
+        if (envelopeContentHash !== releaseState.contentHash) {
+          throw new Error('DEK envelope content hash does not match the on-chain release')
+        }
+
+        const sealConfig = getSealRuntimeConfig()
+        const sealClient = createSealClient()
+
+        const documentId = generateSealDocumentId(
+          seriesState.objectId,
+          undefined, // random nonce
+          releaseState.objectId, // releaseOnChainId for perpetual+subscription compatibility
+        )
+
+        const keyMaterial = createSealKeyMaterial(dek, envelopeContentHash)
+        const { encryptedObject } = await sealClient.encrypt({
+          threshold: sealConfig.threshold,
+          packageId: soulPackageId,
+          id: documentId,
+          data: keyMaterial,
+        })
+
+        const sidecar = {
+          version: 1,
+          mode: 'seal-envelope',
+          documentId,
+          encryptedDek: Buffer.from(encryptedObject).toString('base64'),
+          iv: Buffer.from(iv).toString('base64'),
+          cipher: 'AES-GCM-256' as const,
+          mimeType,
+          fileName,
+          contentHash: envelopeContentHash,
+        }
+
+        await prisma.soulRelease.updateMany({
+          where: { onChainId: releaseState.objectId },
+          data: { sealSidecar: sidecar },
+        })
+      } catch (sealError) {
+        console.error('[soul-publish-mirror] Seal sidecar creation failed', {
+          memberId: identity.memberId,
+          seriesOnChainId,
+          releaseOnChainId: releaseState.objectId,
+          error: toSafeErrorDetails(sealError),
+        })
+        // Don't fail the whole publish — release is created, sidecar can be retried
+      }
+    }
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {

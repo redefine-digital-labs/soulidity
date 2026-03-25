@@ -274,6 +274,33 @@ export async function dbCreatePass(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Renew
+// ---------------------------------------------------------------------------
+
+export async function dbRenewPass(params: {
+  passOnChainId: string
+  newExpiresAt: Date
+  renewTxDigest: string
+  db?: SoulDbClient
+}): Promise<void> {
+  const db = params.db ?? prisma
+  const result = await db.soulPassSnapshot.updateMany({
+    where: {
+      onChainId: params.passOnChainId,
+      passType: 'subscription',
+    },
+    data: {
+      expiresAt: params.newExpiresAt,
+      lastRenewTxDigest: params.renewTxDigest,
+      lastSyncedAt: new Date(),
+    },
+  })
+  if (result.count === 0) {
+    throw new Error(`Subscription pass ${params.passOnChainId} not found`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Agent Grant
 // ---------------------------------------------------------------------------
 

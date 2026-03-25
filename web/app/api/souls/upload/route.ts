@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash } from 'node:crypto'
+import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { sealDekEnvelope } from '@web/lib/services/dek-envelope'
 import {
   FILE_TOO_LARGE_ERROR,
   JSON_METADATA_TOO_LARGE_ERROR,
@@ -90,7 +91,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: signatureError }, { status: 400 })
   }
   const contentHash = createHash('sha256').update(buffer).digest('hex')
-  const blobId = await uploadPublic(buffer)
 
-  return NextResponse.json({ blobId, contentHash })
+  if (type === 'public') {
+    const blobId = await uploadPublic(buffer)
+    return NextResponse.json({ blobId, contentHash })
+  }
+
+  // type === 'encrypted': AES-GCM-256 encrypt before uploading to Walrus
+  const dek = randomBytes(32)
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', dek, iv)
+  const ciphertext = Buffer.concat([cipher.update(buffer), cipher.final(), cipher.getAuthTag()])
+
+  const blobId = await uploadPublic(ciphertext)
+  const envelope = sealDekEnvelope({ dek, iv, contentHash, mimeType: file.type || 'application/octet-stream', fileName: file.name || 'bundle' })
+
+  return NextResponse.json({ blobId, contentHash, sealDekEnvelope: envelope })
 }

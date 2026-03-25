@@ -414,7 +414,7 @@ export default function PublishSoulPage() {
           const data = await uploadRes.json().catch(() => ({}))
           throw new Error(data.error || 'Bundle upload failed')
         }
-        const { blobId: encryptedBlobId, contentHash } = await uploadRes.json()
+        const { blobId: encryptedBlobId, contentHash, sealDekEnvelope } = await uploadRes.json()
 
         setStatus('Creating release on-chain...')
         const contentHashBytes = new Uint8Array(
@@ -437,6 +437,7 @@ export default function PublishSoulPage() {
         currentDraft = patchSoulPublishDraft(currentDraft, {
           releaseId,
           releaseTxDigest: releaseResult.digest,
+          sealDekEnvelope: sealDekEnvelope ?? null,
         })
         persistDraft(currentDraft)
       }
@@ -455,6 +456,7 @@ export default function PublishSoulPage() {
             oneTimePlanTxDigest: currentDraft.oneTimePlanTxDigest,
             subPlanOnChainId: currentDraft.subPlanId,
             subPlanTxDigest: currentDraft.subPlanTxDigest,
+            ...(currentDraft.sealDekEnvelope ? { sealDekEnvelope: currentDraft.sealDekEnvelope } : {}),
           }),
         })
         if (!publishRes.ok) {

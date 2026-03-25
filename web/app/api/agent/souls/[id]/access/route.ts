@@ -242,6 +242,7 @@ export async function GET(
         weight,
       })),
     },
+    sealSidecar: targetRelease.sealSidecar ?? null,
     releaseId: targetRelease.onChainId,
     version: targetRelease.version,
     passType: verifiedPassState.passType,

@@ -661,7 +661,7 @@ describe('Soul purchase route', () => {
     })
   })
 
-  it('returns 503 for renew requests (not yet implemented)', async () => {
+  it('returns 400 for renew requests with invalid JSON', async () => {
     const { POST } = await import('../../web/app/api/souls/[id]/renew/route.ts')
     const response = await POST(
       new Request('http://localhost/api/souls/series-1/renew', {
@@ -671,6 +671,8 @@ describe('Soul purchase route', () => {
       { params: Promise.resolve({ id: 'series-1' }) },
     )
 
-    expect(response.status).toBe(503)
+    expect(response.status).toBe(400)
+    const json = await response.json()
+    expect(json.error).toBe('Invalid JSON')
   })
 })

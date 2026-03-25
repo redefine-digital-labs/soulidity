@@ -437,4 +437,49 @@ describe('post-tx db pricing mirror', () => {
       passOnChainId: '0xmissing',
     })).rejects.toThrow('Pass 0xmissing not found')
   })
+
+  describe('dbRenewPass', () => {
+    it('updates expiresAt, lastRenewTxDigest and lastSyncedAt for a subscription pass', async () => {
+      const { dbRenewPass } = await import('../../web/lib/souls/post-tx-db.ts')
+      const newExpiresAt = new Date('2030-01-01T00:00:00.000Z')
+
+      await expect(dbRenewPass({
+        passOnChainId: '0xpass',
+        newExpiresAt,
+        renewTxDigest: '0xdigest',
+      })).resolves.toBeUndefined()
+
+      expect(mockedPrisma.soulPassSnapshot.updateMany).toHaveBeenCalledWith({
+        where: { onChainId: '0xpass', passType: 'subscription' },
+        data: expect.objectContaining({
+          expiresAt: newExpiresAt,
+          lastRenewTxDigest: '0xdigest',
+          lastSyncedAt: expect.any(Date),
+        }),
+      })
+    })
+
+    it('throws when no subscription pass matches the given onChainId', async () => {
+      mockedPrisma.soulPassSnapshot.updateMany.mockResolvedValueOnce({ count: 0 })
+      const { dbRenewPass } = await import('../../web/lib/souls/post-tx-db.ts')
+
+      await expect(dbRenewPass({
+        passOnChainId: '0xmissing',
+        newExpiresAt: new Date(),
+        renewTxDigest: '0xdigest',
+      })).rejects.toThrow('Subscription pass 0xmissing not found')
+    })
+
+    it('throws for a perpetual pass because the where clause filters on passType subscription', async () => {
+      // perpetual passes will not match the subscription filter → count: 0
+      mockedPrisma.soulPassSnapshot.updateMany.mockResolvedValueOnce({ count: 0 })
+      const { dbRenewPass } = await import('../../web/lib/souls/post-tx-db.ts')
+
+      await expect(dbRenewPass({
+        passOnChainId: '0xperpetual',
+        newExpiresAt: new Date(),
+        renewTxDigest: '0xdigest',
+      })).rejects.toThrow('Subscription pass 0xperpetual not found')
+    })
+  })
 })

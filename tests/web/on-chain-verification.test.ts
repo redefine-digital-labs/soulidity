@@ -323,4 +323,97 @@ describe('on-chain verification helpers', () => {
       },
     } as any)).toThrow(OnChainVerificationError)
   })
+
+  describe('getVerifiedSoulRenewIntents', () => {
+    const PLAN_ID = `0x${'a'.repeat(64)}`
+    const SERIES_ID = `0x${'b'.repeat(64)}`
+    const PASS_ID = `0x${'c'.repeat(64)}`
+    const PLATFORM_CONFIG_ID = `0x${'d'.repeat(64)}`
+    const PAYMENT_COIN_ID = `0x${'e'.repeat(64)}`
+    const CLOCK_ID = '0x0000000000000000000000000000000000000000000000000000000000000006'
+
+    function buildRenewTx(overrides?: {
+      module?: string
+      function?: string
+      packageId?: string
+      arguments?: unknown
+    }) {
+      return {
+        transaction: {
+          data: {
+            transaction: {
+              kind: 'ProgrammableTransaction',
+              inputs: [
+                { type: 'object', objectId: PLATFORM_CONFIG_ID, objectType: 'sharedObject', initialSharedVersion: 1, mutable: false },
+                { type: 'object', objectId: PLAN_ID, objectType: 'sharedObject', initialSharedVersion: 1, mutable: false },
+                { type: 'object', objectId: SERIES_ID, objectType: 'sharedObject', initialSharedVersion: 1, mutable: false },
+                { type: 'object', objectId: PASS_ID, objectType: 'immOrOwnedObject', version: '1', digest: 'abc' },
+                { type: 'object', objectId: PAYMENT_COIN_ID, objectType: 'immOrOwnedObject', version: '1', digest: 'def' },
+                { type: 'object', objectId: CLOCK_ID, objectType: 'sharedObject', initialSharedVersion: 1, mutable: false },
+              ],
+              transactions: [{
+                MoveCall: {
+                  package: overrides?.packageId ?? PACKAGE_ID,
+                  module: overrides?.module ?? 'purchase',
+                  function: overrides?.function ?? 'renew_subscription',
+                  arguments: overrides && 'arguments' in overrides
+                    ? overrides.arguments
+                    : [
+                        { Input: 0 },
+                        { Input: 1 },
+                        { Input: 2 },
+                        { Input: 3 },
+                        { Input: 4 },
+                        { Input: 5 },
+                      ],
+                },
+              }],
+            },
+          },
+        },
+      }
+    }
+
+    it('parses a renew_subscription move call and returns planId, seriesId and passId', async () => {
+      const { getVerifiedSoulRenewIntents } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+      const result = getVerifiedSoulRenewIntents(buildRenewTx() as any)
+
+      expect(result).toEqual([{ planId: PLAN_ID, seriesId: SERIES_ID, passId: PASS_ID }])
+    })
+
+    it('ignores buy_subscription move calls and returns an empty array', async () => {
+      const { getVerifiedSoulRenewIntents } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+      const result = getVerifiedSoulRenewIntents(buildRenewTx({ function: 'buy_subscription' }) as any)
+
+      expect(result).toEqual([])
+    })
+
+    it('ignores move calls from a non-purchase module', async () => {
+      const { getVerifiedSoulRenewIntents } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+      const result = getVerifiedSoulRenewIntents(buildRenewTx({ module: 'grant' }) as any)
+
+      expect(result).toEqual([])
+    })
+
+    it('ignores move calls from a mismatched package when expectedPackageId is provided', async () => {
+      const { getVerifiedSoulRenewIntents } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+      const result = getVerifiedSoulRenewIntents(
+        buildRenewTx({ packageId: COUNTERFEIT_PACKAGE_ID }) as any,
+        PACKAGE_ID,
+      )
+
+      expect(result).toEqual([])
+    })
+
+    it('throws with status 503 when the move call arguments list is null', async () => {
+      const { getVerifiedSoulRenewIntents, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+      expect(() => getVerifiedSoulRenewIntents(buildRenewTx({ arguments: null }) as any)).toThrow(OnChainVerificationError)
+      expect(() => getVerifiedSoulRenewIntents(buildRenewTx({ arguments: null }) as any)).toThrow('unavailable for verification')
+    })
+  })
 })

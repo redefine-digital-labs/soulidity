@@ -59,6 +59,11 @@ vi.mock('@web/lib/sui', () => ({
   suiClient: mockedSuiClient,
 }))
 
+vi.mock('@web/lib/services/seal', () => ({
+  getSealRuntimeConfig: vi.fn().mockReturnValue({ threshold: 1 }),
+  createSealClient: vi.fn().mockReturnValue({ encrypt: vi.fn() }),
+}))
+
 describe('soul publish route', () => {
   beforeEach(() => {
     vi.resetAllMocks()

@@ -55,6 +55,7 @@ export async function createPreparedSoulPurchase(params: {
   planOnChainId: string
   planType: 'onetime' | 'subscription'
   releaseOnChainId: string | null
+  passOnChainId?: string | null
   agentAddress: string
   amountUsdc: bigint
   txBytesBase64: string
@@ -76,6 +77,7 @@ export async function createPreparedSoulPurchase(params: {
         planOnChainId: params.planOnChainId,
         planType: params.planType,
         releaseOnChainId: params.releaseOnChainId,
+        passOnChainId: params.passOnChainId ?? null,
         agentAddress: params.agentAddress,
         amountUsdc: params.amountUsdc.toString(),
         txBytesBase64: params.txBytesBase64,
@@ -120,6 +122,7 @@ export async function createPreparedSoulPurchase(params: {
             planOnChainId: params.planOnChainId,
             planType: params.planType,
             releaseOnChainId: params.releaseOnChainId,
+            passOnChainId: params.passOnChainId ?? null,
             agentAddress: params.agentAddress,
             amountUsdc: params.amountUsdc.toString(),
             txBytesBase64: params.txBytesBase64,
@@ -154,6 +157,7 @@ export async function createPreparedSoulPurchase(params: {
             planOnChainId: params.planOnChainId,
             planType: params.planType,
             releaseOnChainId: params.releaseOnChainId,
+            passOnChainId: params.passOnChainId ?? null,
             agentAddress: params.agentAddress,
             amountUsdc: params.amountUsdc.toString(),
             txBytesBase64: params.txBytesBase64,
@@ -186,6 +190,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
   planOnChainId: string
   planType: string
   releaseOnChainId: string | null
+  passOnChainId: string | null
   agentAddress: string
   amountUsdc: bigint
   txBytesBase64: string
@@ -204,6 +209,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
       planOnChainId: true,
       planType: true,
       releaseOnChainId: true,
+      passOnChainId: true,
       agentAddress: true,
       amountUsdc: true,
       txBytesBase64: true,
@@ -233,6 +239,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
     planOnChainId: prepared.planOnChainId,
     planType: prepared.planType,
     releaseOnChainId: prepared.releaseOnChainId,
+    passOnChainId: prepared.passOnChainId,
     agentAddress: prepared.agentAddress,
     amountUsdc: parseAtomicUsdcString(serializeAtomicUsdcAmount(prepared.amountUsdc) ?? '0'),
     txBytesBase64: prepared.txBytesBase64,
@@ -254,6 +261,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
   planOnChainId: string
   planType: string
   releaseOnChainId: string | null
+  passOnChainId: string | null
   agentAddress: string
   amountUsdc: bigint
   txBytesBase64: string
@@ -308,6 +316,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
         planOnChainId: true,
         planType: true,
         releaseOnChainId: true,
+        passOnChainId: true,
         agentAddress: true,
         amountUsdc: true,
         txBytesBase64: true,
@@ -328,6 +337,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
       planOnChainId: prepared.planOnChainId,
       planType: prepared.planType,
       releaseOnChainId: prepared.releaseOnChainId,
+      passOnChainId: prepared.passOnChainId,
       agentAddress: prepared.agentAddress,
       amountUsdc: parseAtomicUsdcString(serializeAtomicUsdcAmount(prepared.amountUsdc) ?? '0'),
       txBytesBase64: prepared.txBytesBase64,

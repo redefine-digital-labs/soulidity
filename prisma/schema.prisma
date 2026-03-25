@@ -341,6 +341,7 @@ model SoulRelease {
   publicMetadataRef String?   @map("public_metadata_ref")
   contentHash      String     @map("content_hash")
   changelog        String?
+  sealSidecar      Json?      @map("seal_sidecar")
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([seriesId, createdAt(sort: Desc)])
@@ -362,6 +363,7 @@ model SoulPassSnapshot {
   agentGrant      String?    @map("agent_grant")
   status          String     @default("active")
   mintTxDigest    String     @map("mint_tx_digest")
+  lastRenewTxDigest String?  @map("last_renew_tx_digest")
   lastSyncedAt    DateTime   @default(now()) @map("last_synced_at") @db.Timestamptz
   createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -399,6 +401,7 @@ model SoulPreparedPurchase {
   /// `20260322233000_add_soul_enum_checks` constrains plan_type to the supported values in SQL.
   planType         String   @map("plan_type")
   releaseOnChainId String?  @map("release_on_chain_id")
+  passOnChainId    String?  @map("pass_on_chain_id")
   agentAddress     String   @map("agent_address")
   /// Stored in atomic 6-decimal USDC units as NUMERIC(20,0) so prepared execution can verify the full on-chain u64 range losslessly.
   /// `20260323090000_add_prepared_purchase_amount_check` enforces strictly positive prepared purchase amounts.
