@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { prisma } from '@web/lib/prisma'
 import { scrapeUrl } from '@web/lib/scraper'
+import { requireIdentity } from '@web/lib/auth/identity'
 
 // --- Score (inline from src/collector/score.ts) ---
 
@@ -83,8 +84,16 @@ function toSlug(name: string): string {
 
 // --- API Route ---
 
+const llmClient = new OpenAI({
+  baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+  apiKey: process.env.ZAI_API_KEY ?? '',
+})
+
 export async function POST(req: NextRequest) {
   try {
+    const { error: authError } = await requireIdentity()
+    if (authError) return authError
+
     const body = await req.json()
     const url: string | undefined = body.url
     if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 })
@@ -99,7 +108,10 @@ export async function POST(req: NextRequest) {
         title = title || scraped.title
         content = content || scraped.content
       } catch (err: any) {
-        return NextResponse.json({ error: `Failed to scrape URL: ${err.message}` }, { status: 422 })
+        const msg = err.message?.includes('HTTPS') || err.message?.includes('private')
+          ? err.message
+          : 'Failed to scrape URL'
+        return NextResponse.json({ error: msg }, { status: 422 })
       }
     }
 
@@ -130,20 +142,14 @@ export async function POST(req: NextRequest) {
     }
 
     // LLM produce
-    const apiKey = process.env.ZAI_API_KEY
-    if (!apiKey) {
+    if (!process.env.ZAI_API_KEY) {
       return NextResponse.json({ error: 'LLM API key not configured' }, { status: 500 })
     }
-
-    const client = new OpenAI({
-      baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-      apiKey,
-    })
 
     await prisma.rawItem.update({ where: { id: rawItemId }, data: { status: 'processing' } })
 
     const prompt = buildUserPrompt(title, content, url, 'Manual')
-    const response = await client.chat.completions.create({
+    const response = await llmClient.chat.completions.create({
       model: 'glm-4.7',
       max_tokens: 4096,
       messages: [
@@ -199,6 +205,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('Submit error:', err)
-    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

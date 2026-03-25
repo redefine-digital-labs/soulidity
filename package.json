@@ -19,9 +19,8 @@
     "scan:skills": "tsx src/collector/scan-skills.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@prisma/adapter-pg": "^7.4.2",
-    "@prisma/client": "^7.4.2",
+    "@prisma/adapter-pg": "^7.5.0",
+    "@prisma/client": "^7.5.0",
     "dotenv": "^17.3.1",
     "grammy": "^1.30.0",
     "jsonrepair": "^3.13.3",
@@ -29,7 +28,7 @@
     "openai": "^6.25.0",
     "p-limit": "^7.3.0",
     "pg": "^8.19.0",
-    "prisma": "^7.4.2",
+    "prisma": "^7.5.0",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {

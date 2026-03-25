@@ -12,11 +12,11 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@mysten/dapp-kit": "^1.0.3",
-    "@mysten/seal": "^1.0.1",
-    "@mysten/sui": "^2.6.0",
-    "@prisma/adapter-pg": "^7.4.2",
-    "@prisma/client": "^7.4.2",
+    "@mysten/dapp-kit": "^1.0.4",
+    "@mysten/seal": "^1.1.1",
+    "@mysten/sui": "^2.11.0",
+    "@prisma/adapter-pg": "^7.5.0",
+    "@prisma/client": "^7.5.0",
     "@privy-io/react-auth": "^3.17.0",
     "@privy-io/server-auth": "^1.32.5",
     "@supabase/ssr": "^0.9.0",
@@ -26,11 +26,11 @@
     "dotenv": "^17.3.1",
     "grammy": "^1.40.1",
     "jose": "^6.2.1",
-    "next": "16.1.6",
+    "next": "^16.2.1",
     "openai": "^6.25.0",
     "pg": "^8.19.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -39,8 +39,8 @@
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "prisma": "^7.4.2",
+    "eslint-config-next": "^16.2.1",
+    "prisma": "^7.5.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

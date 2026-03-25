@@ -25,6 +25,8 @@ model RawItem {
   @@index([status])
   @@index([score(sort: Desc)])
   @@index([createdAt])
+  @@index([titleHash, status, createdAt])
+  @@index([sourceType, status, createdAt])
   @@map("raw_items")
 }
 
@@ -123,6 +125,8 @@ model Publication {
   messageId   String?   @map("message_id")
   publishedAt DateTime? @map("published_at") @db.Timestamptz
 
+  @@index([articleId])
+  @@index([publishedAt])
   @@map("publications")
 }
 
