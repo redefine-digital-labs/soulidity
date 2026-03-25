@@ -122,27 +122,27 @@
 
 ---
 
-## Recommended Action Plan
+## Recommended Action Plan — Resolution Status
 
-### Immediate (low effort, high impact)
+### Immediate (low effort, high impact) — All Done
 
-1. **Update `next`** to 16.1.7+ — patches 5 CVEs, minor bump
-2. **Add URL validation** to `/api/submit` — block private IPs, require `https://`
-3. **Add auth** to `/api/submit` — prevent anonymous LLM API abuse
-4. **Add `@@index([articleId])` and `@@index([publishedAt])`** to `Publication` model
-5. **Parallelize RSS collector** — swap `for` loop for `Promise.allSettled`
+1. ~~**Update `next`** to 16.1.7+~~ — Done: 16.1.6 → 16.2.1 (`1a18a75`)
+2. ~~**Add URL validation** to `/api/submit`~~ — Done: SSRF protection via `validateUrl()` (`1a18a75`)
+3. ~~**Add auth** to `/api/submit`~~ — Done: `requireIdentity()` + error sanitization (`1a18a75`)
+4. ~~**Add `@@index([articleId])` and `@@index([publishedAt])`** to Publication~~ — Done (`1a18a75`)
+5. ~~**Parallelize RSS collector**~~ — Done: `Promise.allSettled` (`1a18a75`)
 
-### Short-term (moderate effort)
+### Short-term (moderate effort) — All Done
 
-6. Fix dedup N+1 — add composite index on RawItem, add `take` limit
-7. Add caching to stats/leaderboard/tags routes (even a 60s in-memory TTL)
-8. Cap `/api/companies` limit param, add generic error responses
-9. Update `@mysten/sui`, `@mysten/seal`, Prisma stack
-10. Remove dead code: `dedup-run.ts`, empty `seal/` dir, unused `@anthropic-ai/sdk`
+6. ~~Fix dedup N+1~~ — Done: `take: 500` + composite indexes on RawItem (`1a18a75`)
+7. ~~Add caching to stats/leaderboard/tags routes~~ — Done: TTL cache 60-300s (`1a18a75`)
+8. ~~Cap `/api/companies` limit param~~ — Done: max 200 + NaN guard (`1a18a75`)
+9. ~~Update `@mysten/sui`, `@mysten/seal`, Prisma stack~~ — Done: sui 2.11, seal 1.1.1, prisma 7.5.0 (`1a18a75`)
+10. ~~Remove dead code~~ — Done: `@anthropic-ai/sdk`, `dedup-run.ts`, empty `seal/` dir (`1a18a75`)
 
-### Longer-term
+### Longer-term — 3 of 4 Done
 
-11. Migrate rate limiter to distributed store (Upstash Redis) for serverless
-12. Update `@anthropic-ai/sdk` 0.39 → 0.80 (needs careful testing)
-13. Decide: complete or remove the Achievement system
-14. Consider npm workspaces to deduplicate shared dependencies
+11. ~~Migrate rate limiter to Upstash Redis~~ — Done: `@upstash/ratelimit` + in-memory fallback (`1093a30`)
+12. ~~Update `@anthropic-ai/sdk`~~ — Resolved: removed (unused dependency) (`1a18a75`)
+13. ~~Achievement system~~ — Done: auto-award via `evaluateAchievements()` (`1093a30`)
+14. **npm workspaces** — Deferred: vite-node has symlink resolution issues with workspace setups. Revisit with pnpm or after vitest update.
