@@ -30,6 +30,15 @@ public struct PlatformAdminTransferAccepted has copy, drop {
     new_admin: address,
 }
 
+public struct PlatformConfigUpdated has copy, drop {
+    fee_recipient: address,
+    fee_bps: u64,
+}
+
+public struct PlatformPaused has copy, drop {}
+
+public struct PlatformUnpaused has copy, drop {}
+
 // === Constants ===
 
 const PLAN_ONETIME: u8 = 0;
@@ -52,9 +61,9 @@ const E_PERIOD_EXCEEDS_MAX: u64 = 21;
 const E_PLAN_INACTIVE: u64 = 22;
 const E_NO_PENDING_ADMIN: u64 = 23;
 const E_NOT_PENDING_ADMIN: u64 = 24;
-const E_PERIOD_MISMATCH: u64 = 25;
 const E_PLAN_ALREADY_INACTIVE: u64 = 26;
 const E_INVALID_RECIPIENT: u64 = 28;
+const E_PLATFORM_PAUSED: u64 = 29;
 
 // === Structs ===
 
@@ -65,6 +74,7 @@ public struct PlatformConfig has key {
     fee_bps: u64, // basis points, e.g. 250 = 2.5%
     admin: address,
     pending_admin: Option<address>,
+    paused: bool,
 }
 
 /// Pricing plan for a series
@@ -88,6 +98,7 @@ fun init(ctx: &mut TxContext) {
         fee_bps: DEFAULT_PLATFORM_FEE_BPS,
         admin,
         pending_admin: option::none(),
+        paused: false,
     };
     transfer::share_object(config);
 }
@@ -103,6 +114,27 @@ public entry fun update_platform_config(
     assert!(fee_recipient != @0x0, E_INVALID_RECIPIENT);
     config.fee_recipient = fee_recipient;
     config.fee_bps = fee_bps;
+    event::emit(PlatformConfigUpdated { fee_recipient, fee_bps });
+}
+
+/// Pause all purchases and renewals. Only admin can call.
+public entry fun pause_platform(
+    config: &mut PlatformConfig,
+    ctx: &TxContext,
+) {
+    assert!(config.admin == ctx.sender(), E_NOT_ADMIN);
+    config.paused = true;
+    event::emit(PlatformPaused {});
+}
+
+/// Unpause the platform. Only admin can call.
+public entry fun unpause_platform(
+    config: &mut PlatformConfig,
+    ctx: &TxContext,
+) {
+    assert!(config.admin == ctx.sender(), E_NOT_ADMIN);
+    config.paused = false;
+    event::emit(PlatformUnpaused {});
 }
 
 /// Step 1: Current admin proposes a new admin
@@ -220,6 +252,7 @@ public entry fun buy_perpetual(
     payment: Coin<USDC>,
     ctx: &mut TxContext,
 ) {
+    assert!(!config.paused, E_PLATFORM_PAUSED);
     assert!(plan.active, E_PLAN_INACTIVE);
     assert!(plan.series_id == series.series_id(), E_PLAN_SERIES_MISMATCH);
     assert!(plan.plan_type == PLAN_ONETIME, E_WRONG_PLAN_TYPE);
@@ -262,6 +295,7 @@ public entry fun buy_subscription(
     clock: &sui::clock::Clock,
     ctx: &mut TxContext,
 ) {
+    assert!(!config.paused, E_PLATFORM_PAUSED);
     assert!(plan.active, E_PLAN_INACTIVE);
     assert!(plan.series_id == series.series_id(), E_PLAN_SERIES_MISMATCH);
     assert!(plan.plan_type == PLAN_SUBSCRIPTION, E_WRONG_PLAN_TYPE);
@@ -303,13 +337,16 @@ public entry fun renew_subscription(
     clock: &sui::clock::Clock,
     ctx: &mut TxContext,
 ) {
+    assert!(!config.paused, E_PLATFORM_PAUSED);
     assert!(plan.active, E_PLAN_INACTIVE);
-    assert!(pass.subscription_owner() == ctx.sender(), E_NOT_PASS_OWNER);
+    let caller = ctx.sender();
+    let is_owner = pass.subscription_owner() == caller;
+    let is_agent = pass.subscription_agent_grant().contains(&caller);
+    assert!(is_owner || is_agent, E_NOT_PASS_OWNER);
     assert!(plan.series_id == series.series_id(), E_PLAN_SERIES_MISMATCH);
     assert!(plan.plan_type == PLAN_SUBSCRIPTION, E_WRONG_PLAN_TYPE);
     assert!(pass.subscription_series_id() == series.series_id(), E_PLAN_SERIES_MISMATCH);
     assert!(plan.period_ms > 0, E_INVALID_PERIOD);
-    assert!(plan.period_ms == pass.subscription_period_ms(), E_PERIOD_MISMATCH);
     assert!(series.has_active_plan(PLAN_SUBSCRIPTION), E_PLAN_INACTIVE);
     assert!(series.active_plan_id(PLAN_SUBSCRIPTION) == object::id(plan), E_PLAN_SERIES_MISMATCH);
 
@@ -325,7 +362,7 @@ public entry fun renew_subscription(
     };
     transfer::public_transfer(payment_mut, series.series_author());
 
-    pass::renew_subscription_internal(pass, clock);
+    pass::renew_subscription_internal(pass, plan.period_ms, clock);
 }
 
 // === Accessors ===
@@ -338,6 +375,7 @@ public fun plan_active(plan: &PricingPlan): bool { plan.active }
 public fun platform_fee_bps(config: &PlatformConfig): u64 { config.fee_bps }
 public fun platform_fee_recipient(config: &PlatformConfig): address { config.fee_recipient }
 public fun platform_admin(config: &PlatformConfig): address { config.admin }
+public fun platform_paused(config: &PlatformConfig): bool { config.paused }
 
 // === Test Helpers ===
 
@@ -359,6 +397,24 @@ public(package) fun new_platform_config_for_testing(
         fee_bps,
         admin,
         pending_admin: option::none(),
+        paused: false,
+    }
+}
+
+#[test_only]
+public(package) fun new_paused_platform_config_for_testing(
+    admin: address,
+    fee_recipient: address,
+    fee_bps: u64,
+    ctx: &mut TxContext,
+): PlatformConfig {
+    PlatformConfig {
+        id: object::new(ctx),
+        fee_recipient,
+        fee_bps,
+        admin,
+        pending_admin: option::none(),
+        paused: true,
     }
 }
 
@@ -370,6 +426,7 @@ public(package) fun destroy_platform_config_for_testing(config: PlatformConfig) 
         fee_bps: _,
         admin: _,
         pending_admin: _,
+        paused: _,
     } = config;
     id.delete();
 }

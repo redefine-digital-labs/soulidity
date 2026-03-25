@@ -367,3 +367,203 @@ fun update_series_metadata_rejects_too_many_tags() {
     series::destroy_author_cap_for_testing(cap);
     series::destroy_series_for_testing(series_obj);
 }
+
+// === L5: Previously untested input validation branches ===
+
+#[test]
+#[expected_failure(abort_code = series::E_NAME_EMPTY)]
+fun create_series_rejects_empty_name() {
+    let mut ctx = sui::tx_context::dummy();
+    series::create_series_entry(
+        string::utf8(b""),
+        string::utf8(b"Description"),
+        string::utf8(b"Research"),
+        vector[], vector[], &mut ctx,
+    );
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_CATEGORY_EMPTY)]
+fun create_series_rejects_empty_category() {
+    let mut ctx = sui::tx_context::dummy();
+    series::create_series_entry(
+        string::utf8(b"Name"),
+        string::utf8(b"Description"),
+        string::utf8(b""),
+        vector[], vector[], &mut ctx,
+    );
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_NAME_TOO_LONG)]
+fun create_series_rejects_name_too_long() {
+    let mut ctx = sui::tx_context::dummy();
+    let mut name_bytes = vector[];
+    let mut i = 0;
+    while (i < 257) { name_bytes.push_back(0x61); i = i + 1; };
+    series::create_series_entry(
+        string::utf8(name_bytes),
+        string::utf8(b"Description"),
+        string::utf8(b"Research"),
+        vector[], vector[], &mut ctx,
+    );
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_DESCRIPTION_TOO_LONG)]
+fun create_series_rejects_description_too_long() {
+    let mut ctx = sui::tx_context::dummy();
+    let mut desc_bytes = vector[];
+    let mut i = 0;
+    while (i < 4097) { desc_bytes.push_back(0x61); i = i + 1; };
+    series::create_series_entry(
+        string::utf8(b"Name"),
+        string::utf8(desc_bytes),
+        string::utf8(b"Research"),
+        vector[], vector[], &mut ctx,
+    );
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_CATEGORY_TOO_LONG)]
+fun create_series_rejects_category_too_long() {
+    let mut ctx = sui::tx_context::dummy();
+    let mut cat_bytes = vector[];
+    let mut i = 0;
+    while (i < 65) { cat_bytes.push_back(0x61); i = i + 1; };
+    series::create_series_entry(
+        string::utf8(b"Name"),
+        string::utf8(b"Description"),
+        string::utf8(cat_bytes),
+        vector[], vector[], &mut ctx,
+    );
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_TAG_TOO_LONG)]
+fun update_series_metadata_rejects_tag_too_long() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut tag_bytes = vector[];
+    let mut i = 0;
+    while (i < 65) { tag_bytes.push_back(0x61); i = i + 1; };
+    series::update_series_metadata(
+        &cap, &mut series_obj,
+        string::utf8(b"Name"), string::utf8(b"Desc"), string::utf8(b"Cat"),
+        vector[string::utf8(tag_bytes)], vector[], &ctx,
+    );
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_TOO_MANY_PREVIEW_IMAGES)]
+fun update_series_metadata_rejects_too_many_preview_images() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    series::update_series_metadata(
+        &cap, &mut series_obj,
+        string::utf8(b"Name"), string::utf8(b"Desc"), string::utf8(b"Cat"),
+        vector[],
+        vector[
+            string::utf8(b"a"), string::utf8(b"b"), string::utf8(b"c"),
+            string::utf8(b"d"), string::utf8(b"e"), string::utf8(b"f"),
+            string::utf8(b"g"), string::utf8(b"h"), string::utf8(b"i"),
+            string::utf8(b"j"), string::utf8(b"k"),
+        ],
+        &ctx,
+    );
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_PREVIEW_IMAGE_TOO_LONG)]
+fun update_series_metadata_rejects_preview_image_too_long() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut img_bytes = vector[];
+    let mut i = 0;
+    while (i < 513) { img_bytes.push_back(0x61); i = i + 1; };
+    series::update_series_metadata(
+        &cap, &mut series_obj,
+        string::utf8(b"Name"), string::utf8(b"Desc"), string::utf8(b"Cat"),
+        vector[], vector[string::utf8(img_bytes)], &ctx,
+    );
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_PLAN_TYPE_NOT_ACTIVE)]
+fun remove_active_plan_rejects_when_not_active() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+
+    series::remove_active_plan(&mut series_obj, 0);
+
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_DESCRIPTION_EMPTY)]
+fun create_series_rejects_empty_description() {
+    let mut ctx = sui::tx_context::dummy();
+    series::create_series_entry(
+        string::utf8(b"Name"),
+        string::utf8(b""),
+        string::utf8(b"Research"),
+        vector[], vector[], &mut ctx,
+    );
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_RELEASE_BLOB_ID_TOO_LONG)]
+fun publish_release_rejects_too_long_encrypted_blob_id() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(1);
+    let mut blob_bytes = vector[];
+    let mut i = 0;
+    while (i < 257) { blob_bytes.push_back(0x61); i = i + 1; };
+    series::publish_release(
+        &cap, &mut series_obj,
+        string::utf8(b"v1"), string::utf8(blob_bytes),
+        string::utf8(b"public"), b"hash", &clock, &mut ctx,
+    );
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}
+
+#[test]
+#[expected_failure(abort_code = series::E_RELEASE_PUBLIC_METADATA_ID_TOO_LONG)]
+fun publish_release_rejects_too_long_public_metadata_id() {
+    let mut ctx = sui::tx_context::dummy();
+    let author = ctx.sender();
+    let mut series_obj = series::new_series_for_testing(author, &mut ctx);
+    let cap = series::new_author_cap_for_testing(&series_obj, &mut ctx);
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    clock.set_for_testing(1);
+    let mut meta_bytes = vector[];
+    let mut i = 0;
+    while (i < 257) { meta_bytes.push_back(0x61); i = i + 1; };
+    series::publish_release(
+        &cap, &mut series_obj,
+        string::utf8(b"v1"), string::utf8(b"encrypted"),
+        string::utf8(meta_bytes), b"hash", &clock, &mut ctx,
+    );
+    clock.destroy_for_testing();
+    series::destroy_author_cap_for_testing(cap);
+    series::destroy_series_for_testing(series_obj);
+}

@@ -67,6 +67,7 @@ const E_RELEASE_VERSION_EMPTY: u64 = 47;
 const E_RELEASE_BLOB_ID_EMPTY: u64 = 48;
 const E_RELEASE_CONTENT_HASH_EMPTY: u64 = 49;
 const E_RELEASE_PUBLIC_METADATA_ID_EMPTY: u64 = 50;
+const E_DESCRIPTION_EMPTY: u64 = 51;
 
 // === Structs ===
 
@@ -114,6 +115,7 @@ fun validate_metadata(
 ) {
     assert!(name.length() > 0, E_NAME_EMPTY);
     assert!(name.length() <= MAX_NAME_BYTES, E_NAME_TOO_LONG);
+    assert!(description.length() > 0, E_DESCRIPTION_EMPTY);
     assert!(description.length() <= MAX_DESCRIPTION_BYTES, E_DESCRIPTION_TOO_LONG);
     assert!(category.length() > 0, E_CATEGORY_EMPTY);
     assert!(category.length() <= MAX_CATEGORY_BYTES, E_CATEGORY_TOO_LONG);

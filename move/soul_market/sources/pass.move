@@ -103,15 +103,19 @@ public(package) fun mint_subscription(
     pass
 }
 
-/// Renew a subscription pass
+/// Renew a subscription pass, adopting the plan's current period.
+/// When an author replaces a plan with a different period, existing
+/// subscribers naturally migrate to the new period on their next renewal.
 public(package) fun renew_subscription_internal(
     pass: &mut SubscriptionPass,
+    new_period_ms: u64,
     clock: &sui::clock::Clock,
 ) {
     let now = clock.timestamp_ms();
     // If expired, renew from now; otherwise extend from current expiry
     let base = if (now > pass.expires_at) { now } else { pass.expires_at };
-    pass.expires_at = base + pass.period_ms;
+    pass.period_ms = new_period_ms;
+    pass.expires_at = base + new_period_ms;
 
     event::emit(SubscriptionRenewed {
         pass_id: object::id(pass),

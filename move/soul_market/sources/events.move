@@ -5,4 +5,5 @@ module soul_market::events;
 // - pass.move: PerpetualPassMinted, SubscriptionPassMinted, SubscriptionRenewed
 // - grant.move: AgentGrantSet, AgentGrantRevoked, PassTransferred
 // - purchase.move: PricingPlanCreated, PricingPlanDeactivated,
-//                  PlatformAdminTransferProposed, PlatformAdminTransferAccepted
+//                  PlatformAdminTransferProposed, PlatformAdminTransferAccepted,
+//                  PlatformConfigUpdated, PlatformPaused, PlatformUnpaused
