@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   if (!ip) {
     return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
-  const lookupRateLimit = takeRateLimitToken(`agent-claim-lookup:${ip}`, AGENT_CLAIM_LOOKUP_RATE_LIMIT)
+  const lookupRateLimit = await takeRateLimitToken(`agent-claim-lookup:${ip}`, AGENT_CLAIM_LOOKUP_RATE_LIMIT)
   if (lookupRateLimit.limited) {
     return NextResponse.json(
       { error: 'Too many claim requests, try again later' },
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Only humans can claim agents' }, { status: 403 })
   }
 
-  const submitRateLimit = takeRateLimitToken(
+  const submitRateLimit = await takeRateLimitToken(
     `agent-claim-submit:${identity.memberId}`,
     AGENT_CLAIM_SUBMIT_RATE_LIMIT,
   )

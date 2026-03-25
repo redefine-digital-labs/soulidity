@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
 
-  const rl = takeRateLimitToken(`claim-register:${ip}`, {
+  const rl = await takeRateLimitToken(`claim-register:${ip}`, {
     max: 10,
     windowMs: 10 * 60 * 1000,
   })
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
   const privyDid = claims.userId
 
-  const memberRateLimit = takeRateLimitToken(`claim-register-member:${privyDid}`, {
+  const memberRateLimit = await takeRateLimitToken(`claim-register-member:${privyDid}`, {
     max: 10,
     windowMs: 10 * 60 * 1000,
   })

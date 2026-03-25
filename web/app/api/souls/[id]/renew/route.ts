@@ -38,7 +38,7 @@ export async function POST(
     return NextResponse.json({ error: 'Use the agent renew API' }, { status: 403 })
   }
 
-  const rateLimit = takeRateLimitToken(
+  const rateLimit = await takeRateLimitToken(
     `soul-renew-mirror:${identity.memberId}`,
     SOUL_RENEW_MIRROR_RATE_LIMIT,
   )

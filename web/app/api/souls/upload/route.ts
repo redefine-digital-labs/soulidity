@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Only human accounts can upload' }, { status: 403 })
   }
 
-  const uploadRateLimit = takeRateLimitToken(
+  const uploadRateLimit = await takeRateLimitToken(
     `soul-upload:${identity.memberId}`,
     SOUL_UPLOAD_RATE_LIMIT,
   )

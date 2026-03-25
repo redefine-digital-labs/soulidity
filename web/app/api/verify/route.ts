@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   if (!ip) {
     return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
-  const rl = takeRateLimitToken(`verify:${ip}`, VERIFY_RATE_LIMIT)
+  const rl = await takeRateLimitToken(`verify:${ip}`, VERIFY_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
       { error: 'Too many requests, try again later' },

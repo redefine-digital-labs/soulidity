@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Only human accounts can publish' }, { status: 403 })
   }
 
-  const rateLimit = takeRateLimitToken(
+  const rateLimit = await takeRateLimitToken(
     `soul-publish-mirror:${identity.memberId}`,
     SOUL_PUBLISH_MIRROR_RATE_LIMIT,
   )

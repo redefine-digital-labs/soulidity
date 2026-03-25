@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
 
-  const joinRateLimit = takeRateLimitToken(`join:${requestIp}`, {
+  const joinRateLimit = await takeRateLimitToken(`join:${requestIp}`, {
     max: 20,
     windowMs: 10 * 60 * 1000,
   })

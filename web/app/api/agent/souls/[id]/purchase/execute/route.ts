@@ -49,7 +49,7 @@ export async function POST(
   const { agent, response: authError } = await requireAgentApiKey(request)
   if (authError) return authError
 
-  const rl = takeRateLimitToken(`agent-execute:${agent.agentMemberId}`, AGENT_EXECUTE_RATE_LIMIT)
+  const rl = await takeRateLimitToken(`agent-execute:${agent.agentMemberId}`, AGENT_EXECUTE_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
       { error: 'Too many requests, try again later' },

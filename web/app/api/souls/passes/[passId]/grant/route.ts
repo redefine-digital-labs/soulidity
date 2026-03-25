@@ -57,7 +57,7 @@ export async function POST(
     return NextResponse.json({ error: 'Only human accounts can manage agent grants' }, { status: 403 })
   }
 
-  const rateLimit = takeRateLimitToken(
+  const rateLimit = await takeRateLimitToken(
     `soul-pass-grant-mirror:${identity.memberId}`,
     SOUL_GRANT_MIRROR_RATE_LIMIT,
   )
@@ -189,7 +189,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Only human accounts can manage agent grants' }, { status: 403 })
   }
 
-  const rateLimit = takeRateLimitToken(
+  const rateLimit = await takeRateLimitToken(
     `soul-pass-grant-mirror:${identity.memberId}`,
     SOUL_GRANT_MIRROR_RATE_LIMIT,
   )

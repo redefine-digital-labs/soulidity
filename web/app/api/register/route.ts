@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
 
-  const ipRateLimit = takeRateLimitToken(`register-ip:${requestIp}`, {
+  const ipRateLimit = await takeRateLimitToken(`register-ip:${requestIp}`, {
     max: 20,
     windowMs: 10 * 60 * 1000,
   })
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '邀请码格式无效' }, { status: 400 })
   }
 
-  const userRateLimit = takeRateLimitToken(`register:${privyDid}`, {
+  const userRateLimit = await takeRateLimitToken(`register:${privyDid}`, {
     max: 10,
     windowMs: 10 * 60 * 1000,
   })

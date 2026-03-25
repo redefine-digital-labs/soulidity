@@ -117,8 +117,8 @@ describe('agent join route hardening', () => {
 
     let settled = false
     responsePromise.then(() => { settled = true })
-    await Promise.resolve()
-    await Promise.resolve()
+    // Allow enough microtask ticks for the async rate limiter + response to settle
+    for (let i = 0; i < 10; i++) await Promise.resolve()
 
     const settledBeforeCleanup = settled
     resolveCleanup?.({ count: 0 })

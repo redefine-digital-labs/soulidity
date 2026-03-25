@@ -44,7 +44,7 @@ export async function POST(
   const { agent, response: authError } = await requireAgentApiKey(request)
   if (authError) return authError
 
-  const rl = takeRateLimitToken(`agent-purchase:${agent.agentMemberId}`, AGENT_PURCHASE_RATE_LIMIT)
+  const rl = await takeRateLimitToken(`agent-purchase:${agent.agentMemberId}`, AGENT_PURCHASE_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
       { error: 'Too many purchase requests, try again later' },

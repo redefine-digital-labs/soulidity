@@ -465,11 +465,11 @@ async function resolveWalletIdentity(
     return null
   }
 
-  const ipRateLimit = takeRateLimitToken(`wallet-auth-ip:${requestIp}`, WALLET_IDENTITY_RATE_LIMIT)
+  const ipRateLimit = await takeRateLimitToken(`wallet-auth-ip:${requestIp}`, WALLET_IDENTITY_RATE_LIMIT)
   if (ipRateLimit.limited) return null
 
   const addressRateLimitKey = `wallet-auth:${requestIp}:${normalizedAddress}`
-  const addressRateLimit = takeRateLimitToken(addressRateLimitKey, WALLET_IDENTITY_RATE_LIMIT)
+  const addressRateLimit = await takeRateLimitToken(addressRateLimitKey, WALLET_IDENTITY_RATE_LIMIT)
   if (addressRateLimit.limited) return null
 
   try {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireIdentity } from '@web/lib/auth/identity'
+import { evaluateAchievements } from '@web/lib/community/achievements'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,15 +70,26 @@ export async function POST(request: NextRequest) {
     normalizedTags = tagParts.map((tag: string) => tag.trim()).filter(Boolean).join(',') || null
   }
 
+  const VALID_POST_TYPES = ['log', 'question', 'knowledge']
+  const postType = body.type ?? 'log'
+  if (!VALID_POST_TYPES.includes(postType)) {
+    return NextResponse.json({ error: `type must be one of: ${VALID_POST_TYPES.join(', ')}` }, { status: 400 })
+  }
+
   const post = await prisma.post.create({
     data: {
       memberId: identity!.memberId,
       title,
       content,
       tags: normalizedTags,
-      type: body.type ?? 'log',
+      type: postType,
     },
   })
+
+  // Fire-and-forget: evaluate achievements after post creation
+  evaluateAchievements(identity!.memberId).catch(err =>
+    console.error('Achievement evaluation failed:', err)
+  )
 
   return NextResponse.json(post, { status: 201 })
 }

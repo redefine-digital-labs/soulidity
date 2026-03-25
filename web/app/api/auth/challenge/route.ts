@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
 
-  const rateLimit = takeRateLimitToken(`auth-challenge:${ip}`, AUTH_CHALLENGE_RATE_LIMIT)
+  const rateLimit = await takeRateLimitToken(`auth-challenge:${ip}`, AUTH_CHALLENGE_RATE_LIMIT)
   if (rateLimit.limited) {
     return NextResponse.json(
       { error: 'Too many challenge requests, try again later' },

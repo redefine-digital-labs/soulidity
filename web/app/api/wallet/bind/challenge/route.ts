@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
-  const rateLimit = takeRateLimitToken(`wallet-bind-challenge:${identity.memberId}`, {
+  const rateLimit = await takeRateLimitToken(`wallet-bind-challenge:${identity.memberId}`, {
     max: 5,
     windowMs: 60 * 60 * 1000,
   })

@@ -38,7 +38,7 @@ export async function GET(
   const { agent, response } = await requireAgentApiKey(req)
   if (!agent) return response
 
-  const rateLimit = takeRateLimitToken(`agent-access:${agent.agentMemberId}`, AGENT_ACCESS_RATE_LIMIT)
+  const rateLimit = await takeRateLimitToken(`agent-access:${agent.agentMemberId}`, AGENT_ACCESS_RATE_LIMIT)
   if (rateLimit.limited) {
     return NextResponse.json(
       { error: 'Too many access requests, try again later' },

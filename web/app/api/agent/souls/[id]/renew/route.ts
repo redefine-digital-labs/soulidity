@@ -43,7 +43,7 @@ export async function POST(
   const { agent, response: authError } = await requireAgentApiKey(request)
   if (authError) return authError
 
-  const rl = takeRateLimitToken(`agent-renew:${agent.agentMemberId}`, AGENT_RENEW_RATE_LIMIT)
+  const rl = await takeRateLimitToken(`agent-renew:${agent.agentMemberId}`, AGENT_RENEW_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
       { error: 'Too many renew requests, try again later' },

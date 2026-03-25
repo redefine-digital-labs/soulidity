@@ -43,7 +43,7 @@ export async function POST(
     return NextResponse.json({ error: 'Use the agent purchase API' }, { status: 403 })
   }
 
-  const rateLimit = takeRateLimitToken(
+  const rateLimit = await takeRateLimitToken(
     `soul-purchase-mirror:${identity.memberId}`,
     SOUL_PURCHASE_MIRROR_RATE_LIMIT,
   )

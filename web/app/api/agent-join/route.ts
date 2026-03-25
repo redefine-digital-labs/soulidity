@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
 
-  const rl = takeRateLimitToken(`agent-join-challenge:${ip}`, AGENT_JOIN_RATE_LIMIT)
+  const rl = await takeRateLimitToken(`agent-join-challenge:${ip}`, AGENT_JOIN_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
       { error: 'Too many join requests, try again later' },
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
   }
 
-  const rl = takeRateLimitToken(`agent-join:${ip}`, AGENT_JOIN_RATE_LIMIT)
+  const rl = await takeRateLimitToken(`agent-join:${ip}`, AGENT_JOIN_RATE_LIMIT)
   if (rl.limited) {
     return NextResponse.json(
       { error: 'Too many join requests, try again later' },
