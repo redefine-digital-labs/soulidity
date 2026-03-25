@@ -499,6 +499,8 @@ export default function PublishSoulPage() {
     touched: pricingTouched,
   })
   const lockPublishConfig = submitting || hasRecoverableDraft
+  // Allow bundle + version re-selection when resuming a draft that has series but no release yet
+  const lockBundleInput = lockPublishConfig && !!(publishDraft?.releaseId)
   const isSubmitDisabled =
     submitting
     || !name.trim()
@@ -575,7 +577,7 @@ export default function PublishSoulPage() {
               type="file"
               className="input-file-prominent w-full text-xs"
               onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)}
-              disabled={lockPublishConfig}
+              disabled={lockBundleInput}
             />
             <p className="text-xs" style={{ color: bundleFile ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
               {bundleFile ? `Selected: ${bundleFile.name}` : 'Choose the encrypted bundle file buyers will unlock after purchase.'}
@@ -584,7 +586,7 @@ export default function PublishSoulPage() {
 
           <div className="space-y-1">
             <label htmlFor="soul-version" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Version</label>
-            <input id="soul-version" type="text" className="input-dark w-full" placeholder="1.0.0" value={releaseVersion} onChange={(e) => setReleaseVersion(e.target.value)} disabled={lockPublishConfig} maxLength={32} />
+            <input id="soul-version" type="text" className="input-dark w-full" placeholder="1.0.0" value={releaseVersion} onChange={(e) => setReleaseVersion(e.target.value)} disabled={lockBundleInput} maxLength={32} />
           </div>
 
           <div className="space-y-2">
