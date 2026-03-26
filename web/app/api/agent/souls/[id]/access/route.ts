@@ -144,8 +144,14 @@ export async function GET(
   }
 
   if (!verifiedPassState) {
-    if (lastVerifyError && !(lastVerifyError instanceof OnChainVerificationError)) {
-      return NextResponse.json({ error: 'Unable to verify pass access right now' }, { status: 503 })
+    // Surface transient errors (RPC/indexer outages) as 503 instead of false 403
+    if (lastVerifyError) {
+      const isTransient = lastVerifyError instanceof OnChainVerificationError
+        ? lastVerifyError.status >= 500
+        : true
+      if (isTransient) {
+        return NextResponse.json({ error: 'Unable to verify pass access right now' }, { status: 503 })
+      }
     }
     return NextResponse.json({ error: 'No active pass or direct ownership for this Soul' }, { status: 403 })
   }

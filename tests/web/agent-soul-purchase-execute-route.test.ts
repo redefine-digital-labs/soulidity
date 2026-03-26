@@ -434,7 +434,7 @@ describe('agent soul purchase execute route', () => {
       passOnChainId: '0xpass',
       seriesOnChainId: SERIES_ID,
       ownerAddress: AGENT_ADDRESS,
-      ownerMemberId: 'agent-member-1',
+      // ownerMemberId intentionally omitted — dbCreatePass resolves from on-chain owner
       passType: 'perpetual',
       lockedReleaseId: RELEASE_ID,
       mintTxDigest: '0xdigest',

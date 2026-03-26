@@ -338,7 +338,8 @@ export async function POST(
           passOnChainId: passState.objectId,
           seriesOnChainId: series.onChainId,
           ownerAddress: passState.ownerAddress,
-          ownerMemberId: agent.agentMemberId,
+          // Let dbCreatePass resolve ownerMemberId from on-chain owner address
+          // instead of hardcoding caller — handles post-mint transfer edge case
           passType: passState.passType,
           lockedReleaseId: passState.lockedReleaseId,
           mintTxDigest: result.digest,
