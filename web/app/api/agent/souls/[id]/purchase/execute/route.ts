@@ -37,6 +37,8 @@ const AGENT_EXECUTE_RATE_LIMIT = {
 const MAX_EXECUTE_SIGNATURE_LENGTH = 1024
 const RETRYABLE_VERIFICATION_SYNC_ERROR = 'verification_retryable'
 
+type VerifiedPurchasePassState = Awaited<ReturnType<typeof getVerifiedPassState>>
+
 function getRetryableStoredSyncResult(params: {
   resultStatusCode: number | null
   resultBody: unknown
@@ -61,6 +63,38 @@ function getRetryableStoredSyncResult(params: {
     digest,
     passOnChainId,
   }
+}
+
+function getPurchasePassValidationError(params: {
+  passState: VerifiedPurchasePassState
+  seriesOnChainId: string
+  ownerAddress: string
+  planType: string
+  releaseOnChainId: string | null
+}): string | null {
+  const { passState, seriesOnChainId, ownerAddress, planType, releaseOnChainId } = params
+
+  if (!sameSuiValue(passState.seriesId, seriesOnChainId)) {
+    return 'Created pass does not belong to the requested Soul'
+  }
+  if (!sameSuiValue(passState.ownerAddress, ownerAddress)) {
+    return 'Created pass owner does not match the agent wallet'
+  }
+  if (planType === 'onetime') {
+    if (passState.passType !== 'perpetual') {
+      return 'Prepared one-time purchase did not mint a perpetual pass'
+    }
+    if (!releaseOnChainId || !sameSuiValue(passState.lockedReleaseId, releaseOnChainId)) {
+      return 'Created pass release does not match the prepared purchase context'
+    }
+    return null
+  }
+
+  if (passState.passType !== 'subscription') {
+    return 'Prepared subscription purchase did not mint a subscription pass'
+  }
+
+  return null
 }
 
 /**
@@ -148,6 +182,24 @@ export async function POST(
   if (retryableStoredSyncResult) {
     try {
       const passState = await getVerifiedPassState(retryableStoredSyncResult.passOnChainId, soulPackageId)
+      const validationError = getPurchasePassValidationError({
+        passState,
+        seriesOnChainId: series.onChainId,
+        ownerAddress,
+        planType: preparedPurchase.planType,
+        releaseOnChainId: preparedPurchase.releaseOnChainId,
+      })
+      if (validationError) {
+        const resultBody = { error: validationError }
+        await finalizePreparedSoulPurchaseExecution({
+          preparedPurchaseId,
+          txDigest: retryableStoredSyncResult.digest,
+          resultStatusCode: 422,
+          resultBody,
+        })
+        return NextResponse.json(resultBody, { status: 422 })
+      }
+
       const syncedResponseBody = {
         digest: retryableStoredSyncResult.digest,
         status: 'success',
@@ -334,24 +386,15 @@ export async function POST(
     })
 
     const passState = await getVerifiedPassState(passOnChainId, soulPackageId)
-    if (!sameSuiValue(passState.seriesId, series.onChainId)) {
-      return finalizePreparedResult(422, { error: 'Created pass does not belong to the requested Soul' })
-    }
-    if (!sameSuiValue(passState.ownerAddress, ownerAddress)) {
-      return finalizePreparedResult(422, { error: 'Created pass owner does not match the agent wallet' })
-    }
-    if (claimedPreparedPurchase.planType === 'onetime') {
-      if (passState.passType !== 'perpetual') {
-        return finalizePreparedResult(422, { error: 'Prepared one-time purchase did not mint a perpetual pass' })
-      }
-      if (
-        !claimedPreparedPurchase.releaseOnChainId
-        || !sameSuiValue(passState.lockedReleaseId, claimedPreparedPurchase.releaseOnChainId)
-      ) {
-        return finalizePreparedResult(422, { error: 'Created pass release does not match the prepared purchase context' })
-      }
-    } else if (passState.passType !== 'subscription') {
-      return finalizePreparedResult(422, { error: 'Prepared subscription purchase did not mint a subscription pass' })
+    const validationError = getPurchasePassValidationError({
+      passState,
+      seriesOnChainId: series.onChainId,
+      ownerAddress,
+      planType: claimedPreparedPurchase.planType,
+      releaseOnChainId: claimedPreparedPurchase.releaseOnChainId,
+    })
+    if (validationError) {
+      return finalizePreparedResult(422, { error: validationError })
     }
 
     const syncedResponseBody = {

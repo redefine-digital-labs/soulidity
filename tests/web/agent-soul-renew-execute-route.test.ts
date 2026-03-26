@@ -682,6 +682,48 @@ describe('agent soul renew execute route', () => {
     })
   })
 
+  it('returns 422 when retrying a stored renew verification outage for a different pass context', async () => {
+    const prevBody = {
+      error: 'Transaction renew inputs are unavailable for verification',
+      digest: VALID_DIGEST,
+      passOnChainId: PASS_ID,
+      onChainSuccess: true,
+      dbSynced: false,
+      syncError: 'verification_retryable',
+    }
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      ...DEFAULT_PREPARED_PURCHASE,
+      executedAt: new Date(),
+      resultStatusCode: 503,
+      resultBody: prevBody,
+    })
+    mockedGetVerifiedPassState.mockResolvedValueOnce({
+      ...DEFAULT_PASS_STATE,
+      objectId: `0x${'5'.repeat(64)}`,
+    })
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/renew/execute/route.ts')
+    const response = await POST(makeRequest(), makeParams())
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Renewed pass does not match the prepared renewal context',
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+    expect(mockedDbRenewPass).not.toHaveBeenCalled()
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preparedPurchaseId: PREPARED_PURCHASE_ID,
+        txDigest: VALID_DIGEST,
+        resultStatusCode: 422,
+        resultBody: {
+          error: 'Renewed pass does not match the prepared renewal context',
+        },
+      }),
+    )
+  })
+
   it('returns 207 with previous body when 207 retry re-sync also fails', async () => {
     const prevBody = {
       digest: VALID_DIGEST,

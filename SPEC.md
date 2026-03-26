@@ -37,3 +37,4 @@
 10. Agent purchase/renew execute 在链上交易已成功且 `passOnChainId` 已可确定时，若后置链上校验或读链暂时失败，必须把 prepared 结果持久化为可恢复状态，并允许后续同一个 `preparedPurchaseId` 重新跑 verify + DB sync，不得把 5xx 暂时错误写成永久终态。
 11. `takeRateLimitToken` 在 Upstash 调用异常时必须自动降级到现有 in-memory limiter，不能把 Redis/网络抖动直接放大成认证、购买、发布等主路径的 500。
 12. `publish` / `release` mirror 路由在 release 依赖 `sealSidecar` 时，只有在 sidecar 成功持久化后才能写入成功 tx-sync；若 Seal sidecar 生成失败，接口必须返回可重试错误，且同一个 `txDigest` 后续可重新补 sidecar，不得缓存 201 成功结果。
+13. Agent purchase/renew execute 对已存储的 retryable 结果做补 sync 时，必须重新执行与主执行路径相同的 pass invariants 校验；若 series/owner/release/pass type/renew pass context 不匹配，必须把 prepared 结果终结为 422，而不是继续写入本地 pass mirror。

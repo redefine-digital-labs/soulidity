@@ -37,6 +37,8 @@ const AGENT_EXECUTE_RATE_LIMIT = {
 const MAX_EXECUTE_SIGNATURE_LENGTH = 1024
 const RETRYABLE_VERIFICATION_SYNC_ERROR = 'verification_retryable'
 
+type VerifiedRenewPassState = Awaited<ReturnType<typeof getVerifiedPassState>>
+
 function getRetryableStoredSyncResult(params: {
   resultStatusCode: number | null
   resultBody: unknown
@@ -64,6 +66,35 @@ function getRetryableStoredSyncResult(params: {
     digest,
     passOnChainId,
   }
+}
+
+function getRenewPassValidationError(params: {
+  passState: VerifiedRenewPassState
+  seriesOnChainId: string
+  ownerAddress: string
+  preparedPassOnChainId: string | null
+}): string | null {
+  const { passState, seriesOnChainId, ownerAddress, preparedPassOnChainId } = params
+
+  if (!sameSuiValue(passState.seriesId, seriesOnChainId)) {
+    return 'Renewed pass does not belong to the requested Soul'
+  }
+  const isOwnerOrGranted = sameSuiValue(passState.ownerAddress, ownerAddress)
+    || sameSuiValue(passState.agentGrant, ownerAddress)
+  if (!isOwnerOrGranted) {
+    return 'Pass is not owned by or granted to the agent wallet'
+  }
+  if (passState.passType !== 'subscription') {
+    return 'Only subscription passes can be renewed'
+  }
+  if (!passState.expiresAt) {
+    return 'Renewed subscription pass has no expiration date'
+  }
+  if (preparedPassOnChainId && !sameSuiValue(passState.objectId, preparedPassOnChainId)) {
+    return 'Renewed pass does not match the prepared renewal context'
+  }
+
+  return null
 }
 
 /**
@@ -152,6 +183,23 @@ export async function POST(
   if (retryableStoredSyncResult) {
     try {
       const passState = await getVerifiedPassState(retryableStoredSyncResult.passOnChainId, soulPackageId)
+      const validationError = getRenewPassValidationError({
+        passState,
+        seriesOnChainId: series.onChainId,
+        ownerAddress,
+        preparedPassOnChainId: preparedPurchase.passOnChainId,
+      })
+      if (validationError) {
+        const resultBody = { error: validationError }
+        await finalizePreparedSoulPurchaseExecution({
+          preparedPurchaseId,
+          txDigest: retryableStoredSyncResult.digest,
+          resultStatusCode: 422,
+          resultBody,
+        })
+        return NextResponse.json(resultBody, { status: 422 })
+      }
+
       const syncedResponseBody = {
         digest: retryableStoredSyncResult.digest,
         status: 'success',
@@ -332,22 +380,14 @@ export async function POST(
     })
 
     const passState = await getVerifiedPassState(passOnChainId, soulPackageId)
-    if (!sameSuiValue(passState.seriesId, series.onChainId)) {
-      return finalizePreparedResult(422, { error: 'Renewed pass does not belong to the requested Soul' })
-    }
-    const isOwnerOrGranted = sameSuiValue(passState.ownerAddress, ownerAddress)
-      || sameSuiValue(passState.agentGrant, ownerAddress)
-    if (!isOwnerOrGranted) {
-      return finalizePreparedResult(422, { error: 'Pass is not owned by or granted to the agent wallet' })
-    }
-    if (passState.passType !== 'subscription') {
-      return finalizePreparedResult(422, { error: 'Only subscription passes can be renewed' })
-    }
-    if (!passState.expiresAt) {
-      return finalizePreparedResult(422, { error: 'Renewed subscription pass has no expiration date' })
-    }
-    if (claimedPreparedPurchase.passOnChainId && !sameSuiValue(passOnChainId, claimedPreparedPurchase.passOnChainId)) {
-      return finalizePreparedResult(422, { error: 'Renewed pass does not match the prepared renewal context' })
+    const validationError = getRenewPassValidationError({
+      passState,
+      seriesOnChainId: series.onChainId,
+      ownerAddress,
+      preparedPassOnChainId: claimedPreparedPurchase.passOnChainId,
+    })
+    if (validationError) {
+      return finalizePreparedResult(422, { error: validationError })
     }
 
     const syncedResponseBody = {

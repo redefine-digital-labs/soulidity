@@ -33,4 +33,8 @@
    - `takeRateLimitToken` 对 Upstash `limit()` 异常降级到 in-memory limiter
    - `publish` / `release` mirror 把成功 tx-sync 延后到 sidecar 成功之后，sidecar 失败返回可重试错误
    - 同步补 retry 回归，确认同一 `txDigest` 不会因为过早缓存成功而失去修复机会
-11. 跑相关测试与 typecheck，确认无残留。
+11. 收口 execute retry invariant follow-up：
+   - purchase/renew execute 的 stored retry 分支复用主路径 pass-state 校验
+   - 一旦确认 series/owner/release/pass context 不匹配，就把 prepared 结果终结为 422，而不是继续补本地 sync
+   - 补 retry branch 回归，覆盖 purchase release mismatch 与 renew prepared-pass mismatch
+12. 跑相关测试与 typecheck，确认无残留。

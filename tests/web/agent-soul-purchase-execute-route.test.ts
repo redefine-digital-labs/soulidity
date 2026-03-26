@@ -805,4 +805,77 @@ describe('agent soul purchase execute route', () => {
       mintTxDigest: '0xdigest',
     })
   })
+
+  it('returns 422 when retrying a stored purchase verification outage with a mismatched release context', async () => {
+    const prevBody = {
+      error: 'Transaction submitted, but post-submit verification failed',
+      digest: '0xdigest',
+      passOnChainId: '0xpass',
+      onChainSuccess: true,
+      dbSynced: false,
+      syncError: 'verification_retryable',
+    }
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      txBytesBase64: 'c2VydmVyLXR4LWJ5dGVz',
+      txBytesHash: 'deadbeef',
+      seriesOnChainId: SERIES_ID,
+      planOnChainId: '0xplan-1',
+      planType: 'onetime',
+      releaseOnChainId: RELEASE_ID,
+      amountUsdc: 1_000_000n,
+      agentAddress: AGENT_ADDRESS,
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      resultStatusCode: 500,
+      resultBody: prevBody,
+    })
+    mockedSuiClient.getObject.mockResolvedValueOnce({
+      data: {
+        objectId: '0xpass',
+        type: `${PACKAGE_ID}::pass::PerpetualPass`,
+        owner: { AddressOwner: AGENT_ADDRESS },
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::pass::PerpetualPass`,
+          fields: {
+            series_id: SERIES_ID,
+            release_id: `0x${'e'.repeat(64)}`,
+            owner: AGENT_ADDRESS,
+            agent_grant: { vec: [] },
+          },
+        },
+      },
+    })
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          signature: 'c2ln',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Created pass release does not match the prepared purchase context',
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+    expect(mockedDbCreatePass).not.toHaveBeenCalled()
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preparedPurchaseId: PREPARED_PURCHASE_ID,
+        txDigest: '0xdigest',
+        resultStatusCode: 422,
+        resultBody: {
+          error: 'Created pass release does not match the prepared purchase context',
+        },
+      }),
+    )
+  })
 })
