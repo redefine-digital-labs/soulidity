@@ -191,6 +191,45 @@ describe('agent soul purchase execute route', () => {
     expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
   })
 
+  it('rejects prepared renewals before claiming or executing the transaction', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      txBytesBase64: 'c2VydmVyLXR4LWJ5dGVz',
+      txBytesHash: 'deadbeef',
+      seriesOnChainId: SERIES_ID,
+      planOnChainId: '0xplan-1',
+      planType: 'subscription',
+      releaseOnChainId: null,
+      passOnChainId: '0xpass-renew',
+      amountUsdc: 1_000_000n,
+      agentAddress: AGENT_ADDRESS,
+      executedAt: null,
+      resultStatusCode: null,
+      resultBody: null,
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          signature: 'c2ln',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Prepared renewal must be executed via the renew endpoint',
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+    expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedFinalizePreparedSoulPurchaseExecution).not.toHaveBeenCalled()
+  })
+
   it('returns 503 when the soul package id env is missing before pass verification', async () => {
     delete process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID
 

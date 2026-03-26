@@ -108,6 +108,12 @@ export async function POST(
   if (!sameSuiValue(preparedPurchase.agentAddress, ownerAddress)) {
     return NextResponse.json({ error: 'Prepared purchase owner does not match the agent wallet' }, { status: 422 })
   }
+  if (!preparedPurchase.passOnChainId) {
+    return NextResponse.json(
+      { error: 'Prepared purchase must be executed via the purchase endpoint' },
+      { status: 422 },
+    )
+  }
   // 207 = on-chain TX succeeded but DB sync failed — allow retry
   if (preparedPurchase.resultStatusCode === 207 && preparedPurchase.resultBody) {
     const prevBody = preparedPurchase.resultBody as Record<string, unknown>

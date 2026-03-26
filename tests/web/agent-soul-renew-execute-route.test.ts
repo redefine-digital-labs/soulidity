@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const AGENT_ADDRESS = `0x${'a'.repeat(64)}`
 const SERIES_ID = `0x${'1'.repeat(64)}`
 const PASS_ID = `0x${'2'.repeat(64)}`
+const RELEASE_ID = `0x${'4'.repeat(64)}`
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
 const PLAN_ID = `0x${'3'.repeat(64)}`
@@ -327,6 +328,26 @@ describe('agent soul renew execute route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Prepared purchase owner does not match the agent wallet',
     })
+  })
+
+  it('returns 422 when the prepared record belongs to the purchase execute flow', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      ...DEFAULT_PREPARED_PURCHASE,
+      planType: 'onetime',
+      releaseOnChainId: RELEASE_ID,
+      passOnChainId: null,
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/renew/execute/route.ts')
+    const response = await POST(makeRequest(), makeParams())
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Prepared purchase must be executed via the purchase endpoint',
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+    expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedFinalizePreparedSoulPurchaseExecution).not.toHaveBeenCalled()
   })
 
   it('returns 409 for already executing', async () => {

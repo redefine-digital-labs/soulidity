@@ -22,4 +22,8 @@
 7. 收口 coin selection follow-up：
    - 去掉分页扫描的 10 页硬上限，改为扫到分页结束
    - 对缺失/重复 cursor 的异常分页返回 distinct failure，避免误报余额不足
-8. 跑相关测试与 typecheck，确认无残留。
+8. 收口 execute intent 边界 follow-up：
+   - purchase execute 在读取 prepared record 后先拒绝 renewal intent（`passOnChainId` 已存在）
+   - renew execute 在读取 prepared record 后先拒绝 purchase intent（`passOnChainId` 缺失）
+   - 同步修正相关误导性注释，避免继续引导客户端走错 execute 入口
+9. 跑相关测试与 typecheck，确认无残留。

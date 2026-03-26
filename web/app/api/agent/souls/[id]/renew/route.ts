@@ -34,7 +34,7 @@ const AGENT_RENEW_RATE_LIMIT = {
  * Response: { preparedPurchaseId, txBytes, context }
  *
  * The agent signs txBytes locally and submits the resulting signature plus
- * preparedPurchaseId via POST .../purchase/execute.
+ * preparedPurchaseId via POST .../renew/execute.
  */
 export async function POST(
   request: NextRequest,
