@@ -46,3 +46,6 @@
    - `buildCreateSeriesTx` 前置拒绝空白 description，避免必败交易进入签名
    - 补回归覆盖 renew owner refresh 与 empty description validation
 14. 跑相关测试与 typecheck，确认无残留。
+15. 收口 Publish Soul 本地 draft 提交流程：
+   - 提交前若 draft 尚未产生任何 on-chain progress，则用当前表单值刷新 `name` / `description` / pricing 等可编辑字段后再继续执行
+   - 补回归覆盖“第一次空 description 失败后，修正输入再次提交不应继续使用旧空 draft”

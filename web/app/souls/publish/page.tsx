@@ -6,10 +6,10 @@ import Link from 'next/link'
 import { useAuth } from '@web/components/auth-provider'
 import {
   clearSoulPublishDraft,
-  createSoulPublishDraft,
   draftHasOnChainProgress,
   patchSoulPublishDraft,
   readSoulPublishDraft,
+  syncSoulPublishDraftForSubmit,
   type SoulPublishDraft,
   writeSoulPublishDraft,
 } from '@web/lib/souls/publish-draft'
@@ -292,19 +292,19 @@ export default function PublishSoulPage() {
     try {
       const headers = await getAuthHeaders()
       const tagList = tags.split(',').map((tag) => tag.trim()).filter(Boolean)
-
-      if (!currentDraft) {
-        currentDraft = createSoulPublishDraft({
-          walletAddress: suiWallet.address,
-          name: name.trim(),
-          description: description.trim(),
-          category,
-          tags: tagList,
-          pricingType,
-          oneTimePrice,
-          subPrice,
-          subPeriodDays,
-        })
+      const submitDraft = syncSoulPublishDraftForSubmit(currentDraft, {
+        walletAddress: suiWallet.address,
+        name: name.trim(),
+        description: description.trim(),
+        category,
+        tags: tagList,
+        pricingType,
+        oneTimePrice,
+        subPrice,
+        subPeriodDays,
+      })
+      if (submitDraft !== currentDraft) {
+        currentDraft = submitDraft
         persistDraft(currentDraft)
       }
 

@@ -132,6 +132,30 @@ export function createSoulPublishDraft(input: SoulPublishDraftInput): SoulPublis
   }
 }
 
+export function syncSoulPublishDraftForSubmit(
+  draft: SoulPublishDraft | null,
+  input: SoulPublishDraftInput,
+): SoulPublishDraft {
+  if (!draft) {
+    return createSoulPublishDraft(input)
+  }
+
+  if (draftHasOnChainProgress(draft)) {
+    return draft
+  }
+
+  return patchSoulPublishDraft(draft, {
+    name: input.name,
+    description: input.description,
+    category: input.category,
+    tags: input.tags,
+    pricingType: input.pricingType,
+    oneTimePrice: input.oneTimePrice,
+    subPrice: input.subPrice,
+    subPeriodDays: input.subPeriodDays,
+  })
+}
+
 export function patchSoulPublishDraft(
   draft: SoulPublishDraft,
   patch: SoulPublishDraftPatch,

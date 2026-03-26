@@ -41,3 +41,4 @@
 14. Pass mirror 写入前必须把链上 owner 地址规范化后再用于 wallet binding 查找和 `soulPassSnapshot.ownerAddress` 落库，避免等价 Sui 地址因为格式差异丢失 `ownerMemberId` 或导致 owner-scoped 查询漏匹配。
 15. Subscription renew mirror 在成功校验链上续费后，必须同时刷新 `ownerAddress` / `ownerMemberId`，不能只更新到期时间；否则转移后续费会把 snapshot ownership 留在旧 owner。
 16. `buildCreateSeriesTx` 必须在客户端拒绝空白 description，避免用户进入签名/上链后才因为 `series::validate_metadata` 的空描述约束失败。
+17. Publish Soul 页面在链上创建 `SoulSeries` 之前，若存在仅本地保存但尚未产生任何 on-chain progress 的 draft，提交时必须用当前表单值刷新该 draft；旧的空 `description` 或价格字段不得导致后续重试持续复现同一前端校验错误。
