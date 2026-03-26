@@ -16,4 +16,7 @@
 5. 收口前端：
    - SoulCard / SoulDetail / PurchaseButton / SoulPricing 改为 atomic price string + canonical latest release
    - 删除旧 cents 语义与链上 plan price fallback
-6. 跑相关测试与 typecheck，确认无残留。
+6. 收口手动 release mirror / agent access follow-up：
+   - 手动 release 页面传递 `sealDekEnvelope`，后端复用统一 helper 持久化 `sealSidecar`
+   - agent access 记录任一 retryable pass 校验失败，避免被后续 4xx/403 覆盖
+7. 跑相关测试与 typecheck，确认无残留。

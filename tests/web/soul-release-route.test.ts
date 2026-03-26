@@ -7,6 +7,7 @@ const mockedPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }))
 const mockedDbCreateRelease = vi.hoisted(() => vi.fn())
+const mockedCreateAndStoreReleaseSealSidecar = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransaction = vi.hoisted(() => vi.fn())
@@ -28,6 +29,9 @@ vi.mock('@web/lib/prisma', () => ({
 }))
 vi.mock('@web/lib/souls/post-tx-db', () => ({
   dbCreateRelease: mockedDbCreateRelease,
+}))
+vi.mock('@web/lib/souls/release-seal-sidecar', () => ({
+  createAndStoreReleaseSealSidecar: mockedCreateAndStoreReleaseSealSidecar,
 }))
 vi.mock('@web/lib/souls/tx-sync', () => ({
   getStoredSoulTxSync: mockedGetStoredSoulTxSync,
@@ -66,6 +70,44 @@ describe('soul release route', () => {
     mockedTakeRateLimitToken.mockReturnValue({ limited: false })
     mockedGetRequiredPublicEnv.mockReturnValue(`0x${'9'.repeat(64)}`)
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
+    mockedPrisma.soulSeries.findFirst.mockResolvedValue({
+      id: 'series-db-1',
+      onChainId: `0x${'1'.repeat(64)}`,
+    })
+    mockedGetMemberPrimarySuiWalletAddress.mockResolvedValue(`0x${'2'.repeat(64)}`)
+    mockedGetSuccessfulTransaction.mockResolvedValue({ digest: 'tx-1' })
+    mockedAssertCreatedObjectChange.mockReturnValue(undefined)
+    mockedGetVerifiedReleaseState.mockResolvedValue({
+      objectId: `0x${'a'.repeat(64)}`,
+      seriesId: `0x${'1'.repeat(64)}`,
+      version: '1.0.0',
+      walrusBlobRef: 'blob-123',
+      publicMetadataRef: 'blob-123',
+      contentHash: 'deadbeef'.padEnd(64, '0'),
+    })
+    mockedGetVerifiedSeriesState.mockResolvedValue({
+      objectId: `0x${'1'.repeat(64)}`,
+      latestReleaseId: `0x${'a'.repeat(64)}`,
+      authorAddress: `0x${'2'.repeat(64)}`,
+    })
+    mockedSameSuiValue.mockReturnValue(true)
+    mockedDbCreateRelease.mockResolvedValue({
+      id: 'release-db-1',
+      onChainId: `0x${'a'.repeat(64)}`,
+      version: '1.0.0',
+    })
+    mockedStoreSoulTxSync.mockResolvedValue(undefined)
+    mockedCreateAndStoreReleaseSealSidecar.mockResolvedValue({
+      version: 1,
+      mode: 'seal-envelope',
+      documentId: `0x${'b'.repeat(66)}`,
+      encryptedDek: 'ZW5j',
+      iv: 'aXY=',
+      cipher: 'AES-GCM-256',
+      mimeType: 'application/octet-stream',
+      fileName: 'bundle.zip',
+      contentHash: 'deadbeef'.padEnd(64, '0'),
+    })
   })
 
   it('rejects requests with missing txDigest', async () => {
@@ -124,5 +166,34 @@ describe('soul release route', () => {
     )
 
     expect(response.status).toBe(404)
+  })
+
+  it('propagates sealDekEnvelope into manual release sidecar persistence', async () => {
+    const txDigest = 'HW4YDZe8X4GPcfGvN6wPW5kGsX4Dg2mfY1fL96s6mKqH'
+    const releaseOnChainId = `0x${'a'.repeat(64)}`
+    const sealDekEnvelope = 'mock-envelope'
+
+    const { POST } = await import('../../web/app/api/souls/[id]/release/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/series-1/release', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest,
+          releaseOnChainId,
+          sealDekEnvelope,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: 'series-1' }) },
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockedCreateAndStoreReleaseSealSidecar).toHaveBeenCalledWith({
+      sealDekEnvelope,
+      seriesOnChainId: `0x${'1'.repeat(64)}`,
+      releaseOnChainId,
+      releaseContentHash: 'deadbeef'.padEnd(64, '0'),
+      soulPackageId: `0x${'9'.repeat(64)}`,
+    })
   })
 })

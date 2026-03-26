@@ -114,7 +114,7 @@ export async function GET(
   }
 
   let verifiedPassState: Awaited<ReturnType<typeof getVerifiedPassState>> | null = null
-  let lastVerifyError: unknown = null
+  let sawRetryableVerifyFailure = false
   for (const pass of candidatePasses) {
     try {
       const state = await getVerifiedPassState(pass.onChainId, soulPackageId)
@@ -131,7 +131,9 @@ export async function GET(
         break
       }
     } catch (error) {
-      lastVerifyError = error
+      if (!(error instanceof OnChainVerificationError) || error.status >= 500) {
+        sawRetryableVerifyFailure = true
+      }
       if (!(error instanceof OnChainVerificationError)) {
         console.error('[agent-access] Failed to verify pass access state', {
           agentMemberId: agent.agentMemberId,
@@ -145,13 +147,8 @@ export async function GET(
 
   if (!verifiedPassState) {
     // Surface transient errors (RPC/indexer outages) as 503 instead of false 403
-    if (lastVerifyError) {
-      const isTransient = lastVerifyError instanceof OnChainVerificationError
-        ? lastVerifyError.status >= 500
-        : true
-      if (isTransient) {
-        return NextResponse.json({ error: 'Unable to verify pass access right now' }, { status: 503 })
-      }
+    if (sawRetryableVerifyFailure) {
+      return NextResponse.json({ error: 'Unable to verify pass access right now' }, { status: 503 })
     }
     return NextResponse.json({ error: 'No active pass or direct ownership for this Soul' }, { status: 403 })
   }

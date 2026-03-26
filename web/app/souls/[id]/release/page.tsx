@@ -116,7 +116,11 @@ export default function NewReleasePage({ params }: { params: Promise<{ id: strin
         const data = await uploadRes.json().catch(() => ({}))
         throw new Error(data.error || 'Upload failed')
       }
-      const { blobId, contentHash } = await uploadRes.json()
+      const {
+        blobId,
+        contentHash,
+        sealDekEnvelope,
+      }: { blobId: string; contentHash: string; sealDekEnvelope?: string } = await uploadRes.json()
 
       // Create release on-chain
       setStatus('Creating release on-chain...')
@@ -140,7 +144,11 @@ export default function NewReleasePage({ params }: { params: Promise<{ id: strin
       const mirrorRes = await fetch(`/api/souls/${encodeURIComponent(id)}/release`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txDigest: result.digest, releaseOnChainId }),
+        body: JSON.stringify({
+          txDigest: result.digest,
+          releaseOnChainId,
+          ...(sealDekEnvelope ? { sealDekEnvelope } : {}),
+        }),
       })
       if (!mirrorRes.ok) {
         const data = await mirrorRes.json().catch(() => ({}))

@@ -568,4 +568,43 @@ describe('Soul agent access route', () => {
     const findManyArgs = mockedPrisma.soulPassSnapshot.findMany.mock.calls[0]?.[0]
     expect(findManyArgs).not.toHaveProperty('take')
   })
+
+  it('preserves transient verification failures even when a later candidate fails non-transiently', async () => {
+    const rpcFlakyPassId = `0x${'88'.repeat(32)}`
+    const missingPassId = `0x${'99'.repeat(32)}`
+
+    mockedPrisma.soulPassSnapshot.findMany.mockResolvedValueOnce([
+      {
+        passType: 'perpetual',
+        onChainId: rpcFlakyPassId,
+        lockedReleaseId: VALID_RELEASE_ID,
+        ownerAddress: AGENT_ADDRESS,
+        agentGrant: null,
+      },
+      {
+        passType: 'perpetual',
+        onChainId: missingPassId,
+        lockedReleaseId: VALID_RELEASE_ID,
+        ownerAddress: AGENT_ADDRESS,
+        agentGrant: null,
+      },
+    ])
+
+    mockedSuiClient.getObject
+      .mockRejectedValueOnce(new Error('rpc down'))
+      .mockResolvedValueOnce({ data: null })
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { GET } = await import('../../web/app/api/agent/souls/[id]/access/route.ts')
+    const response = await GET(
+      new Request(`http://localhost/api/agent/souls/${VALID_SERIES_ID}/access`) as any,
+      { params: Promise.resolve({ id: VALID_SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unable to verify pass access right now',
+    })
+    consoleError.mockRestore()
+  })
 })

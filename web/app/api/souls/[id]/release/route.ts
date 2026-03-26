@@ -6,6 +6,7 @@ import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import { dbCreateRelease } from '@web/lib/souls/post-tx-db'
+import { createAndStoreReleaseSealSidecar } from '@web/lib/souls/release-seal-sidecar'
 import { parseRequiredObjectId, parseRequiredTxDigest } from '@web/lib/souls/request-validation'
 import {
   getClientSafeOnChainVerificationErrorMessage,
@@ -62,6 +63,7 @@ export async function POST(
 
   const txDigest = parseRequiredTxDigest(body.txDigest)
   const releaseOnChainId = parseRequiredObjectId(body.releaseOnChainId)
+  const sealDekEnvelope = typeof body.sealDekEnvelope === 'string' ? body.sealDekEnvelope : null
 
   if (!txDigest) {
     return NextResponse.json({ error: 'txDigest must be a valid transaction digest' }, { status: 400 })
@@ -143,6 +145,26 @@ export async function POST(
       publicMetadataRef: releaseState.publicMetadataRef,
       contentHash: releaseState.contentHash,
     })
+
+    if (sealDekEnvelope) {
+      try {
+        await createAndStoreReleaseSealSidecar({
+          sealDekEnvelope,
+          seriesOnChainId: seriesState.objectId,
+          releaseOnChainId: releaseState.objectId,
+          releaseContentHash: releaseState.contentHash,
+          soulPackageId,
+        })
+      } catch (sealError) {
+        console.error('[soul-release-mirror] Seal sidecar creation failed', {
+          memberId: identity.memberId,
+          seriesId: series.id,
+          releaseOnChainId,
+          txDigest,
+          error: toSafeErrorDetails(sealError),
+        })
+      }
+    }
 
     const responseBody = {
       id: release.id,

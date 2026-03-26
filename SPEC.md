@@ -30,3 +30,5 @@
 3. Souls 相关 API 对外统一返回 atomic USDC 字符串，不再返回 cents number。
 4. 前端展示与购买逻辑基于 atomic 字符串工作，不再依赖页面临时链上价格 fallback。
 5. 相关旧注释、旧类型、旧契约测试同步清理。
+6. 手动发布 release 页面上传加密 bundle 后，`sealDekEnvelope` 必须随 mirror 请求传到后端并持久化为 release `sealSidecar`，agent access 不能再因为该链路丢字段而返回 `sealSidecar: null`。
+7. Agent Souls access 在扫描多个 candidate pass 时，只要出现任一瞬时链上校验失败且最终没有任何 pass 被确认为有效，就必须返回可重试错误，不得因为后续非瞬时失败把结果误降级为 403。
