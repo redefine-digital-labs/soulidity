@@ -707,4 +707,102 @@ describe('agent soul purchase execute route', () => {
       dbSynced: true,
     })
   })
+
+  it('persists retryable verification failures after on-chain purchase success', async () => {
+    mockedSuiClient.getObject.mockRejectedValueOnce(new Error('rpc unavailable'))
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          signature: 'c2ln',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Transaction submitted, but post-submit verification failed',
+      digest: '0xdigest',
+      passOnChainId: '0xpass',
+      onChainSuccess: true,
+      dbSynced: false,
+      syncError: 'verification_retryable',
+    })
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preparedPurchaseId: PREPARED_PURCHASE_ID,
+        resultStatusCode: 500,
+        resultBody: expect.objectContaining({
+          digest: '0xdigest',
+          passOnChainId: '0xpass',
+          onChainSuccess: true,
+          dbSynced: false,
+          syncError: 'verification_retryable',
+        }),
+        txDigest: '0xdigest',
+      }),
+    )
+  })
+
+  it('retries stored retryable purchase verification failures once chain reads recover', async () => {
+    const prevBody = {
+      error: 'Transaction submitted, but post-submit verification failed',
+      digest: '0xdigest',
+      passOnChainId: '0xpass',
+      onChainSuccess: true,
+      dbSynced: false,
+      syncError: 'verification_retryable',
+    }
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      txBytesBase64: 'c2VydmVyLXR4LWJ5dGVz',
+      txBytesHash: 'deadbeef',
+      seriesOnChainId: SERIES_ID,
+      planOnChainId: '0xplan-1',
+      planType: 'onetime',
+      releaseOnChainId: RELEASE_ID,
+      amountUsdc: 1_000_000n,
+      agentAddress: AGENT_ADDRESS,
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      resultStatusCode: 500,
+      resultBody: prevBody,
+    })
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request(`http://localhost/api/agent/souls/${SERIES_ID}/purchase/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          signature: 'c2ln',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SERIES_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      digest: '0xdigest',
+      passOnChainId: '0xpass',
+      onChainSuccess: true,
+      dbSynced: true,
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+    expect(mockedDbCreatePass).toHaveBeenCalledWith({
+      db: expect.any(Object),
+      passOnChainId: '0xpass',
+      seriesOnChainId: SERIES_ID,
+      ownerAddress: AGENT_ADDRESS,
+      passType: 'perpetual',
+      lockedReleaseId: RELEASE_ID,
+      mintTxDigest: '0xdigest',
+    })
+  })
 })

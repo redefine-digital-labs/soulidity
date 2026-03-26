@@ -34,3 +34,4 @@
 7. Agent Souls access 在扫描多个 candidate pass 时，只要出现任一瞬时链上校验失败且最终没有任何 pass 被确认为有效，就必须返回可重试错误，不得因为后续非瞬时失败把结果误降级为 403。
 8. USDC coin selection 不能因为固定页数上限把“余额足够但分页很深”的钱包误判为资金不足；只有在真正扫完整个分页后仍不够，才允许返回 insufficient funds。
 9. Agent purchase/renew execute 路由必须在链上广播前校验 prepared record 的语义边界：purchase execute 只能接受非 renewal 的 prepared 记录，renew execute 只能接受带 `passOnChainId` 的 renewal prepared 记录；错误路由不得执行交易并不得把 prepared 记录终结到不可恢复状态。
+10. Agent purchase/renew execute 在链上交易已成功且 `passOnChainId` 已可确定时，若后置链上校验或读链暂时失败，必须把 prepared 结果持久化为可恢复状态，并允许后续同一个 `preparedPurchaseId` 重新跑 verify + DB sync，不得把 5xx 暂时错误写成永久终态。

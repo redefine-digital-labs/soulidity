@@ -26,4 +26,7 @@
    - purchase execute 在读取 prepared record 后先拒绝 renewal intent（`passOnChainId` 已存在）
    - renew execute 在读取 prepared record 后先拒绝 purchase intent（`passOnChainId` 缺失）
    - 同步修正相关误导性注释，避免继续引导客户端走错 execute 入口
-9. 跑相关测试与 typecheck，确认无残留。
+9. 收口 execute retry follow-up：
+   - purchase/renew execute 对“链上已成功但 verify/read-chain 暂时失败”写入可恢复结果，保留 `passOnChainId`
+   - stored result 的重试逻辑不再只认 `207`，也允许上述 retryable verification failure 重新完成本地 sync
+10. 跑相关测试与 typecheck，确认无残留。

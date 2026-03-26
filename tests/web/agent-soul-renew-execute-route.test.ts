@@ -519,6 +519,39 @@ describe('agent soul renew execute route', () => {
     })
   })
 
+  it('persists retryable renew verification failures after on-chain success', async () => {
+    mockedGetVerifiedPassState.mockRejectedValueOnce(
+      new mockedOnChainVerificationError('Transaction renew inputs are unavailable for verification', 503),
+    )
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/renew/execute/route.ts')
+    const response = await POST(makeRequest(), makeParams())
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Transaction renew inputs are unavailable for verification',
+      digest: VALID_DIGEST,
+      passOnChainId: PASS_ID,
+      onChainSuccess: true,
+      dbSynced: false,
+      syncError: 'verification_retryable',
+    })
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preparedPurchaseId: PREPARED_PURCHASE_ID,
+        resultStatusCode: 503,
+        resultBody: expect.objectContaining({
+          digest: VALID_DIGEST,
+          passOnChainId: PASS_ID,
+          onChainSuccess: true,
+          dbSynced: false,
+          syncError: 'verification_retryable',
+        }),
+        txDigest: VALID_DIGEST,
+      }),
+    )
+  })
+
   it('submits the server-prepared tx bytes instead of any caller-supplied bytes', async () => {
     const { POST } = await import('../../web/app/api/agent/souls/[id]/renew/execute/route.ts')
     const response = await POST(
@@ -602,6 +635,45 @@ describe('agent soul renew execute route', () => {
       onChainSuccess: true,
       dbSynced: true,
     })
+    expect(mockedDbRenewPass).toHaveBeenCalledWith({
+      db: expect.any(Object),
+      passOnChainId: PASS_ID,
+      newExpiresAt: EXPIRES_AT,
+      renewTxDigest: VALID_DIGEST,
+    })
+  })
+
+  it('returns 200 when retrying a stored renew verification outage after chain reads recover', async () => {
+    const prevBody = {
+      error: 'Transaction renew inputs are unavailable for verification',
+      digest: VALID_DIGEST,
+      passOnChainId: PASS_ID,
+      onChainSuccess: true,
+      dbSynced: false,
+      syncError: 'verification_retryable',
+    }
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      ...DEFAULT_PREPARED_PURCHASE,
+      executedAt: new Date(),
+      resultStatusCode: 503,
+      resultBody: prevBody,
+    })
+    mockedGetVerifiedPassState.mockResolvedValueOnce(DEFAULT_PASS_STATE)
+    mockedDbRenewPass.mockResolvedValueOnce(undefined)
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/renew/execute/route.ts')
+    const response = await POST(makeRequest(), makeParams())
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      digest: VALID_DIGEST,
+      passOnChainId: PASS_ID,
+      expiresAt: EXPIRES_AT.toISOString(),
+      onChainSuccess: true,
+      dbSynced: true,
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
     expect(mockedDbRenewPass).toHaveBeenCalledWith({
       db: expect.any(Object),
       passOnChainId: PASS_ID,

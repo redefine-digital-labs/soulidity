@@ -35,6 +35,33 @@ const AGENT_EXECUTE_RATE_LIMIT = {
   windowMs: 60 * 1000,
 } as const
 const MAX_EXECUTE_SIGNATURE_LENGTH = 1024
+const RETRYABLE_VERIFICATION_SYNC_ERROR = 'verification_retryable'
+
+function getRetryableStoredSyncResult(params: {
+  resultStatusCode: number | null
+  resultBody: unknown
+}) {
+  if (!params.resultStatusCode || !params.resultBody) {
+    return null
+  }
+
+  const prevBody = params.resultBody as Record<string, unknown>
+  const digest = typeof prevBody.digest === 'string' ? prevBody.digest : null
+  const passOnChainId = typeof prevBody.passOnChainId === 'string' ? prevBody.passOnChainId : null
+  const syncError = typeof prevBody.syncError === 'string' ? prevBody.syncError : null
+
+  const retryable = params.resultStatusCode === 207 || syncError === RETRYABLE_VERIFICATION_SYNC_ERROR
+  if (!retryable || !digest || !passOnChainId) {
+    return null
+  }
+
+  return {
+    statusCode: params.resultStatusCode,
+    prevBody,
+    digest,
+    passOnChainId,
+  }
+}
 
 /**
  * POST /api/agent/souls/[id]/purchase/execute — Submit a signed purchase TX.
@@ -114,49 +141,47 @@ export async function POST(
       { status: 422 },
     )
   }
-  // 207 = on-chain TX succeeded but DB sync failed — allow retry
-  if (preparedPurchase.resultStatusCode === 207 && preparedPurchase.resultBody) {
-    const prevBody = preparedPurchase.resultBody as Record<string, unknown>
-    const passOnChainId = typeof prevBody.passOnChainId === 'string' ? prevBody.passOnChainId : null
-    const digest = typeof prevBody.digest === 'string' ? prevBody.digest : null
-
-    if (passOnChainId && digest) {
-      try {
-        const passState = await getVerifiedPassState(passOnChainId, soulPackageId)
-        const syncedResponseBody = {
-          digest,
-          status: 'success',
-          passOnChainId,
-          onChainSuccess: true,
-          dbSynced: true,
-        }
-        await prisma.$transaction(async (tx) => {
-          await dbCreatePass({
-            db: tx,
-            passOnChainId: passState.objectId,
-            seriesOnChainId: series.onChainId,
-            ownerAddress: passState.ownerAddress,
-            passType: passState.passType,
-            lockedReleaseId: passState.lockedReleaseId,
-            mintTxDigest: digest,
-            ...(passState.expiresAt ? { expiresAt: passState.expiresAt } : {}),
-          })
-          await finalizePreparedSoulPurchaseExecution({
-            db: tx,
-            preparedPurchaseId,
-            txDigest: digest,
-            resultStatusCode: 200,
-            resultBody: syncedResponseBody,
-          })
-        })
-        return NextResponse.json(syncedResponseBody, { status: 200 })
-      } catch (err) {
-        console.error('[agent-purchase-execute] DB sync retry failed', toSafeErrorDetails(err))
-        return NextResponse.json(prevBody, { status: 207 })
+  const retryableStoredSyncResult = getRetryableStoredSyncResult({
+    resultStatusCode: preparedPurchase.resultStatusCode,
+    resultBody: preparedPurchase.resultBody,
+  })
+  if (retryableStoredSyncResult) {
+    try {
+      const passState = await getVerifiedPassState(retryableStoredSyncResult.passOnChainId, soulPackageId)
+      const syncedResponseBody = {
+        digest: retryableStoredSyncResult.digest,
+        status: 'success',
+        passOnChainId: retryableStoredSyncResult.passOnChainId,
+        onChainSuccess: true,
+        dbSynced: true,
       }
+      await prisma.$transaction(async (tx) => {
+        await dbCreatePass({
+          db: tx,
+          passOnChainId: passState.objectId,
+          seriesOnChainId: series.onChainId,
+          ownerAddress: passState.ownerAddress,
+          passType: passState.passType,
+          lockedReleaseId: passState.lockedReleaseId,
+          mintTxDigest: retryableStoredSyncResult.digest,
+          ...(passState.expiresAt ? { expiresAt: passState.expiresAt } : {}),
+        })
+        await finalizePreparedSoulPurchaseExecution({
+          db: tx,
+          preparedPurchaseId,
+          txDigest: retryableStoredSyncResult.digest,
+          resultStatusCode: 200,
+          resultBody: syncedResponseBody,
+        })
+      })
+      return NextResponse.json(syncedResponseBody, { status: 200 })
+    } catch (err) {
+      console.error('[agent-purchase-execute] Retryable sync retry failed', toSafeErrorDetails(err))
+      return NextResponse.json(
+        retryableStoredSyncResult.prevBody,
+        { status: retryableStoredSyncResult.statusCode },
+      )
     }
-
-    return NextResponse.json(prevBody, { status: 207 })
   }
 
   if (preparedPurchase.resultStatusCode && preparedPurchase.resultBody) {
@@ -238,6 +263,7 @@ export async function POST(
   await waitForTransactionBestEffort(suiClient, result.digest)
 
   const status = result.effects?.status?.status ?? 'unknown'
+  let passOnChainId: string | undefined
   const finalizePreparedResult = async (
     statusCode: number,
     body: Record<string, unknown>,
@@ -274,7 +300,6 @@ export async function POST(
   try {
     ensureTransactionSucceeded(result)
 
-    let passOnChainId: string | undefined
     const passObj = result.objectChanges?.find((change) => {
       if (!change || typeof change !== 'object') return false
       const candidate = change as { type?: string; objectType?: string; objectId?: string }
@@ -381,12 +406,17 @@ export async function POST(
 
     return finalizePreparedResult(dbSynced ? 200 : 207, responseBody)
   } catch (err) {
+    const onChainSuccess = result.effects?.status?.status === 'success'
+    const retryablePassSyncContext = onChainSuccess && !!passOnChainId
+
     if (err instanceof OnChainVerificationError) {
       return finalizePreparedResult(err.status, {
         error: getClientSafeOnChainVerificationErrorMessage(err),
         digest: result.digest,
-        onChainSuccess: result.effects?.status?.status === 'success',
+        ...(retryablePassSyncContext ? { passOnChainId } : {}),
+        onChainSuccess,
         dbSynced: false,
+        ...(retryablePassSyncContext && err.status >= 500 ? { syncError: RETRYABLE_VERIFICATION_SYNC_ERROR } : {}),
       })
     }
 
@@ -394,8 +424,10 @@ export async function POST(
     return finalizePreparedResult(500, {
       error: 'Transaction submitted, but post-submit verification failed',
       digest: result.digest,
-      onChainSuccess: result.effects?.status?.status === 'success',
+      ...(retryablePassSyncContext ? { passOnChainId } : {}),
+      onChainSuccess,
       dbSynced: false,
+      ...(retryablePassSyncContext ? { syncError: RETRYABLE_VERIFICATION_SYNC_ERROR } : {}),
     })
   }
 }
