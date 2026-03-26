@@ -40,4 +40,9 @@
 12. 收口 pass owner normalization follow-up：
    - `dbCreatePass` 在 wallet binding lookup 和 snapshot upsert 前统一规范化 owner 地址
    - 补回归覆盖短地址/非规范地址输入，确认 `ownerMemberId` 解析与 `ownerAddress` 落库都使用规范值
-13. 跑相关测试与 typecheck，确认无残留。
+13. 收口 renew owner / series metadata validation follow-up：
+   - `dbRenewPass` 续费同步时同步刷新规范化后的 `ownerAddress` / `ownerMemberId`
+   - agent/human renew 路由把 verified pass owner 透传给 `dbRenewPass`
+   - `buildCreateSeriesTx` 前置拒绝空白 description，避免必败交易进入签名
+   - 补回归覆盖 renew owner refresh 与 empty description validation
+14. 跑相关测试与 typecheck，确认无残留。

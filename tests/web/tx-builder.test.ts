@@ -40,6 +40,18 @@ describe('tx builders', () => {
     })).toThrow('Soul preview image reference exceeds the 512-byte limit')
   })
 
+  it('rejects create-series payloads with an empty description before signing', async () => {
+    const { buildCreateSeriesTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+    expect(() => buildCreateSeriesTx({
+      name: 'Soul name',
+      description: '   ',
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: [],
+    })).toThrow('Soul description is required')
+  })
+
   it('rejects publish-release payloads whose contentHash is not 32 bytes', async () => {
     const { buildPublishReleaseTx } = await import('../../web/lib/souls/tx-builder.ts')
 

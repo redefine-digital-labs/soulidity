@@ -289,17 +289,22 @@ export async function dbCreatePass(params: {
 
 export async function dbRenewPass(params: {
   passOnChainId: string
+  ownerAddress: string
   newExpiresAt: Date
   renewTxDigest: string
   db?: SoulDbClient
 }): Promise<void> {
   const db = params.db ?? prisma
+  const ownerAddress = normalizeStoredSuiAddress(params.ownerAddress)
+  const ownerMemberId = await resolveOwnerMemberId(db, ownerAddress)
   const result = await db.soulPassSnapshot.updateMany({
     where: {
       onChainId: params.passOnChainId,
       passType: 'subscription',
     },
     data: {
+      ownerAddress,
+      ownerMemberId,
       expiresAt: params.newExpiresAt,
       lastRenewTxDigest: params.renewTxDigest,
       lastSyncedAt: new Date(),

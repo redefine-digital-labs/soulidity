@@ -212,6 +212,7 @@ export async function POST(
         await dbRenewPass({
           db: tx,
           passOnChainId: passState.objectId,
+          ownerAddress: passState.ownerAddress,
           newExpiresAt: passState.expiresAt!,
           renewTxDigest: retryableStoredSyncResult.digest,
         })
@@ -404,6 +405,7 @@ export async function POST(
         await dbRenewPass({
           db: tx,
           passOnChainId: passState.objectId,
+          ownerAddress: passState.ownerAddress,
           newExpiresAt: passState.expiresAt!,
           renewTxDigest: result.digest,
         })

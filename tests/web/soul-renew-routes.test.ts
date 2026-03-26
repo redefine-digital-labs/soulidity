@@ -468,6 +468,7 @@ describe('Soul renew route (human)', () => {
     expect(mockedDbRenewPass).toHaveBeenCalledWith({
       db: mockedPrisma,
       passOnChainId: PASS_ID,
+      ownerAddress: BUYER_ADDRESS,
       newExpiresAt: new Date('2026-04-25T00:00:00.000Z'),
       renewTxDigest: VALID_TX_DIGEST,
     })

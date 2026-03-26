@@ -500,6 +500,7 @@ describe('agent soul renew execute route', () => {
     expect(mockedDbRenewPass).toHaveBeenCalledWith({
       db: expect.any(Object),
       passOnChainId: PASS_ID,
+      ownerAddress: AGENT_ADDRESS,
       newExpiresAt: EXPIRES_AT,
       renewTxDigest: VALID_DIGEST,
     })
@@ -638,6 +639,7 @@ describe('agent soul renew execute route', () => {
     expect(mockedDbRenewPass).toHaveBeenCalledWith({
       db: expect.any(Object),
       passOnChainId: PASS_ID,
+      ownerAddress: AGENT_ADDRESS,
       newExpiresAt: EXPIRES_AT,
       renewTxDigest: VALID_DIGEST,
     })
@@ -677,6 +679,7 @@ describe('agent soul renew execute route', () => {
     expect(mockedDbRenewPass).toHaveBeenCalledWith({
       db: expect.any(Object),
       passOnChainId: PASS_ID,
+      ownerAddress: AGENT_ADDRESS,
       newExpiresAt: EXPIRES_AT,
       renewTxDigest: VALID_DIGEST,
     })

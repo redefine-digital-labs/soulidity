@@ -488,6 +488,7 @@ describe('post-tx db pricing mirror', () => {
 
       await expect(dbRenewPass({
         passOnChainId: '0xpass',
+        ownerAddress: '0xowner',
         newExpiresAt,
         renewTxDigest: '0xdigest',
       })).resolves.toBeUndefined()
@@ -495,9 +496,37 @@ describe('post-tx db pricing mirror', () => {
       expect(mockedPrisma.soulPassSnapshot.updateMany).toHaveBeenCalledWith({
         where: { onChainId: '0xpass', passType: 'subscription' },
         data: expect.objectContaining({
+          ownerAddress: '0xowner',
           expiresAt: newExpiresAt,
           lastRenewTxDigest: '0xdigest',
           lastSyncedAt: expect.any(Date),
+        }),
+      })
+    })
+
+    it('normalizes and refreshes owner fields during subscription renew sync', async () => {
+      const normalizedOwnerAddress = `0x${'0'.repeat(63)}a`
+      mockedPrisma.walletBinding.findFirst.mockResolvedValueOnce({
+        memberId: 'member-1',
+      })
+      const { dbRenewPass } = await import('../../web/lib/souls/post-tx-db.ts')
+
+      await expect(dbRenewPass({
+        passOnChainId: '0xpass',
+        ownerAddress: '0xA',
+        newExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
+        renewTxDigest: '0xdigest',
+      })).resolves.toBeUndefined()
+
+      expect(mockedPrisma.walletBinding.findFirst).toHaveBeenCalledWith({
+        where: { address: normalizedOwnerAddress, chain: 'sui' },
+      })
+      expect(mockedPrisma.soulPassSnapshot.updateMany).toHaveBeenCalledWith({
+        where: { onChainId: '0xpass', passType: 'subscription' },
+        data: expect.objectContaining({
+          ownerAddress: normalizedOwnerAddress,
+          ownerMemberId: 'member-1',
+          lastRenewTxDigest: '0xdigest',
         }),
       })
     })
@@ -508,6 +537,7 @@ describe('post-tx db pricing mirror', () => {
 
       await expect(dbRenewPass({
         passOnChainId: '0xmissing',
+        ownerAddress: '0xowner',
         newExpiresAt: new Date(),
         renewTxDigest: '0xdigest',
       })).rejects.toThrow('Subscription pass 0xmissing not found')
@@ -520,6 +550,7 @@ describe('post-tx db pricing mirror', () => {
 
       await expect(dbRenewPass({
         passOnChainId: '0xperpetual',
+        ownerAddress: '0xowner',
         newExpiresAt: new Date(),
         renewTxDigest: '0xdigest',
       })).rejects.toThrow('Subscription pass 0xperpetual not found')

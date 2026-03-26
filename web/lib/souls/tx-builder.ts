@@ -36,6 +36,9 @@ function validateCreateSeriesParams(params: {
     throw new Error('Soul name is required')
   }
   assertMaxUtf8Bytes(params.name, MAX_NAME_BYTES, 'Soul name')
+  if (params.description.trim().length === 0) {
+    throw new Error('Soul description is required')
+  }
   assertMaxUtf8Bytes(params.description, MAX_DESCRIPTION_BYTES, 'Soul description')
   if (params.category.trim().length === 0) {
     throw new Error('Soul category is required')

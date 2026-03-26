@@ -140,6 +140,7 @@ export async function POST(
       await dbRenewPass({
         db: tx,
         passOnChainId: passState.objectId,
+        ownerAddress: passState.ownerAddress,
         newExpiresAt: passState.expiresAt!,
         renewTxDigest: transaction.digest ?? txDigest,
       })
