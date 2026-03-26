@@ -196,4 +196,29 @@ describe('soul release route', () => {
       soulPackageId: `0x${'9'.repeat(64)}`,
     })
   })
+
+  it('returns 503 and does not cache release success when Seal sidecar generation fails', async () => {
+    mockedCreateAndStoreReleaseSealSidecar.mockRejectedValueOnce(new Error('seal unavailable'))
+
+    const { POST } = await import('../../web/app/api/souls/[id]/release/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/series-1/release', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: 'HW4YDZe8X4GPcfGvN6wPW5kGsX4Dg2mfY1fL96s6mKqH',
+          releaseOnChainId: `0x${'a'.repeat(64)}`,
+          sealDekEnvelope: 'mock-envelope',
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: 'series-1' }) },
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Release mirrored locally, but Seal sidecar generation failed. Retry release sync.',
+    })
+    expect(mockedDbCreateRelease).toHaveBeenCalledTimes(1)
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
+  })
 })

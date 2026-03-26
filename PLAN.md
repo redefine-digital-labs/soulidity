@@ -29,4 +29,8 @@
 9. 收口 execute retry follow-up：
    - purchase/renew execute 对“链上已成功但 verify/read-chain 暂时失败”写入可恢复结果，保留 `passOnChainId`
    - stored result 的重试逻辑不再只认 `207`，也允许上述 retryable verification failure 重新完成本地 sync
-10. 跑相关测试与 typecheck，确认无残留。
+10. 收口 rate-limit / sidecar retry follow-up：
+   - `takeRateLimitToken` 对 Upstash `limit()` 异常降级到 in-memory limiter
+   - `publish` / `release` mirror 把成功 tx-sync 延后到 sidecar 成功之后，sidecar 失败返回可重试错误
+   - 同步补 retry 回归，确认同一 `txDigest` 不会因为过早缓存成功而失去修复机会
+11. 跑相关测试与 typecheck，确认无残留。

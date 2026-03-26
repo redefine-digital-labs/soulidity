@@ -163,6 +163,10 @@ export async function POST(
           txDigest,
           error: toSafeErrorDetails(sealError),
         })
+        return NextResponse.json(
+          { error: 'Release mirrored locally, but Seal sidecar generation failed. Retry release sync.' },
+          { status: 503 },
+        )
       }
     }
 

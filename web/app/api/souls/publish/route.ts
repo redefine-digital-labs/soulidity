@@ -279,22 +279,12 @@ export async function POST(request: NextRequest) {
         releaseId: release?.id ?? null,
       }
 
-      await storeSoulTxSync({
-        db: tx,
-        txDigest,
-        routeKey: 'publish',
-        actorKey: identity.memberId,
-        resourceKey: seriesState.objectId,
-        statusCode: 201,
-        body: responseBody,
-      })
-
       return responseBody
     }, { timeout: 30_000 })
 
-    // Seal-encrypt the DEK and store as sidecar on the release (after TX succeeds).
-    // This calls external Seal key servers so it must not run inside the DB transaction.
-    // Failure here is non-fatal: the release is already created and the sidecar can be retried.
+    // Seal-encrypt the DEK and store as sidecar on the release after the
+    // mirror rows exist. Success is only cached after the sidecar is ready,
+    // so the same txDigest can be retried if Seal is temporarily unavailable.
     if (sealDekEnvelope && releaseState) {
       try {
         await createAndStoreReleaseSealSidecar({
@@ -311,9 +301,24 @@ export async function POST(request: NextRequest) {
           releaseOnChainId: releaseState.objectId,
           error: toSafeErrorDetails(sealError),
         })
-        // Don't fail the whole publish — release is created, sidecar can be retried
+        return NextResponse.json(
+          { error: 'Release mirrored locally, but Seal sidecar generation failed. Retry publish sync.' },
+          { status: 503 },
+        )
       }
     }
+
+    await prisma.$transaction(async (tx) => {
+      await storeSoulTxSync({
+        db: tx,
+        txDigest,
+        routeKey: 'publish',
+        actorKey: identity.memberId,
+        resourceKey: seriesState.objectId,
+        statusCode: 201,
+        body: responseBody,
+      })
+    })
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {

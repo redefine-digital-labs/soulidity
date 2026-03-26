@@ -21,6 +21,7 @@ const mockedPrisma = vi.hoisted(() => ({
 const mockedDbCreateSeries = vi.hoisted(() => vi.fn())
 const mockedDbCreateRelease = vi.hoisted(() => vi.fn())
 const mockedDbUpdatePricingPlan = vi.hoisted(() => vi.fn())
+const mockedCreateAndStoreReleaseSealSidecar = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
@@ -48,6 +49,10 @@ vi.mock('@web/lib/souls/post-tx-db', () => ({
   dbCreateSeries: mockedDbCreateSeries,
   dbCreateRelease: mockedDbCreateRelease,
   dbUpdatePricingPlan: mockedDbUpdatePricingPlan,
+}))
+
+vi.mock('@web/lib/souls/release-seal-sidecar', () => ({
+  createAndStoreReleaseSealSidecar: mockedCreateAndStoreReleaseSealSidecar,
 }))
 
 vi.mock('@web/lib/souls/tx-sync', () => ({
@@ -245,6 +250,17 @@ describe('soul publish route', () => {
     mockedDbUpdatePricingPlan.mockResolvedValue(undefined)
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
     mockedStoreSoulTxSync.mockResolvedValue(undefined)
+    mockedCreateAndStoreReleaseSealSidecar.mockResolvedValue({
+      version: 1,
+      mode: 'seal-envelope',
+      documentId: `0x${'b'.repeat(66)}`,
+      encryptedDek: 'ZW5j',
+      iv: 'aXY=',
+      cipher: 'AES-GCM-256',
+      mimeType: 'application/octet-stream',
+      fileName: 'bundle.zip',
+      contentHash: 'deadbeef',
+    })
   })
 
   it('requires txDigest for durable publish idempotency', async () => {
@@ -601,5 +617,54 @@ describe('soul publish route', () => {
       },
     })
     expect(mockedGetMemberPrimarySuiWalletAddress).toHaveBeenCalledWith('member-1')
+  })
+
+  it('returns 503 and leaves the publish txDigest retryable when Seal sidecar generation fails', async () => {
+    mockedCreateAndStoreReleaseSealSidecar
+      .mockRejectedValueOnce(new Error('seal unavailable'))
+      .mockResolvedValueOnce({
+        version: 1,
+        mode: 'seal-envelope',
+        documentId: `0x${'b'.repeat(66)}`,
+        encryptedDek: 'ZW5j',
+        iv: 'aXY=',
+        cipher: 'AES-GCM-256',
+        mimeType: 'application/octet-stream',
+        fileName: 'bundle.zip',
+        contentHash: 'deadbeef',
+      })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const request = () => new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: PUBLISH_TX_DIGEST,
+        seriesOnChainId: SERIES_ID,
+        releaseOnChainId: RELEASE_ID,
+        oneTimePlanOnChainId: ONETIME_PLAN_ID,
+        oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        sealDekEnvelope: 'mock-envelope',
+      }),
+    }) as any
+
+    const firstResponse = await POST(request())
+    expect(firstResponse.status).toBe(503)
+    await expect(firstResponse.json()).resolves.toEqual({
+      error: 'Release mirrored locally, but Seal sidecar generation failed. Retry publish sync.',
+    })
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
+
+    const secondResponse = await POST(request())
+    expect(secondResponse.status).toBe(201)
+    await expect(secondResponse.json()).resolves.toMatchObject({
+      id: 'series-db-1',
+      name: 'On-chain Name',
+      onChainId: SERIES_ID,
+      releaseId: 'release-db-1',
+    })
+    expect(mockedDbCreateSeries).toHaveBeenCalledTimes(2)
+    expect(mockedDbCreateRelease).toHaveBeenCalledTimes(2)
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledTimes(1)
   })
 })
