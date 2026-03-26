@@ -64,7 +64,6 @@ fun mint_wraps_blob_and_preserves_metadata() {
         );
 
         std::unit_test::assert_eq!(soul::creator(&soul_obj), owner);
-        std::unit_test::assert_eq!(soul::owner(&soul_obj), owner);
         assert!(*soul::name(&soul_obj).as_bytes() == b"Genesis Soul", 1);
         assert!(*soul::description(&soul_obj).as_bytes() == b"Single-owner artifact", 2);
         assert!(*soul::image_url(&soul_obj).as_bytes() == b"https://example.com/soul.png", 3);
@@ -114,7 +113,7 @@ fun mint_exposes_optional_metadata_ref() {
 }
 
 #[test]
-fun public_mint_uses_current_context_sender_as_creator_and_owner() {
+fun public_mint_uses_current_context_sender_as_creator() {
     let mut ctx = sui::tx_context::new_from_hint(@0xCAFE, 1, 0, 0, 0);
     let (walrus_system, blob) = register_test_blob(&mut ctx);
     let tx_sender = ctx.sender();
@@ -128,7 +127,6 @@ fun public_mint_uses_current_context_sender_as_creator_and_owner() {
     );
 
     assert!(soul::creator(&soul_obj) == tx_sender, 0);
-    assert!(soul::owner(&soul_obj) == tx_sender, 1);
 
     let blob = soul::destroy_for_testing(soul_obj);
     blob.burn();

@@ -38,7 +38,6 @@
 新包中的核心资产对象定义为单一 `Soul`，至少包含：
 
 - `creator`
-- `owner`
 - `name`
 - `description`
 - `image_url`
@@ -52,7 +51,6 @@
 public struct Soul has key, store {
     id: UID,
     creator: address,
-    owner: address,
     name: String,
     description: String,
     image_url: String,
@@ -66,6 +64,7 @@ public struct Soul has key, store {
 
 - `Soul` 直接持有 `Blob`，不采用仅存 `blob id` 的弱引用模式。
 - `Soul` 不再拆成“作品描述对象 + 内容版本对象 + 权益对象”三层。
+- ownership 真相源是 Sui address-owned object 语义，不在 `Soul` 内再镜像一个 `owner` 字段。
 
 ### 模块边界
 
@@ -74,16 +73,18 @@ public struct Soul has key, store {
 - `soul.move`
   - `Soul` 定义
   - `mint_soul`
-  - 当前 owner / agent grant 的最小状态读写
+  - `agent_grant` 的最小状态读写
 - `market.move`
   - `TransferPolicy<Soul>` 初始化
   - Kiosk 首发上架
   - 二级转售辅助
   - 平台费 / 版税规则接入
+  - 市场路径显式清理 `agent_grant`
 - `grant.move`
-  - owner 给 agent 设置 / 撤销 `agent_grant`
+  - 当前 holder 给 agent 设置 / 撤销 `agent_grant`
+  - 直接 `public_transfer` 后由新 holder 覆盖或撤销旧 grant
 - `seal_policy.move`
-  - 基于 `Soul` 的访问审批
+  - 基于 `Soul` 的 Seal 文档 ID 校验
 - `platform_fee_rule.move`
   - 平台费规则
 - `royalty_rule.move`
@@ -151,11 +152,17 @@ public struct Soul has key, store {
   - `version = 0x01`
   - `nonce >= 16 bytes`
 - 校验顺序：
-  - caller 必须是 owner 或已授权 agent
+  - 交易必须提供目标 `Soul` 对象本身
   - 长度满足最小格式要求
   - `domain` 精确匹配
   - `version` 精确匹配
   - `soul_id` 精确匹配
+
+说明：
+
+- `seal_approve` 不再读取镜像 `owner` 字段做授权。
+- address-owned `Soul` 的真实持有者约束由 Sui 对 owned object 的输入规则保证。
+- `agent_grant` 保留给链上状态与应用层授权语义；市场路径会清理它，但裸 `public_transfer` 无法被合约拦截，需由当前 holder 自主覆盖或撤销。
 
 ## 全栈改造
 
@@ -211,9 +218,10 @@ public struct Soul has key, store {
 - 首单购买成功
 - 持有者二级转售成功
 - `Blob` 随 `Soul` 原子转移
-- `agent_grant` 对当前 owner 生效
+- 当前 holder 在直接 transfer 后仍可设置 / 覆盖 / 撤销 `agent_grant`
 - `Display<Soul>` 正常返回 `name/description/image_url/creator`
 - 零价上架被拒绝
+- 市场购买后的 buyer 可直接通过 `seal_approve`
 - `seal` 文档 ID 的错误 domain / version / soul_id / 长度都被拒绝
 
 ### 应用层测试
@@ -246,4 +254,5 @@ public struct Soul has key, store {
 - 当前是开发环境，允许直接切全新包，不做旧 subscription 兼容。
 - 协议层接受“每个 `Soul` 都是独立资产”，不做跨 `Soul` 的内容唯一性保证。
 - `Soul` 直接持有 Walrus `Blob`。
+- ownership 真相源是 Sui object ownership，而不是 `Soul` 内部镜像字段。
 - 保留 agent grant / Seal 访问能力，但授权对象从旧的 pass 改为 `Soul`。

@@ -17,7 +17,6 @@ public struct SOUL has drop {}
 public struct Soul has key, store {
     id: UID,
     creator: address,
-    owner: address,
     name: String,
     description: String,
     image_url: String,
@@ -58,10 +57,6 @@ public fun creator(self: &Soul): address {
     self.creator
 }
 
-public fun owner(self: &Soul): address {
-    self.owner
-}
-
 public fun name(self: &Soul): &String {
     &self.name
 }
@@ -86,8 +81,7 @@ public fun content_blob_object_id(self: &Soul): ID {
     blob::object_id(&self.content_blob)
 }
 
-public(package) fun set_owner(self: &mut Soul, owner: address) {
-    self.owner = owner;
+public(package) fun clear_agent_grant(self: &mut Soul) {
     self.agent_grant = option::none();
 }
 
@@ -108,7 +102,6 @@ fun mint_with_creator(
     let soul = Soul {
         id: object::new(ctx),
         creator,
-        owner: creator,
         name,
         description,
         image_url,
@@ -170,7 +163,6 @@ public fun destroy_for_testing(self: Soul): Blob {
     let Soul {
         id,
         creator: _,
-        owner: _,
         name: _,
         description: _,
         image_url: _,

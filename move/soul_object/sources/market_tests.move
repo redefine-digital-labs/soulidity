@@ -160,10 +160,9 @@ fun purchase_transfers_soul_and_routes_fees() {
             ts::ctx(&mut scenario),
         );
 
-        assert!(soul::owner(&purchased_soul) == buyer, 3);
-        assert!(soul::creator(&purchased_soul) == seller, 4);
-        assert!(seller_kiosk.profits_amount() == SALE_PRICE, 5);
-        assert!(remainder.value() == 0, 8);
+        assert!(soul::creator(&purchased_soul) == seller, 3);
+        assert!(seller_kiosk.profits_amount() == SALE_PRICE, 4);
+        assert!(remainder.value() == 0, 7);
 
         let blob = soul::destroy_for_testing(purchased_soul);
         blob.burn();
@@ -178,8 +177,8 @@ fun purchase_transfers_soul_and_routes_fees() {
         let platform_fee_coin: Coin<SUI> = ts::take_from_address(&scenario, platform);
         let royalty_fee_coin: Coin<SUI> = ts::take_from_address(&scenario, seller);
 
-        assert!(platform_fee_coin.value() == PLATFORM_FEE, 6);
-        assert!(royalty_fee_coin.value() == ROYALTY_FEE, 7);
+        assert!(platform_fee_coin.value() == PLATFORM_FEE, 5);
+        assert!(royalty_fee_coin.value() == ROYALTY_FEE, 6);
 
         coin::burn_for_testing(platform_fee_coin);
         coin::burn_for_testing(royalty_fee_coin);
@@ -297,11 +296,10 @@ fun secondary_resale_transfers_same_soul_and_preserves_blob() {
             ts::ctx(&mut scenario),
         );
 
-        assert!(soul::owner(&resold_soul) == final_buyer, 10);
-        assert!(soul::creator(&resold_soul) == seller, 11);
-        assert!(soul::content_blob_object_id(&resold_soul) == blob_object_id, 12);
-        assert!(reseller_kiosk.profits_amount() == RESALE_PRICE, 13);
-        assert!(remainder.value() == 0, 14);
+        assert!(soul::creator(&resold_soul) == seller, 10);
+        assert!(soul::content_blob_object_id(&resold_soul) == blob_object_id, 11);
+        assert!(reseller_kiosk.profits_amount() == RESALE_PRICE, 12);
+        assert!(remainder.value() == 0, 13);
 
         let blob = soul::destroy_for_testing(resold_soul);
         blob.burn();
@@ -318,8 +316,8 @@ fun secondary_resale_transfers_same_soul_and_preserves_blob() {
         let royalty_fee_coin_1: Coin<SUI> = ts::take_from_address(&scenario, seller);
         let royalty_fee_coin_2: Coin<SUI> = ts::take_from_address(&scenario, seller);
 
-        assert!(platform_fee_coin_1.value() + platform_fee_coin_2.value() == PLATFORM_FEE + RESALE_PLATFORM_FEE, 15);
-        assert!(royalty_fee_coin_1.value() + royalty_fee_coin_2.value() == ROYALTY_FEE + RESALE_ROYALTY_FEE, 16);
+        assert!(platform_fee_coin_1.value() + platform_fee_coin_2.value() == PLATFORM_FEE + RESALE_PLATFORM_FEE, 14);
+        assert!(royalty_fee_coin_1.value() + royalty_fee_coin_2.value() == ROYALTY_FEE + RESALE_ROYALTY_FEE, 15);
 
         coin::burn_for_testing(platform_fee_coin_1);
         coin::burn_for_testing(platform_fee_coin_2);
@@ -693,8 +691,7 @@ fun purchase_clears_existing_agent_grant() {
             ts::ctx(&mut scenario),
         );
 
-        assert!(soul::owner(&purchased_soul) == buyer, 8);
-        assert!(soul::agent_grant(&purchased_soul).is_none(), 9);
+        assert!(soul::agent_grant(&purchased_soul).is_none(), 8);
 
         let blob = soul::destroy_for_testing(purchased_soul);
         blob.burn();

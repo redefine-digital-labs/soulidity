@@ -3,10 +3,9 @@ module soul_object::grant;
 use sui::event;
 use soul_object::soul::Soul;
 
-const ENotOwner: u64 = 0;
-const ENoAgentGrant: u64 = 1;
-const EInvalidAgent: u64 = 2;
-const ESelfGrant: u64 = 3;
+const ENoAgentGrant: u64 = 0;
+const EInvalidAgent: u64 = 1;
+const ESelfGrant: u64 = 2;
 
 public struct AgentGrantSet has copy, drop {
     soul_id: ID,
@@ -19,10 +18,8 @@ public struct AgentGrantRevoked has copy, drop {
 }
 
 public fun set_agent_grant(soul: &mut Soul, agent: address, ctx: &TxContext) {
-    let owner = soul.owner();
-    assert!(owner == ctx.sender(), ENotOwner);
     assert!(agent != @0x0, EInvalidAgent);
-    assert!(agent != owner, ESelfGrant);
+    assert!(agent != ctx.sender(), ESelfGrant);
 
     let soul_id = object::id(soul);
     let existing_agent = *soul.agent_grant();
@@ -38,9 +35,7 @@ public fun set_agent_grant(soul: &mut Soul, agent: address, ctx: &TxContext) {
     event::emit(AgentGrantSet { soul_id, agent });
 }
 
-public fun revoke_agent_grant(soul: &mut Soul, ctx: &TxContext) {
-    assert!(soul.owner() == ctx.sender(), ENotOwner);
-
+public fun revoke_agent_grant(soul: &mut Soul, _ctx: &TxContext) {
     let existing_agent = *soul.agent_grant();
     assert!(existing_agent.is_some(), ENoAgentGrant);
 

@@ -2,18 +2,15 @@ module soul_object::seal_policy;
 
 use soul_object::soul::Soul;
 
-const ENotAuthorized: u64 = 0;
-const EIdPrefixMismatch: u64 = 1;
-const EDocumentIdTooShort: u64 = 2;
+const EIdPrefixMismatch: u64 = 0;
+const EDocumentIdTooShort: u64 = 1;
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
 
-entry fun seal_approve(id: vector<u8>, soul: &Soul, ctx: &TxContext) {
-    let caller = ctx.sender();
-    let is_owner = soul.owner() == caller;
-    let is_agent = soul.agent_grant().contains(&caller);
-    assert!(is_owner || is_agent, ENotAuthorized);
-
+// Address-owned Soul objects are already gated by Sui input ownership rules.
+// This entrypoint only validates that the caller is approving a document for the
+// exact Soul object they provided.
+entry fun seal_approve(id: vector<u8>, soul: &Soul, _ctx: &TxContext) {
     let domain = b"soul-seal:";
     let domain_len = domain.length();
     let soul_id_bytes = object::id(soul).to_bytes();

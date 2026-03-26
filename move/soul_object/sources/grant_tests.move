@@ -43,16 +43,16 @@ fun register_test_blob(ctx: &mut TxContext): (system::System, blob::Blob) {
 }
 
 #[test]
-fun owner_can_set_and_revoke_agent_grant() {
-    let owner = @0xBEEF;
+fun current_holder_can_set_and_revoke_agent_grant() {
+    let holder = @0xBEEF;
     let agent = @0xCAFE;
-    let mut scenario = ts::begin(owner);
+    let mut scenario = ts::begin(holder);
 
     {
         let ctx = ts::ctx(&mut scenario);
         let (walrus_system, blob) = register_test_blob(ctx);
         let soul_obj = soul::mint_for_testing(
-            owner,
+            holder,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
             string::utf8(b"https://example.com/soul.png"),
@@ -60,11 +60,11 @@ fun owner_can_set_and_revoke_agent_grant() {
             blob,
             ctx,
         );
-        transfer::public_transfer(soul_obj, owner);
+        transfer::public_transfer(soul_obj, holder);
         std::unit_test::destroy(walrus_system);
     };
 
-    ts::next_tx(&mut scenario, owner);
+    ts::next_tx(&mut scenario, holder);
     {
         let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
         grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
@@ -83,17 +83,18 @@ fun owner_can_set_and_revoke_agent_grant() {
 }
 
 #[test]
-#[expected_failure(abort_code = soul_object::grant::ENotOwner)]
-fun non_owner_cannot_set_agent_grant() {
-    let owner = @0xBEEF;
-    let attacker = @0xBAD;
-    let mut scenario = ts::begin(owner);
+fun direct_transfer_recipient_can_replace_existing_agent_grant() {
+    let creator = @0xBEEF;
+    let recipient = @0xBAD;
+    let first_agent = @0xCAFE;
+    let second_agent = @0xD00D;
+    let mut scenario = ts::begin(creator);
 
     {
         let ctx = ts::ctx(&mut scenario);
         let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            owner,
+        let mut soul_obj = soul::mint_for_testing(
+            creator,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
             string::utf8(b"https://example.com/soul.png"),
@@ -101,16 +102,33 @@ fun non_owner_cannot_set_agent_grant() {
             blob,
             ctx,
         );
-        transfer::public_transfer(soul_obj, owner);
+        grant::set_agent_grant(&mut soul_obj, first_agent, ctx);
+        transfer::public_transfer(soul_obj, creator);
         std::unit_test::destroy(walrus_system);
     };
 
-    ts::next_tx(&mut scenario, attacker);
+    ts::next_tx(&mut scenario, creator);
     {
-        let mut soul_obj: soul::Soul = ts::take_from_address(&scenario, owner);
-        grant::set_agent_grant(&mut soul_obj, @0xCAFE, ts::ctx(&mut scenario));
-        abort 9
-    }
+        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        transfer::public_transfer(soul_obj, recipient);
+    };
+
+    ts::next_tx(&mut scenario, recipient);
+    {
+        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        assert!(soul::agent_grant(&soul_obj).contains(&first_agent), 3);
+
+        grant::set_agent_grant(&mut soul_obj, second_agent, ts::ctx(&mut scenario));
+        assert!(soul::agent_grant(&soul_obj).contains(&second_agent), 4);
+
+        grant::revoke_agent_grant(&mut soul_obj, ts::ctx(&mut scenario));
+        assert!(soul::agent_grant(&soul_obj).is_none(), 5);
+
+        let blob = soul::destroy_for_testing(soul_obj);
+        blob.burn();
+    };
+
+    ts::end(scenario);
 }
 
 #[test]
@@ -145,15 +163,15 @@ fun zero_address_cannot_be_granted() {
 
 #[test]
 #[expected_failure(abort_code = soul_object::grant::ESelfGrant)]
-fun owner_cannot_grant_self() {
-    let owner = @0xBEEF;
-    let mut scenario = ts::begin(owner);
+fun current_holder_cannot_grant_self() {
+    let holder = @0xBEEF;
+    let mut scenario = ts::begin(holder);
 
     {
         let ctx = ts::ctx(&mut scenario);
         let (walrus_system, blob) = register_test_blob(ctx);
         let soul_obj = soul::mint_for_testing(
-            owner,
+            holder,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
             string::utf8(b"https://example.com/soul.png"),
@@ -161,14 +179,14 @@ fun owner_cannot_grant_self() {
             blob,
             ctx,
         );
-        transfer::public_transfer(soul_obj, owner);
+        transfer::public_transfer(soul_obj, holder);
         std::unit_test::destroy(walrus_system);
     };
 
-    ts::next_tx(&mut scenario, owner);
+    ts::next_tx(&mut scenario, holder);
     {
         let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        grant::set_agent_grant(&mut soul_obj, owner, ts::ctx(&mut scenario));
+        grant::set_agent_grant(&mut soul_obj, holder, ts::ctx(&mut scenario));
         abort 7
     }
 }

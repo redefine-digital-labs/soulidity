@@ -125,7 +125,7 @@ public fun place_and_list(
     let seller = kiosk.owner();
     let kiosk_id = object::id(kiosk);
     let soul_id = object::id(&soul);
-    soul.set_owner(seller);
+    soul.clear_agent_grant();
     kiosk.place_and_list(cap, soul, price);
 
     event::emit(SoulListed {
@@ -156,7 +156,7 @@ public fun purchase(
 
     let buyer = ctx.sender();
     let kiosk_id = object::id(seller_kiosk);
-    soul.set_owner(buyer);
+    soul.clear_agent_grant();
 
     event::emit(SoulPurchased {
         soul_id,
