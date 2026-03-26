@@ -34,38 +34,20 @@ describe('sui wallet helpers', () => {
             { createdAt: 'asc' },
             { id: 'asc' },
           ],
-          take: 1,
+          take: 2,
           select: { address: true },
         },
       },
     })
   })
 
-  it('returns all bound Sui wallets in primary-first order', async () => {
+  it('returns a single bound Sui wallet as a one-element list', async () => {
     mockedPrisma.member.findUnique.mockResolvedValue({
-      walletBindings: [{ address: '0xprimary' }, { address: '0xsecondary' }],
+      walletBindings: [{ address: '0xprimary' }],
     })
 
     const { getMemberSuiWalletAddresses } = await import('../../web/lib/auth/sui-wallet.ts')
-    await expect(getMemberSuiWalletAddresses('member-1')).resolves.toEqual([
-      '0xprimary',
-      '0xsecondary',
-    ])
-
-    expect(mockedPrisma.member.findUnique).toHaveBeenCalledWith({
-      where: { id: 'member-1' },
-      select: {
-        walletBindings: {
-          where: { chain: 'sui' },
-          orderBy: [
-            { isPrimary: 'desc' },
-            { createdAt: 'asc' },
-            { id: 'asc' },
-          ],
-          select: { address: true },
-        },
-      },
-    })
+    await expect(getMemberSuiWalletAddresses('member-1')).resolves.toEqual(['0xprimary'])
   })
 
   it('returns null when no Sui binding exists', async () => {
@@ -89,5 +71,20 @@ describe('sui wallet helpers', () => {
 
     const { getMemberSuiWalletAddresses } = await import('../../web/lib/auth/sui-wallet.ts')
     await expect(getMemberSuiWalletAddresses('member-1')).resolves.toEqual([])
+  })
+
+  it('throws when the member has multiple Sui wallet bindings', async () => {
+    mockedPrisma.member.findUnique.mockResolvedValue({
+      walletBindings: [{ address: '0xprimary' }, { address: '0xsecondary' }],
+    })
+
+    const {
+      getMemberPrimarySuiWalletAddress,
+      MultipleSuiWalletBindingsError,
+    } = await import('../../web/lib/auth/sui-wallet.ts')
+
+    await expect(getMemberPrimarySuiWalletAddress('member-1')).rejects.toBeInstanceOf(
+      MultipleSuiWalletBindingsError,
+    )
   })
 })

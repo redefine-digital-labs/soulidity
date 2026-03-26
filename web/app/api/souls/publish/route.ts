@@ -137,7 +137,15 @@ export async function POST(request: NextRequest) {
   if (!member) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }
-  const authorAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  let authorAddress: string | null
+  try {
+    authorAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    throw error
+  }
   if (!authorAddress) {
     return NextResponse.json({ error: 'No Sui wallet bound to account' }, { status: 400 })
   }

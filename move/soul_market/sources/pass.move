@@ -27,8 +27,8 @@ public struct SubscriptionRenewed has copy, drop {
 
 /// Permanent access pass, locked to a specific release.
 /// `owner` mirrors the Sui object owner so events and off-chain mirrors can
-/// read ownership without re-parsing object metadata. Package transfer helpers
-/// must keep both sources of truth in sync.
+/// read ownership without re-parsing object metadata. Package-level transfer
+/// helpers must keep both sources of truth in sync.
 public struct PerpetualPass has key {
     id: UID,
     series_id: ID,

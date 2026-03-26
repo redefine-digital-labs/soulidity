@@ -408,7 +408,7 @@ describe('agent soul renew execute route', () => {
 
   // --- On-chain verification ---
 
-  it('returns 422 for no mutated subscription pass in TX', async () => {
+  it('persists a retryable sync result when TX effects omit the renewed pass object', async () => {
     mockedSuiClient.executeTransactionBlock.mockResolvedValueOnce({
       ...DEFAULT_TX_RESULT,
       objectChanges: [],
@@ -417,14 +417,27 @@ describe('agent soul renew execute route', () => {
     const { POST } = await import('../../web/app/api/agent/souls/[id]/renew/execute/route.ts')
     const response = await POST(makeRequest(), makeParams())
 
-    expect(response.status).toBe(422)
+    expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({
       error: 'Transaction succeeded on chain, but no Soul subscription pass was mutated',
       digest: VALID_DIGEST,
+      passOnChainId: PASS_ID,
       onChainSuccess: true,
       dbSynced: false,
+      syncError: 'verification_retryable',
     })
     expect(mockedDbRenewPass).not.toHaveBeenCalled()
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preparedPurchaseId: PREPARED_PURCHASE_ID,
+        resultStatusCode: 503,
+        resultBody: expect.objectContaining({
+          digest: VALID_DIGEST,
+          passOnChainId: PASS_ID,
+          syncError: 'verification_retryable',
+        }),
+      }),
+    )
   })
 
   it('returns 422 for pass series mismatch', async () => {

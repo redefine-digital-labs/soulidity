@@ -100,7 +100,15 @@ export async function POST(
   }
 
   // Verify agent has access to this pass (owner or grant)
-  const agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
+  let agentAddress: string | null
+  try {
+    agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    throw error
+  }
   if (!agentAddress) {
     return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 403 })
   }

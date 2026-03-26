@@ -520,8 +520,12 @@ describe('Soul purchase route', () => {
     expect(mockedGetMemberSuiWalletAddresses).toHaveBeenCalledWith('member-1')
   })
 
-  it('accepts purchases made with a non-primary wallet that is still bound to the same member', async () => {
-    mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([PRIMARY_BOUND_ADDRESS, BUYER_ADDRESS])
+  it('returns 409 when the account has multiple Sui wallet bindings', async () => {
+    mockedGetMemberSuiWalletAddresses.mockRejectedValueOnce(
+      Object.assign(new Error('Multiple Sui wallets are not supported for this account'), {
+        name: 'MultipleSuiWalletBindingsError',
+      }),
+    )
 
     const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -536,17 +540,11 @@ describe('Soul purchase route', () => {
       { params: Promise.resolve({ id: SERIES_ID }) },
     )
 
-    expect(response.status).toBe(201)
-    expect(mockedDbCreatePass).toHaveBeenCalledWith({
-      db: mockedPrisma,
-      passOnChainId: PASS_ID,
-      seriesOnChainId: SERIES_ID,
-      ownerAddress: BUYER_ADDRESS,
-      ownerMemberId: 'member-1',
-      passType: 'perpetual',
-      lockedReleaseId: RELEASE_ID,
-      mintTxDigest: VALID_TX_DIGEST,
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Multiple Sui wallets are not supported for this account',
     })
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
   })
 
   it('rejects mirroring when the verified pass does not match the purchase call recorded in the transaction', async () => {

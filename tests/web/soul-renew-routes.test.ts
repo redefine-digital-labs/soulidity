@@ -507,17 +507,20 @@ describe('Soul renew route (human)', () => {
     )
   })
 
-  it('accepts renewal when the pass was purchased using a non-primary bound wallet', async () => {
-    mockedGetMemberSuiWalletAddresses.mockResolvedValue([PRIMARY_BOUND_ADDRESS, BUYER_ADDRESS])
+  it('returns 409 when the account has multiple Sui wallet bindings', async () => {
+    mockedGetMemberSuiWalletAddresses.mockRejectedValueOnce(
+      Object.assign(new Error('Multiple Sui wallets are not supported for this account'), {
+        name: 'MultipleSuiWalletBindingsError',
+      }),
+    )
 
     const response = await callPost({ passOnChainId: PASS_ID, txDigest: VALID_TX_DIGEST })
 
-    expect(response.status).toBe(200)
-    expect(mockedAssertPassChange).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ expectedSender: [PRIMARY_BOUND_ADDRESS, BUYER_ADDRESS] }),
-    )
-    expect(mockedDbRenewPass).toHaveBeenCalled()
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Multiple Sui wallets are not supported for this account',
+    })
+    expect(mockedGetSuccessfulTransaction).not.toHaveBeenCalled()
   })
 
   it('resolves series by DB primary key uuid when id is a uuid', async () => {

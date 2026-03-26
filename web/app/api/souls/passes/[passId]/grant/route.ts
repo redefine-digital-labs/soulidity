@@ -111,7 +111,15 @@ export async function POST(
     )
   }
 
-  const ownerAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  let ownerAddress: string | null
+  try {
+    ownerAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    throw error
+  }
   if (!ownerAddress) {
     return NextResponse.json({ error: 'No Sui wallet bound to account' }, { status: 400 })
   }
@@ -232,7 +240,15 @@ export async function DELETE(
     )
   }
 
-  const ownerAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  let ownerAddress: string | null
+  try {
+    ownerAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    throw error
+  }
   if (!ownerAddress) {
     return NextResponse.json({ error: 'No Sui wallet bound to account' }, { status: 400 })
   }

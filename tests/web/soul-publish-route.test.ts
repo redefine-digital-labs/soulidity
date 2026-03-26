@@ -788,4 +788,32 @@ describe('soul publish route', () => {
     expect(mockedDbCreateRelease).toHaveBeenCalledTimes(2)
     expect(mockedStoreSoulTxSync).toHaveBeenCalledTimes(1)
   })
+
+  it('returns 409 when the account has multiple Sui wallet bindings', async () => {
+    mockedGetMemberPrimarySuiWalletAddress.mockRejectedValueOnce(
+      Object.assign(new Error('Multiple Sui wallets are not supported for this account'), {
+        name: 'MultipleSuiWalletBindingsError',
+      }),
+    )
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Multiple Sui wallets are not supported for this account',
+    })
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+  })
 })

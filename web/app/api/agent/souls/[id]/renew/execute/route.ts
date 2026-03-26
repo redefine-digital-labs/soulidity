@@ -153,7 +153,15 @@ export async function POST(
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  const ownerAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
+  let ownerAddress: string | null
+  try {
+    ownerAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    throw error
+  }
   if (!ownerAddress) {
     return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 400 })
   }
@@ -362,12 +370,14 @@ export async function POST(
     let syncError: string | null = null
 
     if (!passObj?.objectId) {
-      return finalizePreparedResult(422, {
+      return finalizePreparedResult(503, {
         error: 'Transaction succeeded on chain, but no Soul subscription pass was mutated',
         digest: result.digest,
+        passOnChainId: claimedPreparedPurchase.passOnChainId,
         status,
         onChainSuccess: true,
         dbSynced: false,
+        syncError: RETRYABLE_VERIFICATION_SYNC_ERROR,
       })
     }
 

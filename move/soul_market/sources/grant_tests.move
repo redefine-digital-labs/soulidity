@@ -4,7 +4,6 @@ module soul_market::grant_tests;
 use soul_market::grant;
 use soul_market::pass;
 use soul_market::series;
-use sui::test_scenario::{Self as ts};
 
 #[test]
 fun revoke_subscription_agent_grant_clears_agent() {
@@ -20,69 +19,6 @@ fun revoke_subscription_agent_grant_clears_agent() {
 
     pass::destroy_subscription_for_testing(pass);
     series::destroy_series_for_testing(series);
-}
-
-#[test]
-fun transfer_perpetual_pass_updates_owner_and_clears_agent_grant() {
-    let owner = @0xBEEF;
-    let recipient = @0xCAFE;
-    let mut scenario = ts::begin(@0x0);
-
-    {
-        ts::next_tx(&mut scenario, owner);
-        let ctx = ts::ctx(&mut scenario);
-        let series = series::new_series_for_testing(owner, ctx);
-        let release = series::new_release_for_testing(&series, b"v1", ctx);
-        let mut pass = pass::mint_perpetual(
-            series::series_id(&series),
-            object::id(&release),
-            owner,
-            ctx,
-        );
-
-        grant::set_agent_grant_perpetual(&mut pass, @0xA11CE, ctx);
-        series::destroy_release_for_testing(release);
-        series::destroy_series_for_testing(series);
-        grant::transfer_perpetual_pass(pass, recipient, ctx);
-    };
-
-    ts::next_tx(&mut scenario, recipient);
-    {
-        let pass: pass::PerpetualPass = ts::take_from_sender(&scenario);
-        assert!(pass::perpetual_owner(&pass) == recipient, 0);
-        assert!(pass::perpetual_agent_grant(&pass).is_none(), 1);
-        pass::destroy_perpetual_for_testing(pass);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun transfer_subscription_pass_updates_owner_and_clears_agent_grant() {
-    let owner = @0xBEEF;
-    let recipient = @0xCAFE;
-    let mut scenario = ts::begin(@0x0);
-
-    {
-        ts::next_tx(&mut scenario, owner);
-        let ctx = ts::ctx(&mut scenario);
-        let series = series::new_series_for_testing(owner, ctx);
-        let mut pass = pass::mint_subscription(series::series_id(&series), owner, 100, 10, ctx);
-
-        grant::set_agent_grant_subscription(&mut pass, @0xA11CE, ctx);
-        series::destroy_series_for_testing(series);
-        grant::transfer_subscription_pass(pass, recipient, ctx);
-    };
-
-    ts::next_tx(&mut scenario, recipient);
-    {
-        let pass: pass::SubscriptionPass = ts::take_from_sender(&scenario);
-        assert!(pass::subscription_owner(&pass) == recipient, 0);
-        assert!(pass::subscription_agent_grant(&pass).is_none(), 1);
-        pass::destroy_subscription_for_testing(pass);
-    };
-
-    ts::end(scenario);
 }
 
 #[test]
@@ -296,116 +232,5 @@ fun revoke_subscription_agent_grant_rejects_non_owner() {
     grant::revoke_agent_grant_subscription(&mut pass, &attacker_ctx);
 
     pass::destroy_subscription_for_testing(pass);
-    series::destroy_series_for_testing(series);
-}
-
-#[test]
-#[expected_failure(abort_code = grant::E_INVALID_RECIPIENT)]
-fun transfer_perpetual_pass_rejects_zero_recipient() {
-    let mut ctx = sui::tx_context::dummy();
-    let owner = ctx.sender();
-    let series = series::new_series_for_testing(owner, &mut ctx);
-    let release = series::new_release_for_testing(&series, b"v1", &mut ctx);
-    let pass = pass::mint_perpetual(
-        series::series_id(&series),
-        object::id(&release),
-        owner,
-        &mut ctx,
-    );
-
-    grant::transfer_perpetual_pass(pass, @0x0, &ctx);
-
-    series::destroy_release_for_testing(release);
-    series::destroy_series_for_testing(series);
-}
-
-#[test]
-#[expected_failure(abort_code = grant::E_SELF_TRANSFER)]
-fun transfer_perpetual_pass_rejects_self_transfer() {
-    let mut ctx = sui::tx_context::new_from_hint(@0xBEEF, 14, 0, 0, 0);
-    let owner = ctx.sender();
-    let series = series::new_series_for_testing(owner, &mut ctx);
-    let release = series::new_release_for_testing(&series, b"v1", &mut ctx);
-    let pass = pass::mint_perpetual(
-        series::series_id(&series),
-        object::id(&release),
-        owner,
-        &mut ctx,
-    );
-
-    grant::transfer_perpetual_pass(pass, owner, &ctx);
-
-    series::destroy_release_for_testing(release);
-    series::destroy_series_for_testing(series);
-}
-
-#[test]
-#[expected_failure(abort_code = grant::E_NOT_OWNER)]
-fun transfer_perpetual_pass_rejects_non_owner() {
-    let owner = @0xBEEF;
-    let attacker = @0xBAD;
-    let recipient = @0xCAFE;
-    let mut owner_ctx = sui::tx_context::new_from_hint(owner, 10, 0, 0, 0);
-    let attacker_ctx = sui::tx_context::new_from_hint(attacker, 11, 0, 0, 0);
-    let series = series::new_series_for_testing(owner, &mut owner_ctx);
-    let release = series::new_release_for_testing(&series, b"v1", &mut owner_ctx);
-    let pass = pass::mint_perpetual(
-        series::series_id(&series),
-        object::id(&release),
-        owner,
-        &mut owner_ctx,
-    );
-
-    grant::transfer_perpetual_pass(pass, recipient, &attacker_ctx);
-
-    series::destroy_release_for_testing(release);
-    series::destroy_series_for_testing(series);
-}
-
-#[test]
-#[expected_failure(abort_code = grant::E_INVALID_RECIPIENT)]
-fun transfer_subscription_pass_rejects_zero_recipient() {
-    let mut ctx = sui::tx_context::dummy();
-    let owner = ctx.sender();
-    let series = series::new_series_for_testing(owner, &mut ctx);
-    let pass = pass::mint_subscription(series::series_id(&series), owner, 100, 10, &mut ctx);
-
-    grant::transfer_subscription_pass(pass, @0x0, &ctx);
-
-    series::destroy_series_for_testing(series);
-}
-
-#[test]
-#[expected_failure(abort_code = grant::E_SELF_TRANSFER)]
-fun transfer_subscription_pass_rejects_self_transfer() {
-    let mut ctx = sui::tx_context::new_from_hint(@0xBEEF, 15, 0, 0, 0);
-    let owner = ctx.sender();
-    let series = series::new_series_for_testing(owner, &mut ctx);
-    let pass = pass::mint_subscription(series::series_id(&series), owner, 100, 10, &mut ctx);
-
-    grant::transfer_subscription_pass(pass, owner, &ctx);
-
-    series::destroy_series_for_testing(series);
-}
-
-#[test]
-#[expected_failure(abort_code = grant::E_NOT_OWNER)]
-fun transfer_subscription_pass_rejects_non_owner() {
-    let owner = @0xBEEF;
-    let attacker = @0xBAD;
-    let recipient = @0xCAFE;
-    let mut owner_ctx = sui::tx_context::new_from_hint(owner, 12, 0, 0, 0);
-    let attacker_ctx = sui::tx_context::new_from_hint(attacker, 13, 0, 0, 0);
-    let series = series::new_series_for_testing(owner, &mut owner_ctx);
-    let pass = pass::mint_subscription(
-        series::series_id(&series),
-        owner,
-        100,
-        10,
-        &mut owner_ctx,
-    );
-
-    grant::transfer_subscription_pass(pass, recipient, &attacker_ctx);
-
     series::destroy_series_for_testing(series);
 }

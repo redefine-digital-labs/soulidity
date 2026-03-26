@@ -7,10 +7,8 @@ use soul_market::pass::{Self, PerpetualPass, SubscriptionPass};
 
 const E_NOT_OWNER: u64 = 1;
 const E_NO_AGENT_GRANT: u64 = 2;
-const E_SELF_TRANSFER: u64 = 3;
 const E_SELF_GRANT: u64 = 4;
 const E_INVALID_AGENT: u64 = 5;
-const E_INVALID_RECIPIENT: u64 = 6;
 
 // === Events ===
 
@@ -22,12 +20,6 @@ public struct AgentGrantSet has copy, drop {
 public struct AgentGrantRevoked has copy, drop {
     pass_id: ID,
     old_agent: address,
-}
-
-public struct PassTransferred has copy, drop {
-    pass_id: ID,
-    from: address,
-    to: address,
 }
 
 // === Agent Grant: Perpetual ===
@@ -132,66 +124,4 @@ public entry fun revoke_agent_grant_subscription(
         pass_id,
         old_agent,
     });
-}
-
-// === Transfer ===
-
-public entry fun transfer_perpetual_pass(
-    mut pass: PerpetualPass,
-    to: address,
-    ctx: &TxContext,
-) {
-    let from = ctx.sender();
-    assert!(pass.perpetual_owner() == from, E_NOT_OWNER);
-    assert!(to != @0x0, E_INVALID_RECIPIENT);
-    assert!(from != to, E_SELF_TRANSFER);
-    let pass_id = object::id(&pass);
-
-    // Clear agent grant on transfer
-    let grant_mut = pass::perpetual_agent_grant_mut(&mut pass);
-    if (grant_mut.is_some()) {
-        let old_agent = grant_mut.extract();
-        event::emit(AgentGrantRevoked {
-            pass_id,
-            old_agent,
-        });
-    };
-
-    event::emit(PassTransferred {
-        pass_id,
-        from,
-        to,
-    });
-
-    pass::transfer_perpetual(pass, to);
-}
-
-public entry fun transfer_subscription_pass(
-    mut pass: SubscriptionPass,
-    to: address,
-    ctx: &TxContext,
-) {
-    let from = ctx.sender();
-    assert!(pass.subscription_owner() == from, E_NOT_OWNER);
-    assert!(to != @0x0, E_INVALID_RECIPIENT);
-    assert!(from != to, E_SELF_TRANSFER);
-    let pass_id = object::id(&pass);
-
-    // Clear agent grant on transfer
-    let grant_mut = pass::subscription_agent_grant_mut(&mut pass);
-    if (grant_mut.is_some()) {
-        let old_agent = grant_mut.extract();
-        event::emit(AgentGrantRevoked {
-            pass_id,
-            old_agent,
-        });
-    };
-
-    event::emit(PassTransferred {
-        pass_id,
-        from,
-        to,
-    });
-
-    pass::transfer_subscription(pass, to);
 }

@@ -479,4 +479,30 @@ describe('soul pass grant route', () => {
       body: { ok: true },
     })
   })
+
+  it('returns 409 when the account has multiple Sui wallet bindings', async () => {
+    mockedPrisma.member.findUnique.mockResolvedValueOnce({
+      id: 'member-1',
+      walletBindings: [
+        { address: OWNER_ADDRESS, chain: 'sui' },
+        { address: `0x${'2'.repeat(64)}`, chain: 'sui' },
+      ],
+    })
+
+    const { POST } = await import('../../web/app/api/souls/passes/[passId]/grant/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/passes/0xpass/grant', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agentAddress: '0xabc', txDigest: VALID_TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ passId: '0xpass' }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Multiple Sui wallets are not supported for this account',
+    })
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+  })
 })

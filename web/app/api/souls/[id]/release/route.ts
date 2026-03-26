@@ -108,7 +108,15 @@ export async function POST(
     )
   }
 
-  const authorAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  let authorAddress: string | null
+  try {
+    authorAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    throw error
+  }
   if (!authorAddress) {
     return NextResponse.json({ error: 'No Sui wallet bound to account' }, { status: 400 })
   }

@@ -288,7 +288,7 @@ model WalletBinding {
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([chain, address])
-  @@index([memberId, chain])
+  @@unique([memberId, chain])
   @@map("wallet_bindings")
 }
 
