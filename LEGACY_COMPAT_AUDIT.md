@@ -1,66 +1,134 @@
-# 旧数据兼容代码审计（开发环境）
+# 旧兼容代码审计（2026-03-26 实施版）
 
-## 结论
+## 复核结论
 
-基于当前仓库实现与最近 PR 上下文（当前只支持单 Privy Sui 钱包、开发环境为主），仓库里仍存在一批“为历史数据/旧流程兜底”的代码。
-其中有一部分是**可以尽快清理的无效兼容代码**，另一部分属于**迁移期可保留但应标记下线窗口**的过渡逻辑。
+基于当前仓库代码、测试和文档重新核对后，原审计里的 5 项中已有 2 项在本轮完成清理：
+
+- `A1` 发布草稿本地存储的 legacy global key fallback：已清理。
+- `A2` 发布镜像路由对“单交易发布流程”的 backward compatibility fallback：已清理。
+
+另外 3 项需要修正分类：
+
+- `A3` 认证链路里按 `tgId/email` 回捞 legacy account：目前**不适合直接删除**，它仍是现有认证/迁移验收的一部分。
+- `B4` `members.wallet -> wallet_bindings` migration SQL：属于**历史 migration**，应保留，不应回写修改历史迁移。
+- `B5` `src/db/database.ts` 的 snake_case 映射层：原判断**不成立**，这不是废弃兼容层，而是当前 root pipeline 的活跃接口。
 
 ---
 
-## A. 明显可清理的无效兼容代码（优先）
+## A. 确认可清理项
 
-### 1) 发布草稿本地存储的 legacy key 迁移兜底
+### 1) 发布草稿本地存储的 legacy global key fallback
 
 - 文件：`web/lib/souls/publish-draft.ts`
-- 现状：`readSoulPublishDraft` 在读取 wallet-scoped key 失败后，会回退读取全局旧 key `SOUL_PUBLISH_DRAFT_STORAGE_KEY`，并做一次迁移。`clearSoulPublishDraft` 也保留了对旧 key 的条件删除。 
-- 代码位置：`readSoulPublishDraft` 的 legacy fallback 与迁移逻辑（192-205），`clearSoulPublishDraft` 的 legacy 清理逻辑（216-225）。
-- 判断：如果线上/测试环境已完成 wallet-scoped 草稿切换，且不再存在旧 key 写入入口，这段兼容分支将长期只增加维护成本与认知负担。
+- 现状：
+  - `readSoulPublishDraft` 只读取 wallet-scoped key，不再回退读取全局旧 key `SOUL_PUBLISH_DRAFT_STORAGE_KEY`
+  - `writeSoulPublishDraft` / `clearSoulPublishDraft` 只操作 wallet-scoped key
+- 复核证据：
+  - `rg` 结果显示当前运行时调用方只有 `web/app/souls/publish/page.tsx`
+  - 仓库内已不存在其他旧全局 key 写入入口
+  - `tests/web/soul-publish-draft.test.ts` 已改为验证“忽略 legacy global key”与“wallet-scoped draft 归一化恢复”
+- 判断：
+  - 这是纯前端本地持久化兼容分支，调用面单一，已完成收口
+  - 旧浏览器里遗留的裸 key 会被显式忽略，不再做静默迁移
 
-### 2) 发布路由对“单交易发布流程”的 backward compatibility 分支
+### 2) 发布镜像路由对“单交易发布流程”的 backward compatibility fallback
 
 - 文件：`web/app/api/souls/publish/route.ts`
-- 现状：当 `releaseTxDigest` 缺失时，逻辑回退复用 `seriesTransaction` 校验 release 创建（注释明确为 backward compatibility）。
-- 代码位置：173-179（注释与分支）。
-- 判断：若当前前端已稳定要求 release 使用独立 txDigest（或提交必带 releaseTxDigest），该分支是旧流程残留，会掩盖请求契约问题并增加校验复杂度。
-
-### 3) 认证链路中“按 tgId/email 回捞 legacy account”的自动关联
-
-- 文件：`web/lib/auth/identity.ts`
-- 现状：在找不到 `privyDid` 直连账号时，会按 tgId/email 依次回捞历史账号并补写 `privyDid/email/tgName`。
-- 代码位置：341-400。
-- 判断：如果项目阶段已切到纯 Privy 新账号体系、并且历史 Telegram/邮箱账号不再需要自动并档，这段逻辑属于历史迁移兜底，继续保留会放大身份合并的隐性复杂度。
+- 现状：
+  - `releaseOnChainId` 与 `releaseTxDigest` 现在是显式成对契约：缺一即 `400`
+  - route 不再回退复用 `txDigest` 对应的 `seriesTransaction` 校验 release
+- 复核证据：
+  - 当前调用方只有 `web/app/souls/publish/page.tsx`
+  - 该页面已经显式分步执行 release 上链，并在提交 mirror 时始终传 `releaseTxDigest`
+  - `tests/web/soul-publish-route.test.ts` 已改为验证“缺失 `releaseTxDigest` 时在任何链上校验前直接返回 `400`”
+- 判断：
+  - 这是旧单交易发布流程残留，已收口为强契约：`releaseOnChainId` 存在时必须同时提供 `releaseTxDigest`
+  - 对“旧浏览器草稿恢复后只有 `releaseId` 没有 `releaseTxDigest`”的场景，已在 draft 读取层显式清空 release 相关字段，避免再依赖服务端 fallback
 
 ---
 
-## B. 迁移期逻辑（非立即删除，但建议明确下线时间）
+## B. 本轮不应直接删除的项
+
+### 3) 认证链路中按 `tgId/email` 回捞 legacy account 的自动关联
+
+- 文件：`web/lib/auth/identity.ts`
+- 原审计判断：如果已经切到纯 Privy 新账号体系，可改成只认 `privyDid`
+- 复核结果：**本轮不应清理**
+- 证据：
+  - `tests/web/identity.test.ts` 仍有 3 条明确测试在验证：
+    - 首次 Privy 登录按 `tgId` 回捞
+    - `email` 被占用时回退只补 `privyDid/tgName`
+    - 按 `email` 回捞 legacy account
+  - `docs/test-plan-auth.md` 的 `AC5` / `AC8` 仍把“409 后 refresh 自动关联账号”列为人工验收场景
+  - `web/components/auth-provider.tsx` 会在登录后调用 `/api/auth/me`，而 `/api/auth/me` 依赖 `resolveIdentity()`；这条自动关联链路仍是实际产品路径
+  - `web/app/api/register/route.ts` 当前创建 `Account` 时仍会写入 `tgId`，说明账号模型还没有彻底退出 TG 维度
+- 判断：
+  - 这不是“无调用方的历史兜底”，而是尚未完成下线的认证迁移逻辑
+  - 若要删除，必须作为单独 auth decommission 项目处理，先补数据盘点、验收调整和登录链路迁移
 
 ### 4) `members.wallet` 到 `wallet_bindings` 的迁移 SQL
 
 - 文件：`prisma/migrations/20260323173000_drop_member_wallet_legacy_fallback/migration.sql`
-- 现状：完整保留了 legacy `members.wallet` 的校验、冲突检测和回填流程。
-- 判断：这是 migration 历史的一部分，通常不应改写；但可在工程文档中明确“仅历史迁移用途，不代表当前运行时兼容策略”。
+- 复核结果：**保留**
+- 原因：
+  - 这是历史 migration，不是运行时兼容逻辑
+  - migration 中保留 legacy 校验、冲突检测和回填是合理的，不能把“想清理兼容代码”扩展成“篡改历史迁移”
+- 建议：
+  - 只补文档说明“这是历史迁移脚本，不代表当前运行时兼容策略”
 
-### 5) 旧 snake_case 结果类型映射层
+### 5) `src/db/database.ts` 的 snake_case 映射层
 
 - 文件：`src/db/database.ts`
-- 现状：注释明确是 “Prisma model → legacy snake_case types”。
-- 代码位置：219 起。
-- 判断：若上层调用已全面切到 Prisma/camelCase DTO，这层可评估下线；若仍有 bot/scheduler 依赖，则应保留并补注释说明存量调用方。
+- 原审计判断：如果上层全面切到 Prisma/camelCase DTO，可评估下线
+- 复核结果：**当前不属于 legacy compat cleanup**
+- 证据：
+  - `src/db/database.ts` 当前直接以 `src/shared/types.ts` 的 snake_case 类型作为函数入参与返回值
+  - 运行时调用方覆盖 root 主链路：`src/collector/*`、`src/producer/*`、`src/bot/*`、`src/scheduler.ts`
+  - 这层不仅是 bot/scheduler 的残留适配，而是当前 root 服务代码的稳定接口
+- 判断：
+  - 如果未来要统一 camelCase，需要单独立项做 root pipeline 数据模型改造
+  - 不能把它误算进这次 Souls/auth 兼容清理
 
 ---
 
-## 建议执行顺序（一次性收口）
+## 修正后的清理顺序
 
-1. **先删 A1（publish-draft legacy key fallback）**：收益高、风险低、验证简单。
-2. **再删 A2（publish releaseTxDigest backward fallback）**：同时把 API 契约改成“release 发布必须显式提供 releaseTxDigest”。
-3. **评估 A3（legacy account 回捞）**：若确认无历史账号并档需求，改为严格 `privyDid` 唯一来源。
-4. **保留 B 类但补文档**：标注“仅历史迁移/兼容层”，并登记预期下线里程碑。
+### 第一批：已完成
+
+1. 已删除 `web/lib/souls/publish-draft.ts` 里的 legacy global key fallback。
+2. 已收紧 `web/app/api/souls/publish/route.ts` 契约：
+   - `releaseOnChainId` 存在时必须显式提供 `releaseTxDigest`
+   - 缺字段时在任何链上校验前直接返回 `400`
+3. 已同步更新 `tests/web/soul-publish-draft.test.ts`、`tests/web/soul-publish-route.test.ts`
+4. 已明确采用“清空旧 draft 的 release 相关字段”策略，避免恢复旧本地状态后行为模糊
+
+### 第二批：只做文档边界收口
+
+1. 在清理计划 / Spec 中把 `A3` 改为“独立 auth decommission 项目”
+2. 给 `B4` 补“历史 migration only”说明
+3. 把 `B5` 从本轮清理范围中移出
+
+### 第三批：单独立项，不并入本轮
+
+1. auth 迁移收尾：
+   - 盘点 `accounts.privy_did IS NULL` / `accounts.email IS NULL` / 依赖 `tgId` 的真实数据规模
+   - 删除 `resolvePrivyIdentity()` 的 `tgId/email` 自动回捞
+   - 同步改 `docs/test-plan-auth.md`、`tests/web/identity.test.ts`、claim/register 验收
+2. root pipeline 命名统一：
+   - 若要去掉 snake_case，需要单独改 `src/shared/types.ts`、`src/db/database.ts` 和全部 root 调用方
 
 ---
 
-## 验收建议
+## 本轮验收结果
 
-- publish 草稿：确认仅 wallet-scoped key 生效，不再读取/写入旧全局 key。
-- publish mirror：缺失 `releaseTxDigest` 直接返回 4xx，避免静默 fallback。
-- 身份解析：仅 `privyDid` 路径可登录；tgId/email 不再触发自动并档。
-- 回归：`souls publish/release`、登录、草稿恢复、钱包绑定相关测试全绿。
+- publish draft：
+  - 只恢复 wallet-scoped draft
+  - 不再读取或迁移裸 `SOUL_PUBLISH_DRAFT_STORAGE_KEY`
+- publish mirror：
+  - `releaseOnChainId` 存在但 `releaseTxDigest` 缺失时直接返回 `400`
+  - 在返回 `400` 前不触发 `getTransactionBlock` / `getObject`
+- stale draft：
+  - 对“有 `releaseId` 但无 `releaseTxDigest`”的旧本地状态，读取时直接清空 `releaseId` / `releaseTxDigest` / `sealDekEnvelope`
+- auth：
+  - 本轮不改 `resolvePrivyIdentity()` 的 `tgId/email` 自动关联行为
+  - `tests/web/identity.test.ts` 仍作为 defer 边界验证

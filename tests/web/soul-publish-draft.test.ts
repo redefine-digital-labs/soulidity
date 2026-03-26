@@ -100,12 +100,12 @@ describe('soul publish draft', () => {
 
   it('drops malformed persisted payloads instead of reviving them', () => {
     const storage = new MemoryStorage()
-    storage.setItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY, '{"walletAddress":42}')
+    storage.setItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`, '{"walletAddress":42}')
 
     expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
   })
 
-  it('migrates a legacy global draft into a wallet-scoped key on first read', () => {
+  it('ignores the legacy global draft key entirely', () => {
     const storage = new MemoryStorage()
     storage.setItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY, JSON.stringify(createSoulPublishDraft({
       walletAddress: '0xabc',
@@ -119,12 +119,12 @@ describe('soul publish draft', () => {
       subPeriodDays: '30',
     })))
 
-    expect(readSoulPublishDraft(storage, '0xabc')?.walletAddress).toBe('0xabc')
-    expect(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)).toBeNull()
-    expect(storage.getItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`)).not.toBeNull()
+    expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
+    expect(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)).not.toBeNull()
+    expect(storage.getItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`)).toBeNull()
   })
 
-  it('does not fall back to a legacy draft when the wallet-scoped draft is already mirrored', () => {
+  it('sanitizes stale recovered drafts that have a release id without a release tx digest', () => {
     const storage = new MemoryStorage()
     const draft = createSoulPublishDraft({
       walletAddress: '0xabc',
@@ -139,57 +139,18 @@ describe('soul publish draft', () => {
     })
 
     writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
-      dbMirroredAt: '2026-03-23T12:00:00.000Z',
+      seriesId: '0xseries',
+      releaseId: '0xrelease',
+      sealDekEnvelope: 'stale-envelope',
     }))
-    storage.setItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY, JSON.stringify(createSoulPublishDraft({
+
+    expect(readSoulPublishDraft(storage, '0xabc')).toMatchObject({
       walletAddress: '0xabc',
-      name: 'Legacy fallback',
-      description: 'Recovered draft',
-      category: 'Research',
-      tags: [],
-      pricingType: 'onetime',
-      oneTimePrice: '12.00',
-      subPrice: '',
-      subPeriodDays: '30',
-    })))
-
-    expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
-  })
-
-  it('does not overwrite a newer wallet-scoped draft while migrating a legacy draft', () => {
-    const walletKey = `${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`
-    const storage = new MemoryStorage()
-    const legacyDraft = createSoulPublishDraft({
-      walletAddress: '0xabc',
-      name: 'Legacy draft',
-      description: 'Recovered draft',
-      category: 'Research',
-      tags: [],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
+      seriesId: '0xseries',
+      releaseId: null,
+      releaseTxDigest: null,
+      sealDekEnvelope: null,
     })
-    const newerDraft = patchSoulPublishDraft(legacyDraft, {
-      name: 'Newer scoped draft',
-      updatedAt: '2026-03-23T12:00:00.000Z',
-    })
-
-    storage.setItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY, JSON.stringify(legacyDraft))
-
-    const originalGetItem = storage.getItem.bind(storage)
-    let insertedScopedDraft = false
-    storage.getItem = (key: string) => {
-      const value = originalGetItem(key)
-      if (key === SOUL_PUBLISH_DRAFT_STORAGE_KEY && !insertedScopedDraft) {
-        insertedScopedDraft = true
-        storage.setItem(walletKey, JSON.stringify(newerDraft))
-      }
-      return value
-    }
-
-    expect(readSoulPublishDraft(storage, '0xabc')?.name).toBe('Legacy draft')
-    expect(JSON.parse(storage.getItem(walletKey) ?? '{}').name).toBe('Newer scoped draft')
   })
 
   it('merges successful on-chain steps without losing prior progress', () => {
@@ -241,36 +202,7 @@ describe('soul publish draft', () => {
 
     clearSoulPublishDraft(storage, '0xabc')
 
+    expect(storage.getItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`)).toBeNull()
     expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
-  })
-
-  it('does not delete a different wallet legacy draft while clearing the scoped key', () => {
-    const storage = new MemoryStorage()
-    writeSoulPublishDraft(storage, createSoulPublishDraft({
-      walletAddress: '0xabc',
-      name: 'Signal Soul',
-      description: 'Recovered draft',
-      category: 'Research',
-      tags: [],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
-    }))
-    storage.setItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY, JSON.stringify(createSoulPublishDraft({
-      walletAddress: '0xdef',
-      name: 'Other wallet draft',
-      description: 'Recovered draft',
-      category: 'Research',
-      tags: [],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
-    })))
-
-    clearSoulPublishDraft(storage, '0xabc')
-
-    expect(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)).not.toBeNull()
   })
 })

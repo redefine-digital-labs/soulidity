@@ -8,6 +8,7 @@ const SUB_PLAN_ID = `0x${'4'.repeat(64)}`
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
 const COUNTERFEIT_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const PUBLISH_TX_DIGEST = 'FruqTGvpFsoobpBYWWgTgpsQ8S6v2zkCm8fn1Y5cppSN'
+const RELEASE_TX_DIGEST = '8iEEVkAMZirnQxfXn9gtK4bdsd5sBB6pJ2yP5wJxC7ux'
 const ONETIME_PLAN_TX_DIGEST = '3PvcMdm21RaeePjxCgqcvK4VDm2G9y8zJG33fPYWS9n7'
 const SUB_PLAN_TX_DIGEST = 'DV9VuHnbUJNAGsEZe5BFTBx3LU53u13MKx7FvgwYdAYc'
 
@@ -100,6 +101,16 @@ describe('soul publish route', () => {
               sender: AUTHOR_ADDRESS,
               owner: { AddressOwner: AUTHOR_ADDRESS },
             },
+          ],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
+      if (digest === RELEASE_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [
             {
               type: 'created',
               objectId: RELEASE_ID,
@@ -424,6 +435,7 @@ describe('soul publish route', () => {
           txDigest: PUBLISH_TX_DIGEST,
           seriesOnChainId: SERIES_ID,
           releaseOnChainId: RELEASE_ID,
+          releaseTxDigest: RELEASE_TX_DIGEST,
           oneTimePlanOnChainId: ONETIME_PLAN_ID,
           oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
         }),
@@ -440,21 +452,99 @@ describe('soul publish route', () => {
     expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
   })
 
+  it('rejects release mirroring when releaseOnChainId is provided without releaseTxDigest', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          releaseOnChainId: RELEASE_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'releaseTxDigest is required when releaseOnChainId is provided',
+    })
+    expect(mockedGetStoredSoulTxSync).not.toHaveBeenCalled()
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
+  })
+
   it('rejects release mirrors whose submitted publish tx did not create the release object', async () => {
-    mockedSuiClient.getTransactionBlock.mockImplementationOnce(async ({ digest }: { digest: string }) => {
-      expect(digest).toBe(PUBLISH_TX_DIGEST)
+    mockedSuiClient.getTransactionBlock.mockImplementation(async ({ digest }: { digest: string }) => {
+      if (digest === RELEASE_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
+      if (digest === PUBLISH_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [
+            {
+              type: 'created',
+              objectId: SERIES_ID,
+              objectType: `${PACKAGE_ID}::series::SoulSeries`,
+              sender: AUTHOR_ADDRESS,
+              owner: { AddressOwner: AUTHOR_ADDRESS },
+            },
+          ],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
+      if (digest === ONETIME_PLAN_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [
+            {
+              type: 'created',
+              objectId: ONETIME_PLAN_ID,
+              objectType: `${PACKAGE_ID}::purchase::PricingPlan`,
+              sender: AUTHOR_ADDRESS,
+              owner: { AddressOwner: AUTHOR_ADDRESS },
+            },
+          ],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
+      if (digest === SUB_PLAN_TX_DIGEST) {
+        return {
+          digest,
+          effects: { status: { status: 'success' } },
+          objectChanges: [
+            {
+              type: 'created',
+              objectId: SUB_PLAN_ID,
+              objectType: `${PACKAGE_ID}::purchase::PricingPlan`,
+              sender: AUTHOR_ADDRESS,
+              owner: { AddressOwner: AUTHOR_ADDRESS },
+            },
+          ],
+          transaction: { data: { sender: AUTHOR_ADDRESS } },
+        }
+      }
+
       return {
         digest,
         effects: { status: { status: 'success' } },
-        objectChanges: [
-          {
-            type: 'created',
-            objectId: SERIES_ID,
-            objectType: `${PACKAGE_ID}::series::SoulSeries`,
-            sender: AUTHOR_ADDRESS,
-            owner: { AddressOwner: AUTHOR_ADDRESS },
-          },
-        ],
+        objectChanges: [],
         transaction: { data: { sender: AUTHOR_ADDRESS } },
       }
     })
@@ -468,6 +558,7 @@ describe('soul publish route', () => {
           txDigest: PUBLISH_TX_DIGEST,
           seriesOnChainId: SERIES_ID,
           releaseOnChainId: RELEASE_ID,
+          releaseTxDigest: RELEASE_TX_DIGEST,
           oneTimePlanOnChainId: ONETIME_PLAN_ID,
           oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
           sealDekEnvelope: 'mock-envelope',
@@ -587,6 +678,7 @@ describe('soul publish route', () => {
           txDigest: PUBLISH_TX_DIGEST,
           seriesOnChainId: SERIES_ID,
           releaseOnChainId: RELEASE_ID,
+          releaseTxDigest: RELEASE_TX_DIGEST,
           oneTimePlanOnChainId: ONETIME_PLAN_ID,
           oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
           subPlanOnChainId: SUB_PLAN_ID,
@@ -666,13 +758,14 @@ describe('soul publish route', () => {
     const request = () => new Request('http://localhost/api/souls/publish', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        txDigest: PUBLISH_TX_DIGEST,
-        seriesOnChainId: SERIES_ID,
-        releaseOnChainId: RELEASE_ID,
-        oneTimePlanOnChainId: ONETIME_PLAN_ID,
-        oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
-        sealDekEnvelope: 'mock-envelope',
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          releaseOnChainId: RELEASE_ID,
+          releaseTxDigest: RELEASE_TX_DIGEST,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+          sealDekEnvelope: 'mock-envelope',
       }),
     }) as any
 

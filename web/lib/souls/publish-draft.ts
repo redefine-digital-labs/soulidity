@@ -88,6 +88,21 @@ function isPricingType(value: unknown): value is SoulPublishPricingType {
   return value === 'onetime' || value === 'subscription' || value === 'both'
 }
 
+function sanitizeRecoveredReleaseState(draft: SoulPublishDraft): SoulPublishDraft {
+  const hasReleaseId = draft.releaseId != null
+  const hasReleaseTxDigest = draft.releaseTxDigest != null
+  if (hasReleaseId === hasReleaseTxDigest) {
+    return draft
+  }
+
+  return {
+    ...draft,
+    releaseId: null,
+    releaseTxDigest: null,
+    sealDekEnvelope: null,
+  }
+}
+
 export function createSoulPublishDraft(input: SoulPublishDraftInput): SoulPublishDraft {
   return {
     version: SOUL_PUBLISH_DRAFT_VERSION,
@@ -163,13 +178,24 @@ export function parseSoulPublishDraft(raw: string | null): SoulPublishDraft | nu
 
     // Backfill fields added after the initial draft version
     if (!('releaseId' in parsed)) {
-      ;(parsed as Record<string, unknown>).releaseId = null
+      parsed.releaseId = null
     }
     if (!('releaseTxDigest' in parsed)) {
-      ;(parsed as Record<string, unknown>).releaseTxDigest = null
+      parsed.releaseTxDigest = null
+    }
+    if (!('sealDekEnvelope' in parsed)) {
+      parsed.sealDekEnvelope = null
     }
 
-    return parsed as SoulPublishDraft
+    if (
+      !isNullableString(parsed.releaseId)
+      || !isNullableString(parsed.releaseTxDigest)
+      || !isNullableString(parsed.sealDekEnvelope)
+    ) {
+      return null
+    }
+
+    return sanitizeRecoveredReleaseState(parsed as SoulPublishDraft)
   } catch {
     return null
   }
@@ -188,41 +214,17 @@ export function readSoulPublishDraft(
   ) {
     return draft.dbMirroredAt ? null : draft
   }
-
-  const legacyDraft = parseSoulPublishDraft(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY))
-  if (
-    !legacyDraft
-    || normalizeDraftWalletAddress(legacyDraft.walletAddress) !== normalizedWalletAddress
-    || legacyDraft.dbMirroredAt
-  ) {
-    return null
-  }
-
-  if (storage.getItem(walletKey) == null) {
-    storage.setItem(walletKey, JSON.stringify(legacyDraft))
-  }
-  storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
-  return legacyDraft
+  return null
 }
 
 export function writeSoulPublishDraft(storage: StorageLike, draft: SoulPublishDraft) {
   storage.setItem(getWalletScopedDraftStorageKey(draft.walletAddress), JSON.stringify(draft))
-  storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
 }
 
 export function clearSoulPublishDraft(storage: StorageLike, walletAddress?: string) {
   if (walletAddress) {
     storage.removeItem(getWalletScopedDraftStorageKey(walletAddress))
-    const legacyDraft = parseSoulPublishDraft(storage.getItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY))
-    if (
-      legacyDraft
-      && normalizeDraftWalletAddress(legacyDraft.walletAddress) === normalizeDraftWalletAddress(walletAddress)
-    ) {
-      storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
-    }
-    return
   }
-  storage.removeItem(SOUL_PUBLISH_DRAFT_STORAGE_KEY)
 }
 
 export function draftHasOnChainProgress(draft: SoulPublishDraft | null) {

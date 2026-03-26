@@ -97,6 +97,12 @@ export async function POST(request: NextRequest) {
   if (!subPlanOnChainId && subPlanTxDigest) {
     return NextResponse.json({ error: 'subPlanOnChainId is required when subPlanTxDigest is provided' }, { status: 400 })
   }
+  if (releaseOnChainId && !releaseTxDigest) {
+    return NextResponse.json({ error: 'releaseTxDigest is required when releaseOnChainId is provided' }, { status: 400 })
+  }
+  if (!releaseOnChainId && releaseTxDigest) {
+    return NextResponse.json({ error: 'releaseOnChainId is required when releaseTxDigest is provided' }, { status: 400 })
+  }
   if (releaseOnChainId && !sealDekEnvelope) {
     return NextResponse.json({ error: 'sealDekEnvelope is required when releaseOnChainId is provided' }, { status: 400 })
   }
@@ -173,13 +179,8 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    if (releaseOnChainId) {
-      // Release may have been created in the same TX as the series or in a
-      // separate TX. Use releaseTxDigest when provided; fall back to the
-      // series TX for backward compatibility with single-TX publish flows.
-      const releaseTransaction = releaseTxDigest
-        ? await getSuccessfulTransaction(releaseTxDigest)
-        : seriesTransaction
+    if (releaseOnChainId && releaseTxDigest) {
+      const releaseTransaction = await getSuccessfulTransaction(releaseTxDigest)
       assertCreatedObjectChange(releaseTransaction, {
         objectOnChainId: releaseOnChainId,
         errorMessage: 'Transaction did not create the submitted Soul release',
