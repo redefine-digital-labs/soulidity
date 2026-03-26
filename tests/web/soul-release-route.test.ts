@@ -160,12 +160,37 @@ describe('soul release route', () => {
         body: JSON.stringify({
           txDigest: 'HW4YDZe8X4GPcfGvN6wPW5kGsX4Dg2mfY1fL96s6mKqH',
           releaseOnChainId: `0x${'a'.repeat(64)}`,
+          sealDekEnvelope: 'mock-envelope',
         }),
       }) as any,
       { params: Promise.resolve({ id: 'series-1' }) },
     )
 
     expect(response.status).toBe(404)
+  })
+
+  it('rejects manual release sync without sealDekEnvelope before any lookup or caching work', async () => {
+    const { POST } = await import('../../web/app/api/souls/[id]/release/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/series-1/release', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: 'HW4YDZe8X4GPcfGvN6wPW5kGsX4Dg2mfY1fL96s6mKqH',
+          releaseOnChainId: `0x${'a'.repeat(64)}`,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: 'series-1' }) },
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'sealDekEnvelope is required for release sync',
+    })
+    expect(mockedPrisma.soulSeries.findFirst).not.toHaveBeenCalled()
+    expect(mockedGetStoredSoulTxSync).not.toHaveBeenCalled()
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
+    expect(mockedGetSuccessfulTransaction).not.toHaveBeenCalled()
   })
 
   it('propagates sealDekEnvelope into manual release sidecar persistence', async () => {

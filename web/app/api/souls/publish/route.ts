@@ -97,6 +97,9 @@ export async function POST(request: NextRequest) {
   if (!subPlanOnChainId && subPlanTxDigest) {
     return NextResponse.json({ error: 'subPlanOnChainId is required when subPlanTxDigest is provided' }, { status: 400 })
   }
+  if (releaseOnChainId && !sealDekEnvelope) {
+    return NextResponse.json({ error: 'sealDekEnvelope is required when releaseOnChainId is provided' }, { status: 400 })
+  }
   const storedSync = await getStoredSoulTxSync({
     txDigest,
     routeKey: 'publish',
@@ -285,10 +288,10 @@ export async function POST(request: NextRequest) {
     // Seal-encrypt the DEK and store as sidecar on the release after the
     // mirror rows exist. Success is only cached after the sidecar is ready,
     // so the same txDigest can be retried if Seal is temporarily unavailable.
-    if (sealDekEnvelope && releaseState) {
+    if (releaseState) {
       try {
         await createAndStoreReleaseSealSidecar({
-          sealDekEnvelope,
+          sealDekEnvelope: sealDekEnvelope!,
           seriesOnChainId: seriesState.objectId,
           releaseOnChainId: releaseState.objectId,
           releaseContentHash: releaseState.contentHash,

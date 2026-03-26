@@ -414,6 +414,32 @@ describe('soul publish route', () => {
     expect(mockedDbCreateSeries).not.toHaveBeenCalled()
   })
 
+  it('rejects release mirroring without sealDekEnvelope before any verification or caching work', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: PUBLISH_TX_DIGEST,
+          seriesOnChainId: SERIES_ID,
+          releaseOnChainId: RELEASE_ID,
+          oneTimePlanOnChainId: ONETIME_PLAN_ID,
+          oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'sealDekEnvelope is required when releaseOnChainId is provided',
+    })
+    expect(mockedGetStoredSoulTxSync).not.toHaveBeenCalled()
+    expect(mockedSuiClient.getTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedDbCreateSeries).not.toHaveBeenCalled()
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
+  })
+
   it('rejects release mirrors whose submitted publish tx did not create the release object', async () => {
     mockedSuiClient.getTransactionBlock.mockImplementationOnce(async ({ digest }: { digest: string }) => {
       expect(digest).toBe(PUBLISH_TX_DIGEST)
@@ -444,6 +470,7 @@ describe('soul publish route', () => {
           releaseOnChainId: RELEASE_ID,
           oneTimePlanOnChainId: ONETIME_PLAN_ID,
           oneTimePlanTxDigest: ONETIME_PLAN_TX_DIGEST,
+          sealDekEnvelope: 'mock-envelope',
         }),
       }) as any,
     )
@@ -565,6 +592,7 @@ describe('soul publish route', () => {
           subPlanOnChainId: SUB_PLAN_ID,
           subPlanTxDigest: SUB_PLAN_TX_DIGEST,
           readme: 'off-chain readme is still allowed',
+          sealDekEnvelope: 'mock-envelope',
         }),
       }) as any,
     )

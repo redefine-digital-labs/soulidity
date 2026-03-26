@@ -71,6 +71,9 @@ export async function POST(
   if (!releaseOnChainId) {
     return NextResponse.json({ error: 'releaseOnChainId must be a valid on-chain object id' }, { status: 400 })
   }
+  if (!sealDekEnvelope) {
+    return NextResponse.json({ error: 'sealDekEnvelope is required for release sync' }, { status: 400 })
+  }
 
   // Resolve series by DB UUID or on-chain ID
   const series = await prisma.soulSeries.findFirst({
@@ -146,28 +149,26 @@ export async function POST(
       contentHash: releaseState.contentHash,
     })
 
-    if (sealDekEnvelope) {
-      try {
-        await createAndStoreReleaseSealSidecar({
-          sealDekEnvelope,
-          seriesOnChainId: seriesState.objectId,
-          releaseOnChainId: releaseState.objectId,
-          releaseContentHash: releaseState.contentHash,
-          soulPackageId,
-        })
-      } catch (sealError) {
-        console.error('[soul-release-mirror] Seal sidecar creation failed', {
-          memberId: identity.memberId,
-          seriesId: series.id,
-          releaseOnChainId,
-          txDigest,
-          error: toSafeErrorDetails(sealError),
-        })
-        return NextResponse.json(
-          { error: 'Release mirrored locally, but Seal sidecar generation failed. Retry release sync.' },
-          { status: 503 },
-        )
-      }
+    try {
+      await createAndStoreReleaseSealSidecar({
+        sealDekEnvelope,
+        seriesOnChainId: seriesState.objectId,
+        releaseOnChainId: releaseState.objectId,
+        releaseContentHash: releaseState.contentHash,
+        soulPackageId,
+      })
+    } catch (sealError) {
+      console.error('[soul-release-mirror] Seal sidecar creation failed', {
+        memberId: identity.memberId,
+        seriesId: series.id,
+        releaseOnChainId,
+        txDigest,
+        error: toSafeErrorDetails(sealError),
+      })
+      return NextResponse.json(
+        { error: 'Release mirrored locally, but Seal sidecar generation failed. Retry release sync.' },
+        { status: 503 },
+      )
     }
 
     const responseBody = {
