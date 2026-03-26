@@ -1,0 +1,9 @@
+[package]
+name = "soul_object"
+edition = "2024.beta"
+
+[dependencies]
+Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/walrus", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }
+
+[addresses]
+soul_object = "0x0"
