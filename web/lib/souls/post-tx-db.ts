@@ -30,13 +30,22 @@ function sameSuiAddress(left: string, right: string): boolean {
   }
 }
 
+function normalizeStoredSuiAddress(address: string): string {
+  try {
+    const normalized = normalizeSuiAddress(address)
+    return isValidSuiAddress(normalized) ? normalized : address
+  } catch {
+    return address
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Wallet → Member resolution (shared helper)
 // ---------------------------------------------------------------------------
 
 async function resolveOwnerMemberId(db: SoulDbClient, address: string): Promise<string | null> {
   const binding = await db.walletBinding.findFirst({
-    where: { address, chain: 'sui' },
+    where: { address: normalizeStoredSuiAddress(address), chain: 'sui' },
   })
   return binding?.memberId ?? null
 }
@@ -231,6 +240,7 @@ export async function dbCreatePass(params: {
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
+  const ownerAddress = normalizeStoredSuiAddress(params.ownerAddress)
   if (params.passType === 'perpetual' && !params.lockedReleaseId) {
     throw new Error('perpetual passes require a lockedReleaseId')
   }
@@ -239,7 +249,7 @@ export async function dbCreatePass(params: {
   }
 
   // Resolve ownerMemberId if not provided
-  const ownerMemberId = params.ownerMemberId ?? (await resolveOwnerMemberId(db, params.ownerAddress))
+  const ownerMemberId = params.ownerMemberId ?? (await resolveOwnerMemberId(db, ownerAddress))
 
   // Look up series DB id
   const series = await db.soulSeries.findUnique({
@@ -254,7 +264,7 @@ export async function dbCreatePass(params: {
     create: {
       onChainId: params.passOnChainId,
       seriesId: series.id,
-      ownerAddress: params.ownerAddress,
+      ownerAddress,
       ownerMemberId,
       passType: params.passType,
       lockedReleaseId: params.lockedReleaseId ?? null,
@@ -263,7 +273,7 @@ export async function dbCreatePass(params: {
     },
     update: {
       seriesId: series.id,
-      ownerAddress: params.ownerAddress,
+      ownerAddress,
       ownerMemberId,
       passType: params.passType,
       lockedReleaseId: params.lockedReleaseId ?? null,

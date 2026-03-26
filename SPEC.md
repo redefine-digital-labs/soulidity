@@ -38,3 +38,4 @@
 11. `takeRateLimitToken` 在 Upstash 调用异常时必须自动降级到现有 in-memory limiter，不能把 Redis/网络抖动直接放大成认证、购买、发布等主路径的 500。
 12. `publish` / `release` mirror 路由在 release 依赖 `sealSidecar` 时，只有在 sidecar 成功持久化后才能写入成功 tx-sync；若 Seal sidecar 生成失败，接口必须返回可重试错误，且同一个 `txDigest` 后续可重新补 sidecar，不得缓存 201 成功结果。
 13. Agent purchase/renew execute 对已存储的 retryable 结果做补 sync 时，必须重新执行与主执行路径相同的 pass invariants 校验；若 series/owner/release/pass type/renew pass context 不匹配，必须把 prepared 结果终结为 422，而不是继续写入本地 pass mirror。
+14. Pass mirror 写入前必须把链上 owner 地址规范化后再用于 wallet binding 查找和 `soulPassSnapshot.ownerAddress` 落库，避免等价 Sui 地址因为格式差异丢失 `ownerMemberId` 或导致 owner-scoped 查询漏匹配。

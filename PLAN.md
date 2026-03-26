@@ -37,4 +37,7 @@
    - purchase/renew execute 的 stored retry 分支复用主路径 pass-state 校验
    - 一旦确认 series/owner/release/pass context 不匹配，就把 prepared 结果终结为 422，而不是继续补本地 sync
    - 补 retry branch 回归，覆盖 purchase release mismatch 与 renew prepared-pass mismatch
-12. 跑相关测试与 typecheck，确认无残留。
+12. 收口 pass owner normalization follow-up：
+   - `dbCreatePass` 在 wallet binding lookup 和 snapshot upsert 前统一规范化 owner 地址
+   - 补回归覆盖短地址/非规范地址输入，确认 `ownerMemberId` 解析与 `ownerAddress` 落库都使用规范值
+13. 跑相关测试与 typecheck，确认无残留。

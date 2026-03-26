@@ -246,6 +246,49 @@ describe('post-tx db pricing mirror', () => {
     })
   })
 
+  it('normalizes owner addresses before resolving wallet bindings and persisting pass mirrors', async () => {
+    const normalizedOwnerAddress = `0x${'0'.repeat(63)}a`
+    mockedPrisma.walletBinding.findFirst.mockResolvedValueOnce({
+      memberId: 'member-1',
+    })
+
+    const { dbCreatePass } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbCreatePass({
+      passOnChainId: '0xpass',
+      seriesOnChainId: '0xseries',
+      ownerAddress: '0xA',
+      passType: 'subscription',
+      mintTxDigest: '0xdigest',
+    })
+
+    expect(mockedPrisma.walletBinding.findFirst).toHaveBeenCalledWith({
+      where: { address: normalizedOwnerAddress, chain: 'sui' },
+    })
+    expect(mockedPrisma.soulPassSnapshot.upsert).toHaveBeenCalledWith({
+      where: { onChainId: '0xpass' },
+      create: {
+        onChainId: '0xpass',
+        seriesId: 'series-db-1',
+        ownerAddress: normalizedOwnerAddress,
+        ownerMemberId: 'member-1',
+        passType: 'subscription',
+        lockedReleaseId: null,
+        expiresAt: null,
+        mintTxDigest: '0xdigest',
+      },
+      update: {
+        seriesId: 'series-db-1',
+        ownerAddress: normalizedOwnerAddress,
+        ownerMemberId: 'member-1',
+        passType: 'subscription',
+        lockedReleaseId: null,
+        expiresAt: null,
+        mintTxDigest: '0xdigest',
+      },
+    })
+  })
+
   it('rejects pass mirrors when the target series does not exist in the database', async () => {
     mockedPrisma.soulSeries.findUnique.mockResolvedValueOnce(null)
     const { dbCreatePass } = await import('../../web/lib/souls/post-tx-db.ts')
