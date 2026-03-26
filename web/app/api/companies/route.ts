@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 
+const MAX_LIMIT = 200
+
 export async function GET(request: NextRequest) {
   const category = request.nextUrl.searchParams.get('category')
-  const limit = parseInt(request.nextUrl.searchParams.get('limit') ?? '100')
+  const parsed = parseInt(request.nextUrl.searchParams.get('limit') ?? '100')
+  const limit = Math.min(Math.max(Number.isFinite(parsed) ? parsed : 100, 1), MAX_LIMIT)
 
   const companies = await prisma.company.findMany({
     where: category ? { category } : undefined,

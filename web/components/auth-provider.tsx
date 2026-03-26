@@ -9,6 +9,7 @@ interface AuthUser {
   avatar: string | null
   level: number
   kind: string
+  primarySuiAddress: string | null
 }
 
 interface AuthContextValue {

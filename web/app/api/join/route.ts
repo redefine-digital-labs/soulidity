@@ -3,26 +3,28 @@ import { prisma } from '@web/lib/prisma'
 import { processJoinRequest } from '@bot/gateway'
 import { getAppBaseUrl } from '@shared/app-config'
 import { isInviteCode, normalizeInviteCode } from '@shared/invite-code-format'
-import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { getRequestIp, MISSING_CLIENT_IP_ERROR, takeRateLimitToken } from '@web/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   const requestIp = getRequestIp(request.headers)
-  if (requestIp) {
-    const joinRateLimit = takeRateLimitToken(`join:${requestIp}`, {
-      max: 20,
-      windowMs: 10 * 60 * 1000,
-    })
-    if (joinRateLimit.limited) {
-      return NextResponse.json(
-        { success: false, error: 'Too many join attempts, please try again later' },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': String(joinRateLimit.retryAfterSeconds),
-          },
-        }
-      )
-    }
+  if (!requestIp) {
+    return NextResponse.json({ success: false, error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
+  }
+
+  const joinRateLimit = await takeRateLimitToken(`join:${requestIp}`, {
+    max: 20,
+    windowMs: 10 * 60 * 1000,
+  })
+  if (joinRateLimit.limited) {
+    return NextResponse.json(
+      { success: false, error: 'Too many join attempts, please try again later' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(joinRateLimit.retryAfterSeconds),
+        },
+      }
+    )
   }
 
   let body: any

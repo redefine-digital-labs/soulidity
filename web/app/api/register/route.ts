@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { privy } from '@web/lib/auth/privy'
 import { isInviteCode, normalizeInviteCode } from '@shared/invite-code-format'
-import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { getRequestIp, MISSING_CLIENT_IP_ERROR, takeRateLimitToken } from '@web/lib/rate-limit'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +12,27 @@ export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return NextResponse.json({ error: '未登录' }, { status: 401 })
+  }
+
+  const requestIp = getRequestIp(request.headers)
+  if (!requestIp) {
+    return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
+  }
+
+  const ipRateLimit = await takeRateLimitToken(`register-ip:${requestIp}`, {
+    max: 20,
+    windowMs: 10 * 60 * 1000,
+  })
+  if (ipRateLimit.limited) {
+    return NextResponse.json(
+      { error: '请求过于频繁，请稍后再试' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(ipRateLimit.retryAfterSeconds),
+        },
+      }
+    )
   }
 
   const token = authHeader.slice(7)
@@ -37,13 +58,16 @@ export async function POST(request: NextRequest) {
   if (!body?.code) {
     return NextResponse.json({ error: '缺少邀请码' }, { status: 400 })
   }
+  if (typeof body.code !== 'string') {
+    return NextResponse.json({ error: '邀请码格式无效' }, { status: 400 })
+  }
 
-  const code = normalizeInviteCode(String(body.code))
+  const code = normalizeInviteCode(body.code)
   if (!isInviteCode(code)) {
     return NextResponse.json({ error: '邀请码格式无效' }, { status: 400 })
   }
 
-  const userRateLimit = takeRateLimitToken(`register:${privyDid}`, {
+  const userRateLimit = await takeRateLimitToken(`register:${privyDid}`, {
     max: 10,
     windowMs: 10 * 60 * 1000,
   })
@@ -59,32 +83,15 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const requestIp = getRequestIp(request.headers)
-  if (requestIp) {
-    const ipRateLimit = takeRateLimitToken(`register-ip:${requestIp}`, {
-      max: 20,
-      windowMs: 10 * 60 * 1000,
-    })
-    if (ipRateLimit.limited) {
-      return NextResponse.json(
-        { error: '请求过于频繁，请稍后再试' },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': String(ipRateLimit.retryAfterSeconds),
-          },
-        }
-      )
-    }
-  }
-
   try {
     // Get Privy user email inside the guarded block so upstream failures
     // return the route's standard JSON error shape.
     const privyUser = await privy.getUser(privyDid)
-    const email = privyUser.email?.address?.toLowerCase()
+    const email = privyUser.email?.firstVerifiedAt
+      ? privyUser.email.address.toLowerCase()
+      : null
     if (!email) {
-      return NextResponse.json({ error: '未找到邮箱信息' }, { status: 400 })
+      return NextResponse.json({ error: '未找到已验证的邮箱信息' }, { status: 400 })
     }
 
     // Check email not taken by another account
@@ -200,7 +207,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '该邮箱已注册' }, { status: 409 })
     }
 
-    console.error('[register] unexpected error:', error)
+    console.error('[register] unexpected error:', {
+      name: error instanceof Error ? error.name : 'UnknownError',
+      message: error instanceof Error ? error.message : String(error),
+    })
     return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 })
   }
 }

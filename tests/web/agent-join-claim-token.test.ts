@@ -40,4 +40,12 @@ describe('agent claim token', () => {
   it('rejects malformed legacy tokens without a timestamp segment', () => {
     expect(isValidClaimToken('member-1', 'legacy-token')).toBe(false)
   })
+
+  it('rejects truncated legacy signatures even when the HMAC prefix matches', () => {
+    const fullToken = createClaimToken('member-1', 1_700_000_000_000)
+    const [issuedAt, signature] = fullToken.split('.')
+    const legacyToken = `${issuedAt}.${signature.slice(0, 32)}`
+
+    expect(isValidClaimToken('member-1', legacyToken, 1_700_000_000_000)).toBe(false)
+  })
 })

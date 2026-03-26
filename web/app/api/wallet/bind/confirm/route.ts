@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyPersonalMessageSignature } from '@mysten/sui/verify'
 import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { verifyPersonalMessageSignature } from '@web/lib/sui-verify'
 import { buildWalletBindMessage } from '../challenge/route'
+
+const MULTIPLE_SUI_WALLETS_ERROR = 'Multiple Sui wallets are not supported for this account'
 
 export async function POST(request: NextRequest) {
   const identity = await resolveIdentity()
@@ -11,7 +13,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
 
-  const rateLimit = takeRateLimitToken(`wallet-bind-confirm:${identity.memberId}`, {
+  const rateLimit = await takeRateLimitToken(`wallet-bind-confirm:${identity.memberId}`, {
     max: 10,
     windowMs: 60 * 60 * 1000,
   })
@@ -80,13 +82,21 @@ export async function POST(request: NextRequest) {
     return response
   }
 
-  // Atomic: clear primary + create new binding in a single transaction
-  const walletBinding = await prisma.$transaction(async (tx) => {
-    await tx.walletBinding.updateMany({
-      where: { memberId: identity.memberId, chain },
-      data: { isPrimary: false },
-    })
+  const existingMemberBinding = await prisma.walletBinding.findFirst({
+    where: {
+      memberId: identity.memberId,
+      chain,
+      NOT: {
+        address: signerAddress,
+      },
+    },
+  })
+  if (existingMemberBinding) {
+    return NextResponse.json({ error: MULTIPLE_SUI_WALLETS_ERROR }, { status: 409 })
+  }
 
+  // Create the single allowed Sui binding for this member.
+  const walletBinding = await prisma.$transaction(async (tx) => {
     const binding = await tx.walletBinding.create({
       data: {
         memberId: identity.memberId,

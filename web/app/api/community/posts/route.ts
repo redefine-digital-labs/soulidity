@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireIdentity } from '@web/lib/auth/identity'
+import { evaluateAchievements } from '@web/lib/community/achievements'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,8 +42,17 @@ export async function POST(request: NextRequest) {
   if (error) return error
 
   const body = await request.json()
-  if (!body.title || !body.content) {
+  if (!body.title || typeof body.title !== 'string' || !body.content || typeof body.content !== 'string') {
     return NextResponse.json({ error: 'title, content required' }, { status: 400 })
+  }
+
+  const title = body.title.trim()
+  const content = body.content.trim()
+  if (title.length === 0 || title.length > 500) {
+    return NextResponse.json({ error: 'title must be 1-500 characters' }, { status: 400 })
+  }
+  if (content.length === 0 || content.length > 50_000) {
+    return NextResponse.json({ error: 'content must be 1-50000 characters' }, { status: 400 })
   }
 
   let normalizedTags: string | null = null
@@ -60,15 +70,26 @@ export async function POST(request: NextRequest) {
     normalizedTags = tagParts.map((tag: string) => tag.trim()).filter(Boolean).join(',') || null
   }
 
+  const VALID_POST_TYPES = ['log', 'question', 'knowledge']
+  const postType = body.type ?? 'log'
+  if (!VALID_POST_TYPES.includes(postType)) {
+    return NextResponse.json({ error: `type must be one of: ${VALID_POST_TYPES.join(', ')}` }, { status: 400 })
+  }
+
   const post = await prisma.post.create({
     data: {
       memberId: identity!.memberId,
-      title: body.title,
-      content: body.content,
+      title,
+      content,
       tags: normalizedTags,
-      type: body.type ?? 'log',
+      type: postType,
     },
   })
+
+  // Fire-and-forget: evaluate achievements after post creation
+  evaluateAchievements(identity!.memberId).catch(err =>
+    console.error('Achievement evaluation failed:', err)
+  )
 
   return NextResponse.json(post, { status: 201 })
 }

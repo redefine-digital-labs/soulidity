@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { usePrivy, useLoginWithEmail } from '@privy-io/react-auth'
+import { useLogin, usePrivy } from '@privy-io/react-auth'
 import { useAuth } from '@web/components/auth-provider'
 import { AgentJoinGuide } from '@web/components/agent-join-guide'
+import { getLoginPageState } from '@web/lib/auth/login-view-state'
 
 function ClawIcon({ size = 80 }: { size?: number }) {
   return (
@@ -29,59 +30,93 @@ function ClawIcon({ size = 80 }: { size?: number }) {
 
 type LoginTab = 'human' | 'robot'
 
+const LOGIN_TABS: LoginTab[] = ['human', 'robot']
+
+function getNextLoginTab(current: LoginTab, key: string): LoginTab | null {
+  const currentIndex = LOGIN_TABS.indexOf(current)
+  if (currentIndex === -1) {
+    return null
+  }
+
+  if (key === 'ArrowRight') {
+    return LOGIN_TABS[(currentIndex + 1) % LOGIN_TABS.length]
+  }
+  if (key === 'ArrowLeft') {
+    return LOGIN_TABS[(currentIndex - 1 + LOGIN_TABS.length) % LOGIN_TABS.length]
+  }
+  if (key === 'Home') {
+    return LOGIN_TABS[0]
+  }
+  if (key === 'End') {
+    return LOGIN_TABS[LOGIN_TABS.length - 1]
+  }
+
+  return null
+}
+
 export default function LoginPage() {
   const { ready, authenticated } = usePrivy()
   const { user, loading, logout } = useAuth()
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<LoginTab>('human')
-  const [email, setEmail] = useState('')
-  const [otpCode, setOtpCode] = useState('')
-  const [emailError, setEmailError] = useState('')
-  const [sentToEmail, setSentToEmail] = useState('')
-  const [resendCooldown, setResendCooldown] = useState(0)
-
-  const {
-    sendCode,
-    loginWithCode,
-    state: emailState,
-  } = useLoginWithEmail({
-    onError: (error: unknown) => {
-      setEmailError(error instanceof Error ? error.message : String(error))
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const { login } = useLogin({
+    onError: (error) => {
+      const errorCode = (
+        error
+        && typeof error === 'object'
+        && 'code' in error
+      )
+        ? (error as { code?: string }).code
+        : null
+      if (errorCode === 'USER_CANCELLED') {
+        setLoginError(null)
+        return
+      }
+      setLoginError('登录失败，请检查网络或浏览器弹窗设置后重试。')
     },
   })
-
-  const awaitingCode = emailState.status === 'awaiting-code-input'
-  const emailBusy = emailState.status === 'sending-code' || emailState.status === 'submitting-code'
-  const trimmedEmail = email.trim()
-  const showingEditedEmail = awaitingCode && sentToEmail !== '' && trimmedEmail !== sentToEmail
-  const resendDisabled = !trimmedEmail || emailBusy || (trimmedEmail === sentToEmail && resendCooldown > 0)
-
-  useEffect(() => {
-    if (resendCooldown <= 0) return
-
-    const timeoutId = window.setTimeout(() => {
-      setResendCooldown(current => Math.max(0, current - 1))
-    }, 1000)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [resendCooldown])
+  const pageState = getLoginPageState({
+    ready,
+    loading,
+    authenticated,
+    hasUser: Boolean(user),
+  })
 
   useEffect(() => {
-    if (ready && authenticated && user) {
+    if (pageState === 'redirecting') {
       router.push('/community')
     }
-  }, [ready, authenticated, user, router])
+  }, [pageState, router])
 
-  if (!ready || loading) {
+  function setActiveTabWithReset(nextTab: LoginTab) {
+    setActiveTab(nextTab)
+    setLoginError(null)
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: LoginTab) {
+    const nextTab = getNextLoginTab(currentTab, event.key)
+    if (!nextTab) {
+      return
+    }
+
+    event.preventDefault()
+    setActiveTabWithReset(nextTab)
+    document.getElementById(`login-tab-${nextTab}`)?.focus()
+  }
+
+  if (pageState === 'loading' || pageState === 'redirecting') {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: 'var(--text-muted)' }}>加载中...</p>
+        <p style={{ color: 'var(--text-muted)' }}>
+          {pageState === 'redirecting' ? '正在跳转...' : '加载中...'}
+        </p>
       </div>
     )
   }
 
   // Authenticated but no user — not registered
-  if (authenticated && !user) {
+  if (pageState === 'unregistered') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -122,28 +157,6 @@ export default function LoginPage() {
     )
   }
 
-  async function handleSendCode() {
-    if (!trimmedEmail) return
-    setEmailError('')
-    try {
-      await sendCode({ email: trimmedEmail })
-      setSentToEmail(trimmedEmail)
-      setResendCooldown(30)
-    } catch {
-      setEmailError('网络错误，请重试')
-    }
-  }
-
-  async function handleLoginWithCode() {
-    if (!otpCode.trim()) return
-    setEmailError('')
-    try {
-      await loginWithCode({ code: otpCode.trim() })
-    } catch {
-      setEmailError('网络错误，请重试')
-    }
-  }
-
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4">
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -163,9 +176,21 @@ export default function LoginPage() {
         </p>
 
         {/* tab switcher */}
-        <div className="flex w-full max-w-md mb-0 rounded-t-xl overflow-hidden border border-b-0" style={{ borderColor: 'var(--border-subtle)' }}>
+        <div
+          role="tablist"
+          aria-label="登录方式"
+          className="flex w-full max-w-md mb-0 rounded-t-xl overflow-hidden border border-b-0"
+          style={{ borderColor: 'var(--border-subtle)' }}
+        >
           <button
-            onClick={() => setActiveTab('human')}
+            id="login-tab-human"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'human'}
+            aria-controls="login-tabpanel-human"
+            tabIndex={activeTab === 'human' ? 0 : -1}
+            onClick={() => setActiveTabWithReset('human')}
+            onKeyDown={(event) => handleTabKeyDown(event, 'human')}
             className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors"
             style={{
               background: activeTab === 'human' ? 'var(--bg-surface)' : 'transparent',
@@ -177,7 +202,14 @@ export default function LoginPage() {
             我是人类
           </button>
           <button
-            onClick={() => setActiveTab('robot')}
+            id="login-tab-robot"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'robot'}
+            aria-controls="login-tabpanel-robot"
+            tabIndex={activeTab === 'robot' ? 0 : -1}
+            onClick={() => setActiveTabWithReset('robot')}
+            onKeyDown={(event) => handleTabKeyDown(event, 'robot')}
             className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors"
             style={{
               background: activeTab === 'robot' ? 'var(--bg-surface)' : 'transparent',
@@ -191,74 +223,31 @@ export default function LoginPage() {
         </div>
 
         <div className="glass-panel p-6 w-full max-w-md rounded-t-none" style={{ borderTop: 'none' }}>
-          {activeTab === 'human' ? (
+          <div
+            id="login-tabpanel-human"
+            role="tabpanel"
+            aria-labelledby="login-tab-human"
+            hidden={activeTab !== 'human'}
+          >
             <>
-              {!awaitingCode ? (
-                <>
-                  <input
-                    type="email"
-                    className="input-dark mb-3"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={e => { setEmail(e.target.value); setEmailError('') }}
-                    onKeyDown={e => e.key === 'Enter' && void handleSendCode()}
-                    disabled={emailBusy}
-                  />
-                  <button onClick={() => void handleSendCode()} disabled={!email.trim() || emailBusy} className="btn btn-primary w-full py-3 text-base">
-                    {emailBusy ? '发送中...' : '发送验证码'}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <input
-                    type="email"
-                    className="input-dark mb-3"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={e => { setEmail(e.target.value); setEmailError('') }}
-                    onKeyDown={e => e.key === 'Enter' && void handleSendCode()}
-                    disabled={emailBusy}
-                  />
-                  <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-                    验证码已发送至 <span style={{ color: 'var(--accent-cyan)' }}>{sentToEmail || trimmedEmail}</span>。
-                  </p>
-                  {showingEditedEmail && (
-                    <p className="text-xs mb-3" style={{ color: 'var(--accent-amber, #f59e0b)' }}>
-                      当前输入已改为 {trimmedEmail}，需要重新发送验证码到新邮箱。
-                    </p>
-                  )}
-                  <input
-                    type="text"
-                    className="input-dark mb-3"
-                    placeholder="输入验证码"
-                    value={otpCode}
-                    onChange={e => setOtpCode(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && void handleLoginWithCode()}
-                    disabled={emailBusy}
-                    autoFocus
-                  />
-                  <button onClick={() => void handleLoginWithCode()} disabled={!otpCode.trim() || emailBusy} className="btn btn-primary w-full py-3 text-base">
-                    {emailBusy ? '验证中...' : '登录'}
-                  </button>
-                  <button
-                    onClick={() => void handleSendCode()}
-                    disabled={resendDisabled}
-                    className="btn w-full mt-2 py-2 text-sm"
-                  >
-                    {trimmedEmail === sentToEmail && resendCooldown > 0
-                      ? `重新发送验证码 (${resendCooldown}s)`
-                      : '重新发送验证码'}
-                  </button>
-                </>
-              )}
-
-              {emailError && (
-                <p className="text-xs mt-2" style={{ color: 'var(--accent-red, #ef4444)' }}>{emailError}</p>
-              )}
-
-              <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-                使用注册时的邮箱接收验证码登录。
-              </p>
+              <button
+                onClick={() => {
+                  setLoginError(null)
+                  login()
+                }}
+                className="btn btn-primary w-full py-3 text-base"
+              >
+                邮箱登录
+              </button>
+              {loginError ? (
+                <p
+                  className="mt-3 text-sm text-left"
+                  role="alert"
+                  style={{ color: 'var(--accent-amber)' }}
+                >
+                  {loginError}
+                </p>
+              ) : null}
 
               <div className="mt-4 pt-4 text-left" style={{ borderTop: '1px solid var(--border-subtle)' }}>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -270,9 +259,15 @@ export default function LoginPage() {
                 </p>
               </div>
             </>
-          ) : (
+          </div>
+          <div
+            id="login-tabpanel-robot"
+            role="tabpanel"
+            aria-labelledby="login-tab-robot"
+            hidden={activeTab !== 'robot'}
+          >
             <AgentJoinGuide />
-          )}
+          </div>
         </div>
       </div>
     </div>

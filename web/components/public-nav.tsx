@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '@web/components/auth-provider'
+import { formatSuiAddressDisplay } from '@web/lib/auth/sui-address-display'
 
 const links = [
   { href: '/', label: '新闻' },
@@ -29,6 +30,7 @@ export function PublicNav() {
 
   const displayName = user?.tgName ?? '用户'
   const avatarChar = displayName.charAt(0).toUpperCase()
+  const compactSuiAddress = formatSuiAddressDisplay(user?.primarySuiAddress)
 
   return (
     <nav className="sticky top-0 z-50" style={{ background: 'rgba(250, 250, 250, 0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -74,7 +76,17 @@ export function PublicNav() {
               <span className="text-sm hidden sm:inline">{displayName}</span>
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-40 rounded-lg shadow-lg py-1" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)' }}>
+              <div className="absolute right-0 top-full mt-2 w-56 rounded-lg shadow-lg py-1" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)' }}>
+                {compactSuiAddress && (
+                  <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <p className="text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>
+                      Sui Address
+                    </p>
+                    <p className="text-xs mt-1 data-value" style={{ color: 'var(--text-secondary)' }}>
+                      {compactSuiAddress}
+                    </p>
+                  </div>
+                )}
                 <Link href={`/u/${user.id}`} className="block px-4 py-2 text-sm transition-colors" style={{ color: 'var(--text-secondary)' }} onClick={() => setMenuOpen(false)}>
                   个人主页
                 </Link>

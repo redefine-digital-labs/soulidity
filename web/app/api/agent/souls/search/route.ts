@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
+import { serializeAtomicUsdcAmount } from '@web/lib/souls/price-format'
 
 const MAX_SOUL_QUERY_PARAM_LENGTH = 200
 
@@ -64,5 +65,13 @@ export async function GET(req: NextRequest) {
     take: limit,
   })
 
-  return NextResponse.json({ items, offset, limit })
+  return NextResponse.json({
+    items: items.map((item) => ({
+      ...item,
+      oneTimePriceUsdc: serializeAtomicUsdcAmount(item.oneTimePriceUsdc),
+      subPriceUsdc: serializeAtomicUsdcAmount(item.subPriceUsdc),
+    })),
+    offset,
+    limit,
+  })
 }

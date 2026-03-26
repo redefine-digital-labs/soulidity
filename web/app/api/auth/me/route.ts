@@ -12,7 +12,21 @@ export async function GET() {
 
   const member = await prisma.member.findUnique({
     where: { id: identity.memberId },
-    select: { id: true, displayName: true, tgName: true, avatar: true, level: true, bio: true, kind: true },
+    select: {
+      id: true,
+      displayName: true,
+      tgName: true,
+      avatar: true,
+      level: true,
+      bio: true,
+      kind: true,
+      walletBindings: {
+        where: { chain: 'sui' },
+        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        take: 1,
+        select: { address: true },
+      },
+    },
   })
 
   if (!member) {
@@ -27,6 +41,7 @@ export async function GET() {
       level: member.level,
       bio: member.bio,
       kind: member.kind,
+      primarySuiAddress: member.walletBindings[0]?.address ?? null,
     },
   })
 }

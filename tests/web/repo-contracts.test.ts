@@ -62,15 +62,13 @@ describe('repository contract guards', () => {
     expect(pivotPlan.includes('SettlementEvent')).toBe(schema.includes('model SettlementEvent'))
   })
 
-  it('keeps unsafe release publishing UI turned off while the Seal flow is fail-closed', () => {
+  it('includes release publishing in the publish and release pages', () => {
     const publishPage = readFileSync(join(repoRoot, 'web', 'app', 'souls', 'publish', 'page.tsx'), 'utf8')
     const releasePage = readFileSync(join(repoRoot, 'web', 'app', 'souls', '[id]', 'release', 'page.tsx'), 'utf8')
 
-    expect(publishPage).not.toContain('buildPublishReleaseTx')
-    expect(publishPage).not.toContain('SealClient')
-    expect(releasePage).toContain('SOUL_RELEASE_FLOW_DISABLED_MESSAGE')
-    expect(releasePage).not.toContain('useSignAndExecuteTransaction')
-    expect(releasePage).not.toContain('UploadWalrus')
+    expect(publishPage).toContain('buildPublishReleaseTx')
+    expect(releasePage).toContain('buildPublishReleaseTx')
+    expect(releasePage).not.toContain('SOUL_RELEASE_FLOW_DISABLED_MESSAGE')
   })
 
   it('does not swallow client-side Soul mirror sync failures', () => {
@@ -142,12 +140,114 @@ describe('repository contract guards', () => {
     expect(moveToml).toContain('Sui = { git = "https://github.com/MystenLabs/sui.git"')
     expect(purchaseButton).toContain('if (!planId) {')
     expect(passStatus).toContain("const isGrantPending = grantState === 'pending'")
-    expect(passStatus).toContain('disabled={isGrantPending}')
+    expect(passStatus).toContain("setGrantState('idle')")
+    expect(passStatus).not.toContain('setGrantOverride(undefined)')
+    expect(passStatus).toContain('disabled={isGrantPending || !canManageAgentGrant}')
     expect(publishPage).toContain('htmlFor="soul-name"')
     expect(publishPage).toContain('aria-pressed={pricingType === type}')
     expect(soulsPage).toContain('htmlFor="souls-search"')
     expect(soulsPage).toContain('id="souls-search"')
-    expect(soulsPage).toContain('aria-pressed={active}')
+    expect(soulsPage).toContain('role="radiogroup"')
+    expect(soulsPage).toContain('aria-checked={active}')
     expect(webPackage).not.toContain('aftermath-ts-sdk')
+  })
+
+  it('keeps prepared purchases relationally bound to members and subscriptions fully coupled in migrations', () => {
+    const schema = readFileSync(join(repoRoot, 'prisma', 'schema.prisma'), 'utf8')
+    const preparedPurchaseMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260322123000_add_soul_tx_sync_and_prepared_purchase', 'migration.sql'),
+      'utf8',
+    )
+    const constraintsMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260322223000_review_batch_constraints', 'migration.sql'),
+      'utf8',
+    )
+    const amountCheckMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260323090000_add_prepared_purchase_amount_check', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(schema).toContain('preparedSoulPurchases SoulPreparedPurchase[]')
+    expect(schema).toMatch(/agentMember\s+Member\s+@relation\("SoulPreparedPurchaseAgentMember"/)
+    expect(preparedPurchaseMigration).toContain('FOREIGN KEY ("agent_member_id") REFERENCES "members"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+    expect(preparedPurchaseMigration).toContain('octet_length("tx_bytes_base64") <= 65536')
+    expect(constraintsMigration).toContain('("sub_price_usdc" IS NULL) = ("sub_period_days" IS NULL)')
+    expect(constraintsMigration).toContain('("sub_period_days" IS NULL OR "sub_period_days" > 0)')
+    expect(amountCheckMigration).toContain('CHECK ("amount_usdc" > 0)')
+  })
+
+  it('keeps drop-indexer migrations safe on fresh databases', () => {
+    const dropIndexerMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260322200000_drop_indexer_tables', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(dropIndexerMigration).toContain(`to_regclass('"indexer_dead_letter_events"')`)
+    expect(dropIndexerMigration).toContain(`to_regclass('"indexer_cursors"')`)
+  })
+
+  it('keeps Soul prepared-purchase and tx-sync domain fields constrained in SQL', () => {
+    const enumChecksMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260322233000_add_soul_enum_checks', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(enumChecksMigration).toContain(`CHECK ("plan_type" IN ('onetime', 'subscription'))`)
+    expect(enumChecksMigration).toContain(`CHECK ("route_key" IN ('purchase', 'publish', 'grant:set', 'grant:revoke'))`)
+  })
+
+  it('constrains Soul series status values in SQL', () => {
+    const seriesStatusMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260323143000_add_soul_series_status_check', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(seriesStatusMigration).toContain(`CHECK ("status" IN ('active', 'inactive'))`)
+  })
+
+  it('keeps Soul author/access lookup indexes and unit comments aligned in schema + migrations', () => {
+    const schema = readFileSync(join(repoRoot, 'prisma', 'schema.prisma'), 'utf8')
+    const indexMigration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260323150000_add_soul_author_and_access_indexes', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(schema).toContain('@@index([authorAddress])')
+    expect(schema).toContain('@@index([seriesId, ownerAddress, status])')
+    expect(schema).toContain('Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.')
+    expect(schema).toContain('oneTimePriceUsdc      Decimal? @map("one_time_price_usdc") @db.Decimal(20, 0)')
+    expect(schema).toContain('subPriceUsdc          Decimal? @map("sub_price_usdc") @db.Decimal(20, 0)')
+    expect(schema).toContain('Stored in atomic 6-decimal USDC units as NUMERIC(20,0) so prepared execution can verify the full on-chain u64 range losslessly.')
+    expect(schema).toContain('amountUsdc       Decimal  @map("amount_usdc") @db.Decimal(20, 0)')
+    expect(indexMigration).toContain('"soul_series_author_address_idx"')
+    expect(indexMigration).toContain('"soul_pass_snapshots_series_id_owner_address_status_idx"')
+  })
+
+  it('prevents agent claim tokens in the URL from leaking via Referer headers', () => {
+    const agentClaimLayout = readFileSync(join(repoRoot, 'web', 'app', 'agent-claim', 'layout.tsx'), 'utf8')
+    const agentClaimPage = readFileSync(join(repoRoot, 'web', 'app', 'agent-claim', 'page.tsx'), 'utf8')
+
+    expect(agentClaimLayout).toContain("referrer: 'no-referrer'")
+    expect(agentClaimLayout).toContain('index: false')
+    expect(agentClaimPage).toContain('new URLSearchParams({ id, token }).toString()')
+  })
+
+  it('keeps disabled Soul release routes auth-gated and key Soul UI states accessible', () => {
+    const releaseRoute = readFileSync(join(repoRoot, 'web', 'app', 'api', 'souls', '[id]', 'release', 'route.ts'), 'utf8')
+    const loginPage = readFileSync(join(repoRoot, 'web', 'app', 'login', 'page.tsx'), 'utf8')
+    const mySoulsPage = readFileSync(join(repoRoot, 'web', 'app', 'souls', 'my', 'page.tsx'), 'utf8')
+    const publishPage = readFileSync(join(repoRoot, 'web', 'app', 'souls', 'publish', 'page.tsx'), 'utf8')
+    const passStatus = readFileSync(join(repoRoot, 'web', 'components', 'souls', 'pass-status.tsx'), 'utf8')
+    const purchaseButton = readFileSync(join(repoRoot, 'web', 'components', 'souls', 'purchase-button.tsx'), 'utf8')
+
+    expect(releaseRoute).toContain('await requireIdentity()')
+    expect(loginPage).toContain('role="tablist"')
+    expect(loginPage).toContain('role="tabpanel"')
+    expect(mySoulsPage).toContain('role="tablist"')
+    expect(mySoulsPage).toContain('pass.series.onChainId || pass.series.id')
+    expect(publishPage).toContain('role="status"')
+    expect(passStatus).toContain('role="alert"')
+    expect(purchaseButton).toContain('purchaseInFlightRef.current')
+    expect(purchaseButton).toContain('role="alert"')
   })
 })

@@ -100,4 +100,22 @@ describe('agent join claim route', () => {
     })
     expect(mockedPrisma.member.updateMany).not.toHaveBeenCalled()
   })
+
+  it('rejects non-string claim payload fields before validating the token', async () => {
+    const { POST } = await import('../../web/app/api/agent-join/claim/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join/claim', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: { nested: true }, token: 123 }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'id and token are required',
+    })
+    expect(mockedIsValidClaimToken).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.updateMany).not.toHaveBeenCalled()
+  })
 })

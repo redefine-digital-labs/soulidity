@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { getRequestIp, MISSING_CLIENT_IP_ERROR, takeRateLimitToken } from '@web/lib/rate-limit'
 
 import { resolveAgentByApiKey, type AgentIdentity } from './resolve-agent'
 
@@ -9,9 +9,12 @@ const FAILED_AGENT_AUTH_LIMIT = {
   windowMs: 60 * 1000,
 } as const
 
-function buildFailedAgentAuthResponse(request: NextRequest, error: string) {
-  const ip = getRequestIp(request.headers) || 'unknown'
-  const rateLimit = takeRateLimitToken(`agent-auth-failed:${ip}`, FAILED_AGENT_AUTH_LIMIT)
+async function buildFailedAgentAuthResponse(request: NextRequest, error: string) {
+  const ip = getRequestIp(request.headers)
+  if (!ip) {
+    return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
+  }
+  const rateLimit = await takeRateLimitToken(`agent-auth-failed:${ip}`, FAILED_AGENT_AUTH_LIMIT)
 
   if (rateLimit.limited) {
     return NextResponse.json(
@@ -45,7 +48,7 @@ export async function requireAgentApiKey(
   if (!authHeader.startsWith('Bearer sk-')) {
     return {
       agent: null,
-      response: buildFailedAgentAuthResponse(request, 'Unauthorized'),
+      response: await buildFailedAgentAuthResponse(request, 'Unauthorized'),
     }
   }
 
@@ -53,7 +56,7 @@ export async function requireAgentApiKey(
   if (!agent) {
     return {
       agent: null,
-      response: buildFailedAgentAuthResponse(request, 'Invalid API key'),
+      response: await buildFailedAgentAuthResponse(request, 'Invalid API key'),
     }
   }
 

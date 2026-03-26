@@ -245,6 +245,62 @@ h1, h2, h3 {
   box-shadow: 0 0 0 3px var(--accent-cyan-dim);
 }
 
+.input-file-prominent {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  font-family: var(--font-body);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.input-file-prominent:hover:not(:disabled) {
+  border-color: var(--accent-cyan);
+  background: rgba(8, 145, 178, 0.03);
+}
+
+.input-file-prominent:focus-within,
+.input-file-prominent:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px var(--accent-cyan-dim);
+  outline: none;
+}
+
+.input-file-prominent::file-selector-button {
+  margin-right: 12px;
+  border: 0;
+  border-radius: 9999px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, var(--accent-cyan), #0e7490);
+  color: #ffffff;
+  font-weight: 700;
+  font-family: var(--font-body);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.input-file-prominent:hover:not(:disabled)::file-selector-button,
+.input-file-prominent:focus:not(:disabled)::file-selector-button {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(8, 145, 178, 0.24);
+}
+
+.input-file-prominent:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.input-file-prominent:disabled::file-selector-button {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+  box-shadow: none;
+}
+
 select.input-dark {
   appearance: none;
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2371717a' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");

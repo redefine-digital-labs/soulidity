@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid agentMemberId' }, { status: 400 })
   }
 
-  const rateLimit = takeRateLimitToken(`agent-api-key:${identity.accountId}:${agentMemberId}`, {
+  const rateLimit = await takeRateLimitToken(`agent-api-key:${identity.accountId}:${agentMemberId}`, {
     max: 1,
     windowMs: 60 * 60 * 1000,
   })

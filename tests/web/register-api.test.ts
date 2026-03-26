@@ -56,7 +56,7 @@ describe('POST /api/register', () => {
 
     mockedPrivy.verifyAuthToken.mockResolvedValue({ userId: 'did:privy:123' })
     mockedPrivy.getUser.mockResolvedValue({
-      email: { address: 'user@example.com' },
+      email: { address: 'user@example.com', firstVerifiedAt: new Date() },
     })
     mockedPrisma.account.findUnique.mockResolvedValue(null)
     mockedPrisma.inviteCode.findUnique.mockResolvedValue({
@@ -94,7 +94,10 @@ describe('POST /api/register', () => {
 
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.toEqual({ error: '注册失败，请稍后重试' })
-    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', expect.any(Error))
+    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', {
+      name: 'Error',
+      message: 'boom',
+    })
 
     consoleError.mockRestore()
   })
@@ -112,7 +115,10 @@ describe('POST /api/register', () => {
 
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.toEqual({ error: '注册失败，请稍后重试' })
-    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', expect.any(Error))
+    expect(consoleError).toHaveBeenCalledWith('[register] unexpected error:', {
+      name: 'Error',
+      message: 'privy unavailable',
+    })
 
     consoleError.mockRestore()
   })
@@ -145,6 +151,23 @@ describe('POST /api/register', () => {
     await expect(response.json()).resolves.toEqual({ error: '无效的认证令牌' })
   })
 
+  it('rejects requests without a trusted client IP before calling Privy', async () => {
+    const { POST } = await import('../../web/app/api/register/route.ts')
+    const response = await POST(new Request('http://localhost/api/register', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ code: 'ABCD1234' }),
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Unable to determine client IP' })
+    expect(mockedPrivy.verifyAuthToken).not.toHaveBeenCalled()
+    expect(mockedPrisma.account.findUnique).not.toHaveBeenCalled()
+  })
+
   it('rejects missing invite codes', async () => {
     const { POST } = await import('../../web/app/api/register/route.ts')
     const response = await POST(new Request('http://localhost/api/register', {
@@ -175,6 +198,18 @@ describe('POST /api/register', () => {
       method: 'POST',
       headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ code: 'not-a-code' }),
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: '邀请码格式无效' })
+  })
+
+  it('rejects non-string invite codes instead of coercing arrays into valid codes', async () => {
+    const { POST } = await import('../../web/app/api/register/route.ts')
+    const response = await POST(new Request('http://localhost/api/register', {
+      method: 'POST',
+      headers: AUTH_JSON_HEADERS,
+      body: JSON.stringify({ code: ['ABCD1234'] }),
     }) as any)
 
     expect(response.status).toBe(400)

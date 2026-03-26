@@ -6,11 +6,13 @@ export interface SoulSeriesListItem {
   category: string
   tags: string[]
   previewImages: string[]
-  oneTimePriceUsdc: number | null
-  subPriceUsdc: number | null
+  oneTimePriceUsdc: string | null
+  oneTimePlanOnChainId: string | null
+  subPriceUsdc: string | null
+  subPlanOnChainId: string | null
   subPeriodDays: number | null
   createdAt: string
-  releases: { id: string; version: string; createdAt: string }[]
+  latestRelease: SoulRelease | null
   _count: { passSnapshots: number }
 }
 
@@ -26,7 +28,6 @@ export interface SoulSeriesDetail extends SoulSeriesListItem {
   authorMemberId: string | null
   authorAddress: string
   readme: string | null
-  latestReleaseId: string | null
   status: string
   releases: SoulRelease[]
   userPass: SoulPassSnapshot | null

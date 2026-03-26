@@ -48,10 +48,14 @@ export async function GET(req: NextRequest) {
     prisma.soulSeries.findMany({
       where,
       include: {
-        releases: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { id: true, version: true, createdAt: true },
+        latestRelease: {
+          select: {
+            id: true,
+            onChainId: true,
+            version: true,
+            changelog: true,
+            createdAt: true,
+          },
         },
         _count: { select: { passSnapshots: true } },
       },

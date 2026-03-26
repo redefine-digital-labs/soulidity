@@ -4,6 +4,7 @@ const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedUploadEncrypted = vi.hoisted(() => vi.fn())
 const mockedUploadPublic = vi.hoisted(() => vi.fn())
+const mockedSealDekEnvelope = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
@@ -22,6 +23,10 @@ vi.mock('@web/lib/services/walrus', () => ({
   uploadPublic: mockedUploadPublic,
 }))
 
+vi.mock('@web/lib/services/dek-envelope', () => ({
+  sealDekEnvelope: mockedSealDekEnvelope,
+}))
+
 describe('soul upload route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -34,9 +39,10 @@ describe('soul upload route', () => {
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedUploadEncrypted.mockResolvedValue('blob-encrypted')
     mockedUploadPublic.mockResolvedValue('blob-public')
+    mockedSealDekEnvelope.mockReturnValue('mock-envelope-token')
   })
 
-  it('rejects encrypted uploads while the secure release flow is disabled', async () => {
+  it('accepts encrypted uploads and returns blobId with contentHash', async () => {
     const { POST } = await import('../../web/app/api/souls/upload/route.ts')
     const form = new FormData()
     form.append('file', new File([Buffer.alloc(64, 7)], 'bundle.bin', { type: 'application/octet-stream' }))
@@ -48,11 +54,18 @@ describe('soul upload route', () => {
       body: form,
     }) as any)
 
-    expect(response.status).toBe(409)
-    await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringContaining('release publishing'),
-    })
-    expect(mockedUploadEncrypted).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.blobId).toBe('blob-public')
+    expect(body.contentHash).toBeDefined()
+    expect(body.sealDekEnvelope).toBe('mock-envelope-token')
+    expect(mockedSealDekEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dek: expect.any(Buffer),
+        iv: expect.any(Buffer),
+        contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    )
   })
 
   it('rejects non-file FormData values instead of crashing on arrayBuffer()', async () => {
@@ -70,6 +83,20 @@ describe('soul upload route', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
       error: 'No file provided',
+    })
+    expect(mockedUploadPublic).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when multipart parsing fails before file validation', async () => {
+    const { POST } = await import('../../web/app/api/souls/upload/route.ts')
+    const response = await POST({
+      headers: new Headers({ 'content-length': '128' }),
+      formData: vi.fn().mockRejectedValue(new Error('bad multipart body')),
+    } as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Invalid multipart form data',
     })
     expect(mockedUploadPublic).not.toHaveBeenCalled()
   })

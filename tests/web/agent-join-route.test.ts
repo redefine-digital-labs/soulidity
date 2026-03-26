@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const AGENT_WALLET = `0x${'0'.repeat(63)}1`
+const CHALLENGE_NONCE = '550e8400-e29b-41d4-a716-446655440000'
+
 const mockedPrisma = vi.hoisted(() => ({
+  $transaction: vi.fn(),
   walletChallenge: {
     create: vi.fn(),
     deleteMany: vi.fn(),
@@ -34,6 +38,7 @@ vi.mock('@web/lib/rate-limit', () => ({
 }))
 
 vi.mock('@mysten/sui/verify', () => mockedVerify)
+vi.mock('@web/lib/sui-verify', () => mockedVerify)
 
 describe('agent join route hardening', () => {
   beforeEach(() => {
@@ -48,6 +53,10 @@ describe('agent join route hardening', () => {
     mockedPrisma.walletChallenge.deleteMany.mockResolvedValue({ count: 0 })
     mockedPrisma.walletChallenge.create.mockResolvedValue({
       nonce: 'nonce-1',
+    })
+    mockedPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockedPrisma) => Promise<unknown>) => callback(mockedPrisma))
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => AGENT_WALLET,
     })
   })
 
@@ -108,8 +117,8 @@ describe('agent join route hardening', () => {
 
     let settled = false
     responsePromise.then(() => { settled = true })
-    await Promise.resolve()
-    await Promise.resolve()
+    // Allow enough microtask ticks for the async rate limiter + response to settle
+    for (let i = 0; i < 10; i++) await Promise.resolve()
 
     const settledBeforeCleanup = settled
     resolveCleanup?.({ count: 0 })
@@ -118,6 +127,28 @@ describe('agent join route hardening', () => {
     expect(settledBeforeCleanup).toBe(true)
     expect(response.status).toBe(200)
     expect(mockedPrisma.walletChallenge.create).toHaveBeenCalled()
+  })
+
+  it('sanitizes stale wallet challenge cleanup failures before logging them', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockedPrisma.walletChallenge.deleteMany.mockRejectedValue(new Error('postgres://secret@db'))
+
+    const { GET } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await GET(
+      {
+        nextUrl: new URL('http://localhost/api/agent-join?address=0xabc'),
+        headers: new Headers({ host: 'localhost' }),
+      } as any,
+    )
+
+    expect(response.status).toBe(200)
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith('Failed to cleanup stale wallet challenges', {
+        errorName: 'Error',
+      })
+    })
+
+    consoleError.mockRestore()
   })
 
   it('rate limits challenge issuance before writing wallet_challenges rows', async () => {
@@ -175,7 +206,7 @@ describe('agent join route hardening', () => {
   it('rejects agent registration names longer than 100 characters', async () => {
     mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
       nonce: 'nonce-1',
-      address: `0x${'0'.repeat(63)}1`,
+      address: AGENT_WALLET,
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
     })
@@ -189,7 +220,7 @@ describe('agent join route hardening', () => {
           wallet: '0x1',
           chain: 'sui',
           name: 'x'.repeat(101),
-          nonce: 'nonce-1',
+          nonce: CHALLENGE_NONCE,
           signature: 'signature',
         }),
       }) as any,
@@ -198,6 +229,136 @@ describe('agent join route hardening', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
       error: 'name must be 100 characters or fewer',
+    })
+  })
+
+  it('rejects signatures longer than the route limit before verification work starts', async () => {
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: '0x1',
+          chain: 'sui',
+          name: 'Agent Smith',
+          nonce: CHALLENGE_NONCE,
+          signature: 's'.repeat(1025),
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'signature must be 1024 characters or fewer',
+    })
+    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-uuid challenge nonces before any DB lookup', async () => {
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: '0x1',
+          chain: 'sui',
+          name: 'Agent Smith',
+          nonce: 'not-a-uuid',
+          signature: 'signature',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'nonce must be a valid UUID from GET /api/agent-join',
+    })
+    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 when a concurrent join request wins the wallet binding race', async () => {
+    const conflict = new Error('Unique constraint failed')
+    ;(conflict as Error & { code?: string }).code = 'P2002'
+
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      nonce: CHALLENGE_NONCE,
+      address: AGENT_WALLET,
+      domain: 'localhost',
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findUnique.mockResolvedValue(null)
+    mockedPrisma.member.create.mockRejectedValue(conflict)
+
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: AGENT_WALLET,
+          chain: 'sui',
+          name: 'Concurrent Agent',
+          nonce: CHALLENGE_NONCE,
+          signature: 'signature',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'This wallet address is already registered',
+    })
+  })
+
+  it('creates pending agent members without writing the legacy member.wallet field', async () => {
+    process.env.AUTH_SECRET = 'test-auth-secret'
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      nonce: CHALLENGE_NONCE,
+      address: AGENT_WALLET,
+      domain: 'localhost',
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findUnique.mockResolvedValue(null)
+    mockedPrisma.member.create.mockResolvedValue({
+      id: 'member-agent-1',
+      displayName: 'Agent Smith',
+    })
+
+    const { POST } = await import('../../web/app/api/agent-join/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent-join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'localhost' },
+        body: JSON.stringify({
+          wallet: AGENT_WALLET,
+          chain: 'sui',
+          name: 'Agent Smith',
+          nonce: CHALLENGE_NONCE,
+          signature: 'signature',
+        }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockedPrisma.member.create).toHaveBeenCalledWith({
+      data: {
+        kind: 'agent',
+        displayName: 'Agent Smith',
+        walletBindings: {
+          create: {
+            chain: 'sui',
+            address: AGENT_WALLET,
+            isPrimary: true,
+          },
+        },
+      },
+      select: { id: true, displayName: true },
     })
   })
 })

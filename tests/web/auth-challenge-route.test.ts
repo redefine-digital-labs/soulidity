@@ -108,8 +108,8 @@ describe('auth challenge route', () => {
 
     let settled = false
     responsePromise.then(() => { settled = true })
-    await Promise.resolve()
-    await Promise.resolve()
+    // Allow enough microtask ticks for the async rate limiter + response to settle
+    for (let i = 0; i < 10; i++) await Promise.resolve()
 
     const settledBeforeCleanup = settled
     resolveCleanup?.({ count: 0 })
@@ -118,6 +118,28 @@ describe('auth challenge route', () => {
     expect(settledBeforeCleanup).toBe(true)
     expect(response.status).toBe(200)
     expect(mockedPrisma.walletChallenge.create).toHaveBeenCalled()
+  })
+
+  it('sanitizes stale challenge cleanup failures before logging them', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockedPrisma.walletChallenge.deleteMany.mockRejectedValue(new Error('postgres://secret@db'))
+
+    const { GET } = await import('../../web/app/api/auth/challenge/route.ts')
+    const response = await GET(
+      {
+        nextUrl: new URL('http://localhost/api/auth/challenge?address=0x1'),
+        headers: new Headers({ host: 'evil.example.com' }),
+      } as any,
+    )
+
+    expect(response.status).toBe(200)
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith('Failed to cleanup stale wallet challenges', {
+        errorName: 'Error',
+      })
+    })
+
+    consoleError.mockRestore()
   })
 
   it('rate limits challenge creation before writing wallet_challenges rows', async () => {

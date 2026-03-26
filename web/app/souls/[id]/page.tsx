@@ -6,7 +6,6 @@ import { useSoulDetail } from '@web/lib/souls/queries'
 import { SoulPricing } from '@web/components/souls/soul-pricing'
 import { PlanSelector } from '@web/components/souls/plan-selector'
 import { PurchaseButton } from '@web/components/souls/purchase-button'
-import { WalletConnect } from '@web/components/souls/wallet-connect'
 import { ReleaseList } from '@web/components/souls/release-list'
 import { PassStatus } from '@web/components/souls/pass-status'
 
@@ -18,7 +17,12 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
 
   if (isLoading) {
     return (
-      <div className="max-w-4xl mx-auto px-6 py-12 text-center" style={{ color: 'var(--text-muted)' }}>
+      <div
+        role="status"
+        aria-live="polite"
+        className="max-w-4xl mx-auto px-6 py-12 text-center"
+        style={{ color: 'var(--text-muted)' }}
+      >
         Loading...
       </div>
     )
@@ -71,7 +75,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                 <img
                   key={i}
                   src={img}
-                  alt=""
+                  alt={`Preview image ${i + 1} for ${soul.name}`}
                   loading="lazy"
                   decoding="async"
                   className="h-40 rounded-lg object-cover flex-shrink-0"
@@ -86,7 +90,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               <h2 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
                 README
               </h2>
-              <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+              <div className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: 'var(--text-secondary)' }}>
                 {soul.readme}
               </div>
             </div>
@@ -111,7 +115,12 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
             />
 
             {soul.userPass ? (
-              <PassStatus pass={soul.userPass} />
+              <PassStatus
+                pass={soul.userPass}
+                seriesOnChainId={soul.onChainId}
+                subPlanOnChainId={soul.subPlanOnChainId}
+                subPriceUsdc={soul.subPriceUsdc}
+              />
             ) : (
               <>
                 <PlanSelector
@@ -121,10 +130,20 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                   onChange={setPlanType}
                 />
 
-                <WalletConnect />
-
                 <PurchaseButton
                   planType={effectivePlanType}
+                  seriesOnChainId={soul.onChainId}
+                  releaseOnChainId={soul.latestRelease?.onChainId ?? null}
+                  planId={
+                    effectivePlanType === 'onetime'
+                      ? (soul.oneTimePlanOnChainId ?? '')
+                      : (soul.subPlanOnChainId ?? '')
+                  }
+                  amountAtomic={
+                    effectivePlanType === 'onetime'
+                      ? soul.oneTimePriceUsdc
+                      : soul.subPriceUsdc
+                  }
                 />
               </>
             )}

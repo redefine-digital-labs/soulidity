@@ -25,8 +25,11 @@ public struct SubscriptionRenewed has copy, drop {
 
 // === Structs ===
 
-/// Permanent access pass, locked to a specific release
-public struct PerpetualPass has key, store {
+/// Permanent access pass, locked to a specific release.
+/// `owner` mirrors the Sui object owner so events and off-chain mirrors can
+/// read ownership without re-parsing object metadata. Package-level transfer
+/// helpers must keep both sources of truth in sync.
+public struct PerpetualPass has key {
     id: UID,
     series_id: ID,
     release_id: ID,
@@ -34,8 +37,10 @@ public struct PerpetualPass has key, store {
     agent_grant: Option<address>,
 }
 
-/// Time-limited subscription pass
-public struct SubscriptionPass has key, store {
+/// Time-limited subscription pass.
+/// `owner` mirrors the Sui object owner for the same reason as
+/// `PerpetualPass.owner`, and must only change through package transfer helpers.
+public struct SubscriptionPass has key {
     id: UID,
     series_id: ID,
     owner: address,
@@ -44,7 +49,7 @@ public struct SubscriptionPass has key, store {
     agent_grant: Option<address>,
 }
 
-// === Internal Mint Functions (called by purchase/relayer) ===
+// === Internal Mint Functions (called by purchase) ===
 
 /// Mint a perpetual pass (package-level visibility)
 public(package) fun mint_perpetual(
@@ -98,15 +103,19 @@ public(package) fun mint_subscription(
     pass
 }
 
-/// Renew a subscription pass
+/// Renew a subscription pass, adopting the plan's current period.
+/// When an author replaces a plan with a different period, existing
+/// subscribers naturally migrate to the new period on their next renewal.
 public(package) fun renew_subscription_internal(
     pass: &mut SubscriptionPass,
+    new_period_ms: u64,
     clock: &sui::clock::Clock,
 ) {
     let now = clock.timestamp_ms();
     // If expired, renew from now; otherwise extend from current expiry
     let base = if (now > pass.expires_at) { now } else { pass.expires_at };
-    pass.expires_at = base + pass.period_ms;
+    pass.period_ms = new_period_ms;
+    pass.expires_at = base + new_period_ms;
 
     event::emit(SubscriptionRenewed {
         pass_id: object::id(pass),
@@ -137,10 +146,39 @@ public(package) fun subscription_agent_grant_mut(pass: &mut SubscriptionPass): &
     &mut pass.agent_grant
 }
 
-public(package) fun set_perpetual_owner(pass: &mut PerpetualPass, new_owner: address) {
-    pass.owner = new_owner;
+public(package) fun transfer_perpetual(mut pass: PerpetualPass, recipient: address) {
+    pass.owner = recipient;
+    transfer::transfer(pass, recipient);
 }
 
-public(package) fun set_subscription_owner(pass: &mut SubscriptionPass, new_owner: address) {
-    pass.owner = new_owner;
+public(package) fun transfer_subscription(mut pass: SubscriptionPass, recipient: address) {
+    pass.owner = recipient;
+    transfer::transfer(pass, recipient);
+}
+
+// === Test Helpers ===
+
+#[test_only]
+public(package) fun destroy_perpetual_for_testing(pass: PerpetualPass) {
+    let PerpetualPass {
+        id,
+        series_id: _,
+        release_id: _,
+        owner: _,
+        agent_grant: _,
+    } = pass;
+    id.delete();
+}
+
+#[test_only]
+public(package) fun destroy_subscription_for_testing(pass: SubscriptionPass) {
+    let SubscriptionPass {
+        id,
+        series_id: _,
+        owner: _,
+        expires_at: _,
+        period_ms: _,
+        agent_grant: _,
+    } = pass;
+    id.delete();
 }

@@ -7,7 +7,7 @@ export async function GET() {
   const { error } = await requireAdmin()
   if (error) return error
 
-  const invites = await prisma.inviteCode.findMany({ orderBy: { createdAt: 'desc' } })
+  const invites = await prisma.inviteCode.findMany({ orderBy: { createdAt: 'desc' }, take: 100 })
   return NextResponse.json(invites)
 }
 

@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const createRateLimit = takeRateLimitToken(
+  const createRateLimit = await takeRateLimitToken(
     `agents-create:${identity.accountId}`,
     AGENT_CREATE_RATE_LIMIT,
   )
@@ -218,7 +218,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'id 格式无效' }, { status: 400 })
   }
 
-  const rateLimit = takeRateLimitToken(`agents-regenerate:${identity.accountId}:${id}`, {
+  const rateLimit = await takeRateLimitToken(`agents-regenerate:${identity.accountId}:${id}`, {
     max: 1,
     windowMs: 60 * 60 * 1000,
   })

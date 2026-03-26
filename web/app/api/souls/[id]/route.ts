@@ -26,6 +26,15 @@ export async function GET(
           createdAt: true,
         },
       },
+      latestRelease: {
+        select: {
+          id: true,
+          onChainId: true,
+          version: true,
+          changelog: true,
+          createdAt: true,
+        },
+      },
       _count: { select: { passSnapshots: true } },
     },
   })

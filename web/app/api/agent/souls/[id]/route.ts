@@ -30,6 +30,15 @@ export async function GET(
       oneTimePriceUsdc: true,
       subPriceUsdc: true,
       subPeriodDays: true,
+      latestRelease: {
+        select: {
+          id: true,
+          onChainId: true,
+          version: true,
+          contentHash: true,
+          createdAt: true,
+        },
+      },
       releases: {
         orderBy: { createdAt: 'desc' },
         take: 5,

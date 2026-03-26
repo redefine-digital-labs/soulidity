@@ -1,15 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { isValidClaimToken } from '@web/lib/auth/agent-claim-token'
 import { privy } from '@web/lib/auth/privy'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { getRequestIp, MISSING_CLIENT_IP_ERROR, takeRateLimitToken } from '@web/lib/rate-limit'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 import { buildAgentApiKeyData, generateApiKey } from '@web/lib/auth/resolve-agent'
-import { createClaimToken } from '../route'
 
 export const dynamic = 'force-dynamic'
 
 // POST /api/agent-join/claim-register — register new account + claim agent in one step
 export async function POST(request: NextRequest) {
+  const ip = getRequestIp(request.headers)
+  if (!ip) {
+    return NextResponse.json({ error: MISSING_CLIENT_IP_ERROR }, { status: 400 })
+  }
+
+  const rl = await takeRateLimitToken(`claim-register:${ip}`, {
+    max: 10,
+    windowMs: 10 * 60 * 1000,
+  })
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'Too many requests, please try again later' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } }
+    )
+  }
+
   const authHeader = request.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -25,33 +41,40 @@ export async function POST(request: NextRequest) {
 
   const privyDid = claims.userId
 
+  const memberRateLimit = await takeRateLimitToken(`claim-register-member:${privyDid}`, {
+    max: 10,
+    windowMs: 10 * 60 * 1000,
+  })
+  if (memberRateLimit.limited) {
+    return NextResponse.json(
+      { error: 'Too many requests, please try again later' },
+      { status: 429, headers: { 'Retry-After': String(memberRateLimit.retryAfterSeconds) } }
+    )
+  }
+
   const body = await request.json().catch(() => null)
-  if (!body?.id || !body?.token) {
+  if (
+    !body
+    || typeof body.id !== 'string'
+    || typeof body.token !== 'string'
+    || body.id.trim().length === 0
+    || body.token.trim().length === 0
+  ) {
     return NextResponse.json({ error: 'id and token are required' }, { status: 400 })
   }
 
   // Verify HMAC claim token
-  if (createClaimToken(body.id) !== body.token) {
+  if (!isValidClaimToken(body.id, body.token)) {
     return NextResponse.json({ error: 'Invalid claim link' }, { status: 403 })
   }
 
-  // Rate limit
-  const rl = takeRateLimitToken(`claim-register:${privyDid}`, {
-    max: 10,
-    windowMs: 10 * 60 * 1000,
-  })
-  if (rl.limited) {
-    return NextResponse.json(
-      { error: 'Too many requests, please try again later' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } }
-    )
-  }
-
-  // Get Privy user email
+  // Get Privy user email (require verified)
   const privyUser = await privy.getUser(privyDid)
-  const email = privyUser.email?.address?.toLowerCase()
+  const email = privyUser.email?.firstVerifiedAt
+    ? privyUser.email.address.toLowerCase()
+    : null
   if (!email) {
-    return NextResponse.json({ error: 'No email found' }, { status: 400 })
+    return NextResponse.json({ error: 'No verified email found' }, { status: 400 })
   }
 
   // Pre-check: account with this privyDid already exists
@@ -173,7 +196,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.error('[claim-register] unexpected error:', error)
+    const errorDetails = error instanceof Error
+      ? { name: error.name, message: error.message }
+      : { name: 'UnknownError', message: 'Unknown error' }
+    console.error('[claim-register] unexpected error:', errorDetails)
     return NextResponse.json({ error: 'Registration failed' }, { status: 500 })
   }
 }

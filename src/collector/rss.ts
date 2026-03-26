@@ -12,12 +12,12 @@ const parser = new Parser({ timeout: 10000 })
 const MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 export async function collectRss(): Promise<CollectedItem[]> {
-  const items: CollectedItem[] = []
   const cutoff = Date.now() - MAX_AGE_MS
 
-  for (const feed of RSS_FEEDS) {
-    try {
+  const results = await Promise.allSettled(
+    RSS_FEEDS.map(async (feed) => {
       const result = await parser.parseURL(feed.url)
+      const items: CollectedItem[] = []
       for (const entry of result.items ?? []) {
         if (!entry.title || !entry.link) continue
         if (!entry.isoDate) continue
@@ -32,10 +32,18 @@ export async function collectRss(): Promise<CollectedItem[]> {
           raw_data: entry,
         })
       }
-    } catch (err) {
-      console.error(`Failed to fetch RSS from ${feed.name}:`, err)
+      return items
+    }),
+  )
+
+  const items: CollectedItem[] = []
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]
+    if (r.status === 'fulfilled') {
+      items.push(...r.value)
+    } else {
+      console.error(`Failed to fetch RSS from ${RSS_FEEDS[i].name}:`, r.reason)
     }
   }
-
   return items
 }

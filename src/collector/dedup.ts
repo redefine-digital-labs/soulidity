@@ -24,11 +24,12 @@ export async function isDuplicate(
     return { duplicate: true, hash, matchedId: exactMatch.id }
   }
 
-  // Slow path: Jaccard similarity on recent titles
+  // Slow path: Jaccard similarity on recent titles (capped to avoid full scan)
   const rows = await prisma.rawItem.findMany({
     where: { status: { in: DEDUP_REFERENCE_STATUSES }, createdAt: { gte: since } },
     select: { id: true, title: true, content: true, url: true },
     orderBy: { createdAt: 'desc' },
+    take: 500,
   })
 
   const match = findDuplicateMatch(item, rows)

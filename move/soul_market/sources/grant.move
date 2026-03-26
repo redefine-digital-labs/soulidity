@@ -3,6 +3,13 @@ module soul_market::grant;
 use sui::event;
 use soul_market::pass::{Self, PerpetualPass, SubscriptionPass};
 
+// === Errors ===
+
+const E_NOT_OWNER: u64 = 1;
+const E_NO_AGENT_GRANT: u64 = 2;
+const E_SELF_GRANT: u64 = 4;
+const E_INVALID_AGENT: u64 = 5;
+
 // === Events ===
 
 public struct AgentGrantSet has copy, drop {
@@ -15,12 +22,6 @@ public struct AgentGrantRevoked has copy, drop {
     old_agent: address,
 }
 
-public struct PassTransferred has copy, drop {
-    pass_id: ID,
-    from: address,
-    to: address,
-}
-
 // === Agent Grant: Perpetual ===
 
 public entry fun set_agent_grant_perpetual(
@@ -28,28 +29,47 @@ public entry fun set_agent_grant_perpetual(
     agent: address,
     ctx: &TxContext,
 ) {
-    assert!(pass.perpetual_owner() == ctx.sender(), 1); // ENotOwner
+    assert!(pass.perpetual_owner() == ctx.sender(), E_NOT_OWNER);
+    assert!(agent != @0x0, E_INVALID_AGENT);
+    assert!(agent != ctx.sender(), E_SELF_GRANT);
 
+    let pass_id = object::id(pass);
     let grant_mut = pass::perpetual_agent_grant_mut(pass);
+    let mut should_emit_set = true;
+    if (grant_mut.is_some()) {
+        let old_agent = grant_mut.extract();
+        if (old_agent != agent) {
+            event::emit(AgentGrantRevoked {
+                pass_id,
+                old_agent,
+            });
+        } else {
+            should_emit_set = false;
+        };
+    };
     *grant_mut = option::some(agent);
 
-    event::emit(AgentGrantSet {
-        pass_id: object::id(pass),
-        agent,
-    });
+    if (should_emit_set) {
+        event::emit(AgentGrantSet {
+            pass_id,
+            agent,
+        });
+    };
 }
 
 public entry fun revoke_agent_grant_perpetual(
     pass: &mut PerpetualPass,
     ctx: &TxContext,
 ) {
-    assert!(pass.perpetual_owner() == ctx.sender(), 1); // ENotOwner
+    assert!(pass.perpetual_owner() == ctx.sender(), E_NOT_OWNER);
 
+    let pass_id = object::id(pass);
     let grant_mut = pass::perpetual_agent_grant_mut(pass);
+    assert!(grant_mut.is_some(), E_NO_AGENT_GRANT);
     let old_agent = grant_mut.extract();
 
     event::emit(AgentGrantRevoked {
-        pass_id: object::id(pass),
+        pass_id,
         old_agent,
     });
 }
@@ -61,90 +81,47 @@ public entry fun set_agent_grant_subscription(
     agent: address,
     ctx: &TxContext,
 ) {
-    assert!(pass.subscription_owner() == ctx.sender(), 1); // ENotOwner
+    assert!(pass.subscription_owner() == ctx.sender(), E_NOT_OWNER);
+    assert!(agent != @0x0, E_INVALID_AGENT);
+    assert!(agent != ctx.sender(), E_SELF_GRANT);
 
+    let pass_id = object::id(pass);
     let grant_mut = pass::subscription_agent_grant_mut(pass);
+    let mut should_emit_set = true;
+    if (grant_mut.is_some()) {
+        let old_agent = grant_mut.extract();
+        if (old_agent != agent) {
+            event::emit(AgentGrantRevoked {
+                pass_id,
+                old_agent,
+            });
+        } else {
+            should_emit_set = false;
+        };
+    };
     *grant_mut = option::some(agent);
 
-    event::emit(AgentGrantSet {
-        pass_id: object::id(pass),
-        agent,
-    });
+    if (should_emit_set) {
+        event::emit(AgentGrantSet {
+            pass_id,
+            agent,
+        });
+    };
 }
 
 public entry fun revoke_agent_grant_subscription(
     pass: &mut SubscriptionPass,
     ctx: &TxContext,
 ) {
-    assert!(pass.subscription_owner() == ctx.sender(), 1); // ENotOwner
+    assert!(pass.subscription_owner() == ctx.sender(), E_NOT_OWNER);
 
+    let pass_id = object::id(pass);
     let grant_mut = pass::subscription_agent_grant_mut(pass);
+    assert!(grant_mut.is_some(), E_NO_AGENT_GRANT);
     let old_agent = grant_mut.extract();
 
     event::emit(AgentGrantRevoked {
-        pass_id: object::id(pass),
+        pass_id,
         old_agent,
     });
-}
-
-// === Transfer ===
-
-public entry fun transfer_perpetual_pass(
-    mut pass: PerpetualPass,
-    to: address,
-    ctx: &TxContext,
-) {
-    let from = ctx.sender();
-    assert!(pass.perpetual_owner() == from, 1); // ENotOwner
-    let pass_id = object::id(&pass);
-
-    // Clear agent grant on transfer
-    let grant_mut = pass::perpetual_agent_grant_mut(&mut pass);
-    if (grant_mut.is_some()) {
-        let old_agent = grant_mut.extract();
-        event::emit(AgentGrantRevoked {
-            pass_id,
-            old_agent,
-        });
-    };
-
-    pass::set_perpetual_owner(&mut pass, to);
-
-    event::emit(PassTransferred {
-        pass_id,
-        from,
-        to,
-    });
-
-    transfer::public_transfer(pass, to);
-}
-
-public entry fun transfer_subscription_pass(
-    mut pass: SubscriptionPass,
-    to: address,
-    ctx: &TxContext,
-) {
-    let from = ctx.sender();
-    assert!(pass.subscription_owner() == from, 1); // ENotOwner
-    let pass_id = object::id(&pass);
-
-    // Clear agent grant on transfer
-    let grant_mut = pass::subscription_agent_grant_mut(&mut pass);
-    if (grant_mut.is_some()) {
-        let old_agent = grant_mut.extract();
-        event::emit(AgentGrantRevoked {
-            pass_id,
-            old_agent,
-        });
-    };
-
-    pass::set_subscription_owner(&mut pass, to);
-
-    event::emit(PassTransferred {
-        pass_id,
-        from,
-        to,
-    });
-
-    transfer::public_transfer(pass, to);
 }

@@ -1,14 +1,12 @@
 'use client'
 
+import { formatAtomicUsdcForDisplay } from '@web/lib/souls/price-format'
+
 interface SoulPricingProps {
-  oneTime: number | null
-  subscription: number | null
+  oneTime: string | null
+  subscription: string | null
   periodDays: number | null
   compact?: boolean
-}
-
-function formatUsdc(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
 }
 
 export function SoulPricing({ oneTime, subscription, periodDays, compact }: SoulPricingProps) {
@@ -20,11 +18,11 @@ export function SoulPricing({ oneTime, subscription, periodDays, compact }: Soul
     return (
       <div className="flex gap-2 text-xs">
         {oneTime != null && (
-          <span style={{ color: 'var(--accent-cyan)' }}>{formatUsdc(oneTime)}</span>
+          <span style={{ color: 'var(--accent-cyan)' }}>{formatAtomicUsdcForDisplay(oneTime)}</span>
         )}
         {subscription != null && periodDays != null && (
           <span style={{ color: 'var(--text-secondary)' }}>
-            {formatUsdc(subscription)}/{periodDays}d
+            {formatAtomicUsdcForDisplay(subscription)}/{periodDays}d
           </span>
         )}
       </div>
@@ -36,14 +34,14 @@ export function SoulPricing({ oneTime, subscription, periodDays, compact }: Soul
       {oneTime != null && (
         <div className="flex justify-between text-sm">
           <span style={{ color: 'var(--text-secondary)' }}>One-time</span>
-          <span className="font-semibold" style={{ color: 'var(--accent-cyan)' }}>{formatUsdc(oneTime)}</span>
+          <span className="font-semibold" style={{ color: 'var(--accent-cyan)' }}>{formatAtomicUsdcForDisplay(oneTime)}</span>
         </div>
       )}
       {subscription != null && periodDays != null && (
         <div className="flex justify-between text-sm">
           <span style={{ color: 'var(--text-secondary)' }}>Subscription</span>
           <span className="font-semibold" style={{ color: 'var(--accent-cyan)' }}>
-            {formatUsdc(subscription)} / {periodDays} days
+            {formatAtomicUsdcForDisplay(subscription)} / {periodDays} days
           </span>
         </div>
       )}
