@@ -31,7 +31,7 @@ fun init(otw: SOUL, ctx: &mut TxContext) {
     let soul_display = create_display(&publisher, ctx);
 
     transfer::public_transfer(soul_display, recipient);
-    transfer::public_transfer(publisher, recipient);
+    publisher.burn();
 }
 
 public fun mint(
@@ -134,7 +134,7 @@ public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
     let publisher = package::claim(SOUL {}, ctx);
     let soul_display = create_display(&publisher, ctx);
     transfer::public_transfer(soul_display, recipient);
-    transfer::public_transfer(publisher, recipient);
+    publisher.burn();
 }
 
 #[test_only]

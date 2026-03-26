@@ -134,7 +134,7 @@ fun public_mint_uses_current_context_sender_as_creator() {
 }
 
 #[test]
-fun init_for_testing_creates_display_with_required_fields() {
+fun init_for_testing_creates_display_with_required_fields_and_burns_publisher() {
     let publisher_owner = @0xCAFE;
     let mut scenario = ts::begin(@0x0);
 
@@ -146,7 +146,6 @@ fun init_for_testing_creates_display_with_required_fields() {
     ts::next_tx(&mut scenario, publisher_owner);
     {
         let soul_display: display::Display<soul::Soul> = ts::take_from_sender(&scenario);
-        let publisher: package::Publisher = ts::take_from_sender(&scenario);
         let fields = display::fields(&soul_display);
         let name_key = string::utf8(b"name");
         let description_key = string::utf8(b"description");
@@ -162,9 +161,9 @@ fun init_for_testing_creates_display_with_required_fields() {
         assert!(*fields[&image_key].as_bytes() == b"{image_url}", 6);
         assert!(*fields[&creator_key].as_bytes() == b"{creator}", 7);
         assert!(display::version(&soul_display) == 1, 8);
+        assert!(!ts::has_most_recent_for_sender<package::Publisher>(&scenario), 9);
 
         std::unit_test::destroy(soul_display);
-        std::unit_test::destroy(publisher);
     };
 
     ts::end(scenario);

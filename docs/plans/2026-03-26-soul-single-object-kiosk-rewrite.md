@@ -74,6 +74,7 @@ public struct Soul has key, store {
   - `Soul` 定义
   - `mint_soul`
   - `agent_grant` 的最小状态读写
+  - 初始化 `Display<Soul>` 后立即 burn `Publisher`
 - `market.move`
   - `TransferPolicy<Soul>` 初始化
   - Kiosk 首发上架
@@ -142,6 +143,11 @@ public struct Soul has key, store {
 - `creator` <- `Soul.creator`
 
 默认展示图使用铸造时选定的固定封面，不跟随链下页面更新。
+
+初始化约束：
+
+- `soul::init` / `init_for_testing` 在创建完 `Display<Soul>` 后立即 burn `Publisher`。
+- `Publisher` 不向外部地址泄漏，避免外部再次创建额外的 `TransferPolicy<Soul>`。
 
 ### Seal 文档 ID
 
