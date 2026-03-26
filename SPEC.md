@@ -32,3 +32,4 @@
 5. 相关旧注释、旧类型、旧契约测试同步清理。
 6. 手动发布 release 页面上传加密 bundle 后，`sealDekEnvelope` 必须随 mirror 请求传到后端并持久化为 release `sealSidecar`，agent access 不能再因为该链路丢字段而返回 `sealSidecar: null`。
 7. Agent Souls access 在扫描多个 candidate pass 时，只要出现任一瞬时链上校验失败且最终没有任何 pass 被确认为有效，就必须返回可重试错误，不得因为后续非瞬时失败把结果误降级为 403。
+8. USDC coin selection 不能因为固定页数上限把“余额足够但分页很深”的钱包误判为资金不足；只有在真正扫完整个分页后仍不够，才允许返回 insufficient funds。

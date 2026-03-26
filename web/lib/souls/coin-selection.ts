@@ -17,8 +17,6 @@ export interface CoinPageLoaderLike {
   }): Promise<CoinPageLike>
 }
 
-const MAX_COIN_SELECTION_PAGES = 10
-
 function toCoinBalance(value: string | number | bigint): bigint {
   if (typeof value === 'bigint') return value
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -77,8 +75,9 @@ export async function selectCoinObjectIdsForAmountAcrossPages(
   let sawPositiveBalanceCoin = false
   let sawAnyCoin = false
   let cursor: string | null | undefined = undefined
+  const seenCursors = new Set<string>()
 
-  for (let pageCount = 0; pageCount < MAX_COIN_SELECTION_PAGES; pageCount += 1) {
+  while (true) {
     const page = await client.getCoins({
       owner: params.owner,
       coinType: params.coinType,
@@ -101,10 +100,18 @@ export async function selectCoinObjectIdsForAmountAcrossPages(
       }
     }
 
-    if (!page.hasNextPage || !page.nextCursor) {
+    if (!page.hasNextPage) {
       break
     }
 
+    if (!page.nextCursor) {
+      throw new Error('Coin pagination reported additional pages without a cursor')
+    }
+    if (seenCursors.has(page.nextCursor)) {
+      throw new Error('Coin pagination cursor repeated before pagination completed')
+    }
+
+    seenCursors.add(page.nextCursor)
     cursor = page.nextCursor
   }
 

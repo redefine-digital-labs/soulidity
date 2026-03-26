@@ -94,12 +94,12 @@ describe('selectCoinObjectIdsForAmountAcrossPages', () => {
     })).resolves.toBeNull()
   })
 
-  it('stops paginating after a safe maximum page count', async () => {
+  it('keeps paginating past the tenth page before reporting insufficient funds', async () => {
     const client = {
       getCoins: vi.fn(),
     }
 
-    for (let index = 0; index < 20; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       client.getCoins.mockResolvedValueOnce({
         data: [{ coinObjectId: `coin-${index}`, balance: '1' }],
         hasNextPage: true,
@@ -107,11 +107,45 @@ describe('selectCoinObjectIdsForAmountAcrossPages', () => {
       })
     }
 
+    client.getCoins.mockResolvedValueOnce({
+      data: [{ coinObjectId: 'coin-10', balance: '10' }],
+      hasNextPage: false,
+      nextCursor: null,
+    })
+
     await expect(selectCoinObjectIdsForAmountAcrossPages(client, {
       owner: '0x1',
       coinType: '0x2::coin::Coin<0x2::sui::SUI>',
-      requiredAmount: 1_000_000n,
-    })).resolves.toBeNull()
-    expect(client.getCoins).toHaveBeenCalledTimes(10)
+      requiredAmount: 20n,
+    })).resolves.toEqual([
+      'coin-0',
+      'coin-1',
+      'coin-2',
+      'coin-3',
+      'coin-4',
+      'coin-5',
+      'coin-6',
+      'coin-7',
+      'coin-8',
+      'coin-9',
+      'coin-10',
+    ])
+    expect(client.getCoins).toHaveBeenCalledTimes(11)
+  })
+
+  it('fails distinctly when pagination claims more pages without a usable nextCursor', async () => {
+    const client = {
+      getCoins: vi.fn().mockResolvedValue({
+        data: [{ coinObjectId: 'coin-a', balance: '1' }],
+        hasNextPage: true,
+        nextCursor: null,
+      }),
+    }
+
+    await expect(selectCoinObjectIdsForAmountAcrossPages(client, {
+      owner: '0x1',
+      coinType: '0x2::coin::Coin<0x2::sui::SUI>',
+      requiredAmount: 2n,
+    })).rejects.toThrow('Coin pagination reported additional pages without a cursor')
   })
 })

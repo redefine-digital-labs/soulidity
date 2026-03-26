@@ -19,4 +19,7 @@
 6. 收口手动 release mirror / agent access follow-up：
    - 手动 release 页面传递 `sealDekEnvelope`，后端复用统一 helper 持久化 `sealSidecar`
    - agent access 记录任一 retryable pass 校验失败，避免被后续 4xx/403 覆盖
-7. 跑相关测试与 typecheck，确认无残留。
+7. 收口 coin selection follow-up：
+   - 去掉分页扫描的 10 页硬上限，改为扫到分页结束
+   - 对缺失/重复 cursor 的异常分页返回 distinct failure，避免误报余额不足
+8. 跑相关测试与 typecheck，确认无残留。
