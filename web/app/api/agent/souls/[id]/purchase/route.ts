@@ -19,6 +19,20 @@ const AGENT_PURCHASE_RATE_LIMIT = {
   windowMs: 60 * 1000,
 } as const
 
+async function assertCoreListingStillActive(params: {
+  tx: ReturnType<typeof buildBuySecondarySoulTx>
+  buyerAddress: string
+}) {
+  const inspection = await suiClient.devInspectTransactionBlock({
+    sender: params.buyerAddress,
+    transactionBlock: params.tx,
+  })
+
+  if (inspection.error || (inspection.effects?.status?.status && inspection.effects.status.status !== 'success')) {
+    throw new OnChainVerificationError('Soul listing is no longer active on chain')
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -78,17 +92,23 @@ export async function POST(
     }
     const tx = isSecondary ? buildBuySecondarySoulTx(txParams) : buildBuySoulTx(txParams)
     tx.setSender(agentAddress)
+    if (isSecondary) {
+      await assertCoreListingStillActive({
+        tx,
+        buyerAddress: agentAddress,
+      })
+    }
 
     const txBytes = await tx.build({ client: suiClient })
     const txBytesBase64 = Buffer.from(txBytes).toString('base64')
     const preparedPurchase = await createPreparedSoulPurchase({
       agentMemberId: agent.agentMemberId,
-        soulOnChainId: soul.onChainId,
-        sellerKioskId: soul.sellerKioskId,
-        agentAddress,
-        priceSui: quote.priceSui,
-        txBytesBase64,
-      })
+      soulOnChainId: soul.onChainId,
+      sellerKioskId: soul.sellerKioskId,
+      agentAddress,
+      priceSui: quote.priceSui,
+      txBytesBase64,
+    })
 
     return NextResponse.json({
       preparedPurchaseId: preparedPurchase.id,

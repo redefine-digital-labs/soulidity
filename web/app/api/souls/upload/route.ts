@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { requireIdentity } from '@web/lib/auth/identity'
+import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { sealDekEnvelope } from '@web/lib/services/dek-envelope'
 import {
@@ -98,12 +99,27 @@ export async function POST(req: NextRequest) {
   }
 
   // type === 'encrypted': AES-GCM-256 encrypt before uploading to Walrus
+  let ownerAddress: string | null
+  try {
+    ownerAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+  } catch (walletError) {
+    if (walletError instanceof Error && walletError.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: walletError.message }, { status: 409 })
+    }
+    throw walletError
+  }
+  if (!ownerAddress) {
+    return NextResponse.json({ error: 'Bind a Sui wallet before uploading encrypted Soul content' }, { status: 403 })
+  }
+
   const dek = randomBytes(32)
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-256-gcm', dek, iv)
   const ciphertext = Buffer.concat([cipher.update(buffer), cipher.final(), cipher.getAuthTag()])
 
-  const uploaded = await uploadPublic(ciphertext)
+  const uploaded = await uploadPublic(ciphertext, {
+    sendObjectTo: ownerAddress,
+  })
   const envelope = sealDekEnvelope({ dek, iv, contentHash, mimeType: file.type || 'application/octet-stream', fileName: file.name || 'bundle' })
 
   return NextResponse.json({ ...uploaded, contentHash, sealDekEnvelope: envelope })

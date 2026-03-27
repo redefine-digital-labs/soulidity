@@ -22,10 +22,13 @@ const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
+const mockedGetSoulSecondaryPurchaseQuote = vi.hoisted(() => vi.fn())
 const mockedCreatePreparedSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
+const mockedBuildBuySecondarySoulTx = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
   getBalance: vi.fn(),
+  devInspectTransactionBlock: vi.fn(),
 }))
 const mockedTx = vi.hoisted(() => ({
   setSender: vi.fn(),
@@ -54,6 +57,7 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
 
 vi.mock('@web/lib/souls/purchase-quote', () => ({
   getSoulPurchaseQuote: mockedGetSoulPurchaseQuote,
+  getSoulSecondaryPurchaseQuote: mockedGetSoulSecondaryPurchaseQuote,
 }))
 
 vi.mock('@web/lib/souls/prepared-purchase', () => ({
@@ -62,6 +66,7 @@ vi.mock('@web/lib/souls/prepared-purchase', () => ({
 
 vi.mock('@web/lib/souls/tx-builder', () => ({
   buildBuySoulTx: mockedBuildBuySoulTx,
+  buildBuySecondarySoulTx: mockedBuildBuySecondarySoulTx,
 }))
 
 vi.mock('@web/lib/sui', () => ({
@@ -88,6 +93,7 @@ describe('agent soul purchase prepare route', () => {
       id: 'asset-db-1',
       onChainId: SOUL_ID,
       listingStatus: 'listed',
+      listingSource: 'adapter',
       sellerKioskId: KIOSK_ID,
       listedPriceSui: '1000000000',
     })
@@ -97,9 +103,19 @@ describe('agent soul purchase prepare route', () => {
       royaltyFeeSui: 25_000_000n,
       totalSui: 1_075_000_000n,
     })
+    mockedGetSoulSecondaryPurchaseQuote.mockResolvedValue({
+      marketplaceFeeSui: 50_000_000n,
+      priceSui: 1_000_000_000n,
+      royaltyFeeSui: 25_000_000n,
+      totalSui: 1_075_000_000n,
+    })
     mockedSuiClient.getBalance.mockResolvedValue({ totalBalance: '2000000000' })
+    mockedSuiClient.devInspectTransactionBlock.mockResolvedValue({
+      effects: { status: { status: 'success' } },
+    })
     mockedTx.build.mockResolvedValue(new Uint8Array([1, 2, 3]))
     mockedBuildBuySoulTx.mockReturnValue(mockedTx)
+    mockedBuildBuySecondarySoulTx.mockReturnValue(mockedTx)
     mockedCreatePreparedSoulPurchase.mockResolvedValue({
       id: 'prepared-1',
       expiresAt: new Date('2099-01-01T00:00:00.000Z'),
@@ -220,5 +236,38 @@ describe('agent soul purchase prepare route', () => {
       priceSui: 1_000_000_000n,
       txBytesBase64: Buffer.from([1, 2, 3]).toString('base64'),
     })
+  })
+
+  it('revalidates core listings on chain before returning prepared tx bytes', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      id: 'asset-db-1',
+      onChainId: SOUL_ID,
+      listingStatus: 'listed',
+      listingSource: 'core',
+      sellerKioskId: KIOSK_ID,
+      listedPriceSui: '1000000000',
+    })
+    mockedSuiClient.devInspectTransactionBlock.mockResolvedValueOnce({
+      error: 'MoveAbort(MutableObjectUsedAfterDelete)',
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul listing is no longer active on chain',
+    })
+    expect(mockedBuildBuySecondarySoulTx).toHaveBeenCalledWith({
+      soulObjectId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      buyerAddress: AGENT_ADDRESS,
+      priceSui: 1_000_000_000n,
+      feeAmountSui: 75_000_000n,
+    })
+    expect(mockedCreatePreparedSoulPurchase).not.toHaveBeenCalled()
   })
 })

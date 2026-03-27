@@ -16,6 +16,14 @@ const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedToSoulAssetDetail = vi.hoisted(() => vi.fn())
 const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
+const mockedGetSoulSecondaryPurchaseQuote = vi.hoisted(() => vi.fn())
+const mockedBuildBuySecondarySoulTx = vi.hoisted(() => vi.fn())
+const mockedSuiClient = vi.hoisted(() => ({
+  devInspectTransactionBlock: vi.fn(),
+}))
+const mockedSecondaryTx = vi.hoisted(() => ({
+  setSender: vi.fn(),
+}))
 
 vi.mock('@web/lib/auth/identity', () => ({
   resolveIdentity: mockedResolveIdentity,
@@ -36,6 +44,15 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
 
 vi.mock('@web/lib/souls/purchase-quote', () => ({
   getSoulPurchaseQuote: mockedGetSoulPurchaseQuote,
+  getSoulSecondaryPurchaseQuote: mockedGetSoulSecondaryPurchaseQuote,
+}))
+
+vi.mock('@web/lib/souls/tx-builder', () => ({
+  buildBuySecondarySoulTx: mockedBuildBuySecondarySoulTx,
+}))
+
+vi.mock('@web/lib/sui', () => ({
+  suiClient: mockedSuiClient,
 }))
 
 describe('soul detail routes', () => {
@@ -90,6 +107,16 @@ describe('soul detail routes', () => {
       royaltyFeeSui: 25_000_000n,
       totalSui: 1_075_000_000n,
     })
+    mockedGetSoulSecondaryPurchaseQuote.mockResolvedValue({
+      marketplaceFeeSui: 50_000_000n,
+      priceSui: 1_000_000_000n,
+      royaltyFeeSui: 25_000_000n,
+      totalSui: 1_075_000_000n,
+    })
+    mockedBuildBuySecondarySoulTx.mockReturnValue(mockedSecondaryTx)
+    mockedSuiClient.devInspectTransactionBlock.mockResolvedValue({
+      effects: { status: { status: 'success' } },
+    })
   })
 
   it('returns 404 when the public detail route cannot find the Soul', async () => {
@@ -133,6 +160,39 @@ describe('soul detail routes', () => {
 
     expect(response.status).toBe(200)
     expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), 'owner-1')
+  })
+
+  it('suppresses stale core listing quotes on the public detail route', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      id: 'asset-db-1',
+      onChainId: SOUL_ID,
+      listedPriceSui: '1000000000',
+      listingStatus: 'listed',
+      listingSource: 'core',
+      sellerKioskId: `0x${'4'.repeat(64)}`,
+    })
+    mockedSuiClient.devInspectTransactionBlock.mockResolvedValueOnce({
+      error: 'MoveAbort(MutableObjectUsedAfterDelete)',
+    })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      onChainId: SOUL_ID,
+      purchaseFeeAmountSui: null,
+    })
+    expect(mockedBuildBuySecondarySoulTx).toHaveBeenCalledWith({
+      soulObjectId: SOUL_ID,
+      sellerKioskId: `0x${'4'.repeat(64)}`,
+      buyerAddress: `0x${'1'.padStart(64, '0')}`,
+      priceSui: 1_000_000_000n,
+      feeAmountSui: 75_000_000n,
+    })
   })
 
   it('uses the agent member id when serializing agent detail responses', async () => {

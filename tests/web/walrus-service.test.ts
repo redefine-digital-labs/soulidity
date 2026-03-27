@@ -104,7 +104,7 @@ describe('Walrus blob validation', () => {
     )
 
     await expect(uploadPublic(Buffer.from('payload'))).rejects.toThrow('publisher down')
-    const attemptedUrls = fetchMock.mock.calls.map(([url]) => url as string)
+    const attemptedUrls = fetchMock.mock.calls.map(([url]) => String(url))
     expect(attemptedUrls).toHaveLength(4)
     expect(new Set(attemptedUrls).size).toBe(4)
     attemptedUrls.forEach((url) => {
@@ -155,6 +155,31 @@ describe('Walrus blob validation', () => {
       blobObjectId: 'walrus-object-1',
     })
     expect(global.fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('passes send_object_to when a blob should be created for a specific wallet address', async () => {
+    global.fetch = vi.fn(async (input) => {
+      expect(String(input)).toContain('send_object_to=0x1111111111111111111111111111111111111111111111111111111111111111')
+      return new Response(
+        JSON.stringify({
+          newlyCreated: {
+            blobObject: {
+              blobId: 'blob-123',
+              id: 'walrus-object-1',
+            },
+          },
+        }),
+      )
+    }) as typeof fetch
+
+    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+
+    await expect(uploadPublic(Buffer.from('payload'), {
+      sendObjectTo: `0x${'1'.repeat(64)}`,
+    })).resolves.toEqual({
+      blobId: 'blob-123',
+      blobObjectId: 'walrus-object-1',
+    })
   })
 
   it('waits for retry-after before retrying 429 responses', async () => {
