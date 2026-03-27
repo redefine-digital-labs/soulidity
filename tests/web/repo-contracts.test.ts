@@ -18,6 +18,7 @@ describe('repository contract guards', () => {
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID=')
     expect(prismaConfig).toContain('shadowDatabaseUrl')
   })
 
@@ -68,6 +69,8 @@ describe('repository contract guards', () => {
     expect(sealPolicySource).toContain('seal_approve_agent')
     expect(adapterSource).toContain('public fun mint_and_list(')
     expect(adapterSource).toContain('public fun purchase(')
+    expect(adapterSource).toContain('authority: SoulPackageAuthority,')
+    expect(adapterSource).toContain('soul::burn_authority(authority);')
     expect(existsSync(join(repoRoot, 'move', 'soul_market', 'Move.toml'))).toBe(true)
   })
 

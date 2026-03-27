@@ -37,7 +37,7 @@ public struct SoulPurchased has copy, drop {
 }
 
 public fun bootstrap(
-    authority: &SoulPackageAuthority,
+    authority: SoulPackageAuthority,
     registry: &mut NftRegistry,
     royalty_bps: u16,
     ctx: &mut TxContext,
@@ -47,8 +47,9 @@ public fun bootstrap(
     NftCollectionMetadataCap<Soul>,
     TransferPolicyCap<Soul>,
 ) {
-    let (mint_cap, burn_cap_opt, metadata_cap) = create_collection(authority, registry, ctx);
-    let policy_cap = create_transfer_policy(authority, royalty_bps, ctx);
+    let (mint_cap, burn_cap_opt, metadata_cap) = create_collection(&authority, registry, ctx);
+    let policy_cap = create_transfer_policy(&authority, royalty_bps, ctx);
+    soul::burn_authority(authority);
     (mint_cap, burn_cap_opt, metadata_cap, policy_cap)
 }
 

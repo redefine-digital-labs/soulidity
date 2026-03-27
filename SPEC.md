@@ -42,3 +42,5 @@
 15. Subscription renew mirror 在成功校验链上续费后，必须同时刷新 `ownerAddress` / `ownerMemberId`，不能只更新到期时间；否则转移后续费会把 snapshot ownership 留在旧 owner。
 16. `buildCreateSeriesTx` 必须在客户端拒绝空白 description，避免用户进入签名/上链后才因为 `series::validate_metadata` 的空描述约束失败。
 17. Publish Soul 页面在链上创建 `SoulSeries` 之前，若存在仅本地保存但尚未产生任何 on-chain progress 的 draft，提交时必须用当前表单值刷新该 draft；旧的空 `description` 或价格字段不得导致后续重试持续复现同一前端校验错误。
+18. Human Soul purchase mirror 若已完成本地 ownership 更新但尚未写入 tx-sync，后续同一 `txDigest` 重试必须允许补齐 sync，不得因为 Soul 已转成 `held` 就永久返回“not listed”。
+19. 已被 agent 购买并持有的 Soul，必须能通过现有受支持 API 重新 mirror 成 `listed` 状态进入二级市场；agent relist 不得被 `/api/souls/publish` 的身份限制硬阻断，同时初次 publish 仍只允许 creator 侧的人类账号完成。

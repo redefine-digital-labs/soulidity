@@ -114,6 +114,8 @@ describe('soul publish route', () => {
       objectId: SOUL_ID,
       creatorAddress: AUTHOR_ADDRESS,
       ownerAddress: KIOSK_ID,
+      ownerKind: 'object',
+      ownerObjectId: KIOSK_ID,
       name: 'Signal Soul',
       description: 'Encrypted bundle',
       imageUrl: 'https://example.com/soul.png',
@@ -296,11 +298,99 @@ describe('soul publish route', () => {
     expect(mockedCreateSealEnvelopeSidecar).not.toHaveBeenCalled()
   })
 
+  it('allows an agent owner to relist an existing Soul through the publish mirror route', async () => {
+    mockedRequireIdentity.mockResolvedValueOnce({
+      error: null,
+      identity: { memberId: 'agent-member-1', kind: 'agent' },
+    })
+    mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
+    mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({
+      creatorMemberId: 'creator-member',
+      creatorAddress: AUTHOR_ADDRESS,
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: ['blob-preview'],
+      readme: 'Stored README',
+      sealSidecar: { encryptedObject: 'sealed' },
+    })
+    mockedExtractSoulListingEvent.mockReturnValueOnce({
+      soulObjectId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      sellerAddress: HOLDER_ADDRESS,
+      priceSui: 2_000_000_000n,
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer sk-agent-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+      }),
+    }) as any)
+
+    expect(response.status).toBe(200)
+    expect(mockedDbUpsertSoulAsset).toHaveBeenCalledWith(expect.objectContaining({
+      creatorAddress: AUTHOR_ADDRESS,
+      creatorMemberId: 'creator-member',
+      currentOwnerAddress: HOLDER_ADDRESS,
+      currentOwnerMemberId: 'agent-member-1',
+      sellerKioskId: KIOSK_ID,
+      listedPriceSui: 2_000_000_000n,
+      readme: 'Stored README',
+    }))
+    expect(mockedCreateSealEnvelopeSidecar).not.toHaveBeenCalled()
+  })
+
+  it('still rejects agent initial publish sync for Souls that do not exist locally yet', async () => {
+    mockedRequireIdentity.mockResolvedValueOnce({
+      error: null,
+      identity: { memberId: 'agent-member-1', kind: 'agent' },
+    })
+    mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce(null)
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer sk-agent-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Only human accounts can mirror the initial Soul publish',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
   it('rejects publish sync when the submitted content blob id does not match the on-chain Soul', async () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       objectId: SOUL_ID,
       creatorAddress: AUTHOR_ADDRESS,
       ownerAddress: KIOSK_ID,
+      ownerKind: 'object',
+      ownerObjectId: KIOSK_ID,
       name: 'Signal Soul',
       description: 'Encrypted bundle',
       imageUrl: 'https://example.com/soul.png',
@@ -450,5 +540,46 @@ describe('soul publish route', () => {
       resourceKey: SOUL_ID,
       statusCode: 200,
     }))
+  })
+
+  it('rejects stale publish retry when Soul ownership has changed', async () => {
+    const BUYER_ADDRESS = `0x${'b'.repeat(64)}`
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      objectId: SOUL_ID,
+      creatorAddress: AUTHOR_ADDRESS,
+      ownerAddress: BUYER_ADDRESS,
+      ownerKind: 'address',
+      ownerObjectId: null,
+      name: 'Signal Soul',
+      description: 'Encrypted bundle',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: 'walrus://metadata',
+      contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+      contentBlobId: 'blob-content',
+      agentGrant: null,
+      grantVersion: 0n,
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul ownership has changed since this listing transaction',
+    })
+    expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
   })
 })

@@ -49,9 +49,6 @@ export async function POST(request: NextRequest) {
   if (error) {
     return error
   }
-  if (identity.kind !== 'human') {
-    return NextResponse.json({ error: 'Only human accounts can publish Souls' }, { status: 403 })
-  }
 
   const rateLimit = await takeRateLimitToken(`soul-publish:${identity.memberId}`, SOUL_PUBLISH_RATE_LIMIT)
   if (rateLimit.limited) {
@@ -132,6 +129,10 @@ export async function POST(request: NextRequest) {
   })
   const isInitialSync = !existingSoul
 
+  if (isInitialSync && identity.kind !== 'human') {
+    return NextResponse.json({ error: 'Only human accounts can mirror the initial Soul publish' }, { status: 403 })
+  }
+
   if (isInitialSync && !contentBlobObjectId) {
     return NextResponse.json({ error: 'contentBlobObjectId is required' }, { status: 400 })
   }
@@ -184,6 +185,12 @@ export async function POST(request: NextRequest) {
     }
 
     const soulState = await getVerifiedSoulState(soulOnChainId, soulPackageId)
+    if (soulState.ownerKind !== 'object' || !sameSuiValue(soulState.ownerObjectId, listingEvent.sellerKioskId)) {
+      return NextResponse.json(
+        { error: 'Soul ownership has changed since this listing transaction' },
+        { status: 409 },
+      )
+    }
     if (existingSoul && !sameSuiValue(existingSoul.creatorAddress, soulState.creatorAddress)) {
       return NextResponse.json({ error: 'Stored Soul creator does not match the on-chain Soul creator' }, { status: 422 })
     }

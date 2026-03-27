@@ -15,6 +15,7 @@
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { getRequiredSoulPurchaseFunding, getRequiredSoulPurchaseTopUpAmount } from '@web/lib/souls/e2e-agent-purchase'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
 const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC!
@@ -23,21 +24,39 @@ const SOUL_ID = process.env.SOUL_ID! // DB UUID or onChainId
 
 const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' })
 
-async function transferGas(recipientAddress: string) {
-  console.log(`\n--- Transferring SUI gas to ${recipientAddress} ---`)
+async function getRequiredPurchaseBalance() {
+  const detailRes = await fetch(`${BASE_URL}/api/souls/${encodeURIComponent(SOUL_ID)}`)
+  const detailBody = await detailRes.json().catch(() => null)
+
+  if (!detailRes.ok) {
+    throw new Error(`Unable to load Soul detail for funding quote (${detailRes.status})`)
+  }
+
+  return getRequiredSoulPurchaseFunding(detailBody ?? {})
+}
+
+async function transferGas(recipientAddress: string, requiredBalanceMist: bigint) {
+  console.log(`\n--- Funding agent wallet ${recipientAddress} ---`)
 
   const { execSync } = await import('node:child_process')
-  // Check if agent already has SUI
   const balance = await suiClient.getBalance({ owner: recipientAddress })
-  if (BigInt(balance.totalBalance) > 50_000_000n) {
-    console.log(`Agent already has ${balance.totalBalance} MIST, skipping gas transfer`)
+  const currentBalanceMist = BigInt(balance.totalBalance)
+  const topUpAmountMist = getRequiredSoulPurchaseTopUpAmount({
+    requiredBalanceMist,
+    currentBalanceMist,
+  })
+
+  if (topUpAmountMist === 0n) {
+    console.log(`Agent already has ${balance.totalBalance} MIST, required ${requiredBalanceMist} MIST; skipping gas transfer`)
     return
   }
+
+  console.log(`Agent balance ${balance.totalBalance} MIST, topping up ${topUpAmountMist} MIST to reach ${requiredBalanceMist} MIST`)
 
   const cmd = `sui client transfer-sui \
     --to ${recipientAddress} \
     --sui-coin-object-id gas \
-    --amount 100000000 \
+    --amount ${topUpAmountMist} \
     --gas-budget 10000000 \
     --json 2>&1`
 
@@ -52,7 +71,7 @@ async function transferGas(recipientAddress: string) {
     console.log('Direct transfer failed, trying pay-sui...')
     const cmd2 = `sui client pay-sui \
       --recipients ${recipientAddress} \
-      --amounts 100000000 \
+      --amounts ${topUpAmountMist} \
       --gas-budget 10000000 \
       --json 2>&1`
     try {
@@ -77,8 +96,10 @@ async function main() {
   const agentAddress = normalizeSuiAddress(keypair.toSuiAddress())
   console.log(`Agent address: ${agentAddress}`)
 
-  // Step 1: Fund agent wallet
-  await transferGas(agentAddress)
+  // Step 1: Quote required funding and top up the agent wallet
+  const funding = await getRequiredPurchaseBalance()
+  console.log(`Required balance: ${funding.requiredBalanceMist} MIST (price ${funding.priceSui} + fees ${funding.feeAmountSui} + gas buffer)`)
+  await transferGas(agentAddress, funding.requiredBalanceMist)
 
   // Step 2: Prepare purchase TX
   console.log(`\n--- Step 2: Prepare purchase TX ---`)

@@ -49,3 +49,11 @@
 15. 收口 Publish Soul 本地 draft 提交流程：
    - 提交前若 draft 尚未产生任何 on-chain progress，则用当前表单值刷新 `name` / `description` / pricing 等可编辑字段后再继续执行
    - 补回归覆盖“第一次空 description 失败后，修正输入再次提交不应继续使用旧空 draft”
+16. 收口 human purchase mirror retry follow-up：
+   - `getStoredSoulTxSync` 前移到 listing guard 之前，避免已缓存成功结果被 `held` 状态拦截
+   - 对“本地已 held 且当前 owner 就是发起购买的人类账号”的重复 mirror 开放补 sync 路径
+   - 补回归覆盖 `dbSetSoulOwnership` 成功但 `storeSoulTxSync` 尚未落库后的同 digest 重试
+17. 收口 agent relist publish follow-up：
+   - `/api/souls/publish` 允许 agent 身份同步已存在 Soul 的 relist
+   - 初次 publish 仍限制为 human creator，避免放大首发权限
+   - 补回归覆盖 agent relist 成功与 agent initial publish 被拒绝

@@ -216,4 +216,51 @@ describe('Soul purchase route', () => {
       statusCode: 200,
     }))
   })
+
+  it('allows retrying the same digest after ownership already flipped to held locally', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      id: 'asset-db-1',
+      onChainId: SOUL_ID,
+      listingStatus: 'held',
+      sellerKioskId: null,
+      listedPriceSui: null,
+      currentOwnerAddress: BUYER_ADDRESS,
+      currentOwnerMemberId: 'member-1',
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      digest: TX_DIGEST,
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: BUYER_ADDRESS,
+      listingStatus: 'held',
+      onChainSuccess: true,
+      dbSynced: true,
+    })
+    expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: BUYER_ADDRESS,
+      currentOwnerMemberId: 'member-1',
+      listingStatus: 'held',
+      sellerKioskId: null,
+      listedPriceSui: null,
+      grantVersion: 3n,
+    })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
+      txDigest: TX_DIGEST,
+      routeKey: 'purchase',
+      resourceKey: SOUL_ID,
+      statusCode: 200,
+    }))
+  })
 })

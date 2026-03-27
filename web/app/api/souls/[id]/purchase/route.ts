@@ -52,9 +52,6 @@ export async function POST(
   if (!soul) {
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
-  if (soul.listingStatus !== 'listed' || !soul.sellerKioskId || soul.listedPriceSui == null) {
-    return NextResponse.json({ error: 'Soul is not currently listed for sale' }, { status: 409 })
-  }
 
   const storedSync = await getStoredSoulTxSync({
     txDigest,
@@ -64,6 +61,13 @@ export async function POST(
   })
   if (storedSync) {
     return NextResponse.json(storedSync.body, { status: storedSync.statusCode })
+  }
+
+  const canRetryHeldPurchaseMirror =
+    soul.listingStatus === 'held'
+    && soul.currentOwnerMemberId === identity.memberId
+  if (!canRetryHeldPurchaseMirror && (soul.listingStatus !== 'listed' || !soul.sellerKioskId || soul.listedPriceSui == null)) {
+    return NextResponse.json({ error: 'Soul is not currently listed for sale' }, { status: 409 })
   }
 
   let soulPackageId: string
@@ -91,7 +95,7 @@ export async function POST(
     if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
       return NextResponse.json({ error: 'Transaction did not purchase the requested Soul' }, { status: 422 })
     }
-    if (!sameSuiValue(purchaseEvent.sellerKioskId, soul.sellerKioskId)) {
+    if (!canRetryHeldPurchaseMirror && !sameSuiValue(purchaseEvent.sellerKioskId, soul.sellerKioskId)) {
       return NextResponse.json({ error: 'Transaction seller kiosk does not match the active listing' }, { status: 422 })
     }
     if (!walletAddresses.some((address) => sameSuiValue(address, purchaseEvent.buyerAddress))) {
