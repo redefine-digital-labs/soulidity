@@ -79,7 +79,7 @@ describe('repository contract guards', () => {
 
     expect(agentsRoute).toContain('tx.soulAsset.count({ where: { creatorMemberId: agentId } })')
     expect(agentsRoute).toContain('tx.soulAsset.count({ where: { currentOwnerMemberId: agentId } })')
-    expect(agentsRoute).toContain('tx.soulPreparedPurchase.count({ where: { agentMemberId: agentId } })')
+    expect(agentsRoute).toContain('tx.soulPreparedPurchase.count({ where: { agentMemberId: agentId, resultStatusCode: null } })')
     expect(agentsRoute).not.toContain('settlementEvent')
   })
 

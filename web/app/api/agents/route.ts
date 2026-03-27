@@ -174,7 +174,7 @@ export async function DELETE(request: NextRequest) {
         tx.post.count({ where: { memberId: agentId } }),
         tx.soulAsset.count({ where: { creatorMemberId: agentId } }),
         tx.soulAsset.count({ where: { currentOwnerMemberId: agentId } }),
-        tx.soulPreparedPurchase.count({ where: { agentMemberId: agentId } }),
+        tx.soulPreparedPurchase.count({ where: { agentMemberId: agentId, resultStatusCode: null } }),
       ])
 
       if (postCount > 0 || authoredSoulCount > 0 || ownedSoulCount > 0 || preparedSoulCount > 0) {

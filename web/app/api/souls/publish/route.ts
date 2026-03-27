@@ -234,17 +234,21 @@ export async function POST(request: NextRequest) {
       }
 
       const unsealedEnvelope = unsealDekEnvelope(sealDekEnvelope!)
-      sidecar = await createSealEnvelopeSidecar({
-        sealClient: createSealClient(),
-        packageId: soulPackageId,
-        soulObjectId: soulOnChainId,
-        threshold: runtimeConfig.threshold,
-        dek: unsealedEnvelope.dek,
-        iv: unsealedEnvelope.iv,
-        contentHash: unsealedEnvelope.contentHash,
-        mimeType: unsealedEnvelope.mimeType,
-        fileName: unsealedEnvelope.fileName,
-      })
+      try {
+        sidecar = await createSealEnvelopeSidecar({
+          sealClient: createSealClient(),
+          packageId: soulPackageId,
+          soulObjectId: soulOnChainId,
+          threshold: runtimeConfig.threshold,
+          dek: unsealedEnvelope.dek,
+          iv: unsealedEnvelope.iv,
+          contentHash: unsealedEnvelope.contentHash,
+          mimeType: unsealedEnvelope.mimeType,
+          fileName: unsealedEnvelope.fileName,
+        })
+      } finally {
+        unsealedEnvelope.dek.fill(0)
+      }
       syncedCategory = category!
       syncedTags = tags!
       syncedPreviewImages = previewImages!.map((value) => assertWalrusBlobId(value, 'preview image'))
