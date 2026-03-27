@@ -19,6 +19,11 @@ ALTER TABLE "soul_series" DROP CONSTRAINT "soul_series_latest_release_id_fkey";
 -- DropIndex
 DROP INDEX "soul_prepared_purchases_series_on_chain_id_created_at_idx";
 
+-- Legacy prepared purchases target the removed series/release/pass runtime and cannot be backfilled
+-- into the single-object Soul purchase shape. Purge them before adding new required columns so
+-- non-empty development databases can still apply this cutover.
+TRUNCATE TABLE "soul_prepared_purchases";
+
 -- AlterTable
 ALTER TABLE "soul_prepared_purchases"
 DROP COLUMN "amount_usdc",

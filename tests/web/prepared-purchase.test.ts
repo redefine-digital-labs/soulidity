@@ -129,6 +129,27 @@ describe('prepared purchase helpers', () => {
     })
   })
 
+  it('returns null when the execution claim compare-and-set misses', async () => {
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({
+      id: 'prepared-1',
+      agentMemberId: 'agent-1',
+      soulOnChainId: SOUL_OBJECT_ID,
+      executedAt: null,
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+    })
+    mockedPrisma.soulPreparedPurchase.updateMany.mockResolvedValueOnce({ count: 0 })
+
+    const { claimPreparedSoulPurchaseForExecution } = await import('../../web/lib/souls/prepared-purchase.ts')
+
+    await expect(claimPreparedSoulPurchaseForExecution({
+      preparedPurchaseId: 'prepared-1',
+      agentMemberId: 'agent-1',
+      soulOnChainId: SOUL_OBJECT_ID,
+    })).resolves.toBeNull()
+
+    expect(mockedPrisma.soulPreparedPurchase.findUnique).toHaveBeenCalledTimes(1)
+  })
+
   it('releases an execution claim so a failed broadcast can be retried', async () => {
     const { releasePreparedSoulPurchaseExecution } = await import('../../web/lib/souls/prepared-purchase.ts')
 

@@ -232,7 +232,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
       return null
     }
 
-    await tx.soulPreparedPurchase.updateMany({
+    const claimResult = await tx.soulPreparedPurchase.updateMany({
       where: {
         id: current.id,
         executedAt: null,
@@ -242,6 +242,10 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
         executedAt: new Date(),
       },
     })
+
+    if (claimResult.count === 0) {
+      return null
+    }
 
     const prepared = await tx.soulPreparedPurchase.findUnique({
       where: { id: params.preparedPurchaseId },
