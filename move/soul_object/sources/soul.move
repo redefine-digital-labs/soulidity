@@ -14,9 +14,13 @@ public struct SoulMinted has copy, drop {
 
 public struct SOUL has drop {}
 
+public struct SoulPackageAuthority has key, store {
+    id: UID,
+    publisher: Publisher,
+}
+
 public struct Soul has key, store {
     id: UID,
-    creator: address,
     name: String,
     description: String,
     image_url: String,
@@ -24,15 +28,20 @@ public struct Soul has key, store {
     content_blob: Blob,
     agent_grant: Option<address>,
     grant_version: u64,
+    creator: address,
 }
 
 fun init(otw: SOUL, ctx: &mut TxContext) {
     let publisher = package::claim(otw, ctx);
     let recipient = ctx.sender();
     let soul_display = create_display(&publisher, ctx);
+    let authority = SoulPackageAuthority {
+        id: object::new(ctx),
+        publisher,
+    };
 
     transfer::public_transfer(soul_display, recipient);
-    publisher.burn();
+    transfer::public_transfer(authority, recipient);
 }
 
 public fun mint(
@@ -52,6 +61,10 @@ public fun mint(
         content_blob,
         ctx,
     )
+}
+
+public fun publisher(self: &SoulPackageAuthority): &Publisher {
+    &self.publisher
 }
 
 public fun creator(self: &Soul): address {
@@ -91,6 +104,16 @@ public(package) fun clear_agent_grant(self: &mut Soul) {
     self.grant_version = self.grant_version + 1;
 }
 
+public fun clear_agent_grant_if_present(self: &mut Soul): bool {
+    if (self.agent_grant.is_some()) {
+        self.agent_grant = option::none();
+        self.grant_version = self.grant_version + 1;
+        true
+    } else {
+        false
+    }
+}
+
 public(package) fun set_agent_grant(self: &mut Soul, agent: Option<address>): u64 {
     self.agent_grant = agent;
     self.grant_version = self.grant_version + 1;
@@ -109,7 +132,6 @@ fun mint_with_creator(
     let blob_object_id = blob::object_id(&content_blob);
     let soul = Soul {
         id: object::new(ctx),
-        creator,
         name,
         description,
         image_url,
@@ -117,6 +139,7 @@ fun mint_with_creator(
         content_blob,
         agent_grant: option::none(),
         grant_version: 0,
+        creator,
     };
 
     event::emit(SoulMinted {
@@ -142,8 +165,12 @@ fun create_display(publisher: &Publisher, ctx: &mut TxContext): Display<Soul> {
 public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
     let publisher = package::claim(SOUL {}, ctx);
     let soul_display = create_display(&publisher, ctx);
+    let authority = SoulPackageAuthority {
+        id: object::new(ctx),
+        publisher,
+    };
     transfer::public_transfer(soul_display, recipient);
-    publisher.burn();
+    transfer::public_transfer(authority, recipient);
 }
 
 #[test_only]
@@ -171,7 +198,6 @@ public fun mint_for_testing(
 public fun destroy_for_testing(self: Soul): Blob {
     let Soul {
         id,
-        creator: _,
         name: _,
         description: _,
         image_url: _,
@@ -179,7 +205,15 @@ public fun destroy_for_testing(self: Soul): Blob {
         content_blob,
         agent_grant: _,
         grant_version: _,
+        creator: _,
     } = self;
     id.delete();
     content_blob
+}
+
+#[test_only]
+public fun destroy_package_authority_for_testing(self: SoulPackageAuthority) {
+    let SoulPackageAuthority { id, publisher } = self;
+    id.delete();
+    publisher.burn();
 }

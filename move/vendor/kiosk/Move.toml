@@ -1,12 +1,11 @@
 [package]
-name = "soul_object"
-edition = "2024.beta"
+name = "Kiosk"
+version = "0.0.1"
+edition = "legacy"
 
 [dependencies]
-Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/walrus", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }
-unft_standard = { local = "../vendor/unft_standard", override = true }
 MoveStdlib = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
 
 [addresses]
-soul_object = "0x6f1d3e62885d9b6b4e4d55c4b334f0cf5f17319b3a7ac0d5eb6f4b4e1a1f9001"
+kiosk = "0xc9f6a531d5f4e11ef38dd782c9ab5403fb3c011595384c429285952ff6b31839"

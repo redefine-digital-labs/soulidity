@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const PACKAGE_ID = `0x${'9'.repeat(64)}`
-const MARKET_CONFIG_ID = `0x${'8'.repeat(64)}`
 const SOUL_ID = `0x${'1'.repeat(64)}`
 
 const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificationError extends Error {
@@ -17,7 +15,7 @@ const mockedResolveIdentity = vi.hoisted(() => vi.fn())
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedToSoulAssetDetail = vi.hoisted(() => vi.fn())
-const mockedGetVerifiedMarketConfigState = vi.hoisted(() => vi.fn())
+const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/identity', () => ({
   resolveIdentity: mockedResolveIdentity,
@@ -34,15 +32,16 @@ vi.mock('@web/lib/souls/repository', () => ({
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
-  getVerifiedMarketConfigState: mockedGetVerifiedMarketConfigState,
+}))
+
+vi.mock('@web/lib/souls/purchase-quote', () => ({
+  getSoulPurchaseQuote: mockedGetSoulPurchaseQuote,
 }))
 
 describe('soul detail routes', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
-    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = PACKAGE_ID
-    process.env.NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID = MARKET_CONFIG_ID
 
     mockedResolveIdentity.mockResolvedValue(null)
     mockedRequireAgentApiKey.mockResolvedValue({
@@ -54,6 +53,7 @@ describe('soul detail routes', () => {
       onChainId: SOUL_ID,
       listedPriceSui: '1000000000',
       listingStatus: 'listed',
+      sellerKioskId: `0x${'4'.repeat(64)}`,
     })
     mockedToSoulAssetDetail.mockReturnValue({
       id: 'asset-db-1',
@@ -84,9 +84,11 @@ describe('soul detail routes', () => {
       isOwner: false,
       isCreator: false,
     })
-    mockedGetVerifiedMarketConfigState.mockResolvedValue({
-      platformFeeBps: 500n,
-      royaltyBps: 250n,
+    mockedGetSoulPurchaseQuote.mockResolvedValue({
+      marketplaceFeeSui: 50_000_000n,
+      priceSui: 1_000_000_000n,
+      royaltyFeeSui: 25_000_000n,
+      totalSui: 1_075_000_000n,
     })
   })
 

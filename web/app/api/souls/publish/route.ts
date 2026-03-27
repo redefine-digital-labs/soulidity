@@ -111,8 +111,10 @@ export async function POST(request: NextRequest) {
   }
 
   let soulPackageId: string
+  let marketPackageId: string
   try {
     soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+    marketPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID')
   } catch (configError) {
     return NextResponse.json({ error: configError instanceof Error ? configError.message : 'Missing Soul config' }, { status: 503 })
   }
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
     }
 
     const transaction = await getSuccessfulTransactionBlock(txDigest)
-    const listingEvent = extractSoulListingEvent(transaction, soulPackageId)
+    const listingEvent = extractSoulListingEvent(transaction, marketPackageId)
     if (!sameSuiValue(listingEvent.soulObjectId, soulOnChainId)) {
       return NextResponse.json({ error: 'Transaction did not list the submitted Soul' }, { status: 422 })
     }

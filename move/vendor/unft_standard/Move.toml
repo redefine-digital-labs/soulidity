@@ -1,12 +1,10 @@
 [package]
-name = "soul_object"
+name = "unft_standard"
 edition = "2024.beta"
 
 [dependencies]
-Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/walrus", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }
-unft_standard = { local = "../vendor/unft_standard", override = true }
 MoveStdlib = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
 
 [addresses]
-soul_object = "0x6f1d3e62885d9b6b4e4d55c4b334f0cf5f17319b3a7ac0d5eb6f4b4e1a1f9001"
+unft_standard = "0xba172012d7aaa2940037027f37609caf4f1c20bc5f9681f0913ca0cd9cffd1e2"

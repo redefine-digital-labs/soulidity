@@ -5,6 +5,7 @@
 - 合约彻底重写为单对象模型：不再有 `Series`、`Release`、`PerpetualPass`、`SubscriptionPass`。
 - 新协议里唯一可交易对象是 `Soul has key, store`。它本身就是被首发、持有、转售、下载授权的资产。
 - `Soul` 直接持有 Walrus `Blob`，并支持 Sui `Display` 标准；Display 只挂在 `Soul` 上。
+- `Soul` 作为资产真相源，市场接入通过独立 `soul_market_adapter` 包对接 `cpu::marketplace_fixed_trade` + `NftCollection<Soul>`。
 - 交易统一走 Kiosk。作者 mint 一个 `Soul` 做首发；首单后该对象继续在持有者之间二级转售。
 - 全栈一起删掉 subscription：Move、Prisma、API、UI、tx builder、Seal policy、测试、文档都不再保留 subscription 分支。
 
@@ -68,7 +69,7 @@ public struct Soul has key, store {
 
 ### 模块边界
 
-新包保留这些核心模块即可：
+`soul_object` 核心包保留这些模块：
 
 - `soul.move`
   - `Soul` 定义
@@ -95,6 +96,16 @@ public struct Soul has key, store {
 - `events.move` / `config.move`
   - 平台配置与事件
 
+独立市场适配包 `soul_market_adapter` 负责：
+
+- `market.move`
+  - `bootstrap`
+  - `mint_and_list`
+  - `quote_purchase`
+  - `purchase`
+  - 对外发出标准化 `SoulListed / SoulPurchased` 事件
+  - 内部接 `cpu::marketplace_fixed_trade`、`NftCollection<Soul>`、`TransferPolicy<Soul>`
+
 ### 彻底删除的合约概念
 
 以下对象、函数、常量、事件、测试全部删除，不保留兼容壳：
@@ -117,7 +128,7 @@ public struct Soul has key, store {
 
 ### Kiosk 交易模型
 
-- 作者 mint 一个 `Soul` 后，将该 `Soul` 直接上架到 Kiosk 做首发。
+- 作者 mint 一个 `Soul` 后，通过 `soul_market_adapter::market::mint_and_list` 将该 `Soul` 上架到 CPU marketplace。
 - 首单成交后，`Soul` 继续存在，由买家持有。
 - 后续如需二级市场，继续转售的是同一个 `Soul` 对象，不再重新铸造任何新权益对象。
 - `place_and_list` 必须拒绝 `price = 0` 的上架，避免把免费转移混进销售路径。
@@ -125,6 +136,7 @@ public struct Soul has key, store {
   - 平台费
   - 版税
   - 允许的交易路径
+- 应用层购买费用不再读取旧 `MarketConfig`，而是通过 adapter 的 `quote_purchase` 做链上 `devInspect` 报价。
 
 ### Display 标准
 
@@ -205,6 +217,12 @@ public struct Soul has key, store {
 - agent access 基于 `Soul` 与 `agent_grant`
 - 发布页直接创建单个 `Soul`
 - 详情页、列表页、我的资产页都直接展示 `Soul`
+- 发布 / 购买 tx-builder 固定依赖这些公开配置：
+  - `NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID`
+  - `NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID`
+  - `NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID`
+  - `NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID`
+  - `NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID`
 
 必须删除的运行时接口与 UI：
 

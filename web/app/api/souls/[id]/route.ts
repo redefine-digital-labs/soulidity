@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
-import { getRequiredPublicEnv } from '@web/lib/souls/config'
-import { getVerifiedMarketConfigState, OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
+import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
+import { getSoulPurchaseQuote } from '@web/lib/souls/purchase-quote'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@web/lib/souls/repository'
 
 export async function GET(
@@ -22,14 +22,13 @@ export async function GET(
 
   if (soul.listingStatus === 'listed' && soul.listedPriceSui != null) {
     try {
-      const soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-      const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
-      const marketConfig = await getVerifiedMarketConfigState(marketConfigId, soulPackageId)
-      const priceSui = BigInt(soul.listedPriceSui.toString())
-      const feeAmountSui =
-        (priceSui * marketConfig.platformFeeBps) / 10_000n
-        + (priceSui * marketConfig.royaltyBps) / 10_000n
-      detail.purchaseFeeAmountSui = feeAmountSui.toString()
+      if (soul.sellerKioskId) {
+        const quote = await getSoulPurchaseQuote({
+          sellerKioskId: soul.sellerKioskId,
+          soulObjectId: soul.onChainId,
+        })
+        detail.purchaseFeeAmountSui = (quote.totalSui - quote.priceSui).toString()
+      }
     } catch (detailError) {
       if (!(detailError instanceof OnChainVerificationError)) {
         console.warn('[soul-detail] Failed to compute purchase fee', detailError)

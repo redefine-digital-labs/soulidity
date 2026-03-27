@@ -134,7 +134,7 @@ fun public_mint_uses_current_context_sender_as_creator() {
 }
 
 #[test]
-fun init_for_testing_creates_display_with_required_fields_and_burns_publisher() {
+fun init_for_testing_creates_display_and_authority_without_leaking_raw_publisher() {
     let publisher_owner = @0xCAFE;
     let mut scenario = ts::begin(@0x0);
 
@@ -146,6 +146,7 @@ fun init_for_testing_creates_display_with_required_fields_and_burns_publisher() 
     ts::next_tx(&mut scenario, publisher_owner);
     {
         let soul_display: display::Display<soul::Soul> = ts::take_from_sender(&scenario);
+        let soul_authority: soul::SoulPackageAuthority = ts::take_from_sender(&scenario);
         let fields = display::fields(&soul_display);
         let name_key = string::utf8(b"name");
         let description_key = string::utf8(b"description");
@@ -162,8 +163,46 @@ fun init_for_testing_creates_display_with_required_fields_and_burns_publisher() 
         assert!(*fields[&creator_key].as_bytes() == b"{creator}", 7);
         assert!(display::version(&soul_display) == 1, 8);
         assert!(!ts::has_most_recent_for_sender<package::Publisher>(&scenario), 9);
+        assert!(package::from_package<soul::Soul>(soul::publisher(&soul_authority)), 10);
 
         std::unit_test::destroy(soul_display);
+        soul::destroy_package_authority_for_testing(soul_authority);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun clear_agent_grant_if_present_only_bumps_version_when_needed() {
+    let owner = @0xBEEF;
+    let agent = @0xABCD;
+    let mut scenario = ts::begin(owner);
+
+    {
+        let ctx = ts::ctx(&mut scenario);
+        let (walrus_system, blob) = register_test_blob(ctx);
+        let mut soul_obj = soul::mint_for_testing(
+            owner,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            blob,
+            ctx,
+        );
+
+        assert!(!soul::clear_agent_grant_if_present(&mut soul_obj), 0);
+        assert!(soul::grant_version(&soul_obj) == 0, 1);
+
+        let _ = soul::set_agent_grant(&mut soul_obj, option::some(agent));
+        assert!(soul::grant_version(&soul_obj) == 1, 2);
+        assert!(soul::clear_agent_grant_if_present(&mut soul_obj), 3);
+        assert!(soul::grant_version(&soul_obj) == 2, 4);
+        assert!(soul::agent_grant(&soul_obj).is_none(), 5);
+
+        let blob = soul::destroy_for_testing(soul_obj);
+        blob.burn();
+        std::unit_test::destroy(walrus_system);
     };
 
     ts::end(scenario);

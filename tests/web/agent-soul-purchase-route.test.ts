@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const PACKAGE_ID = `0x${'9'.repeat(64)}`
-const MARKET_CONFIG_ID = `0x${'8'.repeat(64)}`
+const SOUL_OBJECT_PACKAGE_ID = `0x${'9'.repeat(64)}`
+const MARKET_ADAPTER_PACKAGE_ID = `0x${'8'.repeat(64)}`
+const CPU_MARKETPLACE_ID = `0x${'7'.repeat(64)}`
+const UNFT_COLLECTION_ID = `0x${'6'.repeat(64)}`
 const AGENT_ADDRESS = `0x${'1'.repeat(64)}`
 const SOUL_ID = `0x${'2'.repeat(64)}`
 const KIOSK_ID = `0x${'3'.repeat(64)}`
@@ -19,7 +21,7 @@ const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
-const mockedGetVerifiedMarketConfigState = vi.hoisted(() => vi.fn())
+const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
 const mockedCreatePreparedSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
@@ -48,7 +50,10 @@ vi.mock('@web/lib/souls/repository', () => ({
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
-  getVerifiedMarketConfigState: mockedGetVerifiedMarketConfigState,
+}))
+
+vi.mock('@web/lib/souls/purchase-quote', () => ({
+  getSoulPurchaseQuote: mockedGetSoulPurchaseQuote,
 }))
 
 vi.mock('@web/lib/souls/prepared-purchase', () => ({
@@ -67,8 +72,11 @@ describe('agent soul purchase prepare route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
-    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = PACKAGE_ID
-    process.env.NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID = MARKET_CONFIG_ID
+    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = SOUL_OBJECT_PACKAGE_ID
+    process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID = MARKET_ADAPTER_PACKAGE_ID
+    process.env.NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID = CPU_MARKETPLACE_ID
+    process.env.NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID = UNFT_COLLECTION_ID
+    process.env.NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID = `0x${'5'.repeat(64)}`
 
     mockedRequireAgentApiKey.mockResolvedValue({
       agent: { agentMemberId: 'agent-member-1' },
@@ -83,9 +91,11 @@ describe('agent soul purchase prepare route', () => {
       sellerKioskId: KIOSK_ID,
       listedPriceSui: '1000000000',
     })
-    mockedGetVerifiedMarketConfigState.mockResolvedValue({
-      platformFeeBps: 500n,
-      royaltyBps: 250n,
+    mockedGetSoulPurchaseQuote.mockResolvedValue({
+      marketplaceFeeSui: 50_000_000n,
+      priceSui: 1_000_000_000n,
+      royaltyFeeSui: 25_000_000n,
+      totalSui: 1_075_000_000n,
     })
     mockedSuiClient.getBalance.mockResolvedValue({ totalBalance: '2000000000' })
     mockedTx.build.mockResolvedValue(new Uint8Array([1, 2, 3]))
@@ -112,7 +122,11 @@ describe('agent soul purchase prepare route', () => {
   })
 
   it('returns 503 when the required purchase config is missing', async () => {
-    delete process.env.NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID
+    mockedGetSoulPurchaseQuote.mockImplementationOnce(() => {
+      const error = new Error('Service temporarily unavailable')
+      error.name = 'MissingPublicEnvError'
+      throw error
+    })
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
     const response = await POST(

@@ -13,6 +13,11 @@ describe('repository contract guards', () => {
     expect(envExample).toContain('DIRECT_URL=')
     expect(envExample).toContain('SHADOW_DATABASE_URL=')
     expect(envExample).toContain('TRUST_PROXY_HEADERS=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID=')
     expect(prismaConfig).toContain('shadowDatabaseUrl')
   })
 
@@ -53,6 +58,7 @@ describe('repository contract guards', () => {
     const grantSource = readFileSync(join(repoRoot, 'move', 'soul_object', 'sources', 'grant.move'), 'utf8')
     const marketSource = readFileSync(join(repoRoot, 'move', 'soul_object', 'sources', 'market.move'), 'utf8')
     const sealPolicySource = readFileSync(join(repoRoot, 'move', 'soul_object', 'sources', 'seal_policy.move'), 'utf8')
+    const adapterSource = readFileSync(join(repoRoot, 'move', 'soul_market_adapter', 'sources', 'market.move'), 'utf8')
 
     expect(soulSource).toContain('public struct Soul has key, store')
     expect(grantSource).toContain('public struct SoulAccessCap has key, store')
@@ -60,6 +66,8 @@ describe('repository contract guards', () => {
     expect(marketSource).toContain('assert!(price > 0, EInvalidPrice);')
     expect(sealPolicySource).toContain('seal_approve_owner')
     expect(sealPolicySource).toContain('seal_approve_agent')
+    expect(adapterSource).toContain('public fun mint_and_list(')
+    expect(adapterSource).toContain('public fun purchase(')
     expect(existsSync(join(repoRoot, 'move', 'soul_market', 'Move.toml'))).toBe(true)
   })
 

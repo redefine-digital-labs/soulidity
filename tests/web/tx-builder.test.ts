@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ORIGINAL_ENV = { ...process.env }
-const PACKAGE_ID = '0xsoul'
-const MARKET_CONFIG_ID = '0xconfig'
+const SOUL_OBJECT_PACKAGE_ID = '0xsoulobject'
+const MARKET_ADAPTER_PACKAGE_ID = '0xsouladapter'
+const CPU_MARKETPLACE_ID = '0xcpu'
+const UNFT_COLLECTION_ID = '0xcollection'
 const TRANSFER_POLICY_ID = '0xpolicy'
 
 describe('tx builders', () => {
@@ -10,8 +12,10 @@ describe('tx builders', () => {
     vi.resetModules()
     process.env = {
       ...ORIGINAL_ENV,
-      NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID: PACKAGE_ID,
-      NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID: MARKET_CONFIG_ID,
+      NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID: SOUL_OBJECT_PACKAGE_ID,
+      NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID: MARKET_ADAPTER_PACKAGE_ID,
+      NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID: CPU_MARKETPLACE_ID,
+      NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID: UNFT_COLLECTION_ID,
       NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID: TRANSFER_POLICY_ID,
     }
   })
@@ -88,13 +92,13 @@ describe('tx builders', () => {
     })
 
     const moveCall = moveCallSpy.mock.calls.findLast(
-      ([call]) => (call as Record<string, unknown>).target === `${PACKAGE_ID}::market::purchase`,
+      ([call]) => (call as Record<string, unknown>).target === `${MARKET_ADAPTER_PACKAGE_ID}::market::purchase`,
     )?.[0] as Record<string, unknown> | undefined
 
     expect(moveCall).toMatchObject({
-      target: `${PACKAGE_ID}::market::purchase`,
+      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::purchase`,
     })
-    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(6)
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(7)
     moveCallSpy.mockRestore()
   })
 
@@ -110,7 +114,7 @@ describe('tx builders', () => {
     })
 
     expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
-      target: `${PACKAGE_ID}::grant::set_agent_grant`,
+      target: `${SOUL_OBJECT_PACKAGE_ID}::grant::set_agent_grant`,
     }))
     expect(transferSpy).toHaveBeenCalledTimes(1)
     moveCallSpy.mockRestore()
@@ -127,7 +131,7 @@ describe('tx builders', () => {
     })
 
     expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
-      target: `${PACKAGE_ID}::grant::revoke_agent_grant`,
+      target: `${SOUL_OBJECT_PACKAGE_ID}::grant::revoke_agent_grant`,
     }))
     moveCallSpy.mockRestore()
   })

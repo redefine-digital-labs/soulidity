@@ -72,13 +72,6 @@ export interface VerifiedSoulPurchasedEvent {
   royaltyFeeSui: bigint
 }
 
-export interface VerifiedMarketConfigState {
-  objectId: string
-  feeRecipient: string
-  platformFeeBps: bigint
-  royaltyBps: bigint
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
 }
@@ -312,28 +305,6 @@ export async function getVerifiedSoulState(objectId: string, packageId?: string)
     contentBlobObjectId: readObjectId(fields.content_blob, 'Soul content_blob'),
     agentGrant: readOptionalAddress(fields.agent_grant, 'Soul agent_grant'),
     grantVersion: readBigInt(fields.grant_version, 'Soul grant_version'),
-  }
-}
-
-export async function getVerifiedMarketConfigState(
-  objectId: string,
-  packageId?: string,
-): Promise<VerifiedMarketConfigState> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${packageId ?? ''}::market::MarketConfig`
-  const { fields } = expectMoveObject(response, objectId, expectedTypePrefix)
-
-  return {
-    objectId,
-    feeRecipient: readAddress(fields.fee_recipient, 'MarketConfig fee_recipient'),
-    platformFeeBps: readBigInt(fields.platform_fee_bps, 'MarketConfig platform_fee_bps'),
-    royaltyBps: readBigInt(fields.royalty_bps, 'MarketConfig royalty_bps'),
   }
 }
 

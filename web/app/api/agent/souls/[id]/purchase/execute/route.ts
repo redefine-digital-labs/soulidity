@@ -70,8 +70,10 @@ export async function POST(
   }
 
   let soulPackageId: string
+  let marketPackageId: string
   try {
     soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+    marketPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID')
   } catch {
     return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
   }
@@ -175,7 +177,7 @@ export async function POST(
   }
 
   try {
-    const purchaseEvent = extractSoulPurchasedEvent(result, soulPackageId)
+    const purchaseEvent = extractSoulPurchasedEvent(result, marketPackageId)
     if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
       return await finalizePreparedResult(422, { error: 'Transaction did not purchase the requested Soul' })
     }

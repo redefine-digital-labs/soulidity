@@ -71,31 +71,27 @@ export function buildMintAndListSoulTx(params: {
     throw new Error('priceSui must be positive')
   }
 
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
+  const adapterPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID')
+  const collectionId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID')
+  const marketplaceId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID')
   const tx = new Transaction()
 
   const [kiosk, kioskOwnerCap] = tx.moveCall({
     target: `${KIOSK_PACKAGE_ID}::kiosk::new`,
   })
-  const soul = tx.moveCall({
-    target: `${packageId}::soul::mint`,
+
+  tx.moveCall({
+    target: `${adapterPackageId}::market::mint_and_list`,
     arguments: [
+      tx.object(collectionId),
+      kiosk,
+      kioskOwnerCap,
+      tx.object(marketplaceId),
       tx.pure.string(params.name),
       tx.pure.string(params.description),
       tx.pure.string(params.imageUrl),
       tx.pure.option('string', params.metadataRef ?? null),
       tx.object(params.contentBlobObjectId),
-    ],
-  })
-
-  tx.moveCall({
-    target: `${packageId}::market::place_and_list`,
-    arguments: [
-      kiosk,
-      kioskOwnerCap,
-      tx.object(transferPolicyId),
-      soul,
       tx.pure.u64(params.priceSui),
     ],
   })
@@ -124,8 +120,9 @@ export function buildBuySoulTx(params: {
     throw new Error('feeAmountSui must be non-negative')
   }
 
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
+  const adapterPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID')
+  const collectionId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID')
+  const marketplaceId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID')
   const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const [paymentCoin, feeCoin] = tx.splitCoins(tx.gas, [
@@ -133,9 +130,10 @@ export function buildBuySoulTx(params: {
     tx.pure.u64(params.feeAmountSui),
   ])
   const [purchasedSoul, feeRemainder] = tx.moveCall({
-    target: `${packageId}::market::purchase`,
+    target: `${adapterPackageId}::market::purchase`,
     arguments: [
-      tx.object(marketConfigId),
+      tx.object(collectionId),
+      tx.object(marketplaceId),
       tx.object(transferPolicyId),
       tx.object(params.sellerKioskId),
       tx.object(params.soulObjectId),

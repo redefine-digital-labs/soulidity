@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
+const MARKET_ADAPTER_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const BUYER_ADDRESS = `0x${'1'.repeat(64)}`
 const SOUL_ID = `0x${'2'.repeat(64)}`
 const KIOSK_ID = `0x${'3'.repeat(64)}`
@@ -68,6 +69,7 @@ describe('Soul purchase route', () => {
     vi.resetAllMocks()
     vi.resetModules()
     process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = PACKAGE_ID
+    process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID = MARKET_ADAPTER_PACKAGE_ID
 
     mockedRequireIdentity.mockResolvedValue({
       error: null,
@@ -138,8 +140,8 @@ describe('Soul purchase route', () => {
     expect(mockedExtractSoulPurchasedEvent).not.toHaveBeenCalled()
   })
 
-  it('returns 503 when the soul object package id env is missing', async () => {
-    delete process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID
+  it('returns 503 when the market adapter package id env is missing', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID
 
     const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
     const response = await POST(
