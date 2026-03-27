@@ -71,7 +71,7 @@ export function PurchaseButton(props: PurchaseButtonProps) {
           opacity: submitting ? 0.7 : 1,
         }}
       >
-        {submitting ? 'Purchasing…' : `Buy for ${formatAtomicSuiForDisplay(props.listedPriceSui)}`}
+        {submitting ? 'Purchasing…' : `Buy for ${formatAtomicSuiForDisplay((BigInt(props.listedPriceSui) + BigInt(props.feeAmountSui)).toString())}`}
       </button>
       {error ? (
         <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{error}</p>

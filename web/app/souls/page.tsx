@@ -8,7 +8,8 @@ import { useSoulsList } from '@web/lib/souls/queries'
 
 export default function SoulsPage() {
   const [q, setQ] = useState('')
-  const { data, isLoading, error } = useSoulsList({ q })
+  const [page, setPage] = useState(1)
+  const { data, isLoading, error } = useSoulsList({ q, page })
 
   return (
     <div className="min-h-screen">
@@ -31,7 +32,7 @@ export default function SoulsPage() {
         <div className="glass-panel p-4">
           <input
             value={q}
-            onChange={(event) => setQ(event.target.value)}
+            onChange={(event) => { setQ(event.target.value); setPage(1) }}
             placeholder="Search Souls"
             className="w-full bg-transparent outline-none"
             style={{ color: 'var(--text-primary)' }}
@@ -43,11 +44,36 @@ export default function SoulsPage() {
         ) : error ? (
           <div style={{ color: 'var(--accent-rose)' }}>Failed to load Souls.</div>
         ) : data && data.items.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {data.items.map((soul) => (
-              <SoulCard key={soul.onChainId} soul={soul} />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {data.items.map((soul) => (
+                <SoulCard key={soul.onChainId} soul={soul} />
+              ))}
+            </div>
+            {data.totalPages > 1 && (
+              <div className="flex items-center justify-center gap-4 pt-4" style={{ color: 'var(--text-muted)' }}>
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                  className="px-3 py-1 rounded-lg disabled:opacity-40"
+                  style={{ background: 'var(--glass-bg)' }}
+                >
+                  Prev
+                </button>
+                <span>{data.page} / {data.totalPages}</span>
+                <button
+                  type="button"
+                  disabled={page >= data.totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="px-3 py-1 rounded-lg disabled:opacity-40"
+                  style={{ background: 'var(--glass-bg)' }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="glass-panel p-8 text-center" style={{ color: 'var(--text-muted)' }}>
             No Souls listed right now.

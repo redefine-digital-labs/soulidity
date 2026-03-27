@@ -7,7 +7,7 @@ import { SoulCard } from '@web/components/souls/soul-card'
 import { useMySouls } from '@web/lib/souls/queries'
 
 export default function MySoulsPage() {
-  const { user, getAuthHeaders } = useAuth()
+  const { user, loading: authLoading, getAuthHeaders } = useAuth()
   const { data, isLoading, error } = useMySouls(user?.id ?? null, getAuthHeaders)
 
   return (
@@ -28,8 +28,12 @@ export default function MySoulsPage() {
           </Link>
         </div>
 
-        {isLoading ? (
+        {authLoading || isLoading ? (
           <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+        ) : !user ? (
+          <div className="glass-panel p-8 text-center" style={{ color: 'var(--text-muted)' }}>
+            Sign in to view your Souls.
+          </div>
         ) : error || !data ? (
           <div style={{ color: 'var(--accent-rose)' }}>Failed to load your Souls.</div>
         ) : (
