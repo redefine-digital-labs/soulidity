@@ -25,7 +25,10 @@ describe('community profile route', () => {
     vi.resetModules()
   })
 
-  it('returns the profile Sui address only to the owner while keeping uploaded active souls public', async () => {
+  it('only returns the primary Sui address to the owner while keeping authored Souls public', async () => {
+    const createdAt = new Date('2026-03-20T00:00:00.000Z')
+    const updatedAt = new Date('2026-03-21T00:00:00.000Z')
+
     mockedPrisma.member.findUnique.mockResolvedValue({
       id: 'member-1',
       tgName: 'claw',
@@ -35,33 +38,26 @@ describe('community profile route', () => {
       bio: 'bio',
       level: 2,
       exp: 42,
-      joinedAt: '2026-03-01T00:00:00.000Z',
+      joinedAt: new Date('2026-03-01T00:00:00.000Z'),
       walletBindings: [{ address: '0xowner' }],
       posts: [],
       achievements: [],
-      authoredSoulSeries: [
+      authoredSoulAssets: [
         {
-          id: 'series-1',
-          onChainId: 'chain-1',
+          id: 'asset-1',
+          onChainId: '0xsoul',
           name: 'Alpha Soul',
           description: 'desc',
+          imageUrl: 'https://example.com/soul.png',
           category: 'Research',
           tags: ['alpha'],
           previewImages: ['blob-1'],
-          oneTimePriceUsdc: '1000000000',
-          oneTimePlanOnChainId: 'plan-1',
-          subPriceUsdc: null,
-          subPlanOnChainId: null,
-          subPeriodDays: null,
-          createdAt: '2026-03-20T00:00:00.000Z',
-          latestRelease: {
-            id: 'release-latest',
-            onChainId: 'release-chain-latest',
-            version: '1.10.0',
-            changelog: null,
-            createdAt: '2026-03-19T00:00:00.000Z',
-          },
-          _count: { passSnapshots: 3 },
+          listedPriceSui: { toString: () => '1000000000' },
+          listingStatus: 'listed',
+          creatorAddress: '0xcreator',
+          currentOwnerAddress: '0xowner',
+          createdAt,
+          updatedAt,
         },
       ],
     })
@@ -79,12 +75,13 @@ describe('community profile route', () => {
       primarySuiAddress: '0xowner',
       uploadedSouls: [
         {
-          id: 'series-1',
+          id: 'asset-1',
+          onChainId: '0xsoul',
           name: 'Alpha Soul',
-          latestRelease: {
-            onChainId: 'release-chain-latest',
-            version: '1.10.0',
-          },
+          listedPriceSui: '1000000000',
+          listingStatus: 'listed',
+          createdAt: createdAt.toISOString(),
+          updatedAt: updatedAt.toISOString(),
         },
       ],
     })
@@ -100,27 +97,21 @@ describe('community profile route', () => {
       primarySuiAddress: null,
       uploadedSouls: [
         {
-          id: 'series-1',
+          id: 'asset-1',
+          onChainId: '0xsoul',
           name: 'Alpha Soul',
-          latestRelease: {
-            onChainId: 'release-chain-latest',
-            version: '1.10.0',
-          },
         },
       ],
     })
-    expect(mockedPrisma.member.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({
-          walletBindings: expect.any(Object),
-          authoredSoulSeries: expect.objectContaining({
-            where: { status: 'active' },
-            include: expect.objectContaining({
-              latestRelease: expect.any(Object),
-            }),
-          }),
+
+    expect(mockedPrisma.member.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({
+        walletBindings: expect.any(Object),
+        authoredSoulAssets: expect.objectContaining({
+          orderBy: { createdAt: 'desc' },
+          take: 12,
         }),
       }),
-    )
+    }))
   })
 })

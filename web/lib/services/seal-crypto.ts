@@ -11,7 +11,8 @@ const DEK_BYTES = 32
 const CONTENT_HASH_BYTES = 32
 const IV_BYTES = 12
 const DOCUMENT_ID_NONCE_BYTES = 16
-const DOCUMENT_ID_MIN_BYTES = DOCUMENT_ID_NONCE_BYTES + 1
+const DOCUMENT_ID_DOMAIN = 'soul-seal:'
+const DOCUMENT_ID_VERSION = 0x01
 const MAX_ENCRYPTED_DEK_BASE64_LENGTH = 16 * 1024
 
 export interface SealEnvelopeSidecar {
@@ -31,7 +32,6 @@ function getCrypto(): Crypto {
   if (!cryptoInstance?.subtle) {
     throw new Error('Web Crypto is not available in this runtime')
   }
-
   return cryptoInstance
 }
 
@@ -49,23 +49,7 @@ function hexToBytes(value: string): Uint8Array {
   for (let index = 0; index < hex.length; index += 2) {
     bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16)
   }
-
   return bytes
-}
-
-function isValidDocumentId(value: string): boolean {
-  if (!value.startsWith('0x')) {
-    return false
-  }
-
-  const hex = stripHexPrefix(value)
-  return (
-    hex.length > 0 &&
-    hex.length % 2 === 0 &&
-    /^[0-9a-fA-F]+$/.test(hex) &&
-    hex.length / 2 > DOCUMENT_ID_NONCE_BYTES &&
-    hex.length / 2 >= DOCUMENT_ID_MIN_BYTES
-  )
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -100,15 +84,11 @@ function base64ToBytes(value: string): Uint8Array {
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index)
   }
-
   return bytes
 }
 
 function isValidBase64(value: string): boolean {
-  if (value.length === 0) {
-    return false
-  }
-
+  if (value.length === 0) return false
   const normalizedValue = padBase64(value)
   return (
     normalizedValue.length % 4 === 0
@@ -124,10 +104,7 @@ async function importAesKey(rawKey: Uint8Array, usage: KeyUsage[]): Promise<Cryp
   return getCrypto().subtle.importKey(
     'raw',
     toCryptoBytes(rawKey),
-    {
-      name: AES_GCM_ALGORITHM,
-      length: 256,
-    },
+    { name: AES_GCM_ALGORITHM, length: 256 },
     false,
     usage,
   )
@@ -136,6 +113,52 @@ async function importAesKey(rawKey: Uint8Array, usage: KeyUsage[]): Promise<Cryp
 async function sha256Hex(data: Uint8Array): Promise<string> {
   const digest = await getCrypto().subtle.digest('SHA-256', toCryptoBytes(data))
   return stripHexPrefix(bytesToHex(new Uint8Array(digest)))
+}
+
+function normalizeSuiHex(value: string): string {
+  return stripHexPrefix(normalizeSuiAddress(value)).toLowerCase()
+}
+
+function isValidDocumentId(value: string): boolean {
+  if (!value.startsWith('0x')) return false
+  const hex = stripHexPrefix(value)
+  if (hex.length === 0 || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(hex)) {
+    return false
+  }
+
+  const bytes = hexToBytes(value)
+  const minimumLength = new TextEncoder().encode(DOCUMENT_ID_DOMAIN).length + 1 + 32 + DOCUMENT_ID_NONCE_BYTES
+  if (bytes.length < minimumLength) {
+    return false
+  }
+
+  const domainBytes = new TextEncoder().encode(DOCUMENT_ID_DOMAIN)
+  for (let index = 0; index < domainBytes.length; index += 1) {
+    if (bytes[index] !== domainBytes[index]) {
+      return false
+    }
+  }
+
+  return bytes[domainBytes.length] === DOCUMENT_ID_VERSION
+}
+
+function assertDocumentIdMatchesExpectedBinding(params: {
+  documentId: string
+  expectedSoulObjectId: string
+}) {
+  if (!isValidDocumentId(params.documentId)) {
+    throw new Error('Seal envelope sidecar documentId is invalid')
+  }
+
+  const expectedPrefix = bytesToHex(new Uint8Array([
+    ...new TextEncoder().encode(DOCUMENT_ID_DOMAIN),
+    DOCUMENT_ID_VERSION,
+    ...hexToBytes(params.expectedSoulObjectId),
+  ])).slice(2).toLowerCase()
+
+  if (!stripHexPrefix(params.documentId).toLowerCase().startsWith(expectedPrefix)) {
+    throw new Error('Seal documentId does not belong to the expected soul')
+  }
 }
 
 export function createSealKeyMaterial(dek: Uint8Array, contentHash: string): Uint8Array {
@@ -150,86 +173,22 @@ export function createSealKeyMaterial(dek: Uint8Array, contentHash: string): Uin
   return keyMaterial
 }
 
-function assertDocumentIdMatchesExpectedBinding(params: {
-  documentId: string
-  expectedSeriesObjectId: string
-  expectedReleaseObjectId?: string | null
-}) {
-  if (!isValidDocumentId(params.documentId)) {
-    throw new Error('Seal envelope sidecar documentId is invalid')
-  }
-
-  if (params.expectedReleaseObjectId) {
-    if (!isSealDocumentIdBoundToRelease(
-      params.documentId,
-      params.expectedSeriesObjectId,
-      params.expectedReleaseObjectId,
-    )) {
-      throw new Error('Seal documentId does not belong to the expected release')
-    }
-    return
-  }
-
-  if (!isSealDocumentIdInSeriesNamespace(params.documentId, params.expectedSeriesObjectId)) {
-    throw new Error('Seal documentId does not belong to the expected series')
-  }
-}
-
 export function generateSealDocumentId(
-  seriesObjectId: string,
+  soulObjectId: string,
   nonce?: Uint8Array,
-  releaseObjectId?: string | null,
 ): string {
-  const seriesBytes = hexToBytes(seriesObjectId)
-  const releaseBytes = releaseObjectId ? hexToBytes(releaseObjectId) : null
+  const soulBytes = hexToBytes(soulObjectId)
   const resolvedNonce = nonce ?? getCrypto().getRandomValues(new Uint8Array(DOCUMENT_ID_NONCE_BYTES))
   if (resolvedNonce.length !== DOCUMENT_ID_NONCE_BYTES) {
     throw new Error(`Seal document id nonce must be ${DOCUMENT_ID_NONCE_BYTES} bytes`)
   }
 
   return bytesToHex(new Uint8Array([
-    ...seriesBytes,
-    ...(releaseBytes ?? []),
+    ...new TextEncoder().encode(DOCUMENT_ID_DOMAIN),
+    DOCUMENT_ID_VERSION,
+    ...soulBytes,
     ...resolvedNonce,
   ]))
-}
-
-export function isSealDocumentIdInSeriesNamespace(
-  documentId: string,
-  seriesObjectId: string,
-): boolean {
-  if (!isValidDocumentId(documentId)) {
-    return false
-  }
-
-  try {
-    const normalizedSeriesObjectId = normalizeSuiAddress(seriesObjectId)
-    return stripHexPrefix(documentId).toLowerCase().startsWith(
-      stripHexPrefix(normalizedSeriesObjectId).toLowerCase(),
-    )
-  } catch {
-    return false
-  }
-}
-
-export function isSealDocumentIdBoundToRelease(
-  documentId: string,
-  seriesObjectId: string,
-  releaseObjectId: string,
-): boolean {
-  if (!isValidDocumentId(documentId)) {
-    return false
-  }
-
-  try {
-    const documentHex = stripHexPrefix(documentId).toLowerCase()
-    const normalizedSeriesObjectId = stripHexPrefix(normalizeSuiAddress(seriesObjectId)).toLowerCase()
-    const normalizedReleaseObjectId = stripHexPrefix(normalizeSuiAddress(releaseObjectId)).toLowerCase()
-
-    return documentHex.startsWith(normalizedSeriesObjectId + normalizedReleaseObjectId)
-  } catch {
-    return false
-  }
 }
 
 export function parseSealEnvelopeSidecar(value: unknown): SealEnvelopeSidecar {
@@ -296,24 +255,12 @@ export async function encryptBundle(params: {
   mimeType: string
   fileName: string
   nonce?: Uint8Array
-  releaseObjectId?: string | null
 }): Promise<{ encryptedData: Uint8Array; sidecar: SealEnvelopeSidecar }> {
   const dek = getCrypto().getRandomValues(new Uint8Array(DEK_BYTES))
   let keyMaterial: Uint8Array | null = null
   try {
     const iv = getCrypto().getRandomValues(new Uint8Array(IV_BYTES))
-    const releaseObjectId =
-      params.accessPolicy.functionName === 'seal_approve_perpetual'
-        ? params.releaseObjectId
-        : null
-    if (params.accessPolicy.functionName === 'seal_approve_perpetual' && !releaseObjectId) {
-      throw new Error('releaseObjectId is required for perpetual Seal encryption')
-    }
-    const documentId = generateSealDocumentId(
-      params.accessPolicy.seriesObjectId,
-      params.nonce,
-      releaseObjectId,
-    )
+    const documentId = generateSealDocumentId(params.accessPolicy.soulObjectId, params.nonce)
     const contentHash = await sha256Hex(params.data)
     const key = await importAesKey(dek, ['encrypt'])
     const encryptedData = new Uint8Array(
@@ -352,23 +299,66 @@ export async function encryptBundle(params: {
   }
 }
 
-/**
- * Callers own the returned plaintext buffer and should zero it after use.
- */
+export async function createSealEnvelopeSidecar(params: {
+  sealClient: Pick<SealClient, 'encrypt'>
+  packageId: string
+  soulObjectId: string
+  threshold: number
+  dek: Uint8Array
+  iv: Uint8Array
+  contentHash: string
+  mimeType: string
+  fileName: string
+  nonce?: Uint8Array
+}): Promise<SealEnvelopeSidecar> {
+  if (params.dek.length !== DEK_BYTES) {
+    throw new Error('Seal envelope DEK must be 32 bytes')
+  }
+  if (params.iv.length !== IV_BYTES) {
+    throw new Error(`Seal envelope IV must be ${IV_BYTES} bytes`)
+  }
+  if (!CONTENT_HASH_HEX_PATTERN.test(params.contentHash)) {
+    throw new Error('contentHash must be a 64-character hex string')
+  }
+
+  const keyMaterial = createSealKeyMaterial(params.dek, params.contentHash)
+  try {
+    const documentId = generateSealDocumentId(params.soulObjectId, params.nonce)
+    const { encryptedObject } = await params.sealClient.encrypt({
+      threshold: params.threshold,
+      packageId: params.packageId,
+      id: documentId,
+      data: keyMaterial,
+    })
+
+    return {
+      version: 1,
+      mode: 'seal-envelope',
+      documentId,
+      encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
+      iv: bytesToBase64(params.iv),
+      cipher: AES_GCM_CIPHER_LABEL,
+      mimeType: params.mimeType,
+      fileName: params.fileName,
+      contentHash: params.contentHash,
+    }
+  } finally {
+    keyMaterial.fill(0)
+  }
+}
+
 export async function decryptBundle(params: {
   sealClient: Pick<SealClient, 'decrypt'>
   sessionKey: SessionKey
   txBytes: Uint8Array
   encryptedData: Uint8Array
   sidecar: SealEnvelopeSidecar
-  expectedSeriesObjectId: string
-  expectedReleaseObjectId?: string | null
+  expectedSoulObjectId: string
 }): Promise<Uint8Array> {
   const sidecar = parseSealEnvelopeSidecar(params.sidecar)
   assertDocumentIdMatchesExpectedBinding({
     documentId: sidecar.documentId,
-    expectedSeriesObjectId: params.expectedSeriesObjectId,
-    expectedReleaseObjectId: params.expectedReleaseObjectId,
+    expectedSoulObjectId: params.expectedSoulObjectId,
   })
 
   const keyMaterial = new Uint8Array(
@@ -418,52 +408,46 @@ export async function decryptBundle(params: {
 export async function buildSealApprovalTxBytes(params: {
   accessPolicy: AccessPolicyDescriptor
   documentId: string
-  passObjectId: string
-  releaseObjectId?: string | null
-  clockObjectId?: string | null
+  soulAccessCapObjectId?: string | null
 }): Promise<Uint8Array> {
+  assertDocumentIdMatchesExpectedBinding({
+    documentId: params.documentId,
+    expectedSoulObjectId: params.accessPolicy.soulObjectId,
+  })
+
   const tx = new Transaction()
-  const target =
-    `${params.accessPolicy.packageId}::${params.accessPolicy.moduleName}::${params.accessPolicy.functionName}`
+  const target = `${params.accessPolicy.packageId}::${params.accessPolicy.moduleName}::${params.accessPolicy.functionName}`
+  const argumentsForCall = [
+    tx.pure.vector('u8', Array.from(hexToBytes(params.documentId))),
+    tx.object(params.accessPolicy.soulObjectId),
+  ]
 
-  if (params.accessPolicy.functionName === 'seal_approve_perpetual') {
-    if (!params.releaseObjectId) {
-      throw new Error('releaseObjectId is required for perpetual Seal approval')
+  if (params.accessPolicy.functionName === 'seal_approve_agent') {
+    if (!params.soulAccessCapObjectId) {
+      throw new Error('soulAccessCapObjectId is required for agent Seal approval')
     }
-    assertDocumentIdMatchesExpectedBinding({
-      documentId: params.documentId,
-      expectedSeriesObjectId: params.accessPolicy.seriesObjectId,
-      expectedReleaseObjectId: params.releaseObjectId,
-    })
-
-    tx.moveCall({
-      target,
-      arguments: [
-        tx.pure.vector('u8', Array.from(hexToBytes(params.documentId))),
-        tx.object(params.passObjectId),
-        tx.object(params.releaseObjectId),
-        tx.object(params.accessPolicy.seriesObjectId),
-      ],
-    })
-  } else {
-    assertDocumentIdMatchesExpectedBinding({
-      documentId: params.documentId,
-      expectedSeriesObjectId: params.accessPolicy.seriesObjectId,
-    })
-
-    tx.moveCall({
-      target,
-      arguments: [
-        tx.pure.vector('u8', Array.from(hexToBytes(params.documentId))),
-        tx.object(params.passObjectId),
-        tx.object(params.accessPolicy.seriesObjectId),
-        tx.object(params.clockObjectId ?? '0x6'),
-      ],
-    })
+    argumentsForCall.push(tx.object(params.soulAccessCapObjectId))
   }
+
+  tx.moveCall({
+    target,
+    arguments: argumentsForCall,
+  })
 
   return tx.build({
     client: suiClient,
     onlyTransactionKind: true,
   })
+}
+
+export function isSealDocumentIdBoundToSoul(documentId: string, soulObjectId: string): boolean {
+  try {
+    assertDocumentIdMatchesExpectedBinding({
+      documentId,
+      expectedSoulObjectId: normalizeSuiHex(soulObjectId),
+    })
+    return true
+  } catch {
+    return false
+  }
 }

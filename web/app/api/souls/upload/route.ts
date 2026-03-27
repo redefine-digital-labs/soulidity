@@ -93,8 +93,8 @@ export async function POST(req: NextRequest) {
   const contentHash = createHash('sha256').update(buffer).digest('hex')
 
   if (type === 'public') {
-    const blobId = await uploadPublic(buffer)
-    return NextResponse.json({ blobId, contentHash })
+    const uploaded = await uploadPublic(buffer)
+    return NextResponse.json({ ...uploaded, contentHash })
   }
 
   // type === 'encrypted': AES-GCM-256 encrypt before uploading to Walrus
@@ -103,8 +103,8 @@ export async function POST(req: NextRequest) {
   const cipher = createCipheriv('aes-256-gcm', dek, iv)
   const ciphertext = Buffer.concat([cipher.update(buffer), cipher.final(), cipher.getAuthTag()])
 
-  const blobId = await uploadPublic(ciphertext)
+  const uploaded = await uploadPublic(ciphertext)
   const envelope = sealDekEnvelope({ dek, iv, contentHash, mimeType: file.type || 'application/octet-stream', fileName: file.name || 'bundle' })
 
-  return NextResponse.json({ blobId, contentHash, sealDekEnvelope: envelope })
+  return NextResponse.json({ ...uploaded, contentHash, sealDekEnvelope: envelope })
 }

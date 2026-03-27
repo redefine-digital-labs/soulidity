@@ -1,35 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  parseSubscriptionPeriodDaysToMs,
-  parseUsdPriceToAtomic,
+  parseSuiPriceToMist,
 } from '../../web/lib/souls/pricing-input.ts'
 
-describe('parseUsdPriceToAtomic', () => {
+describe('parseSuiPriceToMist', () => {
   it('parses large decimal strings without losing precision through Number()', () => {
-    expect(parseUsdPriceToAtomic('9007199254740.993001')).toBe(9_007_199_254_740_993_001n)
+    expect(parseSuiPriceToMist('9007199254740.993001')).toBe(9_007_199_254_740_993_001_000n)
   })
 
   it('rejects zero, negative, and overly precise price strings', () => {
-    expect(parseUsdPriceToAtomic('0')).toBeNull()
-    expect(parseUsdPriceToAtomic('-1')).toBeNull()
-    expect(parseUsdPriceToAtomic('1.1234567')).toBeNull()
+    expect(parseSuiPriceToMist('0')).toBeNull()
+    expect(parseSuiPriceToMist('-1')).toBeNull()
+    expect(parseSuiPriceToMist('1.1234567891')).toBeNull()
   })
 
-  it('rejects sub-cent prices below the supported 0.01 USDC floor', () => {
-    expect(parseUsdPriceToAtomic('0.000001')).toBeNull()
-    expect(parseUsdPriceToAtomic('0.009999')).toBeNull()
-    expect(parseUsdPriceToAtomic('0.01')).toBe(10_000n)
-  })
-})
-
-describe('parseSubscriptionPeriodDaysToMs', () => {
-  it('parses whole subscription days into milliseconds', () => {
-    expect(parseSubscriptionPeriodDaysToMs('30')).toBe(2_592_000_000n)
-  })
-
-  it('rejects zero and non-integer subscription periods', () => {
-    expect(parseSubscriptionPeriodDaysToMs('0')).toBeNull()
-    expect(parseSubscriptionPeriodDaysToMs('1.5')).toBeNull()
+  it('rejects values below the supported 0.001 SUI floor', () => {
+    expect(parseSuiPriceToMist('0.000000001')).toBeNull()
+    expect(parseSuiPriceToMist('0.000999999')).toBeNull()
+    expect(parseSuiPriceToMist('0.001')).toBe(1_000_000n)
   })
 })

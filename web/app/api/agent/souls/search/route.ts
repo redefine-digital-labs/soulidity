@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
-import { serializeAtomicUsdcAmount } from '@web/lib/souls/price-format'
+import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@web/lib/souls/repository'
 
 const MAX_SOUL_QUERY_PARAM_LENGTH = 200
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, Math.trunc(rawLimit))) : 20
   const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : 0
 
-  const where: Record<string, unknown> = { status: 'active' }
+  const where: Record<string, unknown> = { listingStatus: 'listed' }
   if (category) where.category = category
   if (q) {
     where.OR = [
@@ -47,30 +47,16 @@ export async function GET(req: NextRequest) {
     ]
   }
 
-  const items = await prisma.soulSeries.findMany({
+  const items = await prisma.soulAsset.findMany({
     where,
-    select: {
-      id: true,
-      onChainId: true,
-      name: true,
-      description: true,
-      category: true,
-      tags: true,
-      oneTimePriceUsdc: true,
-      subPriceUsdc: true,
-      subPeriodDays: true,
-    },
+    select: soulAssetSummarySelect,
     orderBy: { createdAt: 'desc' },
     skip: offset,
     take: limit,
   })
 
   return NextResponse.json({
-    items: items.map((item) => ({
-      ...item,
-      oneTimePriceUsdc: serializeAtomicUsdcAmount(item.oneTimePriceUsdc),
-      subPriceUsdc: serializeAtomicUsdcAmount(item.subPriceUsdc),
-    })),
+    items: toSoulAssetSummaryList(items),
     offset,
     limit,
   })

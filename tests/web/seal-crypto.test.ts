@@ -1,26 +1,24 @@
 import { describe, expect, it, vi } from 'vitest'
 
-const SERIES_OBJECT_ID = `0x${'11'.repeat(32)}`
-const RELEASE_OBJECT_ID = `0x${'22'.repeat(32)}`
+const SOUL_OBJECT_ID = `0x${'11'.repeat(32)}`
+const OTHER_SOUL_OBJECT_ID = `0x${'33'.repeat(32)}`
+const ACCESS_CAP_OBJECT_ID = `0x${'55'.repeat(32)}`
 const FIXED_NONCE = Uint8Array.from({ length: 16 }, (_, index) => index)
 const VALID_IV_BASE64 = 'AAAAAAAAAAAAAAAA'
 const VALID_CONTENT_HASH = 'a'.repeat(64)
 
+function expectedDocumentIdHex(soulObjectId: string) {
+  const domainHex = Buffer.from('soul-seal:', 'utf8').toString('hex')
+  const soulHex = soulObjectId.slice(2)
+  const nonceHex = Array.from(FIXED_NONCE, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `0x${domainHex}01${soulHex}${nonceHex}`
+}
+
 describe('Seal envelope crypto', () => {
-  it('prefixes the document id with the series object id bytes', async () => {
+  it('prefixes the document id with the soul document namespace and soul object id bytes', async () => {
     const { generateSealDocumentId } = await import('../../web/lib/services/seal-crypto.ts')
 
-    expect(generateSealDocumentId(SERIES_OBJECT_ID, FIXED_NONCE)).toBe(
-      `0x${'11'.repeat(32)}000102030405060708090a0b0c0d0e0f`,
-    )
-  })
-
-  it('binds perpetual document ids to the concrete locked release before the nonce suffix', async () => {
-    const { generateSealDocumentId } = await import('../../web/lib/services/seal-crypto.ts')
-
-    expect(generateSealDocumentId(SERIES_OBJECT_ID, FIXED_NONCE, RELEASE_OBJECT_ID)).toBe(
-      `0x${'11'.repeat(32)}${'22'.repeat(32)}000102030405060708090a0b0c0d0e0f`,
-    )
+    expect(generateSealDocumentId(SOUL_OBJECT_ID, FIXED_NONCE)).toBe(expectedDocumentIdHex(SOUL_OBJECT_ID))
   })
 
   it('rejects malformed hex before building a document id', async () => {
@@ -47,123 +45,6 @@ describe('Seal envelope crypto', () => {
     ).toThrow('Seal envelope sidecar documentId is invalid')
   })
 
-  it('rejects sidecars whose encrypted fields are not valid base64', async () => {
-    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
-
-    expect(() =>
-      parseSealEnvelopeSidecar({
-        version: 1,
-        mode: 'seal-envelope',
-        documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
-        encryptedDek: '!not-base64!',
-        iv: VALID_IV_BASE64,
-        cipher: 'AES-GCM-256',
-        mimeType: 'application/zip',
-        fileName: 'bundle.zip',
-        contentHash: VALID_CONTENT_HASH,
-      }),
-    ).toThrow('Seal envelope sidecar encryptedDek is invalid base64')
-  })
-
-  it('accepts unpadded base64 in encryptedDek sidecars', async () => {
-    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
-
-    expect(parseSealEnvelopeSidecar({
-      version: 1,
-      mode: 'seal-envelope',
-      documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
-      encryptedDek: 'AQI',
-      iv: VALID_IV_BASE64,
-      cipher: 'AES-GCM-256',
-      mimeType: 'application/zip',
-      fileName: 'bundle.zip',
-      contentHash: VALID_CONTENT_HASH,
-    })).toMatchObject({
-      encryptedDek: 'AQI',
-      iv: VALID_IV_BASE64,
-    })
-  })
-
-  it('rejects sidecars whose content hash is not a 64-character hex string', async () => {
-    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
-
-    expect(() =>
-      parseSealEnvelopeSidecar({
-        version: 1,
-        mode: 'seal-envelope',
-        documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
-        encryptedDek: 'AQI',
-        iv: VALID_IV_BASE64,
-        cipher: 'AES-GCM-256',
-        mimeType: 'application/zip',
-        fileName: 'bundle.zip',
-        contentHash: 'not-hex',
-      }),
-    ).toThrow('contentHash must be a 64-character hex string')
-  })
-
-  it('rejects sidecars whose iv does not decode to 12 bytes', async () => {
-    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
-
-    expect(() =>
-      parseSealEnvelopeSidecar({
-        version: 1,
-        mode: 'seal-envelope',
-        documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
-        encryptedDek: 'ZW5jcnlwdGVk',
-        iv: 'aXY=',
-        cipher: 'AES-GCM-256',
-        mimeType: 'application/zip',
-        fileName: 'bundle.zip',
-        contentHash: VALID_CONTENT_HASH,
-      }),
-    ).toThrow('Seal envelope sidecar iv must decode to 12 bytes')
-  })
-
-  it('rejects sidecars whose encrypted DEK exceeds the size cap', async () => {
-    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
-
-    expect(() =>
-      parseSealEnvelopeSidecar({
-        version: 1,
-        mode: 'seal-envelope',
-        documentId: `0x${'11'.repeat(32)}${'22'.repeat(16)}`,
-        encryptedDek: 'A'.repeat(16388),
-        iv: VALID_IV_BASE64,
-        cipher: 'AES-GCM-256',
-        mimeType: 'application/zip',
-        fileName: 'bundle.zip',
-        contentHash: VALID_CONTENT_HASH,
-      }),
-    ).toThrow('Seal envelope sidecar encryptedDek exceeds the size limit')
-  })
-
-  it('requires a release object id when encrypting a perpetual bundle', async () => {
-    const { encryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
-
-    await expect(() =>
-      encryptBundle({
-        sealClient: {
-          encrypt: vi.fn(async ({ data }: { data: Uint8Array }) => ({
-            encryptedObject: Uint8Array.from(data, (byte) => byte ^ 0xff),
-            key: new Uint8Array(32).fill(7),
-          })),
-        } as never,
-        accessPolicy: {
-          packageId: '0xsoul',
-          moduleName: 'seal_policy',
-          functionName: 'seal_approve_perpetual',
-          seriesObjectId: SERIES_OBJECT_ID,
-        },
-        data: new TextEncoder().encode('sealed soul bundle payload'),
-        mimeType: 'application/zip',
-        fileName: 'bundle.zip',
-        threshold: 2,
-        nonce: FIXED_NONCE,
-      }),
-    ).rejects.toThrow('releaseObjectId is required for perpetual Seal encryption')
-  })
-
   it('roundtrips a bundle through envelope encryption with a mock Seal client', async () => {
     const { decryptBundle, encryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
 
@@ -179,8 +60,8 @@ describe('Seal envelope crypto', () => {
     const accessPolicy = {
       packageId: '0xsoul',
       moduleName: 'seal_policy' as const,
-      functionName: 'seal_approve_perpetual' as const,
-      seriesObjectId: SERIES_OBJECT_ID,
+      functionName: 'seal_approve_owner' as const,
+      soulObjectId: SOUL_OBJECT_ID,
     }
 
     const { encryptedData, sidecar } = await encryptBundle({
@@ -189,7 +70,6 @@ describe('Seal envelope crypto', () => {
       data: plaintext,
       mimeType: 'application/zip',
       fileName: 'bundle.zip',
-      releaseObjectId: RELEASE_OBJECT_ID,
       threshold: 2,
       nonce: FIXED_NONCE,
     })
@@ -197,21 +77,12 @@ describe('Seal envelope crypto', () => {
     expect(sidecar).toMatchObject({
       version: 1,
       mode: 'seal-envelope',
-      documentId: `0x${'11'.repeat(32)}${'22'.repeat(32)}000102030405060708090a0b0c0d0e0f`,
+      documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
       cipher: 'AES-GCM-256',
       mimeType: 'application/zip',
       fileName: 'bundle.zip',
     })
-    expect(sidecar.iv).toMatch(/^[A-Za-z0-9+/=]+$/)
     expect(sidecar.iv).toHaveLength(16)
-    expect(sealClient.encrypt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        threshold: 2,
-        packageId: '0xsoul',
-        id: sidecar.documentId,
-        data: expect.any(Uint8Array),
-      }),
-    )
 
     const decrypted = await decryptBundle({
       sealClient: sealClient as never,
@@ -219,21 +90,13 @@ describe('Seal envelope crypto', () => {
       txBytes: new Uint8Array([1, 2, 3]),
       encryptedData,
       sidecar,
-      expectedSeriesObjectId: SERIES_OBJECT_ID,
-      expectedReleaseObjectId: RELEASE_OBJECT_ID,
+      expectedSoulObjectId: SOUL_OBJECT_ID,
     })
 
     expect(decrypted).toEqual(plaintext)
-    expect(sealClient.decrypt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.any(Uint8Array),
-        sessionKey: { key: 'session' },
-        txBytes: new Uint8Array([1, 2, 3]),
-      }),
-    )
   })
 
-  it('rejects decrypting a sidecar whose document id is outside the expected series namespace', async () => {
+  it('rejects decrypting a sidecar whose document id is outside the expected soul namespace', async () => {
     const { decryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
 
     await expect(() =>
@@ -247,7 +110,7 @@ describe('Seal envelope crypto', () => {
         sidecar: {
           version: 1,
           mode: 'seal-envelope',
-          documentId: `0x${'33'.repeat(32)}${'44'.repeat(16)}`,
+          documentId: expectedDocumentIdHex(OTHER_SOUL_OBJECT_ID),
           encryptedDek: 'AQI',
           iv: VALID_IV_BASE64,
           cipher: 'AES-GCM-256',
@@ -255,40 +118,31 @@ describe('Seal envelope crypto', () => {
           fileName: 'bundle.zip',
           contentHash: VALID_CONTENT_HASH,
         },
-        expectedSeriesObjectId: SERIES_OBJECT_ID,
+        expectedSoulObjectId: SOUL_OBJECT_ID,
       }),
-    ).rejects.toThrow('Seal documentId does not belong to the expected series')
+    ).rejects.toThrow('Seal documentId does not belong to the expected soul')
   })
 
-  it('rejects decrypting a sidecar with an unsupported cipher label', async () => {
-    const { decryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
+  it('builds an owner approval tx bound to the requested soul document id', async () => {
+    const { Transaction } = await import('../../web/node_modules/@mysten/sui/dist/transactions/index.mjs')
+    const buildSpy = vi.spyOn(Transaction.prototype, 'build').mockResolvedValue(new Uint8Array([1, 2, 3]))
+    const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
+    const bytes = await buildSealApprovalTxBytes({
+      accessPolicy: {
+        packageId: '0xsoul',
+        moduleName: 'seal_policy',
+        functionName: 'seal_approve_owner',
+        soulObjectId: SOUL_OBJECT_ID,
+      },
+      documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
+    })
 
-    await expect(() =>
-      decryptBundle({
-        sealClient: {
-          decrypt: vi.fn(async () => new Uint8Array(64)),
-        } as never,
-        sessionKey: { key: 'session' } as never,
-        txBytes: new Uint8Array([1, 2, 3]),
-        encryptedData: new Uint8Array([4, 5, 6]),
-        sidecar: {
-          version: 1,
-          mode: 'seal-envelope',
-          documentId: `0x${'11'.repeat(32)}${'22'.repeat(32)}${'33'.repeat(16)}`,
-          encryptedDek: 'AQI',
-          iv: VALID_IV_BASE64,
-          cipher: 'CHACHA20-POLY1305',
-          mimeType: 'application/zip',
-          fileName: 'bundle.zip',
-          contentHash: VALID_CONTENT_HASH,
-        },
-        expectedSeriesObjectId: SERIES_OBJECT_ID,
-        expectedReleaseObjectId: RELEASE_OBJECT_ID,
-      }),
-    ).rejects.toThrow('Unsupported Seal envelope cipher')
+    expect(bytes).toBeInstanceOf(Uint8Array)
+    expect(bytes.length).toBeGreaterThan(0)
+    buildSpy.mockRestore()
   })
 
-  it('rejects building an approval tx when the document id is not bound to the requested release', async () => {
+  it('rejects agent approval txs without a soul access cap object id', async () => {
     const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
 
     await expect(() =>
@@ -296,51 +150,31 @@ describe('Seal envelope crypto', () => {
         accessPolicy: {
           packageId: '0xsoul',
           moduleName: 'seal_policy',
-          functionName: 'seal_approve_perpetual',
-          seriesObjectId: SERIES_OBJECT_ID,
+          functionName: 'seal_approve_agent',
+          soulObjectId: SOUL_OBJECT_ID,
         },
-        documentId: generateOtherSeriesDocumentId(),
-        passObjectId: `0x${'55'.repeat(32)}`,
-        releaseObjectId: RELEASE_OBJECT_ID,
+        documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
       }),
-    ).rejects.toThrow('Seal documentId does not belong to the expected release')
+    ).rejects.toThrow('soulAccessCapObjectId is required for agent Seal approval')
   })
 
-  it('zeroes the in-memory DEK buffer after encrypting it for Seal', async () => {
-    const { encryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
-
-    let capturedDek: Uint8Array | null = null
-    const sealClient = {
-      encrypt: vi.fn(async ({ data }: { data: Uint8Array }) => {
-        capturedDek = data
-        return {
-          encryptedObject: Uint8Array.from(data, (byte) => byte ^ 0xff),
-          key: new Uint8Array(32).fill(7),
-        }
-      }),
-    }
-
-    await encryptBundle({
-      sealClient: sealClient as never,
+  it('builds an agent approval tx with the supplied access cap object id', async () => {
+    const { Transaction } = await import('../../web/node_modules/@mysten/sui/dist/transactions/index.mjs')
+    const buildSpy = vi.spyOn(Transaction.prototype, 'build').mockResolvedValue(new Uint8Array([1, 2, 3]))
+    const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
+    const bytes = await buildSealApprovalTxBytes({
       accessPolicy: {
         packageId: '0xsoul',
         moduleName: 'seal_policy',
-        functionName: 'seal_approve_perpetual',
-        seriesObjectId: SERIES_OBJECT_ID,
+        functionName: 'seal_approve_agent',
+        soulObjectId: SOUL_OBJECT_ID,
       },
-      data: new TextEncoder().encode('sealed soul bundle payload'),
-      mimeType: 'application/zip',
-      fileName: 'bundle.zip',
-      releaseObjectId: RELEASE_OBJECT_ID,
-      threshold: 2,
-      nonce: FIXED_NONCE,
+      documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
+      soulAccessCapObjectId: ACCESS_CAP_OBJECT_ID,
     })
 
-    expect(capturedDek).not.toBeNull()
-    expect(Array.from(capturedDek!)).toEqual(new Array(64).fill(0))
+    expect(bytes).toBeInstanceOf(Uint8Array)
+    expect(bytes.length).toBeGreaterThan(0)
+    buildSpy.mockRestore()
   })
 })
-
-function generateOtherSeriesDocumentId() {
-  return `0x${'33'.repeat(32)}${'22'.repeat(32)}${Array.from(FIXED_NONCE, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
-}

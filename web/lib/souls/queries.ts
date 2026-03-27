@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import type { SoulsListResponse, SoulSeriesDetail, MySoulsResponse } from './types'
+import type { SoulsListResponse, SoulAssetDetail, MySoulsResponse } from './types'
 
 export function useSoulsList(params: { page?: number; category?: string; q?: string }) {
   const searchParams = new URLSearchParams()
@@ -20,7 +20,7 @@ export function useSoulsList(params: { page?: number; category?: string; q?: str
 }
 
 export function useSoulDetail(id: string, getAuthHeaders?: () => Promise<Record<string, string>>) {
-  return useQuery<SoulSeriesDetail>({
+  return useQuery<SoulAssetDetail>({
     queryKey: ['soul', id],
     queryFn: async () => {
       const headers = getAuthHeaders ? await getAuthHeaders() : undefined

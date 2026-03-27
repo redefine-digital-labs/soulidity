@@ -1,12 +1,7 @@
-/**
- * Transaction builders for soul_market Move contract calls.
- * Each function returns a Transaction ready for signing.
- */
-
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 
-const CLOCK = '0x6'
+const KIOSK_PACKAGE_ID = '0x2'
 const MAX_NAME_BYTES = 256
 const MAX_DESCRIPTION_BYTES = 4096
 const MAX_CATEGORY_BYTES = 64
@@ -15,7 +10,7 @@ const MAX_TAG_BYTES = 64
 const MAX_PREVIEW_IMAGES = 10
 const MAX_PREVIEW_IMAGE_BYTES = 512
 
-function getUtf8ByteLength(value: string): number {
+function getUtf8ByteLength(value: string) {
   return new TextEncoder().encode(value).length
 }
 
@@ -25,7 +20,7 @@ function assertMaxUtf8Bytes(value: string, maxBytes: number, label: string) {
   }
 }
 
-function validateCreateSeriesParams(params: {
+function validateSoulMetadata(params: {
   name: string
   description: string
   category: string
@@ -58,250 +53,126 @@ function validateCreateSeriesParams(params: {
   })
 }
 
-// ─── Series ────────────────────────────────────────────────────
-
-export function buildCreateSeriesTx(params: {
+export function buildMintAndListSoulTx(params: {
+  ownerAddress: string
   name: string
   description: string
+  imageUrl: string
+  metadataRef?: string | null
+  contentBlobObjectId: string
   category: string
   tags: string[]
   previewImages: string[]
+  readme?: string | null
+  priceSui: bigint
 }): Transaction {
-  validateCreateSeriesParams(params)
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  validateSoulMetadata(params)
+  if (params.priceSui <= 0n) {
+    throw new Error('priceSui must be positive')
+  }
+
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::series::create_series_entry`,
+
+  const [kiosk, kioskOwnerCap] = tx.moveCall({
+    target: `${KIOSK_PACKAGE_ID}::kiosk::new`,
+  })
+  const soul = tx.moveCall({
+    target: `${packageId}::soul::mint`,
     arguments: [
       tx.pure.string(params.name),
       tx.pure.string(params.description),
-      tx.pure.string(params.category),
-      tx.pure.vector('string', params.tags),
-      tx.pure.vector('string', params.previewImages),
+      tx.pure.string(params.imageUrl),
+      tx.pure.option('string', params.metadataRef ?? null),
+      tx.object(params.contentBlobObjectId),
     ],
   })
+
+  tx.moveCall({
+    target: `${packageId}::market::place_and_list`,
+    arguments: [
+      kiosk,
+      kioskOwnerCap,
+      tx.object(transferPolicyId),
+      soul,
+      tx.pure.u64(params.priceSui),
+    ],
+  })
+
+  tx.moveCall({
+    target: `${KIOSK_PACKAGE_ID}::transfer::public_share_object`,
+    typeArguments: [`${KIOSK_PACKAGE_ID}::kiosk::Kiosk`],
+    arguments: [kiosk],
+  })
+  tx.transferObjects([kioskOwnerCap], tx.pure.address(params.ownerAddress))
+
   return tx
 }
 
-export function buildPublishReleaseTx(params: {
-  authorCapId: string
-  seriesId: string
-  version: string
-  encryptedBlobId: string
-  publicMetadataId: string
-  contentHash: Uint8Array
+export function buildBuySoulTx(params: {
+  soulObjectId: string
+  sellerKioskId: string
+  buyerAddress: string
+  priceSui: bigint
+  feeAmountSui: bigint
 }): Transaction {
-  if (params.contentHash.length !== 32) {
-    throw new Error('contentHash must be 32 bytes')
+  if (params.priceSui <= 0n) {
+    throw new Error('priceSui must be positive')
   }
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  if (params.feeAmountSui < 0n) {
+    throw new Error('feeAmountSui must be non-negative')
+  }
+
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
+  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::series::publish_release`,
+  const [paymentCoin, feeCoin] = tx.splitCoins(tx.gas, [
+    tx.pure.u64(params.priceSui),
+    tx.pure.u64(params.feeAmountSui),
+  ])
+  const [purchasedSoul, feeRemainder] = tx.moveCall({
+    target: `${packageId}::market::purchase`,
     arguments: [
-      tx.object(params.authorCapId),
-      tx.object(params.seriesId),
-      tx.pure.string(params.version),
-      tx.pure.string(params.encryptedBlobId),
-      tx.pure.string(params.publicMetadataId),
-      tx.pure.vector('u8', Array.from(params.contentHash)),
-      tx.object(CLOCK),
-    ],
-  })
-  return tx
-}
-
-// ─── Pricing ───────────────────────────────────────────────────
-
-export function buildCreatePricingPlanTx(params: {
-  authorCapId: string
-  seriesId: string
-  planType: 0 | 1 // 0 = onetime, 1 = subscription
-  priceUsdc: bigint // atomic units (6 decimals)
-  periodMs: bigint // 0 for onetime
-}): Transaction {
-  if (params.priceUsdc < 0n) {
-    throw new Error('priceUsdc must be non-negative')
-  }
-  if (params.periodMs < 0n) {
-    throw new Error('periodMs must be non-negative')
-  }
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::purchase::create_pricing_plan`,
-    arguments: [
-      tx.object(params.authorCapId),
-      tx.object(params.seriesId),
-      tx.pure.u8(params.planType),
-      tx.pure.u64(params.priceUsdc),
-      tx.pure.u64(params.periodMs),
-    ],
-  })
-  return tx
-}
-
-// ─── Purchase ──────────────────────────────────────────────────
-
-export function buildBuyPerpetualTx(params: {
-  platformConfigId: string
-  planId: string
-  seriesId: string
-  releaseId: string
-  paymentCoinIds: string[]
-  amount: bigint // exact USDC atomic units to pay
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  if (params.paymentCoinIds.length === 0) {
-    throw new Error('paymentCoinIds is required')
-  }
-
-  const primaryCoin = tx.object(params.paymentCoinIds[0]!)
-  const extraCoins = params.paymentCoinIds.slice(1).map((coinId) => tx.object(coinId))
-  if (extraCoins.length > 0) {
-    tx.mergeCoins(primaryCoin, extraCoins)
-  }
-
-  // Split exact payment amount from the merged coin set.
-  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.amount)])
-  tx.moveCall({
-    target: `${packageId}::purchase::buy_perpetual`,
-    arguments: [
-      tx.object(params.platformConfigId),
-      tx.object(params.planId),
-      tx.object(params.seriesId),
-      tx.object(params.releaseId),
+      tx.object(marketConfigId),
+      tx.object(transferPolicyId),
+      tx.object(params.sellerKioskId),
+      tx.object(params.soulObjectId),
       paymentCoin,
+      feeCoin,
     ],
   })
+  tx.transferObjects([purchasedSoul], tx.pure.address(params.buyerAddress))
+  tx.mergeCoins(tx.gas, [feeRemainder])
   return tx
 }
 
-export function buildBuySubscriptionTx(params: {
-  platformConfigId: string
-  planId: string
-  seriesId: string
-  paymentCoinIds: string[]
-  amount: bigint
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  if (params.paymentCoinIds.length === 0) {
-    throw new Error('paymentCoinIds is required')
-  }
-
-  const primaryCoin = tx.object(params.paymentCoinIds[0]!)
-  const extraCoins = params.paymentCoinIds.slice(1).map((coinId) => tx.object(coinId))
-  if (extraCoins.length > 0) {
-    tx.mergeCoins(primaryCoin, extraCoins)
-  }
-
-  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.amount)])
-  tx.moveCall({
-    target: `${packageId}::purchase::buy_subscription`,
-    arguments: [
-      tx.object(params.platformConfigId),
-      tx.object(params.planId),
-      tx.object(params.seriesId),
-      paymentCoin,
-      tx.object(CLOCK),
-    ],
-  })
-  return tx
-}
-
-// ─── Renew ─────────────────────────────────────────────────────
-
-export function buildRenewSubscriptionTx(params: {
-  platformConfigId: string
-  planId: string
-  seriesId: string
-  passId: string
-  paymentCoinIds: string[]
-  amount: bigint
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  if (params.paymentCoinIds.length === 0) {
-    throw new Error('paymentCoinIds is required')
-  }
-
-  const primaryCoin = tx.object(params.paymentCoinIds[0]!)
-  const extraCoins = params.paymentCoinIds.slice(1).map((coinId) => tx.object(coinId))
-  if (extraCoins.length > 0) {
-    tx.mergeCoins(primaryCoin, extraCoins)
-  }
-
-  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.amount)])
-  tx.moveCall({
-    target: `${packageId}::purchase::renew_subscription`,
-    arguments: [
-      tx.object(params.platformConfigId),
-      tx.object(params.planId),
-      tx.object(params.seriesId),
-      tx.object(params.passId),
-      paymentCoin,
-      tx.object(CLOCK),
-    ],
-  })
-  return tx
-}
-
-// ─── Agent Grant ───────────────────────────────────────────────
-
-export function buildSetAgentGrantPerpetualTx(params: {
-  passId: string
+export function buildSetAgentGrantTx(params: {
+  soulObjectId: string
   agentAddress: string
 }): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
   const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::grant::set_agent_grant_perpetual`,
+  const [accessCap] = tx.moveCall({
+    target: `${packageId}::grant::set_agent_grant`,
     arguments: [
-      tx.object(params.passId),
+      tx.object(params.soulObjectId),
       tx.pure.address(params.agentAddress),
     ],
   })
+  tx.transferObjects([accessCap], tx.pure.address(params.agentAddress))
   return tx
 }
 
-export function buildRevokeAgentGrantPerpetualTx(params: {
-  passId: string
+export function buildRevokeAgentGrantTx(params: {
+  soulObjectId: string
 }): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
-    target: `${packageId}::grant::revoke_agent_grant_perpetual`,
-    arguments: [tx.object(params.passId)],
-  })
-  return tx
-}
-
-export function buildSetAgentGrantSubscriptionTx(params: {
-  passId: string
-  agentAddress: string
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::grant::set_agent_grant_subscription`,
-    arguments: [
-      tx.object(params.passId),
-      tx.pure.address(params.agentAddress),
-    ],
-  })
-  return tx
-}
-
-export function buildRevokeAgentGrantSubscriptionTx(params: {
-  passId: string
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::grant::revoke_agent_grant_subscription`,
-    arguments: [tx.object(params.passId)],
+    target: `${packageId}::grant::revoke_agent_grant`,
+    arguments: [tx.object(params.soulObjectId)],
   })
   return tx
 }

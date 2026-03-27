@@ -1,35 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
 import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
-import { normalizeSuiWalletAddress } from '@web/lib/auth/challenge'
-import { isUuid } from '@web/lib/is-uuid'
+import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import {
-  getVerifiedPassState,
-  getVerifiedSeriesState,
+  getVerifiedSoulAccessCapState,
+  getVerifiedSoulState,
   OnChainVerificationError,
   sameSuiValue,
 } from '@web/lib/souls/on-chain-verification'
-import { resolveLatestSeriesRelease, resolveReleaseByOnChainId } from '@web/lib/souls/release-resolution'
-import {
-  getClientSafeOnChainVerificationErrorMessage,
-  toSafeErrorDetails,
-} from '@web/lib/souls/route-safety'
+import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
+import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
 import {
   hasCredentialedSealServerConfigs,
   getSealRuntimeConfig,
-  getSealSessionPerpetual,
-  getSealSessionSubscription,
+  getOwnerSealSession,
+  getAgentSealSession,
   hasSealSessionConfig,
 } from '@web/lib/services/seal'
-import { getBlobUrl, normalizeWalrusBlobId } from '@web/lib/services/walrus'
+import { getBlobUrl } from '@web/lib/services/walrus'
 
 const AGENT_ACCESS_RATE_LIMIT = {
   max: 60,
   windowMs: 60 * 1000,
 } as const
-const MAX_SOUL_ROUTE_ID_LENGTH = 128
 
 export async function GET(
   req: NextRequest,
@@ -49,7 +43,6 @@ export async function GET(
   if (!hasSealSessionConfig()) {
     return NextResponse.json({ error: 'Seal session is not configured' }, { status: 503 })
   }
-
   if (hasCredentialedSealServerConfigs()) {
     return NextResponse.json(
       { error: 'Credentialed Seal key servers are not supported for direct agent access' },
@@ -58,197 +51,98 @@ export async function GET(
   }
 
   const { id } = await params
-  if (id.length > MAX_SOUL_ROUTE_ID_LENGTH) {
-    return NextResponse.json({ error: 'Soul id is too long' }, { status: 400 })
-  }
-  const where = isUuid(id)
-    ? { OR: [{ id }, { onChainId: id }], status: 'active' as const }
-    : { onChainId: id, status: 'active' as const }
-
-  const series = await prisma.soulSeries.findFirst({ where })
-
-  if (!series) {
+  const soul = await findSoulAssetDetailByRouteId(id)
+  if (!soul) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
-
-  const agentMember = await prisma.member.findFirst({
-    where: { id: agent.agentMemberId },
-    include: {
-      walletBindings: { where: { chain: 'sui' }, orderBy: { isPrimary: 'desc' }, take: 1 },
-    },
-  })
-
-  const agentAddress = normalizeSuiWalletAddress(agentMember?.walletBindings[0]?.address ?? null)
-  if (!agentAddress) {
-    return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 403 })
-  }
-
-  // Find passes: agent granted OR agent owns the pass (self-purchase)
-  const now = new Date()
-  const candidatePasses = await prisma.soulPassSnapshot.findMany({
-    where: {
-      seriesId: series.id,
-      status: 'active',
-      OR: [
-        { agentGrant: agentAddress },
-        { ownerAddress: agentAddress },
-      ],
-      NOT: { passType: 'subscription', expiresAt: { lt: now } },
-    },
-    orderBy: [
-      { passType: 'desc' },
-      { expiresAt: 'desc' },
-      { createdAt: 'desc' },
-    ],
-  })
-
-  if (candidatePasses.length === 0) {
-    return NextResponse.json({ error: 'No active pass or direct ownership for this Soul' }, { status: 403 })
+  if (!soul.sealSidecar) {
+    return NextResponse.json({ error: 'Soul access is not ready yet' }, { status: 503 })
   }
 
   let soulPackageId: string
   try {
-    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
   } catch {
     return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
   }
 
-  let verifiedPassState: Awaited<ReturnType<typeof getVerifiedPassState>> | null = null
-  let sawRetryableVerifyFailure = false
-  for (const pass of candidatePasses) {
-    try {
-      const state = await getVerifiedPassState(pass.onChainId, soulPackageId)
-      const hasOnChainAccess =
-        sameSuiValue(state.ownerAddress, agentAddress)
-        || sameSuiValue(state.agentGrant, agentAddress)
-      const isExpiredOnChain =
-        state.passType === 'subscription'
-        && state.expiresAt != null
-        && state.expiresAt < now
-
-      if (sameSuiValue(state.seriesId, series.onChainId) && hasOnChainAccess && !isExpiredOnChain) {
-        verifiedPassState = state
-        break
-      }
-    } catch (error) {
-      if (!(error instanceof OnChainVerificationError) || error.status >= 500) {
-        sawRetryableVerifyFailure = true
-      }
-      if (!(error instanceof OnChainVerificationError)) {
-        console.error('[agent-access] Failed to verify pass access state', {
-          agentMemberId: agent.agentMemberId,
-          seriesId: series.id,
-          passOnChainId: pass.onChainId,
-          error: toSafeErrorDetails(error),
-        })
-      }
+  let agentAddress: string | null
+  try {
+    agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
+  } catch (walletError) {
+    if (walletError instanceof Error && walletError.name === 'MultipleSuiWalletBindingsError') {
+      return NextResponse.json({ error: walletError.message }, { status: 409 })
     }
+    throw walletError
+  }
+  if (!agentAddress) {
+    return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 403 })
   }
 
-  if (!verifiedPassState) {
-    // Surface transient errors (RPC/indexer outages) as 503 instead of false 403
-    if (sawRetryableVerifyFailure) {
-      return NextResponse.json({ error: 'Unable to verify pass access right now' }, { status: 503 })
-    }
-    return NextResponse.json({ error: 'No active pass or direct ownership for this Soul' }, { status: 403 })
-  }
+  try {
+    const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
 
-  // Resolve the correct release
-  let targetRelease: Awaited<ReturnType<typeof resolveLatestSeriesRelease>> | null = null
+    let accessPolicy
+    let soulAccessCapObjectId: string | null = null
 
-  if (verifiedPassState.passType === 'perpetual') {
-    if (!verifiedPassState.lockedReleaseId) {
-      return NextResponse.json({ error: 'Locked release missing for perpetual pass' }, { status: 404 })
-    }
-    try {
-      targetRelease = await resolveReleaseByOnChainId({
-        releaseOnChainId: verifiedPassState.lockedReleaseId,
-        seriesDbId: series.id,
-        seriesOnChainId: series.onChainId,
-        seriesLatestReleaseOnChainId: null,
-        soulPackageId,
-      })
-    } catch (error) {
-      if (error instanceof OnChainVerificationError) {
-        return NextResponse.json(
-          { error: getClientSafeOnChainVerificationErrorMessage(error) },
-          { status: error.status },
-        )
+    if (soulState.ownerAddress && sameSuiValue(soulState.ownerAddress, agentAddress)) {
+      accessPolicy = getOwnerSealSession(soul.onChainId)
+    } else if (
+      soul.agentGrantAddress
+      && soul.agentAccessCapOnChainId
+      && sameSuiValue(soul.agentGrantAddress, agentAddress)
+      && sameSuiValue(soulState.agentGrant, agentAddress)
+    ) {
+      const capState = await getVerifiedSoulAccessCapState(soul.agentAccessCapOnChainId, soulPackageId)
+      if (
+        !sameSuiValue(capState.ownerAddress, agentAddress)
+        || !sameSuiValue(capState.soulObjectId, soul.onChainId)
+        || capState.grantVersion !== soulState.grantVersion
+      ) {
+        return NextResponse.json({ error: 'Soul access cap is no longer valid' }, { status: 403 })
       }
-      console.error('[agent-access] Failed to resolve perpetual release', {
-        agentMemberId: agent.agentMemberId,
-        seriesId: series.id,
-        releaseOnChainId: verifiedPassState.lockedReleaseId,
-        error: toSafeErrorDetails(error),
-      })
-      return NextResponse.json({ error: 'Unable to load the locked release right now' }, { status: 503 })
+
+      accessPolicy = getAgentSealSession(soul.onChainId)
+      soulAccessCapObjectId = capState.objectId
+    } else {
+      return NextResponse.json({ error: 'Agent does not have access to this Soul' }, { status: 403 })
     }
-  } else {
-    try {
-      const seriesState = await getVerifiedSeriesState(series.onChainId, soulPackageId)
-      targetRelease = await resolveLatestSeriesRelease({
-        seriesDbId: series.id,
-        seriesOnChainId: series.onChainId,
-        latestReleaseOnChainId: seriesState.latestReleaseId,
-        soulPackageId,
-      })
-    } catch (error) {
-      if (error instanceof OnChainVerificationError) {
-        return NextResponse.json(
-          { error: getClientSafeOnChainVerificationErrorMessage(error) },
-          { status: error.status },
-        )
-      }
-      console.error('[agent-access] Failed to resolve latest subscription release', {
-        agentMemberId: agent.agentMemberId,
-        seriesId: series.id,
-        error: toSafeErrorDetails(error),
-      })
-      return NextResponse.json({ error: 'Unable to load the latest release right now' }, { status: 503 })
+
+    const seal = getSealRuntimeConfig()
+    return NextResponse.json({
+      artifact: {
+        walrusBlobUrl: getBlobUrl(soul.contentBlobId),
+        walrusBlobId: soul.contentBlobId,
+        contentBlobObjectId: soul.contentBlobObjectId,
+      },
+      accessPolicy: {
+        ...accessPolicy,
+        soulAccessCapObjectId,
+      },
+      seal: {
+        network: seal.network,
+        threshold: seal.threshold,
+        verifyKeyServers: seal.verifyKeyServers,
+        serverConfigs: seal.serverConfigs.map(({ objectId, weight }) => ({
+          objectId,
+          weight,
+        })),
+      },
+      sealSidecar: soul.sealSidecar,
+    })
+  } catch (accessError) {
+    if (accessError instanceof OnChainVerificationError) {
+      return NextResponse.json(
+        { error: getClientSafeOnChainVerificationErrorMessage(accessError) },
+        { status: accessError.status },
+      )
     }
+
+    console.error('[agent-access] Failed to resolve Soul access', {
+      agentMemberId: agent.agentMemberId,
+      soulOnChainId: soul.onChainId,
+      error: toSafeErrorDetails(accessError),
+    })
+    return NextResponse.json({ error: 'Unable to verify Soul access right now' }, { status: 503 })
   }
-
-  if (!targetRelease) {
-    return NextResponse.json({ error: 'No releases available' }, { status: 404 })
-  }
-
-  const walrusBlobRef = normalizeWalrusBlobId(targetRelease.walrusBlobRef)
-  if (!walrusBlobRef) {
-    return NextResponse.json({ error: 'Release blob reference is invalid' }, { status: 500 })
-  }
-
-  const accessPolicy =
-    verifiedPassState.passType === 'perpetual'
-      ? getSealSessionPerpetual(series.onChainId)
-      : getSealSessionSubscription(series.onChainId)
-
-  const seal = getSealRuntimeConfig()
-
-  return NextResponse.json({
-    artifact: {
-      walrusBlobUrl: getBlobUrl(walrusBlobRef),
-      walrusBlobRef,
-      contentHash: targetRelease.contentHash,
-    },
-    accessPolicy: {
-      ...accessPolicy,
-      passObjectId: verifiedPassState.objectId,
-      releaseObjectId: targetRelease.onChainId,
-      clockObjectId: verifiedPassState.passType === 'subscription' ? '0x6' : null,
-    },
-    seal: {
-      network: seal.network,
-      threshold: seal.threshold,
-      verifyKeyServers: seal.verifyKeyServers,
-      serverConfigs: seal.serverConfigs.map(({ objectId, weight }) => ({
-        objectId,
-        weight,
-      })),
-    },
-    sealSidecar: targetRelease.sealSidecar ?? null,
-    releaseId: targetRelease.onChainId,
-    version: targetRelease.version,
-    passType: verifiedPassState.passType,
-    passOnChainId: verifiedPassState.objectId,
-  })
 }

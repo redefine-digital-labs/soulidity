@@ -1,10 +1,8 @@
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 
-export const SOUL_PUBLISH_DRAFT_STORAGE_KEY = 'soul-publish-draft'
+export const SOUL_PUBLISH_DRAFT_STORAGE_KEY = 'soul-publish-draft-v2'
 
-const SOUL_PUBLISH_DRAFT_VERSION = 1 as const
-
-export type SoulPublishPricingType = 'onetime' | 'subscription' | 'both'
+const SOUL_PUBLISH_DRAFT_VERSION = 2 as const
 
 export type SoulPublishDraft = {
   version: typeof SOUL_PUBLISH_DRAFT_VERSION
@@ -13,22 +11,18 @@ export type SoulPublishDraft = {
   description: string
   category: string
   tags: string[]
-  pricingType: SoulPublishPricingType
-  oneTimePrice: string
-  subPrice: string
-  subPeriodDays: string
+  imageUrl: string
+  priceSui: string
+  readme: string
   previewBlobId: string | null
   previewFileKey: string | null
-  createTxDigest: string | null
-  seriesId: string | null
-  authorCapId: string | null
-  oneTimePlanTxDigest: string | null
-  oneTimePlanId: string | null
-  subPlanTxDigest: string | null
-  subPlanId: string | null
-  releaseId: string | null
-  releaseTxDigest: string | null
+  contentBlobId: string | null
+  contentBlobObjectId: string | null
+  metadataRef: string | null
   sealDekEnvelope: string | null
+  soulObjectId: string | null
+  sellerKioskId: string | null
+  publishTxDigest: string | null
   dbMirroredAt: string | null
   updatedAt: string
 }
@@ -49,18 +43,13 @@ type SoulPublishDraftInput = {
   description: string
   category: string
   tags: string[]
-  pricingType: SoulPublishPricingType
-  oneTimePrice: string
-  subPrice: string
-  subPeriodDays: string
+  imageUrl: string
+  priceSui: string
+  readme: string
 }
 
 function nowIso() {
   return new Date().toISOString()
-}
-
-function getWalletScopedDraftStorageKey(walletAddress: string): string {
-  return `${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${normalizeDraftWalletAddress(walletAddress)}`
 }
 
 function normalizeDraftWalletAddress(walletAddress: string): string {
@@ -76,6 +65,10 @@ function normalizeDraftWalletAddress(walletAddress: string): string {
   }
 }
 
+function getWalletScopedDraftStorageKey(walletAddress: string): string {
+  return `${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${normalizeDraftWalletAddress(walletAddress)}`
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
@@ -84,22 +77,18 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
 }
 
-function isPricingType(value: unknown): value is SoulPublishPricingType {
-  return value === 'onetime' || value === 'subscription' || value === 'both'
-}
-
-function sanitizeRecoveredReleaseState(draft: SoulPublishDraft): SoulPublishDraft {
-  const hasReleaseId = draft.releaseId != null
-  const hasReleaseTxDigest = draft.releaseTxDigest != null
-  if (hasReleaseId === hasReleaseTxDigest) {
+function sanitizeRecoveredProgress(draft: SoulPublishDraft): SoulPublishDraft {
+  const hasSoulObjectId = draft.soulObjectId != null
+  const hasSellerKioskId = draft.sellerKioskId != null
+  const hasPublishTxDigest = draft.publishTxDigest != null
+  if (hasSoulObjectId || (!hasSellerKioskId && !hasPublishTxDigest)) {
     return draft
   }
 
   return {
     ...draft,
-    releaseId: null,
-    releaseTxDigest: null,
-    sealDekEnvelope: null,
+    sellerKioskId: null,
+    publishTxDigest: null,
   }
 }
 
@@ -111,22 +100,18 @@ export function createSoulPublishDraft(input: SoulPublishDraftInput): SoulPublis
     description: input.description,
     category: input.category,
     tags: input.tags,
-    pricingType: input.pricingType,
-    oneTimePrice: input.oneTimePrice,
-    subPrice: input.subPrice,
-    subPeriodDays: input.subPeriodDays,
+    imageUrl: input.imageUrl,
+    priceSui: input.priceSui,
+    readme: input.readme,
     previewBlobId: null,
     previewFileKey: null,
-    createTxDigest: null,
-    seriesId: null,
-    authorCapId: null,
-    oneTimePlanTxDigest: null,
-    oneTimePlanId: null,
-    subPlanTxDigest: null,
-    subPlanId: null,
-    releaseId: null,
-    releaseTxDigest: null,
+    contentBlobId: null,
+    contentBlobObjectId: null,
+    metadataRef: null,
     sealDekEnvelope: null,
+    soulObjectId: null,
+    sellerKioskId: null,
+    publishTxDigest: null,
     dbMirroredAt: null,
     updatedAt: nowIso(),
   }
@@ -139,20 +124,17 @@ export function syncSoulPublishDraftForSubmit(
   if (!draft) {
     return createSoulPublishDraft(input)
   }
-
   if (draftHasOnChainProgress(draft)) {
     return draft
   }
-
   return patchSoulPublishDraft(draft, {
     name: input.name,
     description: input.description,
     category: input.category,
     tags: input.tags,
-    pricingType: input.pricingType,
-    oneTimePrice: input.oneTimePrice,
-    subPrice: input.subPrice,
-    subPeriodDays: input.subPeriodDays,
+    imageUrl: input.imageUrl,
+    priceSui: input.priceSui,
+    readme: input.readme,
   })
 }
 
@@ -181,64 +163,40 @@ export function parseSoulPublishDraft(raw: string | null): SoulPublishDraft | nu
       || typeof parsed.description !== 'string'
       || typeof parsed.category !== 'string'
       || !isStringArray(parsed.tags)
-      || !isPricingType(parsed.pricingType)
-      || typeof parsed.oneTimePrice !== 'string'
-      || typeof parsed.subPrice !== 'string'
-      || typeof parsed.subPeriodDays !== 'string'
+      || typeof parsed.imageUrl !== 'string'
+      || typeof parsed.priceSui !== 'string'
+      || typeof parsed.readme !== 'string'
       || !isNullableString(parsed.previewBlobId)
       || !isNullableString(parsed.previewFileKey)
-      || !isNullableString(parsed.createTxDigest)
-      || !isNullableString(parsed.seriesId)
-      || !isNullableString(parsed.authorCapId)
-      || !isNullableString(parsed.oneTimePlanTxDigest)
-      || !isNullableString(parsed.oneTimePlanId)
-      || !isNullableString(parsed.subPlanTxDigest)
-      || !isNullableString(parsed.subPlanId)
+      || !isNullableString(parsed.contentBlobId)
+      || !isNullableString(parsed.contentBlobObjectId)
+      || !isNullableString(parsed.metadataRef)
+      || !isNullableString(parsed.sealDekEnvelope)
+      || !isNullableString(parsed.soulObjectId)
+      || !isNullableString(parsed.sellerKioskId)
+      || !isNullableString(parsed.publishTxDigest)
       || !isNullableString(parsed.dbMirroredAt)
       || typeof parsed.updatedAt !== 'string'
     ) {
       return null
     }
 
-    // Backfill fields added after the initial draft version
-    if (!('releaseId' in parsed)) {
-      parsed.releaseId = null
-    }
-    if (!('releaseTxDigest' in parsed)) {
-      parsed.releaseTxDigest = null
-    }
-    if (!('sealDekEnvelope' in parsed)) {
-      parsed.sealDekEnvelope = null
-    }
-
-    if (
-      !isNullableString(parsed.releaseId)
-      || !isNullableString(parsed.releaseTxDigest)
-      || !isNullableString(parsed.sealDekEnvelope)
-    ) {
-      return null
-    }
-
-    return sanitizeRecoveredReleaseState(parsed as SoulPublishDraft)
+    return sanitizeRecoveredProgress(parsed as SoulPublishDraft)
   } catch {
     return null
   }
 }
 
-export function readSoulPublishDraft(
-  storage: StorageLike,
-  walletAddress: string,
-): SoulPublishDraft | null {
+export function readSoulPublishDraft(storage: StorageLike, walletAddress: string): SoulPublishDraft | null {
   const walletKey = getWalletScopedDraftStorageKey(walletAddress)
   const draft = parseSoulPublishDraft(storage.getItem(walletKey))
-  const normalizedWalletAddress = normalizeDraftWalletAddress(walletAddress)
-  if (
-    draft
-    && normalizeDraftWalletAddress(draft.walletAddress) === normalizedWalletAddress
-  ) {
-    return draft.dbMirroredAt ? null : draft
+  if (!draft) {
+    return null
   }
-  return null
+  if (normalizeDraftWalletAddress(draft.walletAddress) !== normalizeDraftWalletAddress(walletAddress)) {
+    return null
+  }
+  return draft.dbMirroredAt ? null : draft
 }
 
 export function writeSoulPublishDraft(storage: StorageLike, draft: SoulPublishDraft) {
@@ -252,5 +210,5 @@ export function clearSoulPublishDraft(storage: StorageLike, walletAddress?: stri
 }
 
 export function draftHasOnChainProgress(draft: SoulPublishDraft | null) {
-  return Boolean(draft?.seriesId || draft?.oneTimePlanId || draft?.subPlanId || draft?.releaseId)
+  return Boolean(draft?.soulObjectId || draft?.sellerKioskId || draft?.publishTxDigest)
 }

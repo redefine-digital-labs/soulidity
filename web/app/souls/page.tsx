@@ -2,133 +2,58 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useSoulsList } from '@web/lib/souls/queries'
+import { PublicNav } from '@web/components/public-nav'
 import { SoulCard } from '@web/components/souls/soul-card'
-import { useAuth } from '@web/components/auth-provider'
-
-const CATEGORIES = ['All', 'Trading', 'Research', 'Social', 'DeFi', 'NFT', 'Infrastructure', 'Other']
+import { useSoulsList } from '@web/lib/souls/queries'
 
 export default function SoulsPage() {
-  const { user, loading } = useAuth()
-  const [page, setPage] = useState(1)
-  const [category, setCategory] = useState('')
-  const [search, setSearch] = useState('')
-  const [searchInput, setSearchInput] = useState('')
-
-  const { data, isLoading } = useSoulsList({
-    page,
-    category: category || undefined,
-    q: search || undefined,
-  })
+  const [q, setQ] = useState('')
+  const { data, isLoading, error } = useSoulsList({ q })
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          Soul Market
-        </h1>
-        {user ? (
-          <div className="flex gap-2">
-            <Link href="/souls/my" className="btn btn-surface text-sm">
-              My Souls
-            </Link>
-            <Link href="/souls/publish" className="btn btn-primary text-sm">
-              Publish
-            </Link>
+    <div className="min-h-screen">
+      <PublicNav />
+      <main className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-6">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
+              Soul Market
+            </p>
+            <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+              One-of-one Souls
+            </h1>
           </div>
-        ) : !loading ? (
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            登录后可查看 My Souls 并发布新作品。
-          </p>
-        ) : null}
-      </div>
-
-      {/* Search */}
-      <div className="mb-4">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            setSearch(searchInput)
-            setPage(1)
-          }}
-        >
-          <label htmlFor="souls-search" className="sr-only">Search Souls</label>
-          <input
-            id="souls-search"
-            type="text"
-            placeholder="Search souls..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="input-dark"
-            style={{ maxWidth: '400px' }}
-          />
-        </form>
-      </div>
-
-      {/* Categories */}
-      <div className="flex gap-2 mb-6 flex-wrap" role="radiogroup" aria-label="Filter Souls by category">
-        {CATEGORIES.map((cat) => {
-          const active = cat === 'All' ? !category : category === cat
-          return (
-            <button
-              key={cat}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => {
-                setCategory(cat === 'All' ? '' : cat)
-                setPage(1)
-              }}
-              className={`filter-pill ${active ? 'filter-pill-active' : ''}`}
-            >
-              {cat}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Grid */}
-      {isLoading ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="text-center py-12"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          Loading...
+          <Link href="/souls/publish" className="px-4 py-2 rounded-xl font-medium" style={{ background: 'var(--accent-cyan)', color: '#02131a' }}>
+            Publish Soul
+          </Link>
         </div>
-      ) : data?.items.length === 0 ? (
-        <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No souls found</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data?.items.map((soul) => <SoulCard key={soul.id} soul={soul} />)}
-          </div>
 
-          {/* Pagination */}
-          {data && data.totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-8 items-center">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="btn btn-surface text-sm"
-              >
-                Prev
-              </button>
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {page} / {data.totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                disabled={page === data.totalPages}
-                className="btn btn-surface text-sm"
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </>
-      )}
+        <div className="glass-panel p-4">
+          <input
+            value={q}
+            onChange={(event) => setQ(event.target.value)}
+            placeholder="Search Souls"
+            className="w-full bg-transparent outline-none"
+            style={{ color: 'var(--text-primary)' }}
+          />
+        </div>
+
+        {isLoading ? (
+          <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+        ) : error ? (
+          <div style={{ color: 'var(--accent-rose)' }}>Failed to load Souls.</div>
+        ) : data && data.items.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {data.items.map((soul) => (
+              <SoulCard key={soul.onChainId} soul={soul} />
+            ))}
+          </div>
+        ) : (
+          <div className="glass-panel p-8 text-center" style={{ color: 'var(--text-muted)' }}>
+            No Souls listed right now.
+          </div>
+        )}
+      </main>
     </div>
   )
 }

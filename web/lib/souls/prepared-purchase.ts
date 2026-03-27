@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 import { sameSuiValue } from '@web/lib/souls/on-chain-verification'
-import { parseAtomicUsdcString, serializeAtomicUsdcAmount } from '@web/lib/souls/price-format'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 
 const PREPARED_PURCHASE_TTL_MS = 5 * 60 * 1000
@@ -27,7 +26,6 @@ function shouldCleanupPreparedPurchases(now = Date.now()): boolean {
   if (now - lastPreparedPurchaseCleanupAt < PREPARED_PURCHASE_CLEANUP_THROTTLE_MS) {
     return false
   }
-
   lastPreparedPurchaseCleanupAt = now
   return true
 }
@@ -51,13 +49,10 @@ function cleanupExpiredPreparedPurchases(): void {
 
 export async function createPreparedSoulPurchase(params: {
   agentMemberId: string
-  seriesOnChainId: string
-  planOnChainId: string
-  planType: 'onetime' | 'subscription'
-  releaseOnChainId: string | null
-  passOnChainId?: string | null
+  soulOnChainId: string
+  sellerKioskId: string
   agentAddress: string
-  amountUsdc: bigint
+  priceSui: bigint
   txBytesBase64: string
 }): Promise<{ id: string; expiresAt: Date }> {
   if (Buffer.byteLength(params.txBytesBase64, 'utf8') > MAX_PREPARED_TX_BYTES_BASE64) {
@@ -70,16 +65,13 @@ export async function createPreparedSoulPurchase(params: {
   const txBytesHash = hashPreparedSoulPurchaseTxBytes(params.txBytesBase64)
 
   try {
-    const prepared = await prisma.soulPreparedPurchase.create({
+    return await prisma.soulPreparedPurchase.create({
       data: {
         agentMemberId: params.agentMemberId,
-        seriesOnChainId: params.seriesOnChainId,
-        planOnChainId: params.planOnChainId,
-        planType: params.planType,
-        releaseOnChainId: params.releaseOnChainId,
-        passOnChainId: params.passOnChainId ?? null,
+        soulOnChainId: params.soulOnChainId,
+        sellerKioskId: params.sellerKioskId,
         agentAddress: params.agentAddress,
-        amountUsdc: params.amountUsdc.toString(),
+        priceSui: params.priceSui.toString(),
         txBytesBase64: params.txBytesBase64,
         txBytesHash,
         expiresAt,
@@ -89,8 +81,6 @@ export async function createPreparedSoulPurchase(params: {
         expiresAt: true,
       },
     })
-
-    return prepared
   } catch (error) {
     if (!isUniqueConstraintError(error)) {
       throw error
@@ -118,13 +108,10 @@ export async function createPreparedSoulPurchase(params: {
             resultStatusCode: null,
           },
           data: {
-            seriesOnChainId: params.seriesOnChainId,
-            planOnChainId: params.planOnChainId,
-            planType: params.planType,
-            releaseOnChainId: params.releaseOnChainId,
-            passOnChainId: params.passOnChainId ?? null,
+            soulOnChainId: params.soulOnChainId,
+            sellerKioskId: params.sellerKioskId,
             agentAddress: params.agentAddress,
-            amountUsdc: params.amountUsdc.toString(),
+            priceSui: params.priceSui.toString(),
             txBytesBase64: params.txBytesBase64,
             expiresAt,
           },
@@ -138,41 +125,6 @@ export async function createPreparedSoulPurchase(params: {
         }
       }
 
-      if (
-        existing.executedAt
-        && existing.executionTxDigest == null
-        && existing.resultStatusCode == null
-        && existing.expiresAt.getTime() <= Date.now()
-      ) {
-        const reclaimed = await prisma.soulPreparedPurchase.updateMany({
-          where: {
-            id: existing.id,
-            executedAt: { not: null },
-            executionTxDigest: null,
-            resultStatusCode: null,
-            expiresAt: { lte: new Date() },
-          },
-          data: {
-            seriesOnChainId: params.seriesOnChainId,
-            planOnChainId: params.planOnChainId,
-            planType: params.planType,
-            releaseOnChainId: params.releaseOnChainId,
-            passOnChainId: params.passOnChainId ?? null,
-            agentAddress: params.agentAddress,
-            amountUsdc: params.amountUsdc.toString(),
-            txBytesBase64: params.txBytesBase64,
-            executedAt: null,
-            expiresAt,
-          },
-        })
-        if (reclaimed.count > 0) {
-          return {
-            id: existing.id,
-            expiresAt,
-          }
-        }
-      }
-
       return existing
     }
 
@@ -183,16 +135,13 @@ export async function createPreparedSoulPurchase(params: {
 export async function getPreparedSoulPurchaseForExecution(params: {
   preparedPurchaseId: string
   agentMemberId: string
-  seriesOnChainId: string
+  soulOnChainId: string
 }): Promise<{
   id: string
-  seriesOnChainId: string
-  planOnChainId: string
-  planType: string
-  releaseOnChainId: string | null
-  passOnChainId: string | null
+  soulOnChainId: string
+  sellerKioskId: string
   agentAddress: string
-  amountUsdc: bigint
+  priceSui: bigint
   txBytesBase64: string
   txBytesHash: string
   expiresAt: Date
@@ -205,13 +154,10 @@ export async function getPreparedSoulPurchaseForExecution(params: {
     select: {
       id: true,
       agentMemberId: true,
-      seriesOnChainId: true,
-      planOnChainId: true,
-      planType: true,
-      releaseOnChainId: true,
-      passOnChainId: true,
+      soulOnChainId: true,
+      sellerKioskId: true,
       agentAddress: true,
-      amountUsdc: true,
+      priceSui: true,
       txBytesBase64: true,
       txBytesHash: true,
       expiresAt: true,
@@ -227,7 +173,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
 
   if (
     prepared.agentMemberId !== params.agentMemberId
-    || !sameSuiValue(prepared.seriesOnChainId, params.seriesOnChainId)
+    || !sameSuiValue(prepared.soulOnChainId, params.soulOnChainId)
     || (prepared.expiresAt.getTime() <= Date.now() && prepared.resultStatusCode == null)
   ) {
     return null
@@ -235,13 +181,10 @@ export async function getPreparedSoulPurchaseForExecution(params: {
 
   return {
     id: prepared.id,
-    seriesOnChainId: prepared.seriesOnChainId,
-    planOnChainId: prepared.planOnChainId,
-    planType: prepared.planType,
-    releaseOnChainId: prepared.releaseOnChainId,
-    passOnChainId: prepared.passOnChainId,
+    soulOnChainId: prepared.soulOnChainId,
+    sellerKioskId: prepared.sellerKioskId,
     agentAddress: prepared.agentAddress,
-    amountUsdc: parseAtomicUsdcString(serializeAtomicUsdcAmount(prepared.amountUsdc) ?? '0'),
+    priceSui: BigInt(prepared.priceSui.toString()),
     txBytesBase64: prepared.txBytesBase64,
     txBytesHash: prepared.txBytesHash,
     expiresAt: prepared.expiresAt,
@@ -254,30 +197,26 @@ export async function getPreparedSoulPurchaseForExecution(params: {
 export async function claimPreparedSoulPurchaseForExecution(params: {
   preparedPurchaseId: string
   agentMemberId: string
-  seriesOnChainId: string
+  soulOnChainId: string
 }): Promise<{
   id: string
-  seriesOnChainId: string
-  planOnChainId: string
-  planType: string
-  releaseOnChainId: string | null
-  passOnChainId: string | null
+  soulOnChainId: string
+  sellerKioskId: string
   agentAddress: string
-  amountUsdc: bigint
+  priceSui: bigint
   txBytesBase64: string
   txBytesHash: string
-  executedAt: Date
+  executedAt: Date | null
   resultStatusCode: number | null
   resultBody: PreparedPurchaseResultBody | null
 } | null> {
   return prisma.$transaction(async (tx) => {
-    const now = new Date()
     const current = await tx.soulPreparedPurchase.findUnique({
       where: { id: params.preparedPurchaseId },
       select: {
         id: true,
         agentMemberId: true,
-        seriesOnChainId: true,
+        soulOnChainId: true,
         executedAt: true,
         expiresAt: true,
       },
@@ -286,39 +225,32 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
     if (
       !current
       || current.agentMemberId !== params.agentMemberId
-      || !sameSuiValue(current.seriesOnChainId, params.seriesOnChainId)
+      || !sameSuiValue(current.soulOnChainId, params.soulOnChainId)
       || current.executedAt
-      || current.expiresAt.getTime() <= now.getTime()
+      || current.expiresAt.getTime() <= Date.now()
     ) {
       return null
     }
 
-    const claimed = await tx.soulPreparedPurchase.updateMany({
+    await tx.soulPreparedPurchase.updateMany({
       where: {
-        id: params.preparedPurchaseId,
+        id: current.id,
         executedAt: null,
-        expiresAt: { gt: now },
+        expiresAt: { gt: new Date() },
       },
       data: {
-        executedAt: now,
+        executedAt: new Date(),
       },
     })
-
-    if (claimed.count === 0) {
-      return null
-    }
 
     const prepared = await tx.soulPreparedPurchase.findUnique({
       where: { id: params.preparedPurchaseId },
       select: {
         id: true,
-        seriesOnChainId: true,
-        planOnChainId: true,
-        planType: true,
-        releaseOnChainId: true,
-        passOnChainId: true,
+        soulOnChainId: true,
+        sellerKioskId: true,
         agentAddress: true,
-        amountUsdc: true,
+        priceSui: true,
         txBytesBase64: true,
         txBytesHash: true,
         executedAt: true,
@@ -327,25 +259,39 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
       },
     })
 
-    if (!prepared || !prepared.executedAt) {
+    if (!prepared) {
       return null
     }
 
     return {
       id: prepared.id,
-      seriesOnChainId: prepared.seriesOnChainId,
-      planOnChainId: prepared.planOnChainId,
-      planType: prepared.planType,
-      releaseOnChainId: prepared.releaseOnChainId,
-      passOnChainId: prepared.passOnChainId,
+      soulOnChainId: prepared.soulOnChainId,
+      sellerKioskId: prepared.sellerKioskId,
       agentAddress: prepared.agentAddress,
-      amountUsdc: parseAtomicUsdcString(serializeAtomicUsdcAmount(prepared.amountUsdc) ?? '0'),
+      priceSui: BigInt(prepared.priceSui.toString()),
       txBytesBase64: prepared.txBytesBase64,
       txBytesHash: prepared.txBytesHash,
       executedAt: prepared.executedAt,
       resultStatusCode: prepared.resultStatusCode,
       resultBody: prepared.resultBody as PreparedPurchaseResultBody | null,
     }
+  })
+}
+
+export async function releasePreparedSoulPurchaseExecution(params: {
+  preparedPurchaseId: string
+  db?: PreparedPurchaseDbClient
+}): Promise<void> {
+  const db = params.db ?? prisma
+  await db.soulPreparedPurchase.updateMany({
+    where: {
+      id: params.preparedPurchaseId,
+      resultStatusCode: null,
+      executionTxDigest: null,
+    },
+    data: {
+      executedAt: null,
+    },
   })
 }
 
@@ -357,27 +303,15 @@ export async function finalizePreparedSoulPurchaseExecution(params: {
   db?: PreparedPurchaseDbClient
 }): Promise<void> {
   const db = params.db ?? prisma
-  await db.soulPreparedPurchase.update({
-    where: { id: params.preparedPurchaseId },
+  await db.soulPreparedPurchase.updateMany({
+    where: {
+      id: params.preparedPurchaseId,
+    },
     data: {
+      executedAt: new Date(),
       executionTxDigest: params.txDigest,
       resultStatusCode: params.resultStatusCode,
       resultBody: params.resultBody as Prisma.InputJsonValue,
-    },
-  })
-}
-
-export async function releasePreparedSoulPurchaseExecution(params: {
-  preparedPurchaseId: string
-}): Promise<void> {
-  await prisma.soulPreparedPurchase.updateMany({
-    where: {
-      id: params.preparedPurchaseId,
-      resultStatusCode: null,
-      executionTxDigest: null,
-    },
-    data: {
-      executedAt: null,
     },
   })
 }

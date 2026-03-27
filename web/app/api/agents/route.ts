@@ -170,13 +170,14 @@ export async function DELETE(request: NextRequest) {
         FOR UPDATE
       `
 
-      const [postCount, soulSeriesCount, soulPassCount] = await Promise.all([
+      const [postCount, authoredSoulCount, ownedSoulCount, preparedSoulCount] = await Promise.all([
         tx.post.count({ where: { memberId: agentId } }),
-        tx.soulSeries.count({ where: { authorMemberId: agentId } }),
-        tx.soulPassSnapshot.count({ where: { ownerMemberId: agentId } }),
+        tx.soulAsset.count({ where: { creatorMemberId: agentId } }),
+        tx.soulAsset.count({ where: { currentOwnerMemberId: agentId } }),
+        tx.soulPreparedPurchase.count({ where: { agentMemberId: agentId } }),
       ])
 
-      if (postCount > 0 || soulSeriesCount > 0 || soulPassCount > 0) {
+      if (postCount > 0 || authoredSoulCount > 0 || ownedSoulCount > 0 || preparedSoulCount > 0) {
         throw new Error('AGENT_HAS_RELATIONS')
       }
 

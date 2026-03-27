@@ -1,212 +1,81 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useAuth } from '@web/components/auth-provider'
-import { useSuiClient } from '@mysten/dapp-kit'
-import { selectCoinObjectIdsForAmountAcrossPages } from '@web/lib/souls/coin-selection'
-import { parseAtomicUsdcString } from '@web/lib/souls/price-format'
-import { getRequiredPublicEnv } from '@web/lib/souls/config'
-import { formatMirrorSyncError, mirrorRouteRequest } from '@web/lib/souls/mirror-sync'
+import { buildBuySoulTx } from '@web/lib/souls/tx-builder'
+import { mirrorRouteRequest, formatMirrorSyncError } from '@web/lib/souls/mirror-sync'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
-import { buildBuyPerpetualTx, buildBuySubscriptionTx } from '@web/lib/souls/tx-builder'
+import { formatAtomicSuiForDisplay } from '@web/lib/souls/price-format'
 
 interface PurchaseButtonProps {
-  planType: 'onetime' | 'subscription'
-  seriesOnChainId: string
-  releaseOnChainId: string | null
-  planId: string
-  amountAtomic: string | null
+  soulObjectId: string
+  sellerKioskId: string
+  listedPriceSui: string
+  feeAmountSui: string
+  onPurchased?: () => Promise<void> | void
 }
 
-export function PurchaseButton({
-  planType,
-  seriesOnChainId,
-  releaseOnChainId,
-  planId,
-  amountAtomic,
-}: PurchaseButtonProps) {
-  const { user, getAuthHeaders } = useAuth()
-  const { suiWallet, signAndExecute } = usePrivySuiSign()
-  const suiClient = useSuiClient()
-
-  const [status, setStatus] = useState<'idle' | 'pending' | 'done' | 'error'>('idle')
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [txDigest, setTxDigest] = useState<string | null>(null)
-  const purchaseInFlightRef = useRef(false)
-
-  if (!user) {
-    return (
-      <a href="/login" className="glass-card px-6 py-3 text-sm font-semibold block text-center" style={{ color: 'var(--accent-cyan)' }}>
-        Login to purchase
-      </a>
-    )
-  }
-
-  if (!suiWallet) {
-    return (
-      <button type="button" disabled className="glass-card px-6 py-3 text-sm font-semibold w-full" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>
-        No Sui wallet found
-      </button>
-    )
-  }
-
-  if (planType === 'onetime' && !releaseOnChainId) {
-    return (
-      <div className="space-y-3">
-        <button type="button" disabled className="glass-card px-6 py-3 text-sm font-semibold w-full" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>
-          Release not available yet
-        </button>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          One-time purchases open after the author publishes a release for this Soul.
-        </p>
-      </div>
-    )
-  }
-
-  if (!planId) {
-    return (
-      <div className="space-y-3">
-        <button
-          type="button"
-          disabled
-          className="glass-card px-6 py-3 text-sm font-semibold w-full"
-          style={{ color: 'var(--text-muted)', opacity: 0.5 }}
-        >
-          Pricing plan unavailable
-        </button>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Refresh the page or wait for the author to finish syncing pricing.
-        </p>
-      </div>
-    )
-  }
+export function PurchaseButton(props: PurchaseButtonProps) {
+  const { getAuthHeaders, user } = useAuth()
+  const { signAndExecute } = usePrivySuiSign()
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handlePurchase() {
-    if (!suiWallet || purchaseInFlightRef.current) return
-    purchaseInFlightRef.current = true
-    setErrorMsg(null)
-    setTxDigest(null)
-    const encodedSeriesOnChainId = encodeURIComponent(seriesOnChainId)
-    let confirmedDigest: string | null = null
+    if (!user?.primarySuiAddress) {
+      setError('请先绑定 Sui 钱包')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
     try {
-      setStatus('pending')
-      const platformConfigId = getRequiredPublicEnv('NEXT_PUBLIC_PLATFORM_CONFIG_ID')
-      const usdcCoinType = getRequiredPublicEnv('NEXT_PUBLIC_USDC_COIN_TYPE')
-      if (!amountAtomic) {
-        throw new Error('Pricing plan amount is unavailable. Please refresh and retry.')
-      }
-      const amount = parseAtomicUsdcString(amountAtomic)
-      if (amount <= 0n) {
-        throw new Error('Pricing plan amount is invalid. Please refresh and retry.')
-      }
-      let paymentCoinIds: string[] | null
-      try {
-        paymentCoinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
-          owner: suiWallet.address,
-          coinType: usdcCoinType,
-          requiredAmount: amount,
-        })
-      } catch {
-        throw new Error('Unable to read your USDC balance from chain right now. Please retry.')
-      }
-      if (paymentCoinIds?.length === 0) {
-        setStatus('error')
-        setErrorMsg('No USDC found in wallet. Please fund your wallet with USDC first.')
-        return
-      }
-      if (!paymentCoinIds) {
-        setStatus('error')
-        setErrorMsg('Not enough USDC found across available coin objects. Please fund or consolidate your wallet first.')
-        return
-      }
-
-      let tx
-      if (planType === 'onetime') {
-        if (!releaseOnChainId) {
-          setStatus('error')
-          setErrorMsg('Latest release is not available yet. Please refresh and try again.')
-          return
-        }
-
-        tx = buildBuyPerpetualTx({
-          platformConfigId,
-          planId,
-          seriesId: seriesOnChainId,
-          releaseId: releaseOnChainId,
-          paymentCoinIds,
-          amount,
-        })
-      } else {
-        tx = buildBuySubscriptionTx({
-          platformConfigId,
-          planId,
-          seriesId: seriesOnChainId,
-          paymentCoinIds,
-          amount,
-        })
-      }
-
+      const tx = buildBuySoulTx({
+        soulObjectId: props.soulObjectId,
+        sellerKioskId: props.sellerKioskId,
+        buyerAddress: user.primarySuiAddress,
+        priceSui: BigInt(props.listedPriceSui),
+        feeAmountSui: BigInt(props.feeAmountSui),
+      })
       const result = await signAndExecute(tx)
-      confirmedDigest = result.digest
-      setTxDigest(result.digest)
-
-      // Extract passId from TX result and write to DB
-      const passObj = result.objectChanges?.find(
-        (c: { type: string; objectType?: string }) =>
-          c.type === 'created' && (c.objectType?.includes('::pass::PerpetualPass') || c.objectType?.includes('::pass::SubscriptionPass')),
-      ) as { objectId?: string } | undefined
-      if (!passObj?.objectId) {
-        throw new Error(`Transaction confirmed, but the minted pass object was missing from the response. Tx: ${result.digest}`)
-      }
-
-      const authHeaders = await getAuthHeaders()
+      const headers = await getAuthHeaders()
       await mirrorRouteRequest({
-        input: `/api/souls/${encodedSeriesOnChainId}/purchase`,
+        input: `/api/souls/${encodeURIComponent(props.soulObjectId)}/purchase`,
         init: {
           method: 'POST',
-          headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            passOnChainId: passObj.objectId,
-            txDigest: result.digest,
-          }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...headers,
+          },
+          body: JSON.stringify({ txDigest: result.digest }),
         },
       })
-
-      setStatus('done')
-    } catch (err) {
-      setErrorMsg(formatMirrorSyncError(err, confirmedDigest))
-      setStatus('error')
+      await props.onPurchased?.()
+    } catch (purchaseError) {
+      setError(formatMirrorSyncError(purchaseError))
     } finally {
-      purchaseInFlightRef.current = false
+      setSubmitting(false)
     }
   }
 
-  if (status === 'done' && txDigest) {
-    return (
-      <div className="space-y-2">
-        <div className="glass-card px-4 py-3 text-sm text-center" style={{ color: 'var(--accent-cyan)' }}>Purchase confirmed</div>
-        <p className="text-xs break-all" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Tx: {txDigest}</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-3">
-      <button type="button" disabled={status === 'pending'} onClick={handlePurchase}
-        className="glass-card px-6 py-3 text-sm font-semibold w-full transition-all"
-        style={{ color: status === 'pending' ? 'var(--text-muted)' : 'var(--accent-cyan)', opacity: status === 'pending' ? 0.6 : 1, cursor: status === 'pending' ? 'not-allowed' : 'pointer' }}>
-        {status === 'pending' ? 'Signing...' : planType === 'onetime' ? 'Purchase' : 'Subscribe'}
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={handlePurchase}
+        disabled={submitting}
+        className="px-4 py-3 rounded-xl font-semibold"
+        style={{
+          background: 'var(--accent-cyan)',
+          color: '#02131a',
+          opacity: submitting ? 0.7 : 1,
+        }}
+      >
+        {submitting ? 'Purchasing…' : `Buy for ${formatAtomicSuiForDisplay(props.listedPriceSui)}`}
       </button>
-      {status === 'error' && errorMsg && (
-        <div className="space-y-1">
-          <p role="alert" className="text-xs" style={{ color: 'var(--error, #f87171)' }}>{errorMsg}</p>
-          {txDigest && (
-            <p className="text-xs break-all" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              Tx: {txDigest}
-            </p>
-          )}
-        </div>
-      )}
+      {error ? (
+        <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{error}</p>
+      ) : null}
     </div>
   )
 }

@@ -1,16 +1,12 @@
-import { suiClient } from '@web/lib/sui'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
+import { normalizeWalrusBlobId } from '@web/lib/services/walrus'
+import { suiClient } from '@web/lib/sui'
 
 type TransactionLike = {
   digest?: string
   effects?: { status?: { status?: string | null } | null } | null
-  objectChanges?: unknown[] | null
-  transaction?: {
-    data?: {
-      sender?: string | null
-      transaction?: unknown
-    } | null
-  } | null
+  events?: Array<{ type?: unknown; parsedJson?: unknown }> | null
+  objectChanges?: Array<Record<string, unknown>> | null
 }
 
 type ObjectLike = {
@@ -26,9 +22,8 @@ type ObjectLike = {
   } | null
 }
 
-type PassType = 'perpetual' | 'subscription'
-type PlanType = 'onetime' | 'subscription'
 const MAX_ON_CHAIN_DECIMAL_BIGINT_LENGTH = 78
+const OPTIONAL_VECTOR_MAX_DEPTH = 4
 
 export class OnChainVerificationError extends Error {
   constructor(message: string, readonly status = 422) {
@@ -37,56 +32,51 @@ export class OnChainVerificationError extends Error {
   }
 }
 
-export interface VerifiedPassState {
+export interface VerifiedSoulState {
   objectId: string
-  passType: PassType
-  seriesId: string
-  ownerAddress: string
-  lockedReleaseId: string | null
-  expiresAt: Date | null
-  agentGrant: string | null
-}
-
-export interface VerifiedSeriesState {
-  objectId: string
+  ownerAddress: string | null
+  ownerObjectId: string | null
+  ownerKind: 'address' | 'object' | 'shared' | 'immutable' | 'unknown'
+  creatorAddress: string
   name: string
   description: string
-  category: string
-  tags: string[]
-  previewImages: string[]
-  authorAddress: string
-  latestReleaseId: string | null
+  imageUrl: string
+  metadataRef: string | null
+  contentBlobId: string | null
+  contentBlobObjectId: string
+  agentGrant: string | null
+  grantVersion: bigint
 }
 
-export interface VerifiedReleaseState {
+export interface VerifiedSoulAccessCapState {
   objectId: string
-  seriesId: string
-  version: string
-  walrusBlobRef: string
-  publicMetadataRef: string | null
-  contentHash: string
+  ownerAddress: string
+  soulObjectId: string
+  agentAddress: string
+  grantVersion: bigint
 }
 
-export interface VerifiedPricingPlanState {
+export interface VerifiedSoulListedEvent {
+  soulObjectId: string
+  sellerKioskId: string
+  sellerAddress: string
+  priceSui: bigint
+}
+
+export interface VerifiedSoulPurchasedEvent {
+  soulObjectId: string
+  sellerKioskId: string
+  buyerAddress: string
+  priceSui: bigint
+  platformFeeSui: bigint
+  royaltyFeeSui: bigint
+}
+
+export interface VerifiedMarketConfigState {
   objectId: string
-  seriesId: string
-  planType: PlanType
-  priceUsdc: bigint
-  periodMs: bigint
-  active: boolean
-}
-
-export interface VerifiedSoulPurchaseIntent {
-  planId: string
-  planType: PlanType
-  releaseId: string | null
-  seriesId: string
-}
-
-export interface VerifiedSoulRenewIntent {
-  planId: string
-  seriesId: string
-  passId: string
+  feeRecipient: string
+  platformFeeBps: bigint
+  royaltyBps: bigint
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -107,8 +97,7 @@ export function sameSuiValue(left: string | null | undefined, right: string | nu
   if (!left || !right) return false
   const normalizedLeft = normalizeSuiValue(left)
   const normalizedRight = normalizeSuiValue(right)
-  if (!normalizedLeft || !normalizedRight) return false
-  return normalizedLeft === normalizedRight
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight)
 }
 
 function readString(value: unknown, fieldName: string): string {
@@ -124,40 +113,12 @@ function readString(value: unknown, fieldName: string): string {
   throw new OnChainVerificationError(`${fieldName} is missing on chain`)
 }
 
-function readText(value: unknown, fieldName: string): string {
-  if (typeof value === 'string') {
-    return value.trim()
+function readAddress(value: unknown, fieldName: string): string {
+  const normalized = typeof value === 'string' ? normalizeSuiValue(value) : null
+  if (!normalized) {
+    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
   }
-
-  const record = asRecord(value)
-  if (record && typeof record.id === 'string') {
-    return record.id.trim()
-  }
-
-  throw new OnChainVerificationError(`${fieldName} is missing on chain`)
-}
-
-function readOptionalString(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    return trimmed.length > 0 ? trimmed : null
-  }
-
-  const record = asRecord(value)
-  if (record && typeof record.id === 'string') {
-    const trimmed = record.id.trim()
-    return trimmed.length > 0 ? trimmed : null
-  }
-
-  return null
-}
-
-function readStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter(Boolean)
+  return normalized
 }
 
 function readBigInt(value: unknown, fieldName: string): bigint {
@@ -180,7 +141,6 @@ function readBigInt(value: unknown, fieldName: string): bigint {
     }
     return BigInt(trimmed)
   }
-
   throw new OnChainVerificationError(`${fieldName} is missing on chain`)
 }
 
@@ -188,643 +148,267 @@ export function dateFromSafeMsBigInt(value: bigint, fieldName: string): Date {
   if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new OnChainVerificationError(`${fieldName} exceeds the supported timestamp range on chain`)
   }
-
   return new Date(Number(value))
 }
 
-function readBoolean(value: unknown, fieldName: string): boolean {
-  if (typeof value === 'boolean') return value
-  throw new OnChainVerificationError(`${fieldName} is missing on chain`)
-}
-
-const OPTIONAL_ADDRESS_MAX_DEPTH = 4
-const OPTIONAL_OBJECT_ID_MAX_DEPTH = 4
-
-function readOptionalAddress(value: unknown, depth = 0): string | null {
-  if (depth > OPTIONAL_ADDRESS_MAX_DEPTH) {
-    throw new OnChainVerificationError('Pass agent_grant nesting exceeds the supported on-chain depth')
-  }
-
-  if (typeof value === 'string') {
-    const normalized = normalizeSuiValue(value)
-    if (!normalized) {
-      throw new OnChainVerificationError('Pass agent_grant is malformed on chain')
-    }
-    return normalized
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) return null
-    return readOptionalAddress(value[0], depth + 1)
-  }
-
-  const record = asRecord(value)
-  if (!record) return null
-
-  if ('id' in record) {
-    if (typeof record.id !== 'string') {
-      throw new OnChainVerificationError('Pass agent_grant is malformed on chain')
-    }
-    const normalized = normalizeSuiValue(record.id)
-    if (!normalized) {
-      throw new OnChainVerificationError('Pass agent_grant is malformed on chain')
-    }
-    return normalized
-  }
-
-  if (Array.isArray(record.vec)) {
-    return readOptionalAddress(record.vec, depth + 1)
-  }
-
-  return null
-}
-
-function readOptionalObjectId(value: unknown, fieldName: string, depth = 0): string | null {
-  if (depth > OPTIONAL_OBJECT_ID_MAX_DEPTH) {
+function readOptionalVectorValue(value: unknown, fieldName: string, depth = 0): string | null {
+  if (depth > OPTIONAL_VECTOR_MAX_DEPTH) {
     throw new OnChainVerificationError(`${fieldName} nesting exceeds the supported on-chain depth`)
   }
 
   if (value == null) {
     return null
   }
-
   if (typeof value === 'string') {
-    const normalized = normalizeSuiValue(value)
-    if (!normalized) {
-      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-    }
-    return normalized
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
   }
-
   if (Array.isArray(value)) {
     if (value.length === 0) return null
     if (value.length !== 1) {
       throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
     }
-    return readOptionalObjectId(value[0], fieldName, depth + 1)
+    return readOptionalVectorValue(value[0], fieldName, depth + 1)
   }
 
   const record = asRecord(value)
   if (!record) {
     throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
   }
-
-  if ('id' in record) {
-    if (typeof record.id !== 'string') {
-      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-    }
-    const normalized = normalizeSuiValue(record.id)
-    if (!normalized) {
-      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-    }
-    return normalized
+  if (Array.isArray(record.vec)) {
+    return readOptionalVectorValue(record.vec, fieldName, depth + 1)
   }
-
-  if ('vec' in record) {
-    if (!Array.isArray(record.vec)) {
-      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-    }
-    if (record.vec.length === 0) return null
-    if (record.vec.length !== 1) {
-      throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-    }
-    return readOptionalObjectId(record.vec[0], fieldName, depth + 1)
+  if (typeof record.id === 'string') {
+    return record.id.trim() || null
   }
 
   throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
 }
 
-function bytesToHex(value: unknown): string {
-  if (typeof value === 'string') {
-    return value.startsWith('0x') ? value.slice(2).toLowerCase() : value.toLowerCase()
+function readOptionalAddress(value: unknown, fieldName: string): string | null {
+  const resolved = readOptionalVectorValue(value, fieldName)
+  if (!resolved) return null
+  const normalized = normalizeSuiValue(resolved)
+  if (!normalized) {
+    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
   }
-  if (!Array.isArray(value)) {
-    throw new OnChainVerificationError('content_hash is missing on chain')
-  }
-
-  return value
-    .map((item) => {
-      if (typeof item !== 'number' || !Number.isInteger(item) || item < 0 || item > 255) {
-        throw new OnChainVerificationError('content_hash is malformed on chain')
-      }
-      return item.toString(16).padStart(2, '0')
-    })
-    .join('')
+  return normalized
 }
 
-function getObjectOwnerAddress(owner: unknown): string | null {
-  const record = asRecord(owner)
-  if (!record) return null
-  return typeof record.AddressOwner === 'string' ? record.AddressOwner : null
+function readOptionalString(value: unknown, fieldName: string): string | null {
+  const resolved = readOptionalVectorValue(value, fieldName)
+  return resolved?.trim() || null
 }
 
-function getChangeSender(change: unknown): string | null {
-  const record = asRecord(change)
-  return typeof record?.sender === 'string' ? record.sender : null
-}
-
-function getTransactionSender(transaction: TransactionLike): string | null {
-  return typeof transaction.transaction?.data?.sender === 'string'
-    ? transaction.transaction.data.sender
-    : null
-}
-
-function getProgrammableTransactionData(transaction: TransactionLike): {
-  inputs: unknown[]
-  transactions: unknown[]
-} {
-  const programmableTx = asRecord(transaction.transaction?.data?.transaction)
-  if (
-    !programmableTx
-    || programmableTx.kind !== 'ProgrammableTransaction'
-    || !Array.isArray(programmableTx.inputs)
-    || !Array.isArray(programmableTx.transactions)
-  ) {
-    throw new OnChainVerificationError('Transaction input data is unavailable for verification', 503)
+function readOptionalWalrusBlobId(value: unknown): string | null {
+  const record = asRecord(value)
+  if (!record) {
+    return typeof value === 'string' ? normalizeWalrusBlobId(value) : null
   }
 
-  return {
-    inputs: programmableTx.inputs,
-    transactions: programmableTx.transactions,
-  }
-}
-
-function readObjectInputIdFromArgument(
-  inputs: unknown[],
-  argument: unknown,
-  fieldName: string,
-): string {
-  const argumentRecord = asRecord(argument)
-  const rawIndex = argumentRecord?.Input
-  if (!Number.isInteger(rawIndex)) {
-    throw new OnChainVerificationError(`${fieldName} is missing from the transaction inputs`)
-  }
-  const inputIndex = rawIndex as number
-  if (inputIndex < 0 || inputIndex >= inputs.length) {
-    throw new OnChainVerificationError(`${fieldName} is missing from the transaction inputs`)
+  const directValue = typeof record.blob_id === 'string'
+    ? record.blob_id
+    : typeof record.blobId === 'string'
+      ? record.blobId
+      : null
+  const directBlobId = directValue ? normalizeWalrusBlobId(directValue) : null
+  if (directBlobId) {
+    return directBlobId
   }
 
-  const inputRecord = asRecord(inputs[inputIndex])
-  if (
-    !inputRecord
-    || inputRecord.type !== 'object'
-    || typeof inputRecord.objectId !== 'string'
-    || inputRecord.objectId.trim().length === 0
-  ) {
-    throw new OnChainVerificationError(`${fieldName} is missing from the transaction inputs`)
-  }
-
-  return inputRecord.objectId.trim()
-}
-
-function readPurchaseIntentFromMoveCall(
-  moveCall: Record<string, unknown>,
-  inputs: unknown[],
-  expectedPackageId?: string | null,
-): VerifiedSoulPurchaseIntent | null {
-  const moveCallPackage = typeof moveCall.package === 'string' ? moveCall.package : null
-  const moveCallModule = typeof moveCall.module === 'string' ? moveCall.module : null
-  const moveCallFunction = typeof moveCall.function === 'string' ? moveCall.function : null
-  if (!moveCallPackage || !moveCallModule || !moveCallFunction) {
-    return null
-  }
-
-  if (expectedPackageId && !sameSuiValue(moveCallPackage, expectedPackageId)) {
-    return null
-  }
-  if (moveCallModule !== 'purchase') {
-    return null
-  }
-
-  const argumentsList = Array.isArray(moveCall.arguments) ? moveCall.arguments : null
-  if (!argumentsList) {
-    throw new OnChainVerificationError('Transaction purchase inputs are unavailable for verification', 503)
-  }
-
-  if (moveCallFunction === 'buy_perpetual') {
-    return {
-      planId: readObjectInputIdFromArgument(inputs, argumentsList[1], 'Purchase pricing plan'),
-      planType: 'onetime',
-      releaseId: readObjectInputIdFromArgument(inputs, argumentsList[3], 'Purchase release'),
-      seriesId: readObjectInputIdFromArgument(inputs, argumentsList[2], 'Purchase series'),
+  const nestedFields = asRecord(record.fields)
+  if (nestedFields) {
+    const nestedBlobId = readOptionalWalrusBlobId(nestedFields)
+    if (nestedBlobId) {
+      return nestedBlobId
     }
   }
 
-  if (moveCallFunction === 'buy_subscription') {
-    return {
-      planId: readObjectInputIdFromArgument(inputs, argumentsList[1], 'Purchase pricing plan'),
-      planType: 'subscription',
-      releaseId: null,
-      seriesId: readObjectInputIdFromArgument(inputs, argumentsList[2], 'Purchase series'),
-    }
+  const nestedVec = record.vec
+  if (Array.isArray(nestedVec) && nestedVec.length === 1) {
+    return readOptionalWalrusBlobId(nestedVec[0])
   }
 
   return null
 }
 
-function readRenewIntentFromMoveCall(
-  moveCall: Record<string, unknown>,
-  inputs: unknown[],
-  expectedPackageId?: string | null,
-): VerifiedSoulRenewIntent | null {
-  const moveCallPackage = typeof moveCall.package === 'string' ? moveCall.package : null
-  const moveCallModule = typeof moveCall.module === 'string' ? moveCall.module : null
-  const moveCallFunction = typeof moveCall.function === 'string' ? moveCall.function : null
-  if (!moveCallPackage || !moveCallModule || !moveCallFunction) {
-    return null
+function readObjectId(value: unknown, fieldName: string): string {
+  const resolved = readString(value, fieldName)
+  const normalized = normalizeSuiValue(resolved)
+  if (!normalized) {
+    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
   }
-
-  if (expectedPackageId && !sameSuiValue(moveCallPackage, expectedPackageId)) {
-    return null
-  }
-  if (moveCallModule !== 'purchase') {
-    return null
-  }
-  if (moveCallFunction !== 'renew_subscription') {
-    return null
-  }
-
-  const argumentsList = Array.isArray(moveCall.arguments) ? moveCall.arguments : null
-  if (!argumentsList) {
-    throw new OnChainVerificationError('Transaction renew inputs are unavailable for verification', 503)
-  }
-
-  return {
-    planId: readObjectInputIdFromArgument(inputs, argumentsList[1], 'Renew pricing plan'),
-    seriesId: readObjectInputIdFromArgument(inputs, argumentsList[2], 'Renew series'),
-    passId: readObjectInputIdFromArgument(inputs, argumentsList[3], 'Renew pass'),
-  }
+  return normalized
 }
 
-function getObjectFields(object: ObjectLike, label: string) {
-  const data = object.data
-  if (!data) {
-    throw new OnChainVerificationError(`${label} not found on chain`)
-  }
+function getObjectOwnerAddress(owner: unknown): string | null {
+  const record = asRecord(owner)
+  if (!record) return null
+  return typeof record.AddressOwner === 'string' ? normalizeSuiValue(record.AddressOwner) : null
+}
 
-  const content = data.content
-  const fields = asRecord(content?.fields)
-  if (!content || content.dataType !== 'moveObject' || !fields) {
-    throw new OnChainVerificationError(`${label} is not a Move object`)
-  }
+function getObjectOwnerObjectId(owner: unknown): string | null {
+  const record = asRecord(owner)
+  if (!record) return null
+  return typeof record.ObjectOwner === 'string' ? normalizeSuiValue(record.ObjectOwner) : null
+}
 
+function getObjectOwnerKind(owner: unknown): VerifiedSoulState['ownerKind'] {
+  const record = asRecord(owner)
+  if (!record) return 'unknown'
+  if (typeof record.AddressOwner === 'string') return 'address'
+  if (typeof record.ObjectOwner === 'string') return 'object'
+  if ('Shared' in record) return 'shared'
+  if ('Immutable' in record) return 'immutable'
+  return 'unknown'
+}
+
+function expectMoveObject(response: ObjectLike, objectId: string, expectedTypePrefix: string) {
+  const object = response.data
+  if (!object || typeof object.objectId !== 'string' || object.objectId !== objectId) {
+    throw new OnChainVerificationError('On-chain object was not found')
+  }
+  if (typeof object.type !== 'string' || !object.type.startsWith(expectedTypePrefix)) {
+    throw new OnChainVerificationError('On-chain object type does not match the expected package')
+  }
+  const content = object.content
+  if (!content || content.dataType !== 'moveObject' || typeof content.type !== 'string' || !content.type.startsWith(expectedTypePrefix)) {
+    throw new OnChainVerificationError('On-chain object content is not a move object')
+  }
+  const fields = asRecord(content.fields)
+  if (!fields) {
+    throw new OnChainVerificationError('On-chain object fields are missing')
+  }
   return {
-    objectId: readString(data.objectId, `${label} id`),
-    type: readString(data.type ?? content.type, `${label} type`),
-    ownerAddress: getObjectOwnerAddress(data.owner),
+    object,
     fields,
   }
 }
 
-function parseObjectType(type: string): { packageId: string; remainder: string } | null {
-  const separatorIndex = type.indexOf('::')
-  if (separatorIndex <= 0) {
-    return null
-  }
-
-  const packageId = normalizeSuiValue(type.slice(0, separatorIndex))
-  const remainder = type.slice(separatorIndex + 2)
-  if (!packageId || remainder.length === 0) {
-    return null
-  }
-
-  return { packageId, remainder }
-}
-
-function matchesExpectedObjectType(
-  type: string,
-  expectedTypes: string[],
-  expectedPackageId?: string | null,
-): boolean {
-  const parsed = parseObjectType(type)
-  if (!parsed) {
-    return false
-  }
-
-  const normalizedExpectedPackageId = expectedPackageId ? normalizeSuiValue(expectedPackageId) : null
-  if (normalizedExpectedPackageId && parsed.packageId !== normalizedExpectedPackageId) {
-    return false
-  }
-
-  return expectedTypes.some((expectedType) => parsed.remainder === expectedType)
-}
-
-function isPerpetualPass(type: string, expectedPackageId?: string | null) {
-  return matchesExpectedObjectType(type, ['pass::PerpetualPass'], expectedPackageId)
-}
-
-function isSubscriptionPass(type: string, expectedPackageId?: string | null) {
-  return matchesExpectedObjectType(type, ['pass::SubscriptionPass'], expectedPackageId)
-}
-
-function isPassType(type: string, expectedPackageId?: string | null) {
-  return isPerpetualPass(type, expectedPackageId) || isSubscriptionPass(type, expectedPackageId)
-}
-
-function parsePassType(type: string, expectedPackageId?: string | null): PassType {
-  if (isSubscriptionPass(type, expectedPackageId)) return 'subscription'
-  if (isPerpetualPass(type, expectedPackageId)) return 'perpetual'
-  throw new OnChainVerificationError('Referenced object is not a Soul pass')
-}
-
-function readPassStateFromObject(
-  object: ObjectLike,
-  expectedPackageId?: string | null,
-): VerifiedPassState {
-  const { objectId, type, ownerAddress: objectOwnerAddress, fields } = getObjectFields(object, 'Pass')
-  if (!isPassType(type, expectedPackageId)) {
-    throw new OnChainVerificationError('Referenced object is not a Soul pass')
-  }
-
-  const passType = parsePassType(type, expectedPackageId)
-  const ownerAddress = readString(fields.owner, 'Pass owner')
-  if (objectOwnerAddress && !sameSuiValue(ownerAddress, objectOwnerAddress)) {
-    throw new OnChainVerificationError('Pass owner does not match on-chain ownership')
-  }
-
-  return {
-    objectId,
-    passType,
-    seriesId: readString(fields.series_id, 'Pass series_id'),
-    ownerAddress,
-    lockedReleaseId: passType === 'perpetual'
-      ? readString(fields.release_id, 'Pass release_id')
-      : null,
-    expiresAt: passType === 'subscription'
-      ? dateFromSafeMsBigInt(readBigInt(fields.expires_at, 'Pass expires_at'), 'Pass expires_at')
-      : null,
-    agentGrant: readOptionalAddress(fields.agent_grant),
-  }
-}
-
-function readSeriesStateFromObject(object: ObjectLike, expectedPackageId?: string | null): VerifiedSeriesState {
-  const { objectId, type, fields } = getObjectFields(object, 'Series')
-  if (!matchesExpectedObjectType(type, ['series::SoulSeries'], expectedPackageId)) {
-    throw new OnChainVerificationError('Referenced object is not a Soul series')
-  }
-
-  return {
-    objectId,
-    name: readString(fields.name, 'Series name'),
-    description: readText(fields.description, 'Series description'),
-    category: readString(fields.category, 'Series category'),
-    tags: readStringArray(fields.tags),
-    previewImages: readStringArray(fields.preview_images),
-    authorAddress: readString(fields.author, 'Series author'),
-    latestReleaseId: readOptionalObjectId(fields.latest_release_id, 'Series latest_release_id'),
-  }
-}
-
-function readReleaseStateFromObject(object: ObjectLike, expectedPackageId?: string | null): VerifiedReleaseState {
-  const { objectId, type, fields } = getObjectFields(object, 'Release')
-  if (!matchesExpectedObjectType(type, ['series::SoulRelease'], expectedPackageId)) {
-    throw new OnChainVerificationError('Referenced object is not a Soul release')
-  }
-
-  return {
-    objectId,
-    seriesId: readString(fields.series_id, 'Release series_id'),
-    version: readString(fields.version, 'Release version'),
-    walrusBlobRef: readString(fields.encrypted_blob_id, 'Release encrypted_blob_id'),
-    publicMetadataRef: readOptionalString(fields.public_metadata_id),
-    contentHash: bytesToHex(fields.content_hash),
-  }
-}
-
-function readPricingPlanStateFromObject(object: ObjectLike, expectedPackageId?: string | null): VerifiedPricingPlanState {
-  const { objectId, type, fields } = getObjectFields(object, 'Pricing plan')
-  if (!matchesExpectedObjectType(type, ['purchase::PricingPlan'], expectedPackageId)) {
-    throw new OnChainVerificationError('Referenced object is not a pricing plan')
-  }
-
-  const planTypeValue = Number(readBigInt(fields.plan_type, 'Pricing plan plan_type'))
-  if (planTypeValue !== 0 && planTypeValue !== 1) {
-    throw new OnChainVerificationError('Pricing plan type is invalid on chain')
-  }
-
-  return {
-    objectId,
-    seriesId: readString(fields.series_id, 'Pricing plan series_id'),
-    planType: planTypeValue === 0 ? 'onetime' : 'subscription',
-    priceUsdc: readBigInt(fields.price_usdc, 'Pricing plan price_usdc'),
-    periodMs: readBigInt(fields.period_ms, 'Pricing plan period_ms'),
-    active: readBoolean(fields.active, 'Pricing plan active'),
-  }
-}
-
-export function ensureTransactionSucceeded(transaction: TransactionLike, fallbackMessage = 'Transaction did not succeed') {
-  if (transaction.effects?.status?.status !== 'success') {
-    throw new OnChainVerificationError(fallbackMessage)
-  }
-}
-
-function findMatchingPassChange(
-  transaction: TransactionLike,
-  passOnChainId: string,
-  changeTypes: Array<'created' | 'mutated'>,
-  expectedPackageId?: string | null,
-) {
-  const wantedId = normalizeSuiValue(passOnChainId)
-  const changes = Array.isArray(transaction.objectChanges) ? transaction.objectChanges : []
-
-  return changes.find((change) => {
-    const record = asRecord(change)
-    if (!record) return false
-    if (!changeTypes.includes(record.type as 'created' | 'mutated')) return false
-    if (typeof record.objectId !== 'string' || normalizeSuiValue(record.objectId) !== wantedId) return false
-    if (typeof record.objectType !== 'string' || !isPassType(record.objectType, expectedPackageId)) return false
-    return true
-  })
-}
-
-function findMatchingObjectChange(
-  transaction: TransactionLike,
-  objectOnChainId: string,
-  changeTypes: Array<'created' | 'mutated'>,
-) {
-  const wantedId = normalizeSuiValue(objectOnChainId)
-  const changes = Array.isArray(transaction.objectChanges) ? transaction.objectChanges : []
-
-  return changes.find((change) => {
-    const record = asRecord(change)
-    if (!record) return false
-    if (!changeTypes.includes(record.type as 'created' | 'mutated')) return false
-    if (typeof record.objectId !== 'string' || normalizeSuiValue(record.objectId) !== wantedId) return false
-    return true
-  })
-}
-
-function verifyExpectedSender(
-  transaction: TransactionLike,
-  change: unknown,
-  expectedSender: string | string[],
-) {
-  const sender = getChangeSender(change) ?? getTransactionSender(transaction)
-  if (!sender) {
-    throw new OnChainVerificationError('Unable to determine transaction sender for verification')
-  }
-
-  const allowedSenders = Array.isArray(expectedSender) ? expectedSender : [expectedSender]
-  if (!allowedSenders.some((candidate) => sameSuiValue(sender, candidate))) {
-    throw new OnChainVerificationError('Transaction sender does not match the expected wallet')
-  }
-}
-
-export function assertPassChange(transaction: TransactionLike, params: {
-  passOnChainId: string
-  changeTypes: Array<'created' | 'mutated'>
-  errorMessage: string
-  expectedSender?: string | string[] | null
-  expectedPackageId?: string | null
-}) {
-  const change = findMatchingPassChange(
-    transaction,
-    params.passOnChainId,
-    params.changeTypes,
-    params.expectedPackageId,
-  )
-  if (!change) {
-    throw new OnChainVerificationError(params.errorMessage)
-  }
-
-  if (params.expectedSender) {
-    verifyExpectedSender(transaction, change, params.expectedSender)
-  }
-
-  return change
-}
-
-export function getVerifiedSoulPurchaseIntents(
-  transaction: TransactionLike,
-  expectedPackageId?: string | null,
-): VerifiedSoulPurchaseIntent[] {
-  const { inputs, transactions } = getProgrammableTransactionData(transaction)
-
-  return transactions.flatMap((entry) => {
-    const transactionRecord = asRecord(entry)
-    const moveCall = asRecord(transactionRecord?.MoveCall)
-    if (!moveCall) {
-      return []
-    }
-
-    const purchaseIntent = readPurchaseIntentFromMoveCall(moveCall, inputs, expectedPackageId)
-    return purchaseIntent ? [purchaseIntent] : []
-  })
-}
-
-export function getVerifiedSoulRenewIntents(
-  transaction: TransactionLike,
-  expectedPackageId?: string | null,
-): VerifiedSoulRenewIntent[] {
-  const { inputs, transactions } = getProgrammableTransactionData(transaction)
-
-  return transactions.flatMap((entry) => {
-    const transactionRecord = asRecord(entry)
-    const moveCall = asRecord(transactionRecord?.MoveCall)
-    if (!moveCall) {
-      return []
-    }
-
-    const renewIntent = readRenewIntentFromMoveCall(moveCall, inputs, expectedPackageId)
-    return renewIntent ? [renewIntent] : []
-  })
-}
-
-export function assertCreatedObjectChange(transaction: TransactionLike, params: {
-  objectOnChainId: string
-  errorMessage: string
-  expectedType?: string | string[]
-  expectedPackageId?: string | null
-  expectedSender?: string | null
-}) {
-  const change = findMatchingObjectChange(transaction, params.objectOnChainId, ['created'])
-  if (!change) {
-    throw new OnChainVerificationError(params.errorMessage)
-  }
-
-  const record = asRecord(change)
-  const expectedTypes = params.expectedType == null
-    ? []
-    : Array.isArray(params.expectedType)
-      ? params.expectedType
-      : [params.expectedType]
-  const objectType = typeof record?.objectType === 'string' ? record.objectType : null
-  if (
-    expectedTypes.length > 0
-    && (
-      !objectType
-      || !matchesExpectedObjectType(objectType, expectedTypes, params.expectedPackageId)
-    )
-  ) {
-    throw new OnChainVerificationError(params.errorMessage)
-  }
-
-  if (params.expectedSender) {
-    verifyExpectedSender(transaction, change, params.expectedSender)
-  }
-
-  return change
-}
-
-export async function getSuccessfulTransaction(digest: string) {
-  const transaction = await suiClient.getTransactionBlock({
-    digest,
+export async function getVerifiedSoulState(objectId: string, packageId?: string): Promise<VerifiedSoulState> {
+  const response = await suiClient.getObject({
+    id: objectId,
     options: {
-      showEffects: true,
-      showInput: true,
-      showObjectChanges: true,
-    },
-  })
-
-  ensureTransactionSucceeded(transaction as TransactionLike)
-  return transaction
-}
-
-export async function getVerifiedPassState(passOnChainId: string, expectedPackageId?: string | null) {
-  const object = await suiClient.getObject({
-    id: passOnChainId,
-    options: {
-      showContent: true,
       showOwner: true,
+      showContent: true,
       showType: true,
     },
   })
+  const expectedTypePrefix = `${packageId ?? ''}::soul::Soul`
+  const { object, fields } = expectMoveObject(response, objectId, expectedTypePrefix)
+  const ownerAddress = getObjectOwnerAddress(object.owner)
 
-  return readPassStateFromObject(object as ObjectLike, expectedPackageId)
+  return {
+    objectId,
+    ownerAddress,
+    ownerObjectId: getObjectOwnerObjectId(object.owner),
+    ownerKind: getObjectOwnerKind(object.owner),
+    creatorAddress: readAddress(fields.creator, 'Soul creator'),
+    name: readString(fields.name, 'Soul name'),
+    description: readString(fields.description, 'Soul description'),
+    imageUrl: readString(fields.image_url, 'Soul image_url'),
+    metadataRef: readOptionalString(fields.metadata_ref, 'Soul metadata_ref'),
+    contentBlobId: readOptionalWalrusBlobId(fields.content_blob),
+    contentBlobObjectId: readObjectId(fields.content_blob, 'Soul content_blob'),
+    agentGrant: readOptionalAddress(fields.agent_grant, 'Soul agent_grant'),
+    grantVersion: readBigInt(fields.grant_version, 'Soul grant_version'),
+  }
 }
 
-export async function getVerifiedSeriesState(seriesOnChainId: string, expectedPackageId?: string | null) {
-  const object = await suiClient.getObject({
-    id: seriesOnChainId,
+export async function getVerifiedMarketConfigState(
+  objectId: string,
+  packageId?: string,
+): Promise<VerifiedMarketConfigState> {
+  const response = await suiClient.getObject({
+    id: objectId,
     options: {
       showContent: true,
       showType: true,
     },
   })
+  const expectedTypePrefix = `${packageId ?? ''}::market::MarketConfig`
+  const { fields } = expectMoveObject(response, objectId, expectedTypePrefix)
 
-  return readSeriesStateFromObject(object as ObjectLike, expectedPackageId)
+  return {
+    objectId,
+    feeRecipient: readAddress(fields.fee_recipient, 'MarketConfig fee_recipient'),
+    platformFeeBps: readBigInt(fields.platform_fee_bps, 'MarketConfig platform_fee_bps'),
+    royaltyBps: readBigInt(fields.royalty_bps, 'MarketConfig royalty_bps'),
+  }
 }
 
-export async function getVerifiedReleaseState(releaseOnChainId: string, expectedPackageId?: string | null) {
-  const object = await suiClient.getObject({
-    id: releaseOnChainId,
+export async function getVerifiedSoulAccessCapState(
+  objectId: string,
+  packageId?: string,
+): Promise<VerifiedSoulAccessCapState> {
+  const response = await suiClient.getObject({
+    id: objectId,
     options: {
+      showOwner: true,
       showContent: true,
       showType: true,
     },
   })
+  const expectedTypePrefix = `${packageId ?? ''}::grant::SoulAccessCap`
+  const { object, fields } = expectMoveObject(response, objectId, expectedTypePrefix)
+  const ownerAddress = getObjectOwnerAddress(object.owner)
+  if (!ownerAddress) {
+    throw new OnChainVerificationError('Soul access cap owner is missing on chain')
+  }
 
-  return readReleaseStateFromObject(object as ObjectLike, expectedPackageId)
+  return {
+    objectId,
+    ownerAddress,
+    soulObjectId: readObjectId(fields.soul_id, 'SoulAccessCap soul_id'),
+    agentAddress: readAddress(fields.agent, 'SoulAccessCap agent'),
+    grantVersion: readBigInt(fields.grant_version, 'SoulAccessCap grant_version'),
+  }
 }
 
-export async function getVerifiedPricingPlanState(planOnChainId: string, expectedPackageId?: string | null) {
-  const object = await suiClient.getObject({
-    id: planOnChainId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
+export function ensureTransactionSucceeded(transaction: TransactionLike) {
+  if (transaction.effects?.status?.status !== 'success') {
+    throw new OnChainVerificationError('On-chain transaction did not succeed')
+  }
+}
 
-  return readPricingPlanStateFromObject(object as ObjectLike, expectedPackageId)
+function extractTypedEvent(
+  transaction: TransactionLike,
+  type: string,
+): Record<string, unknown> | null {
+  const event = transaction.events?.find((item) => item?.type === type)
+  return event ? asRecord(event.parsedJson) : null
+}
+
+export function extractSoulListingEvent(
+  transaction: TransactionLike,
+  packageId: string,
+): VerifiedSoulListedEvent {
+  const event = extractTypedEvent(transaction, `${packageId}::market::SoulListed`)
+  if (!event) {
+    throw new OnChainVerificationError('Soul listing event is missing from the transaction')
+  }
+  return {
+    soulObjectId: readObjectId(event.soul_id, 'SoulListed soul_id'),
+    sellerKioskId: readObjectId(event.kiosk_id, 'SoulListed kiosk_id'),
+    sellerAddress: readAddress(event.seller, 'SoulListed seller'),
+    priceSui: readBigInt(event.price, 'SoulListed price'),
+  }
+}
+
+export function extractSoulPurchasedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+): VerifiedSoulPurchasedEvent {
+  const event = extractTypedEvent(transaction, `${packageId}::market::SoulPurchased`)
+  if (!event) {
+    throw new OnChainVerificationError('Soul purchase event is missing from the transaction')
+  }
+  return {
+    soulObjectId: readObjectId(event.soul_id, 'SoulPurchased soul_id'),
+    sellerKioskId: readObjectId(event.seller_kiosk_id, 'SoulPurchased seller_kiosk_id'),
+    buyerAddress: readAddress(event.buyer, 'SoulPurchased buyer'),
+    priceSui: readBigInt(event.price, 'SoulPurchased price'),
+    platformFeeSui: readBigInt(event.platform_fee, 'SoulPurchased platform_fee'),
+    royaltyFeeSui: readBigInt(event.royalty_fee, 'SoulPurchased royalty_fee'),
+  }
 }

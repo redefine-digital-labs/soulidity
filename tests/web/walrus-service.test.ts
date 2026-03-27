@@ -150,7 +150,10 @@ describe('Walrus blob validation', () => {
 
     const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
 
-    await expect(uploadPublic(Buffer.from('payload'))).resolves.toBe('blob-123')
+    await expect(uploadPublic(Buffer.from('payload'))).resolves.toEqual({
+      blobId: 'blob-123',
+      blobObjectId: 'walrus-object-1',
+    })
     expect(global.fetch).toHaveBeenCalledTimes(3)
   })
 
@@ -187,7 +190,10 @@ describe('Walrus blob validation', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(1)
-    await expect(uploadPromise).resolves.toBe('blob-123')
+    await expect(uploadPromise).resolves.toEqual({
+      blobId: 'blob-123',
+      blobObjectId: 'walrus-object-1',
+    })
     expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 
@@ -224,7 +230,10 @@ describe('Walrus blob validation', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(1)
-    await expect(uploadPromise).resolves.toBe('blob-123')
+    await expect(uploadPromise).resolves.toEqual({
+      blobId: 'blob-123',
+      blobObjectId: 'walrus-object-1',
+    })
     expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 
@@ -261,7 +270,10 @@ describe('Walrus blob validation', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(1)
-    await expect(uploadPromise).resolves.toBe('blob-123')
+    await expect(uploadPromise).resolves.toEqual({
+      blobId: 'blob-123',
+      blobObjectId: 'walrus-object-1',
+    })
     expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 
@@ -295,7 +307,10 @@ describe('Walrus blob validation', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(1)
-    await expect(uploadPromise).resolves.toBe('blob-123')
+    await expect(uploadPromise).resolves.toEqual({
+      blobId: 'blob-123',
+      blobObjectId: 'walrus-object-1',
+    })
     expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 })

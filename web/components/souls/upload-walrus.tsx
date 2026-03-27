@@ -5,6 +5,7 @@ import { useAuth } from '@web/components/auth-provider'
 
 export interface WalrusUploadResult {
   blobId: string
+  blobObjectId: string | null
   contentHash: string
   sealDekEnvelope?: string
 }

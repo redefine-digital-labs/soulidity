@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
-const mockedUploadEncrypted = vi.hoisted(() => vi.fn())
 const mockedUploadPublic = vi.hoisted(() => vi.fn())
 const mockedSealDekEnvelope = vi.hoisted(() => vi.fn())
 
@@ -19,7 +18,6 @@ vi.mock('@web/lib/rate-limit', async () => {
 })
 
 vi.mock('@web/lib/services/walrus', () => ({
-  uploadEncrypted: mockedUploadEncrypted,
   uploadPublic: mockedUploadPublic,
 }))
 
@@ -37,8 +35,10 @@ describe('soul upload route', () => {
       identity: { memberId: 'member-1', kind: 'human' },
     })
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
-    mockedUploadEncrypted.mockResolvedValue('blob-encrypted')
-    mockedUploadPublic.mockResolvedValue('blob-public')
+    mockedUploadPublic.mockResolvedValue({
+      blobId: 'blob-public',
+      blobObjectId: '0xblob-object',
+    })
     mockedSealDekEnvelope.mockReturnValue('mock-envelope-token')
   })
 
@@ -57,8 +57,10 @@ describe('soul upload route', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.blobId).toBe('blob-public')
+    expect(body.blobObjectId).toBe('0xblob-object')
     expect(body.contentHash).toBeDefined()
     expect(body.sealDekEnvelope).toBe('mock-envelope-token')
+    expect(mockedUploadPublic).toHaveBeenCalledTimes(1)
     expect(mockedSealDekEnvelope).toHaveBeenCalledWith(
       expect.objectContaining({
         dek: expect.any(Buffer),

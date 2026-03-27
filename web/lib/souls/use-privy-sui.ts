@@ -1,6 +1,6 @@
 /**
  * Hook for signing and executing Sui transactions via Privy embedded wallet.
- * Reusable across publish, purchase, grant, and release flows.
+ * Reusable across publish, purchase, and grant flows.
  */
 
 import { useCallback } from 'react'
@@ -89,7 +89,7 @@ export function usePrivySuiSign() {
       const result = await suiClient.executeTransactionBlock({
         transactionBlock: Buffer.from(rawBytes).toString('base64'),
         signature: serializedSig,
-        options: { showEffects: true, showInput: true, showObjectChanges: true },
+        options: { showEffects: true, showInput: true, showObjectChanges: true, showEvents: true },
       })
 
       // Wait for the transaction to be confirmed so subsequent TXs see updated object versions

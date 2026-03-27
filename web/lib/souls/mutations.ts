@@ -3,14 +3,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@web/components/auth-provider'
 
-export function useSetAgentGrant(passId: string) {
+export function useSetAgentGrant(soulId: string) {
   const queryClient = useQueryClient()
   const { getAuthHeaders } = useAuth()
 
   return useMutation({
-    mutationFn: async (params: { agentAddress: string; txDigest: string }) => {
+    mutationFn: async (params: { agentAddress: string; soulAccessCapOnChainId: string; txDigest: string }) => {
       const headers = await getAuthHeaders()
-      const res = await fetch(`/api/souls/passes/${passId}/grant`, {
+      const res = await fetch(`/api/souls/${soulId}/grant`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify(params),
@@ -20,18 +20,19 @@ export function useSetAgentGrant(passId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+      queryClient.invalidateQueries({ queryKey: ['soul', soulId] })
     },
   })
 }
 
-export function useRevokeAgentGrant(passId: string) {
+export function useRevokeAgentGrant(soulId: string) {
   const queryClient = useQueryClient()
   const { getAuthHeaders } = useAuth()
 
   return useMutation({
     mutationFn: async (params: { txDigest: string }) => {
       const headers = await getAuthHeaders()
-      const res = await fetch(`/api/souls/passes/${passId}/grant`, {
+      const res = await fetch(`/api/souls/${soulId}/grant`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify(params),
@@ -41,6 +42,7 @@ export function useRevokeAgentGrant(passId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+      queryClient.invalidateQueries({ queryKey: ['soul', soulId] })
     },
   })
 }

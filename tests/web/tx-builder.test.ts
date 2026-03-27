@@ -2,13 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ORIGINAL_ENV = { ...process.env }
 const PACKAGE_ID = '0xsoul'
+const MARKET_CONFIG_ID = '0xconfig'
+const TRANSFER_POLICY_ID = '0xpolicy'
 
 describe('tx builders', () => {
   beforeEach(() => {
     vi.resetModules()
     process.env = {
       ...ORIGINAL_ENV,
-      NEXT_PUBLIC_SOUL_PACKAGE_ID: PACKAGE_ID,
+      NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID: PACKAGE_ID,
+      NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID: MARKET_CONFIG_ID,
+      NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID: TRANSFER_POLICY_ID,
     }
   })
 
@@ -16,145 +20,115 @@ describe('tx builders', () => {
     process.env = { ...ORIGINAL_ENV }
   })
 
-  it('rejects create-series payloads that exceed the on-chain tag limit', async () => {
-    const { buildCreateSeriesTx } = await import('../../web/lib/souls/tx-builder.ts')
+  it('rejects mint-and-list payloads that exceed the on-chain tag limit', async () => {
+    const { buildMintAndListSoulTx } = await import('../../web/lib/souls/tx-builder.ts')
 
-    expect(() => buildCreateSeriesTx({
+    expect(() => buildMintAndListSoulTx({
+      ownerAddress: '0xabc',
       name: 'Soul name',
       description: 'Soul description',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: 'walrus://metadata',
+      contentBlobObjectId: '0xblob',
       category: 'Research',
       tags: Array.from({ length: 11 }, (_, index) => `tag-${index}`),
       previewImages: [],
+      readme: 'README',
+      priceSui: 1_000_000_000n,
     })).toThrow('Soul tags exceed the 10-tag limit')
   })
 
-  it('rejects preview image references that exceed the on-chain byte limit', async () => {
-    const { buildCreateSeriesTx } = await import('../../web/lib/souls/tx-builder.ts')
+  it('rejects empty descriptions before signing publish txs', async () => {
+    const { buildMintAndListSoulTx } = await import('../../web/lib/souls/tx-builder.ts')
 
-    expect(() => buildCreateSeriesTx({
-      name: 'Soul name',
-      description: 'Soul description',
-      category: 'Research',
-      tags: ['alpha'],
-      previewImages: ['x'.repeat(513)],
-    })).toThrow('Soul preview image reference exceeds the 512-byte limit')
-  })
-
-  it('rejects create-series payloads with an empty description before signing', async () => {
-    const { buildCreateSeriesTx } = await import('../../web/lib/souls/tx-builder.ts')
-
-    expect(() => buildCreateSeriesTx({
+    expect(() => buildMintAndListSoulTx({
+      ownerAddress: '0xabc',
       name: 'Soul name',
       description: '   ',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: null,
+      contentBlobObjectId: '0xblob',
       category: 'Research',
       tags: ['alpha'],
       previewImages: [],
+      readme: null,
+      priceSui: 1_000_000_000n,
     })).toThrow('Soul description is required')
   })
 
-  it('rejects publish-release payloads whose contentHash is not 32 bytes', async () => {
-    const { buildPublishReleaseTx } = await import('../../web/lib/souls/tx-builder.ts')
+  it('rejects zero-priced listings before they reach the chain', async () => {
+    const { buildMintAndListSoulTx } = await import('../../web/lib/souls/tx-builder.ts')
 
-    expect(() => buildPublishReleaseTx({
-      authorCapId: '0xcap',
-      seriesId: '0xseries',
-      version: '1.0.0',
-      encryptedBlobId: 'blob-1',
-      publicMetadataId: 'meta-1',
-      contentHash: new Uint8Array(31),
-    })).toThrow('contentHash must be 32 bytes')
+    expect(() => buildMintAndListSoulTx({
+      ownerAddress: '0xabc',
+      name: 'Soul name',
+      description: 'Soul description',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: null,
+      contentBlobObjectId: '0xblob',
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: [],
+      readme: null,
+      priceSui: 0n,
+    })).toThrow('priceSui must be positive')
   })
 
-  it('rejects negative pricing plan values before they reach tx.pure.u64()', async () => {
-    const { buildCreatePricingPlanTx } = await import('../../web/lib/souls/tx-builder.ts')
-
-    expect(() => buildCreatePricingPlanTx({
-      authorCapId: '0xcap',
-      seriesId: '0xseries',
-      planType: 0,
-      priceUsdc: -1n,
-      periodMs: 0n,
-    })).toThrow('priceUsdc must be non-negative')
-
-    expect(() => buildCreatePricingPlanTx({
-      authorCapId: '0xcap',
-      seriesId: '0xseries',
-      planType: 1,
-      priceUsdc: 1_000_000n,
-      periodMs: -1n,
-    })).toThrow('periodMs must be non-negative')
-  })
-
-  it('builds the perpetual purchase move call against the configured package and release', async () => {
+  it('builds the soul purchase move call against the configured package', async () => {
     const { Transaction } = await import('../../web/node_modules/@mysten/sui/dist/transactions/index.mjs')
     const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
-    const { buildBuyPerpetualTx } = await import('../../web/lib/souls/tx-builder.ts')
+    const { buildBuySoulTx } = await import('../../web/lib/souls/tx-builder.ts')
 
-    buildBuyPerpetualTx({
-      platformConfigId: '0xplatform',
-      planId: '0xplan',
-      seriesId: '0xseries',
-      releaseId: '0xrelease',
-      paymentCoinIds: ['0xcoin'],
-      amount: 1_000_000n,
+    buildBuySoulTx({
+      soulObjectId: '0xsoul-object',
+      sellerKioskId: '0xkiosk',
+      buyerAddress: `0x${'1'.repeat(64)}`,
+      priceSui: 1_000_000_000n,
+      feeAmountSui: 100_000_000n,
     })
-    const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
+
+    const moveCall = moveCallSpy.mock.calls.findLast(
+      ([call]) => (call as Record<string, unknown>).target === `${PACKAGE_ID}::market::purchase`,
+    )?.[0] as Record<string, unknown> | undefined
 
     expect(moveCall).toMatchObject({
-      target: `${PACKAGE_ID}::purchase::buy_perpetual`,
+      target: `${PACKAGE_ID}::market::purchase`,
     })
-    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(5)
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(6)
     moveCallSpy.mockRestore()
   })
 
-  it('builds the subscription purchase move call against the configured package and clock object', async () => {
+  it('builds the soul grant move call and transfers the returned cap to the agent', async () => {
     const { Transaction } = await import('../../web/node_modules/@mysten/sui/dist/transactions/index.mjs')
     const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
-    const { buildBuySubscriptionTx } = await import('../../web/lib/souls/tx-builder.ts')
+    const transferSpy = vi.spyOn(Transaction.prototype, 'transferObjects')
+    const { buildSetAgentGrantTx } = await import('../../web/lib/souls/tx-builder.ts')
 
-    buildBuySubscriptionTx({
-      platformConfigId: '0xplatform',
-      planId: '0xplan',
-      seriesId: '0xseries',
-      paymentCoinIds: ['0xcoin'],
-      amount: 1_000_000n,
+    buildSetAgentGrantTx({
+      soulObjectId: '0xsoul-object',
+      agentAddress: `0x${'ab'.repeat(32)}`,
     })
-    const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
 
-    expect(moveCall).toMatchObject({
-      target: `${PACKAGE_ID}::purchase::buy_subscription`,
-    })
-    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(5)
+    expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
+      target: `${PACKAGE_ID}::grant::set_agent_grant`,
+    }))
+    expect(transferSpy).toHaveBeenCalledTimes(1)
     moveCallSpy.mockRestore()
+    transferSpy.mockRestore()
   })
 
-  describe('buildRenewSubscriptionTx', () => {
-    it('returns a Transaction object for valid params', async () => {
-      const { buildRenewSubscriptionTx } = await import('../../web/lib/souls/tx-builder.ts')
+  it('builds the soul revoke move call against the configured package', async () => {
+    const { Transaction } = await import('../../web/node_modules/@mysten/sui/dist/transactions/index.mjs')
+    const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
+    const { buildRevokeAgentGrantTx } = await import('../../web/lib/souls/tx-builder.ts')
 
-      const result = buildRenewSubscriptionTx({
-        platformConfigId: '0xplatform',
-        planId: '0xplan',
-        seriesId: '0xseries',
-        passId: '0xpass',
-        paymentCoinIds: ['0xcoin'],
-        amount: 1_000_000n,
-      })
-
-      expect(result).toBeTruthy()
+    buildRevokeAgentGrantTx({
+      soulObjectId: '0xsoul-object',
     })
 
-    it('throws when paymentCoinIds is empty', async () => {
-      const { buildRenewSubscriptionTx } = await import('../../web/lib/souls/tx-builder.ts')
-
-      expect(() => buildRenewSubscriptionTx({
-        platformConfigId: '0xplatform',
-        planId: '0xplan',
-        seriesId: '0xseries',
-        passId: '0xpass',
-        paymentCoinIds: [],
-        amount: 1_000_000n,
-      })).toThrow('paymentCoinIds is required')
-    })
+    expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
+      target: `${PACKAGE_ID}::grant::revoke_agent_grant`,
+    }))
+    moveCallSpy.mockRestore()
   })
 })

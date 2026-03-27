@@ -44,22 +44,25 @@ export async function GET(
         take: 1,
         select: { address: true },
       },
-      authoredSoulSeries: {
-        where: { status: 'active' },
-        include: {
-          latestRelease: {
-            select: {
-              id: true,
-              onChainId: true,
-              version: true,
-              changelog: true,
-              createdAt: true,
-            },
-          },
-          _count: { select: { passSnapshots: true } },
-        },
+      authoredSoulAssets: {
         orderBy: { createdAt: 'desc' },
         take: 12,
+        select: {
+          id: true,
+          onChainId: true,
+          name: true,
+          description: true,
+          imageUrl: true,
+          category: true,
+          tags: true,
+          previewImages: true,
+          listedPriceSui: true,
+          listingStatus: true,
+          creatorAddress: true,
+          currentOwnerAddress: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       },
     },
   })
@@ -68,11 +71,16 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const { walletBindings, authoredSoulSeries, ...rest } = member
+  const { walletBindings, authoredSoulAssets, ...rest } = member
 
   return NextResponse.json({
     ...rest,
     primarySuiAddress: isOwnProfile ? (walletBindings[0]?.address ?? null) : null,
-    uploadedSouls: serializeSoulPreviewImageList(authoredSoulSeries),
+    uploadedSouls: serializeSoulPreviewImageList(authoredSoulAssets.map((soul) => ({
+      ...soul,
+      listedPriceSui: soul.listedPriceSui?.toString() ?? null,
+      createdAt: soul.createdAt.toISOString(),
+      updatedAt: soul.updatedAt.toISOString(),
+    }))),
   })
 }

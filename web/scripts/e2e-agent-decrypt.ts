@@ -6,7 +6,7 @@
  * 3. Create SealClient + SessionKey (agent Ed25519 keypair)
  * 4. Parse encrypted blob → extract document ID
  * 5. Build seal_approve TX → SealClient.decrypt
- * 6. SHA-256 compare decrypted content with contentHash
+ * 6. SHA-256 compare decrypted content with sealSidecar.contentHash
  *
  * Usage:
  *   AGENT_MNEMONIC="..." AGENT_API_KEY="sk-..." SOUL_ID="..." \
@@ -52,9 +52,8 @@ async function main() {
   }
 
   const access = await accessRes.json()
-  console.log(`Pass type: ${access.passType}`)
   console.log(`Blob URL: ${access.artifact.walrusBlobUrl}`)
-  console.log(`Content hash: ${access.artifact.contentHash}`)
+  console.log(`Content hash: ${access.sealSidecar.contentHash}`)
   console.log(`Policy: ${access.accessPolicy.functionName}`)
 
   // Step 2: Download encrypted blob
@@ -106,28 +105,27 @@ async function main() {
 
   // Step 5: Build approval TX and decrypt
   console.log('\n--- Step 5: Build approval TX ---')
-  const { functionName, seriesObjectId, passObjectId, releaseObjectId, clockObjectId } = access.accessPolicy
+  const { functionName, soulObjectId, soulAccessCapObjectId } = access.accessPolicy
 
   const tx = new Transaction()
-  if (functionName === 'seal_approve_perpetual') {
+  if (functionName === 'seal_approve_owner') {
     tx.moveCall({
       target: `${packageId}::seal_policy::${functionName}`,
       arguments: [
         tx.pure.vector('u8', Array.from(fromHex(documentId))),
-        tx.object(passObjectId),
-        tx.object(releaseObjectId),
-        tx.object(seriesObjectId),
+        tx.object(soulObjectId),
       ],
     })
   } else {
-    // seal_approve_subscription
+    if (!soulAccessCapObjectId) {
+      throw new Error('seal_approve_agent requires soulAccessCapObjectId')
+    }
     tx.moveCall({
       target: `${packageId}::seal_policy::${functionName}`,
       arguments: [
         tx.pure.vector('u8', Array.from(fromHex(documentId))),
-        tx.object(passObjectId),
-        tx.object(seriesObjectId),
-        tx.object(clockObjectId ?? '0x6'),
+        tx.object(soulObjectId),
+        tx.object(soulAccessCapObjectId),
       ],
     })
   }
@@ -149,7 +147,7 @@ async function main() {
     // Step 7: Verify content hash
     console.log('\n--- Step 7: Verify content hash ---')
     const hash = createHash('sha256').update(decryptedData).digest('hex')
-    const expectedHash = access.artifact.contentHash.replace(/^0x/, '')
+    const expectedHash = access.sealSidecar.contentHash.replace(/^0x/, '')
     console.log(`Computed: ${hash}`)
     console.log(`Expected: ${expectedHash}`)
 

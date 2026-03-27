@@ -1,75 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { serializeSoulPreviewImageList } from '@web/lib/souls/serialization'
+import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@web/lib/souls/repository'
 
-const MAX_SOUL_QUERY_PARAM_LENGTH = 200
+const DEFAULT_PAGE = 1
+const DEFAULT_PAGE_SIZE = 12
+const MAX_PAGE_SIZE = 50
 
-function readOptionalBoundedQuery(value: string | null, name: string): { value?: string; error?: string } {
-  if (value == null) return {}
-
-  const normalized = value.trim()
-  if (!normalized) return {}
-  if (normalized.length > MAX_SOUL_QUERY_PARAM_LENGTH) {
-    return { error: `${name} must be at most ${MAX_SOUL_QUERY_PARAM_LENGTH} characters` }
-  }
-
-  return { value: normalized }
+function parsePositiveInteger(value: string | null, fallback: number): number {
+  if (!value) return fallback
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-export async function GET(req: NextRequest) {
-  const url = req.nextUrl
-  const rawPage = Number(url.searchParams.get('page') || '1')
-  const rawLimit = Number(url.searchParams.get('limit') || '20')
-  const page = Number.isFinite(rawPage) ? Math.max(1, Math.trunc(rawPage)) : 1
-  const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, Math.trunc(rawLimit))) : 20
-  const categoryParam = readOptionalBoundedQuery(url.searchParams.get('category'), 'category')
-  if (categoryParam.error) {
-    return NextResponse.json({ error: categoryParam.error }, { status: 400 })
-  }
-  const searchParam = readOptionalBoundedQuery(url.searchParams.get('q'), 'q')
-  if (searchParam.error) {
-    return NextResponse.json({ error: searchParam.error }, { status: 400 })
-  }
-  const category = categoryParam.value
-  const search = searchParam.value
-  const skip = (page - 1) * limit
+export async function GET(request: NextRequest) {
+  const page = parsePositiveInteger(request.nextUrl.searchParams.get('page'), DEFAULT_PAGE)
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    parsePositiveInteger(request.nextUrl.searchParams.get('pageSize'), DEFAULT_PAGE_SIZE),
+  )
+  const q = request.nextUrl.searchParams.get('q')?.trim() || ''
+  const category = request.nextUrl.searchParams.get('category')?.trim() || ''
 
-  const where: Record<string, unknown> = { status: 'active' }
-  if (category) where.category = category
-  if (search) {
+  const where: Record<string, unknown> = {
+    listingStatus: 'listed',
+  }
+  if (category) {
+    where.category = category
+  }
+  if (q) {
     where.OR = [
-      { name: { contains: search, mode: 'insensitive' } },
-      { description: { contains: search, mode: 'insensitive' } },
-      { tags: { has: search } },
+      { name: { contains: q, mode: 'insensitive' } },
+      { description: { contains: q, mode: 'insensitive' } },
+      { tags: { has: q } },
     ]
   }
 
   const [items, total] = await Promise.all([
-    prisma.soulSeries.findMany({
+    prisma.soulAsset.findMany({
       where,
-      include: {
-        latestRelease: {
-          select: {
-            id: true,
-            onChainId: true,
-            version: true,
-            changelog: true,
-            createdAt: true,
-          },
-        },
-        _count: { select: { passSnapshots: true } },
-      },
+      select: soulAssetSummarySelect,
       orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     }),
-    prisma.soulSeries.count({ where }),
+    prisma.soulAsset.count({ where }),
   ])
 
   return NextResponse.json({
-    items: serializeSoulPreviewImageList(items),
+    items: toSoulAssetSummaryList(items),
     total,
     page,
-    totalPages: Math.ceil(total / limit),
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
   })
 }

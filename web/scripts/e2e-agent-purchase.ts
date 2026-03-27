@@ -1,7 +1,7 @@
 /**
  * E2E Test: Agent Self-Purchase Flow
  *
- * 1. Mint TestUSDC to agent wallet (via CLI admin key)
+ * 1. Ensure the agent wallet has enough SUI for price + fees
  * 2. POST /api/agent/souls/{id}/purchase → TX bytes
  * 3. Sign TX locally with agent Ed25519 keypair
  * 4. POST /api/agent/souls/{id}/purchase/execute → submit
@@ -20,40 +20,8 @@ const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
 const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC!
 const AGENT_API_KEY = process.env.AGENT_API_KEY!
 const SOUL_ID = process.env.SOUL_ID! // DB UUID or onChainId
-const PLAN_TYPE = process.env.PLAN_TYPE ?? 'onetime'
-
-// TestUSDC config
-const USDC_PACKAGE = process.env.USDC_PACKAGE ?? '0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325'
-const USDC_TREASURY_CAP = process.env.USDC_TREASURY_CAP ?? '0x56033240326fa75ab7986654d87aa3f2c8168212492edc7d7ee4755f30189184'
-const MINT_AMOUNT = process.env.MINT_AMOUNT ?? '2000000' // 2 USDC in atomic units
 
 const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' })
-
-async function mintTestUsdc(recipientAddress: string, amount: string) {
-  console.log(`\n--- Minting ${amount} TestUSDC to ${recipientAddress} ---`)
-
-  // Use the active CLI keypair (admin) to mint
-  const { execSync } = await import('node:child_process')
-  const cmd = `sui client call \
-    --package ${USDC_PACKAGE} \
-    --module usdc \
-    --function mint \
-    --args ${USDC_TREASURY_CAP} ${amount} ${recipientAddress} \
-    --gas-budget 50000000 \
-    --json 2>&1`
-
-  try {
-    const output = execSync(cmd, { encoding: 'utf-8' })
-    const json = JSON.parse(output)
-    console.log(`Mint TX: ${json.digest}`)
-    // Wait for confirmation
-    await suiClient.waitForTransaction({ digest: json.digest })
-    console.log('Mint confirmed')
-  } catch (err: any) {
-    console.error('Mint failed:', err.stdout || err.message)
-    throw new Error('Failed to mint TestUSDC')
-  }
-}
 
 async function transferGas(recipientAddress: string) {
   console.log(`\n--- Transferring SUI gas to ${recipientAddress} ---`)
@@ -111,7 +79,6 @@ async function main() {
 
   // Step 1: Fund agent wallet
   await transferGas(agentAddress)
-  await mintTestUsdc(agentAddress, MINT_AMOUNT)
 
   // Step 2: Prepare purchase TX
   console.log(`\n--- Step 2: Prepare purchase TX ---`)
@@ -122,7 +89,7 @@ async function main() {
       'Authorization': `Bearer ${AGENT_API_KEY}`,
       'x-forwarded-for': '127.0.0.1',
     },
-    body: JSON.stringify({ planType: PLAN_TYPE }),
+    body: JSON.stringify({}),
   })
 
   const prepBody = await prepRes.json()
@@ -181,8 +148,8 @@ async function main() {
     if (accessRes.ok) {
       const accessBody = await accessRes.json()
       console.log(`\n✅ Agent access verified (attempt ${attempt})!`)
-      console.log(`  Pass type: ${accessBody.passType}`)
-      console.log(`  Pass ID: ${accessBody.passOnChainId}`)
+      console.log(`  Policy: ${accessBody.accessPolicy?.functionName}`)
+      console.log(`  Cap: ${accessBody.accessPolicy?.soulAccessCapObjectId ?? 'owner-direct'}`)
       console.log(`  Blob URL: ${accessBody.artifact?.walrusBlobUrl}`)
       return
     }

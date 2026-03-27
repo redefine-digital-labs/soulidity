@@ -23,6 +23,7 @@ public struct Soul has key, store {
     metadata_ref: Option<String>,
     content_blob: Blob,
     agent_grant: Option<address>,
+    grant_version: u64,
 }
 
 fun init(otw: SOUL, ctx: &mut TxContext) {
@@ -77,16 +78,23 @@ public fun agent_grant(self: &Soul): &Option<address> {
     &self.agent_grant
 }
 
+public fun grant_version(self: &Soul): u64 {
+    self.grant_version
+}
+
 public fun content_blob_object_id(self: &Soul): ID {
     blob::object_id(&self.content_blob)
 }
 
 public(package) fun clear_agent_grant(self: &mut Soul) {
     self.agent_grant = option::none();
+    self.grant_version = self.grant_version + 1;
 }
 
-public(package) fun set_agent_grant(self: &mut Soul, agent: Option<address>) {
+public(package) fun set_agent_grant(self: &mut Soul, agent: Option<address>): u64 {
     self.agent_grant = agent;
+    self.grant_version = self.grant_version + 1;
+    self.grant_version
 }
 
 fun mint_with_creator(
@@ -108,6 +116,7 @@ fun mint_with_creator(
         metadata_ref,
         content_blob,
         agent_grant: option::none(),
+        grant_version: 0,
     };
 
     event::emit(SoulMinted {
@@ -169,6 +178,7 @@ public fun destroy_for_testing(self: Soul): Blob {
         metadata_ref: _,
         content_blob,
         agent_grant: _,
+        grant_version: _,
     } = self;
     id.delete();
     content_blob

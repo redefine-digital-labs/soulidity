@@ -165,9 +165,9 @@ model Member {
   posts        Post[]
   comments     Comment[]
   achievements MemberAchievement[]
-  walletBindings  WalletBinding[]
-  authoredSoulSeries SoulSeries[] @relation("SoulSeriesAuthor")
-  ownedSoulPassSnapshots SoulPassSnapshot[] @relation("SoulPassSnapshotOwner")
+  walletBindings        WalletBinding[]
+  authoredSoulAssets    SoulAsset[]           @relation("SoulAssetCreator")
+  ownedSoulAssets       SoulAsset[]           @relation("SoulAssetOwner")
   preparedSoulPurchases SoulPreparedPurchase[] @relation("SoulPreparedPurchaseAgentMember")
 
   @@index([tgId])
@@ -296,88 +296,42 @@ model WalletBinding {
 // Soul Market Models
 // ============================================================
 
-model SoulSeries {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  onChainId          String   @unique @map("on_chain_id")
-  authorMemberId     String?  @map("author_member_id") @db.Uuid
-  authorMember       Member?  @relation("SoulSeriesAuthor", fields: [authorMemberId], references: [id], onDelete: SetNull)
-  authorAddress      String   @map("author_address")
-  name               String
-  description        String
-  category           String
-  tags               String[]
-  previewImages      String[] @map("preview_images")
-  readme             String?
-  latestReleaseId    String?  @map("latest_release_id") @db.Uuid
-  latestRelease      SoulRelease? @relation("SoulSeriesLatestRelease", fields: [latestReleaseId], references: [id], onDelete: SetNull)
-  /// Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.
-  /// DB CHECKs in `20260322223000_review_batch_constraints` require one-time plan id and price to appear together.
-  oneTimePriceUsdc      Decimal? @map("one_time_price_usdc") @db.Decimal(20, 0)
-  oneTimePlanOnChainId  String?  @map("one_time_plan_on_chain_id")
-  /// Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.
-  /// DB CHECKs in `20260322223000_review_batch_constraints` require subscription price, period, and plan id to stay coupled.
-  subPriceUsdc          Decimal? @map("sub_price_usdc") @db.Decimal(20, 0)
-  subPlanOnChainId      String?  @map("sub_plan_on_chain_id")
-  subPeriodDays         Int?     @map("sub_period_days")
-  /// `20260323143000_add_soul_series_status_check` restricts status to the allowed enum-like values at the SQL layer.
-  status             String   @default("active")
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model SoulAsset {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId             String   @unique @map("on_chain_id")
+  creatorMemberId       String?  @map("creator_member_id") @db.Uuid
+  creatorMember         Member?  @relation("SoulAssetCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
+  creatorAddress        String   @map("creator_address")
+  currentOwnerMemberId  String?  @map("current_owner_member_id") @db.Uuid
+  currentOwnerMember    Member?  @relation("SoulAssetOwner", fields: [currentOwnerMemberId], references: [id], onDelete: SetNull)
+  currentOwnerAddress   String   @map("current_owner_address")
+  sellerKioskId         String?  @map("seller_kiosk_id")
+  listedPriceSui        Decimal? @map("listed_price_sui") @db.Decimal(20, 0)
+  listingStatus         String   @default("held") @map("listing_status")
+  name                  String
+  description           String
+  imageUrl              String   @map("image_url")
+  metadataRef           String?  @map("metadata_ref")
+  contentBlobId         String   @map("content_blob_id")
+  contentBlobObjectId   String   @map("content_blob_object_id")
+  sealSidecar           Json?    @map("seal_sidecar")
+  category              String
+  tags                  String[]
+  previewImages         String[] @map("preview_images")
+  readme                String?
+  agentGrantAddress     String?  @map("agent_grant_address")
+  agentAccessCapOnChainId String? @unique @map("agent_access_cap_on_chain_id")
+  grantVersion          String   @default("0") @map("grant_version")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  releases       SoulRelease[]
-  passSnapshots  SoulPassSnapshot[]
-
-  @@index([authorMemberId, status])
-  @@index([authorAddress])
+  @@index([creatorMemberId, listingStatus])
+  @@index([creatorAddress])
+  @@index([currentOwnerMemberId, listingStatus])
+  @@index([currentOwnerAddress, listingStatus])
   @@index([category])
   @@index([createdAt(sort: Desc)])
-  @@map("soul_series")
-}
-
-model SoulRelease {
-  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  onChainId     String     @unique @map("on_chain_id")
-  seriesId      String     @map("series_id") @db.Uuid
-  series        SoulSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
-  latestForSeries SoulSeries[] @relation("SoulSeriesLatestRelease")
-  version       String
-  walrusBlobRef    String     @map("walrus_blob_ref")
-  publicMetadataRef String?   @map("public_metadata_ref")
-  contentHash      String     @map("content_hash")
-  changelog        String?
-  sealSidecar      Json?      @map("seal_sidecar")
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
-
-  @@index([seriesId, createdAt(sort: Desc)])
-  @@unique([seriesId, version])
-  @@map("soul_releases")
-}
-
-model SoulPassSnapshot {
-  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  onChainId       String     @unique @map("on_chain_id")
-  seriesId        String     @map("series_id") @db.Uuid
-  series          SoulSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
-  ownerAddress    String     @map("owner_address")
-  ownerMemberId   String?    @map("owner_member_id") @db.Uuid
-  ownerMember     Member?    @relation("SoulPassSnapshotOwner", fields: [ownerMemberId], references: [id], onDelete: SetNull)
-  passType        String     @map("pass_type")
-  lockedReleaseId String?    @map("locked_release_id")
-  expiresAt       DateTime?  @map("expires_at") @db.Timestamptz
-  agentGrant      String?    @map("agent_grant")
-  status          String     @default("active")
-  mintTxDigest    String     @map("mint_tx_digest")
-  lastRenewTxDigest String?  @map("last_renew_tx_digest")
-  lastSyncedAt    DateTime   @default(now()) @map("last_synced_at") @db.Timestamptz
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@index([ownerMemberId, status])
-  @@index([ownerAddress, status])
-  @@index([seriesId, status])
-  @@index([seriesId, ownerAddress, status])
-  @@index([seriesId, agentGrant, status])
-  @@map("soul_pass_snapshots")
+  @@map("soul_assets")
 }
 
 model SoulTxSync {
@@ -400,17 +354,10 @@ model SoulPreparedPurchase {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   agentMemberId    String   @map("agent_member_id") @db.Uuid
   agentMember      Member   @relation("SoulPreparedPurchaseAgentMember", fields: [agentMemberId], references: [id], onDelete: Cascade)
-  seriesOnChainId  String   @map("series_on_chain_id")
-  planOnChainId    String   @map("plan_on_chain_id")
-  /// `20260322233000_add_soul_enum_checks` constrains plan_type to the supported values in SQL.
-  planType         String   @map("plan_type")
-  releaseOnChainId String?  @map("release_on_chain_id")
-  passOnChainId    String?  @map("pass_on_chain_id")
+  soulOnChainId    String   @map("soul_on_chain_id")
+  sellerKioskId    String   @map("seller_kiosk_id")
   agentAddress     String   @map("agent_address")
-  /// Stored in atomic 6-decimal USDC units as NUMERIC(20,0) so prepared execution can verify the full on-chain u64 range losslessly.
-  /// `20260323090000_add_prepared_purchase_amount_check` enforces strictly positive prepared purchase amounts.
-  amountUsdc       Decimal  @map("amount_usdc") @db.Decimal(20, 0)
-  /// `20260322123000_add_soul_tx_sync_and_prepared_purchase` caps the stored tx bytes payload length in SQL.
+  priceSui         Decimal  @map("price_sui") @db.Decimal(20, 0)
   txBytesBase64    String   @map("tx_bytes_base64")
   txBytesHash      String   @map("tx_bytes_hash")
   expiresAt        DateTime @map("expires_at") @db.Timestamptz
@@ -422,7 +369,7 @@ model SoulPreparedPurchase {
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([agentMemberId, expiresAt])
-  @@index([seriesOnChainId, createdAt(sort: Desc)])
+  @@index([soulOnChainId, createdAt(sort: Desc)])
   @@index([executionTxDigest])
   @@unique([agentMemberId, txBytesHash])
   @@map("soul_prepared_purchases")

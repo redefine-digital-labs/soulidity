@@ -160,11 +160,13 @@ describe('agents route hardening', () => {
       post: {
         count: vi.fn().mockResolvedValue(0),
       },
-      soulSeries: {
-        count: vi.fn().mockResolvedValue(1),
+      soulAsset: {
+        count: vi.fn()
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0),
       },
-      soulPassSnapshot: {
-        count: vi.fn().mockResolvedValue(0),
+      soulPreparedPurchase: {
+        count: vi.fn().mockResolvedValue(1),
       },
       member: {
         delete: vi.fn(),

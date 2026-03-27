@@ -2,6 +2,7 @@
 module soul_object::seal_policy_tests;
 
 use std::string;
+use soul_object::grant;
 use soul_object::market;
 use soul_object::seal_policy;
 use soul_object::soul;
@@ -94,7 +95,7 @@ fun current_holder_can_approve_matching_document_id() {
     {
         let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
         let document_id = soul_document_id(&soul_obj);
-        seal_policy::seal_approve_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
+        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
 
         let blob = soul::destroy_for_testing(soul_obj);
         blob.burn();
@@ -135,7 +136,7 @@ fun direct_transfer_recipient_can_approve_matching_document_id() {
     {
         let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
         let document_id = soul_document_id(&soul_obj);
-        seal_policy::seal_approve_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
+        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
 
         let blob = soul::destroy_for_testing(soul_obj);
         blob.burn();
@@ -183,7 +184,7 @@ fun wrong_document_prefix_is_rejected() {
             i = i + 1;
         };
 
-        seal_policy::seal_approve_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
+        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
         abort 9
     }
 }
@@ -215,7 +216,7 @@ fun wrong_document_version_is_rejected() {
         let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
         let document_id = soul_document_id_with_version(&soul_obj, 0x02);
 
-        seal_policy::seal_approve_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
+        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
         abort 10
     }
 }
@@ -246,8 +247,111 @@ fun document_id_must_include_nonce_suffix() {
     {
         let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
         let document_id = object::id(&soul_obj).to_bytes();
-        seal_policy::seal_approve_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
+        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
         abort 7
+    }
+}
+
+#[test]
+fun granted_agent_can_approve_matching_document_id() {
+    let owner = @0xBEEF;
+    let agent = @0xCAFE;
+    let mut scenario = ts::begin(owner);
+
+    {
+        let ctx = ts::ctx(&mut scenario);
+        let (walrus_system, blob) = register_test_blob(ctx);
+        let soul_obj = soul::mint_for_testing(
+            owner,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            blob,
+            ctx,
+        );
+        transfer::public_transfer(soul_obj, owner);
+        std::unit_test::destroy(walrus_system);
+    };
+
+    {
+        ts::next_tx(&mut scenario, owner);
+        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        let access_cap = grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
+        transfer::public_transfer(soul_obj, owner);
+        transfer::public_transfer(access_cap, agent);
+    };
+
+    ts::next_tx(&mut scenario, agent);
+    {
+        let soul_obj: soul::Soul = ts::take_from_address(&scenario, owner);
+        let access_cap: grant::SoulAccessCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(&soul_obj);
+        seal_policy::seal_approve_agent_for_testing(
+            document_id,
+            &soul_obj,
+            &access_cap,
+            ts::ctx(&mut scenario),
+        );
+
+        grant::destroy_for_testing(access_cap);
+        ts::return_to_address(owner, soul_obj);
+    };
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        let blob = soul::destroy_for_testing(soul_obj);
+        blob.burn();
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::seal_policy::ENoAgentGrant)]
+fun revoked_agent_cap_cannot_approve_document_id() {
+    let owner = @0xBEEF;
+    let agent = @0xCAFE;
+    let mut scenario = ts::begin(owner);
+
+    {
+        let ctx = ts::ctx(&mut scenario);
+        let (walrus_system, blob) = register_test_blob(ctx);
+        let soul_obj = soul::mint_for_testing(
+            owner,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            blob,
+            ctx,
+        );
+        transfer::public_transfer(soul_obj, owner);
+        std::unit_test::destroy(walrus_system);
+    };
+
+    {
+        ts::next_tx(&mut scenario, owner);
+        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        let access_cap = grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
+        grant::revoke_agent_grant(&mut soul_obj, ts::ctx(&mut scenario));
+        transfer::public_transfer(soul_obj, owner);
+        transfer::public_transfer(access_cap, agent);
+    };
+
+    ts::next_tx(&mut scenario, agent);
+    {
+        let soul_obj: soul::Soul = ts::take_from_address(&scenario, owner);
+        let access_cap: grant::SoulAccessCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(&soul_obj);
+        seal_policy::seal_approve_agent_for_testing(
+            document_id,
+            &soul_obj,
+            &access_cap,
+            ts::ctx(&mut scenario),
+        );
+        abort 11
     }
 }
 
@@ -310,7 +414,7 @@ fun market_buyer_can_approve_matching_document_id() {
             ts::ctx(&mut scenario),
         );
         let document_id = soul_document_id(&purchased_soul);
-        seal_policy::seal_approve_for_testing(document_id, &purchased_soul, ts::ctx(&mut scenario));
+        seal_policy::seal_approve_owner_for_testing(document_id, &purchased_soul, ts::ctx(&mut scenario));
 
         let blob = soul::destroy_for_testing(purchased_soul);
         blob.burn();

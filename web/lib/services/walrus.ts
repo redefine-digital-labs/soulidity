@@ -40,6 +40,11 @@ interface WalrusStoreResponse {
   }
 }
 
+export interface WalrusStoredBlob {
+  blobId: string
+  blobObjectId: string | null
+}
+
 class WalrusUploadError extends Error {
   constructor(
     message: string,
@@ -276,20 +281,23 @@ async function putWalrusBlob(buffer: Buffer): Promise<WalrusStoreResponse> {
  * Upload an encrypted bundle to Walrus (for Seal-protected access).
  * The buffer should already be encrypted client-side.
  */
-export async function uploadEncrypted(buffer: Buffer): Promise<string> {
+export async function uploadEncrypted(buffer: Buffer): Promise<WalrusStoredBlob> {
   const data = await putWalrusBlob(buffer)
   const blobId = assertWalrusBlobId(
     data.newlyCreated?.blobObject.blobId ?? data.alreadyCertified?.blobId,
     'Walrus blob ID',
   )
 
-  return blobId
+  return {
+    blobId,
+    blobObjectId: data.newlyCreated?.blobObject.id ?? null,
+  }
 }
 
 /**
  * Upload public metadata (preview images or sidecars) to Walrus.
  */
-export async function uploadPublic(buffer: Buffer): Promise<string> {
+export async function uploadPublic(buffer: Buffer): Promise<WalrusStoredBlob> {
   return uploadEncrypted(buffer)
 }
 

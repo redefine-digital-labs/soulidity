@@ -647,7 +647,8 @@ fun purchase_clears_existing_agent_grant() {
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
         let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
         let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
+        let access_cap = grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
+        assert!(soul::grant_version(&soul_obj) == 1, 8);
 
         market::update_fee_recipient(&mut config, &admin_cap, platform);
         market::update_platform_fee_bps(
@@ -672,6 +673,7 @@ fun purchase_clears_existing_agent_grant() {
         transfer::public_transfer(policy_cap, seller);
         transfer::public_transfer(seller_kiosk, seller);
         transfer::public_transfer(seller_cap, seller);
+        transfer::public_transfer(access_cap, agent);
     };
 
     ts::next_tx(&mut scenario, buyer);
@@ -691,7 +693,8 @@ fun purchase_clears_existing_agent_grant() {
             ts::ctx(&mut scenario),
         );
 
-        assert!(soul::agent_grant(&purchased_soul).is_none(), 8);
+        assert!(soul::agent_grant(&purchased_soul).is_none(), 9);
+        assert!(soul::grant_version(&purchased_soul) == 3, 10);
 
         let blob = soul::destroy_for_testing(purchased_soul);
         blob.burn();
@@ -707,6 +710,12 @@ fun purchase_clears_existing_agent_grant() {
         let royalty_fee_coin: Coin<SUI> = ts::take_from_address(&scenario, seller);
         coin::burn_for_testing(platform_fee_coin);
         coin::burn_for_testing(royalty_fee_coin);
+    };
+
+    ts::next_tx(&mut scenario, agent);
+    {
+        let access_cap: grant::SoulAccessCap = ts::take_from_sender(&scenario);
+        grant::destroy_for_testing(access_cap);
     };
 
     ts::end(scenario);

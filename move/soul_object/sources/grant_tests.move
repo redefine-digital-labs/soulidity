@@ -67,16 +67,22 @@ fun current_holder_can_set_and_revoke_agent_grant() {
     ts::next_tx(&mut scenario, holder);
     {
         let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
+        let access_cap = grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
         let agent_grant = soul::agent_grant(&soul_obj);
         assert!(agent_grant.is_some(), 0);
         assert!(*agent_grant.borrow() == agent, 1);
+        assert!(soul::grant_version(&soul_obj) == 1, 2);
+        assert!(grant::agent(&access_cap) == agent, 3);
+        assert!(grant::soul_id(&access_cap) == object::id(&soul_obj), 4);
+        assert!(grant::grant_version(&access_cap) == soul::grant_version(&soul_obj), 5);
 
         grant::revoke_agent_grant(&mut soul_obj, ts::ctx(&mut scenario));
-        assert!(soul::agent_grant(&soul_obj).is_none(), 2);
+        assert!(soul::agent_grant(&soul_obj).is_none(), 6);
+        assert!(soul::grant_version(&soul_obj) == 2, 7);
 
         let blob = soul::destroy_for_testing(soul_obj);
         blob.burn();
+        grant::destroy_for_testing(access_cap);
     };
 
     ts::end(scenario);
@@ -102,8 +108,9 @@ fun direct_transfer_recipient_can_replace_existing_agent_grant() {
             blob,
             ctx,
         );
-        grant::set_agent_grant(&mut soul_obj, first_agent, ctx);
+        let access_cap = grant::set_agent_grant(&mut soul_obj, first_agent, ctx);
         transfer::public_transfer(soul_obj, creator);
+        transfer::public_transfer(access_cap, creator);
         std::unit_test::destroy(walrus_system);
     };
 
@@ -116,16 +123,23 @@ fun direct_transfer_recipient_can_replace_existing_agent_grant() {
     ts::next_tx(&mut scenario, recipient);
     {
         let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        let first_access_cap: grant::SoulAccessCap = ts::take_from_address(&scenario, creator);
         assert!(soul::agent_grant(&soul_obj).contains(&first_agent), 3);
+        assert!(grant::grant_version(&first_access_cap) == 1, 4);
 
-        grant::set_agent_grant(&mut soul_obj, second_agent, ts::ctx(&mut scenario));
-        assert!(soul::agent_grant(&soul_obj).contains(&second_agent), 4);
+        let second_access_cap = grant::set_agent_grant(&mut soul_obj, second_agent, ts::ctx(&mut scenario));
+        assert!(soul::agent_grant(&soul_obj).contains(&second_agent), 5);
+        assert!(soul::grant_version(&soul_obj) == 2, 6);
+        assert!(grant::grant_version(&second_access_cap) == 2, 7);
 
         grant::revoke_agent_grant(&mut soul_obj, ts::ctx(&mut scenario));
-        assert!(soul::agent_grant(&soul_obj).is_none(), 5);
+        assert!(soul::agent_grant(&soul_obj).is_none(), 8);
+        assert!(soul::grant_version(&soul_obj) == 3, 9);
 
         let blob = soul::destroy_for_testing(soul_obj);
         blob.burn();
+        grant::destroy_for_testing(first_access_cap);
+        grant::destroy_for_testing(second_access_cap);
     };
 
     ts::end(scenario);
@@ -156,7 +170,8 @@ fun zero_address_cannot_be_granted() {
     ts::next_tx(&mut scenario, owner);
     {
         let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        grant::set_agent_grant(&mut soul_obj, @0x0, ts::ctx(&mut scenario));
+        let access_cap = grant::set_agent_grant(&mut soul_obj, @0x0, ts::ctx(&mut scenario));
+        grant::destroy_for_testing(access_cap);
         abort 8
     }
 }
@@ -186,7 +201,8 @@ fun current_holder_cannot_grant_self() {
     ts::next_tx(&mut scenario, holder);
     {
         let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        grant::set_agent_grant(&mut soul_obj, holder, ts::ctx(&mut scenario));
+        let access_cap = grant::set_agent_grant(&mut soul_obj, holder, ts::ctx(&mut scenario));
+        grant::destroy_for_testing(access_cap);
         abort 7
     }
 }

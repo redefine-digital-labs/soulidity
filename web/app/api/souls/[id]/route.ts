@@ -1,79 +1,41 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
+import { NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
-import { isUuid } from '@web/lib/is-uuid'
-import { serializeSoulPreviewImages } from '@web/lib/souls/serialization'
+import { getRequiredPublicEnv } from '@web/lib/souls/config'
+import { getVerifiedMarketConfigState, OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
+import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@web/lib/souls/repository'
 
 export async function GET(
-  _req: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const where = isUuid(id)
-    ? { OR: [{ id }, { onChainId: id }], status: 'active' as const }
-    : { onChainId: id, status: 'active' as const }
+  const [identity, soul] = await Promise.all([
+    resolveIdentity(),
+    findSoulAssetDetailByRouteId(id),
+  ])
 
-  const series = await prisma.soulSeries.findFirst({
-    where,
-    include: {
-      releases: {
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          onChainId: true,
-          version: true,
-          changelog: true,
-          createdAt: true,
-        },
-      },
-      latestRelease: {
-        select: {
-          id: true,
-          onChainId: true,
-          version: true,
-          changelog: true,
-          createdAt: true,
-        },
-      },
-      _count: { select: { passSnapshots: true } },
-    },
-  })
-
-  if (!series) {
+  if (!soul) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // Check if current user has a pass
-  let userPass = null
-  try {
-    const identity = await resolveIdentity()
-    if (identity?.memberId) {
-      const now = new Date()
-      userPass = await prisma.soulPassSnapshot.findFirst({
-        where: {
-          seriesId: series.id,
-          ownerMemberId: identity.memberId,
-          status: 'active',
-          NOT: {
-            passType: 'subscription',
-            expiresAt: { lt: now },
-          },
-        },
-        select: {
-          id: true,
-          onChainId: true,
-          passType: true,
-          lockedReleaseId: true,
-          expiresAt: true,
-          agentGrant: true,
-          status: true,
-          createdAt: true,
-        },
-      })
+  const detail = toSoulAssetDetail(soul, identity?.memberId ?? null)
+
+  if (soul.listingStatus === 'listed' && soul.listedPriceSui != null) {
+    try {
+      const soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+      const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
+      const marketConfig = await getVerifiedMarketConfigState(marketConfigId, soulPackageId)
+      const priceSui = BigInt(soul.listedPriceSui.toString())
+      const feeAmountSui =
+        (priceSui * marketConfig.platformFeeBps) / 10_000n
+        + (priceSui * marketConfig.royaltyBps) / 10_000n
+      detail.purchaseFeeAmountSui = feeAmountSui.toString()
+    } catch (detailError) {
+      if (!(detailError instanceof OnChainVerificationError)) {
+        console.warn('[soul-detail] Failed to compute purchase fee', detailError)
+      }
     }
-  } catch {
-    // Not authenticated — that's fine
   }
 
-  return NextResponse.json({ ...serializeSoulPreviewImages(series), userPass })
+  return NextResponse.json(detail)
 }

@@ -1,67 +1,46 @@
-export interface SoulSeriesListItem {
+export interface SoulAssetSummary {
   id: string
   onChainId: string
   name: string
   description: string
+  imageUrl: string
   category: string
   tags: string[]
   previewImages: string[]
-  oneTimePriceUsdc: string | null
-  oneTimePlanOnChainId: string | null
-  subPriceUsdc: string | null
-  subPlanOnChainId: string | null
-  subPeriodDays: number | null
+  listedPriceSui: string | null
+  listingStatus: 'listed' | 'held'
+  creatorAddress: string
+  currentOwnerAddress: string
   createdAt: string
-  latestRelease: SoulRelease | null
-  _count: { passSnapshots: number }
+  updatedAt: string
 }
 
-export interface SoulRelease {
-  id: string
-  onChainId: string
-  version: string
-  changelog: string | null
-  createdAt: string
-}
-
-export interface SoulSeriesDetail extends SoulSeriesListItem {
-  authorMemberId: string | null
-  authorAddress: string
+export interface SoulAssetDetail extends SoulAssetSummary {
+  metadataRef: string | null
+  contentBlobId: string
+  contentBlobObjectId: string
+  sellerKioskId: string | null
   readme: string | null
-  status: string
-  releases: SoulRelease[]
-  userPass: SoulPassSnapshot | null
-}
-
-export interface SoulPassSnapshot {
-  id: string
-  onChainId: string
-  passType: 'perpetual' | 'subscription'
-  lockedReleaseId: string | null
-  expiresAt: string | null
-  agentGrant: string | null
-  status: string
-  createdAt: string
+  agentGrantAddress: string | null
+  agentAccessCapOnChainId: string | null
+  grantVersion: string
+  creatorMemberId: string | null
+  currentOwnerMemberId: string | null
+  purchaseFeeAmountSui: string | null
+  isOwner: boolean
+  isCreator: boolean
 }
 
 export interface SoulsListResponse {
-  items: SoulSeriesListItem[]
+  items: SoulAssetSummary[]
   total: number
   page: number
   totalPages: number
 }
 
 export interface MySoulsResponse {
-  published: SoulSeriesListItem[]
-  passes: (SoulPassSnapshot & {
-    series: {
-      id: string
-      name: string
-      category: string
-      previewImages: string[]
-      onChainId: string
-    }
-  })[]
+  authored: SoulAssetSummary[]
+  owned: SoulAssetSummary[]
 }
 
 export type PurchaseStatus = 'idle' | 'creating' | 'signing' | 'confirming' | 'settling' | 'done' | 'error'

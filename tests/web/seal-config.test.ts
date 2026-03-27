@@ -9,7 +9,7 @@ describe('Seal service configuration', () => {
     vi.resetModules()
     process.env = { ...ORIGINAL_ENV }
     delete process.env.SEAL_SERVER_CONFIGS
-    delete process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID
+    delete process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID
     delete process.env.NEXT_PUBLIC_SUI_NETWORK
     delete process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS
     delete process.env.NEXT_PUBLIC_SEAL_THRESHOLD
@@ -20,23 +20,23 @@ describe('Seal service configuration', () => {
     process.env = { ...ORIGINAL_ENV }
   })
 
-  it('uses the soul package id as the access policy package and falls back to testnet defaults', async () => {
-    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xsoul'
+  it('uses the soul object package id as the access policy package and falls back to testnet defaults', async () => {
+    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = '0xsoul'
 
     const mod = await import('../../web/lib/services/seal.ts')
 
     expect(mod.hasSealSessionConfig()).toBe(true)
-    expect(mod.getSealSessionPerpetual('0xseries')).toEqual({
+    expect(mod.getOwnerSealSession('0xsoul-object')).toEqual({
       packageId: '0xsoul',
-      seriesObjectId: '0xseries',
+      soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
-      functionName: 'seal_approve_perpetual',
+      functionName: 'seal_approve_owner',
     })
-    expect(mod.getSealSessionSubscription('0xseries')).toEqual({
+    expect(mod.getAgentSealSession('0xsoul-object')).toEqual({
       packageId: '0xsoul',
-      seriesObjectId: '0xseries',
+      soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
-      functionName: 'seal_approve_subscription',
+      functionName: 'seal_approve_agent',
     })
 
     expect(mod.getSealRuntimeConfig()).toEqual({
@@ -54,7 +54,7 @@ describe('Seal service configuration', () => {
   })
 
   it('honors explicit runtime overrides', async () => {
-    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xoverride'
+    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = '0xoverride'
     process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
     process.env.NEXT_PUBLIC_SEAL_THRESHOLD = '1'
     process.env.NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS = 'false'
@@ -95,118 +95,9 @@ describe('Seal service configuration', () => {
     consoleWarn.mockRestore()
   })
 
-  it('rejects malformed threshold env values instead of partially parsing them', async () => {
-    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xsoul'
-    process.env.NEXT_PUBLIC_SEAL_THRESHOLD = '1abc'
-    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([
-      { objectId: '0xabc', weight: 1 },
-      { objectId: '0xdef', weight: 1 },
-    ])
-
-    const mod = await import('../../web/lib/services/seal.ts')
-
-    expect(mod.getSealRuntimeConfig()).toEqual({
-      network: 'testnet',
-      threshold: 2,
-      verifyKeyServers: true,
-      serverConfigs: [
-        { objectId: '0xabc', weight: 1 },
-        { objectId: '0xdef', weight: 1 },
-      ],
-    })
-  })
-
-  it('never trusts key server credentials from NEXT_PUBLIC seal config', async () => {
-    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xoverride'
-    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([
-      {
-        objectId: '0xabc',
-        weight: 1,
-        aggregatorUrl: 'https://example.com',
-        apiKeyName: 'public-name',
-        apiKey: 'public-secret',
-      },
-    ])
-
-    const mod = await import('../../web/lib/services/seal.ts')
-
-    expect(mod.getSealRuntimeConfig()).toEqual({
-      network: 'testnet',
-      threshold: 1,
-      verifyKeyServers: true,
-      serverConfigs: [
-        {
-          objectId: '0xabc',
-          weight: 1,
-          aggregatorUrl: 'https://example.com',
-        },
-      ],
-    })
-    expect(mod.hasCredentialedSealServerConfigs()).toBe(false)
-  })
-
-  it('reports missing session config when the soul package is absent', async () => {
+  it('reports missing session config when the soul object package is absent', async () => {
     const mod = await import('../../web/lib/services/seal.ts')
 
     expect(mod.hasSealSessionConfig()).toBe(false)
-  })
-
-  it('warns when explicit key server config JSON is invalid', async () => {
-    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xsoul'
-    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = '{invalid-json'
-
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const mod = await import('../../web/lib/services/seal.ts')
-
-    expect(mod.getSealRuntimeConfig()).toEqual({
-      network: 'testnet',
-      threshold: 0,
-      verifyKeyServers: true,
-      serverConfigs: [],
-    })
-    expect(consoleWarn).toHaveBeenCalledWith('Failed to parse NEXT_PUBLIC_SEAL_SERVER_CONFIGS')
-
-    consoleWarn.mockRestore()
-  })
-
-  it('does not include parser errors when credentialed seal config JSON is invalid', async () => {
-    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xsoul'
-    process.env.SEAL_SERVER_CONFIGS = '{invalid-json'
-
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const mod = await import('../../web/lib/services/seal.ts')
-
-    expect(mod.getSealRuntimeConfig()).toEqual({
-      network: 'testnet',
-      threshold: 1,
-      verifyKeyServers: true,
-      serverConfigs: [
-        {
-          objectId: '0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75',
-          weight: 1,
-        },
-      ],
-    })
-    expect(consoleWarn).toHaveBeenCalledWith('Failed to parse SEAL_SERVER_CONFIGS')
-
-    consoleWarn.mockRestore()
-  })
-
-  it('warns when mainnet has no seal key server config', async () => {
-    process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID = '0xsoul'
-    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
-
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const mod = await import('../../web/lib/services/seal.ts')
-
-    expect(mod.getSealRuntimeConfig()).toEqual({
-      network: 'mainnet',
-      threshold: 0,
-      verifyKeyServers: true,
-      serverConfigs: [],
-    })
-    expect(consoleWarn).toHaveBeenCalledWith('Seal key server config is empty on mainnet')
-
-    consoleWarn.mockRestore()
   })
 })

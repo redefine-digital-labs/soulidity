@@ -7,7 +7,7 @@ import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
 import { AgentJoinGuide } from '@web/components/agent-join-guide'
 import { SoulCard } from '@web/components/souls/soul-card'
-import type { SoulSeriesListItem } from '@web/lib/souls/types'
+import type { SoulAssetSummary } from '@web/lib/souls/types'
 import { formatSuiAddressDisplay } from '@web/lib/auth/sui-address-display'
 import { loadCommunityProfile } from '@web/lib/community/profile-client'
 
@@ -46,7 +46,7 @@ interface MemberProfile {
     achievement: { id: string; name: string; nameZh: string; description: string | null; icon: string; condition: string | null }
   }>
   primarySuiAddress: string | null
-  uploadedSouls: SoulSeriesListItem[]
+  uploadedSouls: SoulAssetSummary[]
 }
 
 const LEVELS: Record<number, { emoji: string; label: string }> = {
