@@ -27,6 +27,7 @@ export interface SoulAssetDetail extends SoulAssetSummary {
   creatorMemberId: string | null
   currentOwnerMemberId: string | null
   purchaseFeeAmountSui: string | null
+  quotedPriceSui: string | null
   isOwner: boolean
   isCreator: boolean
 }

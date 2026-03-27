@@ -53,12 +53,20 @@ vi.mock('@web/lib/souls/transaction', () => ({
   getSuccessfulTransactionBlock: mockedGetSuccessfulTransactionBlock,
 }))
 
+const sameSuiValueImpl = (left: string | null | undefined, right: string | null | undefined) =>
+  String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase()
+
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   getVerifiedSoulAccessCapState: mockedGetVerifiedSoulAccessCapState,
-  sameSuiValue: (left: string | null | undefined, right: string | null | undefined) =>
-    String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase(),
+  sameSuiValue: sameSuiValueImpl,
+  transactionMutatedObject: (
+    transaction: { objectChanges?: Array<{ type?: string; objectId?: string }> | null },
+    objectId: string,
+  ) => transaction.objectChanges?.some(
+    (change) => change.type === 'mutated' && change.objectId && sameSuiValueImpl(change.objectId, objectId),
+  ) ?? false,
 }))
 
 vi.mock('@web/lib/souls/post-tx-db', () => ({
@@ -85,7 +93,10 @@ describe('soul grant route', () => {
       listingStatus: 'held',
     })
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
-    mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
+    mockedGetSuccessfulTransactionBlock.mockResolvedValue({
+      digest: TX_DIGEST,
+      objectChanges: [{ type: 'mutated', objectId: SOUL_ID }],
+    })
     mockedGetVerifiedSoulState.mockResolvedValue({
       ownerAddress: OWNER_ADDRESS,
       agentGrant: AGENT_ADDRESS,

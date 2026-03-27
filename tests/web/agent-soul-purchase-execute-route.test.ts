@@ -489,7 +489,7 @@ describe('agent soul purchase execute route', () => {
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
   })
 
-  it('does not re-attempt sync for terminal 422 cached results', async () => {
+  it('re-attempts sync for cached 422 with onChainSuccess true', async () => {
     mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
       id: PREPARED_PURCHASE_ID,
       soulOnChainId: SOUL_ID,
@@ -500,7 +500,74 @@ describe('agent soul purchase execute route', () => {
       executedAt: new Date('2099-01-01T00:00:00.000Z'),
       executionTxDigest: '0xbad',
       resultStatusCode: 422,
-      resultBody: { error: 'Transaction did not purchase the requested Soul' },
+      resultBody: { onChainSuccess: true, dbSynced: false, digest: 'test-digest' },
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      ownerAddress: AGENT_ADDRESS,
+      grantVersion: 6n,
+    })
+    mockedDbSetSoulOwnership.mockResolvedValueOnce(undefined)
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      digest: 'test-digest',
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      onChainSuccess: true,
+      dbSynced: true,
+    })
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      listingStatus: 'held',
+      sellerKioskId: null,
+      listedPriceSui: null,
+      grantVersion: 6n,
+    })
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+      txDigest: 'test-digest',
+      resultStatusCode: 200,
+      resultBody: {
+        digest: 'test-digest',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+        onChainSuccess: true,
+        dbSynced: true,
+      },
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+  })
+
+  it('returns original 422 when on-chain owner does not match on retry', async () => {
+    const cachedBody = { onChainSuccess: true, dbSynced: false, digest: 'test-digest' }
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xbad',
+      resultStatusCode: 422,
+      resultBody: cachedBody,
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      ownerAddress: `0x${'f'.repeat(64)}`,
+      grantVersion: 6n,
     })
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
@@ -514,10 +581,8 @@ describe('agent soul purchase execute route', () => {
     )
 
     expect(response.status).toBe(422)
-    await expect(response.json()).resolves.toEqual({
-      error: 'Transaction did not purchase the requested Soul',
-    })
-    expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual(cachedBody)
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
     expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
   })

@@ -28,6 +28,7 @@ export async function GET(
           soulObjectId: soul.onChainId,
         })
         detail.purchaseFeeAmountSui = (quote.totalSui - quote.priceSui).toString()
+        detail.quotedPriceSui = quote.priceSui.toString()
       }
     } catch (detailError) {
       if (!(detailError instanceof OnChainVerificationError)) {

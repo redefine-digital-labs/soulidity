@@ -111,7 +111,7 @@ export async function POST(
       cachedBody.onChainSuccess === true
       && cachedBody.dbSynced === false
       && typeof cachedBody.digest === 'string'
-      && (preparedPurchase.resultStatusCode === 207 || preparedPurchase.resultStatusCode >= 500)
+      && (preparedPurchase.resultStatusCode === 207 || preparedPurchase.resultStatusCode === 422 || preparedPurchase.resultStatusCode >= 500)
 
     if (!isRecoverableDbSyncFailure) {
       return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })

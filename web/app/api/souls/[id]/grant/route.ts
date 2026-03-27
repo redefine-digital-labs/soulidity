@@ -8,6 +8,7 @@ import {
   getVerifiedSoulState,
   OnChainVerificationError,
   sameSuiValue,
+  transactionMutatedObject,
 } from '@web/lib/souls/on-chain-verification'
 import { dbRevokeSoulAgentGrant, dbSetSoulAgentGrant } from '@web/lib/souls/post-tx-db'
 import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
@@ -93,7 +94,10 @@ export async function POST(
       return NextResponse.json({ error: 'Bind a Sui wallet before granting access' }, { status: 403 })
     }
 
-    await getSuccessfulTransactionBlock(txDigest)
+    const transaction = await getSuccessfulTransactionBlock(txDigest)
+    if (!transactionMutatedObject(transaction, soul.onChainId)) {
+      return NextResponse.json({ error: 'Transaction did not modify this Soul' }, { status: 422 })
+    }
 
     const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
     if (!soulState.ownerAddress || !walletAddresses.some((address) => sameSuiValue(address, soulState.ownerAddress))) {
@@ -202,7 +206,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'Bind a Sui wallet before revoking access' }, { status: 403 })
     }
 
-    await getSuccessfulTransactionBlock(txDigest)
+    const transaction = await getSuccessfulTransactionBlock(txDigest)
+    if (!transactionMutatedObject(transaction, soul.onChainId)) {
+      return NextResponse.json({ error: 'Transaction did not modify this Soul' }, { status: 422 })
+    }
 
     const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
     if (!soulState.ownerAddress || !walletAddresses.some((address) => sameSuiValue(address, soulState.ownerAddress))) {

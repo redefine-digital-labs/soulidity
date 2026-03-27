@@ -383,3 +383,12 @@ export function extractSoulPurchasedEvent(
     royaltyFeeSui: readBigInt(event.royalty_fee, 'SoulPurchased royalty_fee'),
   }
 }
+
+export function transactionMutatedObject(
+  transaction: { objectChanges?: Array<{ type?: string; objectId?: string }> | null },
+  objectId: string,
+): boolean {
+  return transaction.objectChanges?.some(
+    (change) => change.type === 'mutated' && change.objectId && sameSuiValue(change.objectId, objectId),
+  ) ?? false
+}

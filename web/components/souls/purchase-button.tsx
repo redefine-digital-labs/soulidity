@@ -12,6 +12,7 @@ interface PurchaseButtonProps {
   sellerKioskId: string
   listedPriceSui: string
   feeAmountSui: string
+  quotedPriceSui?: string | null
   onPurchased?: () => Promise<void> | void
 }
 
@@ -34,7 +35,7 @@ export function PurchaseButton(props: PurchaseButtonProps) {
         soulObjectId: props.soulObjectId,
         sellerKioskId: props.sellerKioskId,
         buyerAddress: user.primarySuiAddress,
-        priceSui: BigInt(props.listedPriceSui),
+        priceSui: BigInt(props.quotedPriceSui ?? props.listedPriceSui),
         feeAmountSui: BigInt(props.feeAmountSui),
       })
       const result = await signAndExecute(tx)
@@ -71,7 +72,7 @@ export function PurchaseButton(props: PurchaseButtonProps) {
           opacity: submitting ? 0.7 : 1,
         }}
       >
-        {submitting ? 'Purchasing…' : `Buy for ${formatAtomicSuiForDisplay((BigInt(props.listedPriceSui) + BigInt(props.feeAmountSui)).toString())}`}
+        {submitting ? 'Purchasing…' : `Buy for ${formatAtomicSuiForDisplay((BigInt(props.quotedPriceSui ?? props.listedPriceSui) + BigInt(props.feeAmountSui)).toString())}`}
       </button>
       {error ? (
         <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{error}</p>

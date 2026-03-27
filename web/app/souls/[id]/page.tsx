@@ -174,6 +174,7 @@ export default function SoulDetailPage() {
                     sellerKioskId={soul.sellerKioskId}
                     listedPriceSui={soul.listedPriceSui}
                     feeAmountSui={soul.purchaseFeeAmountSui}
+                    quotedPriceSui={soul.quotedPriceSui}
                     onPurchased={async () => { await refetch() }}
                   />
                 ) : soul.isOwner ? (

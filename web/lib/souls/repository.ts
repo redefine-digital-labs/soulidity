@@ -93,6 +93,7 @@ export function toSoulAssetDetail(record: SoulAssetDetailRecord, viewerMemberId:
     creatorMemberId: record.creatorMemberId,
     currentOwnerMemberId: record.currentOwnerMemberId,
     purchaseFeeAmountSui: null,
+    quotedPriceSui: null,
     isOwner: viewerMemberId != null && record.currentOwnerMemberId === viewerMemberId,
     isCreator: viewerMemberId != null && record.creatorMemberId === viewerMemberId,
   }
