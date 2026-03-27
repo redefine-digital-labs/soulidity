@@ -118,12 +118,16 @@ export default function PublishSoulPage() {
       },
     )
 
-    writeSoulPublishDraft(window.localStorage, patchSoulPublishDraft(baseDraft, {
-      previewBlobId: previewUpload?.blobId ?? null,
-      contentBlobId: contentUpload?.blobId ?? null,
-      contentBlobObjectId: contentUpload?.blobObjectId ?? null,
-      sealDekEnvelope: contentUpload?.sealDekEnvelope ?? null,
-    }))
+    if (draftHasOnChainProgress(baseDraft)) {
+      writeSoulPublishDraft(window.localStorage, baseDraft)
+    } else {
+      writeSoulPublishDraft(window.localStorage, patchSoulPublishDraft(baseDraft, {
+        previewBlobId: previewUpload?.blobId ?? null,
+        contentBlobId: contentUpload?.blobId ?? null,
+        contentBlobObjectId: contentUpload?.blobObjectId ?? null,
+        sealDekEnvelope: contentUpload?.sealDekEnvelope ?? null,
+      }))
+    }
   }, [
     user?.primarySuiAddress,
     name,
@@ -191,6 +195,10 @@ export default function PublishSoulPage() {
       ? readSoulPublishDraft(window.localStorage, user.primarySuiAddress)
       : null
     if (existingDraft?.soulObjectId && existingDraft.publishTxDigest && draftHasOnChainProgress(existingDraft)) {
+      if (!existingDraft.contentBlobId || !existingDraft.contentBlobObjectId || !existingDraft.sealDekEnvelope) {
+        setError('发布进度数据不完整，请清除草稿后重新发布')
+        return
+      }
       setSubmitting(true)
       try {
         const headers = await getAuthHeaders()
@@ -205,9 +213,9 @@ export default function PublishSoulPage() {
             body: JSON.stringify({
               txDigest: existingDraft.publishTxDigest,
               soulOnChainId: existingDraft.soulObjectId,
-              contentBlobId: contentUpload.blobId,
-              contentBlobObjectId: contentUpload.blobObjectId,
-              sealDekEnvelope: contentUpload.sealDekEnvelope,
+              contentBlobId: existingDraft.contentBlobId,
+              contentBlobObjectId: existingDraft.contentBlobObjectId,
+              sealDekEnvelope: existingDraft.sealDekEnvelope,
               category: category.trim(),
               tags,
               previewImages: [previewUpload.blobId],

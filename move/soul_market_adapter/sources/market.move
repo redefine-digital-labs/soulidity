@@ -50,7 +50,7 @@ public fun bootstrap(
     (mint_cap, burn_cap_opt, metadata_cap)
 }
 
-public fun create_collection(
+fun create_collection(
     authority: &SoulPackageAuthority,
     registry: &mut NftRegistry,
     ctx: &mut TxContext,

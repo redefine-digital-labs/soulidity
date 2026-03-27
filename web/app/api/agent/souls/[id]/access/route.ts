@@ -86,12 +86,8 @@ export async function GET(
     let soulAccessCapObjectId: string | null = null
 
     const isDirectOwner = soulState.ownerAddress && sameSuiValue(soulState.ownerAddress, agentAddress)
-    const isListedSeller = (
-      soul.listingStatus === 'listed'
-      && soul.currentOwnerMemberId === agent.agentMemberId
-    )
 
-    if (isDirectOwner || isListedSeller) {
+    if (isDirectOwner) {
       accessPolicy = getOwnerSealSession(soul.onChainId)
     } else if (
       soul.agentGrantAddress
