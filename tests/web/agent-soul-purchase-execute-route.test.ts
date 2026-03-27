@@ -136,7 +136,10 @@ describe('agent soul purchase execute route', () => {
     mockedHashPreparedSoulPurchaseTxBytes.mockReturnValue('deadbeef')
     mockedStorePreparedSoulPurchaseExecutionDigest.mockResolvedValue(undefined)
     mockedVerifyPreparedTransactionSignature.mockResolvedValue(undefined)
-    mockedSuiClient.executeTransactionBlock.mockResolvedValue({ digest: '0xtx' })
+    mockedSuiClient.executeTransactionBlock.mockResolvedValue({
+      digest: '0xtx',
+      effects: { status: { status: 'success' } },
+    })
     mockedWaitForTransactionBestEffort.mockResolvedValue(undefined)
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: '0xtx' })
     mockedExtractSoulPurchasedEvent.mockReturnValue({
@@ -549,6 +552,33 @@ describe('agent soul purchase execute route', () => {
       },
     })
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+  })
+
+  it('releases execution claim and returns 400 when TX effects indicate failure', async () => {
+    mockedSuiClient.executeTransactionBlock.mockResolvedValueOnce({
+      digest: 'failed-tx-digest',
+      effects: { status: { status: 'failure', error: 'MoveAbort: listing changed' } },
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'MoveAbort: listing changed',
+    })
+    expect(mockedReleasePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+    })
+    expect(mockedFinalizePreparedSoulPurchaseExecution).not.toHaveBeenCalled()
+    expect(mockedWaitForTransactionBestEffort).not.toHaveBeenCalled()
   })
 
   it('returns original 422 when on-chain owner does not match on retry', async () => {

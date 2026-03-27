@@ -284,6 +284,12 @@ export async function POST(
     return NextResponse.json({ error: 'Transaction execution failed' }, { status: 400 })
   }
 
+  if (result.effects?.status?.status !== 'success') {
+    await releaseExecutionClaim()
+    const effectsError = result.effects?.status?.error ?? 'Transaction effects indicate failure'
+    return NextResponse.json({ error: effectsError }, { status: 400 })
+  }
+
   await waitForTransactionBestEffort(suiClient, result.digest)
   try {
     await storePreparedSoulPurchaseExecutionDigest({

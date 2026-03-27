@@ -256,6 +256,10 @@ function getObjectOwnerKind(owner: unknown): VerifiedSoulState['ownerKind'] {
   return 'unknown'
 }
 
+function normalizePackageId(packageId: string): string {
+  return normalizeSuiAddress(packageId)
+}
+
 function expectMoveObject(response: ObjectLike, objectId: string, expectedTypePrefix: string) {
   const object = response.data
   if (!object || typeof object.objectId !== 'string' || object.objectId !== objectId) {
@@ -287,7 +291,7 @@ export async function getVerifiedSoulState(objectId: string, packageId?: string)
       showType: true,
     },
   })
-  const expectedTypePrefix = `${packageId ?? ''}::soul::Soul`
+  const expectedTypePrefix = `${normalizePackageId(packageId ?? '')}::soul::Soul`
   const { object, fields } = expectMoveObject(response, objectId, expectedTypePrefix)
   const ownerAddress = getObjectOwnerAddress(object.owner)
 
@@ -320,7 +324,7 @@ export async function getVerifiedSoulAccessCapState(
       showType: true,
     },
   })
-  const expectedTypePrefix = `${packageId ?? ''}::grant::SoulAccessCap`
+  const expectedTypePrefix = `${normalizePackageId(packageId ?? '')}::grant::SoulAccessCap`
   const { object, fields } = expectMoveObject(response, objectId, expectedTypePrefix)
   const ownerAddress = getObjectOwnerAddress(object.owner)
   if (!ownerAddress) {
@@ -354,7 +358,7 @@ export function extractSoulListingEvent(
   transaction: TransactionLike,
   packageId: string,
 ): VerifiedSoulListedEvent {
-  const event = extractTypedEvent(transaction, `${packageId}::market::SoulListed`)
+  const event = extractTypedEvent(transaction, `${normalizePackageId(packageId)}::market::SoulListed`)
   if (!event) {
     throw new OnChainVerificationError('Soul listing event is missing from the transaction')
   }
@@ -370,7 +374,7 @@ export function extractSoulPurchasedEvent(
   transaction: TransactionLike,
   packageId: string,
 ): VerifiedSoulPurchasedEvent {
-  const event = extractTypedEvent(transaction, `${packageId}::market::SoulPurchased`)
+  const event = extractTypedEvent(transaction, `${normalizePackageId(packageId)}::market::SoulPurchased`)
   if (!event) {
     throw new OnChainVerificationError('Soul purchase event is missing from the transaction')
   }

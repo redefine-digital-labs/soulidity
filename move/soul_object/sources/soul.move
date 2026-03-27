@@ -14,7 +14,7 @@ public struct SoulMinted has copy, drop {
 
 public struct SOUL has drop {}
 
-public struct SoulPackageAuthority has key, store {
+public struct SoulPackageAuthority has key {
     id: UID,
     publisher: Publisher,
 }
@@ -41,7 +41,7 @@ fun init(otw: SOUL, ctx: &mut TxContext) {
     };
 
     transfer::public_transfer(soul_display, recipient);
-    transfer::public_transfer(authority, recipient);
+    transfer::transfer(authority, recipient);
 }
 
 public fun mint(
@@ -65,6 +65,12 @@ public fun mint(
 
 public fun publisher(self: &SoulPackageAuthority): &Publisher {
     &self.publisher
+}
+
+public entry fun burn_authority(authority: SoulPackageAuthority) {
+    let SoulPackageAuthority { id, publisher } = authority;
+    id.delete();
+    publisher.burn();
 }
 
 public fun creator(self: &Soul): address {
@@ -170,7 +176,7 @@ public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
         publisher,
     };
     transfer::public_transfer(soul_display, recipient);
-    transfer::public_transfer(authority, recipient);
+    transfer::transfer(authority, recipient);
 }
 
 #[test_only]
