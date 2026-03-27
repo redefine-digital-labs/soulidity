@@ -106,6 +106,50 @@ export async function POST(
     return NextResponse.json({ error: 'Prepared purchase owner does not match the agent wallet' }, { status: 422 })
   }
   if (preparedPurchase.resultStatusCode && preparedPurchase.resultBody) {
+    const cachedBody = preparedPurchase.resultBody as Record<string, unknown>
+    const isRecoverableDbSyncFailure =
+      cachedBody.onChainSuccess === true
+      && cachedBody.dbSynced === false
+      && typeof cachedBody.digest === 'string'
+      && (preparedPurchase.resultStatusCode === 207 || preparedPurchase.resultStatusCode >= 500)
+
+    if (!isRecoverableDbSyncFailure) {
+      return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
+    }
+
+    try {
+      const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
+      if (soulState.ownerAddress && sameSuiValue(soulState.ownerAddress, agentAddress)) {
+        await dbSetSoulOwnership({
+          soulOnChainId: soul.onChainId,
+          currentOwnerAddress: soulState.ownerAddress,
+          listingStatus: 'held',
+          sellerKioskId: null,
+          listedPriceSui: null,
+          grantVersion: soulState.grantVersion,
+        })
+        const syncedBody = {
+          digest: cachedBody.digest,
+          soulOnChainId: soul.onChainId,
+          currentOwnerAddress: soulState.ownerAddress,
+          onChainSuccess: true,
+          dbSynced: true,
+        }
+        await finalizePreparedSoulPurchaseExecution({
+          preparedPurchaseId,
+          txDigest: cachedBody.digest as string,
+          resultStatusCode: 200,
+          resultBody: syncedBody,
+        })
+        return NextResponse.json(syncedBody, { status: 200 })
+      }
+    } catch (resyncError) {
+      console.warn('[agent-purchase-execute] Re-sync attempt failed for cached partial result', {
+        preparedPurchaseId,
+        error: toSafeErrorDetails(resyncError),
+      })
+    }
+
     return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
   }
   const finalizePreparedResult = async (

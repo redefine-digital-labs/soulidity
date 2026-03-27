@@ -195,6 +195,7 @@ describe('agent soul purchase execute route', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ digest: '0xold', dbSynced: true })
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+    expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
   })
 
   it('returns 404 when the prepared purchase no longer exists for this Soul', async () => {
@@ -370,5 +371,154 @@ describe('agent soul purchase execute route', () => {
     })
     expect(mockedGetSuccessfulTransactionBlock).toHaveBeenCalledWith('0xtx')
     expect(mockedClaimPreparedSoulPurchaseForExecution).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-attempts DB sync when cached result is a recoverable 207', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xpartial',
+      resultStatusCode: 207,
+      resultBody: {
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+      },
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      ownerAddress: AGENT_ADDRESS,
+      grantVersion: 5n,
+    })
+    mockedDbSetSoulOwnership.mockResolvedValueOnce(undefined)
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      digest: '0xpartial',
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      onChainSuccess: true,
+      dbSynced: true,
+    })
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      listingStatus: 'held',
+      sellerKioskId: null,
+      listedPriceSui: null,
+      grantVersion: 5n,
+    })
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+      txDigest: '0xpartial',
+      resultStatusCode: 200,
+      resultBody: {
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+        onChainSuccess: true,
+        dbSynced: true,
+      },
+    })
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+  })
+
+  it('returns cached 207 when DB re-sync also fails on retry', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xpartial',
+      resultStatusCode: 207,
+      resultBody: {
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+      },
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      ownerAddress: AGENT_ADDRESS,
+      grantVersion: 5n,
+    })
+    mockedDbSetSoulOwnership.mockRejectedValueOnce(new Error('db still offline'))
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(207)
+    await expect(response.json()).resolves.toEqual({
+      onChainSuccess: true,
+      dbSynced: false,
+      digest: '0xpartial',
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+    })
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedFinalizePreparedSoulPurchaseExecution).not.toHaveBeenCalled()
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+  })
+
+  it('does not re-attempt sync for terminal 422 cached results', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xbad',
+      resultStatusCode: 422,
+      resultBody: { error: 'Transaction did not purchase the requested Soul' },
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction did not purchase the requested Soul',
+    })
+    expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
+    expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
   })
 })

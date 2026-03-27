@@ -12,6 +12,8 @@ import { buildBuySoulTx } from '@web/lib/souls/tx-builder'
 
 export const dynamic = 'force-dynamic'
 
+const PURCHASE_GAS_BUDGET_BUFFER_MIST = 50_000_000n // 0.05 SUI
+
 const AGENT_PURCHASE_RATE_LIMIT = {
   max: 10,
   windowMs: 60 * 1000,
@@ -59,8 +61,12 @@ export async function POST(
     const feeAmountSui = quote.totalSui - quote.priceSui
 
     const balance = await suiClient.getBalance({ owner: agentAddress })
-    if (BigInt(balance.totalBalance) < quote.totalSui) {
-      return NextResponse.json({ error: 'Agent does not have enough SUI to cover this purchase.' }, { status: 402 })
+    const requiredBalance = quote.totalSui + PURCHASE_GAS_BUDGET_BUFFER_MIST
+    if (BigInt(balance.totalBalance) < requiredBalance) {
+      return NextResponse.json(
+        { error: `Insufficient SUI balance for purchase. Required: ${requiredBalance} MIST (includes gas reserve), available: ${balance.totalBalance} MIST.` },
+        { status: 402 },
+      )
     }
 
     const tx = buildBuySoulTx({

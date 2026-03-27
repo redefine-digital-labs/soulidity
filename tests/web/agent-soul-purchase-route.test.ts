@@ -164,7 +164,23 @@ describe('agent soul purchase prepare route', () => {
 
     expect(response.status).toBe(402)
     await expect(response.json()).resolves.toEqual({
-      error: 'Agent does not have enough SUI to cover this purchase.',
+      error: 'Insufficient SUI balance for purchase. Required: 1125000000 MIST (includes gas reserve), available: 1000000000 MIST.',
+    })
+    expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+  })
+
+  it('returns 402 when balance covers price+fees but not gas reserve', async () => {
+    mockedSuiClient.getBalance.mockResolvedValueOnce({ totalBalance: '1080000000' })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(402)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Insufficient SUI balance for purchase. Required: 1125000000 MIST (includes gas reserve), available: 1080000000 MIST.',
     })
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
   })

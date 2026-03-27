@@ -13,6 +13,7 @@ import { parseSuiPriceToMist } from '@web/lib/souls/pricing-input'
 import {
   clearSoulPublishDraft,
   createSoulPublishDraft,
+  draftHasOnChainProgress,
   patchSoulPublishDraft,
   readSoulPublishDraft,
   syncSoulPublishDraftForSubmit,
@@ -187,6 +188,47 @@ export default function PublishSoulPage() {
       return
     }
 
+    const existingDraft = typeof window !== 'undefined'
+      ? readSoulPublishDraft(window.localStorage, user.primarySuiAddress)
+      : null
+    if (existingDraft?.soulObjectId && existingDraft.publishTxDigest && draftHasOnChainProgress(existingDraft)) {
+      setSubmitting(true)
+      try {
+        const headers = await getAuthHeaders()
+        await mirrorRouteRequest({
+          input: '/api/souls/publish',
+          init: {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...headers,
+            },
+            body: JSON.stringify({
+              txDigest: existingDraft.publishTxDigest,
+              soulOnChainId: existingDraft.soulObjectId,
+              contentBlobId: contentUpload.blobId,
+              contentBlobObjectId: contentUpload.blobObjectId,
+              sealDekEnvelope: contentUpload.sealDekEnvelope,
+              category: category.trim(),
+              tags,
+              previewImages: [previewUpload.blobId],
+              readme: readme.trim() || null,
+            }),
+          },
+        })
+        if (typeof window !== 'undefined') {
+          clearSoulPublishDraft(window.localStorage, user.primarySuiAddress)
+        }
+        router.push(`/souls/${encodeURIComponent(existingDraft.soulObjectId)}`)
+        return
+      } catch (retryError) {
+        setError(formatMirrorSyncError(retryError, existingDraft.publishTxDigest))
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+
     setSubmitting(true)
     try {
       const headers = await getAuthHeaders()
@@ -214,6 +256,16 @@ export default function PublishSoulPage() {
       const soulObjectId = findCreatedSoulObjectId(result as { objectChanges?: CreatedObjectChange[] | null })
       if (!soulObjectId) {
         throw new Error('Transaction succeeded but no Soul object was created')
+      }
+
+      if (typeof window !== 'undefined') {
+        const currentDraft = readSoulPublishDraft(window.localStorage, user.primarySuiAddress)
+        if (currentDraft) {
+          writeSoulPublishDraft(window.localStorage, patchSoulPublishDraft(currentDraft, {
+            soulObjectId,
+            publishTxDigest: result.digest,
+          }))
+        }
       }
 
       await mirrorRouteRequest({
