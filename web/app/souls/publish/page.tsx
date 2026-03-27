@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
 import { UploadWalrus, type WalrusUploadResult } from '@web/components/souls/upload-walrus'
 import { buildMintAndListSoulTx } from '@web/lib/souls/tx-builder'
@@ -304,7 +303,6 @@ export default function PublishSoulPage() {
 
   return (
     <div className="min-h-screen">
-      <PublicNav />
       <main className="max-w-3xl mx-auto px-6 py-10">
         <form onSubmit={handleSubmit} className="glass-panel p-6 flex flex-col gap-6">
           <div>

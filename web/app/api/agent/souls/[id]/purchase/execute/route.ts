@@ -254,6 +254,17 @@ export async function POST(
     soulOnChainId: soul.onChainId,
   })
   if (!claimedPreparedPurchase) {
+    const latestPreparedPurchase = await getPreparedSoulPurchaseForExecution({
+      preparedPurchaseId,
+      agentMemberId: agent.agentMemberId,
+      soulOnChainId: soul.onChainId,
+    })
+    if (latestPreparedPurchase?.resultStatusCode && latestPreparedPurchase.resultBody) {
+      return NextResponse.json(
+        latestPreparedPurchase.resultBody,
+        { status: latestPreparedPurchase.resultStatusCode },
+      )
+    }
     return NextResponse.json({ error: 'Prepared purchase is already being executed' }, { status: 409 })
   }
 

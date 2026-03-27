@@ -10,7 +10,7 @@ use sui::coin::{Self as coin, Coin};
 use sui::event;
 use sui::kiosk::{Kiosk, KioskOwnerCap};
 use sui::sui::SUI;
-use sui::transfer_policy::{Self as transfer_policy, TransferPolicy, TransferPolicyCap};
+use sui::transfer_policy::{Self as transfer_policy, TransferPolicy};
 use unft_standard::unft_standard::{NftBurnCap, NftCollection, NftCollectionMetadataCap, NftMintCap, NftRegistry};
 use walrus::blob::Blob;
 
@@ -39,18 +39,15 @@ public struct SoulPurchased has copy, drop {
 public fun bootstrap(
     authority: SoulPackageAuthority,
     registry: &mut NftRegistry,
-    royalty_bps: u16,
     ctx: &mut TxContext,
 ): (
     NftMintCap<Soul>,
     option::Option<NftBurnCap<Soul>>,
     NftCollectionMetadataCap<Soul>,
-    TransferPolicyCap<Soul>,
 ) {
     let (mint_cap, burn_cap_opt, metadata_cap) = create_collection(&authority, registry, ctx);
-    let policy_cap = create_transfer_policy(&authority, royalty_bps, ctx);
     soul::burn_authority(authority);
-    (mint_cap, burn_cap_opt, metadata_cap, policy_cap)
+    (mint_cap, burn_cap_opt, metadata_cap)
 }
 
 public fun create_collection(
@@ -70,15 +67,6 @@ public fun create_collection(
         string::utf8(COLLECTION_IMAGE_URL),
         ctx,
     )
-}
-
-#[allow(lint(share_owned))]
-public fun create_transfer_policy(
-    authority: &SoulPackageAuthority,
-    royalty_bps: u16,
-    ctx: &mut TxContext,
-): TransferPolicyCap<Soul> {
-    market_bootstrap::create_transfer_policy(authority, royalty_bps, ctx)
 }
 
 public fun mint_and_list(

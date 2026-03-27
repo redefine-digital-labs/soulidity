@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
 import { SoulCard } from '@web/components/souls/soul-card'
 import { useMySouls } from '@web/lib/souls/queries'
@@ -12,7 +11,6 @@ export default function MySoulsPage() {
 
   return (
     <div className="min-h-screen">
-      <PublicNav />
       <main className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-8">
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>

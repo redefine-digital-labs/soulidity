@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { PublicNav } from '@web/components/public-nav'
 import { PurchaseButton } from '@web/components/souls/purchase-button'
 import { useAuth } from '@web/components/auth-provider'
 import { useSoulDetail } from '@web/lib/souls/queries'
@@ -103,7 +102,6 @@ export default function SoulDetailPage() {
 
   return (
     <div className="min-h-screen">
-      <PublicNav />
       <main className="max-w-5xl mx-auto px-6 py-10">
         {isLoading ? (
           <div style={{ color: 'var(--text-muted)' }}>Loading…</div>

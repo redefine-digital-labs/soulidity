@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { PublicNav } from '@web/components/public-nav'
 import { SoulCard } from '@web/components/souls/soul-card'
 import { useSoulsList } from '@web/lib/souls/queries'
 
@@ -13,7 +12,6 @@ export default function SoulsPage() {
 
   return (
     <div className="min-h-screen">
-      <PublicNav />
       <main className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-6">
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
