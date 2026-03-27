@@ -184,6 +184,44 @@ export function buildBuySecondarySoulTx(params: {
   return tx
 }
 
+export function buildListHeldSoulTx(params: {
+  ownerAddress: string
+  soulObjectId: string
+  priceSui: bigint
+}): Transaction {
+  if (params.priceSui <= 0n) {
+    throw new Error('priceSui must be positive')
+  }
+
+  const soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
+  const tx = new Transaction()
+
+  const [kiosk, kioskOwnerCap] = tx.moveCall({
+    target: `${KIOSK_PACKAGE_ID}::kiosk::new`,
+  })
+
+  tx.moveCall({
+    target: `${soulPackageId}::market::place_and_list`,
+    arguments: [
+      kiosk,
+      kioskOwnerCap,
+      tx.object(transferPolicyId),
+      tx.object(params.soulObjectId),
+      tx.pure.u64(params.priceSui),
+    ],
+  })
+
+  tx.moveCall({
+    target: `${KIOSK_PACKAGE_ID}::transfer::public_share_object`,
+    typeArguments: [`${KIOSK_PACKAGE_ID}::kiosk::Kiosk`],
+    arguments: [kiosk],
+  })
+  tx.transferObjects([kioskOwnerCap], tx.pure.address(params.ownerAddress))
+
+  return tx
+}
+
 export function buildSetAgentGrantTx(params: {
   soulObjectId: string
   agentAddress: string

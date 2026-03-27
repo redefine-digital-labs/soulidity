@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation'
 import { PurchaseButton } from '@web/components/souls/purchase-button'
 import { useAuth } from '@web/components/auth-provider'
 import { useSoulDetail } from '@web/lib/souls/queries'
-import { buildRevokeAgentGrantTx, buildSetAgentGrantTx } from '@web/lib/souls/tx-builder'
+import { buildListHeldSoulTx, buildRevokeAgentGrantTx, buildSetAgentGrantTx } from '@web/lib/souls/tx-builder'
+import { parseSuiPriceToMist } from '@web/lib/souls/pricing-input'
 import { mirrorRouteRequest, formatMirrorSyncError } from '@web/lib/souls/mirror-sync'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
 import { formatAtomicSuiForDisplay } from '@web/lib/souls/price-format'
@@ -29,6 +30,10 @@ export default function SoulDetailPage() {
   const [agentAddress, setAgentAddress] = useState('')
   const [grantSubmitting, setGrantSubmitting] = useState(false)
   const [grantError, setGrantError] = useState<string | null>(null)
+
+  const [listPrice, setListPrice] = useState('')
+  const [listSubmitting, setListSubmitting] = useState(false)
+  const [listError, setListError] = useState<string | null>(null)
 
   const previewImage = useMemo(() => soul?.previewImages[0] ?? soul?.imageUrl ?? null, [soul])
 
@@ -97,6 +102,43 @@ export default function SoulDetailPage() {
       setGrantError(formatMirrorSyncError(grantSyncError))
     } finally {
       setGrantSubmitting(false)
+    }
+  }
+
+  async function handleListForSale() {
+    if (!soul || !user?.primarySuiAddress) return
+    const priceSui = parseSuiPriceToMist(listPrice)
+    if (!priceSui) {
+      setListError('Enter a valid price (min 0.001 SUI)')
+      return
+    }
+    setListSubmitting(true)
+    setListError(null)
+    try {
+      const tx = buildListHeldSoulTx({
+        ownerAddress: user.primarySuiAddress,
+        soulObjectId: soul.onChainId,
+        priceSui,
+      })
+      const result = await signAndExecute(tx)
+      const headers = await getAuthHeaders()
+      await mirrorRouteRequest({
+        input: '/api/souls/publish',
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({
+            txDigest: result.digest,
+            soulOnChainId: soul.onChainId,
+          }),
+        },
+      })
+      setListPrice('')
+      await refetch()
+    } catch (listSyncError) {
+      setListError(formatMirrorSyncError(listSyncError))
+    } finally {
+      setListSubmitting(false)
     }
   }
 
@@ -184,6 +226,40 @@ export default function SoulDetailPage() {
               </div>
 
               {soul.isOwner && soul.listingStatus === 'held' ? (
+                <>
+                <div className="glass-panel p-6 flex flex-col gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      List for sale
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Set a price and list this Soul on the secondary market.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <input
+                      value={listPrice}
+                      onChange={(event) => setListPrice(event.target.value)}
+                      placeholder="Price in SUI (e.g. 1.5)"
+                      inputMode="decimal"
+                      className="glass-panel px-3 py-3 bg-transparent outline-none"
+                      style={{ color: 'var(--text-primary)' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleListForSale}
+                      disabled={listSubmitting || listPrice.trim().length === 0}
+                      className="px-4 py-3 rounded-xl font-semibold"
+                      style={{ background: 'var(--accent-cyan)', color: '#02131a', opacity: listSubmitting ? 0.7 : 1 }}
+                    >
+                      {listSubmitting ? 'Listing…' : 'List for sale'}
+                    </button>
+                  </div>
+                  {listError ? (
+                    <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{listError}</p>
+                  ) : null}
+                </div>
+
                 <div className="glass-panel p-6 flex flex-col gap-4">
                   <div>
                     <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -239,6 +315,7 @@ export default function SoulDetailPage() {
                     <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{grantError}</p>
                   ) : null}
                 </div>
+                </>
               ) : null}
             </aside>
           </div>
