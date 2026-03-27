@@ -11,6 +11,7 @@ import {
   hashPreparedSoulPurchaseTxBytes,
   releasePreparedSoulPurchaseExecution,
   storePreparedSoulPurchaseExecutionDigest,
+  ZOMBIE_CLAIM_AGE_THRESHOLD_MS,
 } from '@web/lib/souls/prepared-purchase'
 import { dbSetSoulOwnership } from '@web/lib/souls/post-tx-db'
 import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
@@ -170,7 +171,12 @@ export async function POST(
     submittedTransaction: Parameters<typeof extractSoulPurchasedEvent>[0] & { digest: string },
     expectedSellerKioskId: string,
   ) => {
-    const purchaseEvent = extractSoulPurchasedEvent(submittedTransaction, marketPackageId)
+    let purchaseEvent: ReturnType<typeof extractSoulPurchasedEvent>
+    try {
+      purchaseEvent = extractSoulPurchasedEvent(submittedTransaction, marketPackageId)
+    } catch {
+      purchaseEvent = extractSoulPurchasedEvent(submittedTransaction, soulPackageId)
+    }
     if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
       return await finalizePreparedResult(submittedTransaction.digest, 422, { error: 'Transaction did not purchase the requested Soul' })
     }
@@ -218,17 +224,27 @@ export async function POST(
   }
 
   if (preparedPurchase.executedAt) {
-    try {
-      const recoveredTransaction = await getSuccessfulTransactionBlock(
-        preparedPurchase.executionTxDigest ?? getPreparedSoulPurchaseTxDigest(preparedPurchase.txBytesBase64),
-      )
-      return await finalizeSubmittedPurchase(recoveredTransaction, preparedPurchase.sellerKioskId)
-    } catch (recoveryError) {
-      console.warn('[agent-purchase-execute] Prepared purchase recovery is still pending', {
-        preparedPurchaseId,
-        error: toSafeErrorDetails(recoveryError),
-      })
-      return NextResponse.json({ error: 'Prepared purchase is already being executed' }, { status: 409 })
+    const isZombie =
+      preparedPurchase.executionTxDigest == null
+      && preparedPurchase.resultStatusCode == null
+      && (Date.now() - preparedPurchase.executedAt.getTime()) > ZOMBIE_CLAIM_AGE_THRESHOLD_MS
+
+    if (isZombie) {
+      console.warn('[agent-purchase-execute] Reclaiming zombie prepared purchase', { preparedPurchaseId })
+      await releasePreparedSoulPurchaseExecution({ preparedPurchaseId })
+    } else {
+      try {
+        const recoveredTransaction = await getSuccessfulTransactionBlock(
+          preparedPurchase.executionTxDigest ?? getPreparedSoulPurchaseTxDigest(preparedPurchase.txBytesBase64),
+        )
+        return await finalizeSubmittedPurchase(recoveredTransaction, preparedPurchase.sellerKioskId)
+      } catch (recoveryError) {
+        console.warn('[agent-purchase-execute] Prepared purchase recovery is still pending', {
+          preparedPurchaseId,
+          error: toSafeErrorDetails(recoveryError),
+        })
+        return NextResponse.json({ error: 'Prepared purchase is already being executed' }, { status: 409 })
+      }
     }
   }
 

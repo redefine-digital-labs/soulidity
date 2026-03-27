@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
 import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
-import { getSoulPurchaseQuote } from '@web/lib/souls/purchase-quote'
+import { getSoulPurchaseQuote, getSoulSecondaryPurchaseQuote } from '@web/lib/souls/purchase-quote'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@web/lib/souls/repository'
 
 export async function GET(
@@ -23,10 +23,9 @@ export async function GET(
   if (soul.listingStatus === 'listed' && soul.listedPriceSui != null) {
     try {
       if (soul.sellerKioskId) {
-        const quote = await getSoulPurchaseQuote({
-          sellerKioskId: soul.sellerKioskId,
-          soulObjectId: soul.onChainId,
-        })
+        const quote = soul.listingSource === 'core'
+          ? await getSoulSecondaryPurchaseQuote({ priceSui: BigInt(soul.listedPriceSui!.toString()) })
+          : await getSoulPurchaseQuote({ sellerKioskId: soul.sellerKioskId, soulObjectId: soul.onChainId })
         detail.purchaseFeeAmountSui = (quote.totalSui - quote.priceSui).toString()
         detail.quotedPriceSui = quote.priceSui.toString()
       }

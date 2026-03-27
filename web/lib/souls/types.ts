@@ -20,6 +20,7 @@ export interface SoulAssetDetail extends SoulAssetSummary {
   contentBlobId: string
   contentBlobObjectId: string
   sellerKioskId: string | null
+  listingSource: string | null
   readme: string | null
   agentGrantAddress: string | null
   agentAccessCapOnChainId: string | null

@@ -82,7 +82,12 @@ export async function POST(
     }
 
     const transaction = await getSuccessfulTransactionBlock(txDigest)
-    const purchaseEvent = extractSoulPurchasedEvent(transaction, marketPackageId)
+    let purchaseEvent: ReturnType<typeof extractSoulPurchasedEvent>
+    try {
+      purchaseEvent = extractSoulPurchasedEvent(transaction, marketPackageId)
+    } catch {
+      purchaseEvent = extractSoulPurchasedEvent(transaction, soulPackageId)
+    }
     if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
       return NextResponse.json({ error: 'Transaction did not purchase the requested Soul' }, { status: 422 })
     }

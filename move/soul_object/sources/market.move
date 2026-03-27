@@ -111,6 +111,19 @@ public fun update_royalty_bps(
     event::emit(RoyaltyBpsUpdated { royalty_bps });
 }
 
+public fun quote_purchase(
+    policy: &TransferPolicy<Soul>,
+    price: u64,
+): (u64, u64, u64, u64) {
+    let platform_fee = if (platform_fee_rule::is_enabled(policy)) {
+        ((price as u128) * (platform_fee_rule::bps(policy) as u128) / 10_000) as u64
+    } else { 0 };
+    let royalty_fee = if (royalty_rule::is_enabled(policy)) {
+        ((price as u128) * (royalty_rule::bps(policy) as u128) / 10_000) as u64
+    } else { 0 };
+    (platform_fee, price, royalty_fee, price + platform_fee + royalty_fee)
+}
+
 public fun place_and_list(
     kiosk: &mut Kiosk,
     cap: &KioskOwnerCap,

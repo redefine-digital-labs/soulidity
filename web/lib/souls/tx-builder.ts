@@ -146,6 +146,44 @@ export function buildBuySoulTx(params: {
   return tx
 }
 
+export function buildBuySecondarySoulTx(params: {
+  soulObjectId: string
+  sellerKioskId: string
+  buyerAddress: string
+  priceSui: bigint
+  feeAmountSui: bigint
+}): Transaction {
+  if (params.priceSui <= 0n) {
+    throw new Error('priceSui must be positive')
+  }
+  if (params.feeAmountSui < 0n) {
+    throw new Error('feeAmountSui must be non-negative')
+  }
+
+  const soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
+  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
+  const tx = new Transaction()
+  const [paymentCoin, feeCoin] = tx.splitCoins(tx.gas, [
+    tx.pure.u64(params.priceSui),
+    tx.pure.u64(params.feeAmountSui),
+  ])
+  const [purchasedSoul, feeRemainder] = tx.moveCall({
+    target: `${soulPackageId}::market::purchase`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(transferPolicyId),
+      tx.object(params.sellerKioskId),
+      tx.object(params.soulObjectId),
+      paymentCoin,
+      feeCoin,
+    ],
+  })
+  tx.transferObjects([purchasedSoul], tx.pure.address(params.buyerAddress))
+  tx.mergeCoins(tx.gas, [feeRemainder])
+  return tx
+}
+
 export function buildSetAgentGrantTx(params: {
   soulObjectId: string
   agentAddress: string

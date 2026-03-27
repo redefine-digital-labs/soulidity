@@ -61,6 +61,7 @@ vi.mock('@web/lib/souls/prepared-purchase', () => ({
   getPreparedSoulPurchaseTxDigest: mockedGetPreparedSoulPurchaseTxDigest,
   hashPreparedSoulPurchaseTxBytes: mockedHashPreparedSoulPurchaseTxBytes,
   storePreparedSoulPurchaseExecutionDigest: mockedStorePreparedSoulPurchaseExecutionDigest,
+  ZOMBIE_CLAIM_AGE_THRESHOLD_MS: 2 * 60 * 1000,
 }))
 
 vi.mock('@web/lib/souls/tx-signature', () => ({

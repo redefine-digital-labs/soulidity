@@ -4,6 +4,7 @@ export type RequiredPublicEnvName =
   | 'NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID'
   | 'NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID'
   | 'NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID'
+  | 'NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID'
 
 export class MissingPublicEnvError extends Error {
   constructor(readonly envName: RequiredPublicEnvName) {
@@ -24,6 +25,8 @@ function readPublicEnv(name: RequiredPublicEnvName): string | undefined {
       return process.env.NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID
     case 'NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID':
       return process.env.NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID
+    case 'NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID':
+      return process.env.NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID
   }
 }
 

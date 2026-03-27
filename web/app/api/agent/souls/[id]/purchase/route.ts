@@ -5,10 +5,10 @@ import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { suiClient } from '@web/lib/sui'
 import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
 import { createPreparedSoulPurchase } from '@web/lib/souls/prepared-purchase'
-import { getSoulPurchaseQuote } from '@web/lib/souls/purchase-quote'
+import { getSoulPurchaseQuote, getSoulSecondaryPurchaseQuote } from '@web/lib/souls/purchase-quote'
 import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
 import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
-import { buildBuySoulTx } from '@web/lib/souls/tx-builder'
+import { buildBuySoulTx, buildBuySecondarySoulTx } from '@web/lib/souls/tx-builder'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,10 +54,10 @@ export async function POST(
   }
 
   try {
-    const quote = await getSoulPurchaseQuote({
-      sellerKioskId: soul.sellerKioskId,
-      soulObjectId: soul.onChainId,
-    })
+    const isSecondary = soul.listingSource === 'core'
+    const quote = isSecondary
+      ? await getSoulSecondaryPurchaseQuote({ priceSui: BigInt(soul.listedPriceSui!.toString()) })
+      : await getSoulPurchaseQuote({ sellerKioskId: soul.sellerKioskId!, soulObjectId: soul.onChainId })
     const feeAmountSui = quote.totalSui - quote.priceSui
 
     const balance = await suiClient.getBalance({ owner: agentAddress })
@@ -69,13 +69,14 @@ export async function POST(
       )
     }
 
-    const tx = buildBuySoulTx({
+    const txParams = {
       soulObjectId: soul.onChainId,
-      sellerKioskId: soul.sellerKioskId,
+      sellerKioskId: soul.sellerKioskId!,
       buyerAddress: agentAddress,
       priceSui: quote.priceSui,
       feeAmountSui,
-    })
+    }
+    const tx = isSecondary ? buildBuySecondarySoulTx(txParams) : buildBuySoulTx(txParams)
     tx.setSender(agentAddress)
 
     const txBytes = await tx.build({ client: suiClient })

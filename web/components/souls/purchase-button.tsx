@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useAuth } from '@web/components/auth-provider'
-import { buildBuySoulTx } from '@web/lib/souls/tx-builder'
+import { buildBuySoulTx, buildBuySecondarySoulTx } from '@web/lib/souls/tx-builder'
 import { mirrorRouteRequest, formatMirrorSyncError } from '@web/lib/souls/mirror-sync'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
 import { formatAtomicSuiForDisplay } from '@web/lib/souls/price-format'
@@ -13,6 +13,7 @@ interface PurchaseButtonProps {
   listedPriceSui: string
   feeAmountSui: string
   quotedPriceSui?: string | null
+  listingSource?: string | null
   onPurchased?: () => Promise<void> | void
 }
 
@@ -31,13 +32,16 @@ export function PurchaseButton(props: PurchaseButtonProps) {
     setSubmitting(true)
     setError(null)
     try {
-      const tx = buildBuySoulTx({
+      const txParams = {
         soulObjectId: props.soulObjectId,
         sellerKioskId: props.sellerKioskId,
         buyerAddress: user.primarySuiAddress,
         priceSui: BigInt(props.quotedPriceSui ?? props.listedPriceSui),
         feeAmountSui: BigInt(props.feeAmountSui),
-      })
+      }
+      const tx = props.listingSource === 'core'
+        ? buildBuySecondarySoulTx(txParams)
+        : buildBuySoulTx(txParams)
       const result = await signAndExecute(tx)
       const headers = await getAuthHeaders()
       await mirrorRouteRequest({

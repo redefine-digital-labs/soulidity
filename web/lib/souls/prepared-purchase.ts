@@ -8,6 +8,7 @@ import { isUniqueConstraintError } from '@shared/prisma-errors'
 const PREPARED_PURCHASE_TTL_MS = 5 * 60 * 1000
 const PREPARED_PURCHASE_STALE_RETENTION_MS = PREPARED_PURCHASE_TTL_MS
 const PREPARED_PURCHASE_CLEANUP_THROTTLE_MS = 60 * 1000
+export const ZOMBIE_CLAIM_AGE_THRESHOLD_MS = 2 * 60 * 1000
 const MAX_PREPARED_TX_BYTES_BASE64 = 64 * 1024
 
 type PreparedPurchaseResultBody = Record<string, unknown>
@@ -40,14 +41,26 @@ function cleanupExpiredPreparedPurchases(): void {
     return
   }
 
-  void prisma.soulPreparedPurchase.deleteMany({
-    where: {
-      expiresAt: { lt: getPreparedPurchaseCleanupCutoff() },
-      executedAt: null,
-      resultStatusCode: null,
-      executionTxDigest: null,
-    },
-  }).catch((error) => {
+  const cutoff = getPreparedPurchaseCleanupCutoff()
+
+  void Promise.all([
+    prisma.soulPreparedPurchase.deleteMany({
+      where: {
+        expiresAt: { lt: cutoff },
+        executedAt: null,
+        resultStatusCode: null,
+        executionTxDigest: null,
+      },
+    }),
+    prisma.soulPreparedPurchase.deleteMany({
+      where: {
+        expiresAt: { lt: cutoff },
+        executedAt: { not: null },
+        executionTxDigest: null,
+        resultStatusCode: null,
+      },
+    }),
+  ]).catch((error) => {
     console.error('Failed to cleanup expired prepared purchases', { error })
   })
 }
@@ -105,6 +118,12 @@ export async function createPreparedSoulPurchase(params: {
       },
     })
     if (existing) {
+      const isZombie =
+        existing.executedAt != null
+        && existing.executionTxDigest == null
+        && existing.resultStatusCode == null
+        && existing.expiresAt.getTime() <= Date.now()
+
       if (!existing.executedAt && existing.resultStatusCode == null) {
         const updated = await prisma.soulPreparedPurchase.updateMany({
           where: {
@@ -113,6 +132,31 @@ export async function createPreparedSoulPurchase(params: {
             resultStatusCode: null,
           },
           data: {
+            soulOnChainId: params.soulOnChainId,
+            sellerKioskId: params.sellerKioskId,
+            agentAddress: params.agentAddress,
+            priceSui: params.priceSui.toString(),
+            txBytesBase64: params.txBytesBase64,
+            expiresAt,
+          },
+        })
+        if (updated.count === 0) {
+          return existing
+        }
+        return {
+          id: existing.id,
+          expiresAt,
+        }
+      } else if (isZombie) {
+        const updated = await prisma.soulPreparedPurchase.updateMany({
+          where: {
+            id: existing.id,
+            executionTxDigest: null,
+            resultStatusCode: null,
+          },
+          data: {
+            executedAt: null,
+            executionTxDigest: null,
             soulOnChainId: params.soulOnChainId,
             sellerKioskId: params.sellerKioskId,
             agentAddress: params.agentAddress,

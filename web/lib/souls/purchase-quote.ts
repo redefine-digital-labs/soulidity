@@ -59,6 +59,28 @@ export async function getSoulPurchaseQuote(params: {
     ],
   })
 
+  return parseQuoteDevInspectResult(tx)
+}
+
+export async function getSoulSecondaryPurchaseQuote(params: {
+  priceSui: bigint
+}): Promise<SoulPurchaseQuote> {
+  const soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
+
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${soulPackageId}::market::quote_purchase`,
+    arguments: [
+      tx.object(transferPolicyId),
+      tx.pure.u64(params.priceSui),
+    ],
+  })
+
+  return parseQuoteDevInspectResult(tx)
+}
+
+async function parseQuoteDevInspectResult(tx: Transaction): Promise<SoulPurchaseQuote> {
   const result = await suiClient.devInspectTransactionBlock({
     sender: DEV_INSPECT_SENDER,
     transactionBlock: tx,

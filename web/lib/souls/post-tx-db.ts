@@ -56,6 +56,7 @@ export async function dbUpsertSoulAsset(params: {
   grantVersion: bigint
   agentGrantAddress?: string | null
   agentAccessCapOnChainId?: string | null
+  listingSource?: 'adapter' | 'core' | null
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
@@ -96,6 +97,7 @@ export async function dbUpsertSoulAsset(params: {
       sellerKioskId: params.sellerKioskId,
       listedPriceSui: params.listedPriceSui ? new Prisma.Decimal(params.listedPriceSui.toString()) : null,
       listingStatus: params.listingStatus,
+      listingSource: params.listingSource ?? null,
       name: params.name,
       description: params.description,
       imageUrl: params.imageUrl,
@@ -118,6 +120,7 @@ export async function dbUpsertSoulAsset(params: {
       sellerKioskId: params.sellerKioskId,
       listedPriceSui: params.listedPriceSui ? new Prisma.Decimal(params.listedPriceSui.toString()) : null,
       listingStatus: params.listingStatus,
+      listingSource: params.listingSource ?? null,
       name: params.name,
       description: params.description,
       imageUrl: params.imageUrl,

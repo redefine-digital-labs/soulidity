@@ -167,7 +167,15 @@ export async function POST(request: NextRequest) {
     }
 
     const transaction = await getSuccessfulTransactionBlock(txDigest)
-    const listingEvent = extractSoulListingEvent(transaction, marketPackageId)
+    let listingEvent: ReturnType<typeof extractSoulListingEvent>
+    let listingSource: 'adapter' | 'core'
+    try {
+      listingEvent = extractSoulListingEvent(transaction, marketPackageId)
+      listingSource = 'adapter'
+    } catch {
+      listingEvent = extractSoulListingEvent(transaction, soulPackageId)
+      listingSource = 'core'
+    }
     if (!sameSuiValue(listingEvent.soulObjectId, soulOnChainId)) {
       return NextResponse.json({ error: 'Transaction did not list the submitted Soul' }, { status: 422 })
     }
@@ -245,6 +253,7 @@ export async function POST(request: NextRequest) {
       sellerKioskId: listingEvent.sellerKioskId,
       listedPriceSui: listingEvent.priceSui,
       listingStatus: 'listed',
+      listingSource,
       name: soulState.name,
       description: soulState.description,
       imageUrl: soulState.imageUrl,
