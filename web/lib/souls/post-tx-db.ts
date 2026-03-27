@@ -26,7 +26,7 @@ function normalizeStoredSuiAddress(address: string): string {
   }
 }
 
-async function resolveOwnerMemberId(db: SoulDbClient, address: string): Promise<string | null> {
+async function resolveMemberIdBySuiAddress(db: SoulDbClient, address: string): Promise<string | null> {
   const binding = await db.walletBinding.findFirst({
     where: { address: normalizeStoredSuiAddress(address), chain: 'sui' },
   })
@@ -61,7 +61,8 @@ export async function dbUpsertSoulAsset(params: {
   const db = params.db ?? prisma
   const creatorAddress = normalizeStoredSuiAddress(params.creatorAddress)
   const currentOwnerAddress = normalizeStoredSuiAddress(params.currentOwnerAddress)
-  const currentOwnerMemberId = params.currentOwnerMemberId ?? await resolveOwnerMemberId(db, currentOwnerAddress)
+  const creatorMemberId = params.creatorMemberId ?? await resolveMemberIdBySuiAddress(db, creatorAddress)
+  const currentOwnerMemberId = params.currentOwnerMemberId ?? await resolveMemberIdBySuiAddress(db, currentOwnerAddress)
   const existingSoul = await db.soulAsset.findUnique({
     where: { onChainId: params.soulOnChainId },
     select: {
@@ -71,10 +72,15 @@ export async function dbUpsertSoulAsset(params: {
   })
   if (
     existingSoul
-    && (
-      existingSoul.creatorMemberId !== params.creatorMemberId
-      || !sameSuiAddress(existingSoul.creatorAddress, creatorAddress)
-    )
+    && !sameSuiAddress(existingSoul.creatorAddress, creatorAddress)
+  ) {
+    throw new Error('existing Soul creator does not match the submitted on-chain creator')
+  }
+  if (
+    existingSoul
+    && existingSoul.creatorMemberId != null
+    && creatorMemberId != null
+    && existingSoul.creatorMemberId !== creatorMemberId
   ) {
     throw new Error('existing Soul creator does not match the submitted on-chain creator')
   }
@@ -84,7 +90,7 @@ export async function dbUpsertSoulAsset(params: {
     create: {
       onChainId: params.soulOnChainId,
       creatorAddress,
-      creatorMemberId: params.creatorMemberId,
+      creatorMemberId,
       currentOwnerAddress,
       currentOwnerMemberId,
       sellerKioskId: params.sellerKioskId,
@@ -182,7 +188,7 @@ export async function dbSetSoulOwnership(params: {
 }) {
   const db = params.db ?? prisma
   const currentOwnerAddress = normalizeStoredSuiAddress(params.currentOwnerAddress)
-  const currentOwnerMemberId = params.currentOwnerMemberId ?? await resolveOwnerMemberId(db, currentOwnerAddress)
+  const currentOwnerMemberId = params.currentOwnerMemberId ?? await resolveMemberIdBySuiAddress(db, currentOwnerAddress)
   const result = await db.soulAsset.updateMany({
     where: { onChainId: params.soulOnChainId },
     data: {

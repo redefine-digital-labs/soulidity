@@ -24,12 +24,15 @@ const mockedGetPreparedSoulPurchaseForExecution = vi.hoisted(() => vi.fn())
 const mockedClaimPreparedSoulPurchaseForExecution = vi.hoisted(() => vi.fn())
 const mockedFinalizePreparedSoulPurchaseExecution = vi.hoisted(() => vi.fn())
 const mockedReleasePreparedSoulPurchaseExecution = vi.hoisted(() => vi.fn())
+const mockedGetPreparedSoulPurchaseTxDigest = vi.hoisted(() => vi.fn())
 const mockedHashPreparedSoulPurchaseTxBytes = vi.hoisted(() => vi.fn())
+const mockedStorePreparedSoulPurchaseExecutionDigest = vi.hoisted(() => vi.fn())
 const mockedVerifyPreparedTransactionSignature = vi.hoisted(() => vi.fn())
 const mockedDbSetSoulOwnership = vi.hoisted(() => vi.fn())
 const mockedExtractSoulPurchasedEvent = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedWaitForTransactionBestEffort = vi.hoisted(() => vi.fn())
+const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
   executeTransactionBlock: vi.fn(),
 }))
@@ -55,7 +58,9 @@ vi.mock('@web/lib/souls/prepared-purchase', () => ({
   claimPreparedSoulPurchaseForExecution: mockedClaimPreparedSoulPurchaseForExecution,
   finalizePreparedSoulPurchaseExecution: mockedFinalizePreparedSoulPurchaseExecution,
   releasePreparedSoulPurchaseExecution: mockedReleasePreparedSoulPurchaseExecution,
+  getPreparedSoulPurchaseTxDigest: mockedGetPreparedSoulPurchaseTxDigest,
   hashPreparedSoulPurchaseTxBytes: mockedHashPreparedSoulPurchaseTxBytes,
+  storePreparedSoulPurchaseExecutionDigest: mockedStorePreparedSoulPurchaseExecutionDigest,
 }))
 
 vi.mock('@web/lib/souls/tx-signature', () => ({
@@ -76,6 +81,10 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
 
 vi.mock('@web/lib/souls/tx-confirmation', () => ({
   waitForTransactionBestEffort: mockedWaitForTransactionBestEffort,
+}))
+
+vi.mock('@web/lib/souls/transaction', () => ({
+  getSuccessfulTransactionBlock: mockedGetSuccessfulTransactionBlock,
 }))
 
 vi.mock('@web/lib/sui', () => ({
@@ -107,6 +116,7 @@ describe('agent soul purchase execute route', () => {
       txBytesBase64: 'c2VydmVyLXR4',
       txBytesHash: 'deadbeef',
       executedAt: null,
+      executionTxDigest: null,
       resultStatusCode: null,
       resultBody: null,
     })
@@ -118,13 +128,17 @@ describe('agent soul purchase execute route', () => {
       txBytesBase64: 'c2VydmVyLXR4',
       txBytesHash: 'deadbeef',
       executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: null,
       resultStatusCode: null,
       resultBody: null,
     })
+    mockedGetPreparedSoulPurchaseTxDigest.mockReturnValue('0xtx')
     mockedHashPreparedSoulPurchaseTxBytes.mockReturnValue('deadbeef')
+    mockedStorePreparedSoulPurchaseExecutionDigest.mockResolvedValue(undefined)
     mockedVerifyPreparedTransactionSignature.mockResolvedValue(undefined)
     mockedSuiClient.executeTransactionBlock.mockResolvedValue({ digest: '0xtx' })
     mockedWaitForTransactionBestEffort.mockResolvedValue(undefined)
+    mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: '0xtx' })
     mockedExtractSoulPurchasedEvent.mockReturnValue({
       soulObjectId: SOUL_ID,
       sellerKioskId: KIOSK_ID,
@@ -163,6 +177,7 @@ describe('agent soul purchase execute route', () => {
       txBytesBase64: 'c2VydmVyLXR4',
       txBytesHash: 'deadbeef',
       executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xold',
       resultStatusCode: 200,
       resultBody: { digest: '0xold', dbSynced: true },
     })
@@ -304,5 +319,56 @@ describe('agent soul purchase execute route', () => {
       dbSynced: false,
       error: 'Transaction succeeded on chain, but local Soul sync failed.',
     })
+  })
+
+  it('recovers a previously submitted purchase when finalization storage failed on the first attempt', async () => {
+    mockedFinalizePreparedSoulPurchaseExecution.mockRejectedValueOnce(new Error('db write failed'))
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+
+    const firstResponse = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(firstResponse.status).toBe(500)
+
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: null,
+      resultStatusCode: null,
+      resultBody: null,
+    })
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const recoveredResponse = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(recoveredResponse.status).toBe(200)
+    await expect(recoveredResponse.json()).resolves.toEqual({
+      digest: '0xtx',
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      onChainSuccess: true,
+      dbSynced: true,
+    })
+    expect(mockedGetSuccessfulTransactionBlock).toHaveBeenCalledWith('0xtx')
+    expect(mockedClaimPreparedSoulPurchaseForExecution).toHaveBeenCalledTimes(1)
   })
 })

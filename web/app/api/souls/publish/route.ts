@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
+import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import {
@@ -13,10 +14,10 @@ import { dbUpsertSoulAsset } from '@web/lib/souls/post-tx-db'
 import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
 import { getSuccessfulTransactionBlock } from '@web/lib/souls/transaction'
 import { getStoredSoulTxSync, storeSoulTxSync } from '@web/lib/souls/tx-sync'
-import { parseRequiredObjectId, parseRequiredTxDigest } from '@web/lib/souls/request-validation'
+import { parseOptionalObjectId, parseRequiredObjectId, parseRequiredTxDigest } from '@web/lib/souls/request-validation'
 import { assertWalrusBlobId, normalizeWalrusBlobId } from '@web/lib/services/walrus'
 import { createSealClient, getSealRuntimeConfig } from '@web/lib/services/seal'
-import { createSealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
+import { createSealEnvelopeSidecar, type SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
 import { unsealDekEnvelope } from '@web/lib/services/dek-envelope'
 
 const SOUL_PUBLISH_RATE_LIMIT = {
@@ -64,16 +65,23 @@ export async function POST(request: NextRequest) {
   if (!body || typeof body !== 'object') {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
+  const requestBody = body as Record<string, unknown>
 
-  const txDigest = parseRequiredTxDigest((body as Record<string, unknown>).txDigest)
-  const soulOnChainId = parseRequiredObjectId((body as Record<string, unknown>).soulOnChainId)
-  const contentBlobObjectId = parseRequiredObjectId((body as Record<string, unknown>).contentBlobObjectId)
-  const contentBlobId = normalizeWalrusBlobId((body as Record<string, unknown>).contentBlobId)
-  const category = parseOptionalString((body as Record<string, unknown>).category)
-  const tags = parseStringArray((body as Record<string, unknown>).tags, 'tags')
-  const previewImages = parseStringArray((body as Record<string, unknown>).previewImages, 'previewImages')
-  const readme = parseOptionalString((body as Record<string, unknown>).readme)
-  const sealDekEnvelope = parseOptionalString((body as Record<string, unknown>).sealDekEnvelope)
+  const txDigest = parseRequiredTxDigest(requestBody.txDigest)
+  const soulOnChainId = parseRequiredObjectId(requestBody.soulOnChainId)
+  const hasContentBlobObjectId = Object.hasOwn(requestBody, 'contentBlobObjectId')
+  const contentBlobObjectId = parseOptionalObjectId(requestBody.contentBlobObjectId)
+  const hasContentBlobId = Object.hasOwn(requestBody, 'contentBlobId')
+  const contentBlobId = normalizeWalrusBlobId(requestBody.contentBlobId)
+  const hasCategory = Object.hasOwn(requestBody, 'category')
+  const category = parseOptionalString(requestBody.category)
+  const hasTags = Object.hasOwn(requestBody, 'tags')
+  const tags = parseStringArray(requestBody.tags, 'tags')
+  const hasPreviewImages = Object.hasOwn(requestBody, 'previewImages')
+  const previewImages = parseStringArray(requestBody.previewImages, 'previewImages')
+  const readme = parseOptionalString(requestBody.readme)
+  const hasSealDekEnvelope = Object.hasOwn(requestBody, 'sealDekEnvelope')
+  const sealDekEnvelope = parseOptionalString(requestBody.sealDekEnvelope)
 
   if (!txDigest) {
     return NextResponse.json({ error: 'txDigest must be a valid transaction digest' }, { status: 400 })
@@ -81,22 +89,22 @@ export async function POST(request: NextRequest) {
   if (!soulOnChainId) {
     return NextResponse.json({ error: 'soulOnChainId must be a valid object id' }, { status: 400 })
   }
-  if (!contentBlobObjectId) {
+  if (hasContentBlobObjectId && !contentBlobObjectId) {
     return NextResponse.json({ error: 'contentBlobObjectId must be a valid object id' }, { status: 400 })
   }
-  if (!contentBlobId) {
+  if (hasContentBlobId && !contentBlobId) {
     return NextResponse.json({ error: 'contentBlobId must be a valid Walrus blob id' }, { status: 400 })
   }
-  if (!category) {
+  if (hasCategory && !category) {
     return NextResponse.json({ error: 'category is required' }, { status: 400 })
   }
-  if (!tags) {
+  if (hasTags && !tags) {
     return NextResponse.json({ error: 'tags must be a string array' }, { status: 400 })
   }
-  if (!previewImages || !previewImages.every((value) => normalizeWalrusBlobId(value))) {
+  if (hasPreviewImages && (!previewImages || !previewImages.every((value) => normalizeWalrusBlobId(value)))) {
     return NextResponse.json({ error: 'previewImages must be Walrus blob ids' }, { status: 400 })
   }
-  if (!sealDekEnvelope) {
+  if (hasSealDekEnvelope && !sealDekEnvelope) {
     return NextResponse.json({ error: 'sealDekEnvelope is required' }, { status: 400 })
   }
 
@@ -108,6 +116,39 @@ export async function POST(request: NextRequest) {
   })
   if (storedSync) {
     return NextResponse.json(storedSync.body, { status: storedSync.statusCode })
+  }
+
+  const existingSoul = await prisma.soulAsset.findUnique({
+    where: { onChainId: soulOnChainId },
+    select: {
+      creatorMemberId: true,
+      creatorAddress: true,
+      category: true,
+      tags: true,
+      previewImages: true,
+      readme: true,
+      sealSidecar: true,
+    },
+  })
+  const isInitialSync = !existingSoul
+
+  if (isInitialSync && !contentBlobObjectId) {
+    return NextResponse.json({ error: 'contentBlobObjectId is required' }, { status: 400 })
+  }
+  if (isInitialSync && !contentBlobId) {
+    return NextResponse.json({ error: 'contentBlobId is required' }, { status: 400 })
+  }
+  if (isInitialSync && !category) {
+    return NextResponse.json({ error: 'category is required' }, { status: 400 })
+  }
+  if (isInitialSync && !tags) {
+    return NextResponse.json({ error: 'tags must be a string array' }, { status: 400 })
+  }
+  if (isInitialSync && !previewImages) {
+    return NextResponse.json({ error: 'previewImages must be Walrus blob ids' }, { status: 400 })
+  }
+  if (isInitialSync && !sealDekEnvelope) {
+    return NextResponse.json({ error: 'sealDekEnvelope is required' }, { status: 400 })
   }
 
   let soulPackageId: string
@@ -135,35 +176,70 @@ export async function POST(request: NextRequest) {
     }
 
     const soulState = await getVerifiedSoulState(soulOnChainId, soulPackageId)
-    if (!walletAddresses.some((address) => sameSuiValue(address, soulState.creatorAddress))) {
-      return NextResponse.json({ error: 'On-chain Soul creator does not match the authenticated wallet' }, { status: 422 })
+    if (existingSoul && !sameSuiValue(existingSoul.creatorAddress, soulState.creatorAddress)) {
+      return NextResponse.json({ error: 'Stored Soul creator does not match the on-chain Soul creator' }, { status: 422 })
     }
-    if (!sameSuiValue(soulState.contentBlobObjectId, contentBlobObjectId)) {
+    if (contentBlobObjectId && !sameSuiValue(soulState.contentBlobObjectId, contentBlobObjectId)) {
       return NextResponse.json({ error: 'Submitted content blob object id does not match the on-chain Soul' }, { status: 422 })
     }
-
-    const runtimeConfig = getSealRuntimeConfig()
-    if (runtimeConfig.threshold <= 0 || runtimeConfig.serverConfigs.length === 0) {
-      return NextResponse.json({ error: 'Seal is not configured for Soul publishing' }, { status: 503 })
+    if (!soulState.contentBlobId) {
+      return NextResponse.json({ error: 'On-chain Soul content blob id is missing' }, { status: 422 })
     }
 
-    const unsealedEnvelope = unsealDekEnvelope(sealDekEnvelope)
-    const sidecar = await createSealEnvelopeSidecar({
-      sealClient: createSealClient(),
-      packageId: soulPackageId,
-      soulObjectId: soulOnChainId,
-      threshold: runtimeConfig.threshold,
-      dek: unsealedEnvelope.dek,
-      iv: unsealedEnvelope.iv,
-      contentHash: unsealedEnvelope.contentHash,
-      mimeType: unsealedEnvelope.mimeType,
-      fileName: unsealedEnvelope.fileName,
-    })
+    const verifiedContentBlobId = assertWalrusBlobId(soulState.contentBlobId, 'on-chain Soul content blob id')
+    if (contentBlobId && verifiedContentBlobId !== contentBlobId) {
+      return NextResponse.json({ error: 'Submitted content blob id does not match the on-chain Soul' }, { status: 422 })
+    }
+
+    const isCreatorWallet = walletAddresses.some((address) => sameSuiValue(address, soulState.creatorAddress))
+    if (!existingSoul && !isCreatorWallet) {
+      return NextResponse.json({ error: 'Only the Soul creator can mirror the initial listing' }, { status: 422 })
+    }
+    const creatorMemberId = existingSoul?.creatorMemberId ?? (isCreatorWallet ? identity.memberId : null)
+
+    let sidecar: SealEnvelopeSidecar | null
+    let syncedCategory: string
+    let syncedTags: string[]
+    let syncedPreviewImages: string[]
+    let syncedReadme: string | null
+
+    if (existingSoul) {
+      sidecar = (existingSoul.sealSidecar ?? null) as SealEnvelopeSidecar | null
+      if (!sidecar) {
+        return NextResponse.json({ error: 'Stored Soul seal sidecar is missing' }, { status: 409 })
+      }
+      syncedCategory = existingSoul.category
+      syncedTags = existingSoul.tags
+      syncedPreviewImages = existingSoul.previewImages.map((value) => assertWalrusBlobId(value, 'stored preview image'))
+      syncedReadme = existingSoul.readme ?? null
+    } else {
+      const runtimeConfig = getSealRuntimeConfig()
+      if (runtimeConfig.threshold <= 0 || runtimeConfig.serverConfigs.length === 0) {
+        return NextResponse.json({ error: 'Seal is not configured for Soul publishing' }, { status: 503 })
+      }
+
+      const unsealedEnvelope = unsealDekEnvelope(sealDekEnvelope!)
+      sidecar = await createSealEnvelopeSidecar({
+        sealClient: createSealClient(),
+        packageId: soulPackageId,
+        soulObjectId: soulOnChainId,
+        threshold: runtimeConfig.threshold,
+        dek: unsealedEnvelope.dek,
+        iv: unsealedEnvelope.iv,
+        contentHash: unsealedEnvelope.contentHash,
+        mimeType: unsealedEnvelope.mimeType,
+        fileName: unsealedEnvelope.fileName,
+      })
+      syncedCategory = category!
+      syncedTags = tags!
+      syncedPreviewImages = previewImages!.map((value) => assertWalrusBlobId(value, 'preview image'))
+      syncedReadme = readme
+    }
 
     await dbUpsertSoulAsset({
       soulOnChainId,
       creatorAddress: soulState.creatorAddress,
-      creatorMemberId: identity.memberId,
+      creatorMemberId,
       currentOwnerAddress: listingEvent.sellerAddress,
       currentOwnerMemberId: identity.memberId,
       sellerKioskId: listingEvent.sellerKioskId,
@@ -173,13 +249,13 @@ export async function POST(request: NextRequest) {
       description: soulState.description,
       imageUrl: soulState.imageUrl,
       metadataRef: soulState.metadataRef,
-      contentBlobId: assertWalrusBlobId(contentBlobId, 'contentBlobId'),
+      contentBlobId: verifiedContentBlobId,
       contentBlobObjectId: soulState.contentBlobObjectId,
       sealSidecar: sidecar,
-      category,
-      tags,
-      previewImages: previewImages.map((value) => assertWalrusBlobId(value, 'preview image')),
-      readme,
+      category: syncedCategory,
+      tags: syncedTags,
+      previewImages: syncedPreviewImages,
+      readme: syncedReadme,
       grantVersion: soulState.grantVersion,
       agentGrantAddress: soulState.agentGrant,
       agentAccessCapOnChainId: null,

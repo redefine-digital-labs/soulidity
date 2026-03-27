@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
 const MARKET_ADAPTER_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const AUTHOR_ADDRESS = `0x${'1'.repeat(64)}`
+const HOLDER_ADDRESS = `0x${'5'.repeat(64)}`
 const SOUL_ID = `0x${'2'.repeat(64)}`
 const KIOSK_ID = `0x${'3'.repeat(64)}`
 const CONTENT_BLOB_OBJECT_ID = `0x${'4'.repeat(64)}`
@@ -19,6 +20,11 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
+const mockedPrisma = vi.hoisted(() => ({
+  soulAsset: {
+    findUnique: vi.fn(),
+  },
+}))
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
@@ -37,6 +43,10 @@ vi.mock('@web/lib/auth/identity', () => ({
 
 vi.mock('@web/lib/auth/sui-wallet', () => ({
   getMemberSuiWalletAddresses: mockedGetMemberSuiWalletAddresses,
+}))
+
+vi.mock('@web/lib/prisma', () => ({
+  prisma: mockedPrisma,
 }))
 
 vi.mock('@web/lib/rate-limit', () => ({
@@ -89,9 +99,11 @@ describe('soul publish route', () => {
       identity: { memberId: 'member-1', kind: 'human' },
     })
     mockedGetMemberSuiWalletAddresses.mockResolvedValue([AUTHOR_ADDRESS])
+    mockedPrisma.soulAsset.findUnique.mockResolvedValue(null)
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
+    mockedPrisma.soulAsset.findUnique.mockResolvedValue(null)
     mockedExtractSoulListingEvent.mockReturnValue({
       soulObjectId: SOUL_ID,
       sellerKioskId: KIOSK_ID,
@@ -233,6 +245,166 @@ describe('soul publish route', () => {
     expect(response.status).toBe(422)
     await expect(response.json()).resolves.toEqual({
       error: 'Soul listing seller does not match the authenticated wallet',
+    })
+    expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
+  })
+
+  it('allows the current holder to sync a relisted Soul without matching the creator wallet', async () => {
+    mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
+    mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({
+      creatorMemberId: 'creator-member',
+      creatorAddress: AUTHOR_ADDRESS,
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: ['blob-preview'],
+      readme: 'Stored README',
+      sealSidecar: { encryptedObject: 'sealed' },
+    })
+    mockedExtractSoulListingEvent.mockReturnValueOnce({
+      soulObjectId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      sellerAddress: HOLDER_ADDRESS,
+      priceSui: 2_000_000_000n,
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(200)
+    expect(mockedDbUpsertSoulAsset).toHaveBeenCalledWith(expect.objectContaining({
+      creatorAddress: AUTHOR_ADDRESS,
+      creatorMemberId: 'creator-member',
+      currentOwnerAddress: HOLDER_ADDRESS,
+      currentOwnerMemberId: 'member-1',
+      sellerKioskId: KIOSK_ID,
+      listedPriceSui: 2_000_000_000n,
+      readme: 'Stored README',
+    }))
+    expect(mockedCreateSealEnvelopeSidecar).not.toHaveBeenCalled()
+  })
+
+  it('rejects publish sync when the submitted content blob id does not match the on-chain Soul', async () => {
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      objectId: SOUL_ID,
+      creatorAddress: AUTHOR_ADDRESS,
+      ownerAddress: KIOSK_ID,
+      name: 'Signal Soul',
+      description: 'Encrypted bundle',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: 'walrus://metadata',
+      contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+      contentBlobId: 'blob-onchain',
+      agentGrant: null,
+      grantVersion: 0n,
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-client',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Submitted content blob id does not match the on-chain Soul',
+    })
+    expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
+  })
+
+  it('allows a non-creator holder to sync a relisted Soul using stored metadata', async () => {
+    const HOLDER_ADDRESS = `0x${'7'.repeat(64)}`
+    mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
+    mockedExtractSoulListingEvent.mockReturnValueOnce({
+      soulObjectId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      sellerAddress: HOLDER_ADDRESS,
+      priceSui: 2_000_000_000n,
+    })
+    mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({
+      creatorMemberId: 'creator-member-1',
+      creatorAddress: AUTHOR_ADDRESS,
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: ['blob-preview'],
+      readme: 'README',
+      sealSidecar: { encryptedObject: 'sealed' },
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+      }),
+    }) as any)
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      listedPriceSui: '2000000000',
+      listingStatus: 'listed',
+    })
+    expect(mockedCreateSealEnvelopeSidecar).not.toHaveBeenCalled()
+    expect(mockedDbUpsertSoulAsset).toHaveBeenCalledWith(expect.objectContaining({
+      creatorMemberId: 'creator-member-1',
+      currentOwnerAddress: HOLDER_ADDRESS,
+      currentOwnerMemberId: 'member-1',
+      listedPriceSui: 2_000_000_000n,
+      contentBlobId: 'blob-content',
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: ['blob-preview'],
+      readme: 'README',
+      sealSidecar: { encryptedObject: 'sealed' },
+    }))
+  })
+
+  it('rejects contentBlobId values that do not match the verified on-chain Soul', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-wrong',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Submitted content blob id does not match the on-chain Soul',
     })
     expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
   })

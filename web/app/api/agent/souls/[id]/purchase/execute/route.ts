@@ -7,8 +7,10 @@ import {
   claimPreparedSoulPurchaseForExecution,
   finalizePreparedSoulPurchaseExecution,
   getPreparedSoulPurchaseForExecution,
+  getPreparedSoulPurchaseTxDigest,
   hashPreparedSoulPurchaseTxBytes,
   releasePreparedSoulPurchaseExecution,
+  storePreparedSoulPurchaseExecutionDigest,
 } from '@web/lib/souls/prepared-purchase'
 import { dbSetSoulOwnership } from '@web/lib/souls/post-tx-db'
 import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
@@ -22,6 +24,7 @@ import {
 import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
 import { waitForTransactionBestEffort } from '@web/lib/souls/tx-confirmation'
 import { verifyPreparedTransactionSignature } from '@web/lib/souls/tx-signature'
+import { getSuccessfulTransactionBlock } from '@web/lib/souls/transaction'
 import { isUuid } from '@web/lib/is-uuid'
 
 export const dynamic = 'force-dynamic'
@@ -105,8 +108,84 @@ export async function POST(
   if (preparedPurchase.resultStatusCode && preparedPurchase.resultBody) {
     return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
   }
+  const finalizePreparedResult = async (
+    txDigest: string,
+    statusCode: number,
+    body: Record<string, unknown>,
+  ): Promise<NextResponse> => {
+    await finalizePreparedSoulPurchaseExecution({
+      preparedPurchaseId,
+      txDigest,
+      resultStatusCode: statusCode,
+      resultBody: body,
+    })
+    return NextResponse.json(body, { status: statusCode })
+  }
+
+  const finalizeSubmittedPurchase = async (
+    submittedTransaction: Parameters<typeof extractSoulPurchasedEvent>[0] & { digest: string },
+    expectedSellerKioskId: string,
+  ) => {
+    const purchaseEvent = extractSoulPurchasedEvent(submittedTransaction, marketPackageId)
+    if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, { error: 'Transaction did not purchase the requested Soul' })
+    }
+    if (!sameSuiValue(purchaseEvent.sellerKioskId, expectedSellerKioskId)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Transaction seller kiosk does not match the prepared purchase',
+      })
+    }
+    if (!sameSuiValue(purchaseEvent.buyerAddress, agentAddress)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul owner does not match the agent wallet',
+      })
+    }
+
+    const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
+    if (!soulState.ownerAddress || !sameSuiValue(soulState.ownerAddress, agentAddress)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul was not transferred to the agent wallet',
+      })
+    }
+
+    let dbSynced = true
+    try {
+      await dbSetSoulOwnership({
+        soulOnChainId: soul.onChainId,
+        currentOwnerAddress: soulState.ownerAddress,
+        listingStatus: 'held',
+        sellerKioskId: null,
+        listedPriceSui: null,
+        grantVersion: soulState.grantVersion,
+      })
+    } catch (syncError) {
+      dbSynced = false
+      console.error('[agent-purchase-execute] Local soul sync failed', toSafeErrorDetails(syncError))
+    }
+
+    return await finalizePreparedResult(submittedTransaction.digest, dbSynced ? 200 : 207, {
+      digest: submittedTransaction.digest,
+      soulOnChainId: soul.onChainId,
+      currentOwnerAddress: soulState.ownerAddress,
+      onChainSuccess: true,
+      dbSynced,
+      ...(dbSynced ? {} : { error: 'Transaction succeeded on chain, but local Soul sync failed.' }),
+    })
+  }
+
   if (preparedPurchase.executedAt) {
-    return NextResponse.json({ error: 'Prepared purchase is already being executed' }, { status: 409 })
+    try {
+      const recoveredTransaction = await getSuccessfulTransactionBlock(
+        preparedPurchase.executionTxDigest ?? getPreparedSoulPurchaseTxDigest(preparedPurchase.txBytesBase64),
+      )
+      return await finalizeSubmittedPurchase(recoveredTransaction, preparedPurchase.sellerKioskId)
+    } catch (recoveryError) {
+      console.warn('[agent-purchase-execute] Prepared purchase recovery is still pending', {
+        preparedPurchaseId,
+        error: toSafeErrorDetails(recoveryError),
+      })
+      return NextResponse.json({ error: 'Prepared purchase is already being executed' }, { status: 409 })
+    }
   }
 
   const claimedPreparedPurchase = await claimPreparedSoulPurchaseForExecution({
@@ -162,63 +241,24 @@ export async function POST(
   }
 
   await waitForTransactionBestEffort(suiClient, result.digest)
-
-  const finalizePreparedResult = async (
-    statusCode: number,
-    body: Record<string, unknown>,
-  ): Promise<NextResponse> => {
-    await finalizePreparedSoulPurchaseExecution({
+  try {
+    await storePreparedSoulPurchaseExecutionDigest({
       preparedPurchaseId,
       txDigest: result.digest,
-      resultStatusCode: statusCode,
-      resultBody: body,
     })
-    return NextResponse.json(body, { status: statusCode })
+  } catch (digestStoreError) {
+    console.error('[agent-purchase-execute] Failed to persist prepared purchase tx digest', {
+      preparedPurchaseId,
+      digest: result.digest,
+      error: toSafeErrorDetails(digestStoreError),
+    })
   }
 
   try {
-    const purchaseEvent = extractSoulPurchasedEvent(result, marketPackageId)
-    if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
-      return await finalizePreparedResult(422, { error: 'Transaction did not purchase the requested Soul' })
-    }
-    if (!sameSuiValue(purchaseEvent.sellerKioskId, claimedPreparedPurchase.sellerKioskId)) {
-      return await finalizePreparedResult(422, { error: 'Transaction seller kiosk does not match the prepared purchase' })
-    }
-    if (!sameSuiValue(purchaseEvent.buyerAddress, agentAddress)) {
-      return await finalizePreparedResult(422, { error: 'Purchased Soul owner does not match the agent wallet' })
-    }
-
-    const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
-    if (!soulState.ownerAddress || !sameSuiValue(soulState.ownerAddress, agentAddress)) {
-      return await finalizePreparedResult(422, { error: 'Purchased Soul was not transferred to the agent wallet' })
-    }
-
-    let dbSynced = true
-    try {
-      await dbSetSoulOwnership({
-        soulOnChainId: soul.onChainId,
-        currentOwnerAddress: soulState.ownerAddress,
-        listingStatus: 'held',
-        sellerKioskId: null,
-        listedPriceSui: null,
-        grantVersion: soulState.grantVersion,
-      })
-    } catch (syncError) {
-      dbSynced = false
-      console.error('[agent-purchase-execute] Local soul sync failed', toSafeErrorDetails(syncError))
-    }
-
-    return await finalizePreparedResult(dbSynced ? 200 : 207, {
-      digest: result.digest,
-      soulOnChainId: soul.onChainId,
-      currentOwnerAddress: soulState.ownerAddress,
-      onChainSuccess: true,
-      dbSynced,
-      ...(dbSynced ? {} : { error: 'Transaction succeeded on chain, but local Soul sync failed.' }),
-    })
+    return await finalizeSubmittedPurchase(result, claimedPreparedPurchase.sellerKioskId)
   } catch (verificationError) {
     if (verificationError instanceof OnChainVerificationError) {
-      return await finalizePreparedResult(verificationError.status, {
+      return await finalizePreparedResult(result.digest, verificationError.status, {
         error: getClientSafeOnChainVerificationErrorMessage(verificationError),
         digest: result.digest,
         onChainSuccess: true,
@@ -227,7 +267,7 @@ export async function POST(
     }
 
     console.error('[agent-purchase-execute] Post-submit verification failed', toSafeErrorDetails(verificationError))
-    return await finalizePreparedResult(500, {
+    return await finalizePreparedResult(result.digest, 500, {
       error: 'Transaction submitted, but post-submit verification failed',
       digest: result.digest,
       onChainSuccess: true,

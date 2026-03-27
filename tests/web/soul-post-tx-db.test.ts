@@ -48,6 +48,7 @@ describe('post-tx db soul asset mirror', () => {
       description: 'A recovered mirror',
       imageUrl: 'https://example.com/soul.png',
       metadataRef: 'walrus://metadata',
+      contentBlobId: 'blob-1',
       contentBlobObjectId: '0xblob',
       category: 'Research',
       tags: ['alpha'],
@@ -94,6 +95,7 @@ describe('post-tx db soul asset mirror', () => {
       description: 'A recovered mirror',
       imageUrl: 'https://example.com/soul.png',
       metadataRef: null,
+      contentBlobId: 'blob-1',
       contentBlobObjectId: '0xblob',
       category: 'Research',
       tags: ['alpha'],
@@ -103,6 +105,41 @@ describe('post-tx db soul asset mirror', () => {
       agentGrantAddress: null,
       agentAccessCapOnChainId: null,
     })).rejects.toThrow('existing Soul creator does not match the submitted on-chain creator')
+  })
+
+  it('allows a relisting holder to refresh a Soul without impersonating the creator member id', async () => {
+    const { dbUpsertSoulAsset } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await expect(dbUpsertSoulAsset({
+      soulOnChainId: '0xsoul',
+      creatorAddress: CREATOR_ADDRESS,
+      creatorMemberId: null,
+      currentOwnerAddress: OWNER_ADDRESS,
+      currentOwnerMemberId: 'member-holder',
+      sellerKioskId: '0xkiosk',
+      listedPriceSui: 2_000_000_000n,
+      listingStatus: 'listed',
+      name: 'Signal Soul',
+      description: 'A relisted mirror',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: null,
+      contentBlobId: 'blob-1',
+      contentBlobObjectId: '0xblob',
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: ['blob-1'],
+      readme: null,
+      grantVersion: 1n,
+      agentGrantAddress: null,
+      agentAccessCapOnChainId: null,
+    })).resolves.toBeDefined()
+
+    expect(mockedPrisma.soulAsset.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({
+        currentOwnerAddress: OWNER_ADDRESS,
+        currentOwnerMemberId: 'member-holder',
+      }),
+    }))
   })
 
   it('normalizes owner addresses before resolving wallet bindings and persisting soul mirrors', async () => {
@@ -125,6 +162,7 @@ describe('post-tx db soul asset mirror', () => {
       description: 'A recovered mirror',
       imageUrl: 'https://example.com/soul.png',
       metadataRef: null,
+      contentBlobId: 'blob-1',
       contentBlobObjectId: '0xblob',
       category: 'Research',
       tags: ['alpha'],

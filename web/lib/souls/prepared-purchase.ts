@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { TransactionDataBuilder } from '@mysten/sui/transactions'
 import { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 import { sameSuiValue } from '@web/lib/souls/on-chain-verification'
@@ -16,6 +17,10 @@ let lastPreparedPurchaseCleanupAt = 0
 
 export function hashPreparedSoulPurchaseTxBytes(txBytesBase64: string): string {
   return createHash('sha256').update(txBytesBase64).digest('hex')
+}
+
+export function getPreparedSoulPurchaseTxDigest(txBytesBase64: string): string {
+  return TransactionDataBuilder.getDigestFromBytes(Buffer.from(txBytesBase64, 'base64'))
 }
 
 function getPreparedPurchaseCleanupCutoff(now = Date.now()): Date {
@@ -146,6 +151,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
   txBytesHash: string
   expiresAt: Date
   executedAt: Date | null
+  executionTxDigest: string | null
   resultStatusCode: number | null
   resultBody: PreparedPurchaseResultBody | null
 } | null> {
@@ -162,6 +168,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
       txBytesHash: true,
       expiresAt: true,
       executedAt: true,
+      executionTxDigest: true,
       resultStatusCode: true,
       resultBody: true,
     },
@@ -174,7 +181,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
   if (
     prepared.agentMemberId !== params.agentMemberId
     || !sameSuiValue(prepared.soulOnChainId, params.soulOnChainId)
-    || (prepared.expiresAt.getTime() <= Date.now() && prepared.resultStatusCode == null)
+    || (prepared.expiresAt.getTime() <= Date.now() && prepared.resultStatusCode == null && prepared.executedAt == null)
   ) {
     return null
   }
@@ -189,6 +196,7 @@ export async function getPreparedSoulPurchaseForExecution(params: {
     txBytesHash: prepared.txBytesHash,
     expiresAt: prepared.expiresAt,
     executedAt: prepared.executedAt,
+    executionTxDigest: prepared.executionTxDigest,
     resultStatusCode: prepared.resultStatusCode,
     resultBody: prepared.resultBody as PreparedPurchaseResultBody | null,
   }
@@ -207,6 +215,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
   txBytesBase64: string
   txBytesHash: string
   executedAt: Date | null
+  executionTxDigest: string | null
   resultStatusCode: number | null
   resultBody: PreparedPurchaseResultBody | null
 } | null> {
@@ -258,6 +267,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
         txBytesBase64: true,
         txBytesHash: true,
         executedAt: true,
+        executionTxDigest: true,
         resultStatusCode: true,
         resultBody: true,
       },
@@ -276,6 +286,7 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
       txBytesBase64: prepared.txBytesBase64,
       txBytesHash: prepared.txBytesHash,
       executedAt: prepared.executedAt,
+      executionTxDigest: prepared.executionTxDigest,
       resultStatusCode: prepared.resultStatusCode,
       resultBody: prepared.resultBody as PreparedPurchaseResultBody | null,
     }
@@ -291,12 +302,32 @@ export async function releasePreparedSoulPurchaseExecution(params: {
     where: {
       id: params.preparedPurchaseId,
       resultStatusCode: null,
-      executionTxDigest: null,
     },
     data: {
       executedAt: null,
+      executionTxDigest: null,
     },
   })
+}
+
+export async function storePreparedSoulPurchaseExecutionDigest(params: {
+  preparedPurchaseId: string
+  txDigest: string
+  db?: PreparedPurchaseDbClient
+}): Promise<void> {
+  const db = params.db ?? prisma
+  const result = await db.soulPreparedPurchase.updateMany({
+    where: {
+      id: params.preparedPurchaseId,
+      resultStatusCode: null,
+    },
+    data: {
+      executionTxDigest: params.txDigest,
+    },
+  })
+  if (result.count === 0) {
+    throw new Error(`Prepared purchase ${params.preparedPurchaseId} not found`)
+  }
 }
 
 export async function finalizePreparedSoulPurchaseExecution(params: {

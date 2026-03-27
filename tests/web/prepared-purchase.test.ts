@@ -41,6 +41,7 @@ describe('prepared purchase helpers', () => {
       txBytesHash: 'deadbeef',
       expiresAt: new Date('2099-01-01T00:00:00.000Z'),
       executedAt: null,
+      executionTxDigest: null,
       resultStatusCode: null,
       resultBody: null,
     })
@@ -76,6 +77,12 @@ describe('prepared purchase helpers', () => {
     })
   })
 
+  it('derives a stable transaction digest from prepared tx bytes', async () => {
+    const { getPreparedSoulPurchaseTxDigest } = await import('../../web/lib/souls/prepared-purchase.ts')
+
+    expect(getPreparedSoulPurchaseTxDigest('c2VydmVyLXR4')).toBe('5LwM4Dkngd9ASa84nvdjbh8np9KExpc8SdJsPbQX1APb')
+  })
+
   it('returns null when an execution lookup is for a different soul object id', async () => {
     const { getPreparedSoulPurchaseForExecution } = await import('../../web/lib/souls/prepared-purchase.ts')
 
@@ -104,6 +111,7 @@ describe('prepared purchase helpers', () => {
         txBytesBase64: 'c2VydmVyLXR4',
         txBytesHash: 'deadbeef',
         executedAt: new Date('2099-01-01T00:00:01.000Z'),
+        executionTxDigest: null,
         resultStatusCode: null,
         resultBody: null,
       })
@@ -150,6 +158,35 @@ describe('prepared purchase helpers', () => {
     expect(mockedPrisma.soulPreparedPurchase.findUnique).toHaveBeenCalledTimes(1)
   })
 
+  it('still returns executed purchases after expiry so finalize recovery can continue', async () => {
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({
+      id: 'prepared-1',
+      agentMemberId: 'agent-1',
+      soulOnChainId: SOUL_OBJECT_ID,
+      sellerKioskId: SELLER_KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      priceSui: 1_000_000_000n,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      expiresAt: new Date('2000-01-01T00:00:00.000Z'),
+      executedAt: new Date('2099-01-01T00:00:01.000Z'),
+      executionTxDigest: '0xtx',
+      resultStatusCode: null,
+      resultBody: null,
+    })
+
+    const { getPreparedSoulPurchaseForExecution } = await import('../../web/lib/souls/prepared-purchase.ts')
+
+    await expect(getPreparedSoulPurchaseForExecution({
+      preparedPurchaseId: 'prepared-1',
+      agentMemberId: 'agent-1',
+      soulOnChainId: SOUL_OBJECT_ID,
+    })).resolves.toEqual(expect.objectContaining({
+      id: 'prepared-1',
+      executionTxDigest: '0xtx',
+    }))
+  })
+
   it('releases an execution claim so a failed broadcast can be retried', async () => {
     const { releasePreparedSoulPurchaseExecution } = await import('../../web/lib/souls/prepared-purchase.ts')
 
@@ -161,10 +198,10 @@ describe('prepared purchase helpers', () => {
       where: {
         id: 'prepared-1',
         resultStatusCode: null,
-        executionTxDigest: null,
       },
       data: {
         executedAt: null,
+        executionTxDigest: null,
       },
     })
   })
