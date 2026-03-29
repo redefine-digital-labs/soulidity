@@ -7,11 +7,13 @@ use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
 use soul_object::allowlist::{Self as allowlist, AllowlistRegistry};
 use soul_object::market;
+use soul_object::market_bootstrap;
 use soul_object::soul::{Self as soul};
-use sui::coin::TreasuryCap;
+use sui::coin::{Self as coin, Coin, TreasuryCap};
 use sui::kiosk::{Self as kiosk, Kiosk};
 use sui::test_scenario::{Self as ts};
 use sui::transfer_policy;
+use unft_standard::unft_standard::{Self as unft, NftRegistry};
 use usdc::usdc::{Self as test_usdc, USDC};
 use walrus::{blob, encoding, system, test_utils};
 
@@ -57,9 +59,31 @@ fun register_test_blob(ctx: &mut TxContext): (system::System, blob::Blob) {
 fun init_market_for_testing(scenario: &mut ts::Scenario, admin: address) {
     ts::next_tx(scenario, admin);
     {
+        soul::init_for_testing(admin, ts::ctx(scenario));
         market::init_for_testing(admin, ts::ctx(scenario));
         allowlist::init_for_testing(ts::ctx(scenario));
         test_usdc::init_for_testing(admin, ts::ctx(scenario));
+        unft::test_init(ts::ctx(scenario));
+    };
+
+    ts::next_tx(scenario, admin);
+    {
+        let mut registry: NftRegistry = ts::take_shared(scenario);
+        let authority: soul::SoulPackageAuthority = ts::take_from_sender(scenario);
+        let (mint_cap, burn_cap_opt, metadata_cap) = market_bootstrap::create_collection(
+            &authority,
+            &mut registry,
+            string::utf8(b"Soul Collection"),
+            string::utf8(b"Single-object Soul assets traded through the native fixed-price market"),
+            string::utf8(b"https://claw.news/souls/collection.png"),
+            ts::ctx(scenario),
+        );
+
+        burn_cap_opt.destroy_none();
+        ts::return_shared(registry);
+        soul::destroy_package_authority_for_testing(authority);
+        transfer::public_transfer(mint_cap, admin);
+        transfer::public_transfer(metadata_cap, admin);
     };
 }
 
@@ -124,6 +148,231 @@ fun admin_can_update_platform_fee_and_quote_purchase() {
     };
 
     ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::market::EPlatformFeeTooHigh)]
+fun quote_purchase_rejects_creator_royalty_above_max_bps() {
+    let admin = @0xA11CE;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+
+        market::quote_purchase(&config, 1_000, 10_001);
+
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_transfer(admin_cap, admin);
+        transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
+        abort 0
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::market::ECombinedFeesTooHigh)]
+fun quote_purchase_rejects_combined_fees_above_max_bps() {
+    let admin = @0xA11CE;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mut config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+
+        market::update_platform_fee_bps(&mut config, &admin_cap, 5_000);
+        market::quote_purchase(&config, 1_000, 6_000);
+
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_transfer(admin_cap, admin);
+        transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
+        abort 0
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::market::ECombinedFeesTooHigh)]
+fun mint_and_list_fixed_price_rejects_combined_fees_above_max_bps() {
+    let admin = @0xA11CE;
+    let seller = admin;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mut config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+
+        market::update_platform_fee_bps(&mut config, &admin_cap, 5_000);
+
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_transfer(admin_cap, admin);
+        transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
+    };
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+        let mint_cap = ts::take_from_address<unft::NftMintCap<soul::Soul>>(&scenario, seller);
+
+        market::mint_and_list_fixed_price(
+            &mint_cap,
+            &config,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            content_blob,
+            SALE_PRICE,
+            6_000,
+            ts::ctx(&mut scenario),
+        );
+
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(config);
+        transfer::public_transfer(mint_cap, seller);
+        abort 0
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::market::EMarketPaused)]
+fun mint_and_list_fixed_price_rejects_when_market_paused() {
+    let admin = @0xA11CE;
+    let seller = admin;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mut config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+
+        market::update_paused(&mut config, &admin_cap, true);
+
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_transfer(admin_cap, admin);
+        transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
+    };
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+        let mint_cap = ts::take_from_address<unft::NftMintCap<soul::Soul>>(&scenario, seller);
+
+        market::mint_and_list_fixed_price(
+            &mint_cap,
+            &config,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            content_blob,
+            SALE_PRICE,
+            CREATOR_ROYALTY_BPS,
+            ts::ctx(&mut scenario),
+        );
+
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(config);
+        transfer::public_transfer(mint_cap, seller);
+        abort 0
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::market::EMarketPaused)]
+fun list_fixed_price_rejects_when_market_paused() {
+    let admin = @0xA11CE;
+    let seller = @0xB0B;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mut config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+
+        market::update_paused(&mut config, &admin_cap, true);
+
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_transfer(admin_cap, admin);
+        transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
+    };
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let (mut seller_kiosk, seller_kiosk_cap) = kiosk::new(ts::ctx(&mut scenario));
+        let seller_personal_cap = personal_kiosk::new(&mut seller_kiosk, seller_kiosk_cap, ts::ctx(&mut scenario));
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+        let soul_obj = soul::mint_for_testing(
+            seller,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            content_blob,
+            ts::ctx(&mut scenario),
+        );
+        let soul_id = object::id(&soul_obj);
+
+        kiosk::place(&mut seller_kiosk, personal_kiosk::borrow(&seller_personal_cap), soul_obj);
+        market::list_fixed_price(
+            &config,
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            SALE_PRICE,
+            ts::ctx(&mut scenario),
+        );
+
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_share_object(seller_kiosk);
+        personal_kiosk::transfer_to_sender(seller_personal_cap, ts::ctx(&mut scenario));
+        abort 0
+    }
 }
 
 #[test]
@@ -240,6 +489,7 @@ fun cancel_listing_keeps_soul_in_seller_personal_kiosk() {
 
         kiosk::place(&mut seller_kiosk, personal_kiosk::borrow(&seller_personal_cap), soul_obj);
         let mut listing = market::list_fixed_price_for_testing(
+            &config,
             &mut registry,
             &mut seller_kiosk,
             &seller_personal_cap,
@@ -266,6 +516,119 @@ fun cancel_listing_keeps_soul_in_seller_personal_kiosk() {
 }
 
 #[test]
+#[expected_failure(abort_code = soul_object::market::EMarketPaused)]
+fun buy_fixed_price_rejects_when_market_paused() {
+    let admin = @0xA11CE;
+    let seller = @0xB0B;
+    let buyer = @0xCAFE;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let (mut seller_kiosk, seller_kiosk_cap) = kiosk::new(ts::ctx(&mut scenario));
+        let seller_personal_cap = personal_kiosk::new(&mut seller_kiosk, seller_kiosk_cap, ts::ctx(&mut scenario));
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+        let soul_obj = soul::mint_for_testing(
+            seller,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            content_blob,
+            ts::ctx(&mut scenario),
+        );
+        let soul_id = object::id(&soul_obj);
+
+        kiosk::place(&mut seller_kiosk, personal_kiosk::borrow(&seller_personal_cap), soul_obj);
+        market::list_fixed_price(
+            &config,
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            SALE_PRICE,
+            ts::ctx(&mut scenario),
+        );
+
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_share_object(seller_kiosk);
+        personal_kiosk::transfer_to_sender(seller_personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mut config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+
+        market::update_paused(&mut config, &admin_cap, true);
+
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_transfer(admin_cap, admin);
+        transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        market::init_personal_kiosk(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let mut listing: market::FixedPriceListing = ts::take_shared(&scenario);
+        let mut first_kiosk: Kiosk = ts::take_shared(&scenario);
+        let mut second_kiosk: Kiosk = ts::take_shared(&scenario);
+        let buyer_personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, admin);
+        let (_, _, _, total) = market::quote_fixed_price(&config, &listing);
+        let payment = test_usdc::mint_for_testing(&mut treasury_cap, total, ts::ctx(&mut scenario));
+        let (seller_kiosk, buyer_kiosk) =
+            if (kiosk::has_item(&first_kiosk, market::listing_soul_id(&listing))) {
+                (&mut first_kiosk, &mut second_kiosk)
+            } else {
+                (&mut second_kiosk, &mut first_kiosk)
+            };
+
+        market::buy_fixed_price(
+            &config,
+            &policy,
+            &mut registry,
+            seller_kiosk,
+            buyer_kiosk,
+            &buyer_personal_cap,
+            &mut listing,
+            payment,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(registry);
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        ts::return_shared(listing);
+        ts::return_shared(first_kiosk);
+        ts::return_shared(second_kiosk);
+        personal_kiosk::transfer_to_sender(buyer_personal_cap, ts::ctx(&mut scenario));
+        transfer::public_transfer(treasury_cap, admin);
+        abort 0
+    }
+}
+
+#[test]
 fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() {
     let seller = @0xA11CE;
     let buyer = @0xB0B;
@@ -273,6 +636,7 @@ fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() 
     let mut scenario = ts::begin(@0x0);
     let soul_id: ID;
     let seller_kiosk_id: ID;
+    let buyer_kiosk_id: ID;
 
     init_market_for_testing(&mut scenario, seller);
 
@@ -350,22 +714,37 @@ fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() 
 
     ts::next_tx(&mut scenario, buyer);
     {
+        buyer_kiosk_id = market::init_personal_kiosk(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
         let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
         let config: market::MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let mut listing: market::FixedPriceListing = ts::take_shared(&scenario);
-        let mut seller_kiosk: Kiosk = ts::take_shared(&scenario);
+        let mut first_kiosk: Kiosk = ts::take_shared(&scenario);
+        let mut second_kiosk: Kiosk = ts::take_shared(&scenario);
+        let buyer_personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let admin_cap: market::MarketAdminCap = ts::take_from_address(&scenario, seller);
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_address(&scenario, seller);
         let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, seller);
         let (_, _, _, total) = market::quote_fixed_price(&config, &listing);
         let payment = test_usdc::mint_for_testing(&mut treasury_cap, total, ts::ctx(&mut scenario));
+        let (seller_kiosk, buyer_kiosk) =
+            if (object::id(&first_kiosk) == seller_kiosk_id) {
+                (&mut first_kiosk, &mut second_kiosk)
+            } else {
+                (&mut second_kiosk, &mut first_kiosk)
+            };
 
         market::buy_fixed_price(
             &config,
             &policy,
             &mut registry,
-            &mut seller_kiosk,
+            seller_kiosk,
+            buyer_kiosk,
+            &buyer_personal_cap,
             &mut listing,
             payment,
             ts::ctx(&mut scenario),
@@ -375,7 +754,9 @@ fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() 
         ts::return_shared(config);
         ts::return_shared(policy);
         ts::return_shared(listing);
-        ts::return_shared(seller_kiosk);
+        ts::return_shared(first_kiosk);
+        ts::return_shared(second_kiosk);
+        personal_kiosk::transfer_to_sender(buyer_personal_cap, ts::ctx(&mut scenario));
         transfer::public_transfer(admin_cap, seller);
         transfer::public_transfer(policy_cap, seller);
         transfer::public_transfer(treasury_cap, seller);
@@ -395,7 +776,9 @@ fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() 
         let treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, seller);
 
         let (seller_kiosk, buyer_kiosk) =
-            if (object::id(&first_kiosk) == seller_kiosk_id) {
+            if (object::id(&first_kiosk) == buyer_kiosk_id) {
+                (&second_kiosk, &first_kiosk)
+            } else if (object::id(&first_kiosk) == seller_kiosk_id) {
                 (&first_kiosk, &second_kiosk)
             } else {
                 (&second_kiosk, &first_kiosk)
@@ -411,9 +794,10 @@ fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() 
         assert!(kiosk::has_item(buyer_kiosk, soul_id), 2);
         assert!(kiosk::is_locked(buyer_kiosk, soul_id), 3);
         assert!(personal_kiosk::owner(buyer_kiosk) == buyer, 4);
-        assert!(soul::allowlist_address(purchased_soul).is_none(), 5);
-        assert!(soul::allowlist_version(purchased_soul) == 2, 6);
-        assert!(allowlist::registry_version(&registry, soul_id) == 2, 7);
+        assert!(object::id(buyer_kiosk) == buyer_kiosk_id, 5);
+        assert!(soul::allowlist_address(purchased_soul).is_none(), 6);
+        assert!(soul::allowlist_version(purchased_soul) == 2, 7);
+        assert!(allowlist::registry_version(&registry, soul_id) == 2, 8);
 
         ts::return_shared(registry);
         ts::return_shared(config);
@@ -425,6 +809,114 @@ fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() 
         transfer::public_transfer(admin_cap, seller);
         transfer::public_transfer(policy_cap, seller);
         transfer::public_transfer(treasury_cap, seller);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun buy_fixed_price_keeps_primary_sale_proceeds_in_one_seller_coin() {
+    let admin = @0xCAFE;
+    let seller = @0xA11CE;
+    let buyer = @0xB0B;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let (mut seller_kiosk, seller_kiosk_cap) = kiosk::new(ts::ctx(&mut scenario));
+        let seller_personal_cap = personal_kiosk::new(&mut seller_kiosk, seller_kiosk_cap, ts::ctx(&mut scenario));
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+        let soul_obj = soul::mint_for_testing_with_creator_royalty(
+            seller,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            content_blob,
+            CREATOR_ROYALTY_BPS,
+            ts::ctx(&mut scenario),
+        );
+        let soul_id = object::id(&soul_obj);
+
+        kiosk::place(&mut seller_kiosk, personal_kiosk::borrow(&seller_personal_cap), soul_obj);
+        market::list_fixed_price(
+            &config,
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            SALE_PRICE,
+            ts::ctx(&mut scenario),
+        );
+
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_share_object(seller_kiosk);
+        personal_kiosk::transfer_to_sender(seller_personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        market::init_personal_kiosk(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let mut listing: market::FixedPriceListing = ts::take_shared(&scenario);
+        let mut first_kiosk: Kiosk = ts::take_shared(&scenario);
+        let mut second_kiosk: Kiosk = ts::take_shared(&scenario);
+        let buyer_personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, admin);
+        let (_, _, creator_royalty, total) = market::quote_fixed_price(&config, &listing);
+        let payment = test_usdc::mint_for_testing(&mut treasury_cap, total, ts::ctx(&mut scenario));
+        let (seller_kiosk, buyer_kiosk) =
+            if (kiosk::has_item(&first_kiosk, market::listing_soul_id(&listing))) {
+                (&mut first_kiosk, &mut second_kiosk)
+            } else {
+                (&mut second_kiosk, &mut first_kiosk)
+            };
+
+        market::buy_fixed_price(
+            &config,
+            &policy,
+            &mut registry,
+            seller_kiosk,
+            buyer_kiosk,
+            &buyer_personal_cap,
+            &mut listing,
+            payment,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(creator_royalty > 0, 0);
+
+        ts::return_shared(registry);
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        ts::return_shared(listing);
+        ts::return_shared(first_kiosk);
+        ts::return_shared(second_kiosk);
+        personal_kiosk::transfer_to_sender(buyer_personal_cap, ts::ctx(&mut scenario));
+        transfer::public_transfer(treasury_cap, admin);
+    };
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let seller_payment: Coin<USDC> = ts::take_from_sender(&scenario);
+        let expected_seller_payment = SALE_PRICE + (((CREATOR_ROYALTY_BPS as u64) * SALE_PRICE) / 10_000);
+        assert!(coin::value(&seller_payment) == expected_seller_payment, 0);
+        assert!(!ts::has_most_recent_for_sender<Coin<USDC>>(&scenario), 1);
+        transfer::public_transfer(seller_payment, seller);
     };
 
     ts::end(scenario);

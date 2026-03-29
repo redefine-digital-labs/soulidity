@@ -11,7 +11,7 @@ use sui::coin::TreasuryCap;
 use sui::kiosk::{Self as kiosk, Kiosk};
 use sui::test_scenario::{Self as ts};
 use sui::transfer_policy;
-use unft_standard::unft_standard::{Self as unft, NftCollection, NftRegistry};
+use unft_standard::unft_standard::{Self as unft, NftRegistry};
 use usdc::usdc::{Self as test_usdc, USDC};
 use walrus::{blob, encoding, system, test_utils};
 
@@ -109,15 +109,21 @@ fun mint_and_list_fixed_price_places_new_soul_into_seller_personal_kiosk() {
 
     init_adapter_market_for_testing(&mut scenario, admin);
 
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mint_cap = ts::take_from_sender<unft::NftMintCap<soul::Soul>>(&scenario);
+        transfer::public_transfer(mint_cap, seller);
+    };
+
     ts::next_tx(&mut scenario, seller);
     {
-        let collection: NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let config: MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let mint_cap = ts::take_from_sender<unft::NftMintCap<soul::Soul>>(&scenario);
         let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
 
         soul_id = market::mint_and_list_fixed_price(
-            &collection,
+            &mint_cap,
             &config,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
@@ -130,14 +136,13 @@ fun mint_and_list_fixed_price_places_new_soul_into_seller_personal_kiosk() {
         );
 
         std::unit_test::destroy(walrus_system);
-        ts::return_shared(collection);
         ts::return_shared(config);
         ts::return_shared(policy);
+        transfer::public_transfer(mint_cap, seller);
     };
 
     ts::next_tx(&mut scenario, seller);
     {
-        let collection: NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let config: MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let listing: FixedPriceListing = ts::take_shared(&scenario);
@@ -150,7 +155,6 @@ fun mint_and_list_fixed_price_places_new_soul_into_seller_personal_kiosk() {
         assert!(kiosk::has_item(&seller_kiosk, soul_id), 4);
         assert!(kiosk::is_listed_exclusively(&seller_kiosk, soul_id), 5);
 
-        ts::return_shared(collection);
         ts::return_shared(config);
         ts::return_shared(policy);
         ts::return_shared(listing);
@@ -190,15 +194,21 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
         transfer::public_transfer(metadata_cap, admin);
     };
 
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mint_cap = ts::take_from_sender<unft::NftMintCap<soul::Soul>>(&scenario);
+        transfer::public_transfer(mint_cap, seller);
+    };
+
     ts::next_tx(&mut scenario, seller);
     {
-        let collection: NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let config: MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let mint_cap = ts::take_from_sender<unft::NftMintCap<soul::Soul>>(&scenario);
         let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
 
         market::mint_and_list_fixed_price(
-            &collection,
+            &mint_cap,
             &config,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
@@ -211,9 +221,14 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
         );
 
         std::unit_test::destroy(walrus_system);
-        ts::return_shared(collection);
         ts::return_shared(config);
         ts::return_shared(policy);
+        transfer::public_transfer(mint_cap, seller);
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        market::init_personal_kiosk(ts::ctx(&mut scenario));
     };
 
     ts::next_tx(&mut scenario, buyer);
@@ -222,14 +237,21 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
         let config: MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let mut listing: FixedPriceListing = ts::take_shared(&scenario);
-        let mut seller_kiosk: Kiosk = ts::take_shared(&scenario);
+        let mut first_kiosk: Kiosk = ts::take_shared(&scenario);
+        let mut second_kiosk: Kiosk = ts::take_shared(&scenario);
+        let buyer_personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let admin_cap: MarketAdminCap = ts::take_from_address(&scenario, admin);
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_address(&scenario, admin);
         let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, admin);
-        let mint_cap = ts::take_from_address<unft::NftMintCap<soul::Soul>>(&scenario, admin);
         let metadata_cap = ts::take_from_address<unft::NftCollectionMetadataCap<soul::Soul>>(&scenario, admin);
         let (_, price, creator_royalty, total) = market::quote_fixed_price(&config, &listing);
         let payment = test_usdc::mint_for_testing(&mut treasury_cap, total, ts::ctx(&mut scenario));
+        let (seller_kiosk, buyer_kiosk) =
+            if (kiosk::has_item(&first_kiosk, core_market::listing_soul_id(&listing))) {
+                (&mut first_kiosk, &mut second_kiosk)
+            } else {
+                (&mut second_kiosk, &mut first_kiosk)
+            };
 
         assert!(price == SALE_PRICE, 0);
         assert!(creator_royalty > 0, 1);
@@ -237,7 +259,9 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
             &config,
             &policy,
             &mut registry,
-            &mut seller_kiosk,
+            seller_kiosk,
+            buyer_kiosk,
+            &buyer_personal_cap,
             &mut listing,
             payment,
             ts::ctx(&mut scenario),
@@ -247,11 +271,12 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
         ts::return_shared(config);
         ts::return_shared(policy);
         ts::return_shared(listing);
-        ts::return_shared(seller_kiosk);
+        ts::return_shared(first_kiosk);
+        ts::return_shared(second_kiosk);
+        personal_kiosk::transfer_to_sender(buyer_personal_cap, ts::ctx(&mut scenario));
         transfer::public_transfer(admin_cap, admin);
         transfer::public_transfer(policy_cap, admin);
         transfer::public_transfer(treasury_cap, admin);
-        transfer::public_transfer(mint_cap, admin);
         transfer::public_transfer(metadata_cap, admin);
     };
 
@@ -267,7 +292,6 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
         let admin_cap: MarketAdminCap = ts::take_from_address(&scenario, admin);
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_address(&scenario, admin);
         let treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, admin);
-        let mint_cap = ts::take_from_address<unft::NftMintCap<soul::Soul>>(&scenario, admin);
         let metadata_cap = ts::take_from_address<unft::NftCollectionMetadataCap<soul::Soul>>(&scenario, admin);
         let buyer_kiosk_id = personal_kiosk::borrow(&buyer_personal_cap).kiosk();
         let (buyer_kiosk, seller_kiosk) =
@@ -301,7 +325,6 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
         transfer::public_transfer(admin_cap, admin);
         transfer::public_transfer(policy_cap, admin);
         transfer::public_transfer(treasury_cap, admin);
-        transfer::public_transfer(mint_cap, admin);
         transfer::public_transfer(metadata_cap, admin);
     };
 

@@ -23,6 +23,7 @@ const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
 const mockedCreatePreparedSoulPurchase = vi.hoisted(() => vi.fn())
+const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
 const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
   getBalance: vi.fn(),
@@ -62,6 +63,10 @@ vi.mock('@web/lib/souls/prepared-purchase', () => ({
   createPreparedSoulPurchase: mockedCreatePreparedSoulPurchase,
 }))
 
+vi.mock('@web/lib/souls/personal-kiosk', () => ({
+  resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
+}))
+
 vi.mock('@web/lib/souls/tx-builder', () => ({
   buildBuySoulTx: mockedBuildBuySoulTx,
 }))
@@ -98,6 +103,14 @@ describe('agent soul purchase prepare route', () => {
       priceAtomic: 1_000_000n,
       creatorRoyaltyAtomic: 25_000n,
       totalAtomic: 1_075_000n,
+    })
+    mockedResolveOwnedPersonalKiosk.mockResolvedValue({
+      status: 'ready',
+      kiosk: {
+        ownerAddress: AGENT_ADDRESS,
+        currentKioskId: `0x${'8'.repeat(64)}`,
+        currentKioskCapOnChainId: `0x${'4'.repeat(64)}`,
+      },
     })
     mockedSuiClient.getCoins.mockResolvedValue({
       data: [{ coinObjectId: '0xcoin-a', balance: '2000000' }],
@@ -202,6 +215,41 @@ describe('agent soul purchase prepare route', () => {
 
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toEqual({ error: 'Multiple Sui wallets' })
+  })
+
+  it('returns 409 when the agent wallet has no Soul personal kiosk yet', async () => {
+    mockedResolveOwnedPersonalKiosk.mockResolvedValueOnce({ status: 'missing' })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Agent wallet must initialize a Soul personal kiosk before purchasing',
+    })
+    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 when the agent wallet has multiple Soul personal kiosks', async () => {
+    mockedResolveOwnedPersonalKiosk.mockResolvedValueOnce({
+      status: 'multiple',
+      kiosks: [],
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Agent wallet has multiple Soul personal kiosks; consolidate before purchasing',
+    })
+    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
   })
 
   it('returns 402 when the agent does not hold enough payment coin balance', async () => {
@@ -317,6 +365,8 @@ describe('agent soul purchase prepare route', () => {
     expect(mockedBuildBuySoulTx).toHaveBeenCalledWith({
       listingObjectId: LISTING_ID,
       sellerKioskId: KIOSK_ID,
+      buyerKioskId: `0x${'8'.repeat(64)}`,
+      buyerKioskCapOnChainId: `0x${'4'.repeat(64)}`,
       totalAtomic: 1_075_000n,
       paymentCoinObjectIds: ['0xcoin-a'],
     })

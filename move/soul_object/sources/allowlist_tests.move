@@ -145,6 +145,87 @@ fun current_holder_can_replace_existing_allowlist_address() {
 }
 
 #[test]
+fun stale_allowlist_cap_can_be_destroyed_after_replacement() {
+    let creator = @0xBEEF;
+    let first_allowlisted = @0xCAFE;
+    let second_allowlisted = @0xD00D;
+    let mut scenario = ts::begin(creator);
+
+    {
+        let ctx = ts::ctx(&mut scenario);
+        allowlist::init_for_testing(ctx);
+        let (walrus_system, blob) = register_test_blob(ctx);
+        let soul_obj = soul::mint_for_testing(
+            creator,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            blob,
+            ctx,
+        );
+        transfer::public_transfer(soul_obj, creator);
+        std::unit_test::destroy(walrus_system);
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        let first_access_cap =
+            allowlist::set_allowlist_address(&mut registry, &mut soul_obj, first_allowlisted, ts::ctx(&mut scenario));
+        let second_access_cap =
+            allowlist::set_allowlist_address(&mut registry, &mut soul_obj, second_allowlisted, ts::ctx(&mut scenario));
+
+        assert!(allowlist::registry_version(&registry, object::id(&soul_obj)) == 2, 0);
+        allowlist::destroy_stale_allowlist_cap(&registry, first_access_cap);
+
+        let blob = soul::destroy_for_testing(soul_obj);
+        blob.burn();
+        allowlist::destroy_for_testing(second_access_cap);
+        ts::return_shared(registry);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::allowlist::EAllowlistCapStillActive)]
+fun active_allowlist_cap_cannot_be_destroyed_as_stale() {
+    let creator = @0xBEEF;
+    let allowlisted = @0xCAFE;
+    let mut scenario = ts::begin(creator);
+
+    {
+        let ctx = ts::ctx(&mut scenario);
+        allowlist::init_for_testing(ctx);
+        let (walrus_system, blob) = register_test_blob(ctx);
+        let soul_obj = soul::mint_for_testing(
+            creator,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            blob,
+            ctx,
+        );
+        transfer::public_transfer(soul_obj, creator);
+        std::unit_test::destroy(walrus_system);
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        let access_cap =
+            allowlist::set_allowlist_address(&mut registry, &mut soul_obj, allowlisted, ts::ctx(&mut scenario));
+
+        allowlist::destroy_stale_allowlist_cap(&registry, access_cap);
+        abort 9
+    }
+}
+
+#[test]
 #[expected_failure(abort_code = soul_object::allowlist::EInvalidAllowlistAddress)]
 fun zero_address_cannot_be_allowlisted() {
     let owner = @0xBEEF;

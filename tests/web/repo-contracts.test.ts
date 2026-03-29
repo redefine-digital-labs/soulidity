@@ -16,7 +16,7 @@ describe('repository contract guards', () => {
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID=')
-    expect(envExample).toContain('NEXT_PUBLIC_SOUL_COLLECTION_ID=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_MINT_CAP_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE=')
@@ -29,9 +29,11 @@ describe('repository contract guards', () => {
   it('keeps the human Soul access and allowlist routes explicitly dynamic', () => {
     const accessRoute = readFileSync(join(repoRoot, 'web', 'app', 'api', 'souls', '[id]', 'access', 'route.ts'), 'utf8')
     const allowlistRoute = readFileSync(join(repoRoot, 'web', 'app', 'api', 'souls', '[id]', 'allowlist', 'route.ts'), 'utf8')
+    const personalKioskRoute = readFileSync(join(repoRoot, 'web', 'app', 'api', 'souls', 'personal-kiosk', 'route.ts'), 'utf8')
 
     expect(accessRoute).toContain("export const dynamic = 'force-dynamic'")
     expect(allowlistRoute).toContain("export const dynamic = 'force-dynamic'")
+    expect(personalKioskRoute).toContain("export const dynamic = 'force-dynamic'")
   })
 
   it('keeps the new Soul runtime schema on single-object models only', () => {
@@ -99,11 +101,15 @@ describe('repository contract guards', () => {
     expect(soulSource).toContain('public struct Soul has key, store')
     expect(soulSource).toContain('creator_royalty_bps')
     expect(allowlistSource).toContain('public struct SoulAllowlistCap has key, store')
+    expect(allowlistSource).toContain('public fun destroy_stale_allowlist_cap(')
     expect(marketSource).toContain('const EInvalidPrice')
+    expect(marketSource).toContain('const EMarketPaused')
     expect(marketSource).toContain('witness_rule')
     expect(marketSource).not.toContain('update_royalty_bps')
     expect(soulSource).toContain('public(package) fun publisher(self: &SoulPackageAuthority): &Publisher')
     expect(soulSource).not.toContain('public fun publisher(self: &SoulPackageAuthority): &Publisher')
+    expect(soulSource).toContain('public(package) fun mint(')
+    expect(soulSource).not.toContain('public fun mint(')
     expect(soulSource).toContain('public(package) fun clear_allowlist_address_if_present(self: &mut Soul): bool')
     expect(soulSource).not.toContain('public fun clear_allowlist_address_if_present(self: &mut Soul): bool')
     expect(allowlistSource).toContain('public(package) fun clear_allowlist_address_if_present(registry: &mut AllowlistRegistry, soul: &mut Soul): bool')
@@ -111,9 +117,13 @@ describe('repository contract guards', () => {
     expect(sealPolicySource).toContain('seal_approve_owner_in_personal_kiosk')
     expect(sealPolicySource).toContain('seal_approve_allowlisted')
     expect(marketSource).toContain('public struct FixedPriceListing has key, store')
+    expect(marketSource).toContain('public fun init_personal_kiosk(ctx: &mut TxContext): ID')
     expect(adapterSource).toContain('public fun mint_and_list_fixed_price(')
+    expect(adapterSource).toContain('mint_cap: &NftMintCap<Soul>,')
+    expect(adapterSource).toContain('public fun init_personal_kiosk(ctx: &mut TxContext): ID')
     expect(adapterSource).toContain('public fun list_fixed_price(')
     expect(adapterSource).toContain('public fun buy_fixed_price(')
+    expect(adapterSource).not.toContain('_collection: &NftCollection<Soul>')
     expect(marketSource).toContain('kiosk::list_with_purchase_cap')
     expect(adapterSource).toContain('authority: SoulPackageAuthority,')
     expect(adapterSource).toContain('soul::burn_authority(authority);')
@@ -149,6 +159,18 @@ describe('repository contract guards', () => {
     expect(migration).toContain(
       'CREATE INDEX "soul_assets_listing_status_created_at_idx" ON "soul_assets"("listing_status", "created_at" DESC);',
     )
+  })
+
+  it('adds a DB-level CHECK constraint for Soul listing status values', () => {
+    const schema = readFileSync(join(repoRoot, 'prisma', 'schema.prisma'), 'utf8')
+    const migration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260329183000_add_soul_listing_status_check', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(schema).toContain('listingStatus         String   @default("held") @map("listing_status")')
+    expect(migration).toContain('ADD CONSTRAINT "soul_assets_listing_status_check"')
+    expect(migration).toContain(`CHECK ("listing_status" IN ('held', 'listed'))`)
   })
 
   it('hard-cuts Soul tx sync migrations to the current four-key contract', () => {

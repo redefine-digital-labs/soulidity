@@ -113,27 +113,6 @@ fun mint_exposes_optional_metadata_ref() {
 }
 
 #[test]
-fun public_mint_uses_current_context_sender_as_creator() {
-    let mut ctx = sui::tx_context::new_from_hint(@0xCAFE, 1, 0, 0, 0);
-    let (walrus_system, blob) = register_test_blob(&mut ctx);
-    let tx_sender = ctx.sender();
-    let soul_obj = soul::mint(
-        string::utf8(b"Genesis Soul"),
-        string::utf8(b"Single-owner artifact"),
-        string::utf8(b"https://example.com/soul.png"),
-        option::none(),
-        blob,
-        &mut ctx,
-    );
-
-    assert!(soul::creator(&soul_obj) == tx_sender, 0);
-
-    let blob = soul::destroy_for_testing(soul_obj);
-    blob.burn();
-    std::unit_test::destroy(walrus_system);
-}
-
-#[test]
 fun init_for_testing_creates_display_and_authority_without_leaking_raw_publisher() {
     let publisher_owner = @0xCAFE;
     let mut scenario = ts::begin(@0x0);

@@ -4,7 +4,7 @@ const ORIGINAL_ENV = { ...process.env }
 const SOUL_OBJECT_PACKAGE_ID = '0xsoulobject'
 const MARKET_ADAPTER_PACKAGE_ID = '0xsouladapter'
 const MARKET_CONFIG_ID = '0xmarketconfig'
-const SOUL_COLLECTION_ID = '0xcollection'
+const SOUL_MINT_CAP_ID = '0xmintcap'
 const TRANSFER_POLICY_ID = '0xpolicy'
 const ALLOWLIST_REGISTRY_ID = '0xallowlistregistry'
 const PAYMENT_COIN_TYPE = '0xpayment::usdc::USDC'
@@ -17,7 +17,7 @@ describe('tx builders', () => {
       NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID: SOUL_OBJECT_PACKAGE_ID,
       NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID: MARKET_ADAPTER_PACKAGE_ID,
       NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID: MARKET_CONFIG_ID,
-      NEXT_PUBLIC_SOUL_COLLECTION_ID: SOUL_COLLECTION_ID,
+      NEXT_PUBLIC_SOUL_MINT_CAP_ID: SOUL_MINT_CAP_ID,
       NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID: TRANSFER_POLICY_ID,
       NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID: ALLOWLIST_REGISTRY_ID,
       NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE: PAYMENT_COIN_TYPE,
@@ -139,6 +139,8 @@ describe('tx builders', () => {
     buildBuySoulTx({
       listingObjectId: '0xlisting',
       sellerKioskId: '0xkiosk',
+      buyerKioskId: '0xbuyer-kiosk',
+      buyerKioskCapOnChainId: '0xbuyer-kiosk-cap',
       totalAtomic: 1_100_000n,
       paymentCoinObjectIds: ['0xcoin-a', '0xcoin-b'],
     })
@@ -150,7 +152,7 @@ describe('tx builders', () => {
     expect(moveCall).toMatchObject({
       target: `${MARKET_ADAPTER_PACKAGE_ID}::market::buy_fixed_price`,
     })
-    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(6)
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(8)
     expect(splitCoinsSpy).toHaveBeenCalledTimes(1)
     expect(mergeCoinsSpy).toHaveBeenCalledTimes(1)
     expect(mergeCoinsSpy).toHaveBeenCalledWith(expect.anything(), [expect.anything()])
@@ -167,9 +169,26 @@ describe('tx builders', () => {
     expect(() => buildBuySoulTx({
       listingObjectId: '0xlisting',
       sellerKioskId: '0xkiosk',
+      buyerKioskId: '0xbuyer-kiosk',
+      buyerKioskCapOnChainId: '0xbuyer-kiosk-cap',
       totalAtomic: 1_100_000n,
       paymentCoinObjectIds: [],
     })).toThrow('paymentCoinObjectIds must contain at least one coin object id')
+  })
+
+  it('builds the Soul personal kiosk initialization move call', async () => {
+    const { Transaction } = await import('@mysten/sui/transactions')
+    const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
+    moveCallSpy.mockImplementation(() => ({ $kind: 'Result', Result: 0 } as any))
+    const { buildInitSoulPersonalKioskTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+    buildInitSoulPersonalKioskTx()
+
+    expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
+      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::init_personal_kiosk`,
+      arguments: [],
+    }))
+    moveCallSpy.mockRestore()
   })
 
   it('builds the soul allowlist move call against the kiosk-held Soul and transfers the returned cap to the allowlisted address', async () => {
