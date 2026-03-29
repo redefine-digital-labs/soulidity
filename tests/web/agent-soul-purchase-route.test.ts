@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const SOUL_OBJECT_PACKAGE_ID = `0x${'9'.repeat(64)}`
-const MARKET_ADAPTER_PACKAGE_ID = `0x${'8'.repeat(64)}`
-const CPU_MARKETPLACE_ID = `0x${'7'.repeat(64)}`
-const UNFT_COLLECTION_ID = `0x${'6'.repeat(64)}`
+const LISTING_ID = `0x${'7'.repeat(64)}`
+const ALLOWLIST_REGISTRY_ID = `0x${'5'.repeat(64)}`
 const AGENT_ADDRESS = `0x${'1'.repeat(64)}`
 const SOUL_ID = `0x${'2'.repeat(64)}`
 const KIOSK_ID = `0x${'3'.repeat(64)}`
+const PAYMENT_COIN_TYPE = '0xpayment::usdc::USDC'
 
 const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificationError extends Error {
   status: number
@@ -22,12 +22,11 @@ const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
-const mockedGetSoulSecondaryPurchaseQuote = vi.hoisted(() => vi.fn())
 const mockedCreatePreparedSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
-const mockedBuildBuySecondarySoulTx = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
   getBalance: vi.fn(),
+  getCoins: vi.fn(),
   devInspectTransactionBlock: vi.fn(),
 }))
 const mockedTx = vi.hoisted(() => ({
@@ -57,7 +56,6 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
 
 vi.mock('@web/lib/souls/purchase-quote', () => ({
   getSoulPurchaseQuote: mockedGetSoulPurchaseQuote,
-  getSoulSecondaryPurchaseQuote: mockedGetSoulSecondaryPurchaseQuote,
 }))
 
 vi.mock('@web/lib/souls/prepared-purchase', () => ({
@@ -66,7 +64,6 @@ vi.mock('@web/lib/souls/prepared-purchase', () => ({
 
 vi.mock('@web/lib/souls/tx-builder', () => ({
   buildBuySoulTx: mockedBuildBuySoulTx,
-  buildBuySecondarySoulTx: mockedBuildBuySecondarySoulTx,
 }))
 
 vi.mock('@web/lib/sui', () => ({
@@ -78,10 +75,9 @@ describe('agent soul purchase prepare route', () => {
     vi.resetAllMocks()
     vi.resetModules()
     process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = SOUL_OBJECT_PACKAGE_ID
-    process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID = MARKET_ADAPTER_PACKAGE_ID
-    process.env.NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID = CPU_MARKETPLACE_ID
-    process.env.NEXT_PUBLIC_SOUL_UNFT_COLLECTION_ID = UNFT_COLLECTION_ID
     process.env.NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID = `0x${'5'.repeat(64)}`
+    process.env.NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID = ALLOWLIST_REGISTRY_ID
+    process.env.NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE = PAYMENT_COIN_TYPE
 
     mockedRequireAgentApiKey.mockResolvedValue({
       agent: { agentMemberId: 'agent-member-1' },
@@ -93,29 +89,31 @@ describe('agent soul purchase prepare route', () => {
       id: 'asset-db-1',
       onChainId: SOUL_ID,
       listingStatus: 'listed',
-      listingSource: 'adapter',
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: '1000000000',
+      currentKioskId: KIOSK_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '1000000',
     })
     mockedGetSoulPurchaseQuote.mockResolvedValue({
-      marketplaceFeeSui: 50_000_000n,
-      priceSui: 1_000_000_000n,
-      royaltyFeeSui: 25_000_000n,
-      totalSui: 1_075_000_000n,
+      platformFeeAtomic: 50_000n,
+      priceAtomic: 1_000_000n,
+      creatorRoyaltyAtomic: 25_000n,
+      totalAtomic: 1_075_000n,
     })
-    mockedGetSoulSecondaryPurchaseQuote.mockResolvedValue({
-      marketplaceFeeSui: 50_000_000n,
-      priceSui: 1_000_000_000n,
-      royaltyFeeSui: 25_000_000n,
-      totalSui: 1_075_000_000n,
+    mockedSuiClient.getCoins.mockResolvedValue({
+      data: [{ coinObjectId: '0xcoin-a', balance: '2000000' }],
+      hasNextPage: false,
+      nextCursor: null,
     })
-    mockedSuiClient.getBalance.mockResolvedValue({ totalBalance: '2000000000' })
+    mockedSuiClient.getBalance.mockImplementation(async ({ coinType }: { coinType?: string }) => (
+      coinType
+        ? { totalBalance: '2000000' }
+        : { totalBalance: '2000000000' }
+    ))
     mockedSuiClient.devInspectTransactionBlock.mockResolvedValue({
       effects: { status: { status: 'success' } },
     })
     mockedTx.build.mockResolvedValue(new Uint8Array([1, 2, 3]))
     mockedBuildBuySoulTx.mockReturnValue(mockedTx)
-    mockedBuildBuySecondarySoulTx.mockReturnValue(mockedTx)
     mockedCreatePreparedSoulPurchase.mockResolvedValue({
       id: 'prepared-1',
       expiresAt: new Date('2099-01-01T00:00:00.000Z'),
@@ -135,6 +133,43 @@ describe('agent soul purchase prepare route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Soul is not currently listed for sale',
     })
+  })
+
+  it('returns 409 when the mirrored listing is missing its kiosk id', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      id: 'asset-db-1',
+      onChainId: SOUL_ID,
+      listingStatus: 'listed',
+      currentKioskId: null,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '1000000',
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul listing missing kiosk',
+    })
+    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 before quoting when the allowlist registry config is missing', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(503)
+    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
+    expect(mockedSuiClient.getBalance).not.toHaveBeenCalled()
   })
 
   it('returns 503 when the required purchase config is missing', async () => {
@@ -169,8 +204,17 @@ describe('agent soul purchase prepare route', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Multiple Sui wallets' })
   })
 
-  it('returns 402 when the agent balance cannot cover price plus fees', async () => {
-    mockedSuiClient.getBalance.mockResolvedValueOnce({ totalBalance: '1000000000' })
+  it('returns 402 when the agent does not hold enough payment coin balance', async () => {
+    mockedSuiClient.getCoins.mockResolvedValueOnce({
+      data: [{ coinObjectId: '0xcoin-a', balance: '1000000' }],
+      hasNextPage: false,
+      nextCursor: null,
+    })
+    mockedSuiClient.getBalance.mockImplementationOnce(async ({ coinType }: { coinType?: string }) => (
+      coinType
+        ? { totalBalance: '1000000' }
+        : { totalBalance: '2000000000' }
+    ))
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -180,13 +224,15 @@ describe('agent soul purchase prepare route', () => {
 
     expect(response.status).toBe(402)
     await expect(response.json()).resolves.toEqual({
-      error: 'Insufficient SUI balance for purchase. Required: 1125000000 MIST (includes gas reserve), available: 1000000000 MIST.',
+      error: 'Insufficient USDC balance for purchase. Required: 1075000 atomic units, available: 1000000.',
     })
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
   })
 
-  it('returns 402 when balance covers price+fees but not gas reserve', async () => {
-    mockedSuiClient.getBalance.mockResolvedValueOnce({ totalBalance: '1080000000' })
+  it('returns 402 when payment is funded but the SUI gas reserve is too low', async () => {
+    mockedSuiClient.getBalance
+      .mockResolvedValueOnce({ totalBalance: '2000000' })
+      .mockResolvedValueOnce({ totalBalance: '10000000' })
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -196,7 +242,7 @@ describe('agent soul purchase prepare route', () => {
 
     expect(response.status).toBe(402)
     await expect(response.json()).resolves.toEqual({
-      error: 'Insufficient SUI balance for purchase. Required: 1125000000 MIST (includes gas reserve), available: 1080000000 MIST.',
+      error: 'Insufficient SUI gas balance for purchase. Required reserve: 50000000 MIST, available: 10000000 MIST.',
     })
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
   })
@@ -214,38 +260,45 @@ describe('agent soul purchase prepare route', () => {
       txBytes: Buffer.from([1, 2, 3]).toString('base64'),
       context: {
         soulOnChainId: SOUL_ID,
+        listingObjectId: LISTING_ID,
         sellerKioskId: KIOSK_ID,
-        priceSui: '1000000000',
-        feeAmountSui: '75000000',
+        priceAtomic: '1000000',
+        platformFeeAtomic: '50000',
+        creatorRoyaltyAtomic: '25000',
+        totalAtomic: '1075000',
+        paymentCoinType: PAYMENT_COIN_TYPE,
         agentAddress: AGENT_ADDRESS,
         expiresAt: '2099-01-01T00:00:00.000Z',
       },
     })
     expect(mockedBuildBuySoulTx).toHaveBeenCalledWith({
-      soulObjectId: SOUL_ID,
+      listingObjectId: LISTING_ID,
       sellerKioskId: KIOSK_ID,
-      buyerAddress: AGENT_ADDRESS,
-      priceSui: 1_000_000_000n,
-      feeAmountSui: 75_000_000n,
+      totalAtomic: 1_075_000n,
+      paymentCoinObjectIds: ['0xcoin-a'],
     })
     expect(mockedCreatePreparedSoulPurchase).toHaveBeenCalledWith({
       agentMemberId: 'agent-member-1',
       soulOnChainId: SOUL_ID,
+      listingObjectId: LISTING_ID,
       sellerKioskId: KIOSK_ID,
       agentAddress: AGENT_ADDRESS,
-      priceSui: 1_000_000_000n,
+      priceAtomic: 1_000_000n,
+      platformFeeAtomic: 50_000n,
+      creatorRoyaltyAtomic: 25_000n,
+      totalAtomic: 1_075_000n,
       txBytesBase64: Buffer.from([1, 2, 3]).toString('base64'),
     })
   })
 
-  it('revalidates core listings on chain before returning prepared tx bytes', async () => {
+  it('returns 422 when the on-chain listing check fails', async () => {
     mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
       id: 'asset-db-1',
       onChainId: SOUL_ID,
       listingStatus: 'listed',
-      listingSource: 'core',
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: '1000000000',
+      currentKioskId: KIOSK_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '1000000',
     })
     mockedSuiClient.devInspectTransactionBlock.mockResolvedValueOnce({
       error: 'MoveAbort(MutableObjectUsedAfterDelete)',
@@ -261,13 +314,7 @@ describe('agent soul purchase prepare route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Soul listing is no longer active on chain',
     })
-    expect(mockedBuildBuySecondarySoulTx).toHaveBeenCalledWith({
-      soulObjectId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
-      buyerAddress: AGENT_ADDRESS,
-      priceSui: 1_000_000_000n,
-      feeAmountSui: 75_000_000n,
-    })
+    expect(mockedBuildBuySoulTx).toHaveBeenCalled()
     expect(mockedCreatePreparedSoulPurchase).not.toHaveBeenCalled()
   })
 })

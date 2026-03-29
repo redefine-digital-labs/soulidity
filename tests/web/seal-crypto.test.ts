@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 const SOUL_OBJECT_ID = `0x${'11'.repeat(32)}`
 const OTHER_SOUL_OBJECT_ID = `0x${'33'.repeat(32)}`
 const ACCESS_CAP_OBJECT_ID = `0x${'55'.repeat(32)}`
+const KIOSK_OBJECT_ID = `0x${'66'.repeat(32)}`
+const KIOSK_CAP_OBJECT_ID = `0x${'77'.repeat(32)}`
+const ALLOWLIST_REGISTRY_OBJECT_ID = `0x${'88'.repeat(32)}`
 const FIXED_NONCE = Uint8Array.from({ length: 16 }, (_, index) => index)
 const VALID_IV_BASE64 = 'AAAAAAAAAAAAAAAA'
 const VALID_CONTENT_HASH = 'a'.repeat(64)
@@ -60,8 +63,11 @@ describe('Seal envelope crypto', () => {
     const accessPolicy = {
       packageId: '0xsoul',
       moduleName: 'seal_policy' as const,
-      functionName: 'seal_approve_owner' as const,
+      functionName: 'seal_approve_owner_in_personal_kiosk' as const,
       soulObjectId: SOUL_OBJECT_ID,
+      currentKioskId: KIOSK_OBJECT_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_OBJECT_ID,
+      allowlistRegistryObjectId: null,
     }
 
     const { encryptedData, sidecar } = await encryptBundle({
@@ -96,6 +102,59 @@ describe('Seal envelope crypto', () => {
     expect(decrypted).toEqual(plaintext)
   })
 
+  it('zeroizes decrypted Seal key material after bundle decryption succeeds', async () => {
+    const { decryptBundle, encryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
+
+    let encryptedKeyMaterial: Uint8Array | null = null
+    const encryptClient = {
+      encrypt: vi.fn(async ({ data }: { data: Uint8Array }) => {
+        encryptedKeyMaterial = new Uint8Array(data)
+        return {
+          encryptedObject: Uint8Array.from(data, (byte) => byte ^ 0xff),
+          key: new Uint8Array(32).fill(7),
+        }
+      }),
+    }
+
+    const plaintext = new TextEncoder().encode('sealed soul bundle payload')
+    const accessPolicy = {
+      packageId: '0xsoul',
+      moduleName: 'seal_policy' as const,
+      functionName: 'seal_approve_owner_in_personal_kiosk' as const,
+      soulObjectId: SOUL_OBJECT_ID,
+      currentKioskId: KIOSK_OBJECT_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_OBJECT_ID,
+      allowlistRegistryObjectId: null,
+    }
+
+    const { encryptedData, sidecar } = await encryptBundle({
+      sealClient: encryptClient as never,
+      accessPolicy,
+      data: plaintext,
+      mimeType: 'application/zip',
+      fileName: 'bundle.zip',
+      threshold: 2,
+      nonce: FIXED_NONCE,
+    })
+
+    const decryptedKeyMaterial = new Uint8Array(encryptedKeyMaterial!)
+    const decryptClient = {
+      decrypt: vi.fn(async () => decryptedKeyMaterial.buffer),
+    }
+
+    const decrypted = await decryptBundle({
+      sealClient: decryptClient as never,
+      sessionKey: { key: 'session' } as never,
+      txBytes: new Uint8Array([1, 2, 3]),
+      encryptedData,
+      sidecar,
+      expectedSoulObjectId: SOUL_OBJECT_ID,
+    })
+
+    expect(decrypted).toEqual(plaintext)
+    expect(decryptedKeyMaterial).toEqual(new Uint8Array(decryptedKeyMaterial.length))
+  })
+
   it('rejects decrypting a sidecar whose document id is outside the expected soul namespace', async () => {
     const { decryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
 
@@ -124,15 +183,18 @@ describe('Seal envelope crypto', () => {
   })
 
   it('builds an owner approval tx bound to the requested soul document id', async () => {
-    const { Transaction } = await import('../../web/node_modules/@mysten/sui/dist/transactions/index.mjs')
+    const { Transaction } = await import('@mysten/sui/transactions')
     const buildSpy = vi.spyOn(Transaction.prototype, 'build').mockResolvedValue(new Uint8Array([1, 2, 3]))
     const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
     const bytes = await buildSealApprovalTxBytes({
       accessPolicy: {
         packageId: '0xsoul',
         moduleName: 'seal_policy',
-        functionName: 'seal_approve_owner',
+        functionName: 'seal_approve_owner_in_personal_kiosk',
         soulObjectId: SOUL_OBJECT_ID,
+        currentKioskId: KIOSK_OBJECT_ID,
+        currentKioskCapOnChainId: KIOSK_CAP_OBJECT_ID,
+        allowlistRegistryObjectId: null,
       },
       documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
     })
@@ -142,7 +204,7 @@ describe('Seal envelope crypto', () => {
     buildSpy.mockRestore()
   })
 
-  it('rejects agent approval txs without a soul access cap object id', async () => {
+  it('rejects allowlisted approval txs without a soul allowlist cap object id', async () => {
     const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
 
     await expect(() =>
@@ -150,31 +212,56 @@ describe('Seal envelope crypto', () => {
         accessPolicy: {
           packageId: '0xsoul',
           moduleName: 'seal_policy',
-          functionName: 'seal_approve_agent',
+          functionName: 'seal_approve_allowlisted',
           soulObjectId: SOUL_OBJECT_ID,
+          currentKioskId: null,
+          currentKioskCapOnChainId: null,
+          allowlistRegistryObjectId: ALLOWLIST_REGISTRY_OBJECT_ID,
         },
         documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
       }),
-    ).rejects.toThrow('soulAccessCapObjectId is required for agent Seal approval')
+    ).rejects.toThrow('soulAllowlistCapObjectId is required for allowlisted Seal approval')
   })
 
-  it('builds an agent approval tx with the supplied access cap object id', async () => {
-    const { Transaction } = await import('../../web/node_modules/@mysten/sui/dist/transactions/index.mjs')
+  it('builds an allowlisted approval tx with the supplied access cap object id', async () => {
+    const { Transaction } = await import('@mysten/sui/transactions')
     const buildSpy = vi.spyOn(Transaction.prototype, 'build').mockResolvedValue(new Uint8Array([1, 2, 3]))
     const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
     const bytes = await buildSealApprovalTxBytes({
       accessPolicy: {
         packageId: '0xsoul',
         moduleName: 'seal_policy',
-        functionName: 'seal_approve_agent',
+        functionName: 'seal_approve_allowlisted',
         soulObjectId: SOUL_OBJECT_ID,
+        currentKioskId: null,
+        currentKioskCapOnChainId: null,
+        allowlistRegistryObjectId: ALLOWLIST_REGISTRY_OBJECT_ID,
       },
       documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
-      soulAccessCapObjectId: ACCESS_CAP_OBJECT_ID,
+      soulAllowlistCapObjectId: ACCESS_CAP_OBJECT_ID,
     })
 
     expect(bytes).toBeInstanceOf(Uint8Array)
     expect(bytes.length).toBeGreaterThan(0)
     buildSpy.mockRestore()
+  })
+
+  it('rejects unknown Seal approval function names instead of falling through to allowlist mode', async () => {
+    const { buildSealApprovalTxBytes } = await import('../../web/lib/services/seal-crypto.ts')
+
+    await expect(() =>
+      buildSealApprovalTxBytes({
+        accessPolicy: {
+          packageId: '0xsoul',
+          moduleName: 'seal_policy',
+          functionName: 'seal_approve_future_mode' as never,
+          soulObjectId: SOUL_OBJECT_ID,
+          currentKioskId: null,
+          currentKioskCapOnChainId: null,
+          allowlistRegistryObjectId: null,
+        },
+        documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
+      }),
+    ).rejects.toThrow('Unknown Seal approval function: seal_approve_future_mode')
   })
 })

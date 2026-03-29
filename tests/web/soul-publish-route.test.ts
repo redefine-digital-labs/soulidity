@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { sameSuiValueForTests } from './test-sui-value.ts'
 
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
-const MARKET_ADAPTER_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const AUTHOR_ADDRESS = `0x${'1'.repeat(64)}`
 const HOLDER_ADDRESS = `0x${'5'.repeat(64)}`
 const SOUL_ID = `0x${'2'.repeat(64)}`
+const LISTING_ID = `0x${'7'.repeat(64)}`
 const KIOSK_ID = `0x${'3'.repeat(64)}`
+const KIOSK_CAP_ID = `0x${'6'.repeat(64)}`
 const CONTENT_BLOB_OBJECT_ID = `0x${'4'.repeat(64)}`
 const TX_DIGEST = '11111111111111111111111111111111'
 
@@ -66,8 +68,7 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   extractSoulListingEvent: mockedExtractSoulListingEvent,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
-  sameSuiValue: (left: string | null | undefined, right: string | null | undefined) =>
-    String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase(),
+  sameSuiValue: sameSuiValueForTests,
 }))
 
 vi.mock('@web/lib/souls/post-tx-db', () => ({
@@ -92,7 +93,6 @@ describe('soul publish route', () => {
     vi.resetAllMocks()
     vi.resetModules()
     process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = PACKAGE_ID
-    process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID = MARKET_ADAPTER_PACKAGE_ID
 
     mockedRequireIdentity.mockResolvedValue({
       error: null,
@@ -105,14 +105,17 @@ describe('soul publish route', () => {
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
     mockedPrisma.soulAsset.findUnique.mockResolvedValue(null)
     mockedExtractSoulListingEvent.mockReturnValue({
+      listingObjectId: LISTING_ID,
       soulObjectId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
+      kioskId: KIOSK_ID,
+      kioskCapOnChainId: KIOSK_CAP_ID,
       sellerAddress: AUTHOR_ADDRESS,
-      priceSui: 1_000_000_000n,
+      priceAtomic: 1_000_000n,
     })
     mockedGetVerifiedSoulState.mockResolvedValue({
       objectId: SOUL_ID,
       creatorAddress: AUTHOR_ADDRESS,
+      creatorRoyaltyBps: 0,
       ownerAddress: KIOSK_ID,
       ownerKind: 'object',
       ownerObjectId: KIOSK_ID,
@@ -122,8 +125,8 @@ describe('soul publish route', () => {
       metadataRef: 'walrus://metadata',
       contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
       contentBlobId: 'blob-content',
-      agentGrant: null,
-      grantVersion: 0n,
+      allowlistAddress: null,
+      allowlistVersion: 0n,
     })
     mockedGetSealRuntimeConfig.mockReturnValue({
       network: 'testnet',
@@ -197,8 +200,33 @@ describe('soul publish route', () => {
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })
 
-  it('returns 503 when the market adapter package id env is missing', async () => {
-    delete process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID
+  it('rejects oversized readme payloads before on-chain verification', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        readme: 'a'.repeat(70_000),
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'readme must be 65536 bytes or less',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 when the soul object package id env is missing', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(new Request('http://localhost/api/souls/publish', {
@@ -220,12 +248,38 @@ describe('soul publish route', () => {
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })
 
+  it('returns 409 when the publisher has multiple Sui wallet bindings', async () => {
+    const walletError = new Error('Multiple Sui wallets')
+    walletError.name = 'MultipleSuiWalletBindingsError'
+    mockedGetMemberSuiWalletAddresses.mockRejectedValueOnce(walletError)
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({ error: 'Multiple Sui wallets' })
+  })
+
   it('rejects listing events whose seller wallet does not match the authenticated user', async () => {
     mockedExtractSoulListingEvent.mockReturnValueOnce({
       soulObjectId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
+      kioskId: KIOSK_ID,
+      kioskCapOnChainId: KIOSK_CAP_ID,
       sellerAddress: `0x${'f'.repeat(64)}`,
-      priceSui: 1_000_000_000n,
+      priceAtomic: 1_000_000_000n,
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -263,10 +317,12 @@ describe('soul publish route', () => {
       sealSidecar: { encryptedObject: 'sealed' },
     })
     mockedExtractSoulListingEvent.mockReturnValueOnce({
+      listingObjectId: LISTING_ID,
       soulObjectId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
+      kioskId: KIOSK_ID,
+      kioskCapOnChainId: KIOSK_CAP_ID,
       sellerAddress: HOLDER_ADDRESS,
-      priceSui: 2_000_000_000n,
+      priceAtomic: 2_000_000n,
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -291,8 +347,10 @@ describe('soul publish route', () => {
       creatorMemberId: 'creator-member',
       currentOwnerAddress: HOLDER_ADDRESS,
       currentOwnerMemberId: 'member-1',
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: 2_000_000_000n,
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: 2_000_000n,
       readme: 'Stored README',
     }))
     expect(mockedCreateSealEnvelopeSidecar).not.toHaveBeenCalled()
@@ -314,10 +372,12 @@ describe('soul publish route', () => {
       sealSidecar: { encryptedObject: 'sealed' },
     })
     mockedExtractSoulListingEvent.mockReturnValueOnce({
+      listingObjectId: LISTING_ID,
       soulObjectId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
+      kioskId: KIOSK_ID,
+      kioskCapOnChainId: KIOSK_CAP_ID,
       sellerAddress: HOLDER_ADDRESS,
-      priceSui: 2_000_000_000n,
+      priceAtomic: 2_000_000n,
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -344,8 +404,10 @@ describe('soul publish route', () => {
       creatorMemberId: 'creator-member',
       currentOwnerAddress: HOLDER_ADDRESS,
       currentOwnerMemberId: 'agent-member-1',
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: 2_000_000_000n,
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: 2_000_000n,
       readme: 'Stored README',
     }))
     expect(mockedCreateSealEnvelopeSidecar).not.toHaveBeenCalled()
@@ -388,6 +450,7 @@ describe('soul publish route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       objectId: SOUL_ID,
       creatorAddress: AUTHOR_ADDRESS,
+      creatorRoyaltyBps: 0,
       ownerAddress: KIOSK_ID,
       ownerKind: 'object',
       ownerObjectId: KIOSK_ID,
@@ -397,8 +460,8 @@ describe('soul publish route', () => {
       metadataRef: 'walrus://metadata',
       contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
       contentBlobId: 'blob-onchain',
-      agentGrant: null,
-      grantVersion: 0n,
+      allowlistAddress: null,
+      allowlistVersion: 0n,
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -428,10 +491,12 @@ describe('soul publish route', () => {
     const HOLDER_ADDRESS = `0x${'7'.repeat(64)}`
     mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
     mockedExtractSoulListingEvent.mockReturnValueOnce({
+      listingObjectId: LISTING_ID,
       soulObjectId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
+      kioskId: KIOSK_ID,
+      kioskCapOnChainId: KIOSK_CAP_ID,
       sellerAddress: HOLDER_ADDRESS,
-      priceSui: 2_000_000_000n,
+      priceAtomic: 2_000_000n,
     })
     mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({
       creatorMemberId: 'creator-member-1',
@@ -456,8 +521,10 @@ describe('soul publish route', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
       soulOnChainId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: '2000000000',
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '2000000',
       listingStatus: 'listed',
     })
     expect(mockedCreateSealEnvelopeSidecar).not.toHaveBeenCalled()
@@ -465,7 +532,10 @@ describe('soul publish route', () => {
       creatorMemberId: 'creator-member-1',
       currentOwnerAddress: HOLDER_ADDRESS,
       currentOwnerMemberId: 'member-1',
-      listedPriceSui: 2_000_000_000n,
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: 2_000_000n,
       contentBlobId: 'blob-content',
       category: 'Research',
       tags: ['alpha'],
@@ -520,16 +590,21 @@ describe('soul publish route', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
       soulOnChainId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: '1000000000',
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '1000000',
       listingStatus: 'listed',
     })
     expect(mockedDbUpsertSoulAsset).toHaveBeenCalledWith(expect.objectContaining({
       soulOnChainId: SOUL_ID,
       creatorAddress: AUTHOR_ADDRESS,
+      creatorRoyaltyBps: 0,
       currentOwnerAddress: AUTHOR_ADDRESS,
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: 1_000_000_000n,
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: 1_000_000n,
       contentBlobId: 'blob-content',
       contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
       readme: 'README',
@@ -547,6 +622,7 @@ describe('soul publish route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       objectId: SOUL_ID,
       creatorAddress: AUTHOR_ADDRESS,
+      creatorRoyaltyBps: 0,
       ownerAddress: BUYER_ADDRESS,
       ownerKind: 'address',
       ownerObjectId: null,
@@ -556,8 +632,8 @@ describe('soul publish route', () => {
       metadataRef: 'walrus://metadata',
       contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
       contentBlobId: 'blob-content',
-      agentGrant: null,
-      grantVersion: 0n,
+      allowlistAddress: null,
+      allowlistVersion: 0n,
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')

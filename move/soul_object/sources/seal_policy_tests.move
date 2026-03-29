@@ -2,15 +2,12 @@
 module soul_object::seal_policy_tests;
 
 use std::string;
-use soul_object::grant;
-use soul_object::market;
+use kiosk::personal_kiosk;
+use soul_object::allowlist;
 use soul_object::seal_policy;
 use soul_object::soul;
-use sui::coin::{Self as coin, Coin};
-use sui::kiosk;
-use sui::sui::SUI;
+use sui::kiosk::{Self as kiosk, Kiosk};
 use sui::test_scenario::{Self as ts};
-use sui::transfer_policy;
 use walrus::{blob, encoding, system, test_utils};
 
 const BLOB_ROOT_HASH: u256 = 0xABC;
@@ -18,7 +15,6 @@ const BLOB_SIZE: u64 = 5_000_000;
 const BLOB_ENCODING: u8 = 1;
 const BLOB_EPOCHS_AHEAD: u32 = 3;
 const PAYMENT_FROST: u64 = 1_000_000_000;
-const SALE_PRICE: u64 = 1_000;
 
 fun register_test_blob(ctx: &mut TxContext): (system::System, blob::Blob) {
     let mut walrus_system = system::new_for_testing(ctx);
@@ -49,9 +45,9 @@ fun register_test_blob(ctx: &mut TxContext): (system::System, blob::Blob) {
     (walrus_system, registered_blob)
 }
 
-fun soul_document_id_with_version(soul_obj: &soul::Soul, version: u8): vector<u8> {
+fun soul_document_id_with_version(soul_id: ID, version: u8): vector<u8> {
     let mut id = b"soul-seal:";
-    let soul_id_bytes = object::id(soul_obj).to_bytes();
+    let soul_id_bytes = soul_id.to_bytes();
     let mut soul_id_index: u64 = 0;
     id.push_back(version);
     while (soul_id_index < soul_id_bytes.length()) {
@@ -66,80 +62,41 @@ fun soul_document_id_with_version(soul_obj: &soul::Soul, version: u8): vector<u8
     id
 }
 
-fun soul_document_id(soul_obj: &soul::Soul): vector<u8> {
-    soul_document_id_with_version(soul_obj, 0x01)
+fun soul_document_id(soul_id: ID): vector<u8> {
+    soul_document_id_with_version(soul_id, 0x01)
+}
+
+fun new_personal_kiosk_with_soul(owner: address, ctx: &mut TxContext): (system::System, Kiosk, personal_kiosk::PersonalKioskCap, ID) {
+    let (walrus_system, blob) = register_test_blob(ctx);
+    let soul_obj = soul::mint_for_testing(
+        owner,
+        string::utf8(b"Genesis Soul"),
+        string::utf8(b"Single-owner artifact"),
+        string::utf8(b"https://example.com/soul.png"),
+        option::none(),
+        blob,
+        ctx,
+    );
+    let soul_id = object::id(&soul_obj);
+    let (mut kiosk_obj, kiosk_owner_cap) = kiosk::new(ctx);
+    let personal_cap = personal_kiosk::new(&mut kiosk_obj, kiosk_owner_cap, ctx);
+    kiosk::place(&mut kiosk_obj, personal_kiosk::borrow(&personal_cap), soul_obj);
+    (walrus_system, kiosk_obj, personal_cap, soul_id)
 }
 
 #[test]
-fun current_holder_can_approve_matching_document_id() {
+fun current_holder_can_approve_matching_document_id_from_personal_kiosk() {
     let holder = @0xBEEF;
-    let mut scenario = ts::begin(holder);
-
-    {
-        let ctx = ts::ctx(&mut scenario);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            holder,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
-        );
-        transfer::public_transfer(soul_obj, holder);
-        std::unit_test::destroy(walrus_system);
-    };
+    let mut scenario = ts::begin(@0x0);
 
     ts::next_tx(&mut scenario, holder);
     {
-        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let document_id = soul_document_id(&soul_obj);
-        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
-
-        let blob = soul::destroy_for_testing(soul_obj);
-        blob.burn();
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun direct_transfer_recipient_can_approve_matching_document_id() {
-    let creator = @0xBEEF;
-    let recipient = @0xCAFE;
-    let mut scenario = ts::begin(creator);
-
-    {
-        let ctx = ts::ctx(&mut scenario);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            creator,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
-        );
-        transfer::public_transfer(soul_obj, creator);
+        let (walrus_system, mut kiosk_obj, personal_cap, soul_id) = new_personal_kiosk_with_soul(holder, ts::ctx(&mut scenario));
+        let document_id = soul_document_id(soul_id);
+        seal_policy::seal_approve_owner_for_testing(document_id, &mut kiosk_obj, &personal_cap, soul_id, ts::ctx(&mut scenario));
+        transfer::public_transfer(kiosk_obj, holder);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
         std::unit_test::destroy(walrus_system);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        transfer::public_transfer(soul_obj, recipient);
-    };
-
-    ts::next_tx(&mut scenario, recipient);
-    {
-        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let document_id = soul_document_id(&soul_obj);
-        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
-
-        let blob = soul::destroy_for_testing(soul_obj);
-        blob.burn();
     };
 
     ts::end(scenario);
@@ -149,29 +106,13 @@ fun direct_transfer_recipient_can_approve_matching_document_id() {
 #[expected_failure(abort_code = soul_object::seal_policy::EIdPrefixMismatch)]
 fun wrong_document_prefix_is_rejected() {
     let holder = @0xBEEF;
-    let mut scenario = ts::begin(holder);
-
-    {
-        let ctx = ts::ctx(&mut scenario);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            holder,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
-        );
-        transfer::public_transfer(soul_obj, holder);
-        std::unit_test::destroy(walrus_system);
-    };
+    let mut scenario = ts::begin(@0x0);
 
     ts::next_tx(&mut scenario, holder);
     {
-        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
+        let (walrus_system, mut kiosk_obj, personal_cap, soul_id) = new_personal_kiosk_with_soul(holder, ts::ctx(&mut scenario));
         let mut document_id = b"wrong-seal:";
-        let soul_id_bytes = object::id(&soul_obj).to_bytes();
+        let soul_id_bytes = soul_id.to_bytes();
         let mut i: u64 = 0;
         document_id.push_back(0x01);
         while (i < soul_id_bytes.length()) {
@@ -184,7 +125,8 @@ fun wrong_document_prefix_is_rejected() {
             i = i + 1;
         };
 
-        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
+        seal_policy::seal_approve_owner_for_testing(document_id, &mut kiosk_obj, &personal_cap, soul_id, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system);
         abort 9
     }
 }
@@ -193,161 +135,118 @@ fun wrong_document_prefix_is_rejected() {
 #[expected_failure(abort_code = soul_object::seal_policy::EIdPrefixMismatch)]
 fun wrong_document_version_is_rejected() {
     let holder = @0xBEEF;
-    let mut scenario = ts::begin(holder);
-
-    {
-        let ctx = ts::ctx(&mut scenario);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            holder,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
-        );
-        transfer::public_transfer(soul_obj, holder);
-        std::unit_test::destroy(walrus_system);
-    };
+    let mut scenario = ts::begin(@0x0);
 
     ts::next_tx(&mut scenario, holder);
     {
-        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let document_id = soul_document_id_with_version(&soul_obj, 0x02);
-
-        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
+        let (walrus_system, mut kiosk_obj, personal_cap, soul_id) = new_personal_kiosk_with_soul(holder, ts::ctx(&mut scenario));
+        let document_id = soul_document_id_with_version(soul_id, 0x02);
+        seal_policy::seal_approve_owner_for_testing(document_id, &mut kiosk_obj, &personal_cap, soul_id, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system);
         abort 10
     }
 }
 
 #[test]
-#[expected_failure(abort_code = soul_object::seal_policy::EDocumentIdTooShort)]
-fun document_id_must_include_nonce_suffix() {
-    let holder = @0xBEEF;
-    let mut scenario = ts::begin(holder);
-
-    {
-        let ctx = ts::ctx(&mut scenario);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            holder,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
-        );
-        transfer::public_transfer(soul_obj, holder);
-        std::unit_test::destroy(walrus_system);
-    };
-
-    ts::next_tx(&mut scenario, holder);
-    {
-        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let document_id = object::id(&soul_obj).to_bytes();
-        seal_policy::seal_approve_owner_for_testing(document_id, &soul_obj, ts::ctx(&mut scenario));
-        abort 7
-    }
-}
-
-#[test]
-fun granted_agent_can_approve_matching_document_id() {
+fun allowlisted_address_can_approve_matching_document_id() {
     let owner = @0xBEEF;
-    let agent = @0xCAFE;
-    let mut scenario = ts::begin(owner);
+    let allowlisted = @0xCAFE;
+    let mut scenario = ts::begin(@0x0);
+    let soul_id: ID;
 
+    ts::next_tx(&mut scenario, owner);
     {
-        let ctx = ts::ctx(&mut scenario);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            owner,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
-        );
-        transfer::public_transfer(soul_obj, owner);
-        std::unit_test::destroy(walrus_system);
-    };
-
-    {
-        ts::next_tx(&mut scenario, owner);
-        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let access_cap = grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
-        transfer::public_transfer(soul_obj, owner);
-        transfer::public_transfer(access_cap, agent);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let soul_obj: soul::Soul = ts::take_from_address(&scenario, owner);
-        let access_cap: grant::SoulAccessCap = ts::take_from_sender(&scenario);
-        let document_id = soul_document_id(&soul_obj);
-        seal_policy::seal_approve_agent_for_testing(
-            document_id,
-            &soul_obj,
-            &access_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        grant::destroy_for_testing(access_cap);
-        ts::return_to_address(owner, soul_obj);
+        allowlist::init_for_testing(ts::ctx(&mut scenario));
     };
 
     ts::next_tx(&mut scenario, owner);
     {
-        let soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let blob = soul::destroy_for_testing(soul_obj);
-        blob.burn();
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let (walrus_system, mut kiosk_obj, personal_cap, minted_soul_id) = new_personal_kiosk_with_soul(owner, ts::ctx(&mut scenario));
+        soul_id = minted_soul_id;
+        let access_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_obj,
+            &personal_cap,
+            soul_id,
+            allowlisted,
+            ts::ctx(&mut scenario),
+        );
+        transfer::public_transfer(access_cap, allowlisted);
+        transfer::public_transfer(kiosk_obj, owner);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
+    };
+
+    ts::next_tx(&mut scenario, allowlisted);
+    {
+        let registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let access_cap: allowlist::SoulAllowlistCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(soul_id);
+        seal_policy::seal_approve_allowlisted_for_testing(
+            document_id,
+            &registry,
+            soul_id,
+            &access_cap,
+            ts::ctx(&mut scenario),
+        );
+
+        allowlist::destroy_for_testing(access_cap);
+        ts::return_shared(registry);
     };
 
     ts::end(scenario);
 }
 
 #[test]
-#[expected_failure(abort_code = soul_object::seal_policy::ENoAgentGrant)]
-fun revoked_agent_cap_cannot_approve_document_id() {
+#[expected_failure(abort_code = soul_object::seal_policy::EAllowlistVersionMismatch)]
+fun cleared_allowlist_cap_cannot_approve_document_id() {
     let owner = @0xBEEF;
-    let agent = @0xCAFE;
-    let mut scenario = ts::begin(owner);
+    let allowlisted = @0xCAFE;
+    let mut scenario = ts::begin(@0x0);
+    let soul_id: ID;
 
+    ts::next_tx(&mut scenario, owner);
     {
-        let ctx = ts::ctx(&mut scenario);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            owner,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
+        allowlist::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let (walrus_system, mut kiosk_obj, personal_cap, minted_soul_id) = new_personal_kiosk_with_soul(owner, ts::ctx(&mut scenario));
+        soul_id = minted_soul_id;
+        let access_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_obj,
+            &personal_cap,
+            soul_id,
+            allowlisted,
+            ts::ctx(&mut scenario),
         );
-        transfer::public_transfer(soul_obj, owner);
+        allowlist::clear_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_obj,
+            &personal_cap,
+            soul_id,
+        );
+        transfer::public_transfer(access_cap, allowlisted);
+        transfer::public_transfer(kiosk_obj, owner);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
         std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
     };
 
+    ts::next_tx(&mut scenario, allowlisted);
     {
-        ts::next_tx(&mut scenario, owner);
-        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let access_cap = grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
-        grant::revoke_agent_grant(&mut soul_obj, ts::ctx(&mut scenario));
-        transfer::public_transfer(soul_obj, owner);
-        transfer::public_transfer(access_cap, agent);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let soul_obj: soul::Soul = ts::take_from_address(&scenario, owner);
-        let access_cap: grant::SoulAccessCap = ts::take_from_sender(&scenario);
-        let document_id = soul_document_id(&soul_obj);
-        seal_policy::seal_approve_agent_for_testing(
+        let registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let access_cap: allowlist::SoulAllowlistCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(soul_id);
+        seal_policy::seal_approve_allowlisted_for_testing(
             document_id,
-            &soul_obj,
+            &registry,
+            soul_id,
             &access_cap,
             ts::ctx(&mut scenario),
         );
@@ -356,73 +255,217 @@ fun revoked_agent_cap_cannot_approve_document_id() {
 }
 
 #[test]
-fun market_buyer_can_approve_matching_document_id() {
-    let seller = @0xA11CE;
-    let buyer = @0xB0B;
+#[expected_failure(abort_code = soul_object::seal_policy::EAllowlistVersionMismatch)]
+fun replaced_allowlist_cap_cannot_approve_document_id() {
+    let owner = @0xBEEF;
+    let first_allowlisted = @0xCAFE;
+    let second_allowlisted = @0xD00D;
     let mut scenario = ts::begin(@0x0);
     let soul_id: ID;
 
+    ts::next_tx(&mut scenario, owner);
     {
-        ts::next_tx(&mut scenario, seller);
-        market::init_for_testing(seller, ts::ctx(&mut scenario));
+        allowlist::init_for_testing(ts::ctx(&mut scenario));
     };
 
+    ts::next_tx(&mut scenario, owner);
     {
-        ts::next_tx(&mut scenario, seller);
-        let config: market::MarketConfig = ts::take_shared(&scenario);
-        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
-        let soul_obj = soul::mint_for_testing(
-            seller,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ts::ctx(&mut scenario),
-        );
-        soul_id = object::id(&soul_obj);
-
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &policy, soul_obj, SALE_PRICE);
-
-        std::unit_test::destroy(walrus_system);
-        ts::return_shared(config);
-        ts::return_shared(policy);
-        transfer::public_transfer(admin_cap, seller);
-        transfer::public_transfer(policy_cap, seller);
-        transfer::public_transfer(seller_kiosk, seller);
-        transfer::public_transfer(seller_cap, seller);
-    };
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: market::MarketConfig = ts::take_shared(&scenario);
-        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let mut seller_kiosk: kiosk::Kiosk = ts::take_from_address(&scenario, seller);
-        let payment: Coin<SUI> = coin::mint_for_testing(SALE_PRICE, ts::ctx(&mut scenario));
-        let fees: Coin<SUI> = coin::mint_for_testing(1, ts::ctx(&mut scenario));
-        let (purchased_soul, remainder) = market::purchase(
-            &config,
-            &policy,
-            &mut seller_kiosk,
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let (walrus_system, mut kiosk_obj, personal_cap, minted_soul_id) = new_personal_kiosk_with_soul(owner, ts::ctx(&mut scenario));
+        soul_id = minted_soul_id;
+        let first_access_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_obj,
+            &personal_cap,
             soul_id,
-            payment,
-            fees,
+            first_allowlisted,
             ts::ctx(&mut scenario),
         );
-        let document_id = soul_document_id(&purchased_soul);
-        seal_policy::seal_approve_owner_for_testing(document_id, &purchased_soul, ts::ctx(&mut scenario));
-
-        let blob = soul::destroy_for_testing(purchased_soul);
-        blob.burn();
-        coin::burn_for_testing(remainder);
-        ts::return_shared(config);
-        ts::return_shared(policy);
-        ts::return_to_address(seller, seller_kiosk);
+        let second_access_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_obj,
+            &personal_cap,
+            soul_id,
+            second_allowlisted,
+            ts::ctx(&mut scenario),
+        );
+        transfer::public_transfer(first_access_cap, first_allowlisted);
+        allowlist::destroy_for_testing(second_access_cap);
+        transfer::public_transfer(kiosk_obj, owner);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
     };
 
-    ts::end(scenario);
+    ts::next_tx(&mut scenario, first_allowlisted);
+    {
+        let registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let access_cap: allowlist::SoulAllowlistCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(soul_id);
+        seal_policy::seal_approve_allowlisted_for_testing(
+            document_id,
+            &registry,
+            soul_id,
+            &access_cap,
+            ts::ctx(&mut scenario),
+        );
+        abort 12
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::seal_policy::EAccessCapSoulMismatch)]
+fun allowlist_cap_for_another_soul_is_rejected() {
+    let owner = @0xBEEF;
+    let allowlisted = @0xCAFE;
+    let mut scenario = ts::begin(@0x0);
+    let other_soul_id: ID;
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        allowlist::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let (walrus_system_a, mut kiosk_a, personal_cap_a, approved_soul_id) = new_personal_kiosk_with_soul(owner, ts::ctx(&mut scenario));
+        other_soul_id = object::id(&kiosk_a);
+        let access_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_a,
+            &personal_cap_a,
+            approved_soul_id,
+            allowlisted,
+            ts::ctx(&mut scenario),
+        );
+        transfer::public_transfer(access_cap, allowlisted);
+        transfer::public_transfer(kiosk_a, owner);
+        personal_kiosk::transfer_to_sender(personal_cap_a, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system_a);
+        ts::return_shared(registry);
+    };
+
+    ts::next_tx(&mut scenario, allowlisted);
+    {
+        let registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let access_cap: allowlist::SoulAllowlistCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(other_soul_id);
+        seal_policy::seal_approve_allowlisted_for_testing(
+            document_id,
+            &registry,
+            other_soul_id,
+            &access_cap,
+            ts::ctx(&mut scenario),
+        );
+        allowlist::destroy_for_testing(access_cap);
+        ts::return_shared(registry);
+        abort 12
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::seal_policy::EAccessCapAllowlistedMismatch)]
+fun allowlist_cap_rejects_the_wrong_sender() {
+    let owner = @0xBEEF;
+    let allowlisted = @0xCAFE;
+    let wrong_holder = @0xD00D;
+    let mut scenario = ts::begin(@0x0);
+    let soul_id: ID;
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        allowlist::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let (walrus_system, mut kiosk_obj, personal_cap, minted_soul_id) = new_personal_kiosk_with_soul(owner, ts::ctx(&mut scenario));
+        soul_id = minted_soul_id;
+        let access_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_obj,
+            &personal_cap,
+            soul_id,
+            allowlisted,
+            ts::ctx(&mut scenario),
+        );
+        transfer::public_transfer(access_cap, wrong_holder);
+        transfer::public_transfer(kiosk_obj, owner);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
+    };
+
+    ts::next_tx(&mut scenario, wrong_holder);
+    {
+        let registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let access_cap: allowlist::SoulAllowlistCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(soul_id);
+        seal_policy::seal_approve_allowlisted_for_testing(
+            document_id,
+            &registry,
+            soul_id,
+            &access_cap,
+            ts::ctx(&mut scenario),
+        );
+        allowlist::destroy_for_testing(access_cap);
+        ts::return_shared(registry);
+        abort 13
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::seal_policy::ESoulNotInKiosk)]
+fun owner_approval_rejects_when_the_soul_is_missing_from_the_kiosk() {
+    let holder = @0xBEEF;
+    let mut scenario = ts::begin(@0x0);
+
+    ts::next_tx(&mut scenario, holder);
+    {
+        let (walrus_system, mut kiosk_obj, personal_cap, soul_id) = new_personal_kiosk_with_soul(holder, ts::ctx(&mut scenario));
+        let removed_soul = kiosk::take<soul::Soul>(&mut kiosk_obj, personal_kiosk::borrow(&personal_cap), soul_id);
+        let document_id = soul_document_id(soul_id);
+        seal_policy::seal_approve_owner_for_testing(document_id, &mut kiosk_obj, &personal_cap, soul_id, ts::ctx(&mut scenario));
+        let blob = soul::destroy_for_testing(removed_soul);
+        blob.burn();
+        std::unit_test::destroy(walrus_system);
+        abort 14
+    }
+}
+
+#[test]
+#[expected_failure(abort_code = soul_object::seal_policy::EPersonalKioskOwnerMismatch)]
+fun owner_approval_rejects_when_the_personal_kiosk_owner_does_not_match_sender() {
+    let holder = @0xBEEF;
+    let wrong_holder = @0xCAFE;
+    let mut scenario = ts::begin(@0x0);
+    let soul_id: ID;
+
+    ts::next_tx(&mut scenario, holder);
+    {
+        let (walrus_system, kiosk_obj, personal_cap, minted_soul_id) = new_personal_kiosk_with_soul(holder, ts::ctx(&mut scenario));
+        soul_id = minted_soul_id;
+        transfer::public_share_object(kiosk_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system);
+    };
+
+    ts::next_tx(&mut scenario, wrong_holder);
+    {
+        let (mut wrong_kiosk, wrong_kiosk_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
+        let wrong_personal_cap = personal_kiosk::new(&mut wrong_kiosk, wrong_kiosk_owner_cap, ts::ctx(&mut scenario));
+        transfer::public_transfer(wrong_kiosk, wrong_holder);
+        personal_kiosk::transfer_to_sender(wrong_personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, wrong_holder);
+    {
+        let mut kiosk_obj: kiosk::Kiosk = ts::take_shared(&scenario);
+        let personal_cap: personal_kiosk::PersonalKioskCap = ts::take_from_sender(&scenario);
+        let document_id = soul_document_id(soul_id);
+        seal_policy::seal_approve_owner_for_testing(document_id, &mut kiosk_obj, &personal_cap, soul_id, ts::ctx(&mut scenario));
+        abort 15
+    }
 }

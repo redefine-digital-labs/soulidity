@@ -6,9 +6,9 @@ import {
 } from '../../web/lib/souls/publish-ui.ts'
 
 describe('soul publish price state', () => {
-  it('requires a single SUI price for primary sale publishing', () => {
+  it('requires a single USDC price for Soul publishing', () => {
     expect(getSoulPublishPriceState({ price: '' })).toEqual({
-      helperText: 'Primary sale uses a single fixed SUI price.',
+      helperText: 'Each Soul uses a single fixed USDC listing price.',
       fieldErrors: {
         price: 'Required',
       },
@@ -16,19 +16,19 @@ describe('soul publish price state', () => {
     })
   })
 
-  it('rejects malformed or below-floor SUI prices', () => {
-    expect(getSoulPublishPriceState({ price: '0.000000001' })).toEqual({
-      helperText: 'Primary sale uses a single fixed SUI price.',
+  it('rejects malformed or zero USDC prices', () => {
+    expect(getSoulPublishPriceState({ price: '0.0000001' })).toEqual({
+      helperText: 'Each Soul uses a single fixed USDC listing price.',
       fieldErrors: {
-        price: 'Enter a positive SUI amount with at most 9 decimal places',
+        price: 'Enter a positive USDC amount with at most 6 decimal places',
       },
       isComplete: false,
     })
   })
 
-  it('becomes complete once the SUI price is valid', () => {
+  it('becomes complete once the USDC price is valid', () => {
     expect(getSoulPublishPriceState({ price: '1.25' })).toEqual({
-      helperText: 'Primary sale uses a single fixed SUI price.',
+      helperText: 'Each Soul uses a single fixed USDC listing price.',
       fieldErrors: {
         price: null,
       },

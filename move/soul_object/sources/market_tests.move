@@ -2,14 +2,17 @@
 module soul_object::market_tests;
 
 use std::string;
-use soul_object::grant;
+use kiosk::kiosk_lock_rule;
+use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
+use kiosk::personal_kiosk_rule;
+use soul_object::allowlist::{Self as allowlist, AllowlistRegistry};
 use soul_object::market;
-use soul_object::soul;
-use sui::coin::{Self as coin, Coin};
-use sui::kiosk;
-use sui::sui::SUI;
+use soul_object::soul::{Self as soul};
+use sui::coin::TreasuryCap;
+use sui::kiosk::{Self as kiosk, Kiosk};
 use sui::test_scenario::{Self as ts};
 use sui::transfer_policy;
+use usdc::usdc::{Self as test_usdc, USDC};
 use walrus::{blob, encoding, system, test_utils};
 
 const BLOB_ROOT_HASH: u256 = 0xABC;
@@ -17,14 +20,10 @@ const BLOB_SIZE: u64 = 5_000_000;
 const BLOB_ENCODING: u8 = 1;
 const BLOB_EPOCHS_AHEAD: u32 = 3;
 const PAYMENT_FROST: u64 = 1_000_000_000;
-const SALE_PRICE: u64 = 1_000;
-const RESALE_PRICE: u64 = 2_000;
-const PLATFORM_FEE_BPS: u16 = 500;
-const ROYALTY_BPS: u16 = 1_000;
-const PLATFORM_FEE: u64 = 50;
-const ROYALTY_FEE: u64 = 100;
-const RESALE_PLATFORM_FEE: u64 = 100;
-const RESALE_ROYALTY_FEE: u64 = 200;
+const SALE_PRICE: u64 = 1_000_000;
+const RELIST_PRICE: u64 = 2_000_000;
+const PLATFORM_FEE_BPS: u16 = 250;
+const CREATOR_ROYALTY_BPS: u16 = 1_000;
 
 fun register_test_blob(ctx: &mut TxContext): (system::System, blob::Blob) {
     let mut walrus_system = system::new_for_testing(ctx);
@@ -55,15 +54,21 @@ fun register_test_blob(ctx: &mut TxContext): (system::System, blob::Blob) {
     (walrus_system, registered_blob)
 }
 
+fun init_market_for_testing(scenario: &mut ts::Scenario, admin: address) {
+    ts::next_tx(scenario, admin);
+    {
+        market::init_for_testing(admin, ts::ctx(scenario));
+        allowlist::init_for_testing(ts::ctx(scenario));
+        test_usdc::init_for_testing(admin, ts::ctx(scenario));
+    };
+}
+
 #[test]
-fun init_for_testing_shares_config_and_policy() {
+fun init_for_testing_adds_lock_and_personal_kiosk_rules() {
     let admin = @0xA11CE;
     let mut scenario = ts::begin(@0x0);
 
-    {
-        ts::next_tx(&mut scenario, admin);
-        market::init_for_testing(admin, ts::ctx(&mut scenario));
-    };
+    init_market_for_testing(&mut scenario, admin);
 
     ts::next_tx(&mut scenario, admin);
     {
@@ -71,651 +76,355 @@ fun init_for_testing_shares_config_and_policy() {
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
 
-        assert!(market::fee_recipient(&config) == admin, 0);
-        assert!(market::platform_fee_bps(&config) == 0, 1);
-        assert!(market::royalty_bps(&config) == 0, 2);
+        assert!(transfer_policy::has_rule<soul::Soul, kiosk_lock_rule::Rule>(&policy), 0);
+        assert!(transfer_policy::has_rule<soul::Soul, personal_kiosk_rule::Rule>(&policy), 1);
 
         ts::return_shared(config);
         ts::return_shared(policy);
         transfer::public_transfer(admin_cap, admin);
         transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
     };
 
     ts::end(scenario);
 }
 
 #[test]
-fun purchase_transfers_soul_and_routes_fees() {
-    let seller = @0xA11CE;
-    let buyer = @0xB0B;
-    let platform = @0xCAFE;
+fun admin_can_update_platform_fee_and_quote_purchase() {
+    let admin = @0xA11CE;
     let mut scenario = ts::begin(@0x0);
-    let soul_id: ID;
 
-    {
-        ts::next_tx(&mut scenario, seller);
-        market::init_for_testing(seller, ts::ctx(&mut scenario));
-    };
+    init_market_for_testing(&mut scenario, admin);
 
+    ts::next_tx(&mut scenario, admin);
     {
-        ts::next_tx(&mut scenario, seller);
         let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
-        let soul_obj = soul::mint_for_testing(
-            seller,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ts::ctx(&mut scenario),
-        );
-        soul_id = object::id(&soul_obj);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
 
-        market::update_fee_recipient(&mut config, &admin_cap, platform);
-        market::update_platform_fee_bps(
-            &mut config,
-            &mut policy,
-            &policy_cap,
-            &admin_cap,
-            PLATFORM_FEE_BPS,
-        );
-        market::update_royalty_bps(
-            &mut config,
-            &mut policy,
-            &policy_cap,
-            &admin_cap,
-            ROYALTY_BPS,
-        );
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &policy, soul_obj, SALE_PRICE);
+        market::update_platform_fee_bps(&mut config, &admin_cap, PLATFORM_FEE_BPS);
+        assert!(market::platform_fee_bps(&config) == PLATFORM_FEE_BPS, 0);
 
-        std::unit_test::destroy(walrus_system);
+        let (platform_fee, price, creator_royalty, total) =
+            market::quote_purchase(&config, 1_000, CREATOR_ROYALTY_BPS);
+        assert!(platform_fee == 25, 1);
+        assert!(price == 1_000, 2);
+        assert!(creator_royalty == 100, 3);
+        assert!(total == 1_125, 4);
+
         ts::return_shared(config);
         ts::return_shared(policy);
-        transfer::public_transfer(admin_cap, seller);
-        transfer::public_transfer(policy_cap, seller);
-        transfer::public_transfer(seller_kiosk, seller);
-        transfer::public_transfer(seller_cap, seller);
-    };
-
-        ts::next_tx(&mut scenario, buyer);
-    {
-        let config: market::MarketConfig = ts::take_shared(&scenario);
-        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let mut seller_kiosk: kiosk::Kiosk = ts::take_from_address(&scenario, seller);
-        let payment: Coin<SUI> = coin::mint_for_testing(SALE_PRICE, ts::ctx(&mut scenario));
-        let fees: Coin<SUI> = coin::mint_for_testing(PLATFORM_FEE + ROYALTY_FEE, ts::ctx(&mut scenario));
-        let (purchased_soul, remainder) = market::purchase(
-            &config,
-            &policy,
-            &mut seller_kiosk,
-            soul_id,
-            payment,
-            fees,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::creator(&purchased_soul) == seller, 3);
-        assert!(seller_kiosk.profits_amount() == SALE_PRICE, 4);
-        assert!(remainder.value() == 0, 7);
-
-        let blob = soul::destroy_for_testing(purchased_soul);
-        blob.burn();
-        coin::burn_for_testing(remainder);
-        ts::return_shared(config);
-        ts::return_shared(policy);
-        ts::return_to_address(seller, seller_kiosk);
-    };
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let platform_fee_coin: Coin<SUI> = ts::take_from_address(&scenario, platform);
-        let royalty_fee_coin: Coin<SUI> = ts::take_from_address(&scenario, seller);
-
-        assert!(platform_fee_coin.value() == PLATFORM_FEE, 5);
-        assert!(royalty_fee_coin.value() == ROYALTY_FEE, 6);
-
-        coin::burn_for_testing(platform_fee_coin);
-        coin::burn_for_testing(royalty_fee_coin);
+        transfer::public_transfer(admin_cap, admin);
+        transfer::public_transfer(policy_cap, admin);
+        transfer::public_transfer(treasury_cap, admin);
     };
 
     ts::end(scenario);
 }
 
 #[test]
-fun secondary_resale_transfers_same_soul_and_preserves_blob() {
-    let seller = @0xA11CE;
-    let reseller = @0xB0B;
-    let final_buyer = @0xC0DE;
-    let platform = @0xCAFE;
+fun list_fixed_price_clears_allowlist_and_marks_listing_active() {
+    let admin = @0xA11CE;
+    let seller = @0xB0B;
+    let allowlisted = @0xCAFE;
     let mut scenario = ts::begin(@0x0);
     let soul_id: ID;
-    let blob_object_id: ID;
+    let seller_kiosk_id: ID;
 
-    {
-        ts::next_tx(&mut scenario, seller);
-        market::init_for_testing(seller, ts::ctx(&mut scenario));
-    };
+    init_market_for_testing(&mut scenario, admin);
 
+    ts::next_tx(&mut scenario, seller);
     {
-        ts::next_tx(&mut scenario, seller);
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
-        let soul_obj = soul::mint_for_testing(
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let (mut seller_kiosk, seller_kiosk_cap) = kiosk::new(ts::ctx(&mut scenario));
+        seller_kiosk_id = object::id(&seller_kiosk);
+        let seller_personal_cap = personal_kiosk::new(&mut seller_kiosk, seller_kiosk_cap, ts::ctx(&mut scenario));
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+        let soul_obj = soul::mint_for_testing_with_creator_royalty(
             seller,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
             string::utf8(b"https://example.com/soul.png"),
             option::none(),
-            blob,
+            content_blob,
+            CREATOR_ROYALTY_BPS,
             ts::ctx(&mut scenario),
         );
         soul_id = object::id(&soul_obj);
-        blob_object_id = soul::content_blob_object_id(&soul_obj);
 
-        market::update_fee_recipient(&mut config, &admin_cap, platform);
-        market::update_platform_fee_bps(
-            &mut config,
-            &mut policy,
-            &policy_cap,
-            &admin_cap,
-            PLATFORM_FEE_BPS,
+        kiosk::place(&mut seller_kiosk, personal_kiosk::borrow(&seller_personal_cap), soul_obj);
+        let allowlist_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            allowlisted,
+            ts::ctx(&mut scenario),
         );
-        market::update_royalty_bps(
-            &mut config,
-            &mut policy,
-            &policy_cap,
-            &admin_cap,
-            ROYALTY_BPS,
+        allowlist::destroy_for_testing(allowlist_cap);
+        market::list_fixed_price(
+            &config,
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            SALE_PRICE,
+            ts::ctx(&mut scenario),
         );
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &policy, soul_obj, SALE_PRICE);
 
         std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
         ts::return_shared(config);
         ts::return_shared(policy);
-        transfer::public_transfer(admin_cap, seller);
-        transfer::public_transfer(policy_cap, seller);
-        transfer::public_transfer(seller_kiosk, seller);
-        transfer::public_transfer(seller_cap, seller);
+        transfer::public_share_object(seller_kiosk);
+        personal_kiosk::transfer_to_sender(seller_personal_cap, ts::ctx(&mut scenario));
     };
 
+    ts::next_tx(&mut scenario, seller);
     {
-        ts::next_tx(&mut scenario, reseller);
+        let registry: AllowlistRegistry = ts::take_shared(&scenario);
         let config: market::MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let mut seller_kiosk: kiosk::Kiosk = ts::take_from_address(&scenario, seller);
-        let payment: Coin<SUI> = coin::mint_for_testing(SALE_PRICE, ts::ctx(&mut scenario));
-        let fees: Coin<SUI> = coin::mint_for_testing(PLATFORM_FEE + ROYALTY_FEE, ts::ctx(&mut scenario));
-        let (purchased_soul, remainder) = market::purchase(
-            &config,
-            &policy,
-            &mut seller_kiosk,
-            soul_id,
-            payment,
-            fees,
-            ts::ctx(&mut scenario),
-        );
-        let (mut reseller_kiosk, reseller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        market::place_and_list(&mut reseller_kiosk, &reseller_cap, &policy, purchased_soul, RESALE_PRICE);
+        let listing: market::FixedPriceListing = ts::take_shared(&scenario);
+        let seller_kiosk: Kiosk = ts::take_shared(&scenario);
 
-        assert!(reseller_kiosk.profits_amount() == 0, 9);
-        coin::burn_for_testing(remainder);
+        assert!(market::listing_is_active(&listing), 0);
+        assert!(market::listing_soul_id(&listing) == soul_id, 1);
+        assert!(market::listing_seller_kiosk_id(&listing) == seller_kiosk_id, 2);
+        assert!(market::listing_price(&listing) == SALE_PRICE, 3);
+        assert!(market::listing_creator_royalty_bps(&listing) == CREATOR_ROYALTY_BPS, 4);
+        assert!(allowlist::registry_version(&registry, soul_id) == 2, 5);
+        assert!(kiosk::is_listed_exclusively(&seller_kiosk, soul_id), 6);
+
+        ts::return_shared(registry);
         ts::return_shared(config);
         ts::return_shared(policy);
-        ts::return_to_address(seller, seller_kiosk);
-        transfer::public_transfer(reseller_kiosk, reseller);
-        transfer::public_transfer(reseller_cap, reseller);
-    };
-
-    ts::next_tx(&mut scenario, final_buyer);
-    {
-        let config: market::MarketConfig = ts::take_shared(&scenario);
-        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let mut reseller_kiosk: kiosk::Kiosk = ts::take_from_address(&scenario, reseller);
-        let payment: Coin<SUI> = coin::mint_for_testing(RESALE_PRICE, ts::ctx(&mut scenario));
-        let fees: Coin<SUI> = coin::mint_for_testing(
-            RESALE_PLATFORM_FEE + RESALE_ROYALTY_FEE,
-            ts::ctx(&mut scenario),
-        );
-        let (resold_soul, remainder) = market::purchase(
-            &config,
-            &policy,
-            &mut reseller_kiosk,
-            soul_id,
-            payment,
-            fees,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::creator(&resold_soul) == seller, 10);
-        assert!(soul::content_blob_object_id(&resold_soul) == blob_object_id, 11);
-        assert!(reseller_kiosk.profits_amount() == RESALE_PRICE, 12);
-        assert!(remainder.value() == 0, 13);
-
-        let blob = soul::destroy_for_testing(resold_soul);
-        blob.burn();
-        coin::burn_for_testing(remainder);
-        ts::return_shared(config);
-        ts::return_shared(policy);
-        ts::return_to_address(reseller, reseller_kiosk);
-    };
-
-    ts::next_tx(&mut scenario, final_buyer);
-    {
-        let platform_fee_coin_1: Coin<SUI> = ts::take_from_address(&scenario, platform);
-        let platform_fee_coin_2: Coin<SUI> = ts::take_from_address(&scenario, platform);
-        let royalty_fee_coin_1: Coin<SUI> = ts::take_from_address(&scenario, seller);
-        let royalty_fee_coin_2: Coin<SUI> = ts::take_from_address(&scenario, seller);
-
-        assert!(platform_fee_coin_1.value() + platform_fee_coin_2.value() == PLATFORM_FEE + RESALE_PLATFORM_FEE, 14);
-        assert!(royalty_fee_coin_1.value() + royalty_fee_coin_2.value() == ROYALTY_FEE + RESALE_ROYALTY_FEE, 15);
-
-        coin::burn_for_testing(platform_fee_coin_1);
-        coin::burn_for_testing(platform_fee_coin_2);
-        coin::burn_for_testing(royalty_fee_coin_1);
-        coin::burn_for_testing(royalty_fee_coin_2);
+        ts::return_shared(listing);
+        ts::return_shared(seller_kiosk);
     };
 
     ts::end(scenario);
 }
 
 #[test]
-#[expected_failure(abort_code = soul_object::market::EInvalidRecipient)]
-fun fee_recipient_cannot_be_zero_address() {
+fun cancel_listing_keeps_soul_in_seller_personal_kiosk() {
     let admin = @0xA11CE;
+    let seller = @0xB0B;
     let mut scenario = ts::begin(@0x0);
+    init_market_for_testing(&mut scenario, admin);
 
+    ts::next_tx(&mut scenario, seller);
     {
-        ts::next_tx(&mut scenario, admin);
-        market::init_for_testing(admin, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        market::update_fee_recipient(&mut config, &admin_cap, @0x0);
-        abort 5
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soul_object::platform_fee_rule::EFeeTooHigh)]
-fun platform_fee_bps_cannot_exceed_maximum() {
-    let admin = @0xA11CE;
-    let mut scenario = ts::begin(@0x0);
-
-    {
-        ts::next_tx(&mut scenario, admin);
-        market::init_for_testing(admin, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        market::update_platform_fee_bps(&mut config, &mut policy, &policy_cap, &admin_cap, 10_001);
-        abort 4
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soul_object::royalty_rule::ERoyaltyTooHigh)]
-fun royalty_bps_cannot_exceed_maximum() {
-    let admin = @0xA11CE;
-    let mut scenario = ts::begin(@0x0);
-
-    {
-        ts::next_tx(&mut scenario, admin);
-        market::init_for_testing(admin, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        market::update_royalty_bps(&mut config, &mut policy, &policy_cap, &admin_cap, 10_001);
-        abort 6
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soul_object::market::EPolicyNotConfigured)]
-fun place_and_list_requires_configured_policy_rules() {
-    let owner = @0xA11CE;
-    let mut scenario = ts::begin(owner);
-
-    {
-        let ctx = ts::ctx(&mut scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ctx);
-        let (raw_policy, policy_cap) = transfer_policy::new_for_testing<soul::Soul>(ctx);
-        let (walrus_system, blob) = register_test_blob(ctx);
-        let soul_obj = soul::mint_for_testing(
-            owner,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ctx,
-        );
-
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &raw_policy, soul_obj, SALE_PRICE);
-        std::unit_test::destroy(walrus_system);
-        transfer_policy::destroy_and_withdraw(raw_policy, policy_cap, ctx).burn_for_testing();
-        abort 3
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soul_object::market::EInvalidPrice)]
-fun zero_price_listing_is_rejected() {
-    let seller = @0xA11CE;
-    let platform = @0xCAFE;
-    let mut scenario = ts::begin(@0x0);
-
-    {
-        ts::next_tx(&mut scenario, seller);
-        market::init_for_testing(seller, ts::ctx(&mut scenario));
-    };
-
-    {
-        ts::next_tx(&mut scenario, seller);
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let (mut seller_kiosk, seller_kiosk_cap) = kiosk::new(ts::ctx(&mut scenario));
+        let seller_personal_cap = personal_kiosk::new(&mut seller_kiosk, seller_kiosk_cap, ts::ctx(&mut scenario));
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
         let soul_obj = soul::mint_for_testing(
             seller,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
             string::utf8(b"https://example.com/soul.png"),
             option::none(),
-            blob,
+            content_blob,
             ts::ctx(&mut scenario),
         );
+        let soul_id = object::id(&soul_obj);
 
-        market::update_fee_recipient(&mut config, &admin_cap, platform);
-        market::update_platform_fee_bps(&mut config, &mut policy, &policy_cap, &admin_cap, PLATFORM_FEE_BPS);
-        market::update_royalty_bps(&mut config, &mut policy, &policy_cap, &admin_cap, ROYALTY_BPS);
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &policy, soul_obj, 0);
+        kiosk::place(&mut seller_kiosk, personal_kiosk::borrow(&seller_personal_cap), soul_obj);
+        let mut listing = market::list_fixed_price_for_testing(
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            RELIST_PRICE,
+            ts::ctx(&mut scenario),
+        );
+        market::cancel_listing(&mut seller_kiosk, &seller_personal_cap, &mut listing);
+
+        assert!(!market::listing_is_active(&listing), 0);
+        assert!(kiosk::has_item(&seller_kiosk, soul_id), 1);
+        assert!(!kiosk::is_listed_exclusively(&seller_kiosk, soul_id), 2);
 
         std::unit_test::destroy(walrus_system);
+        market::destroy_listing_for_testing(listing);
+        ts::return_shared(registry);
+        ts::return_shared(config);
+        ts::return_shared(policy);
+        transfer::public_share_object(seller_kiosk);
+        personal_kiosk::transfer_to_sender(seller_personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun buy_fixed_price_moves_soul_into_buyer_personal_kiosk_and_clears_allowlist() {
+    let seller = @0xA11CE;
+    let buyer = @0xB0B;
+    let allowlisted = @0xCAFE;
+    let mut scenario = ts::begin(@0x0);
+    let soul_id: ID;
+    let seller_kiosk_id: ID;
+
+    init_market_for_testing(&mut scenario, seller);
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let mut config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+
+        market::update_platform_fee_bps(&mut config, &admin_cap, PLATFORM_FEE_BPS);
+
         ts::return_shared(config);
         ts::return_shared(policy);
         transfer::public_transfer(admin_cap, seller);
         transfer::public_transfer(policy_cap, seller);
-        transfer::public_transfer(seller_kiosk, seller);
-        transfer::public_transfer(seller_cap, seller);
-        abort 17
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soul_object::platform_fee_rule::EInsufficientPayment)]
-fun purchase_requires_sufficient_fee_coin() {
-    let seller = @0xA11CE;
-    let buyer = @0xB0B;
-    let platform = @0xCAFE;
-    let mut scenario = ts::begin(@0x0);
-    let soul_id: ID;
-
-    {
-        ts::next_tx(&mut scenario, seller);
-        market::init_for_testing(seller, ts::ctx(&mut scenario));
+        transfer::public_transfer(treasury_cap, seller);
     };
 
+    ts::next_tx(&mut scenario, seller);
     {
-        ts::next_tx(&mut scenario, seller);
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let config: market::MarketConfig = ts::take_shared(&scenario);
+        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
-        let soul_obj = soul::mint_for_testing(
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
+        let (mut seller_kiosk, seller_kiosk_cap) = kiosk::new(ts::ctx(&mut scenario));
+        seller_kiosk_id = object::id(&seller_kiosk);
+        let seller_personal_cap = personal_kiosk::new(&mut seller_kiosk, seller_kiosk_cap, ts::ctx(&mut scenario));
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+        let soul_obj = soul::mint_for_testing_with_creator_royalty(
             seller,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
             string::utf8(b"https://example.com/soul.png"),
             option::none(),
-            blob,
+            content_blob,
+            CREATOR_ROYALTY_BPS,
             ts::ctx(&mut scenario),
         );
         soul_id = object::id(&soul_obj);
 
-        market::update_fee_recipient(&mut config, &admin_cap, platform);
-        market::update_platform_fee_bps(&mut config, &mut policy, &policy_cap, &admin_cap, PLATFORM_FEE_BPS);
-        market::update_royalty_bps(&mut config, &mut policy, &policy_cap, &admin_cap, ROYALTY_BPS);
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &policy, soul_obj, SALE_PRICE);
+        kiosk::place(&mut seller_kiosk, personal_kiosk::borrow(&seller_personal_cap), soul_obj);
+        let allowlist_cap = allowlist::set_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            allowlisted,
+            ts::ctx(&mut scenario),
+        );
+        allowlist::destroy_for_testing(allowlist_cap);
+        market::list_fixed_price(
+            &config,
+            &mut registry,
+            &mut seller_kiosk,
+            &seller_personal_cap,
+            soul_id,
+            SALE_PRICE,
+            ts::ctx(&mut scenario),
+        );
 
         std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
         ts::return_shared(config);
         ts::return_shared(policy);
         transfer::public_transfer(admin_cap, seller);
         transfer::public_transfer(policy_cap, seller);
-        transfer::public_transfer(seller_kiosk, seller);
-        transfer::public_transfer(seller_cap, seller);
+        transfer::public_transfer(treasury_cap, seller);
+        transfer::public_share_object(seller_kiosk);
+        personal_kiosk::transfer_to_sender(seller_personal_cap, ts::ctx(&mut scenario));
     };
 
     ts::next_tx(&mut scenario, buyer);
     {
+        let mut registry: AllowlistRegistry = ts::take_shared(&scenario);
         let config: market::MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let mut seller_kiosk: kiosk::Kiosk = ts::take_from_address(&scenario, seller);
-        let payment: Coin<SUI> = coin::mint_for_testing(SALE_PRICE, ts::ctx(&mut scenario));
-        let fees: Coin<SUI> = coin::mint_for_testing(10, ts::ctx(&mut scenario));
+        let mut listing: market::FixedPriceListing = ts::take_shared(&scenario);
+        let mut seller_kiosk: Kiosk = ts::take_shared(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_address(&scenario, seller);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_address(&scenario, seller);
+        let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, seller);
+        let (_, _, _, total) = market::quote_fixed_price(&config, &listing);
+        let payment = test_usdc::mint_for_testing(&mut treasury_cap, total, ts::ctx(&mut scenario));
 
-        let (purchased_soul, remaining_fee_coin) = market::purchase(
+        market::buy_fixed_price(
             &config,
             &policy,
+            &mut registry,
             &mut seller_kiosk,
-            soul_id,
+            &mut listing,
             payment,
-            fees,
             ts::ctx(&mut scenario),
         );
-        let blob = soul::destroy_for_testing(purchased_soul);
-        blob.burn();
-        remaining_fee_coin.burn_for_testing();
-        abort 2
-    }
-}
 
-#[test]
-#[expected_failure(abort_code = soul_object::royalty_rule::EInsufficientPayment)]
-fun purchase_requires_sufficient_royalty_fee_coin() {
-    let seller = @0xA11CE;
-    let buyer = @0xB0B;
-    let platform = @0xCAFE;
-    let mut scenario = ts::begin(@0x0);
-    let soul_id: ID;
-
-    {
-        ts::next_tx(&mut scenario, seller);
-        market::init_for_testing(seller, ts::ctx(&mut scenario));
-    };
-
-    {
-        ts::next_tx(&mut scenario, seller);
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
-        let soul_obj = soul::mint_for_testing(
-            seller,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ts::ctx(&mut scenario),
-        );
-        soul_id = object::id(&soul_obj);
-
-        market::update_fee_recipient(&mut config, &admin_cap, platform);
-        market::update_platform_fee_bps(&mut config, &mut policy, &policy_cap, &admin_cap, 0);
-        market::update_royalty_bps(&mut config, &mut policy, &policy_cap, &admin_cap, ROYALTY_BPS);
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &policy, soul_obj, SALE_PRICE);
-
-        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
         ts::return_shared(config);
         ts::return_shared(policy);
+        ts::return_shared(listing);
+        ts::return_shared(seller_kiosk);
         transfer::public_transfer(admin_cap, seller);
         transfer::public_transfer(policy_cap, seller);
-        transfer::public_transfer(seller_kiosk, seller);
-        transfer::public_transfer(seller_cap, seller);
+        transfer::public_transfer(treasury_cap, seller);
     };
 
     ts::next_tx(&mut scenario, buyer);
     {
+        let registry: AllowlistRegistry = ts::take_shared(&scenario);
         let config: market::MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let mut seller_kiosk: kiosk::Kiosk = ts::take_from_address(&scenario, seller);
-        let payment: Coin<SUI> = coin::mint_for_testing(SALE_PRICE, ts::ctx(&mut scenario));
-        let fees: Coin<SUI> = coin::mint_for_testing(ROYALTY_FEE - 1, ts::ctx(&mut scenario));
+        let listing: market::FixedPriceListing = ts::take_shared(&scenario);
+        let first_kiosk: Kiosk = ts::take_shared(&scenario);
+        let second_kiosk: Kiosk = ts::take_shared(&scenario);
+        let buyer_personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let admin_cap: market::MarketAdminCap = ts::take_from_address(&scenario, seller);
+        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_address(&scenario, seller);
+        let treasury_cap: TreasuryCap<USDC> = ts::take_from_address(&scenario, seller);
 
-        let (purchased_soul, remaining_fee_coin) = market::purchase(
-            &config,
-            &policy,
-            &mut seller_kiosk,
+        let (seller_kiosk, buyer_kiosk) =
+            if (object::id(&first_kiosk) == seller_kiosk_id) {
+                (&first_kiosk, &second_kiosk)
+            } else {
+                (&second_kiosk, &first_kiosk)
+            };
+        let purchased_soul = kiosk::borrow<soul::Soul>(
+            buyer_kiosk,
+            personal_kiosk::borrow(&buyer_personal_cap),
             soul_id,
-            payment,
-            fees,
-            ts::ctx(&mut scenario),
         );
-        let blob = soul::destroy_for_testing(purchased_soul);
-        blob.burn();
-        remaining_fee_coin.burn_for_testing();
-        abort 7
-    }
-}
 
-#[test]
-fun purchase_clears_existing_agent_grant() {
-    let seller = @0xA11CE;
-    let buyer = @0xB0B;
-    let platform = @0xCAFE;
-    let agent = @0xD00D;
-    let mut scenario = ts::begin(@0x0);
-    let soul_id: ID;
+        assert!(!market::listing_is_active(&listing), 0);
+        assert!(!kiosk::has_item(seller_kiosk, soul_id), 1);
+        assert!(kiosk::has_item(buyer_kiosk, soul_id), 2);
+        assert!(kiosk::is_locked(buyer_kiosk, soul_id), 3);
+        assert!(personal_kiosk::owner(buyer_kiosk) == buyer, 4);
+        assert!(soul::allowlist_address(purchased_soul).is_none(), 5);
+        assert!(soul::allowlist_version(purchased_soul) == 2, 6);
+        assert!(allowlist::registry_version(&registry, soul_id) == 2, 7);
 
-    {
-        ts::next_tx(&mut scenario, seller);
-        market::init_for_testing(seller, ts::ctx(&mut scenario));
-    };
-
-    {
-        ts::next_tx(&mut scenario, seller);
-        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
-        let soul_obj = soul::mint_for_testing(
-            seller,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Single-owner artifact"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            blob,
-            ts::ctx(&mut scenario),
-        );
-        soul_id = object::id(&soul_obj);
-        transfer::public_transfer(soul_obj, seller);
-        std::unit_test::destroy(walrus_system);
-    };
-
-    {
-        ts::next_tx(&mut scenario, seller);
-        let mut config: market::MarketConfig = ts::take_shared(&scenario);
-        let mut policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
-        let (mut seller_kiosk, seller_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let mut soul_obj: soul::Soul = ts::take_from_sender(&scenario);
-        let access_cap = grant::set_agent_grant(&mut soul_obj, agent, ts::ctx(&mut scenario));
-        assert!(soul::grant_version(&soul_obj) == 1, 8);
-
-        market::update_fee_recipient(&mut config, &admin_cap, platform);
-        market::update_platform_fee_bps(
-            &mut config,
-            &mut policy,
-            &policy_cap,
-            &admin_cap,
-            PLATFORM_FEE_BPS,
-        );
-        market::update_royalty_bps(
-            &mut config,
-            &mut policy,
-            &policy_cap,
-            &admin_cap,
-            ROYALTY_BPS,
-        );
-        market::place_and_list(&mut seller_kiosk, &seller_cap, &policy, soul_obj, SALE_PRICE);
-
+        ts::return_shared(registry);
         ts::return_shared(config);
         ts::return_shared(policy);
+        ts::return_shared(listing);
+        ts::return_shared(first_kiosk);
+        ts::return_shared(second_kiosk);
+        personal_kiosk::transfer_to_sender(buyer_personal_cap, ts::ctx(&mut scenario));
         transfer::public_transfer(admin_cap, seller);
         transfer::public_transfer(policy_cap, seller);
-        transfer::public_transfer(seller_kiosk, seller);
-        transfer::public_transfer(seller_cap, seller);
-        transfer::public_transfer(access_cap, agent);
-    };
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: market::MarketConfig = ts::take_shared(&scenario);
-        let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
-        let mut seller_kiosk: kiosk::Kiosk = ts::take_from_address(&scenario, seller);
-        let payment: Coin<SUI> = coin::mint_for_testing(SALE_PRICE, ts::ctx(&mut scenario));
-        let fees: Coin<SUI> = coin::mint_for_testing(PLATFORM_FEE + ROYALTY_FEE, ts::ctx(&mut scenario));
-        let (purchased_soul, remainder) = market::purchase(
-            &config,
-            &policy,
-            &mut seller_kiosk,
-            soul_id,
-            payment,
-            fees,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::agent_grant(&purchased_soul).is_none(), 9);
-        assert!(soul::grant_version(&purchased_soul) == 3, 10);
-
-        let blob = soul::destroy_for_testing(purchased_soul);
-        blob.burn();
-        coin::burn_for_testing(remainder);
-        ts::return_shared(config);
-        ts::return_shared(policy);
-        ts::return_to_address(seller, seller_kiosk);
-    };
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let platform_fee_coin: Coin<SUI> = ts::take_from_address(&scenario, platform);
-        let royalty_fee_coin: Coin<SUI> = ts::take_from_address(&scenario, seller);
-        coin::burn_for_testing(platform_fee_coin);
-        coin::burn_for_testing(royalty_fee_coin);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let access_cap: grant::SoulAccessCap = ts::take_from_sender(&scenario);
-        grant::destroy_for_testing(access_cap);
+        transfer::public_transfer(treasury_cap, seller);
     };
 
     ts::end(scenario);

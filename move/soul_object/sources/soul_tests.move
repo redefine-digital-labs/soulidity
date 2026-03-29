@@ -173,9 +173,9 @@ fun init_for_testing_creates_display_and_authority_without_leaking_raw_publisher
 }
 
 #[test]
-fun clear_agent_grant_if_present_only_bumps_version_when_needed() {
+fun clear_allowlist_address_if_present_only_bumps_version_when_needed() {
     let owner = @0xBEEF;
-    let agent = @0xABCD;
+    let allowlisted = @0xABCD;
     let mut scenario = ts::begin(owner);
 
     {
@@ -191,14 +191,14 @@ fun clear_agent_grant_if_present_only_bumps_version_when_needed() {
             ctx,
         );
 
-        assert!(!soul::clear_agent_grant_if_present(&mut soul_obj), 0);
-        assert!(soul::grant_version(&soul_obj) == 0, 1);
+        assert!(!soul::clear_allowlist_address_if_present(&mut soul_obj), 0);
+        assert!(soul::allowlist_version(&soul_obj) == 0, 1);
 
-        let _ = soul::set_agent_grant(&mut soul_obj, option::some(agent));
-        assert!(soul::grant_version(&soul_obj) == 1, 2);
-        assert!(soul::clear_agent_grant_if_present(&mut soul_obj), 3);
-        assert!(soul::grant_version(&soul_obj) == 2, 4);
-        assert!(soul::agent_grant(&soul_obj).is_none(), 5);
+        let _ = soul::set_allowlist_address(&mut soul_obj, allowlisted);
+        assert!(soul::allowlist_version(&soul_obj) == 1, 2);
+        assert!(soul::clear_allowlist_address_if_present(&mut soul_obj), 3);
+        assert!(soul::allowlist_version(&soul_obj) == 2, 4);
+        assert!(soul::allowlist_address(&soul_obj).is_none(), 5);
 
         let blob = soul::destroy_for_testing(soul_obj);
         blob.burn();

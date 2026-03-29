@@ -12,21 +12,18 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
 })
 
 const mockedResolveIdentity = vi.hoisted(() => vi.fn())
+const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedToSoulAssetDetail = vi.hoisted(() => vi.fn())
 const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
-const mockedGetSoulSecondaryPurchaseQuote = vi.hoisted(() => vi.fn())
-const mockedBuildBuySecondarySoulTx = vi.hoisted(() => vi.fn())
-const mockedSuiClient = vi.hoisted(() => ({
-  devInspectTransactionBlock: vi.fn(),
-}))
-const mockedSecondaryTx = vi.hoisted(() => ({
-  setSender: vi.fn(),
-}))
 
 vi.mock('@web/lib/auth/identity', () => ({
   resolveIdentity: mockedResolveIdentity,
+}))
+
+vi.mock('@web/lib/auth/sui-wallet', () => ({
+  getMemberSuiWalletAddresses: mockedGetMemberSuiWalletAddresses,
 }))
 
 vi.mock('@web/lib/auth/require-agent-api-key', () => ({
@@ -44,15 +41,6 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
 
 vi.mock('@web/lib/souls/purchase-quote', () => ({
   getSoulPurchaseQuote: mockedGetSoulPurchaseQuote,
-  getSoulSecondaryPurchaseQuote: mockedGetSoulSecondaryPurchaseQuote,
-}))
-
-vi.mock('@web/lib/souls/tx-builder', () => ({
-  buildBuySecondarySoulTx: mockedBuildBuySecondarySoulTx,
-}))
-
-vi.mock('@web/lib/sui', () => ({
-  suiClient: mockedSuiClient,
 }))
 
 describe('soul detail routes', () => {
@@ -61,6 +49,7 @@ describe('soul detail routes', () => {
     vi.resetModules()
 
     mockedResolveIdentity.mockResolvedValue(null)
+    mockedGetMemberSuiWalletAddresses.mockResolvedValue([])
     mockedRequireAgentApiKey.mockResolvedValue({
       agent: { agentMemberId: 'agent-member-1' },
       response: null,
@@ -68,9 +57,11 @@ describe('soul detail routes', () => {
     mockedFindSoulAssetDetailByRouteId.mockResolvedValue({
       id: 'asset-db-1',
       onChainId: SOUL_ID,
-      listedPriceSui: '1000000000',
+      creatorRoyaltyBps: 0,
+      listingObjectOnChainId: `0x${'6'.repeat(64)}`,
+      listedPriceAtomic: '1000000',
       listingStatus: 'listed',
-      sellerKioskId: `0x${'4'.repeat(64)}`,
+      currentKioskId: `0x${'4'.repeat(64)}`,
     })
     mockedToSoulAssetDetail.mockReturnValue({
       id: 'asset-db-1',
@@ -81,7 +72,9 @@ describe('soul detail routes', () => {
       category: 'Research',
       tags: [],
       previewImages: [],
-      listedPriceSui: '1000000000',
+      creatorRoyaltyBps: 0,
+      listingObjectOnChainId: `0x${'6'.repeat(64)}`,
+      listedPriceAtomic: '1000000',
       listingStatus: 'listed',
       creatorAddress: `0x${'2'.repeat(64)}`,
       currentOwnerAddress: `0x${'3'.repeat(64)}`,
@@ -90,32 +83,27 @@ describe('soul detail routes', () => {
       metadataRef: null,
       contentBlobId: 'blob-content',
       contentBlobObjectId: '0xblob',
-      sellerKioskId: `0x${'4'.repeat(64)}`,
+      currentKioskId: `0x${'4'.repeat(64)}`,
+      currentKioskCapOnChainId: `0x${'5'.repeat(64)}`,
       readme: null,
-      agentGrantAddress: null,
-      agentAccessCapOnChainId: null,
-      grantVersion: '0',
+      allowlistAddress: null,
+      allowlistCapOnChainId: null,
+      allowlistVersion: '0',
       creatorMemberId: 'creator-1',
       currentOwnerMemberId: 'owner-1',
-      purchaseFeeAmountSui: null,
+      purchasePlatformFeeAtomic: null,
+      purchaseCreatorRoyaltyAtomic: null,
+      purchaseTotalAtomic: null,
+      quotedPriceAtomic: null,
       isOwner: false,
       isCreator: false,
+      isAllowlisted: false,
     })
     mockedGetSoulPurchaseQuote.mockResolvedValue({
-      marketplaceFeeSui: 50_000_000n,
-      priceSui: 1_000_000_000n,
-      royaltyFeeSui: 25_000_000n,
-      totalSui: 1_075_000_000n,
-    })
-    mockedGetSoulSecondaryPurchaseQuote.mockResolvedValue({
-      marketplaceFeeSui: 50_000_000n,
-      priceSui: 1_000_000_000n,
-      royaltyFeeSui: 25_000_000n,
-      totalSui: 1_075_000_000n,
-    })
-    mockedBuildBuySecondarySoulTx.mockReturnValue(mockedSecondaryTx)
-    mockedSuiClient.devInspectTransactionBlock.mockResolvedValue({
-      effects: { status: { status: 'success' } },
+      platformFeeAtomic: 50_000n,
+      priceAtomic: 1_000_000n,
+      creatorRoyaltyAtomic: 25_000n,
+      totalAtomic: 1_075_000n,
     })
   })
 
@@ -142,11 +130,17 @@ describe('soul detail routes', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
       onChainId: SOUL_ID,
-      purchaseFeeAmountSui: '75000000',
+      purchasePlatformFeeAtomic: '50000',
+      purchaseCreatorRoyaltyAtomic: '25000',
+      purchaseTotalAtomic: '1075000',
+      quotedPriceAtomic: '1000000',
     })
     expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.objectContaining({
       onChainId: SOUL_ID,
-    }), null)
+    }), {
+      viewerMemberId: null,
+      viewerWalletAddresses: [],
+    })
   })
 
   it('passes the authenticated viewer id into public detail serialization', async () => {
@@ -159,20 +153,64 @@ describe('soul detail routes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), 'owner-1')
+    expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), {
+      viewerMemberId: 'owner-1',
+      viewerWalletAddresses: [],
+    })
   })
 
-  it('suppresses stale core listing quotes on the public detail route', async () => {
+  it('returns 409 when the authenticated viewer has multiple Sui wallet bindings', async () => {
+    mockedResolveIdentity.mockResolvedValueOnce({ memberId: 'owner-1' })
+    const walletError = new Error('Multiple Sui wallets')
+    walletError.name = 'MultipleSuiWalletBindingsError'
+    mockedGetMemberSuiWalletAddresses.mockRejectedValueOnce(walletError)
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({ error: 'Multiple Sui wallets' })
+    expect(mockedToSoulAssetDetail).not.toHaveBeenCalled()
+  })
+
+  it('degrades gracefully when viewer wallet lookup fails unexpectedly', async () => {
+    mockedResolveIdentity.mockResolvedValueOnce({ memberId: 'owner-1' })
+    mockedGetMemberSuiWalletAddresses.mockRejectedValueOnce(new Error('wallet service unavailable'))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    try {
+      const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+      const response = await GET(
+        new Request('http://localhost/api/souls/0xsoul') as any,
+        { params: Promise.resolve({ id: SOUL_ID }) },
+      )
+
+      expect(response.status).toBe(200)
+      expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), {
+        viewerMemberId: 'owner-1',
+        viewerWalletAddresses: [],
+      })
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[soul-detail] Failed to resolve viewer wallets',
+        expect.any(Error),
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('skips purchase quote lookup when the listed Soul is missing its kiosk mirror', async () => {
     mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
       id: 'asset-db-1',
       onChainId: SOUL_ID,
-      listedPriceSui: '1000000000',
+      creatorRoyaltyBps: 0,
+      listingObjectOnChainId: null,
+      listedPriceAtomic: '1000000',
       listingStatus: 'listed',
-      listingSource: 'core',
-      sellerKioskId: `0x${'4'.repeat(64)}`,
-    })
-    mockedSuiClient.devInspectTransactionBlock.mockResolvedValueOnce({
-      error: 'MoveAbort(MutableObjectUsedAfterDelete)',
+      currentKioskId: null,
     })
 
     const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
@@ -184,14 +222,30 @@ describe('soul detail routes', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
       onChainId: SOUL_ID,
-      purchaseFeeAmountSui: null,
+      purchasePlatformFeeAtomic: null,
+      purchaseCreatorRoyaltyAtomic: null,
+      purchaseTotalAtomic: null,
+      quotedPriceAtomic: null,
     })
-    expect(mockedBuildBuySecondarySoulTx).toHaveBeenCalledWith({
-      soulObjectId: SOUL_ID,
-      sellerKioskId: `0x${'4'.repeat(64)}`,
-      buyerAddress: `0x${'1'.padStart(64, '0')}`,
-      priceSui: 1_000_000_000n,
-      feeAmountSui: 75_000_000n,
+    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
+  })
+
+  it('still returns Soul detail when purchase quote lookup fails', async () => {
+    mockedGetSoulPurchaseQuote.mockRejectedValueOnce(new MockOnChainVerificationError('Listing is stale'))
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      onChainId: SOUL_ID,
+      purchasePlatformFeeAtomic: null,
+      purchaseCreatorRoyaltyAtomic: null,
+      purchaseTotalAtomic: null,
+      quotedPriceAtomic: null,
     })
   })
 
@@ -203,6 +257,25 @@ describe('soul detail routes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), 'agent-member-1')
+    expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), {
+      viewerMemberId: 'agent-member-1',
+      viewerWalletAddresses: [],
+    })
+  })
+
+  it('passes agent wallet addresses so allowlisted state can be derived', async () => {
+    mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([`0x${'a'.repeat(64)}`])
+
+    const { GET } = await import('../../web/app/api/agent/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/agent/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), {
+      viewerMemberId: 'agent-member-1',
+      viewerWalletAddresses: [`0x${'a'.repeat(64)}`],
+    })
   })
 })

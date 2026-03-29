@@ -37,7 +37,8 @@ describe('soul publish draft', () => {
       category: 'Research',
       tags: ['alpha', 'beta'],
       imageUrl: 'https://example.com/soul.png',
-      priceSui: '1000000000',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
       readme: 'README',
     })
 
@@ -67,7 +68,8 @@ describe('soul publish draft', () => {
       category: 'Research',
       tags: [],
       imageUrl: 'https://example.com/soul.png',
-      priceSui: '1000000000',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
       readme: '',
     })))
 
@@ -85,18 +87,19 @@ describe('soul publish draft', () => {
       category: 'Research',
       tags: [],
       imageUrl: 'https://example.com/soul.png',
-      priceSui: '1000000000',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
       readme: '',
     })
 
     writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
-      sellerKioskId: '0xkiosk',
+      currentKioskId: '0xkiosk',
       publishTxDigest: '0xtx',
     }))
 
     expect(readSoulPublishDraft(storage, '0xabc')).toMatchObject({
       walletAddress: '0xabc',
-      sellerKioskId: null,
+      currentKioskId: null,
       publishTxDigest: null,
     })
   })
@@ -109,7 +112,8 @@ describe('soul publish draft', () => {
       category: 'Research',
       tags: ['alpha'],
       imageUrl: 'https://example.com/old.png',
-      priceSui: '1000000000',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
       readme: '',
     })
     const hydratedDraft = patchSoulPublishDraft(originalDraft, {
@@ -124,7 +128,8 @@ describe('soul publish draft', () => {
       category: 'Trading',
       tags: ['momentum', 'signals'],
       imageUrl: 'https://example.com/new.png',
-      priceSui: '1200000000',
+      priceInput: '1.2',
+      creatorRoyaltyBps: '250',
       readme: 'Updated readme',
     })
 
@@ -135,7 +140,8 @@ describe('soul publish draft', () => {
       category: 'Trading',
       tags: ['momentum', 'signals'],
       imageUrl: 'https://example.com/new.png',
-      priceSui: '1200000000',
+      priceInput: '1.2',
+      creatorRoyaltyBps: '250',
       readme: 'Updated readme',
       previewBlobId: 'blob-1',
       previewFileKey: 'preview.png:100:200',
@@ -151,11 +157,12 @@ describe('soul publish draft', () => {
       category: 'Research',
       tags: ['alpha'],
       imageUrl: 'https://example.com/original.png',
-      priceSui: '1000000000',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
       readme: '',
     }), {
       soulObjectId: '0xsoul',
-      sellerKioskId: '0xkiosk',
+      currentKioskId: '0xkiosk',
       publishTxDigest: '0xpublish',
     })
 
@@ -166,7 +173,8 @@ describe('soul publish draft', () => {
       category: 'Trading',
       tags: ['beta'],
       imageUrl: 'https://example.com/edited.png',
-      priceSui: '2000000000',
+      priceInput: '2',
+      creatorRoyaltyBps: '500',
       readme: 'Edited readme',
     })
 
@@ -176,9 +184,10 @@ describe('soul publish draft', () => {
       category: 'Research',
       tags: ['alpha'],
       imageUrl: 'https://example.com/original.png',
-      priceSui: '1000000000',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
       soulObjectId: '0xsoul',
-      sellerKioskId: '0xkiosk',
+      currentKioskId: '0xkiosk',
       publishTxDigest: '0xpublish',
     })
   })

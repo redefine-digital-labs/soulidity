@@ -1,11 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { VerifiedSoulState } from '../../web/lib/souls/on-chain-verification'
+import { sameSuiValueForTests } from './test-sui-value.ts'
 
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
-const MARKET_ADAPTER_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const AGENT_ADDRESS = `0x${'1'.repeat(64)}`
 const SOUL_ID = `0x${'2'.repeat(64)}`
 const KIOSK_ID = `0x${'3'.repeat(64)}`
+const BUYER_KIOSK_ID = `0x${'4'.repeat(64)}`
+const BUYER_KIOSK_CAP_ID = `0x${'5'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
+
+function makeVerifiedSoulState(overrides: Partial<VerifiedSoulState> = {}): VerifiedSoulState {
+  return {
+    objectId: SOUL_ID,
+    ownerAddress: null,
+    ownerObjectId: BUYER_KIOSK_ID,
+    ownerKind: 'object',
+    creatorAddress: `0x${'6'.repeat(64)}`,
+    name: 'Signal Soul',
+    description: 'Encrypted bundle',
+    imageUrl: 'https://example.com/soul.png',
+    metadataRef: null,
+    contentBlobId: 'blob-content',
+    contentBlobObjectId: '0xblob',
+    allowlistAddress: null,
+    allowlistVersion: 4n,
+    ...overrides,
+  }
+}
 
 const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificationError extends Error {
   status: number
@@ -30,6 +52,7 @@ const mockedStorePreparedSoulPurchaseExecutionDigest = vi.hoisted(() => vi.fn())
 const mockedVerifyPreparedTransactionSignature = vi.hoisted(() => vi.fn())
 const mockedDbSetSoulOwnership = vi.hoisted(() => vi.fn())
 const mockedExtractSoulPurchasedEvent = vi.hoisted(() => vi.fn())
+const mockedGetVerifiedPersonalKioskCapState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedWaitForTransactionBestEffort = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
@@ -75,9 +98,9 @@ vi.mock('@web/lib/souls/post-tx-db', () => ({
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
+  getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
-  sameSuiValue: (left: string | null | undefined, right: string | null | undefined) =>
-    String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase(),
+  sameSuiValue: sameSuiValueForTests,
 }))
 
 vi.mock('@web/lib/souls/tx-confirmation', () => ({
@@ -97,7 +120,6 @@ describe('agent soul purchase execute route', () => {
     vi.resetAllMocks()
     vi.resetModules()
     process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = PACKAGE_ID
-    process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID = MARKET_ADAPTER_PACKAGE_ID
 
     mockedRequireAgentApiKey.mockResolvedValue({
       agent: { agentMemberId: 'agent-member-1' },
@@ -146,12 +168,16 @@ describe('agent soul purchase execute route', () => {
     mockedExtractSoulPurchasedEvent.mockReturnValue({
       soulObjectId: SOUL_ID,
       sellerKioskId: KIOSK_ID,
+      buyerKioskId: BUYER_KIOSK_ID,
+      buyerKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       buyerAddress: AGENT_ADDRESS,
     })
-    mockedGetVerifiedSoulState.mockResolvedValue({
+    mockedGetVerifiedPersonalKioskCapState.mockResolvedValue({
+      objectId: BUYER_KIOSK_CAP_ID,
       ownerAddress: AGENT_ADDRESS,
-      grantVersion: 4n,
+      kioskId: BUYER_KIOSK_ID,
     })
+    mockedGetVerifiedSoulState.mockResolvedValue(makeVerifiedSoulState())
     mockedDbSetSoulOwnership.mockResolvedValue(undefined)
     mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValue(undefined)
     mockedReleasePreparedSoulPurchaseExecution.mockResolvedValue(undefined)
@@ -221,8 +247,8 @@ describe('agent soul purchase execute route', () => {
     })
   })
 
-  it('returns 503 when the market adapter package id env is missing', async () => {
-    delete process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID
+  it('returns 503 when the soul object package id env is missing', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
     const response = await POST(
@@ -277,16 +303,21 @@ describe('agent soul purchase execute route', () => {
       digest: '0xtx',
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       onChainSuccess: true,
       dbSynced: true,
     })
     expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentOwnerMemberId: 'agent-member-1',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
       listingStatus: 'held',
-      sellerKioskId: null,
-      listedPriceSui: null,
-      grantVersion: 4n,
+      listedPriceAtomic: null,
+      allowlistVersion: 4n,
     })
     expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
       preparedPurchaseId: PREPARED_PURCHASE_ID,
@@ -296,10 +327,17 @@ describe('agent soul purchase execute route', () => {
         digest: '0xtx',
         soulOnChainId: SOUL_ID,
         currentOwnerAddress: AGENT_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
         onChainSuccess: true,
         dbSynced: true,
       },
     })
+    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalledTimes(1)
+    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ digest: '0xtx' }),
+      PACKAGE_ID,
+    )
   })
 
   it('surfaces partial success when the chain tx succeeds but local sync fails', async () => {
@@ -320,6 +358,8 @@ describe('agent soul purchase execute route', () => {
       digest: '0xtx',
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       onChainSuccess: true,
       dbSynced: false,
       error: 'Transaction succeeded on chain, but local Soul sync failed.',
@@ -370,6 +410,8 @@ describe('agent soul purchase execute route', () => {
       digest: '0xtx',
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       onChainSuccess: true,
       dbSynced: true,
     })
@@ -394,12 +436,13 @@ describe('agent soul purchase execute route', () => {
         digest: '0xpartial',
         soulOnChainId: SOUL_ID,
         currentOwnerAddress: AGENT_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       },
     })
-    mockedGetVerifiedSoulState.mockResolvedValueOnce({
-      ownerAddress: AGENT_ADDRESS,
-      grantVersion: 5n,
-    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      allowlistVersion: 5n,
+    }))
     mockedDbSetSoulOwnership.mockResolvedValueOnce(undefined)
     mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
 
@@ -418,17 +461,23 @@ describe('agent soul purchase execute route', () => {
       digest: '0xpartial',
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       onChainSuccess: true,
       dbSynced: true,
     })
     expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
     expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentOwnerMemberId: 'agent-member-1',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
       listingStatus: 'held',
-      sellerKioskId: null,
-      listedPriceSui: null,
-      grantVersion: 5n,
+      listedPriceAtomic: null,
+      allowlistVersion: 5n,
     })
     expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
       preparedPurchaseId: PREPARED_PURCHASE_ID,
@@ -438,6 +487,8 @@ describe('agent soul purchase execute route', () => {
         digest: '0xpartial',
         soulOnChainId: SOUL_ID,
         currentOwnerAddress: AGENT_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
         onChainSuccess: true,
         dbSynced: true,
       },
@@ -462,12 +513,13 @@ describe('agent soul purchase execute route', () => {
         digest: '0xpartial',
         soulOnChainId: SOUL_ID,
         currentOwnerAddress: AGENT_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       },
     })
-    mockedGetVerifiedSoulState.mockResolvedValueOnce({
-      ownerAddress: AGENT_ADDRESS,
-      grantVersion: 5n,
-    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      allowlistVersion: 5n,
+    }))
     mockedDbSetSoulOwnership.mockRejectedValueOnce(new Error('db still offline'))
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
@@ -487,9 +539,72 @@ describe('agent soul purchase execute route', () => {
       digest: '0xpartial',
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
     })
     expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
     expect(mockedFinalizePreparedSoulPurchaseExecution).not.toHaveBeenCalled()
+    expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+  })
+
+  it('persists a specific 422 when the recovered kiosk cap no longer matches the agent wallet', async () => {
+    const cachedBody = {
+      onChainSuccess: true,
+      dbSynced: false,
+      digest: '0xpartial',
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+    }
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xpartial',
+      resultStatusCode: 207,
+      resultBody: cachedBody,
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      allowlistVersion: 5n,
+    }))
+    mockedGetVerifiedPersonalKioskCapState.mockResolvedValueOnce({
+      objectId: BUYER_KIOSK_CAP_ID,
+      ownerAddress: `0x${'f'.repeat(64)}`,
+      kioskId: BUYER_KIOSK_ID,
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      ...cachedBody,
+      error: 'Purchase ownership verification failed',
+    })
+    expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
+    expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+      txDigest: '0xpartial',
+      resultStatusCode: 422,
+      resultBody: {
+        ...cachedBody,
+        error: 'Purchase ownership verification failed',
+      },
+    })
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
   })
 
@@ -504,12 +619,17 @@ describe('agent soul purchase execute route', () => {
       executedAt: new Date('2099-01-01T00:00:00.000Z'),
       executionTxDigest: '0xbad',
       resultStatusCode: 422,
-      resultBody: { onChainSuccess: true, dbSynced: false, digest: 'test-digest' },
+      resultBody: {
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: 'test-digest',
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      },
     })
-    mockedGetVerifiedSoulState.mockResolvedValueOnce({
-      ownerAddress: AGENT_ADDRESS,
-      grantVersion: 6n,
-    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      allowlistVersion: 6n,
+    }))
     mockedDbSetSoulOwnership.mockResolvedValueOnce(undefined)
     mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
 
@@ -528,17 +648,23 @@ describe('agent soul purchase execute route', () => {
       digest: 'test-digest',
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       onChainSuccess: true,
       dbSynced: true,
     })
     expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
     expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+      currentOwnerMemberId: 'agent-member-1',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
       listingStatus: 'held',
-      sellerKioskId: null,
-      listedPriceSui: null,
-      grantVersion: 6n,
+      listedPriceAtomic: null,
+      allowlistVersion: 6n,
     })
     expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
       preparedPurchaseId: PREPARED_PURCHASE_ID,
@@ -548,11 +674,63 @@ describe('agent soul purchase execute route', () => {
         digest: 'test-digest',
         soulOnChainId: SOUL_ID,
         currentOwnerAddress: AGENT_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
         onChainSuccess: true,
         dbSynced: true,
       },
     })
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+  })
+
+  it('clears stale allowlist mirrors during cached ownership resync after purchase', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xbad',
+      resultStatusCode: 422,
+      resultBody: {
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: 'test-digest',
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      },
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      allowlistAddress: `0x${'6'.repeat(64)}`,
+      allowlistVersion: 7n,
+    }))
+    mockedDbSetSoulOwnership.mockResolvedValueOnce(undefined)
+    mockedFinalizePreparedSoulPurchaseExecution.mockResolvedValueOnce(undefined)
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      currentOwnerMemberId: 'agent-member-1',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
+      listingStatus: 'held',
+      listedPriceAtomic: null,
+      allowlistVersion: 7n,
+    })
   })
 
   it('releases execution claim and returns 400 when TX effects indicate failure', async () => {
@@ -583,7 +761,13 @@ describe('agent soul purchase execute route', () => {
   })
 
   it('returns original 422 when on-chain owner does not match on retry', async () => {
-    const cachedBody = { onChainSuccess: true, dbSynced: false, digest: 'test-digest' }
+    const cachedBody = {
+      onChainSuccess: true,
+      dbSynced: false,
+      digest: 'test-digest',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+    }
     mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
       id: PREPARED_PURCHASE_ID,
       soulOnChainId: SOUL_ID,
@@ -596,10 +780,10 @@ describe('agent soul purchase execute route', () => {
       resultStatusCode: 422,
       resultBody: cachedBody,
     })
-    mockedGetVerifiedSoulState.mockResolvedValueOnce({
-      ownerAddress: `0x${'f'.repeat(64)}`,
-      grantVersion: 6n,
-    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      ownerObjectId: `0x${'f'.repeat(64)}`,
+      allowlistVersion: 6n,
+    }))
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
     const response = await POST(
@@ -616,5 +800,61 @@ describe('agent soul purchase execute route', () => {
     expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
     expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+  })
+
+  it('warns when cached partial results are missing kiosk ids and skips re-sync', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+        id: PREPARED_PURCHASE_ID,
+        soulOnChainId: SOUL_ID,
+        sellerKioskId: KIOSK_ID,
+        agentAddress: AGENT_ADDRESS,
+        txBytesBase64: 'c2VydmVyLXR4',
+        txBytesHash: 'deadbeef',
+        executedAt: new Date('2099-01-01T00:00:00.000Z'),
+        executionTxDigest: '0xpartial',
+        resultStatusCode: 207,
+        resultBody: {
+          onChainSuccess: true,
+          dbSynced: false,
+          digest: '0xpartial',
+          soulOnChainId: SOUL_ID,
+          currentOwnerAddress: AGENT_ADDRESS,
+        },
+      })
+
+      const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+      const response = await POST(
+        new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+        }) as any,
+        { params: Promise.resolve({ id: SOUL_ID }) },
+      )
+
+      expect(response.status).toBe(207)
+      await expect(response.json()).resolves.toEqual({
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+      })
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[agent-purchase-execute] Skipping cached partial-result re-sync because kiosk ids are missing',
+        expect.objectContaining({
+          preparedPurchaseId: PREPARED_PURCHASE_ID,
+          hasCurrentKioskId: false,
+          hasCurrentKioskCapOnChainId: false,
+        }),
+      )
+      expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
+      expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
+      expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 })

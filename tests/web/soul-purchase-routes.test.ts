@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { sameSuiValueForTests } from './test-sui-value.ts'
 
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
-const MARKET_ADAPTER_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const BUYER_ADDRESS = `0x${'1'.repeat(64)}`
 const SOUL_ID = `0x${'2'.repeat(64)}`
-const KIOSK_ID = `0x${'3'.repeat(64)}`
+const SELLER_KIOSK_ID = `0x${'3'.repeat(64)}`
+const BUYER_KIOSK_ID = `0x${'4'.repeat(64)}`
+const BUYER_KIOSK_CAP_ID = `0x${'5'.repeat(64)}`
 const TX_DIGEST = '11111111111111111111111111111111'
 
 const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificationError extends Error {
@@ -24,6 +26,7 @@ const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
 const mockedExtractSoulPurchasedEvent = vi.hoisted(() => vi.fn())
+const mockedGetVerifiedPersonalKioskCapState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedDbSetSoulOwnership = vi.hoisted(() => vi.fn())
 
@@ -55,9 +58,9 @@ vi.mock('@web/lib/souls/transaction', () => ({
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
+  getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
-  sameSuiValue: (left: string | null | undefined, right: string | null | undefined) =>
-    String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase(),
+  sameSuiValue: sameSuiValueForTests,
 }))
 
 vi.mock('@web/lib/souls/post-tx-db', () => ({
@@ -69,7 +72,6 @@ describe('Soul purchase route', () => {
     vi.resetAllMocks()
     vi.resetModules()
     process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = PACKAGE_ID
-    process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID = MARKET_ADAPTER_PACKAGE_ID
 
     mockedRequireIdentity.mockResolvedValue({
       error: null,
@@ -81,19 +83,29 @@ describe('Soul purchase route', () => {
       id: 'asset-db-1',
       onChainId: SOUL_ID,
       listingStatus: 'listed',
-      sellerKioskId: KIOSK_ID,
-      listedPriceSui: '1000000000',
+      currentKioskId: SELLER_KIOSK_ID,
+      listingObjectOnChainId: `0x${'6'.repeat(64)}`,
+      listedPriceAtomic: '1000000000',
     })
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
     mockedExtractSoulPurchasedEvent.mockReturnValue({
       soulObjectId: SOUL_ID,
-      sellerKioskId: KIOSK_ID,
+      sellerKioskId: SELLER_KIOSK_ID,
+      buyerKioskId: BUYER_KIOSK_ID,
+      buyerKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       buyerAddress: BUYER_ADDRESS,
     })
     mockedGetVerifiedSoulState.mockResolvedValue({
+      ownerKind: 'object',
+      ownerAddress: null,
+      ownerObjectId: BUYER_KIOSK_ID,
+      allowlistVersion: 3n,
+    })
+    mockedGetVerifiedPersonalKioskCapState.mockResolvedValue({
+      objectId: BUYER_KIOSK_CAP_ID,
       ownerAddress: BUYER_ADDRESS,
-      grantVersion: 3n,
+      kioskId: BUYER_KIOSK_ID,
     })
     mockedDbSetSoulOwnership.mockResolvedValue(undefined)
     mockedStoreSoulTxSync.mockResolvedValue(undefined)
@@ -140,8 +152,8 @@ describe('Soul purchase route', () => {
     expect(mockedExtractSoulPurchasedEvent).not.toHaveBeenCalled()
   })
 
-  it('returns 503 when the market adapter package id env is missing', async () => {
-    delete process.env.NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID
+  it('returns 503 when the soul object package id env is missing', async () => {
+    delete process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID
 
     const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -157,10 +169,58 @@ describe('Soul purchase route', () => {
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })
 
+  it('returns 409 when the listed Soul is missing its seller kiosk mirror', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      id: 'asset-db-1',
+      onChainId: SOUL_ID,
+      listingStatus: 'listed',
+      currentKioskId: null,
+      listingObjectOnChainId: `0x${'6'.repeat(64)}`,
+      listedPriceAtomic: '1000000000',
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul listing missing kiosk',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 when the buyer has multiple Sui wallet bindings', async () => {
+    const walletError = new Error('Multiple Sui wallets')
+    walletError.name = 'MultipleSuiWalletBindingsError'
+    mockedGetMemberSuiWalletAddresses.mockRejectedValueOnce(walletError)
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({ error: 'Multiple Sui wallets' })
+  })
+
   it('rejects transactions that purchase a different Soul object', async () => {
     mockedExtractSoulPurchasedEvent.mockReturnValueOnce({
       soulObjectId: `0x${'f'.repeat(64)}`,
-      sellerKioskId: KIOSK_ID,
+      sellerKioskId: SELLER_KIOSK_ID,
+      buyerKioskId: BUYER_KIOSK_ID,
+      buyerKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       buyerAddress: BUYER_ADDRESS,
     })
 
@@ -180,6 +240,30 @@ describe('Soul purchase route', () => {
     })
   })
 
+  it('rejects purchases whose buyer kiosk cap is not owned by the authenticated wallet', async () => {
+    mockedGetVerifiedPersonalKioskCapState.mockResolvedValueOnce({
+      objectId: BUYER_KIOSK_CAP_ID,
+      ownerAddress: `0x${'f'.repeat(64)}`,
+      kioskId: BUYER_KIOSK_ID,
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Purchased Soul kiosk cap does not belong to the authenticated buyer',
+    })
+    expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
+  })
+
   it('mirrors successful purchases into Soul ownership state', async () => {
     const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -196,6 +280,8 @@ describe('Soul purchase route', () => {
       digest: TX_DIGEST,
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: BUYER_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: true,
@@ -204,16 +290,118 @@ describe('Soul purchase route', () => {
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: BUYER_ADDRESS,
       currentOwnerMemberId: 'member-1',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
       listingStatus: 'held',
-      sellerKioskId: null,
-      listedPriceSui: null,
-      grantVersion: 3n,
+      listedPriceAtomic: null,
+      allowlistVersion: 3n,
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
       txDigest: TX_DIGEST,
       routeKey: 'purchase',
       resourceKey: SOUL_ID,
       statusCode: 200,
+    }))
+    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalledTimes(1)
+    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalledWith({ digest: TX_DIGEST }, PACKAGE_ID)
+    expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
+  })
+
+  it('returns 207 when the chain purchase succeeded but local ownership sync failed', async () => {
+    mockedDbSetSoulOwnership.mockRejectedValueOnce(new Error('db offline'))
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(207)
+    await expect(response.json()).resolves.toEqual({
+      digest: TX_DIGEST,
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: BUYER_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingStatus: 'held',
+      onChainSuccess: true,
+      dbSynced: false,
+      error: 'Transaction succeeded on chain, but local Soul sync failed.',
+    })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
+      txDigest: TX_DIGEST,
+      routeKey: 'purchase',
+      resourceKey: SOUL_ID,
+      statusCode: 207,
+      body: expect.objectContaining({
+        dbSynced: false,
+        error: 'Transaction succeeded on chain, but local Soul sync failed.',
+      }),
+    }))
+  })
+
+  it('retries DB sync when a cached purchase result is a recoverable 207', async () => {
+    mockedGetStoredSoulTxSync.mockResolvedValueOnce({
+      statusCode: 207,
+      body: {
+        digest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: BUYER_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+        listingStatus: 'held',
+        onChainSuccess: true,
+        dbSynced: false,
+        error: 'Transaction succeeded on chain, but local Soul sync failed.',
+      },
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      digest: TX_DIGEST,
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: BUYER_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingStatus: 'held',
+      onChainSuccess: true,
+      dbSynced: true,
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: BUYER_ADDRESS,
+      currentOwnerMemberId: 'member-1',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
+      listingStatus: 'held',
+      listedPriceAtomic: null,
+      allowlistVersion: 3n,
+    })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
+      txDigest: TX_DIGEST,
+      routeKey: 'purchase',
+      resourceKey: SOUL_ID,
+      statusCode: 200,
+      body: expect.objectContaining({
+        dbSynced: true,
+      }),
     }))
   })
 
@@ -222,8 +410,9 @@ describe('Soul purchase route', () => {
       id: 'asset-db-1',
       onChainId: SOUL_ID,
       listingStatus: 'held',
-      sellerKioskId: null,
-      listedPriceSui: null,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listedPriceAtomic: null,
       currentOwnerAddress: BUYER_ADDRESS,
       currentOwnerMemberId: 'member-1',
     })
@@ -243,6 +432,8 @@ describe('Soul purchase route', () => {
       digest: TX_DIGEST,
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: BUYER_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: true,
@@ -251,10 +442,12 @@ describe('Soul purchase route', () => {
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: BUYER_ADDRESS,
       currentOwnerMemberId: 'member-1',
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
       listingStatus: 'held',
-      sellerKioskId: null,
-      listedPriceSui: null,
-      grantVersion: 3n,
+      listedPriceAtomic: null,
+      allowlistVersion: 3n,
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
       txDigest: TX_DIGEST,

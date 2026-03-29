@@ -26,17 +26,30 @@ describe('Seal service configuration', () => {
     const mod = await import('../../web/lib/services/seal.ts')
 
     expect(mod.hasSealSessionConfig()).toBe(true)
-    expect(mod.getOwnerSealSession('0xsoul-object')).toEqual({
+    expect(mod.getOwnerSealSession({
+      soulObjectId: '0xsoul-object',
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xkioskcap',
+    })).toEqual({
       packageId: '0xsoul',
       soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
-      functionName: 'seal_approve_owner',
+      functionName: 'seal_approve_owner_in_personal_kiosk',
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xkioskcap',
+      allowlistRegistryObjectId: null,
     })
-    expect(mod.getAgentSealSession('0xsoul-object')).toEqual({
+    expect(mod.getAllowlistedSealSession({
+      soulObjectId: '0xsoul-object',
+      allowlistRegistryObjectId: '0xallowlist',
+    })).toEqual({
       packageId: '0xsoul',
       soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
-      functionName: 'seal_approve_agent',
+      functionName: 'seal_approve_allowlisted',
+      currentKioskId: null,
+      currentKioskCapOnChainId: null,
+      allowlistRegistryObjectId: '0xallowlist',
     })
 
     expect(mod.getSealRuntimeConfig()).toEqual({

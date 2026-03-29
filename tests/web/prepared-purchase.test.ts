@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const SOUL_OBJECT_ID = `0x${'a'.repeat(64)}`
+const LISTING_OBJECT_ID = `0x${'b'.repeat(64)}`
 const SELLER_KIOSK_ID = `0x${'2'.repeat(64)}`
 const AGENT_ADDRESS = `0x${'4'.repeat(64)}`
 
@@ -34,9 +35,13 @@ describe('prepared purchase helpers', () => {
       id: 'prepared-1',
       agentMemberId: 'agent-1',
       soulOnChainId: SOUL_OBJECT_ID,
+      listingObjectId: LISTING_OBJECT_ID,
       sellerKioskId: SELLER_KIOSK_ID,
       agentAddress: AGENT_ADDRESS,
-      priceSui: 1_000_000_000n,
+      priceAtomic: 1_000_000n,
+      platformFeeAtomic: 50_000n,
+      creatorRoyaltyAtomic: 25_000n,
+      totalAtomic: 1_075_000n,
       txBytesBase64: 'c2VydmVyLXR4',
       txBytesHash: 'deadbeef',
       expiresAt: new Date('2099-01-01T00:00:00.000Z'),
@@ -56,17 +61,25 @@ describe('prepared purchase helpers', () => {
     await createPreparedSoulPurchase({
       agentMemberId: 'agent-1',
       soulOnChainId: SOUL_OBJECT_ID,
+      listingObjectId: LISTING_OBJECT_ID,
       sellerKioskId: SELLER_KIOSK_ID,
       agentAddress: AGENT_ADDRESS,
-      priceSui: 1_000_000_000n,
+      priceAtomic: 1_000_000n,
+      platformFeeAtomic: 50_000n,
+      creatorRoyaltyAtomic: 25_000n,
+      totalAtomic: 1_075_000n,
       txBytesBase64: 'c2VydmVyLXR4',
     })
 
     expect(mockedPrisma.soulPreparedPurchase.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         soulOnChainId: SOUL_OBJECT_ID,
+        listingObjectId: LISTING_OBJECT_ID,
         sellerKioskId: SELLER_KIOSK_ID,
-        priceSui: '1000000000',
+        priceAtomic: '1000000',
+        platformFeeAtomic: '50000',
+        creatorRoyaltyAtomic: '25000',
+        totalAtomic: '1075000',
         txBytesBase64: 'c2VydmVyLXR4',
         txBytesHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       }),
@@ -105,9 +118,13 @@ describe('prepared purchase helpers', () => {
       .mockResolvedValueOnce({
         id: 'prepared-1',
         soulOnChainId: SOUL_OBJECT_ID,
+        listingObjectId: LISTING_OBJECT_ID,
         sellerKioskId: SELLER_KIOSK_ID,
         agentAddress: AGENT_ADDRESS,
-        priceSui: 1_000_000_000n,
+        priceAtomic: 1_000_000n,
+        platformFeeAtomic: 50_000n,
+        creatorRoyaltyAtomic: 25_000n,
+        totalAtomic: 1_075_000n,
         txBytesBase64: 'c2VydmVyLXR4',
         txBytesHash: 'deadbeef',
         executedAt: new Date('2099-01-01T00:00:01.000Z'),
@@ -163,9 +180,13 @@ describe('prepared purchase helpers', () => {
       id: 'prepared-1',
       agentMemberId: 'agent-1',
       soulOnChainId: SOUL_OBJECT_ID,
+      listingObjectId: LISTING_OBJECT_ID,
       sellerKioskId: SELLER_KIOSK_ID,
       agentAddress: AGENT_ADDRESS,
-      priceSui: 1_000_000_000n,
+      priceAtomic: 1_000_000n,
+      platformFeeAtomic: 50_000n,
+      creatorRoyaltyAtomic: 25_000n,
+      totalAtomic: 1_075_000n,
       txBytesBase64: 'c2VydmVyLXR4',
       txBytesHash: 'deadbeef',
       expiresAt: new Date('2000-01-01T00:00:00.000Z'),
