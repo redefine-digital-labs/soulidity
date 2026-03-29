@@ -21,3 +21,10 @@ queue/failed/
 queue/inflight/
 move/*/build/
 *.key
+
+# Review-memory MCP (lives in its own repo)
+.mcp.json
+src/mcp/
+tests/mcp/
+docker/review-memory/
+scripts/review-memory-*
