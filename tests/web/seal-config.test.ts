@@ -38,6 +38,7 @@ describe('Seal service configuration', () => {
       currentKioskId: '0xkiosk',
       currentKioskCapOnChainId: '0xkioskcap',
       allowlistRegistryObjectId: null,
+      soulAllowlistCapObjectId: null,
     })
     expect(mod.getAllowlistedSealSession({
       soulObjectId: '0xsoul-object',
@@ -50,6 +51,7 @@ describe('Seal service configuration', () => {
       currentKioskId: null,
       currentKioskCapOnChainId: null,
       allowlistRegistryObjectId: '0xallowlist',
+      soulAllowlistCapObjectId: null,
     })
 
     expect(mod.getSealRuntimeConfig()).toEqual({

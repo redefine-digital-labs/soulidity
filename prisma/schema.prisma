@@ -302,13 +302,19 @@ model SoulAsset {
   creatorMemberId       String?  @map("creator_member_id") @db.Uuid
   creatorMember         Member?  @relation("SoulAssetCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
   creatorAddress        String   @map("creator_address")
+  creatorRoyaltyBps     Int      @default(0) @map("creator_royalty_bps")
   currentOwnerMemberId  String?  @map("current_owner_member_id") @db.Uuid
   currentOwnerMember    Member?  @relation("SoulAssetOwner", fields: [currentOwnerMemberId], references: [id], onDelete: SetNull)
   currentOwnerAddress   String   @map("current_owner_address")
-  sellerKioskId         String?  @map("seller_kiosk_id")
-  listedPriceSui        Decimal? @map("listed_price_sui") @db.Decimal(20, 0)
+  currentKioskId        String   @map("current_kiosk_id")
+  currentKioskCapOnChainId String @map("current_kiosk_cap_on_chain_id")
+  /// Hand-managed partial unique index lives in
+  /// `prisma/migrations/20260329120000_hard_cut_soul_market_to_stablecoin_listing_objects/migration.sql`
+  /// and is tracked in `prisma/MANUAL_INDEXES.md`.
+  /// Keep the SQL index in place because Prisma cannot represent the `WHERE ... IS NOT NULL` predicate here.
+  listingObjectOnChainId String? @map("listing_object_on_chain_id")
+  listedPriceAtomic     Decimal? @map("listed_price_atomic") @db.Decimal(20, 0)
   listingStatus         String   @default("held") @map("listing_status")
-  listingSource         String?  @map("listing_source")
   name                  String
   description           String
   imageUrl              String   @map("image_url")
@@ -320,9 +326,9 @@ model SoulAsset {
   tags                  String[]
   previewImages         String[] @map("preview_images")
   readme                String?
-  agentGrantAddress     String?  @map("agent_grant_address")
-  agentAccessCapOnChainId String? @unique @map("agent_access_cap_on_chain_id")
-  grantVersion          String   @default("0") @map("grant_version")
+  allowlistAddress      String?  @map("allowlist_address")
+  allowlistCapOnChainId String?  @unique @map("allowlist_cap_on_chain_id")
+  allowlistVersion      String   @default("0") @map("allowlist_version")
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -330,6 +336,8 @@ model SoulAsset {
   @@index([creatorAddress])
   @@index([currentOwnerMemberId, listingStatus])
   @@index([currentOwnerAddress, listingStatus])
+  @@index([listingStatus, createdAt(sort: Desc)])
+  @@index([currentKioskId, currentKioskCapOnChainId])
   @@index([category])
   @@index([createdAt(sort: Desc)])
   @@map("soul_assets")
@@ -356,9 +364,13 @@ model SoulPreparedPurchase {
   agentMemberId    String   @map("agent_member_id") @db.Uuid
   agentMember      Member   @relation("SoulPreparedPurchaseAgentMember", fields: [agentMemberId], references: [id], onDelete: Cascade)
   soulOnChainId    String   @map("soul_on_chain_id")
+  listingObjectId  String   @map("listing_object_id")
   sellerKioskId    String   @map("seller_kiosk_id")
   agentAddress     String   @map("agent_address")
-  priceSui         Decimal  @map("price_sui") @db.Decimal(20, 0)
+  priceAtomic      Decimal  @map("price_atomic") @db.Decimal(20, 0)
+  platformFeeAtomic Decimal @default(0) @map("platform_fee_atomic") @db.Decimal(20, 0)
+  creatorRoyaltyAtomic Decimal @default(0) @map("creator_royalty_atomic") @db.Decimal(20, 0)
+  totalAtomic      Decimal  @default(0) @map("total_atomic") @db.Decimal(20, 0)
   txBytesBase64    String   @map("tx_bytes_base64")
   txBytesHash      String   @map("tx_bytes_hash")
   expiresAt        DateTime @map("expires_at") @db.Timestamptz

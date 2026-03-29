@@ -79,10 +79,13 @@ describe('repository contract guards', () => {
   it('uses the new publish flow and removes release/subscription UI entrypoints', () => {
     const publishPage = readFileSync(join(repoRoot, 'web', 'app', 'souls', 'publish', 'page.tsx'), 'utf8')
     const purchaseButton = readFileSync(join(repoRoot, 'web', 'components', 'souls', 'purchase-button.tsx'), 'utf8')
+    const soulCard = readFileSync(join(repoRoot, 'web', 'components', 'souls', 'soul-card.tsx'), 'utf8')
 
     expect(publishPage).toContain('buildMintAndListSoulTx')
     expect(publishPage).not.toContain('buildPublishReleaseTx')
     expect(purchaseButton).not.toContain('planType')
+    expect(soulCard).toContain('toSafeBackgroundImage')
+    expect(soulCard).not.toContain('style={{ backgroundImage: `url("${previewImage}")` }}')
   })
 
   it('keeps the new Soul Move packages as the only active implementation', () => {
@@ -133,6 +136,19 @@ describe('repository contract guards', () => {
     expect(migration).toContain('ADD COLUMN "creator_royalty_atomic" DECIMAL(20, 0) NOT NULL DEFAULT 0')
     expect(migration).toContain('ADD COLUMN "total_atomic" DECIMAL(20, 0) NOT NULL DEFAULT 0')
     expect(migration).toContain('DELETE FROM "soul_prepared_purchases"')
+  })
+
+  it('adds a standalone listing-status index for marketplace listing queries', () => {
+    const schema = readFileSync(join(repoRoot, 'prisma', 'schema.prisma'), 'utf8')
+    const migration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260329150000_add_soul_listing_status_indexes', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(schema).toContain('@@index([listingStatus, createdAt(sort: Desc)])')
+    expect(migration).toContain(
+      'CREATE INDEX "soul_assets_listing_status_created_at_idx" ON "soul_assets"("listing_status", "created_at" DESC);',
+    )
   })
 
   it('hard-cuts Soul tx sync migrations to the current four-key contract', () => {

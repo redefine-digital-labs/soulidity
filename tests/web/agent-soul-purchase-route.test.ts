@@ -229,10 +229,53 @@ describe('agent soul purchase prepare route', () => {
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
   })
 
+  it('returns 409 when the agent wallet has too many fragmented payment coin objects', async () => {
+    mockedSuiClient.getCoins.mockReset()
+    for (let index = 0; index < 20; index += 1) {
+      mockedSuiClient.getCoins.mockResolvedValueOnce({
+        data: [{ coinObjectId: `0xcoin-${index}`, balance: '1' }],
+        hasNextPage: true,
+        nextCursor: `cursor-${index + 1}`,
+      })
+    }
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Too many USDC coin objects to prepare this purchase automatically. Consolidate them and try again.',
+    })
+    expect(mockedSuiClient.getBalance).not.toHaveBeenCalled()
+    expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+  })
+
+  it('returns 402 with an acquisition hint when the agent wallet has no payment coin objects', async () => {
+    mockedSuiClient.getCoins.mockResolvedValueOnce({
+      data: [],
+      hasNextPage: false,
+      nextCursor: null,
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(402)
+    await expect(response.json()).resolves.toEqual({
+      error: 'No USDC found in the agent wallet. You may need to acquire some first.',
+    })
+    expect(mockedSuiClient.getBalance).not.toHaveBeenCalled()
+    expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+  })
+
   it('returns 402 when payment is funded but the SUI gas reserve is too low', async () => {
-    mockedSuiClient.getBalance
-      .mockResolvedValueOnce({ totalBalance: '2000000' })
-      .mockResolvedValueOnce({ totalBalance: '10000000' })
+    mockedSuiClient.getBalance.mockResolvedValueOnce({ totalBalance: '10000000' })
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -289,6 +332,8 @@ describe('agent soul purchase prepare route', () => {
       totalAtomic: 1_075_000n,
       txBytesBase64: Buffer.from([1, 2, 3]).toString('base64'),
     })
+    expect(mockedSuiClient.getBalance).toHaveBeenCalledTimes(1)
+    expect(mockedSuiClient.getBalance).toHaveBeenCalledWith({ owner: AGENT_ADDRESS })
   })
 
   it('returns 422 when the on-chain listing check fails', async () => {

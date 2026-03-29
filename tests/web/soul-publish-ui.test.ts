@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  INCOMPLETE_PUBLISH_PROGRESS_ERROR,
   getSoulPublishPriceState,
   getVisibleSoulPublishPriceErrors,
 } from '../../web/lib/souls/publish-ui.ts'
@@ -48,5 +49,11 @@ describe('soul publish price state', () => {
       submitAttempted: false,
       touched: { price: true },
     })).toEqual({ price: 'Required' })
+  })
+
+  it('keeps the publish progress recovery error copy in English', () => {
+    expect(INCOMPLETE_PUBLISH_PROGRESS_ERROR).toBe(
+      'Publish progress is incomplete. Clear the draft and try again.',
+    )
   })
 })

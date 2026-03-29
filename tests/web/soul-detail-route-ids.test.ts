@@ -13,8 +13,10 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
 
 const mockedResolveIdentity = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
+const mockedGetRequestIp = vi.hoisted(() => vi.fn())
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
+const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedToSoulAssetDetail = vi.hoisted(() => vi.fn())
 const mockedGetSoulPurchaseQuote = vi.hoisted(() => vi.fn())
 
@@ -24,6 +26,11 @@ vi.mock('@web/lib/auth/identity', () => ({
 
 vi.mock('@web/lib/auth/sui-wallet', () => ({
   getMemberSuiWalletAddresses: mockedGetMemberSuiWalletAddresses,
+}))
+
+vi.mock('@web/lib/rate-limit', () => ({
+  getRequestIp: mockedGetRequestIp,
+  takeRateLimitToken: mockedTakeRateLimitToken,
 }))
 
 vi.mock('@web/lib/auth/require-agent-api-key', () => ({
@@ -50,10 +57,12 @@ describe('soul detail routes', () => {
 
     mockedResolveIdentity.mockResolvedValue(null)
     mockedGetMemberSuiWalletAddresses.mockResolvedValue([])
+    mockedGetRequestIp.mockReturnValue('203.0.113.10')
     mockedRequireAgentApiKey.mockResolvedValue({
       agent: { agentMemberId: 'agent-member-1' },
       response: null,
     })
+    mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 0 })
     mockedFindSoulAssetDetailByRouteId.mockResolvedValue({
       id: 'asset-db-1',
       onChainId: SOUL_ID,
@@ -120,6 +129,46 @@ describe('soul detail routes', () => {
     expect(mockedFindSoulAssetDetailByRouteId).toHaveBeenCalledWith(SOUL_ID)
   })
 
+  it('rate limits public detail requests before the on-chain quote lookup', async () => {
+    mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 12 })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(429)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Too many soul detail requests, try again later',
+    })
+    expect(response.headers.get('Retry-After')).toBe('12')
+    expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
+    expect(mockedToSoulAssetDetail).not.toHaveBeenCalled()
+    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
+  })
+
+  it('falls back to a global rate-limit bucket when the request IP is unavailable', async () => {
+    mockedGetRequestIp.mockReturnValueOnce(null)
+    mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 7 })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(429)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Too many soul detail requests, try again later',
+    })
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith('soul-detail:unknown', {
+      max: 10,
+      windowMs: 60 * 1000,
+    })
+    expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
+  })
+
   it('computes purchase fees for listed Souls on the public detail route', async () => {
     const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
     const response = await GET(
@@ -159,21 +208,58 @@ describe('soul detail routes', () => {
     })
   })
 
-  it('returns 409 when the authenticated viewer has multiple Sui wallet bindings', async () => {
+  it('marks the agent detail route as force-dynamic', async () => {
+    const mod = await import('../../web/app/api/agent/souls/[id]/route.ts')
+    expect(mod.dynamic).toBe('force-dynamic')
+  })
+
+  it('rate limits agent detail requests before loading the Soul record', async () => {
+    mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 9 })
+
+    const { GET } = await import('../../web/app/api/agent/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/agent/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(429)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Too many soul detail requests, try again later',
+    })
+    expect(response.headers.get('Retry-After')).toBe('9')
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith('agent-detail:agent-member-1', {
+      max: 60,
+      windowMs: 60 * 1000,
+    })
+    expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
+  })
+
+  it('still returns public Soul detail when the authenticated viewer has multiple Sui wallet bindings', async () => {
     mockedResolveIdentity.mockResolvedValueOnce({ memberId: 'owner-1' })
     const walletError = new Error('Multiple Sui wallets')
     walletError.name = 'MultipleSuiWalletBindingsError'
     mockedGetMemberSuiWalletAddresses.mockRejectedValueOnce(walletError)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
-    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
-    const response = await GET(
-      new Request('http://localhost/api/souls/0xsoul') as any,
-      { params: Promise.resolve({ id: SOUL_ID }) },
-    )
+    try {
+      const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+      const response = await GET(
+        new Request('http://localhost/api/souls/0xsoul') as any,
+        { params: Promise.resolve({ id: SOUL_ID }) },
+      )
 
-    expect(response.status).toBe(409)
-    await expect(response.json()).resolves.toEqual({ error: 'Multiple Sui wallets' })
-    expect(mockedToSoulAssetDetail).not.toHaveBeenCalled()
+      expect(response.status).toBe(200)
+      expect(mockedToSoulAssetDetail).toHaveBeenCalledWith(expect.anything(), {
+        viewerMemberId: 'owner-1',
+        viewerWalletAddresses: [],
+      })
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[soul-detail] Viewer wallet lookup is ambiguous; continuing without wallet-scoped fields',
+        { name: 'MultipleSuiWalletBindingsError', message: 'Multiple Sui wallets' },
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 
   it('degrades gracefully when viewer wallet lookup fails unexpectedly', async () => {
@@ -195,7 +281,7 @@ describe('soul detail routes', () => {
       })
       expect(warnSpy).toHaveBeenCalledWith(
         '[soul-detail] Failed to resolve viewer wallets',
-        expect.any(Error),
+        { name: 'Error', message: 'wallet service unavailable' },
       )
     } finally {
       warnSpy.mockRestore()

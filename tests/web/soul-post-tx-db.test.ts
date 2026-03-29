@@ -263,6 +263,34 @@ describe('post-tx db soul asset mirror', () => {
     })
   })
 
+  it('guards allowlist mirror writes against stale ownership state', async () => {
+    const { dbSetSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbSetSoulAllowlist({
+      soulOnChainId: '0xsoul',
+      allowlistAddress: OWNER_ADDRESS,
+      allowlistCapOnChainId: '0xcap',
+      allowlistVersion: 3n,
+      expectedCurrentOwnerAddress: OWNER_ADDRESS,
+      expectedCurrentKioskId: CURRENT_KIOSK_ID,
+      expectedListingStatus: 'held',
+    })
+
+    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
+      where: {
+        onChainId: '0xsoul',
+        currentOwnerAddress: OWNER_ADDRESS,
+        currentKioskId: CURRENT_KIOSK_ID,
+        listingStatus: 'held',
+      },
+      data: {
+        allowlistAddress: OWNER_ADDRESS,
+        allowlistCapOnChainId: '0xcap',
+        allowlistVersion: '3',
+      },
+    })
+  })
+
   it('clears mirrored allowlist fields for a soul', async () => {
     const { dbClearSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
 
@@ -273,6 +301,32 @@ describe('post-tx db soul asset mirror', () => {
 
     expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
       where: { onChainId: '0xsoul' },
+      data: {
+        allowlistAddress: null,
+        allowlistCapOnChainId: null,
+        allowlistVersion: '4',
+      },
+    })
+  })
+
+  it('guards allowlist clear writes against stale ownership state', async () => {
+    const { dbClearSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbClearSoulAllowlist({
+      soulOnChainId: '0xsoul',
+      allowlistVersion: 4n,
+      expectedCurrentOwnerAddress: OWNER_ADDRESS,
+      expectedCurrentKioskId: CURRENT_KIOSK_ID,
+      expectedListingStatus: 'held',
+    })
+
+    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
+      where: {
+        onChainId: '0xsoul',
+        currentOwnerAddress: OWNER_ADDRESS,
+        currentKioskId: CURRENT_KIOSK_ID,
+        listingStatus: 'held',
+      },
       data: {
         allowlistAddress: null,
         allowlistCapOnChainId: null,
@@ -292,6 +346,22 @@ describe('post-tx db soul asset mirror', () => {
     })).rejects.toThrow('Soul 0xmissing not found')
   })
 
+  it('throws a conflict error when guarded allowlist writes lose an ownership race', async () => {
+    mockedPrisma.soulAsset.updateMany.mockResolvedValueOnce({ count: 0 })
+
+    const { dbSetSoulAllowlist, SoulMirrorOwnershipConflictError } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await expect(dbSetSoulAllowlist({
+      soulOnChainId: '0xsoul',
+      allowlistAddress: OWNER_ADDRESS,
+      allowlistCapOnChainId: '0xcap',
+      allowlistVersion: 4n,
+      expectedCurrentOwnerAddress: OWNER_ADDRESS,
+      expectedCurrentKioskId: CURRENT_KIOSK_ID,
+      expectedListingStatus: 'held',
+    })).rejects.toBeInstanceOf(SoulMirrorOwnershipConflictError)
+  })
+
   it('clears mirrored listing and allowlist state when ownership changes after purchase', async () => {
     const { dbSetSoulOwnership } = await import('../../web/lib/souls/post-tx-db.ts')
 
@@ -309,6 +379,46 @@ describe('post-tx db soul asset mirror', () => {
 
     expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
       where: { onChainId: '0xsoul' },
+      data: {
+        currentOwnerAddress: OWNER_ADDRESS,
+        currentOwnerMemberId: 'member-buyer',
+        currentKioskId: CURRENT_KIOSK_ID,
+        currentKioskCapOnChainId: CURRENT_KIOSK_CAP_ID,
+        listingObjectOnChainId: null,
+        listingStatus: 'held',
+        listedPriceAtomic: null,
+        allowlistAddress: null,
+        allowlistCapOnChainId: null,
+        allowlistVersion: '4',
+      },
+    })
+  })
+
+  it('guards ownership mirror writes against stale ownership state', async () => {
+    const { dbSetSoulOwnership } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbSetSoulOwnership({
+      soulOnChainId: '0xsoul',
+      currentOwnerAddress: OWNER_ADDRESS,
+      currentOwnerMemberId: 'member-buyer',
+      currentKioskId: CURRENT_KIOSK_ID,
+      currentKioskCapOnChainId: CURRENT_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
+      listingStatus: 'held',
+      listedPriceAtomic: null,
+      allowlistVersion: 4n,
+      expectedCurrentOwnerAddress: CREATOR_ADDRESS,
+      expectedCurrentKioskId: LISTING_OBJECT_ID,
+      expectedListingStatus: 'listed',
+    })
+
+    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
+      where: {
+        onChainId: '0xsoul',
+        currentOwnerAddress: CREATOR_ADDRESS,
+        currentKioskId: LISTING_OBJECT_ID,
+        listingStatus: 'listed',
+      },
       data: {
         currentOwnerAddress: OWNER_ADDRESS,
         currentOwnerMemberId: 'member-buyer',
@@ -355,6 +465,30 @@ describe('post-tx db soul asset mirror', () => {
     })
   })
 
+  it('preserves a zero-valued listed price instead of coercing it to null', async () => {
+    const { dbSetSoulOwnership } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await dbSetSoulOwnership({
+      soulOnChainId: '0xsoul',
+      currentOwnerAddress: OWNER_ADDRESS,
+      currentOwnerMemberId: 'member-buyer',
+      currentKioskId: CURRENT_KIOSK_ID,
+      currentKioskCapOnChainId: CURRENT_KIOSK_CAP_ID,
+      listingObjectOnChainId: LISTING_OBJECT_ID,
+      listingStatus: 'listed',
+      listedPriceAtomic: 0n,
+      allowlistVersion: 5n,
+    })
+
+    const updateArgs = mockedPrisma.soulAsset.updateMany.mock.calls[0]?.[0]
+    expect(updateArgs?.data).toMatchObject({
+      listingObjectOnChainId: LISTING_OBJECT_ID,
+      listingStatus: 'listed',
+      allowlistVersion: '5',
+    })
+    expect(updateArgs?.data?.listedPriceAtomic?.toString()).toBe('0')
+  })
+
   it('throws when setting ownership for a Soul that is not mirrored locally', async () => {
     mockedPrisma.soulAsset.updateMany.mockResolvedValueOnce({ count: 0 })
 
@@ -371,6 +505,27 @@ describe('post-tx db soul asset mirror', () => {
       listedPriceAtomic: null,
       allowlistVersion: 4n,
     })).rejects.toThrow('Soul 0xmissing not found')
+  })
+
+  it('throws a conflict error when guarded ownership writes lose an ownership race', async () => {
+    mockedPrisma.soulAsset.updateMany.mockResolvedValueOnce({ count: 0 })
+
+    const { dbSetSoulOwnership, SoulMirrorOwnershipConflictError } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await expect(dbSetSoulOwnership({
+      soulOnChainId: '0xsoul',
+      currentOwnerAddress: OWNER_ADDRESS,
+      currentOwnerMemberId: 'member-buyer',
+      currentKioskId: CURRENT_KIOSK_ID,
+      currentKioskCapOnChainId: CURRENT_KIOSK_CAP_ID,
+      listingObjectOnChainId: null,
+      listingStatus: 'held',
+      listedPriceAtomic: null,
+      allowlistVersion: 4n,
+      expectedCurrentOwnerAddress: CREATOR_ADDRESS,
+      expectedCurrentKioskId: LISTING_OBJECT_ID,
+      expectedListingStatus: 'listed',
+    })).rejects.toBeInstanceOf(SoulMirrorOwnershipConflictError)
   })
 
   it('normalizes ownership addresses before mirroring purchase ownership updates', async () => {

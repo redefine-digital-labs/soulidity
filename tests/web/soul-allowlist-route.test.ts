@@ -19,6 +19,13 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
   }
 })
 
+const MockSoulMirrorOwnershipConflictError = vi.hoisted(() => class MockSoulMirrorOwnershipConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SoulMirrorOwnershipConflictError'
+  }
+})
+
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -26,6 +33,8 @@ const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
+const mockedExtractSoulAllowlistSetEvent = vi.hoisted(() => vi.fn())
+const mockedExtractSoulAllowlistClearedEvent = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulAllowlistCapState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedPersonalKioskCapState = vi.hoisted(() => vi.fn())
@@ -61,19 +70,16 @@ const sameSuiValueImpl = sameSuiValueForTests
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
+  extractSoulAllowlistSetEvent: mockedExtractSoulAllowlistSetEvent,
+  extractSoulAllowlistClearedEvent: mockedExtractSoulAllowlistClearedEvent,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   getVerifiedSoulAllowlistCapState: mockedGetVerifiedSoulAllowlistCapState,
   getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
   sameSuiValue: sameSuiValueImpl,
-  transactionMutatedObject: (
-    transaction: { objectChanges?: Array<{ type?: string; objectId?: string }> | null },
-    objectId: string,
-  ) => transaction.objectChanges?.some(
-    (change) => change.type === 'mutated' && change.objectId && sameSuiValueImpl(change.objectId, objectId),
-  ) ?? false,
 }))
 
 vi.mock('@web/lib/souls/post-tx-db', () => ({
+  SoulMirrorOwnershipConflictError: MockSoulMirrorOwnershipConflictError,
   dbSetSoulAllowlist: mockedDbSetSoulAllowlist,
   dbClearSoulAllowlist: mockedDbClearSoulAllowlist,
 }))
@@ -95,13 +101,27 @@ describe('soul allowlist route', () => {
       onChainId: SOUL_ID,
       currentOwnerMemberId: 'member-1',
       currentKioskId: KIOSK_ID,
+      currentOwnerAddress: OWNER_ADDRESS,
       currentKioskCapOnChainId: KIOSK_CAP_ID,
       listingStatus: 'held',
     })
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({
       digest: TX_DIGEST,
-      objectChanges: [{ type: 'mutated', objectId: SOUL_ID }],
+      transaction: {
+        data: {
+          sender: OWNER_ADDRESS,
+        },
+      },
+    })
+    mockedExtractSoulAllowlistSetEvent.mockReturnValue({
+      soulObjectId: SOUL_ID,
+      allowlistedAddress: AGENT_ADDRESS,
+      allowlistVersion: 5n,
+    })
+    mockedExtractSoulAllowlistClearedEvent.mockReturnValue({
+      soulObjectId: SOUL_ID,
+      oldAllowlistedAddress: AGENT_ADDRESS,
     })
     mockedGetVerifiedSoulState.mockResolvedValue({
       ownerKind: 'object',
@@ -298,6 +318,9 @@ describe('soul allowlist route', () => {
       allowlistAddress: AGENT_ADDRESS,
       allowlistCapOnChainId: ACCESS_CAP_ID,
       allowlistVersion: 5n,
+      expectedCurrentOwnerAddress: OWNER_ADDRESS,
+      expectedCurrentKioskId: KIOSK_ID,
+      expectedListingStatus: 'held',
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
       txDigest: TX_DIGEST,
@@ -311,6 +334,32 @@ describe('soul allowlist route', () => {
         soulAllowlistCapOnChainId: ACCESS_CAP_ID,
       }),
     }))
+  })
+
+  it('returns 409 when the Soul owner changes before the allowlist mirror write lands', async () => {
+    mockedDbSetSoulAllowlist.mockRejectedValueOnce(
+      new MockSoulMirrorOwnershipConflictError('ownership changed'),
+    )
+
+    const { POST } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: TX_DIGEST,
+          allowlistAddress: AGENT_ADDRESS,
+          soulAllowlistCapOnChainId: ACCESS_CAP_ID,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul ownership changed before the allowlist mirror could be updated',
+    })
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
   })
 
   it('replays cached allowlist responses for duplicate tx digests', async () => {
@@ -420,10 +469,9 @@ describe('soul allowlist route', () => {
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })
 
-  it('returns 422 when the tx did not mutate the target Soul', async () => {
-    mockedGetSuccessfulTransactionBlock.mockResolvedValueOnce({
-      digest: TX_DIGEST,
-      objectChanges: [{ type: 'mutated', objectId: `0x${'f'.repeat(64)}` }],
+  it('returns 422 when the tx is missing the expected allowlist-set event', async () => {
+    mockedExtractSoulAllowlistSetEvent.mockImplementationOnce(() => {
+      throw new MockOnChainVerificationError('Soul allowlist set event is missing from the transaction')
     })
 
     const { POST } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
@@ -442,7 +490,7 @@ describe('soul allowlist route', () => {
 
     expect(response.status).toBe(422)
     await expect(response.json()).resolves.toEqual({
-      error: 'Transaction did not modify this Soul',
+      error: 'Soul allowlist set event is missing from the transaction',
     })
     expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
   })
@@ -532,6 +580,28 @@ describe('soul allowlist route', () => {
     expect(mockedDbSetSoulAllowlist).not.toHaveBeenCalled()
   })
 
+  it('returns 422 when the clear tx is missing the expected allowlist-cleared event', async () => {
+    mockedExtractSoulAllowlistClearedEvent.mockImplementationOnce(() => {
+      throw new MockOnChainVerificationError('Soul allowlist cleared event is missing from the transaction')
+    })
+
+    const { DELETE } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await DELETE(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul allowlist cleared event is missing from the transaction',
+    })
+    expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
+  })
+
   it('rate limits allowlist clear before reading Soul state', async () => {
     mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 120 })
 
@@ -580,7 +650,38 @@ describe('soul allowlist route', () => {
     expect(mockedDbClearSoulAllowlist).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
       allowlistVersion: 6n,
+      expectedCurrentOwnerAddress: OWNER_ADDRESS,
+      expectedCurrentKioskId: KIOSK_ID,
+      expectedListingStatus: 'held',
     })
+  })
+
+  it('returns 409 when the Soul owner changes before the allowlist clear mirror write lands', async () => {
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      ownerKind: 'object',
+      ownerObjectId: KIOSK_ID,
+      allowlistAddress: null,
+      allowlistVersion: 6n,
+    })
+    mockedDbClearSoulAllowlist.mockRejectedValueOnce(
+      new MockSoulMirrorOwnershipConflictError('ownership changed'),
+    )
+
+    const { DELETE } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await DELETE(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul ownership changed before the allowlist mirror could be cleared',
+    })
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
   })
 
   it('returns 503 when the mirrored kiosk-cap id is still missing before allowlist clear verification', async () => {

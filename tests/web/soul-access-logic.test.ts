@@ -82,6 +82,7 @@ function makeVerifiedSoulState(overrides: Partial<VerifiedSoulState> = {}): Veri
     ownerObjectId: KIOSK_ID,
     ownerKind: 'object',
     creatorAddress: `0x${'a'.repeat(64)}`,
+    creatorRoyaltyBps: 0,
     name: 'Signal Soul',
     description: 'desc',
     imageUrl: 'https://example.com/soul.png',
@@ -175,7 +176,24 @@ describe('resolveSoulAccessPayload', () => {
     })
   })
 
-  it('returns 503 when the mirrored kiosk-cap id is still missing for the owner path', async () => {
+  it('uses the on-chain verified kiosk id when building the owner seal session', async () => {
+    const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
+
+    await resolveSoulAccessPayload({
+      soul: makeSoulRecord({ currentKioskId: KIOSK_ID.toUpperCase() }),
+      viewerAddresses: [OWNER_ADDRESS],
+      soulPackageId: PACKAGE_ID,
+      allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
+    })
+
+    expect(mockedGetOwnerSealSession).toHaveBeenCalledWith({
+      soulObjectId: SOUL_ID,
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+    })
+  })
+
+  it('skips owner path and denies access when the mirrored kiosk-cap id is still missing', async () => {
     const { resolveSoulAccessPayload, SoulAccessDeniedError } = await import('../../web/lib/souls/access.ts')
 
     await expect(resolveSoulAccessPayload({
@@ -185,8 +203,8 @@ describe('resolveSoulAccessPayload', () => {
       allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
     })).rejects.toMatchObject({
       name: SoulAccessDeniedError.name,
-      message: 'Soul kiosk access is still syncing',
-      status: 503,
+      message: 'Viewer does not have access to this Soul',
+      status: 403,
     })
 
     expect(mockedGetVerifiedPersonalKioskCapState).not.toHaveBeenCalled()
@@ -207,6 +225,27 @@ describe('resolveSoulAccessPayload', () => {
     })
 
     expect(mockedGetVerifiedPersonalKioskCapState).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 when the on-chain Soul content blob is not yet available', async () => {
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      contentBlobId: null,
+    }))
+
+    const { resolveSoulAccessPayload, SoulAccessDeniedError } = await import('../../web/lib/souls/access.ts')
+
+    await expect(resolveSoulAccessPayload({
+      soul: makeSoulRecord(),
+      viewerAddresses: [OWNER_ADDRESS],
+      soulPackageId: PACKAGE_ID,
+      allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
+    })).rejects.toMatchObject({
+      name: SoulAccessDeniedError.name,
+      message: 'Soul content is not available',
+      status: 503,
+    })
+
+    expect(mockedGetBlobUrl).not.toHaveBeenCalled()
   })
 
   it('returns 503 when the seal sidecar documentId belongs to a different Soul', async () => {
@@ -354,6 +393,8 @@ describe('resolveSoulAccessPayload', () => {
       message: 'Soul allowlist access is not configured',
       status: 503,
     })
+
+    expect(mockedGetVerifiedSoulAllowlistCapState).not.toHaveBeenCalled()
   })
 
   it('fails closed when the allowlist cap version no longer matches the on-chain Soul version', async () => {

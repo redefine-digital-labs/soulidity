@@ -7,6 +7,7 @@ const SOUL_ID = `0x${'2'.repeat(64)}`
 const SELLER_KIOSK_ID = `0x${'3'.repeat(64)}`
 const BUYER_KIOSK_ID = `0x${'4'.repeat(64)}`
 const BUYER_KIOSK_CAP_ID = `0x${'5'.repeat(64)}`
+const SELLER_ADDRESS = `0x${'6'.repeat(64)}`
 const TX_DIGEST = '11111111111111111111111111111111'
 
 const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificationError extends Error {
@@ -15,6 +16,13 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
   constructor(message: string, status = 422) {
     super(message)
     this.status = status
+  }
+})
+
+const MockSoulMirrorOwnershipConflictError = vi.hoisted(() => class MockSoulMirrorOwnershipConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SoulMirrorOwnershipConflictError'
   }
 })
 
@@ -64,7 +72,9 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
 }))
 
 vi.mock('@web/lib/souls/post-tx-db', () => ({
+  SoulMirrorOwnershipConflictError: MockSoulMirrorOwnershipConflictError,
   dbSetSoulOwnership: mockedDbSetSoulOwnership,
+  narrowListingStatus: (v: string | null | undefined) => (v === 'listed' || v === 'held' ? v : undefined),
 }))
 
 describe('Soul purchase route', () => {
@@ -83,12 +93,20 @@ describe('Soul purchase route', () => {
       id: 'asset-db-1',
       onChainId: SOUL_ID,
       listingStatus: 'listed',
+      currentOwnerAddress: SELLER_ADDRESS,
       currentKioskId: SELLER_KIOSK_ID,
       listingObjectOnChainId: `0x${'6'.repeat(64)}`,
       listedPriceAtomic: '1000000000',
     })
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
-    mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
+    mockedGetSuccessfulTransactionBlock.mockResolvedValue({
+      digest: TX_DIGEST,
+      transaction: {
+        data: {
+          sender: BUYER_ADDRESS,
+        },
+      },
+    })
     mockedExtractSoulPurchasedEvent.mockReturnValue({
       soulObjectId: SOUL_ID,
       sellerKioskId: SELLER_KIOSK_ID,
@@ -109,6 +127,12 @@ describe('Soul purchase route', () => {
     })
     mockedDbSetSoulOwnership.mockResolvedValue(undefined)
     mockedStoreSoulTxSync.mockResolvedValue(undefined)
+  })
+
+  it('marks the human purchase mirror route as dynamic', async () => {
+    const routeModule = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+
+    expect(routeModule.dynamic).toBe('force-dynamic')
   })
 
   it('returns 400 for invalid tx digests', async () => {
@@ -285,6 +309,7 @@ describe('Soul purchase route', () => {
       listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: true,
+      txSender: BUYER_ADDRESS,
     })
     expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
@@ -296,6 +321,9 @@ describe('Soul purchase route', () => {
       listingStatus: 'held',
       listedPriceAtomic: null,
       allowlistVersion: 3n,
+      expectedCurrentOwnerAddress: SELLER_ADDRESS,
+      expectedCurrentKioskId: SELLER_KIOSK_ID,
+      expectedListingStatus: 'listed',
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
       txDigest: TX_DIGEST,
@@ -304,7 +332,10 @@ describe('Soul purchase route', () => {
       statusCode: 200,
     }))
     expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalledTimes(1)
-    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalledWith({ digest: TX_DIGEST }, PACKAGE_ID)
+    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ digest: TX_DIGEST }),
+      PACKAGE_ID,
+    )
     expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
   })
 
@@ -331,6 +362,7 @@ describe('Soul purchase route', () => {
       listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: false,
+      txSender: BUYER_ADDRESS,
       error: 'Transaction succeeded on chain, but local Soul sync failed.',
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
@@ -354,6 +386,7 @@ describe('Soul purchase route', () => {
         currentOwnerAddress: BUYER_ADDRESS,
         currentKioskId: BUYER_KIOSK_ID,
         currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+        txSender: BUYER_ADDRESS,
         listingStatus: 'held',
         onChainSuccess: true,
         dbSynced: false,
@@ -393,6 +426,9 @@ describe('Soul purchase route', () => {
       listingStatus: 'held',
       listedPriceAtomic: null,
       allowlistVersion: 3n,
+      expectedCurrentOwnerAddress: SELLER_ADDRESS,
+      expectedCurrentKioskId: SELLER_KIOSK_ID,
+      expectedListingStatus: 'listed',
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
       txDigest: TX_DIGEST,
@@ -437,6 +473,7 @@ describe('Soul purchase route', () => {
       listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: true,
+      txSender: BUYER_ADDRESS,
     })
     expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
@@ -448,6 +485,9 @@ describe('Soul purchase route', () => {
       listingStatus: 'held',
       listedPriceAtomic: null,
       allowlistVersion: 3n,
+      expectedCurrentOwnerAddress: BUYER_ADDRESS,
+      expectedCurrentKioskId: BUYER_KIOSK_ID,
+      expectedListingStatus: 'held',
     })
     expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
       txDigest: TX_DIGEST,

@@ -68,6 +68,7 @@ describe('Seal envelope crypto', () => {
       currentKioskId: KIOSK_OBJECT_ID,
       currentKioskCapOnChainId: KIOSK_CAP_OBJECT_ID,
       allowlistRegistryObjectId: null,
+      soulAllowlistCapObjectId: null,
     }
 
     const { encryptedData, sidecar } = await encryptBundle({
@@ -125,6 +126,7 @@ describe('Seal envelope crypto', () => {
       currentKioskId: KIOSK_OBJECT_ID,
       currentKioskCapOnChainId: KIOSK_CAP_OBJECT_ID,
       allowlistRegistryObjectId: null,
+      soulAllowlistCapObjectId: null,
     }
 
     const { encryptedData, sidecar } = await encryptBundle({
@@ -195,6 +197,7 @@ describe('Seal envelope crypto', () => {
         currentKioskId: KIOSK_OBJECT_ID,
         currentKioskCapOnChainId: KIOSK_CAP_OBJECT_ID,
         allowlistRegistryObjectId: null,
+        soulAllowlistCapObjectId: null,
       },
       documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
     })
@@ -217,6 +220,7 @@ describe('Seal envelope crypto', () => {
           currentKioskId: null,
           currentKioskCapOnChainId: null,
           allowlistRegistryObjectId: ALLOWLIST_REGISTRY_OBJECT_ID,
+          soulAllowlistCapObjectId: null,
         },
         documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
       }),
@@ -236,6 +240,7 @@ describe('Seal envelope crypto', () => {
         currentKioskId: null,
         currentKioskCapOnChainId: null,
         allowlistRegistryObjectId: ALLOWLIST_REGISTRY_OBJECT_ID,
+        soulAllowlistCapObjectId: null,
       },
       documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
       soulAllowlistCapObjectId: ACCESS_CAP_OBJECT_ID,
@@ -259,6 +264,7 @@ describe('Seal envelope crypto', () => {
           currentKioskId: null,
           currentKioskCapOnChainId: null,
           allowlistRegistryObjectId: null,
+          soulAllowlistCapObjectId: null,
         },
         documentId: expectedDocumentIdHex(SOUL_OBJECT_ID),
       }),

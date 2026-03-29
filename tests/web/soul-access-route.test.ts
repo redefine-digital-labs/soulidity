@@ -202,6 +202,8 @@ describe('Soul agent access route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       ownerKind: 'object',
       ownerObjectId: KIOSK_ID,
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
       allowlistAddress: null,
       allowlistVersion: 1n,
     })
@@ -243,6 +245,8 @@ describe('Soul agent access route', () => {
       ownerKind: 'address',
       ownerAddress: AGENT_ADDRESS,
       ownerObjectId: null,
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
       allowlistAddress: null,
       allowlistVersion: 1n,
     })
@@ -264,6 +268,8 @@ describe('Soul agent access route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       ownerKind: 'object',
       ownerObjectId: KIOSK_ID,
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
       allowlistAddress: null,
       allowlistVersion: 1n,
     })
@@ -299,6 +305,8 @@ describe('Soul agent access route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       ownerKind: 'object',
       ownerObjectId: `0x${'f'.repeat(64)}`,
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
       allowlistAddress: AGENT_ADDRESS,
       allowlistVersion: 7n,
     })
@@ -341,6 +349,8 @@ describe('Soul agent access route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       ownerKind: 'object',
       ownerObjectId: `0x${'f'.repeat(64)}`,
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
       allowlistAddress: AGENT_ADDRESS,
       allowlistVersion: 7n,
     })
@@ -372,6 +382,8 @@ describe('Soul agent access route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       ownerKind: 'object',
       ownerObjectId: `0x${'f'.repeat(64)}`,
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
       allowlistAddress: AGENT_ADDRESS,
       allowlistVersion: 8n,
     })
@@ -399,6 +411,8 @@ describe('Soul agent access route', () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       ownerKind: 'object',
       ownerObjectId: `0x${'f'.repeat(64)}`,
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
       allowlistAddress: null,
       allowlistVersion: 1n,
     })

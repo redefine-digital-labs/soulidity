@@ -305,6 +305,39 @@ describe('soul publish route', () => {
     expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
   })
 
+  it('rejects listing events whose mirrored price is zero or negative', async () => {
+    mockedExtractSoulListingEvent.mockReturnValueOnce({
+      listingObjectId: LISTING_ID,
+      soulObjectId: SOUL_ID,
+      kioskId: KIOSK_ID,
+      kioskCapOnChainId: KIOSK_CAP_ID,
+      sellerAddress: AUTHOR_ADDRESS,
+      priceAtomic: 0n,
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul listing price must be greater than zero',
+    })
+    expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
+  })
+
   it('allows the current holder to sync a relisted Soul without matching the creator wallet', async () => {
     mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
     mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({

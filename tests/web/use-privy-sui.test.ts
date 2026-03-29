@@ -43,4 +43,12 @@ describe('use-privy-sui helpers', () => {
       Array.from({ length: 32 }, () => 0x11),
     )
   })
+
+  it('rejects Privy public keys that are not 32 bytes after normalization', async () => {
+    const { normalizePrivyEd25519PublicKeyBytes } = await import('../../web/lib/souls/use-privy-sui.ts')
+
+    expect(() => normalizePrivyEd25519PublicKeyBytes('0x1234')).toThrow(
+      'Privy Sui public key must be 32 bytes after normalization',
+    )
+  })
 })

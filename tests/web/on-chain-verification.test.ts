@@ -102,6 +102,69 @@ describe('on-chain verification helpers', () => {
     })
   })
 
+  it('rejects creator royalty bps outside the supported 0-10000 range', async () => {
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: '0xsoul',
+        owner: { AddressOwner: `0x${'1'.repeat(64)}` },
+        type: `${PACKAGE_ID}::soul::Soul`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::soul::Soul`,
+          fields: {
+            creator: `0x${'2'.repeat(64)}`,
+            creator_royalty_bps: '10001',
+            name: 'Soul',
+            description: 'Desc',
+            image_url: 'https://example.com/soul.png',
+            metadata_ref: { vec: [] },
+            content_blob: { id: `0x${'3'.repeat(64)}` },
+            allowlist_address: { vec: [] },
+            allowlist_version: '0',
+          },
+        },
+      },
+    })
+
+    const { getVerifiedSoulState, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedSoulState('0xsoul', PACKAGE_ID)).rejects.toThrow(OnChainVerificationError)
+    await expect(getVerifiedSoulState('0xsoul', PACKAGE_ID)).rejects.toThrow(
+      'Soul creator_royalty_bps is out of valid range on chain',
+    )
+  })
+
+  it('rejects soul objects when creator royalty bps is missing on chain', async () => {
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: '0xsoul',
+        owner: { AddressOwner: `0x${'1'.repeat(64)}` },
+        type: `${PACKAGE_ID}::soul::Soul`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::soul::Soul`,
+          fields: {
+            creator: `0x${'2'.repeat(64)}`,
+            name: 'Soul',
+            description: 'Desc',
+            image_url: 'https://example.com/soul.png',
+            metadata_ref: { vec: [] },
+            content_blob: { id: `0x${'3'.repeat(64)}` },
+            allowlist_address: { vec: [] },
+            allowlist_version: '0',
+          },
+        },
+      },
+    })
+
+    const { getVerifiedSoulState, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedSoulState('0xsoul', PACKAGE_ID)).rejects.toThrow(OnChainVerificationError)
+    await expect(getVerifiedSoulState('0xsoul', PACKAGE_ID)).rejects.toThrow(
+      'Soul creator_royalty_bps is missing on chain',
+    )
+  })
+
   it('reads soul access cap objects and their owner address', async () => {
     const ownerAddress = `0x${'4'.repeat(64)}`
     const soulId = `0x${'5'.repeat(64)}`
@@ -166,6 +229,21 @@ describe('on-chain verification helpers', () => {
     expect(mockedGetVendoredKioskPackageAddress).toHaveBeenCalledTimes(1)
   })
 
+  it('fails with a safe 503 when personal kiosk verification is not configured', async () => {
+    mockedGetVendoredKioskPackageAddress.mockImplementationOnce(() => {
+      throw new Error('missing kiosk package config')
+    })
+
+    const { getVerifiedPersonalKioskCapState, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedPersonalKioskCapState('0xkioskcap')).rejects.toMatchObject({
+      name: OnChainVerificationError.name,
+      message: 'Personal kiosk verification is not configured',
+      status: 503,
+    })
+    expect(mockedSuiClient.getObject).not.toHaveBeenCalled()
+  })
+
   it('extracts the listing event payload from a successful market transaction', async () => {
     const { extractSoulListingEvent } = await import('../../web/lib/souls/on-chain-verification.ts')
     const listingObjectId = `0x${'9'.repeat(64)}`
@@ -225,6 +303,64 @@ describe('on-chain verification helpers', () => {
       priceAtomic: 1000n,
       platformFeeAtomic: 25n,
       creatorRoyaltyAtomic: 100n,
+    })
+  })
+
+  it('rejects negative event integers for unsigned Soul market fields', async () => {
+    const { extractSoulListingEvent, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    expect(() => extractSoulListingEvent({
+      events: [{
+        type: `${PACKAGE_ID}::market::SoulListed`,
+        parsedJson: {
+          listing_id: `0x${'9'.repeat(64)}`,
+          soul_id: `0x${'7'.repeat(64)}`,
+          kiosk_id: `0x${'8'.repeat(64)}`,
+          kiosk_cap_id: `0x${'6'.repeat(64)}`,
+          seller: `0x${'1'.repeat(64)}`,
+          price: '-1',
+        },
+      }],
+    }, PACKAGE_ID)).toThrow(OnChainVerificationError)
+  })
+
+  it('extracts the allowlist-set event payload for Soul allowlist sync', async () => {
+    const { extractSoulAllowlistSetEvent } = await import('../../web/lib/souls/on-chain-verification.ts')
+    const soulObjectId = `0x${'7'.repeat(64)}`
+    const allowlistedAddress = `0x${'1'.repeat(64)}`
+
+    expect(extractSoulAllowlistSetEvent({
+      events: [{
+        type: `${PACKAGE_ID}::allowlist::AllowlistAddressSet`,
+        parsedJson: {
+          soul_id: soulObjectId,
+          allowlisted: allowlistedAddress,
+          allowlist_version: '5',
+        },
+      }],
+    }, PACKAGE_ID)).toEqual({
+      soulObjectId,
+      allowlistedAddress,
+      allowlistVersion: 5n,
+    })
+  })
+
+  it('extracts the allowlist-cleared event payload for Soul allowlist sync', async () => {
+    const { extractSoulAllowlistClearedEvent } = await import('../../web/lib/souls/on-chain-verification.ts')
+    const soulObjectId = `0x${'7'.repeat(64)}`
+    const oldAllowlistedAddress = `0x${'1'.repeat(64)}`
+
+    expect(extractSoulAllowlistClearedEvent({
+      events: [{
+        type: `${PACKAGE_ID}::allowlist::AllowlistAddressCleared`,
+        parsedJson: {
+          soul_id: soulObjectId,
+          old_allowlisted: oldAllowlistedAddress,
+        },
+      }],
+    }, PACKAGE_ID)).toEqual({
+      soulObjectId,
+      oldAllowlistedAddress,
     })
   })
 })

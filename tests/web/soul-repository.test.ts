@@ -62,6 +62,7 @@ describe('soul repository helpers', () => {
     expect(detail.contentBlobObjectId).toBe(`0x${'5'.repeat(64)}`)
     expect(detail.allowlistAddress).toBeNull()
     expect(detail.allowlistCapOnChainId).toBe(`0x${'7'.repeat(64)}`)
+    expect(detail.allowlistVersion).toBe('1')
     expect(detail.creatorMemberId).toBeNull()
     expect(detail.currentOwnerMemberId).toBeNull()
   })
@@ -75,6 +76,26 @@ describe('soul repository helpers', () => {
 
     expect(detail.isOwner).toBe(true)
     expect(detail.isCreator).toBe(false)
+  })
+
+  it('treats a wallet-matched viewer as the owner when the member mirror has not caught up', async () => {
+    const { toSoulAssetDetail } = await import('../../web/lib/souls/repository.ts')
+    const detail = toSoulAssetDetail(makeRecord({
+      currentOwnerAddress: `0x${'0'.repeat(63)}3`,
+      currentOwnerMemberId: null,
+      allowlistAddress: `0x${'8'.repeat(64)}`,
+      allowlistCapOnChainId: `0x${'7'.repeat(64)}`,
+    }), {
+      viewerMemberId: null,
+      viewerWalletAddresses: ['0x3'],
+    })
+
+    expect(detail.isOwner).toBe(true)
+    expect(detail.contentBlobId).toBe('blob-content')
+    expect(detail.contentBlobObjectId).toBe(`0x${'5'.repeat(64)}`)
+    expect(detail.currentKioskCapOnChainId).toBe(`0x${'6'.repeat(64)}`)
+    expect(detail.allowlistAddress).toBe(`0x${'8'.repeat(64)}`)
+    expect(detail.allowlistCapOnChainId).toBe(`0x${'7'.repeat(64)}`)
   })
 
   it('hides sensitive detail fields from unauthenticated viewers', async () => {
@@ -92,6 +113,7 @@ describe('soul repository helpers', () => {
     expect(detail.currentKioskCapOnChainId).toBeNull()
     expect(detail.allowlistAddress).toBeNull()
     expect(detail.allowlistCapOnChainId).toBeNull()
+    expect(detail.allowlistVersion).toBeNull()
     expect(detail.creatorMemberId).toBeNull()
     expect(detail.currentOwnerMemberId).toBeNull()
   })
@@ -111,6 +133,7 @@ describe('soul repository helpers', () => {
     expect(detail.currentKioskCapOnChainId).toBe(`0x${'6'.repeat(64)}`)
     expect(detail.allowlistAddress).toBe(`0x${'8'.repeat(64)}`)
     expect(detail.allowlistCapOnChainId).toBe(`0x${'7'.repeat(64)}`)
+    expect(detail.allowlistVersion).toBe('1')
     expect(detail.creatorMemberId).toBe('creator-1')
     expect(detail.currentOwnerMemberId).toBe('owner-1')
   })
@@ -121,7 +144,10 @@ describe('soul repository helpers', () => {
     expect(buildSoulAssetRouteWhere('550e8400-e29b-41d4-a716-446655440000')).toEqual({
       id: '550e8400-e29b-41d4-a716-446655440000',
     })
-    expect(buildSoulAssetRouteWhere('0xsoul')).toEqual({ onChainId: '0xsoul' })
+    expect(buildSoulAssetRouteWhere('0x1')).toEqual({
+      onChainId: `0x${'0'.repeat(63)}1`,
+    })
+    expect(buildSoulAssetRouteWhere('0xsoul')).toBeNull()
   })
 
   it('serializes summary timestamps and decimal listing amounts for API output', async () => {
@@ -146,10 +172,19 @@ describe('soul repository helpers', () => {
     mockedFindFirst.mockResolvedValueOnce(null)
     const { findSoulAssetDetailByRouteId } = await import('../../web/lib/souls/repository.ts')
 
-    await findSoulAssetDetailByRouteId('0xsoul')
+    await findSoulAssetDetailByRouteId(`0x${'1'.repeat(64)}`)
 
     expect(mockedFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { onChainId: '0xsoul' },
+      where: { onChainId: `0x${'1'.repeat(64)}` },
     }))
+  })
+
+  it('returns null without querying Prisma when the Soul route id is malformed', async () => {
+    const { prisma } = await import('@web/lib/prisma')
+    const mockedFindFirst = vi.mocked(prisma.soulAsset.findFirst)
+    const { findSoulAssetDetailByRouteId } = await import('../../web/lib/souls/repository.ts')
+
+    await expect(findSoulAssetDetailByRouteId('0xsoul')).resolves.toBeNull()
+    expect(mockedFindFirst).not.toHaveBeenCalled()
   })
 })

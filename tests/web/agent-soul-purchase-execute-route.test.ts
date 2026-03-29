@@ -8,6 +8,7 @@ const SOUL_ID = `0x${'2'.repeat(64)}`
 const KIOSK_ID = `0x${'3'.repeat(64)}`
 const BUYER_KIOSK_ID = `0x${'4'.repeat(64)}`
 const BUYER_KIOSK_CAP_ID = `0x${'5'.repeat(64)}`
+const SELLER_ADDRESS = `0x${'6'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
 
 function makeVerifiedSoulState(overrides: Partial<VerifiedSoulState> = {}): VerifiedSoulState {
@@ -35,6 +36,13 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
   constructor(message: string, status = 422) {
     super(message)
     this.status = status
+  }
+})
+
+const MockSoulMirrorOwnershipConflictError = vi.hoisted(() => class MockSoulMirrorOwnershipConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SoulMirrorOwnershipConflictError'
   }
 })
 
@@ -92,7 +100,9 @@ vi.mock('@web/lib/souls/tx-signature', () => ({
 }))
 
 vi.mock('@web/lib/souls/post-tx-db', () => ({
+  SoulMirrorOwnershipConflictError: MockSoulMirrorOwnershipConflictError,
   dbSetSoulOwnership: mockedDbSetSoulOwnership,
+  narrowListingStatus: (v: string | null | undefined) => (v === 'listed' || v === 'held' ? v : undefined),
 }))
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
@@ -130,6 +140,9 @@ describe('agent soul purchase execute route', () => {
     mockedFindSoulAssetDetailByRouteId.mockResolvedValue({
       id: 'asset-db-1',
       onChainId: SOUL_ID,
+      listingStatus: 'listed',
+      currentOwnerAddress: SELLER_ADDRESS,
+      currentKioskId: KIOSK_ID,
     })
     mockedGetPreparedSoulPurchaseForExecution.mockResolvedValue({
       id: PREPARED_PURCHASE_ID,
@@ -305,6 +318,7 @@ describe('agent soul purchase execute route', () => {
       currentOwnerAddress: AGENT_ADDRESS,
       currentKioskId: BUYER_KIOSK_ID,
       currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: true,
     })
@@ -318,6 +332,9 @@ describe('agent soul purchase execute route', () => {
       listingStatus: 'held',
       listedPriceAtomic: null,
       allowlistVersion: 4n,
+      expectedCurrentOwnerAddress: SELLER_ADDRESS,
+      expectedCurrentKioskId: KIOSK_ID,
+      expectedListingStatus: 'listed',
     })
     expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
       preparedPurchaseId: PREPARED_PURCHASE_ID,
@@ -329,6 +346,7 @@ describe('agent soul purchase execute route', () => {
         currentOwnerAddress: AGENT_ADDRESS,
         currentKioskId: BUYER_KIOSK_ID,
         currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+        listingStatus: 'held',
         onChainSuccess: true,
         dbSynced: true,
       },
@@ -360,6 +378,7 @@ describe('agent soul purchase execute route', () => {
       currentOwnerAddress: AGENT_ADDRESS,
       currentKioskId: BUYER_KIOSK_ID,
       currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: false,
       error: 'Transaction succeeded on chain, but local Soul sync failed.',
@@ -412,6 +431,7 @@ describe('agent soul purchase execute route', () => {
       currentOwnerAddress: AGENT_ADDRESS,
       currentKioskId: BUYER_KIOSK_ID,
       currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: true,
     })
@@ -478,6 +498,9 @@ describe('agent soul purchase execute route', () => {
       listingStatus: 'held',
       listedPriceAtomic: null,
       allowlistVersion: 5n,
+      expectedCurrentOwnerAddress: SELLER_ADDRESS,
+      expectedCurrentKioskId: KIOSK_ID,
+      expectedListingStatus: 'listed',
     })
     expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
       preparedPurchaseId: PREPARED_PURCHASE_ID,
@@ -665,6 +688,9 @@ describe('agent soul purchase execute route', () => {
       listingStatus: 'held',
       listedPriceAtomic: null,
       allowlistVersion: 6n,
+      expectedCurrentOwnerAddress: SELLER_ADDRESS,
+      expectedCurrentKioskId: KIOSK_ID,
+      expectedListingStatus: 'listed',
     })
     expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
       preparedPurchaseId: PREPARED_PURCHASE_ID,
@@ -730,6 +756,9 @@ describe('agent soul purchase execute route', () => {
       listingStatus: 'held',
       listedPriceAtomic: null,
       allowlistVersion: 7n,
+      expectedCurrentOwnerAddress: SELLER_ADDRESS,
+      expectedCurrentKioskId: KIOSK_ID,
+      expectedListingStatus: 'listed',
     })
   })
 
@@ -751,7 +780,7 @@ describe('agent soul purchase execute route', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
-      error: 'MoveAbort: listing changed',
+      error: 'Transaction effects indicate failure',
     })
     expect(mockedReleasePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
       preparedPurchaseId: PREPARED_PURCHASE_ID,
@@ -856,5 +885,53 @@ describe('agent soul purchase execute route', () => {
     } finally {
       warnSpy.mockRestore()
     }
+  })
+
+  it('rejects when buyer kiosk cap does not point to the buyer kiosk', async () => {
+    mockedGetVerifiedPersonalKioskCapState.mockResolvedValueOnce({
+      objectId: BUYER_KIOSK_CAP_ID,
+      ownerAddress: AGENT_ADDRESS,
+      kioskId: `0x${'e'.repeat(64)}`,
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      error: 'Purchased Soul kiosk cap does not match the buyer kiosk',
+    }))
+    expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
+  })
+
+  it('rejects when buyer kiosk cap is not owned by the agent wallet', async () => {
+    mockedGetVerifiedPersonalKioskCapState.mockResolvedValueOnce({
+      objectId: BUYER_KIOSK_CAP_ID,
+      ownerAddress: `0x${'d'.repeat(64)}`,
+      kioskId: BUYER_KIOSK_ID,
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      error: 'Purchased Soul kiosk cap does not belong to the agent wallet',
+    }))
+    expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
   })
 })
