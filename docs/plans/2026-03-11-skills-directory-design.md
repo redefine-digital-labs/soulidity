@@ -441,7 +441,7 @@ Run: `cd /Users/admin/Desktop/nao/clawnews/web && npx next dev`
 
 **Step 3: 更新 PRD**
 
-在 `docs/ai-web3-content-community-plan.md` 的页面清单中追加技能页面记录。
+在 `docs/legacy/ai-web3-content-community-plan.md` 的页面清单中追加技能页面记录。
 
 **Step 4: Final Commit**
 

@@ -4,7 +4,7 @@ edition = "2024.beta"
 
 [dependencies]
 soul_object = { local = "../soul_object" }
-cpu = { local = "../vendor/cpu" }
+usdc = { local = "../test_usdc" }
 unft_standard = { local = "../vendor/unft_standard", override = true }
 Kiosk = { local = "../vendor/kiosk", override = true }
 Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/walrus", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }

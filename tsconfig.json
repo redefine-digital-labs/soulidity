@@ -17,6 +17,6 @@
       "@web/*": ["./web/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "scripts/**/*.ts"],
   "exclude": ["node_modules", "dist", "web"]
 }

@@ -1,46 +1,63 @@
-# Souls Latest Release And Atomic Price Spec
+# Soul Stablecoin Fixed-Price Hard Cut Spec
 
 ## Goal
 
-一次性收口 Souls 最新 release 与价格语义，消除基于镜像插入顺序猜“最新版本”的逻辑，以及基于 `Int cents` / `BigInt` 的不完整 `u64` 存储。
+一次性把 Soul 从“地址直持有 + 第三方市场假设 + SUI 命名残留”的半套模型，硬切成“始终由 personal kiosk 托管 + 自家 fixed-price 成交 + 单一稳定币结算 + allowlist/version-cap 在受支持转移路径里自动清空”的单一模型，不留 address-owned Soul、旧 Marketplace 假设和旧计价字段尾巴。
 
 ## Scope
 
-- Souls 公共详情、列表、我的 Souls、社区资料、agent detail 的 release/price 返回结构
-- Souls 前端页面与卡片的 latest release 与价格展示/购买逻辑
-- Souls 价格镜像写入、prepared purchase 金额持久化、Prisma schema 与迁移
-- 相关测试与仓库契约
+- `move/soul_object/**`
+- `move/soul_market_adapter/**`
+- `prisma/**`
+- `web/lib/souls/**`
+- `web/lib/services/seal*.ts`
+- `web/app/api/souls/**`
+- `web/app/api/agent/souls/**`
+- `web/app/souls/**`
+- `web/components/souls/**`
+- `tests/web/**`
+- `SPEC.md`
+- `PLAN.md`
 
 ## Non-Goals
 
-- 不做历史数据迁移兼容
-- 不保留旧 API price number/cents 语义兼容层
-- 不保留通过 `releases[0]` 推断最新 release 的旧逻辑
+- 不新增多地址 allowlist；仍然是 `owner + 1 个 allowlist 地址`
+- 不做旧 address-owned Soul 的向后兼容逻辑
+- 不做多币种或运行时切币；测试网固定沿用 `test_usdc::USDC`
+- 不支持第三方 market offer / bid / seller-accept-offer
+- 不扩展到 Soul 以外的其他资产模型
 
 ## Constraints
 
-- Souls 和用户都是开发数据，可直接替换数据模型
-- 数据库层需要完整承载 `u64`，不能使用 `BIGINT`
-- API 边界不能直接暴露 `bigint` / Prisma Decimal，统一输出字符串
+- Soul 交易本质仍是 NFT 交易，但仓库的受支持生命周期必须统一到 `always-in-kiosk + buyer-initiated fixed-price`
+- 链上策略必须加入足够的 rule，使产品支持路径下的 Soul 在买入、持有、重上架过程中都不回到地址直持有状态，也不能被第三方市场确认成交
+- human 与 agent 对 Seal 内容访问能力保持对称；差异只能在认证入口，不在 Soul 业务模型
+- owner 自身访问与 allowlisted 地址访问都必须在 Soul 被 kiosk 托管时继续可用
+- 内层权利继续沿用现有 `allowlist/version-cap`；不引入新的 license/token 体系
+- 本轮是硬切，必须同步清理旧字段、旧假设、旧测试和误导性文案
 
 ## Acceptance
 
-1. 所有 Souls 购买与展示逻辑只从 canonical `latestRelease` 读取最新 release，不再依赖 `releases[0]`。
-2. `oneTimePriceUsdc`、`subPriceUsdc`、`amountUsdc` 在数据库中可完整承载 `u64`，且服务端内部计算保持精确。
-3. Souls 相关 API 对外统一返回 atomic USDC 字符串，不再返回 cents number。
-4. 前端展示与购买逻辑基于 atomic 字符串工作，不再依赖页面临时链上价格 fallback。
-5. 相关旧注释、旧类型、旧契约测试同步清理。
-6. 手动发布 release 页面上传加密 bundle 后，`sealDekEnvelope` 必须随 mirror 请求传到后端并持久化为 release `sealSidecar`，agent access 不能再因为该链路丢字段而返回 `sealSidecar: null`。
-7. Agent Souls access 在扫描多个 candidate pass 时，只要出现任一瞬时链上校验失败且最终没有任何 pass 被确认为有效，就必须返回可重试错误，不得因为后续非瞬时失败把结果误降级为 403。
-8. USDC coin selection 不能因为固定页数上限把“余额足够但分页很深”的钱包误判为资金不足；只有在真正扫完整个分页后仍不够，才允许返回 insufficient funds。
-9. Agent purchase/renew execute 路由必须在链上广播前校验 prepared record 的语义边界：purchase execute 只能接受非 renewal 的 prepared 记录，renew execute 只能接受带 `passOnChainId` 的 renewal prepared 记录；错误路由不得执行交易并不得把 prepared 记录终结到不可恢复状态。
-10. Agent purchase/renew execute 在链上交易已成功且 `passOnChainId` 已可确定时，若后置链上校验或读链暂时失败，必须把 prepared 结果持久化为可恢复状态，并允许后续同一个 `preparedPurchaseId` 重新跑 verify + DB sync，不得把 5xx 暂时错误写成永久终态。
-11. `takeRateLimitToken` 在 Upstash 调用异常时必须自动降级到现有 in-memory limiter，不能把 Redis/网络抖动直接放大成认证、购买、发布等主路径的 500。
-12. `publish` / `release` mirror 路由在 release 依赖 `sealSidecar` 时，只有在 sidecar 成功持久化后才能写入成功 tx-sync；若 Seal sidecar 生成失败，接口必须返回可重试错误，且同一个 `txDigest` 后续可重新补 sidecar，不得缓存 201 成功结果。
-13. Agent purchase/renew execute 对已存储的 retryable 结果做补 sync 时，必须重新执行与主执行路径相同的 pass invariants 校验；若 series/owner/release/pass type/renew pass context 不匹配，必须把 prepared 结果终结为 422，而不是继续写入本地 pass mirror。
-14. Pass mirror 写入前必须把链上 owner 地址规范化后再用于 wallet binding 查找和 `soulPassSnapshot.ownerAddress` 落库，避免等价 Sui 地址因为格式差异丢失 `ownerMemberId` 或导致 owner-scoped 查询漏匹配。
-15. Subscription renew mirror 在成功校验链上续费后，必须同时刷新 `ownerAddress` / `ownerMemberId`，不能只更新到期时间；否则转移后续费会把 snapshot ownership 留在旧 owner。
-16. `buildCreateSeriesTx` 必须在客户端拒绝空白 description，避免用户进入签名/上链后才因为 `series::validate_metadata` 的空描述约束失败。
-17. Publish Soul 页面在链上创建 `SoulSeries` 之前，若存在仅本地保存但尚未产生任何 on-chain progress 的 draft，提交时必须用当前表单值刷新该 draft；旧的空 `description` 或价格字段不得导致后续重试持续复现同一前端校验错误。
-18. Human Soul purchase mirror 若已完成本地 ownership 更新但尚未写入 tx-sync，后续同一 `txDigest` 重试必须允许补齐 sync，不得因为 Soul 已转成 `held` 就永久返回“not listed”。
-19. 已被 agent 购买并持有的 Soul，必须能通过现有受支持 API 重新 mirror 成 `listed` 状态进入二级市场；agent relist 不得被 `/api/souls/publish` 的身份限制硬阻断，同时初次 publish 仍只允许 creator 侧的人类账号完成。
+1. `move/soul_object::market` 的 TransferPolicy 对 `Soul` 启用 `kiosk_lock_rule`、`personal_kiosk_rule` 与 `witness_rule<MarketOnlyProof>`，并且活动交易路径能完成对应 prove / confirm。
+2. `move/soul_market_adapter` 的发布、报价、购买、持有、再上架路径统一成 stablecoin fixed-price + personal kiosk 托管模型：
+   - 发布后 Soul 在 creator personal kiosk 内上架
+   - 购买后 Soul 在 buyer personal kiosk 内保管，而不是回到 buyer 地址直持有
+   - 再上架从现有 kiosk 内的 Soul 出发，不再要求地址直持有 `Soul`
+   - 测试网支付币固定为 `test_usdc::USDC`
+3. `Soul` 本体持有不可变 `creator_royalty_bps`，默认 `0`；购买报价和结算显式拆分 `price + platform fee + creator royalty`，旧全局 royalty / platform fee rule 模块被移除。
+4. Seal owner approval 不再直接假设 `&Soul` 来自地址持有对象；owner 在 Soul 被 kiosk 托管时仍可完成浏览器内下载解密。
+5. Web/DB 运行时不再把 `held` 解释成“地址直持有”，并且不再使用旧 `*Sui` 价格字段：
+   - owner 识别基于 personal kiosk owner
+   - DB 存储当前托管 kiosk、`listingObjectOnChainId`、`listedPriceAtomic`，并保留 listed / held 两种产品态
+   - 不再把 `sellerKioskId = null` 当作 held 的必要条件
+   - prepared purchase、详情页报价和购买按钮统一使用 atomic 稳定币金额与 listing object
+6. 购买、重上架会清空 allowlist 并 bump version；`cancel_listing` 不改变 owner 访问能力。
+7. 购买、allowlist、access、我的 Souls、详情页、重上架按钮、agent prepared purchase 全部适配 kiosk 持有 + 稳定币购买模型。
+8. 仓库当前活动代码中不再存在“购买后 transfer Soul 到 buyer 地址”“重上架必须传入地址持有 Soul 对象”或“继续依赖第三方市场 offer/bid”的主链路。
+9. Move tests 与 Web tests 覆盖以下事实：
+   - 购买后 Soul 由 buyer personal kiosk 托管
+   - 持有态可从 kiosk 重上架
+   - allowlist 在购买/重新上架等支持的转移路径中清空
+   - 稳定币报价、支付与费用拆分正确
+   - owner / allowlisted 均可在 kiosk 托管状态下完成 Seal 访问
+10. 验证结果明确说明最终边界：产品支持路径下已消除 address-owned 尾巴与第三方市场成交尾巴；如果仍存在协议层无法钩住的外部裸转移边界，必须只剩明确、可解释的最小边界，而不是仓库内旧实现残留。

@@ -15,9 +15,19 @@
     "produce": "tsx src/producer/run.ts",
     "publish": "tsx src/publisher/run.ts",
     "seed:achievements": "tsx src/db/seed-achievements.ts",
-    "scan:skills": "tsx src/collector/scan-skills.ts"
+    "scan:skills": "tsx src/collector/scan-skills.ts",
+    "mcp:review-memory": "tsx src/mcp/review-memory/server.ts",
+    "review-memory:backfill": "tsx scripts/review-memory-backfill.ts",
+    "review-memory:dedupe": "tsx scripts/review-memory-dedupe.ts",
+    "review-memory:migrate-active-state": "tsx scripts/review-memory-migrate-active-state.ts",
+    "review-memory:server:up": "bash scripts/review-memory-run-local.sh",
+    "review-memory:docker:up": "docker compose -f docker/review-memory/docker-compose.yml up -d --build",
+    "review-memory:docker:db:up": "docker compose -f docker/review-memory/docker-compose.yml up -d postgres",
+    "review-memory:docker:down": "docker compose -f docker/review-memory/docker-compose.yml down",
+    "review-memory:docker:logs": "docker compose -f docker/review-memory/docker-compose.yml logs -f mnemo-server"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
     "dotenv": "^17.3.1",
@@ -28,7 +38,8 @@
     "p-limit": "^7.3.0",
     "pg": "^8.19.0",
     "prisma": "^7.5.0",
-    "rss-parser": "^3.13.0"
+    "rss-parser": "^3.13.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
