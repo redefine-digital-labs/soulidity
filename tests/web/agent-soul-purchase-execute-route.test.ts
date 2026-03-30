@@ -874,6 +874,66 @@ describe('agent soul purchase execute route', () => {
     }))
   })
 
+  it('rejects cached recovery when the recovered purchase buyer does not match the agent wallet', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xpartial',
+      resultStatusCode: 207,
+      resultBody: {
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+      },
+    })
+    mockedExtractSoulPurchasedEvent.mockReturnValueOnce({
+      soulObjectId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      buyerKioskId: BUYER_KIOSK_ID,
+      buyerKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      buyerAddress: `0x${'f'.repeat(64)}`,
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      digest: '0xpartial',
+      soulOnChainId: SOUL_ID,
+      onChainSuccess: true,
+      dbSynced: false,
+      error: 'Purchased Soul owner does not match the agent wallet',
+    })
+    expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+      txDigest: '0xpartial',
+      resultStatusCode: 422,
+      resultBody: {
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        onChainSuccess: true,
+        dbSynced: false,
+        error: 'Purchased Soul owner does not match the agent wallet',
+      },
+    })
+  })
+
   it('falls back to cached result when kiosk ids are missing and on-chain recovery fails', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {

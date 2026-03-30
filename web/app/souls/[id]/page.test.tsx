@@ -115,4 +115,23 @@ describe('Soul detail access section', () => {
     const accessButton = container.querySelector('[data-role="access-download-button"]')
     expect(accessButton?.textContent).toBe('0x2')
   })
+
+  it('warns the owner before listing a Soul that still has an allowlist address', async () => {
+    mockUseSoulDetail.mockReturnValue({
+      data: buildSoulDetail({
+        isOwner: true,
+        listingStatus: 'held',
+        allowlistAddress: `0x${'9'.repeat(64)}`,
+      }),
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+
+    await act(async () => {
+      root.render(<SoulDetailPage />)
+    })
+
+    expect(container.textContent).toContain("Listing this Soul will revoke the current allowlisted address's access.")
+  })
 })

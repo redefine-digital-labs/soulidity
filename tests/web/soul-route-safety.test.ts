@@ -12,6 +12,8 @@ const unsafeMessages = [
   'Soul allowlist_address nesting exceeds the supported on-chain depth',
   'Unable to determine transaction sender for verification',
   'Pricing plan type is invalid on chain',
+  'Soul creator_royalty_bps is out of valid range on chain',
+  'Personal kiosk cap kiosk id is missing on chain',
 ] as const
 
 describe('route safety helpers', () => {

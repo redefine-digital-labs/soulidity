@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedResolveIdentity = vi.hoisted(() => vi.fn())
+const mockedGetRequestIp = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   member: {
     findUnique: vi.fn(),
   },
 }))
+const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/identity', () => ({
   resolveIdentity: mockedResolveIdentity,
@@ -13,6 +15,11 @@ vi.mock('@web/lib/auth/identity', () => ({
 
 vi.mock('@web/lib/prisma', () => ({
   prisma: mockedPrisma,
+}))
+
+vi.mock('@web/lib/rate-limit', () => ({
+  getRequestIp: mockedGetRequestIp,
+  takeRateLimitToken: mockedTakeRateLimitToken,
 }))
 
 vi.mock('@web/lib/souls/serialization', () => ({
@@ -23,6 +30,24 @@ describe('community profile route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    mockedGetRequestIp.mockReturnValue('203.0.113.20')
+    mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
+  })
+
+  it('rate limits community profile requests before reading Prisma state', async () => {
+    mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 12 })
+
+    const { GET } = await import('../../web/app/api/community/profile/[id]/route.ts')
+    const response = await GET(new Request('http://localhost/api/community/profile/member-1'), {
+      params: Promise.resolve({ id: 'member-1' }),
+    })
+
+    expect(response.status).toBe(429)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Too many community profile requests, try again later',
+    })
+    expect(response.headers.get('Retry-After')).toBe('12')
+    expect(mockedPrisma.member.findUnique).not.toHaveBeenCalled()
   })
 
   it('only returns the primary Sui address to the owner while keeping authored Souls public', async () => {
@@ -116,5 +141,9 @@ describe('community profile route', () => {
         }),
       }),
     }))
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'community-profile:203.0.113.20',
+      expect.objectContaining({ max: 60 }),
+    )
   })
 })

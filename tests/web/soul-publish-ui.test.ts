@@ -17,11 +17,11 @@ describe('soul publish price state', () => {
     })
   })
 
-  it('rejects malformed or zero USDC prices', () => {
-    expect(getSoulPublishPriceState({ price: '0.0000001' })).toEqual({
+  it('rejects malformed, zero, or sub-minimum USDC prices', () => {
+    expect(getSoulPublishPriceState({ price: '0.000001' })).toEqual({
       helperText: 'Each Soul uses a single fixed USDC listing price.',
       fieldErrors: {
-        price: 'Enter a positive USDC amount with at most 6 decimal places',
+        price: 'Enter a USDC amount of at least 0.001 with at most 6 decimal places',
       },
       isComplete: false,
     })

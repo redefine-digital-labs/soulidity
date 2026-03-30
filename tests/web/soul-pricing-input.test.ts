@@ -15,7 +15,9 @@ describe('parseSoulPaymentAmountToAtomic', () => {
     expect(parseSoulPaymentAmountToAtomic('1.1234567')).toBeNull()
   })
 
-  it('accepts the smallest positive 6-decimal payment amount', () => {
-    expect(parseSoulPaymentAmountToAtomic('0.000001')).toBe(1n)
+  it('rejects prices below the minimum listing amount and accepts the minimum', () => {
+    expect(parseSoulPaymentAmountToAtomic('0.000001')).toBeNull()
+    expect(parseSoulPaymentAmountToAtomic('0.000999')).toBeNull()
+    expect(parseSoulPaymentAmountToAtomic('0.001')).toBe(1_000n)
   })
 })

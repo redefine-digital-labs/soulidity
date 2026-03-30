@@ -24,6 +24,7 @@ const VALID_DOCUMENT_ID = buildValidDocumentId(SOUL_ID)
 const mockedGetVerifiedPersonalKioskCapState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulAllowlistCapState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
+const mockedGetOwnedObjects = vi.hoisted(() => vi.fn())
 const mockedGetAllowlistedSealSession = vi.hoisted(() => vi.fn())
 const mockedGetOwnerSealSession = vi.hoisted(() => vi.fn())
 const mockedGetSealRuntimeConfig = vi.hoisted(() => vi.fn())
@@ -48,6 +49,12 @@ vi.mock('@web/lib/services/seal', () => ({
 
 vi.mock('@web/lib/services/walrus', () => ({
   getBlobUrl: mockedGetBlobUrl,
+}))
+
+vi.mock('@web/lib/sui', () => ({
+  suiClient: {
+    getOwnedObjects: mockedGetOwnedObjects,
+  },
 }))
 
 function makeSoulRecord(overrides: Record<string, unknown> = {}) {
@@ -112,6 +119,11 @@ describe('resolveSoulAccessPayload', () => {
       soulObjectId: SOUL_ID,
       allowlistedAddress: ALLOWLISTED_ADDRESS,
       allowlistVersion: 7n,
+    })
+    mockedGetOwnedObjects.mockResolvedValue({
+      data: [],
+      hasNextPage: false,
+      nextCursor: null,
     })
     mockedGetOwnerSealSession.mockReturnValue({
       packageId: PACKAGE_ID,
@@ -310,15 +322,23 @@ describe('resolveSoulAccessPayload', () => {
     })
   })
 
-  it('returns 503 when the on-chain allowlist exists but the DB cap mirror has not caught up', async () => {
+  it('falls back to the viewer-owned allowlist cap when the DB cap mirror has not caught up', async () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
       ownerObjectId: `0x${'f'.repeat(64)}`,
       allowlistAddress: ALLOWLISTED_ADDRESS,
     }))
+    mockedGetOwnedObjects.mockResolvedValueOnce({
+      data: [],
+      hasNextPage: false,
+      nextCursor: null,
+    }).mockResolvedValueOnce({
+      data: [{ data: { objectId: ACCESS_CAP_ID } }],
+      hasNextPage: false,
+      nextCursor: null,
+    })
 
-    const { resolveSoulAccessPayload, SoulAccessDeniedError } = await import('../../web/lib/souls/access.ts')
-
-    await expect(resolveSoulAccessPayload({
+    const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
+    const payload = await resolveSoulAccessPayload({
       soul: makeSoulRecord({
         allowlistAddress: STALE_DB_ALLOWLIST_ADDRESS,
         allowlistCapOnChainId: null,
@@ -326,10 +346,13 @@ describe('resolveSoulAccessPayload', () => {
       viewerAddresses: [ALLOWLISTED_ADDRESS],
       soulPackageId: PACKAGE_ID,
       allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
-    })).rejects.toMatchObject({
-      name: SoulAccessDeniedError.name,
-      message: 'Soul allowlist access is still syncing',
-      status: 503,
+    })
+
+    expect(payload.accessKind).toBe('allowlisted')
+    expect(payload.viewerAddress).toBe(ALLOWLISTED_ADDRESS)
+    expect(payload.accessPolicy).toMatchObject({
+      functionName: 'seal_approve_allowlisted',
+      soulAllowlistCapObjectId: ACCESS_CAP_ID,
     })
   })
 

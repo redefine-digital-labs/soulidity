@@ -153,22 +153,35 @@ describe('soul detail routes', () => {
 
     const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
     const response = await GET(
-      new Request('http://localhost/api/souls/0xsoul') as any,
+      new Request('http://localhost/api/souls/0xsoul', {
+        headers: {
+          'user-agent': 'SoulBrowser/1.0',
+          'accept-language': 'en-US,en;q=0.9',
+        },
+      }) as any,
       { params: Promise.resolve({ id: SOUL_ID }) },
     )
 
     expect(response.status).toBe(200)
-    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith('soul-detail:missing-ip', expect.objectContaining({ max: 60 }))
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'soul-detail:fp:soulbrowser-1-0:en-us-en-q-0-9',
+      expect.objectContaining({ max: 60 }),
+    )
     expect(mockedFindSoulAssetDetailByRouteId).toHaveBeenCalledWith(SOUL_ID)
   })
 
-  it('still blocks missing-ip requests when the shared fallback bucket is exhausted', async () => {
+  it('still blocks fallback-fingerprint requests when the request IP is unavailable', async () => {
     mockedGetRequestIp.mockReturnValueOnce(null)
     mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 7 })
 
     const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
     const response = await GET(
-      new Request('http://localhost/api/souls/0xsoul') as any,
+      new Request('http://localhost/api/souls/0xsoul', {
+        headers: {
+          'user-agent': 'SoulBrowser/1.0',
+          'accept-language': 'en-US,en;q=0.9',
+        },
+      }) as any,
       { params: Promise.resolve({ id: SOUL_ID }) },
     )
 
@@ -177,7 +190,10 @@ describe('soul detail routes', () => {
       error: 'Too many soul detail requests, try again later',
     })
     expect(response.headers.get('Retry-After')).toBe('7')
-    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith('soul-detail:missing-ip', expect.objectContaining({ max: 60 }))
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'soul-detail:fp:soulbrowser-1-0:en-us-en-q-0-9',
+      expect.objectContaining({ max: 60 }),
+    )
     expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
   })
 

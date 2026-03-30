@@ -441,7 +441,7 @@ describe('Soul purchase route', () => {
     }))
   })
 
-  it('returns a fresh pending body when recoverable cached sync verification no longer matches on chain', async () => {
+  it('returns and persists a fresh pending body when recoverable cached sync verification no longer matches on chain', async () => {
     mockedGetStoredSoulTxSync.mockResolvedValueOnce({
       statusCode: 207,
       body: {
@@ -483,6 +483,20 @@ describe('Soul purchase route', () => {
       dbSynced: false,
       error: 'Purchase sync pending',
     })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
+      txDigest: TX_DIGEST,
+      routeKey: 'purchase',
+      resourceKey: SOUL_ID,
+      statusCode: 207,
+      body: expect.objectContaining({
+        digest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        txSender: BUYER_ADDRESS,
+        onChainSuccess: true,
+        dbSynced: false,
+        error: 'Purchase sync pending',
+      }),
+    }))
   })
 
   it('allows retrying the same digest after ownership already flipped to held locally', async () => {

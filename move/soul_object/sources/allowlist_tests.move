@@ -2,8 +2,10 @@
 module soul_object::allowlist_tests;
 
 use std::string;
+use kiosk::personal_kiosk::{Self as personal_kiosk};
 use soul_object::allowlist;
 use soul_object::soul;
+use sui::kiosk::{Self as kiosk};
 use sui::test_scenario::{Self as ts};
 use walrus::{blob, encoding, system, test_utils};
 
@@ -321,4 +323,53 @@ fun clear_requires_existing_allowlist_address() {
         allowlist::clear_allowlist_address(&mut registry, &mut soul_obj);
         abort 6
     }
+}
+
+#[test]
+fun clear_via_personal_kiosk_is_a_noop_when_allowlist_is_missing() {
+    let owner = @0xBEEF;
+    let mut scenario = ts::begin(@0x0);
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        allowlist::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, owner);
+    {
+        let mut registry: allowlist::AllowlistRegistry = ts::take_shared(&scenario);
+        let (walrus_system, blob) = register_test_blob(ts::ctx(&mut scenario));
+        let (mut kiosk_obj, kiosk_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
+        let personal_cap = personal_kiosk::new(&mut kiosk_obj, kiosk_owner_cap, ts::ctx(&mut scenario));
+        let soul_obj = soul::mint_for_testing(
+            owner,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            blob,
+            ts::ctx(&mut scenario),
+        );
+        let soul_id = object::id(&soul_obj);
+        kiosk::place(&mut kiosk_obj, personal_kiosk::borrow(&personal_cap), soul_obj);
+
+        allowlist::clear_allowlist_address_via_personal_kiosk(
+            &mut registry,
+            &mut kiosk_obj,
+            &personal_cap,
+            soul_id,
+        );
+
+        assert!(allowlist::registry_version(&registry, soul_id) == 0, 0);
+        let soul_ref = kiosk::borrow<soul::Soul>(&kiosk_obj, personal_kiosk::borrow(&personal_cap), soul_id);
+        assert!(soul::allowlist_address(soul_ref).is_none(), 1);
+        assert!(soul::allowlist_version(soul_ref) == 0, 2);
+
+        transfer::public_transfer(kiosk_obj, owner);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(registry);
+    };
+
+    ts::end(scenario);
 }
