@@ -571,6 +571,67 @@ describe('agent soul purchase execute route', () => {
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
   })
 
+  it('finalizes cached 207 retries with a terminal 410 when the Soul has moved to a different owner path', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xpartial',
+      resultStatusCode: 207,
+      resultBody: {
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      },
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      ownerObjectId: `0x${'f'.repeat(64)}`,
+    }))
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(410)
+    await expect(response.json()).resolves.toEqual({
+      digest: '0xpartial',
+      soulOnChainId: SOUL_ID,
+      onChainSuccess: true,
+      dbSynced: false,
+      ownershipChanged: true,
+      error: 'Soul ownership changed since the original purchase sync. Refresh the Soul detail instead of retrying.',
+    })
+    expect(mockedFinalizePreparedSoulPurchaseExecution).toHaveBeenCalledWith({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+      txDigest: '0xpartial',
+      resultStatusCode: 410,
+      resultBody: {
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        onChainSuccess: true,
+        dbSynced: false,
+        ownershipChanged: true,
+        error: 'Soul ownership changed since the original purchase sync. Refresh the Soul detail instead of retrying.',
+      },
+    })
+    expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
+    expect(mockedGetVerifiedPersonalKioskCapState).not.toHaveBeenCalled()
+  })
+
   it('persists a specific 422 when the recovered kiosk cap no longer matches the agent wallet', async () => {
     const cachedBody = {
       onChainSuccess: true,

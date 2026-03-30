@@ -8,7 +8,7 @@ import {
 
 describe('soul publish price state', () => {
   it('requires a single USDC price for Soul publishing', () => {
-    expect(getSoulPublishPriceState({ price: '' })).toEqual({
+    expect(getSoulPublishPriceState({ price: '', listForSale: true })).toEqual({
       helperText: 'Each Soul uses a single fixed USDC listing price.',
       fieldErrors: {
         price: 'Required',
@@ -18,7 +18,7 @@ describe('soul publish price state', () => {
   })
 
   it('rejects malformed, zero, or sub-minimum USDC prices', () => {
-    expect(getSoulPublishPriceState({ price: '0.000001' })).toEqual({
+    expect(getSoulPublishPriceState({ price: '0.000001', listForSale: true })).toEqual({
       helperText: 'Each Soul uses a single fixed USDC listing price.',
       fieldErrors: {
         price: 'Enter a USDC amount of at least 0.001 with at most 6 decimal places',
@@ -28,7 +28,7 @@ describe('soul publish price state', () => {
   })
 
   it('becomes complete once the USDC price is valid', () => {
-    expect(getSoulPublishPriceState({ price: '1.25' })).toEqual({
+    expect(getSoulPublishPriceState({ price: '1.25', listForSale: true })).toEqual({
       helperText: 'Each Soul uses a single fixed USDC listing price.',
       fieldErrors: {
         price: null,
@@ -38,7 +38,7 @@ describe('soul publish price state', () => {
   })
 
   it('only reveals price errors after touch or submit', () => {
-    const state = getSoulPublishPriceState({ price: '' })
+    const state = getSoulPublishPriceState({ price: '', listForSale: true })
 
     expect(getVisibleSoulPublishPriceErrors(state, {
       submitAttempted: false,

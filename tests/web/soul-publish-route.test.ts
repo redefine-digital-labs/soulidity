@@ -32,7 +32,7 @@ const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
 const mockedReadTransactionSender = vi.hoisted(() => vi.fn())
-const mockedExtractSoulListingEvent = vi.hoisted(() => vi.fn())
+const mockedExtractSoulPublishEvent = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedDbUpsertSoulAsset = vi.hoisted(() => vi.fn())
 const mockedGetSealRuntimeConfig = vi.hoisted(() => vi.fn())
@@ -71,7 +71,7 @@ vi.mock('@web/lib/souls/transaction-metadata', () => ({
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
-  extractSoulListingEvent: mockedExtractSoulListingEvent,
+  extractSoulPublishEvent: mockedExtractSoulPublishEvent,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   sameSuiValue: sameSuiValueForTests,
 }))
@@ -110,13 +110,16 @@ describe('soul publish route', () => {
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
     mockedReadTransactionSender.mockReturnValue(AUTHOR_ADDRESS)
     mockedPrisma.soulAsset.findUnique.mockResolvedValue(null)
-    mockedExtractSoulListingEvent.mockReturnValue({
-      listingObjectId: LISTING_ID,
-      soulObjectId: SOUL_ID,
-      kioskId: KIOSK_ID,
-      kioskCapOnChainId: KIOSK_CAP_ID,
-      sellerAddress: AUTHOR_ADDRESS,
-      priceAtomic: 1_000_000n,
+    mockedExtractSoulPublishEvent.mockReturnValue({
+      kind: 'listed',
+      event: {
+        listingObjectId: LISTING_ID,
+        soulObjectId: SOUL_ID,
+        kioskId: KIOSK_ID,
+        kioskCapOnChainId: KIOSK_CAP_ID,
+        sellerAddress: AUTHOR_ADDRESS,
+        priceAtomic: 1_000_000n,
+      },
     })
     mockedGetVerifiedSoulState.mockResolvedValue({
       objectId: SOUL_ID,
@@ -280,12 +283,15 @@ describe('soul publish route', () => {
   })
 
   it('rejects listing events whose seller wallet does not match the authenticated user', async () => {
-    mockedExtractSoulListingEvent.mockReturnValueOnce({
-      soulObjectId: SOUL_ID,
-      kioskId: KIOSK_ID,
-      kioskCapOnChainId: KIOSK_CAP_ID,
-      sellerAddress: `0x${'f'.repeat(64)}`,
-      priceAtomic: 1_000_000_000n,
+    mockedExtractSoulPublishEvent.mockReturnValueOnce({
+      kind: 'listed',
+      event: {
+        soulObjectId: SOUL_ID,
+        kioskId: KIOSK_ID,
+        kioskCapOnChainId: KIOSK_CAP_ID,
+        sellerAddress: `0x${'f'.repeat(64)}`,
+        priceAtomic: 1_000_000_000n,
+      },
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -306,19 +312,22 @@ describe('soul publish route', () => {
 
     expect(response.status).toBe(422)
     await expect(response.json()).resolves.toEqual({
-      error: 'Soul listing seller does not match the authenticated wallet',
+      error: 'Soul publisher does not match the authenticated wallet',
     })
     expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
   })
 
   it('rejects listing events whose mirrored price is zero or negative', async () => {
-    mockedExtractSoulListingEvent.mockReturnValueOnce({
-      listingObjectId: LISTING_ID,
-      soulObjectId: SOUL_ID,
-      kioskId: KIOSK_ID,
-      kioskCapOnChainId: KIOSK_CAP_ID,
-      sellerAddress: AUTHOR_ADDRESS,
-      priceAtomic: 0n,
+    mockedExtractSoulPublishEvent.mockReturnValueOnce({
+      kind: 'listed',
+      event: {
+        listingObjectId: LISTING_ID,
+        soulObjectId: SOUL_ID,
+        kioskId: KIOSK_ID,
+        kioskCapOnChainId: KIOSK_CAP_ID,
+        sellerAddress: AUTHOR_ADDRESS,
+        priceAtomic: 0n,
+      },
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -356,13 +365,16 @@ describe('soul publish route', () => {
       readme: 'Stored README',
       sealSidecar: { encryptedObject: 'sealed' },
     })
-    mockedExtractSoulListingEvent.mockReturnValueOnce({
-      listingObjectId: LISTING_ID,
-      soulObjectId: SOUL_ID,
-      kioskId: KIOSK_ID,
-      kioskCapOnChainId: KIOSK_CAP_ID,
-      sellerAddress: HOLDER_ADDRESS,
-      priceAtomic: 2_000_000n,
+    mockedExtractSoulPublishEvent.mockReturnValueOnce({
+      kind: 'listed',
+      event: {
+        listingObjectId: LISTING_ID,
+        soulObjectId: SOUL_ID,
+        kioskId: KIOSK_ID,
+        kioskCapOnChainId: KIOSK_CAP_ID,
+        sellerAddress: HOLDER_ADDRESS,
+        priceAtomic: 2_000_000n,
+      },
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -412,13 +424,16 @@ describe('soul publish route', () => {
       readme: 'Stored README',
       sealSidecar: { encryptedObject: 'sealed' },
     })
-    mockedExtractSoulListingEvent.mockReturnValueOnce({
-      listingObjectId: LISTING_ID,
-      soulObjectId: SOUL_ID,
-      kioskId: KIOSK_ID,
-      kioskCapOnChainId: KIOSK_CAP_ID,
-      sellerAddress: HOLDER_ADDRESS,
-      priceAtomic: 2_000_000n,
+    mockedExtractSoulPublishEvent.mockReturnValueOnce({
+      kind: 'listed',
+      event: {
+        listingObjectId: LISTING_ID,
+        soulObjectId: SOUL_ID,
+        kioskId: KIOSK_ID,
+        kioskCapOnChainId: KIOSK_CAP_ID,
+        sellerAddress: HOLDER_ADDRESS,
+        priceAtomic: 2_000_000n,
+      },
     })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
@@ -584,13 +599,16 @@ describe('soul publish route', () => {
     const HOLDER_ADDRESS = `0x${'7'.repeat(64)}`
     mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
     mockedReadTransactionSender.mockReturnValueOnce(HOLDER_ADDRESS)
-    mockedExtractSoulListingEvent.mockReturnValueOnce({
-      listingObjectId: LISTING_ID,
-      soulObjectId: SOUL_ID,
-      kioskId: KIOSK_ID,
-      kioskCapOnChainId: KIOSK_CAP_ID,
-      sellerAddress: HOLDER_ADDRESS,
-      priceAtomic: 2_000_000n,
+    mockedExtractSoulPublishEvent.mockReturnValueOnce({
+      kind: 'listed',
+      event: {
+        listingObjectId: LISTING_ID,
+        soulObjectId: SOUL_ID,
+        kioskId: KIOSK_ID,
+        kioskCapOnChainId: KIOSK_CAP_ID,
+        sellerAddress: HOLDER_ADDRESS,
+        priceAtomic: 2_000_000n,
+      },
     })
     mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({
       creatorMemberId: 'creator-member-1',
@@ -711,6 +729,49 @@ describe('soul publish route', () => {
     }))
   })
 
+  it('uses the on-chain Soul package id when creating the publish seal sidecar', async () => {
+    const onChainSoulPackageId = `0x${'8'.repeat(64)}`
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      objectId: SOUL_ID,
+      packageId: onChainSoulPackageId,
+      creatorAddress: AUTHOR_ADDRESS,
+      creatorRoyaltyBps: 0,
+      ownerAddress: KIOSK_ID,
+      ownerKind: 'object',
+      ownerObjectId: KIOSK_ID,
+      name: 'Signal Soul',
+      description: 'Encrypted bundle',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: 'walrus://metadata',
+      contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+      contentBlobId: 'blob-content',
+      allowlistAddress: null,
+      allowlistVersion: 0n,
+    })
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        readme: 'README',
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(200)
+    expect(mockedCreateSealEnvelopeSidecar).toHaveBeenCalledWith(expect.objectContaining({
+      packageId: onChainSoulPackageId,
+    }))
+  })
+
   it('rejects stale publish retry when Soul ownership has changed', async () => {
     const BUYER_ADDRESS = `0x${'b'.repeat(64)}`
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
@@ -748,7 +809,7 @@ describe('soul publish route', () => {
 
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toEqual({
-      error: 'Soul ownership has changed since this listing transaction',
+      error: 'Soul ownership has changed since this publish transaction',
     })
     expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
   })

@@ -3,6 +3,11 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createSoulPublishDraft,
+  patchSoulPublishDraft,
+  writeSoulPublishDraft,
+} from '@web/lib/souls/publish-draft'
 import PublishSoulPage from './page'
 
 const mockedPush = vi.hoisted(() => vi.fn())
@@ -10,6 +15,10 @@ const mockedGetAuthHeaders = vi.hoisted(() => vi.fn())
 const mockedSignAndExecute = vi.hoisted(() => vi.fn())
 const mockedBuildMintAndListSoulTx = vi.hoisted(() => vi.fn())
 const mockedMirrorRouteRequest = vi.hoisted(() => vi.fn())
+const mockedSuiClient = vi.hoisted(() => ({
+  getNormalizedMoveModule: vi.fn(),
+}))
+const PRIMARY_SUI_ADDRESS = `0x${'1'.repeat(64)}`
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -19,9 +28,13 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@web/components/auth-provider', () => ({
   useAuth: () => ({
-    user: { primarySuiAddress: `0x${'1'.repeat(64)}` },
+    user: { primarySuiAddress: PRIMARY_SUI_ADDRESS },
     getAuthHeaders: mockedGetAuthHeaders,
   }),
+}))
+
+vi.mock('@web/lib/sui', () => ({
+  suiClient: mockedSuiClient,
 }))
 
 vi.mock('@web/components/souls/upload-walrus', () => ({
@@ -120,6 +133,39 @@ describe('PublishSoulPage', () => {
     mockedBuildMintAndListSoulTx.mockReturnValue({ kind: 'tx' })
     mockedMirrorRouteRequest.mockReset()
     mockedMirrorRouteRequest.mockResolvedValue({})
+    mockedSuiClient.getNormalizedMoveModule.mockReset()
+    mockedSuiClient.getNormalizedMoveModule.mockResolvedValue({
+      exposedFunctions: {
+        mint_and_list_fixed_price: {
+          parameters: [
+            { MutableReference: { Struct: { address: `0x${'9'.repeat(64)}`, module: 'market', name: 'MarketConfig', typeArguments: [] } } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'option', name: 'Option', typeArguments: [{ Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } }] } },
+            { Struct: { address: `0x${'7'.repeat(64)}`, module: 'blob', name: 'Blob', typeArguments: [] } },
+            'U64',
+            'U16',
+            { MutableReference: { Struct: { address: '0x2', module: 'tx_context', name: 'TxContext', typeArguments: [] } } },
+          ],
+        },
+        mint_and_list_fixed_price_in_personal_kiosk: {
+          parameters: [
+            { Reference: { Struct: { address: `0x${'9'.repeat(64)}`, module: 'market', name: 'MarketConfig', typeArguments: [] } } },
+            { MutableReference: { Struct: { address: '0x2', module: 'kiosk', name: 'Kiosk', typeArguments: [] } } },
+            { Reference: { Struct: { address: `0x${'9'.repeat(64)}`, module: 'personal_kiosk', name: 'PersonalKioskCap', typeArguments: [] } } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'option', name: 'Option', typeArguments: [{ Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } }] } },
+            { Struct: { address: `0x${'7'.repeat(64)}`, module: 'blob', name: 'Blob', typeArguments: [] } },
+            'U64',
+            'U16',
+            { MutableReference: { Struct: { address: '0x2', module: 'tx_context', name: 'TxContext', typeArguments: [] } } },
+          ],
+        },
+      },
+    })
     process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = `0x${'9'.repeat(64)}`
     process.env.NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID = `0x${'8'.repeat(64)}`
 
@@ -234,5 +280,241 @@ describe('PublishSoulPage', () => {
       }),
     }))
     expect(mockedPush).toHaveBeenCalledWith('/souls/0xsoul')
+  })
+
+  it('reuses an existing Soul personal kiosk when the runtime already has one', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/souls/personal-kiosk') {
+        return createJsonResponse({
+          currentKioskId: '0xkiosk',
+          currentKioskCapOnChainId: '0xcap',
+        })
+      }
+      if (String(input) === '/api/souls/upload') {
+        const formData = init?.body as FormData
+        const uploadType = formData.get('type')
+        if (uploadType === 'public') {
+          return createJsonResponse({ blobId: 'blob-metadata' })
+        }
+        if (uploadType === 'encrypted') {
+          return createJsonResponse({
+            blobId: 'blob-content',
+            blobObjectId: '0xblob',
+            contentHash: 'content-hash',
+            sealDekEnvelope: 'envelope',
+          })
+        }
+      }
+      throw new Error(`Unexpected fetch call: ${String(input)}`)
+    }) as unknown as typeof fetch
+
+    await act(async () => {
+      root.render(<PublishSoulPage />)
+      await Promise.resolve()
+    })
+
+    const setInputValue = async (labelText: string, value: string) => {
+      const input = findControl(container, labelText, 'input, textarea') as HTMLInputElement | HTMLTextAreaElement
+      const prototype = input instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype
+      const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+
+      await act(async () => {
+        valueSetter?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+
+    await setInputValue('Name', 'Signal Soul')
+    await setInputValue('Description', 'Private research bundle')
+    await setInputValue('Category', 'Research')
+    await setInputValue('Price (USDC)', '1.25')
+    await setInputValue('Tags', 'alpha, macro')
+
+    const previewButton = container.querySelector('button[data-upload-type="public"]') as HTMLButtonElement | null
+    await act(async () => {
+      previewButton?.click()
+    })
+
+    const contentInput = findControl(container, 'Content file', 'input[type="file"]') as HTMLInputElement
+    Object.defineProperty(contentInput, 'files', {
+      configurable: true,
+      value: [new File(['secret bundle'], 'bundle.zip', { type: 'application/zip' })],
+    })
+    await act(async () => {
+      contentInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement | null
+    const form = submitButton?.form
+    await act(async () => {
+      form?.requestSubmit(submitButton ?? undefined)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockedBuildMintAndListSoulTx).toHaveBeenCalledWith(expect.objectContaining({
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xcap',
+    }))
+  })
+
+  it('blocks publish before uploads when the configured Soul package ABI is stale', async () => {
+    mockedSuiClient.getNormalizedMoveModule.mockResolvedValueOnce({
+      exposedFunctions: {
+        mint_and_list_fixed_price: {
+          parameters: [
+            { Reference: { Struct: { address: `0x${'a'.repeat(64)}`, module: 'unft_standard', name: 'NftMintCap', typeArguments: [] } } },
+            { MutableReference: { Struct: { address: `0x${'a'.repeat(64)}`, module: 'unft_standard', name: 'NftCollection', typeArguments: [] } } },
+            { Reference: { Struct: { address: `0x${'9'.repeat(64)}`, module: 'market', name: 'MarketConfig', typeArguments: [] } } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
+            { Struct: { address: '0x1', module: 'option', name: 'Option', typeArguments: [{ Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } }] } },
+            { Struct: { address: `0x${'7'.repeat(64)}`, module: 'blob', name: 'Blob', typeArguments: [] } },
+            'U64',
+            'U16',
+            { MutableReference: { Struct: { address: '0x2', module: 'tx_context', name: 'TxContext', typeArguments: [] } } },
+          ],
+        },
+      },
+    })
+
+    await act(async () => {
+      root.render(<PublishSoulPage />)
+      await Promise.resolve()
+    })
+
+    const setInputValue = async (labelText: string, value: string) => {
+      const input = findControl(container, labelText, 'input, textarea') as HTMLInputElement | HTMLTextAreaElement
+      const prototype = input instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype
+      const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+
+      await act(async () => {
+        valueSetter?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+
+    await setInputValue('Name', 'Signal Soul')
+    await setInputValue('Description', 'Private research bundle')
+    await setInputValue('Category', 'Research')
+    await setInputValue('Price (USDC)', '1.25')
+    await setInputValue('Tags', 'alpha, macro')
+
+    const previewButton = container.querySelector('button[data-upload-type="public"]') as HTMLButtonElement | null
+    await act(async () => {
+      previewButton?.click()
+    })
+
+    const contentInput = findControl(container, 'Content file', 'input[type="file"]') as HTMLInputElement
+    Object.defineProperty(contentInput, 'files', {
+      configurable: true,
+      value: [new File(['secret bundle'], 'bundle.zip', { type: 'application/zip' })],
+    })
+    await act(async () => {
+      contentInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const fetchSpy = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    fetchSpy.mockClear()
+
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement | null
+    const form = submitButton?.form
+    await act(async () => {
+      form?.requestSubmit(submitButton ?? undefined)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Current Soul package deployment is outdated')
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(mockedBuildMintAndListSoulTx).not.toHaveBeenCalled()
+    expect(mockedSignAndExecute).not.toHaveBeenCalled()
+  })
+
+  it('retries publish sync from the frozen draft snapshot instead of edited form state', async () => {
+    const frozenDraft = patchSoulPublishDraft(createSoulPublishDraft({
+      walletAddress: PRIMARY_SUI_ADDRESS,
+      name: 'Frozen Soul',
+      description: 'Frozen description',
+      category: 'Frozen Category',
+      tags: ['frozen', 'tags'],
+      imageUrl: 'https://walrus.example/blob-preview-original',
+      listForSale: true,
+      priceInput: '1.25',
+      creatorRoyaltyBps: '250',
+      readme: 'Frozen README',
+    }), {
+      previewBlobId: 'blob-preview-original',
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      soulObjectId: '0xsoul',
+      publishTxDigest: '0xdigest',
+    })
+    writeSoulPublishDraft(localStorage, frozenDraft)
+
+    await act(async () => {
+      root.render(<PublishSoulPage />)
+      await Promise.resolve()
+    })
+
+    const setInputValue = async (labelText: string, value: string) => {
+      const input = findControl(container, labelText, 'input, textarea') as HTMLInputElement | HTMLTextAreaElement
+      const prototype = input instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype
+      const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+
+      await act(async () => {
+        valueSetter?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+
+    await setInputValue('Category', 'Edited Category')
+    await setInputValue('Tags', 'edited, tags')
+    await setInputValue('README', 'Edited README')
+
+    const previewButton = container.querySelector('button[data-upload-type="public"]') as HTMLButtonElement | null
+    await act(async () => {
+      previewButton?.click()
+    })
+
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement | null
+    const form = submitButton?.form
+    await act(async () => {
+      form?.requestSubmit(submitButton ?? undefined)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockedBuildMintAndListSoulTx).not.toHaveBeenCalled()
+    expect(mockedSignAndExecute).not.toHaveBeenCalled()
+    expect(mockedMirrorRouteRequest).toHaveBeenCalledTimes(1)
+
+    const call = mockedMirrorRouteRequest.mock.calls[0]?.[0] as {
+      init?: { body?: string }
+    }
+    const payload = JSON.parse(call.init?.body ?? '{}') as Record<string, unknown>
+
+    expect(payload).toMatchObject({
+      txDigest: '0xdigest',
+      soulOnChainId: '0xsoul',
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      category: 'Frozen Category',
+      tags: ['frozen', 'tags'],
+      previewImages: ['blob-preview-original'],
+      readme: 'Frozen README',
+    })
   })
 })

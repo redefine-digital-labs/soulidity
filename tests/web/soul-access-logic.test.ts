@@ -85,6 +85,7 @@ function makeSoulRecord(overrides: Record<string, unknown> = {}) {
 function makeVerifiedSoulState(overrides: Partial<VerifiedSoulState> = {}): VerifiedSoulState {
   return {
     objectId: SOUL_ID,
+    packageId: PACKAGE_ID,
     ownerAddress: null,
     ownerObjectId: KIOSK_ID,
     ownerKind: 'object',
@@ -200,6 +201,30 @@ describe('resolveSoulAccessPayload', () => {
 
     expect(mockedGetOwnerSealSession).toHaveBeenCalledWith({
       soulObjectId: SOUL_ID,
+      packageId: PACKAGE_ID,
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+    })
+  })
+
+  it('uses the on-chain Soul package id when building owner seal access', async () => {
+    const onChainSoulPackageId = `0x${'b'.repeat(64)}`
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      packageId: onChainSoulPackageId,
+    }))
+
+    const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
+
+    await resolveSoulAccessPayload({
+      soul: makeSoulRecord(),
+      viewerAddresses: [OWNER_ADDRESS],
+      soulPackageId: PACKAGE_ID,
+      allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
+    })
+
+    expect(mockedGetOwnerSealSession).toHaveBeenCalledWith({
+      soulObjectId: SOUL_ID,
+      packageId: onChainSoulPackageId,
       currentKioskId: KIOSK_ID,
       currentKioskCapOnChainId: KIOSK_CAP_ID,
     })

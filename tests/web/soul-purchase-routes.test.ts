@@ -441,7 +441,7 @@ describe('Soul purchase route', () => {
     }))
   })
 
-  it('returns and persists a fresh pending body when recoverable cached sync verification no longer matches on chain', async () => {
+  it('returns and persists a terminal 410 when recoverable cached sync shows the Soul changed ownership', async () => {
     mockedGetStoredSoulTxSync.mockResolvedValueOnce({
       statusCode: 207,
       body: {
@@ -474,37 +474,73 @@ describe('Soul purchase route', () => {
       { params: Promise.resolve({ id: SOUL_ID }) },
     )
 
+    expect(response.status).toBe(410)
+    await expect(response.json()).resolves.toEqual({
+      digest: TX_DIGEST,
+      soulOnChainId: SOUL_ID,
+      onChainSuccess: true,
+      dbSynced: false,
+      ownershipChanged: true,
+      error: 'Soul ownership changed since the original purchase sync. Refresh the Soul detail instead of retrying.',
+    })
+    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
+      txDigest: TX_DIGEST,
+      routeKey: 'purchase',
+      resourceKey: SOUL_ID,
+      statusCode: 410,
+      body: expect.objectContaining({
+        digest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        onChainSuccess: true,
+        dbSynced: false,
+        ownershipChanged: true,
+        error: 'Soul ownership changed since the original purchase sync. Refresh the Soul detail instead of retrying.',
+      }),
+    }))
+  })
+
+  it('does not rewrite cached 207 bodies when a retry produces the same pending payload', async () => {
+    mockedGetStoredSoulTxSync.mockResolvedValueOnce({
+      statusCode: 207,
+      body: {
+        digest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        txSender: BUYER_ADDRESS,
+        currentOwnerAddress: BUYER_ADDRESS,
+        currentKioskId: BUYER_KIOSK_ID,
+        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+        listingStatus: 'held',
+        onChainSuccess: true,
+        dbSynced: false,
+        error: 'Purchase sync pending',
+      },
+    })
+    mockedDbSetSoulOwnership.mockRejectedValueOnce(new Error('temporary DB outage'))
+
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
     expect(response.status).toBe(207)
     await expect(response.json()).resolves.toEqual({
       digest: TX_DIGEST,
       soulOnChainId: SOUL_ID,
       txSender: BUYER_ADDRESS,
-      currentOwnerAddress: `0x${'8'.repeat(64)}`,
-      currentKioskId: `0x${'9'.repeat(64)}`,
+      currentOwnerAddress: BUYER_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
       currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
       listingStatus: 'held',
       onChainSuccess: true,
       dbSynced: false,
       error: 'Purchase sync pending',
     })
-    expect(mockedStoreSoulTxSync).toHaveBeenCalledWith(expect.objectContaining({
-      txDigest: TX_DIGEST,
-      routeKey: 'purchase',
-      resourceKey: SOUL_ID,
-      statusCode: 207,
-      body: expect.objectContaining({
-        digest: TX_DIGEST,
-        soulOnChainId: SOUL_ID,
-        txSender: BUYER_ADDRESS,
-        currentOwnerAddress: `0x${'8'.repeat(64)}`,
-        currentKioskId: `0x${'9'.repeat(64)}`,
-        currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
-        listingStatus: 'held',
-        onChainSuccess: true,
-        dbSynced: false,
-        error: 'Purchase sync pending',
-      }),
-    }))
+    expect(mockedStoreSoulTxSync).not.toHaveBeenCalled()
   })
 
   it('keeps recoverable purchase sync metadata after a retry stays pending', async () => {

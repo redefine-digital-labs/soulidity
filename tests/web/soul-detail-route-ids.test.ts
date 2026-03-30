@@ -164,13 +164,30 @@ describe('soul detail routes', () => {
 
     expect(response.status).toBe(200)
     expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
-      'soul-detail:fp:soulbrowser-1-0:en-us-en-q-0-9',
-      expect.objectContaining({ max: 60 }),
+      'soul-detail:no-ip',
+      expect.objectContaining({ max: 120 }),
     )
     expect(mockedFindSoulAssetDetailByRouteId).toHaveBeenCalledWith(SOUL_ID)
   })
 
-  it('still blocks fallback-fingerprint requests when the request IP is unavailable', async () => {
+  it('uses a member-scoped fallback bucket when the request IP is unavailable for an authenticated viewer', async () => {
+    mockedGetRequestIp.mockReturnValueOnce(null)
+    mockedResolveIdentity.mockResolvedValueOnce({ memberId: 'owner-1' })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'soul-detail:member:owner-1',
+      expect.objectContaining({ max: 60 }),
+    )
+  })
+
+  it('still blocks shared fallback-bucket requests when the request IP is unavailable', async () => {
     mockedGetRequestIp.mockReturnValueOnce(null)
     mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 7 })
 
@@ -191,8 +208,8 @@ describe('soul detail routes', () => {
     })
     expect(response.headers.get('Retry-After')).toBe('7')
     expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
-      'soul-detail:fp:soulbrowser-1-0:en-us-en-q-0-9',
-      expect.objectContaining({ max: 60 }),
+      'soul-detail:no-ip',
+      expect.objectContaining({ max: 120 }),
     )
     expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
   })

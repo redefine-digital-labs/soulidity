@@ -113,6 +113,12 @@ describe('soul allowlist route', () => {
           sender: OWNER_ADDRESS,
         },
       },
+      objectChanges: [
+        {
+          type: 'created',
+          objectId: ACCESS_CAP_ID,
+        },
+      ],
     })
     mockedExtractSoulAllowlistSetEvent.mockReturnValue({
       soulObjectId: SOUL_ID,
@@ -334,6 +340,43 @@ describe('soul allowlist route', () => {
         soulAllowlistCapOnChainId: ACCESS_CAP_ID,
       }),
     }))
+  })
+
+  it('rejects allowlist caps that were not created or mutated by the submitted transaction', async () => {
+    mockedGetSuccessfulTransactionBlock.mockResolvedValueOnce({
+      digest: TX_DIGEST,
+      transaction: {
+        data: {
+          sender: OWNER_ADDRESS,
+        },
+      },
+      objectChanges: [
+        {
+          type: 'created',
+          objectId: `0x${'7'.repeat(64)}`,
+        },
+      ],
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: TX_DIGEST,
+          allowlistAddress: AGENT_ADDRESS,
+          soulAllowlistCapOnChainId: ACCESS_CAP_ID,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Submitted soulAllowlistCapOnChainId was not created or updated by this transaction',
+    })
+    expect(mockedDbSetSoulAllowlist).not.toHaveBeenCalled()
   })
 
   it('returns 409 when the Soul owner changes before the allowlist mirror write lands', async () => {

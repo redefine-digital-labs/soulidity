@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildPurchaseOwnershipConflictBody,
+  buildPurchaseOwnershipChangedBody,
+  purchaseSyncBodiesEqual,
   readRecoverableStoredPurchaseSync,
 } from '@web/lib/souls/purchase-sync-state'
 
@@ -64,5 +66,30 @@ describe('purchase sync state helpers', () => {
       ownershipConflict: true,
       error: 'Transaction succeeded on chain, but the local Soul mirror no longer matched the expected buyer ownership. Refresh the Soul detail instead of retrying.',
     })
+  })
+
+  it('marks ownership-changed responses as terminal refresh signals', () => {
+    expect(buildPurchaseOwnershipChangedBody({
+      digest: 'digest-2',
+      soulOnChainId: '0x9',
+    })).toEqual({
+      digest: 'digest-2',
+      soulOnChainId: '0x9',
+      onChainSuccess: true,
+      dbSynced: false,
+      ownershipChanged: true,
+      error: 'Soul ownership changed since the original purchase sync. Refresh the Soul detail instead of retrying.',
+    })
+  })
+
+  it('compares pending purchase sync payloads structurally', () => {
+    expect(purchaseSyncBodiesEqual(
+      { digest: '1', error: 'pending' },
+      { digest: '1', error: 'pending' },
+    )).toBe(true)
+    expect(purchaseSyncBodiesEqual(
+      { digest: '1', error: 'pending' },
+      { digest: '1', error: 'changed' },
+    )).toBe(false)
   })
 })

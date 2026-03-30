@@ -68,6 +68,29 @@ describe('Seal service configuration', () => {
     expect(mod.hasCredentialedSealServerConfigs()).toBe(false)
   })
 
+  it('allows the access policy package id to be overridden with the on-chain Soul package id', async () => {
+    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = '0xpublished'
+
+    const mod = await import('../../web/lib/services/seal.ts')
+
+    expect(mod.getOwnerSealSession({
+      packageId: '0xorigin',
+      soulObjectId: '0xsoul-object',
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xkioskcap',
+    })).toMatchObject({
+      packageId: '0xorigin',
+    })
+
+    expect(mod.getAllowlistedSealSession({
+      packageId: '0xorigin',
+      soulObjectId: '0xsoul-object',
+      allowlistRegistryObjectId: '0xallowlist',
+    })).toMatchObject({
+      packageId: '0xorigin',
+    })
+  })
+
   it('honors explicit runtime overrides', async () => {
     process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = '0xoverride'
     process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'

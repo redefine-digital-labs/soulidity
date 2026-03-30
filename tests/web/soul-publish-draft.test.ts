@@ -5,6 +5,7 @@ import {
   createSoulPublishDraft,
   patchSoulPublishDraft,
   readSoulPublishDraft,
+  readSoulPublishRetrySnapshot,
   syncSoulPublishDraftForSubmit,
   writeSoulPublishDraft,
 } from '@web/lib/souls/publish-draft'
@@ -38,6 +39,7 @@ describe('soul publish draft', () => {
       tags: ['alpha', 'beta'],
       imageUrl: 'https://example.com/soul.png',
       priceInput: '1',
+      listForSale: true,
       creatorRoyaltyBps: '0',
       readme: 'README',
     })
@@ -70,6 +72,7 @@ describe('soul publish draft', () => {
       tags: [],
       imageUrl: 'https://example.com/soul.png',
       priceInput: '1',
+      listForSale: true,
       creatorRoyaltyBps: '0',
       readme: '',
     })))
@@ -89,6 +92,7 @@ describe('soul publish draft', () => {
       tags: [],
       imageUrl: 'https://example.com/soul.png',
       priceInput: '1',
+      listForSale: true,
       creatorRoyaltyBps: '0',
       readme: '',
     })
@@ -115,6 +119,7 @@ describe('soul publish draft', () => {
       tags: [],
       imageUrl: 'https://example.com/soul.png',
       priceInput: '1',
+      listForSale: true,
       creatorRoyaltyBps: '0',
       readme: '',
     })
@@ -144,6 +149,7 @@ describe('soul publish draft', () => {
       tags: ['alpha'],
       imageUrl: 'https://example.com/old.png',
       priceInput: '1',
+      listForSale: true,
       creatorRoyaltyBps: '0',
       readme: '',
     })
@@ -160,6 +166,7 @@ describe('soul publish draft', () => {
       tags: ['momentum', 'signals'],
       imageUrl: 'https://example.com/new.png',
       priceInput: '1.2',
+      listForSale: true,
       creatorRoyaltyBps: '250',
       readme: 'Updated readme',
     })
@@ -189,6 +196,7 @@ describe('soul publish draft', () => {
       tags: ['alpha'],
       imageUrl: 'https://example.com/original.png',
       priceInput: '1',
+      listForSale: true,
       creatorRoyaltyBps: '0',
       readme: '',
     }), {
@@ -205,6 +213,7 @@ describe('soul publish draft', () => {
       tags: ['beta'],
       imageUrl: 'https://example.com/edited.png',
       priceInput: '2',
+      listForSale: true,
       creatorRoyaltyBps: '500',
       readme: 'Edited readme',
     })
@@ -220,6 +229,40 @@ describe('soul publish draft', () => {
       soulObjectId: '0xsoul',
       currentKioskId: '0xkiosk',
       publishTxDigest: '0xpublish',
+    })
+  })
+
+  it('builds a retry snapshot only from frozen on-chain draft state', () => {
+    const draft = patchSoulPublishDraft(createSoulPublishDraft({
+      walletAddress: '0xabc',
+      name: 'Original Soul',
+      description: 'Original description',
+      category: 'Research',
+      tags: ['alpha'],
+      imageUrl: 'https://example.com/original.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: 'README',
+    }), {
+      previewBlobId: 'blob-preview',
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      soulObjectId: '0xsoul',
+      publishTxDigest: '0xpublish',
+    })
+
+    expect(readSoulPublishRetrySnapshot(draft)).toEqual({
+      txDigest: '0xpublish',
+      soulObjectId: '0xsoul',
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: ['blob-preview'],
+      readme: 'README',
     })
   })
 })

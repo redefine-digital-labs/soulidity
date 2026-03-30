@@ -16,6 +16,8 @@ describe('soul detail helpers', () => {
 
   it('rejects unsafe or non-https background URLs', () => {
     expect(toSafeBackgroundImage('data:image/png;base64,Zm9v")')).toBeNull()
+    expect(toSafeBackgroundImage('data:image/png;base64,Zm9v(')).toBeNull()
+    expect(toSafeBackgroundImage('data:image/png;base64,Zm9v\nYmFy')).toBeNull()
     expect(toSafeBackgroundImage('http://example.com/preview.png')).toBeNull()
     expect(toSafeBackgroundImage('https://example.com/preview.png')).toBe('url("https://example.com/preview.png")')
   })

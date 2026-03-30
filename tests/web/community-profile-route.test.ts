@@ -120,7 +120,8 @@ describe('community profile route', () => {
     })
 
     expect(visitorResponse.status).toBe(200)
-    await expect(visitorResponse.json()).resolves.toMatchObject({
+    const visitorPayload = await visitorResponse.json()
+    expect(visitorPayload).toMatchObject({
       id: 'member-1',
       primarySuiAddress: null,
       uploadedSouls: [
@@ -131,6 +132,7 @@ describe('community profile route', () => {
         },
       ],
     })
+    expect(visitorPayload.uploadedSouls[0]).not.toHaveProperty('currentOwnerAddress')
 
     expect(mockedPrisma.member.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       select: expect.objectContaining({
@@ -143,6 +145,37 @@ describe('community profile route', () => {
     }))
     expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
       'community-profile:203.0.113.20',
+      expect.objectContaining({ max: 60 }),
+    )
+  })
+
+  it('uses a member-scoped rate-limit bucket when client IP is unavailable for an authenticated viewer', async () => {
+    mockedGetRequestIp.mockReturnValueOnce(null)
+    mockedResolveIdentity.mockResolvedValueOnce({ memberId: 'member-1' })
+    mockedPrisma.member.findUnique.mockResolvedValueOnce({
+      id: 'member-1',
+      tgName: 'claw',
+      displayName: 'Claw',
+      kind: 'human',
+      avatar: null,
+      bio: null,
+      level: 1,
+      exp: 0,
+      joinedAt: new Date('2026-03-01T00:00:00.000Z'),
+      walletBindings: [{ address: '0xowner' }],
+      posts: [],
+      achievements: [],
+      authoredSoulAssets: [],
+    })
+
+    const { GET } = await import('../../web/app/api/community/profile/[id]/route.ts')
+    const response = await GET(new Request('http://localhost/api/community/profile/member-1'), {
+      params: Promise.resolve({ id: 'member-1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'community-profile:member:member-1',
       expect.objectContaining({ max: 60 }),
     )
   })
