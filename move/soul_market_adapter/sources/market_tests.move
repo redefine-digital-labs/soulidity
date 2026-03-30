@@ -118,12 +118,14 @@ fun mint_and_list_fixed_price_places_new_soul_into_seller_personal_kiosk() {
     ts::next_tx(&mut scenario, seller);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let mut collection: unft::NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let mint_cap = ts::take_from_sender<unft::NftMintCap<soul::Soul>>(&scenario);
         let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
 
         soul_id = market::mint_and_list_fixed_price(
             &mint_cap,
+            &mut collection,
             &config,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
@@ -137,6 +139,7 @@ fun mint_and_list_fixed_price_places_new_soul_into_seller_personal_kiosk() {
 
         std::unit_test::destroy(walrus_system);
         ts::return_shared(config);
+        ts::return_shared(collection);
         ts::return_shared(policy);
         transfer::public_transfer(mint_cap, seller);
     };
@@ -144,6 +147,7 @@ fun mint_and_list_fixed_price_places_new_soul_into_seller_personal_kiosk() {
     ts::next_tx(&mut scenario, seller);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let collection: unft::NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let listing: FixedPriceListing = ts::take_shared(&scenario);
         let seller_kiosk: Kiosk = ts::take_shared(&scenario);
@@ -154,8 +158,10 @@ fun mint_and_list_fixed_price_places_new_soul_into_seller_personal_kiosk() {
         assert!(core_market::listing_creator_royalty_bps(&listing) == CREATOR_ROYALTY_BPS, 3);
         assert!(kiosk::has_item(&seller_kiosk, soul_id), 4);
         assert!(kiosk::is_listed_exclusively(&seller_kiosk, soul_id), 5);
+        assert!(unft::minted(&collection) == 1, 6);
 
         ts::return_shared(config);
+        ts::return_shared(collection);
         ts::return_shared(policy);
         ts::return_shared(listing);
         ts::return_shared(seller_kiosk);
@@ -203,12 +209,14 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
     ts::next_tx(&mut scenario, seller);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let mut collection: unft::NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let mint_cap = ts::take_from_sender<unft::NftMintCap<soul::Soul>>(&scenario);
         let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
 
         market::mint_and_list_fixed_price(
             &mint_cap,
+            &mut collection,
             &config,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
@@ -222,6 +230,7 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
 
         std::unit_test::destroy(walrus_system);
         ts::return_shared(config);
+        ts::return_shared(collection);
         ts::return_shared(policy);
         transfer::public_transfer(mint_cap, seller);
     };
@@ -283,6 +292,7 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
     ts::next_tx(&mut scenario, buyer);
     {
         let registry: AllowlistRegistry = ts::take_shared(&scenario);
+        let collection: unft::NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let config: MarketConfig = ts::take_shared(&scenario);
         let policy: transfer_policy::TransferPolicy<soul::Soul> = ts::take_shared(&scenario);
         let listing: FixedPriceListing = ts::take_shared(&scenario);
@@ -314,8 +324,11 @@ fun buy_fixed_price_uses_test_usdc_and_moves_soul_into_buyer_personal_kiosk() {
         assert!(personal_kiosk::owner(buyer_kiosk) == buyer, 6);
         assert!(soul::allowlist_address(purchased_soul).is_none(), 7);
         assert!(allowlist::registry_version(&registry, soul_id) == 0, 8);
+        assert!(unft::minted(&collection) == 1, 9);
+        assert!(soul::has_collection_id_for_testing(purchased_soul), 10);
 
         ts::return_shared(registry);
+        ts::return_shared(collection);
         ts::return_shared(config);
         ts::return_shared(policy);
         ts::return_shared(listing);

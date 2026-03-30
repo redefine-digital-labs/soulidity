@@ -24,6 +24,11 @@ describe('soul detail helpers', () => {
     expect(toSafeBackgroundImage('https://example.com/preview).png')).toBeNull()
   })
 
+  it('rejects oversized raster data-image URLs', () => {
+    const oversized = `data:image/png;base64,${'a'.repeat(600_000)}`
+    expect(toSafeBackgroundImage(oversized)).toBeNull()
+  })
+
   it('requires the created allowlist cap object type to match the configured Soul package id exactly', () => {
     expect(extractCreatedAllowlistCapObjectId({
       objectChanges: [

@@ -365,7 +365,12 @@ describe('soul allowlist route', () => {
   it('replays cached allowlist responses for duplicate tx digests', async () => {
     mockedGetStoredSoulTxSync.mockResolvedValueOnce({
       statusCode: 200,
-      body: { soulOnChainId: SOUL_ID, allowlistVersion: '5' },
+      body: {
+        soulOnChainId: SOUL_ID,
+        allowlistAddress: AGENT_ADDRESS,
+        soulAllowlistCapOnChainId: ACCESS_CAP_ID,
+        allowlistVersion: '5',
+      },
     })
 
     const { POST } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
@@ -384,6 +389,70 @@ describe('soul allowlist route', () => {
 
     expect(response.status).toBe(200)
     expect(mockedDbSetSoulAllowlist).not.toHaveBeenCalled()
+  })
+
+  it('rejects cached allowlist set responses when the requested address no longer matches the stored body', async () => {
+    mockedGetStoredSoulTxSync.mockResolvedValueOnce({
+      statusCode: 200,
+      body: {
+        soulOnChainId: SOUL_ID,
+        allowlistAddress: OWNER_ADDRESS,
+        soulAllowlistCapOnChainId: ACCESS_CAP_ID,
+        allowlistVersion: '5',
+      },
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: TX_DIGEST,
+          allowlistAddress: AGENT_ADDRESS,
+          soulAllowlistCapOnChainId: ACCESS_CAP_ID,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Stored allowlist sync does not match the requested address',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
+  it('rejects cached allowlist set responses when the requested cap id no longer matches the stored body', async () => {
+    mockedGetStoredSoulTxSync.mockResolvedValueOnce({
+      statusCode: 200,
+      body: {
+        soulOnChainId: SOUL_ID,
+        allowlistAddress: AGENT_ADDRESS,
+        soulAllowlistCapOnChainId: `0x${'8'.repeat(64)}`,
+        allowlistVersion: '5',
+      },
+    })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          txDigest: TX_DIGEST,
+          allowlistAddress: AGENT_ADDRESS,
+          soulAllowlistCapOnChainId: ACCESS_CAP_ID,
+        }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Stored allowlist sync does not match the requested cap id',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })
 
   it('returns 422 when the verified on-chain allowlist does not match the requested address', async () => {
@@ -622,6 +691,22 @@ describe('soul allowlist route', () => {
     expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
   })
 
+  it('returns a specific error when the allowlist clear DELETE body is missing', async () => {
+    const { DELETE } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await DELETE(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'DELETE',
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'DELETE request body must include txDigest',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
   it('mirrors allowlist revocation once the on-chain allowlist is cleared', async () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       ownerKind: 'object',
@@ -654,6 +739,41 @@ describe('soul allowlist route', () => {
       expectedCurrentKioskId: KIOSK_ID,
       expectedListingStatus: 'held',
     })
+  })
+
+  it('rejects allowlist clears when the event old address diverges from the mirrored allowlist address', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      id: 'asset-db-1',
+      onChainId: SOUL_ID,
+      currentOwnerMemberId: 'member-1',
+      currentKioskId: KIOSK_ID,
+      currentOwnerAddress: OWNER_ADDRESS,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingStatus: 'held',
+      allowlistAddress: OWNER_ADDRESS,
+    })
+    mockedGetVerifiedSoulState.mockResolvedValueOnce({
+      ownerKind: 'object',
+      ownerObjectId: KIOSK_ID,
+      allowlistAddress: null,
+      allowlistVersion: 6n,
+    })
+
+    const { DELETE } = await import('../../web/app/api/souls/[id]/allowlist/route.ts')
+    const response = await DELETE(
+      new Request('http://localhost/api/souls/0xsoul/allowlist', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction cleared a different allowlist address than the mirrored Soul state',
+    })
+    expect(mockedDbClearSoulAllowlist).not.toHaveBeenCalled()
   })
 
   it('returns 409 when the Soul owner changes before the allowlist clear mirror write lands', async () => {

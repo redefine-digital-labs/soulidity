@@ -151,7 +151,7 @@ fun admin_can_update_platform_fee_and_quote_purchase() {
 }
 
 #[test]
-#[expected_failure(abort_code = soul_object::market::EPlatformFeeTooHigh)]
+#[expected_failure(abort_code = soul_object::market::ECreatorRoyaltyTooHigh)]
 fun quote_purchase_rejects_creator_royalty_above_max_bps() {
     let admin = @0xA11CE;
     let mut scenario = ts::begin(@0x0);
@@ -234,11 +234,13 @@ fun mint_and_list_fixed_price_rejects_combined_fees_above_max_bps() {
     ts::next_tx(&mut scenario, seller);
     {
         let config: market::MarketConfig = ts::take_shared(&scenario);
+        let mut collection: unft::NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
         let mint_cap = ts::take_from_address<unft::NftMintCap<soul::Soul>>(&scenario, seller);
 
         market::mint_and_list_fixed_price(
             &mint_cap,
+            &mut collection,
             &config,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
@@ -252,6 +254,7 @@ fun mint_and_list_fixed_price_rejects_combined_fees_above_max_bps() {
 
         std::unit_test::destroy(walrus_system);
         ts::return_shared(config);
+        ts::return_shared(collection);
         transfer::public_transfer(mint_cap, seller);
         abort 0
     }
@@ -286,11 +289,13 @@ fun mint_and_list_fixed_price_rejects_when_market_paused() {
     ts::next_tx(&mut scenario, seller);
     {
         let config: market::MarketConfig = ts::take_shared(&scenario);
+        let mut collection: unft::NftCollection<soul::Soul> = ts::take_shared(&scenario);
         let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
         let mint_cap = ts::take_from_address<unft::NftMintCap<soul::Soul>>(&scenario, seller);
 
         market::mint_and_list_fixed_price(
             &mint_cap,
+            &mut collection,
             &config,
             string::utf8(b"Genesis Soul"),
             string::utf8(b"Single-owner artifact"),
@@ -304,6 +309,7 @@ fun mint_and_list_fixed_price_rejects_when_market_paused() {
 
         std::unit_test::destroy(walrus_system);
         ts::return_shared(config);
+        ts::return_shared(collection);
         transfer::public_transfer(mint_cap, seller);
         abort 0
     }

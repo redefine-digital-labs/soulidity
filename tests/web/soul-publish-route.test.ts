@@ -31,6 +31,7 @@ const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulTxSync = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
+const mockedReadTransactionSender = vi.hoisted(() => vi.fn())
 const mockedExtractSoulListingEvent = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedDbUpsertSoulAsset = vi.hoisted(() => vi.fn())
@@ -62,6 +63,10 @@ vi.mock('@web/lib/souls/tx-sync', () => ({
 
 vi.mock('@web/lib/souls/transaction', () => ({
   getSuccessfulTransactionBlock: mockedGetSuccessfulTransactionBlock,
+}))
+
+vi.mock('@web/lib/souls/transaction-metadata', () => ({
+  readTransactionSender: mockedReadTransactionSender,
 }))
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
@@ -103,6 +108,7 @@ describe('soul publish route', () => {
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedGetStoredSoulTxSync.mockResolvedValue(null)
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
+    mockedReadTransactionSender.mockReturnValue(AUTHOR_ADDRESS)
     mockedPrisma.soulAsset.findUnique.mockResolvedValue(null)
     mockedExtractSoulListingEvent.mockReturnValue({
       listingObjectId: LISTING_ID,
@@ -340,6 +346,7 @@ describe('soul publish route', () => {
 
   it('allows the current holder to sync a relisted Soul without matching the creator wallet', async () => {
     mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
+    mockedReadTransactionSender.mockReturnValueOnce(HOLDER_ADDRESS)
     mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({
       creatorMemberId: 'creator-member',
       creatorAddress: AUTHOR_ADDRESS,
@@ -395,6 +402,7 @@ describe('soul publish route', () => {
       identity: { memberId: 'agent-member-1', kind: 'agent' },
     })
     mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
+    mockedReadTransactionSender.mockReturnValueOnce(HOLDER_ADDRESS)
     mockedPrisma.soulAsset.findUnique.mockResolvedValueOnce({
       creatorMemberId: 'creator-member',
       creatorAddress: AUTHOR_ADDRESS,
@@ -479,6 +487,58 @@ describe('soul publish route', () => {
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })
 
+  it('rejects listing transactions whose sender does not match the authenticated wallet', async () => {
+    mockedReadTransactionSender.mockReturnValueOnce(HOLDER_ADDRESS)
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction sender does not match the authenticated wallet',
+    })
+    expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
+  })
+
+  it('rejects listing transactions when the sender metadata is missing', async () => {
+    mockedReadTransactionSender.mockReturnValueOnce(null)
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Transaction sender does not match the authenticated wallet',
+    })
+    expect(mockedDbUpsertSoulAsset).not.toHaveBeenCalled()
+  })
+
   it('rejects publish sync when the submitted content blob id does not match the on-chain Soul', async () => {
     mockedGetVerifiedSoulState.mockResolvedValueOnce({
       objectId: SOUL_ID,
@@ -523,6 +583,7 @@ describe('soul publish route', () => {
   it('allows a non-creator holder to sync a relisted Soul using stored metadata', async () => {
     const HOLDER_ADDRESS = `0x${'7'.repeat(64)}`
     mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([HOLDER_ADDRESS])
+    mockedReadTransactionSender.mockReturnValueOnce(HOLDER_ADDRESS)
     mockedExtractSoulListingEvent.mockReturnValueOnce({
       listingObjectId: LISTING_ID,
       soulObjectId: SOUL_ID,

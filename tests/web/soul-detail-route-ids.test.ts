@@ -148,7 +148,21 @@ describe('soul detail routes', () => {
     expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
   })
 
-  it('falls back to a global rate-limit bucket when the request IP is unavailable', async () => {
+  it('uses a shared fallback rate-limit bucket when the request IP is unavailable', async () => {
+    mockedGetRequestIp.mockReturnValueOnce(null)
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith('soul-detail:missing-ip', expect.objectContaining({ max: 60 }))
+    expect(mockedFindSoulAssetDetailByRouteId).toHaveBeenCalledWith(SOUL_ID)
+  })
+
+  it('still blocks missing-ip requests when the shared fallback bucket is exhausted', async () => {
     mockedGetRequestIp.mockReturnValueOnce(null)
     mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 7 })
 
@@ -162,10 +176,8 @@ describe('soul detail routes', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Too many soul detail requests, try again later',
     })
-    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith('soul-detail:unknown', {
-      max: 10,
-      windowMs: 60 * 1000,
-    })
+    expect(response.headers.get('Retry-After')).toBe('7')
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith('soul-detail:missing-ip', expect.objectContaining({ max: 60 }))
     expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
   })
 

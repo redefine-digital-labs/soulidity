@@ -6,6 +6,7 @@ const KIOSK_CAP_ID = `0x${'3'.repeat(64)}`
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
+const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/identity', () => ({
@@ -14,6 +15,10 @@ vi.mock('@web/lib/auth/identity', () => ({
 
 vi.mock('@web/lib/auth/sui-wallet', () => ({
   getMemberSuiWalletAddresses: mockedGetMemberSuiWalletAddresses,
+}))
+
+vi.mock('@web/lib/rate-limit', () => ({
+  takeRateLimitToken: mockedTakeRateLimitToken,
 }))
 
 vi.mock('@web/lib/souls/personal-kiosk', () => ({
@@ -30,6 +35,7 @@ describe('Soul personal kiosk route', () => {
       identity: { memberId: 'member-1', kind: 'human' },
     })
     mockedGetMemberSuiWalletAddresses.mockResolvedValue([BUYER_ADDRESS])
+    mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedResolveOwnedPersonalKiosk.mockResolvedValue({
       status: 'ready',
       kiosk: {
@@ -83,6 +89,20 @@ describe('Soul personal kiosk route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Multiple Soul personal kiosks detected for this wallet set',
     })
+  })
+
+  it('rate limits personal kiosk resolution before wallet lookup', async () => {
+    mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 30 })
+
+    const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
+    const response = await GET()
+
+    expect(response.status).toBe(429)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Too many Soul personal kiosk requests, try again later',
+    })
+    expect(mockedGetMemberSuiWalletAddresses).not.toHaveBeenCalled()
+    expect(mockedResolveOwnedPersonalKiosk).not.toHaveBeenCalled()
   })
 
   it('returns the resolved Soul personal kiosk for the authenticated viewer', async () => {

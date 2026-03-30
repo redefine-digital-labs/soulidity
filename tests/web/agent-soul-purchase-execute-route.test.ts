@@ -831,9 +831,53 @@ describe('agent soul purchase execute route', () => {
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
   })
 
-  it('warns when cached partial results are missing kiosk ids and skips re-sync', async () => {
+  it('recovers kiosk ids from on-chain transaction when cached partial results are missing them', async () => {
+    mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      soulOnChainId: SOUL_ID,
+      sellerKioskId: KIOSK_ID,
+      agentAddress: AGENT_ADDRESS,
+      txBytesBase64: 'c2VydmVyLXR4',
+      txBytesHash: 'deadbeef',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      executionTxDigest: '0xpartial',
+      resultStatusCode: 207,
+      resultBody: {
+        onChainSuccess: true,
+        dbSynced: false,
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+      },
+    })
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedGetSuccessfulTransactionBlock).toHaveBeenCalledWith('0xpartial')
+    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalled()
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalled()
+    expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith(expect.objectContaining({
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: BUYER_KIOSK_ID,
+      currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
+      listingStatus: 'held',
+    }))
+  })
+
+  it('falls back to cached result when kiosk ids are missing and on-chain recovery fails', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
+      mockedGetSuccessfulTransactionBlock.mockRejectedValueOnce(new Error('RPC unavailable'))
       mockedGetPreparedSoulPurchaseForExecution.mockResolvedValueOnce({
         id: PREPARED_PURCHASE_ID,
         soulOnChainId: SOUL_ID,
@@ -872,14 +916,9 @@ describe('agent soul purchase execute route', () => {
         currentOwnerAddress: AGENT_ADDRESS,
       })
       expect(warnSpy).toHaveBeenCalledWith(
-        '[agent-purchase-execute] Skipping cached partial-result re-sync because kiosk ids are missing',
-        expect.objectContaining({
-          preparedPurchaseId: PREPARED_PURCHASE_ID,
-          hasCurrentKioskId: false,
-          hasCurrentKioskCapOnChainId: false,
-        }),
+        '[agent-purchase-execute] Skipping cached partial-result re-sync because kiosk ids are missing and on-chain recovery failed',
+        expect.objectContaining({ preparedPurchaseId: PREPARED_PURCHASE_ID }),
       )
-      expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
       expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
       expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
     } finally {

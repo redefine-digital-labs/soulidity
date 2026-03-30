@@ -17,6 +17,7 @@ describe('repository contract guards', () => {
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_MINT_CAP_ID=')
+    expect(envExample).toContain('NEXT_PUBLIC_SOUL_COLLECTION_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID=')
     expect(envExample).toContain('NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE=')
@@ -84,10 +85,25 @@ describe('repository contract guards', () => {
     const soulCard = readFileSync(join(repoRoot, 'web', 'components', 'souls', 'soul-card.tsx'), 'utf8')
 
     expect(publishPage).toContain('buildMintAndListSoulTx')
+    expect(publishPage).toContain('100 = 1%, 500 = 5%, 10000 = 100%')
+    expect(publishPage).toContain('maxLength={5}')
     expect(publishPage).not.toContain('buildPublishReleaseTx')
     expect(purchaseButton).not.toContain('planType')
     expect(soulCard).toContain('toSafeBackgroundImage')
     expect(soulCard).not.toContain('style={{ backgroundImage: `url("${previewImage}")` }}')
+  })
+
+  it('keeps Soul tooling source contracts aligned with the hardened runtime behavior', () => {
+    const databaseSource = readFileSync(join(repoRoot, 'src', 'db', 'database.ts'), 'utf8')
+    const e2ePurchaseSource = readFileSync(join(repoRoot, 'web', 'scripts', 'e2e-agent-purchase.ts'), 'utf8')
+    const e2eDecryptSource = readFileSync(join(repoRoot, 'web', 'scripts', 'e2e-agent-decrypt.ts'), 'utf8')
+
+    expect(databaseSource).toContain("from '../../generated/prisma/client.js'")
+    expect(e2ePurchaseSource).toContain('Soul detail response was not valid JSON')
+    expect(e2ePurchaseSource).toContain('execFileSync')
+    expect(e2ePurchaseSource).toContain('Unable to fund agent wallet with SUI gas')
+    expect(e2eDecryptSource).toContain("functionName !== 'seal_approve_allowlisted'")
+    expect(e2eDecryptSource).toContain('Unexpected Seal approval function')
   })
 
   it('keeps the new Soul Move packages as the only active implementation', () => {
@@ -120,10 +136,11 @@ describe('repository contract guards', () => {
     expect(marketSource).toContain('public fun init_personal_kiosk(ctx: &mut TxContext): ID')
     expect(adapterSource).toContain('public fun mint_and_list_fixed_price(')
     expect(adapterSource).toContain('mint_cap: &NftMintCap<Soul>,')
+    expect(adapterSource).toContain('collection: &mut NftCollection<Soul>,')
     expect(adapterSource).toContain('public fun init_personal_kiosk(ctx: &mut TxContext): ID')
     expect(adapterSource).toContain('public fun list_fixed_price(')
     expect(adapterSource).toContain('public fun buy_fixed_price(')
-    expect(adapterSource).not.toContain('_collection: &NftCollection<Soul>')
+    expect(marketSource).toContain('unft::track_mint')
     expect(marketSource).toContain('kiosk::list_with_purchase_cap')
     expect(adapterSource).toContain('authority: SoulPackageAuthority,')
     expect(adapterSource).toContain('soul::burn_authority(authority);')

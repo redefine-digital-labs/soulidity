@@ -5,6 +5,7 @@ const SOUL_OBJECT_PACKAGE_ID = '0xsoulobject'
 const MARKET_ADAPTER_PACKAGE_ID = '0xsouladapter'
 const MARKET_CONFIG_ID = '0xmarketconfig'
 const SOUL_MINT_CAP_ID = '0xmintcap'
+const SOUL_COLLECTION_ID = '0xcollection'
 const TRANSFER_POLICY_ID = '0xpolicy'
 const ALLOWLIST_REGISTRY_ID = '0xallowlistregistry'
 const PAYMENT_COIN_TYPE = '0xpayment::usdc::USDC'
@@ -18,6 +19,7 @@ describe('tx builders', () => {
       NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID: MARKET_ADAPTER_PACKAGE_ID,
       NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID: MARKET_CONFIG_ID,
       NEXT_PUBLIC_SOUL_MINT_CAP_ID: SOUL_MINT_CAP_ID,
+      NEXT_PUBLIC_SOUL_COLLECTION_ID: SOUL_COLLECTION_ID,
       NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID: TRANSFER_POLICY_ID,
       NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID: ALLOWLIST_REGISTRY_ID,
       NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE: PAYMENT_COIN_TYPE,
@@ -124,7 +126,7 @@ describe('tx builders', () => {
       target: `${MARKET_ADAPTER_PACKAGE_ID}::market::mint_and_list_fixed_price`,
     }))
     const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
-    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(9)
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(10)
     moveCallSpy.mockRestore()
   })
 
