@@ -11,6 +11,7 @@
    - `config.ts`、`tx-builder.ts`、`purchase-quote.ts`、publish/purchase/personal-kiosk API 全部切到 `soul_object::market`。
    - personal kiosk 解析只保留 `ready | missing`，把重复 kiosk 视为 invariant error。
    - 修复下载 MIME 传递，并把前端 `alert()` 改成 modal。
+   - Souls publish 内容链路收口为“用户只选择原始文件，提交时由系统完成加密上传”；浏览器草稿仅在进入上链恢复阶段后保留内容上传中间态。
 4. 最后做清理、迁移和验证。
    - 删除 adapter 活动包和旧 env / repo-contract 断言。
    - 新增 Prisma 硬切 migration 清理 Soul 旧镜像数据。

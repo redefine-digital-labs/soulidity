@@ -2,7 +2,7 @@
 
 ## Goal
 
-一次性把 Soul 发布与交易链路从 `unft_standard` / `NftMintCap<Soul>` / `soul_market_adapter` 过渡层切掉，收敛为 `soul_object::market` 直连、公开直铸、单例 personal kiosk 运行时，并同步清理旧配置、旧测试、旧文档和前端 `alert()` 交互，不留双轨尾巴。
+一次性把 Soul 发布与交易链路从 `unft_standard` / `NftMintCap<Soul>` / `soul_market_adapter` 过渡层切掉，收敛为 `soul_object::market` 直连、公开直铸、单例 personal kiosk 运行时，并同步清理旧配置、旧测试、旧文档、前端 `alert()` 交互，以及 Souls publish 中“用户手动上传加密包”的旧责任边界，不留双轨尾巴。
 
 ## Scope
 
@@ -33,6 +33,7 @@
 - `personal kiosk` 运行时语义必须是单例；重复初始化不再生成第二个 kiosk
 - 前端不能再调用浏览器 `alert()`；错误反馈改为 modal
 - 下载内容时必须保留 Seal sidecar 中的原始 `mimeType`
+- Souls publish 必须改成“用户只选择原始内容文件，发布时由系统完成加密上传”；浏览器本地草稿不得在未进入上链恢复阶段时保留内容上传中间态
 
 ## Acceptance
 
@@ -46,3 +47,5 @@
 8. 前端活动代码中不再存在 `alert(...)`；原先 alert 交互改为 modal 呈现。
 9. Prisma 新增硬切 migration，清理 Soul 旧镜像/准备态数据，确保新 package 切换后由新链重新镜像。
 10. `npm run typecheck`、`npm test`、`sui move test --path move/soul_object` 通过；若某项受外部环境阻塞，需明确记录阻塞原因。
+11. `web/app/souls/publish/page.tsx` 不再向用户暴露“Upload encrypted content bundle”式的两段式交互；用户只需选择原始内容文件，点击 Publish 后由系统调用上传接口完成加密上传、拿到 `contentBlobObjectId` 后再构建交易。
+12. `web/lib/souls/publish-draft.ts` 只在已进入可恢复的上链发布阶段时保留 `contentBlobId` / `contentBlobObjectId` / `sealDekEnvelope` / `metadataRef`；纯本地草稿不得残留这类系统中间态。

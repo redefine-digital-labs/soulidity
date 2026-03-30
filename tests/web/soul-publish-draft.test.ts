@@ -45,6 +45,7 @@ describe('soul publish draft', () => {
     writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
       contentBlobObjectId: '0xblob',
       metadataRef: 'walrus://metadata',
+      soulObjectId: '0xsoul',
       publishTxDigest: '0xdigest',
     }))
 
@@ -101,6 +102,36 @@ describe('soul publish draft', () => {
       walletAddress: '0xabc',
       currentKioskId: null,
       publishTxDigest: null,
+    })
+  })
+
+  it('drops pre-uploaded content artifacts from drafts that never reached on-chain publish progress', () => {
+    const storage = new MemoryStorage()
+    const draft = createSoulPublishDraft({
+      walletAddress: '0xabc',
+      name: 'Scoped draft',
+      description: 'Recovered draft',
+      category: 'Research',
+      tags: [],
+      imageUrl: 'https://example.com/soul.png',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
+      readme: '',
+    })
+
+    writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      metadataRef: 'blob-metadata',
+    }))
+
+    expect(readSoulPublishDraft(storage, '0xabc')).toMatchObject({
+      walletAddress: '0xabc',
+      contentBlobId: null,
+      contentBlobObjectId: null,
+      sealDekEnvelope: null,
+      metadataRef: null,
     })
   })
 
