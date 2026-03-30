@@ -2,10 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ORIGINAL_ENV = { ...process.env }
 const SOUL_OBJECT_PACKAGE_ID = '0xsoulobject'
-const MARKET_ADAPTER_PACKAGE_ID = '0xsouladapter'
 const MARKET_CONFIG_ID = '0xmarketconfig'
-const SOUL_MINT_CAP_ID = '0xmintcap'
-const SOUL_COLLECTION_ID = '0xcollection'
 const TRANSFER_POLICY_ID = '0xpolicy'
 const ALLOWLIST_REGISTRY_ID = '0xallowlistregistry'
 const PAYMENT_COIN_TYPE = '0xpayment::usdc::USDC'
@@ -16,10 +13,7 @@ describe('tx builders', () => {
     process.env = {
       ...ORIGINAL_ENV,
       NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID: SOUL_OBJECT_PACKAGE_ID,
-      NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID: MARKET_ADAPTER_PACKAGE_ID,
       NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID: MARKET_CONFIG_ID,
-      NEXT_PUBLIC_SOUL_MINT_CAP_ID: SOUL_MINT_CAP_ID,
-      NEXT_PUBLIC_SOUL_COLLECTION_ID: SOUL_COLLECTION_ID,
       NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID: TRANSFER_POLICY_ID,
       NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID: ALLOWLIST_REGISTRY_ID,
       NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE: PAYMENT_COIN_TYPE,
@@ -123,7 +117,37 @@ describe('tx builders', () => {
     })
 
     expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
-      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::mint_and_list_fixed_price`,
+      target: `${SOUL_OBJECT_PACKAGE_ID}::market::mint_and_list_fixed_price`,
+    }))
+    const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(8)
+    moveCallSpy.mockRestore()
+  })
+
+  it('builds the soul publish move call against an existing personal kiosk when one is already registered', async () => {
+    const { Transaction } = await import('@mysten/sui/transactions')
+    const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
+    moveCallSpy.mockImplementation(() => ({ $kind: 'Result', Result: 0 } as any))
+    const { buildMintAndListSoulTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+    buildMintAndListSoulTx({
+      name: 'Soul name',
+      description: 'Soul description',
+      imageUrl: 'https://example.com/soul.png',
+      metadataRef: 'walrus://metadata',
+      contentBlobObjectId: '0xblob',
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xcap',
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: [],
+      readme: 'README',
+      priceAtomic: 1_000_000n,
+      creatorRoyaltyBps: 250,
+    })
+
+    expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
+      target: `${SOUL_OBJECT_PACKAGE_ID}::market::mint_and_list_fixed_price_in_personal_kiosk`,
     }))
     const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
     expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(10)
@@ -148,11 +172,11 @@ describe('tx builders', () => {
     })
 
     const moveCall = moveCallSpy.mock.calls.findLast(
-      ([call]) => (call as Record<string, unknown>).target === `${MARKET_ADAPTER_PACKAGE_ID}::market::buy_fixed_price`,
+      ([call]) => (call as Record<string, unknown>).target === `${SOUL_OBJECT_PACKAGE_ID}::market::buy_fixed_price`,
     )?.[0] as Record<string, unknown> | undefined
 
     expect(moveCall).toMatchObject({
-      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::buy_fixed_price`,
+      target: `${SOUL_OBJECT_PACKAGE_ID}::market::buy_fixed_price`,
     })
     expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(8)
     expect(splitCoinsSpy).toHaveBeenCalledTimes(1)
@@ -187,9 +211,10 @@ describe('tx builders', () => {
     buildInitSoulPersonalKioskTx()
 
     expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
-      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::init_personal_kiosk`,
-      arguments: [],
+      target: `${SOUL_OBJECT_PACKAGE_ID}::market::init_personal_kiosk`,
     }))
+    const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(1)
     moveCallSpy.mockRestore()
   })
 
@@ -202,10 +227,10 @@ describe('tx builders', () => {
     buildInitSoulPersonalKioskTx({ currentKioskCapOnChainId: '0xexistingcap' })
 
     expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
-      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::reuse_personal_kiosk`,
+      target: `${SOUL_OBJECT_PACKAGE_ID}::market::reuse_personal_kiosk`,
     }))
     const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
-    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(1)
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(2)
     moveCallSpy.mockRestore()
   })
 
@@ -290,7 +315,7 @@ describe('tx builders', () => {
     moveCallSpy.mockRestore()
   })
 
-  it('builds the relist move call against the configured adapter package', async () => {
+  it('builds the relist move call against soul_object::market directly', async () => {
     const { Transaction } = await import('@mysten/sui/transactions')
     const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
     moveCallSpy.mockImplementation(() => ({ $kind: 'Result', Result: 0 } as any))
@@ -304,7 +329,7 @@ describe('tx builders', () => {
     })
 
     expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
-      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::list_fixed_price`,
+      target: `${SOUL_OBJECT_PACKAGE_ID}::market::list_fixed_price`,
     }))
     const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
     expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(6)
@@ -321,4 +346,5 @@ describe('tx builders', () => {
       priceAtomic: 0n,
     })).toThrow('priceAtomic must be positive')
   })
+
 })

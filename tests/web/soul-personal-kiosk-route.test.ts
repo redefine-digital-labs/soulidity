@@ -76,18 +76,17 @@ describe('Soul personal kiosk route', () => {
     })
   })
 
-  it('returns 409 when multiple Soul personal kiosks are detected', async () => {
-    mockedResolveOwnedPersonalKiosk.mockResolvedValueOnce({
-      status: 'multiple',
-      kiosks: [],
-    })
+  it('returns 503 when Soul personal kiosk resolution hits an invariant error', async () => {
+    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
+      new Error('Soul personal kiosk invariant violated: multiple kiosks detected for this wallet set'),
+    )
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
     const response = await GET()
 
-    expect(response.status).toBe(409)
+    expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
-      error: 'Multiple Soul personal kiosks detected for this wallet set',
+      error: 'Unable to resolve Soul personal kiosk right now',
     })
   })
 

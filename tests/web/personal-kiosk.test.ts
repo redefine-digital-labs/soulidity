@@ -91,7 +91,7 @@ describe('personal kiosk resolution helpers', () => {
     expect(mockedGetVerifiedPersonalKioskCapState).not.toHaveBeenCalled()
   })
 
-  it('returns multiple when more than one verified kiosk cap belongs to the owner set', async () => {
+  it('throws when more than one verified kiosk cap belongs to the owner set', async () => {
     mockedSuiClient.getOwnedObjects.mockReset()
     mockedSuiClient.getOwnedObjects.mockResolvedValueOnce({
       data: [{ data: { objectId: FIRST_CAP_ID } }, { data: { objectId: SECOND_CAP_ID } }],
@@ -113,21 +113,9 @@ describe('personal kiosk resolution helpers', () => {
 
     const { resolveOwnedPersonalKiosk } = await import('../../web/lib/souls/personal-kiosk.ts')
 
-    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
-      status: 'multiple',
-      kiosks: [
-        {
-          ownerAddress: OWNER_ADDRESS,
-          currentKioskId: `0x${'7'.repeat(64)}`,
-          currentKioskCapOnChainId: FIRST_CAP_ID,
-        },
-        {
-          ownerAddress: OWNER_ADDRESS,
-          currentKioskId: SECOND_KIOSK_ID,
-          currentKioskCapOnChainId: SECOND_CAP_ID,
-        },
-      ],
-    })
+    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toThrow(
+      'Soul personal kiosk invariant violated: multiple kiosks detected for this wallet set',
+    )
   })
 
   it('propagates verification errors when kiosk-cap inspection fails', async () => {

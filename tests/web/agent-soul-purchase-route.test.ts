@@ -233,11 +233,10 @@ describe('agent soul purchase prepare route', () => {
     expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
   })
 
-  it('returns 409 when the agent wallet has multiple Soul personal kiosks', async () => {
-    mockedResolveOwnedPersonalKiosk.mockResolvedValueOnce({
-      status: 'multiple',
-      kiosks: [],
-    })
+  it('returns 503 when Soul personal kiosk resolution hits an invariant error', async () => {
+    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
+      new Error('Soul personal kiosk invariant violated: multiple kiosks detected for this wallet set'),
+    )
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
     const response = await POST(
@@ -245,9 +244,9 @@ describe('agent soul purchase prepare route', () => {
       { params: Promise.resolve({ id: SOUL_ID }) },
     )
 
-    expect(response.status).toBe(409)
+    expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
-      error: 'Agent wallet has multiple Soul personal kiosks; consolidate before purchasing',
+      error: 'Unable to prepare agent purchase right now',
     })
     expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
   })

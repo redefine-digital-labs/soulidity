@@ -113,7 +113,7 @@ fun mint_exposes_optional_metadata_ref() {
 }
 
 #[test]
-fun init_for_testing_creates_display_and_authority_without_leaking_raw_publisher() {
+fun init_for_testing_creates_display_without_leaking_raw_publisher() {
     let publisher_owner = @0xCAFE;
     let mut scenario = ts::begin(@0x0);
 
@@ -125,7 +125,6 @@ fun init_for_testing_creates_display_and_authority_without_leaking_raw_publisher
     ts::next_tx(&mut scenario, publisher_owner);
     {
         let soul_display: display::Display<soul::Soul> = ts::take_from_sender(&scenario);
-        let soul_authority: soul::SoulPackageAuthority = ts::take_from_sender(&scenario);
         let fields = display::fields(&soul_display);
         let name_key = string::utf8(b"name");
         let description_key = string::utf8(b"description");
@@ -142,10 +141,8 @@ fun init_for_testing_creates_display_and_authority_without_leaking_raw_publisher
         assert!(*fields[&creator_key].as_bytes() == b"{creator}", 7);
         assert!(display::version(&soul_display) == 1, 8);
         assert!(!ts::has_most_recent_for_sender<package::Publisher>(&scenario), 9);
-        assert!(package::from_package<soul::Soul>(soul::publisher(&soul_authority)), 10);
 
         std::unit_test::destroy(soul_display);
-        soul::destroy_package_authority_for_testing(soul_authority);
     };
 
     ts::end(scenario);

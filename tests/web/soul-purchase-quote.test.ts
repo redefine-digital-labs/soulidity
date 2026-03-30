@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const ADAPTER_PACKAGE_ID = `0x${'9'.repeat(64)}`
+const SOUL_OBJECT_PACKAGE_ID = `0x${'9'.repeat(64)}`
 const MARKET_CONFIG_ID = `0x${'8'.repeat(64)}`
 const TRANSFER_POLICY_ID = `0x${'7'.repeat(64)}`
 const LISTING_OBJECT_ID = `0x${'6'.repeat(64)}`
@@ -21,7 +21,7 @@ describe('soul purchase quote helper', () => {
     vi.resetModules()
     process.env = {
       ...originalEnv,
-      NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID: ADAPTER_PACKAGE_ID,
+      NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID: SOUL_OBJECT_PACKAGE_ID,
       NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID: MARKET_CONFIG_ID,
       NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID: TRANSFER_POLICY_ID,
     }
