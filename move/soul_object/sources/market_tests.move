@@ -116,6 +116,43 @@ fun init_for_testing_adds_lock_and_personal_kiosk_rules() {
 }
 
 #[test]
+fun reuse_personal_kiosk_returns_existing_kiosk_and_preserves_cap() {
+    let admin = @0xA11CE;
+    let buyer = @0xB0B;
+    let mut scenario = ts::begin(@0x0);
+    let initial_kiosk_id: ID;
+    let reused_kiosk_id: ID;
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        initial_kiosk_id = market::init_personal_kiosk(ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        let personal_kiosk_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        reused_kiosk_id = market::reuse_personal_kiosk(personal_kiosk_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, buyer);
+    {
+        let personal_kiosk_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, initial_kiosk_id);
+
+        assert!(reused_kiosk_id == initial_kiosk_id, 0);
+        assert!(kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(&personal_kiosk_cap)) == initial_kiosk_id, 1);
+        assert!(personal_kiosk::owner(&buyer_kiosk) == buyer, 2);
+
+        ts::return_shared(buyer_kiosk);
+        personal_kiosk::transfer_to_sender(personal_kiosk_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
 fun admin_can_update_platform_fee_and_quote_purchase() {
     let admin = @0xA11CE;
     let mut scenario = ts::begin(@0x0);
