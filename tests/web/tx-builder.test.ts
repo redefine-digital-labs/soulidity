@@ -193,6 +193,22 @@ describe('tx builders', () => {
     moveCallSpy.mockRestore()
   })
 
+  it('reuses the existing Soul personal kiosk cap when the caller already has one', async () => {
+    const { Transaction } = await import('@mysten/sui/transactions')
+    const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
+    moveCallSpy.mockImplementation(() => ({ $kind: 'Result', Result: 0 } as any))
+    const { buildInitSoulPersonalKioskTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+    buildInitSoulPersonalKioskTx({ currentKioskCapOnChainId: '0xexistingcap' })
+
+    expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
+      target: `${MARKET_ADAPTER_PACKAGE_ID}::market::reuse_personal_kiosk`,
+    }))
+    const moveCall = moveCallSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
+    expect(Array.isArray(moveCall?.arguments) ? moveCall.arguments : []).toHaveLength(1)
+    moveCallSpy.mockRestore()
+  })
+
   it('builds the soul allowlist move call against the kiosk-held Soul and transfers the returned cap to the allowlisted address', async () => {
     const { Transaction } = await import('@mysten/sui/transactions')
     const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')

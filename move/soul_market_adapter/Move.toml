@@ -12,4 +12,4 @@ MoveStdlib = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/s
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
 
 [addresses]
-soul_market_adapter = "0x6f1d3e62885d9b6b4e4d55c4b334f0cf5f17319b3a7ac0d5eb6f4b4e1a1f9002"
+soul_market_adapter = "0xb25dc3b5dfd30e458dce1a7aea2fabca989413e5004fe0012ead7fb21430165d"

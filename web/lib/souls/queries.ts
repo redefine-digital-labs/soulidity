@@ -19,9 +19,9 @@ export function useSoulsList(params: { page?: number; category?: string; q?: str
   })
 }
 
-export function useSoulDetail(id: string, getAuthHeaders?: () => Promise<Record<string, string>>) {
+export function useSoulDetail(id: string, getAuthHeaders?: () => Promise<Record<string, string>>, viewerId?: string | null) {
   return useQuery<SoulAssetDetail>({
-    queryKey: ['soul', id],
+    queryKey: ['soul', id, viewerId ?? null],
     queryFn: async () => {
       const headers = getAuthHeaders ? await getAuthHeaders() : undefined
       const res = await fetch(`/api/souls/${encodeURIComponent(id)}`, { headers })

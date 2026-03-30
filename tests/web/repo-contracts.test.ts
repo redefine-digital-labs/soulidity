@@ -106,6 +106,16 @@ describe('repository contract guards', () => {
     expect(e2eDecryptSource).toContain('Unexpected Seal approval function')
   })
 
+  it('keeps the e2e agent decrypt script aligned with the seal-envelope runtime contract', () => {
+    const e2eDecryptSource = readFileSync(join(repoRoot, 'web', 'scripts', 'e2e-agent-decrypt.ts'), 'utf8')
+
+    expect(e2eDecryptSource).toContain('parseSealEnvelopeSidecar(access.sealSidecar)')
+    expect(e2eDecryptSource).toContain('sealSidecar.documentId')
+    expect(e2eDecryptSource).toContain('sealSidecar.encryptedDek')
+    expect(e2eDecryptSource).not.toContain('EncryptedObject.parse(encryptedBytes)')
+    expect(e2eDecryptSource).not.toContain('data: encryptedBytes')
+  })
+
   it('keeps the new Soul Move packages as the only active implementation', () => {
     const soulSource = readFileSync(join(repoRoot, 'move', 'soul_object', 'sources', 'soul.move'), 'utf8')
     const allowlistSource = readFileSync(join(repoRoot, 'move', 'soul_object', 'sources', 'allowlist.move'), 'utf8')
