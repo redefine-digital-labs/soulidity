@@ -39,8 +39,8 @@ DELETE FROM "soul_assets";
 
 ### -1.4 准备测试文件
 创建最小测试文件供 publish 上传：
-- 1x1 PNG 图片（preview image）
-- 小文本文件（content bundle）
+- 1x1 PNG 图片（preview image，通过 `UploadWalrus` 组件上传）
+- 小文本文件（content bundle，本地选择后由 publish 流程自动加密上传）
 
 ### -1.5 确认 Next.js dev server 运行
 `curl http://localhost:3000/souls` 确认可达。
@@ -81,20 +81,20 @@ navigate 到 `/souls/publish` 后 `evaluate_script` 清除所有 `soul-publish-d
 2. `navigate_page` → `/souls/publish`
 3. `wait_for` text "Mint a Soul"
 4. 填表单（用 `fill` + CSS selector）:
-   - Name input (`form label:has(span:text("Name")) input`): `E2E Kiosk Alpha v6`
-   - Description (`form label:has(span:text("Description")) textarea`): `E2E test Soul A - Trading strategy content`
-   - Category: `Trading`
-   - Price (USDC): `1`
-   - Creator royalty (bps): `500`
-   - Tags: `alpha, e2e, trading`
-   - README textarea: `E2E test Soul A readme`
-5. `upload_file` 上传 preview image（selector: 第一个 `input[type="file"][accept*="image"]`）
-6. `wait_for` "Uploaded!" 文本出现
-7. `upload_file` 上传 content bundle（selector: 第二个 `input[type="file"]`，无 accept 限制）
-8. `wait_for` 第二个 "Uploaded!"
+   - Name input（`form label:has(span:text("Name")) input`）: `E2E Kiosk Alpha v6`
+   - Description（`form label:has(span:text("Description")) textarea`）: `E2E test Soul A - Trading strategy content`
+   - Category（`form .grid label:has(span:text("Category")) input`）: `Trading`
+   - Price USDC（`form .grid label:has(span:text("Price (USDC)")) input`）: `1`
+   - Creator royalty bps（`form .grid label:has(span:text("Creator royalty (bps)")) input`）: `500`（placeholder 默认 "0"）
+   - Tags（`form label:has(span:text("Tags")) input`）: `alpha, e2e, trading`
+   - README（`form label:has(span:text("README")) textarea`）: `E2E test Soul A readme`
+5. Preview image 上传：`UploadWalrus` 组件 — `upload_file`（selector: `input[type="file"][accept="image/jpeg,image/png,image/webp,image/gif"]`）
+6. `wait_for` label 变为 "Preview uploaded"
+7. Content file 选择：`upload_file`（selector: `label:has(span:text("Content file")) input[type="file"]`）
+8. `wait_for` dashed border div 文字变为所选文件名（非 "Choose content file"）
 9. `click` "Publish Soul" 按钮（`button[type="submit"]`）
-10. Privy 签名弹窗 — 检测并 approve（Privy embedded wallet 通常自动签名，如需手动则 click iframe 中 approve 按钮）
-11. `wait_for` URL 变为 `/souls/0x...`（publish 成功后 router.push）
+10. 等待 content 加密上传 + metadata 上传 + personal kiosk 检查 + on-chain TX — Privy embedded wallet 自动签名
+11. `wait_for` URL 变为 `/souls/0x...`（publish 成功后 router.push），timeout 60s
 12. **记录 SOUL_A_ID** = URL 中的 onChainId
 13. `take_screenshot`
 
@@ -123,7 +123,8 @@ navigate 到 `/souls/publish` 后 `evaluate_script` 清除所有 `soul-publish-d
 ### Test 6: Soul A 状态 = Listed
 - `navigate_page` → `/souls/${SOUL_A_ID}`
 - `wait_for` Soul name 显示
-- `evaluate_script` 验证页面含 "Listed"（status indicator）
+- `evaluate_script` 验证页面含 "Listed"（status indicator，cyan 色）
+- `evaluate_script` 验证 price 区域显示格式化金额（非 "Not for sale"）
 
 ### Test 7: Soul B 状态 = Listed
 同 Test 6，换 SOUL_B_ID
@@ -147,21 +148,27 @@ navigate 到 `/souls/publish` 后 `evaluate_script` 清除所有 `soul-publish-d
 ### Test 9: Personal Kiosk 初始化
 - `navigate_page` → `/souls/${SOUL_A_ID}`
 - `wait_for` 购买按钮区域加载
-- 如果出现 "Initialize Soul kiosk" 按钮 → `click` 并等 Privy 签名
-- `wait_for` 按钮变为 "Buy for ..."
+- Personal kiosk 状态自动检查（组件 mount 时 `useEffect` 调用 `GET /api/souls/personal-kiosk`）
+- 如果出现 "Initialize Soul kiosk" 按钮（`personalKioskStatus === 'missing'`）→ `click` 并等 Privy 签名
+- `wait_for` 按钮变为 "Buy for ..."（kiosk 初始化后 `personalKioskStatus` 变为 `'ready'`）
 - 如果直接显示 "Buy for ..." → kiosk 已就绪，跳过
+- 注意：purchase 按钮中间态文字 "Checking Soul kiosk…"（`personalKioskStatus === 'loading'`）、"Initialize kiosk to buy"（`personalKioskStatus === 'missing'`）、"Price unavailable"（无 `parsedAmounts`）
 
 ### Test 10: 购买 Soul A
-- `click` "Buy for ..." 按钮
-- 等待 Privy TX 签名
-- `wait_for` "You currently own this Soul." 文本出现
+- `click` "Buy for ..." 按钮（按钮文字格式：`Buy for ${formatAtomicSoulPaymentForDisplay(totalAtomic)}`）
+- 等待 Privy TX 签名（coin selection + `buildBuySoulTx` + signAndExecute + POST `/api/souls/{id}/purchase` 镜像同步）
+- `wait_for` "You currently own this Soul." 文本出现（页面 refetch 后 `soul.isOwner === true`）
 - `take_screenshot`
 
 ### Test 11: Owner UI 完整
 - `evaluate_script` 验证存在：
-  - `button[aria-label="Download Soul content"]`（Access content 区域）
-  - `input[aria-label="Price in USDC for listing"]`（List for sale 区域）
-  - `button[aria-label="Add address to Soul allowlist"]`（Manage allowlist 区域）
+  - **Access content 区域**：`button[aria-label="Download Soul content"]`（`AccessDownloadButton` 组件，条件：`soul.isOwner || soul.isAllowlisted`）
+  - **List for sale 区域**（条件：`soul.isOwner && soul.listingStatus === 'held'`）：
+    - `input[aria-label="Price in USDC for listing"]`（placeholder "Price in USDC (e.g. 1.5)"）
+    - `button[aria-label="List this Soul for sale"]`
+  - **Manage allowlist 区域**（条件：`soul.isOwner && soul.listingStatus === 'held'`）：
+    - `input[aria-label="Sui address for allowlist"]`（placeholder "0x... Sui address"）
+    - `button[aria-label="Add address to Soul allowlist"]`
 
 ### Test 12: My Souls — Authored 0, Owned 1
 - `navigate_page` → `/souls/my`
@@ -175,10 +182,10 @@ navigate 到 `/souls/publish` 后 `evaluate_script` 清除所有 `soul-publish-d
 
 ### Test 13: 设置 allowlist for Agent Alpha
 - `navigate_page` → `/souls/${SOUL_A_ID}`
-- `fill` allowlist input (`input[aria-label="Sui address for allowlist"]`): `0x3b82a2209ab7f937d29c12105fe501a63f4223a7f5c128842d25686e66a68610`
-- `click` "Add to allowlist" (`button[aria-label="Add address to Soul allowlist"]`)
-- 等待 Privy TX 签名
-- `wait_for` "Current allowlist address" 文本
+- `fill` allowlist input（`input[aria-label="Sui address for allowlist"]`）: `0x3b82a2209ab7f937d29c12105fe501a63f4223a7f5c128842d25686e66a68610`
+- `click` "Add to allowlist"（`button[aria-label="Add address to Soul allowlist"]`）
+- 等待 Privy TX 签名（`buildSetAllowlistAddressTx` → signAndExecute → POST `/api/souls/{id}/allowlist` 镜像同步 → refetch）
+- `wait_for` "Current allowlist address" 文本（allowlist 设置后页面刷新，显示 `soul.allowlistAddress`）
 - `take_screenshot`
 
 ### Test 14: Agent Alpha → Soul A: 200（allowlisted）
@@ -198,9 +205,9 @@ curl -s -w "\n%{http_code}" \
 验证 HTTP 403
 
 ### Test 16: 清除 allowlist + confirm dialog
-- `handle_dialog` 预设 accept（`window.confirm` 弹窗）
-- `click` "Clear allowlist" (`button[aria-label="Clear Soul allowlist"]`)
-- 等待 Privy TX 签名
+- `handle_dialog` 预设 accept（`window.confirm("This will revoke the allowlisted address's access. Continue?")` 弹窗）
+- `click` "Clear allowlist"（`button[aria-label="Clear Soul allowlist"]`，rose 背景色按钮）
+- 等待 Privy TX 签名（`buildClearAllowlistAddressTx` → signAndExecute → DELETE `/api/souls/{id}/allowlist` 镜像同步 → refetch）
 - `wait_for` allowlist input 重新出现（`input[aria-label="Sui address for allowlist"]`）
 - `take_screenshot`
 
@@ -211,11 +218,11 @@ curl -s -w "\n%{http_code}" \
 重复 Test 13 完整流程
 
 ### Test 19: Owner 下载内容
-- `click` "Download content" (`button[aria-label="Download Soul content"]`)
-- 等待 Privy personal message 签名
+- `click` "Download content"（`button[aria-label="Download Soul content"]`，emerald 背景色按钮）
+- 等待 Privy personal message 签名（`loadDecryptedSoulBundle` → GET `/api/souls/{id}/access` → session key → approval TX → fetch Walrus blob → Seal decrypt）
 - `wait_for` 按钮从 "Decrypting…" 恢复为 "Download content"
 - `list_console_messages` 验证无 error
-- `evaluate_script` 验证无 error `<p>` 元素
+- `evaluate_script` 验证无 error `<p>` 元素（rose 色 error 文本）
 
 ---
 
@@ -258,8 +265,9 @@ curl -s http://localhost:3000/api/agent/souls/${SOUL_B_ID}/access \
 
 ### Test 24: 浏览器 Owner 解密 Soul A
 已在 Test 19 执行。此处追加验证：
-- `list_network_requests` 找 `/api/souls/${SOUL_A_ID}/access` 请求
-- `get_network_request` 检查 response body 含 `sealSidecar` 字段
+- `list_network_requests` 找 `/api/souls/${SOUL_A_ID}/access` 请求（人类 access 端点：`GET /api/souls/[id]/access`）
+- `get_network_request` 检查 response body 含 `sealSidecar` 字段（含 `documentId`、`encryptedDek`）
+- 验证 response 含 `accessKind`（`'owner'`）和 `accessPolicy.functionName`（`'seal_approve_owner_in_personal_kiosk'`）
 - 验证下载过程中无 console error
 
 ### Test 25: Agent 脚本解密 Soul B
@@ -349,7 +357,20 @@ Test 20 (agent purchase) → Tests 21-23, 25
 | `web/components/public-nav.tsx` | 导航栏登录状态 |
 | `web/components/souls/access-download-button.tsx` | 下载按钮 — Test 19, 24 |
 | `web/components/souls/purchase-button.tsx` | 购买按钮 — Test 9-10 |
-| `web/components/souls/upload-walrus.tsx` | 文件上传 — Test 2-3 |
+| `web/components/souls/upload-walrus.tsx` | Preview 文件上传 — Test 2-3 |
+| `web/app/api/souls/personal-kiosk/route.ts` | Personal kiosk 查询 — Test 9 |
+| `web/app/api/souls/[id]/access/route.ts` | 人类 access 端点 — Test 19, 24 |
+| `web/app/api/souls/[id]/allowlist/route.ts` | Allowlist CRUD — Test 13, 16, 18 |
+| `web/app/api/souls/[id]/purchase/route.ts` | 购买镜像同步 — Test 10 |
+| `web/app/api/agent/souls/[id]/access/route.ts` | Agent access — Test 14-15, 21-22, 26-30 |
+| `web/lib/souls/tx-builder.ts` | TX 构建（mint, buy, allowlist, list） |
+| `web/lib/souls/access-download.ts` | 浏览器端解密下载逻辑 |
+| `web/lib/souls/access.ts` | 服务端 access payload 构建 |
+| `web/lib/souls/personal-kiosk.ts` | Personal kiosk 解析 |
+| `web/lib/souls/on-chain-verification.ts` | 链上状态验证 |
+| `web/lib/souls/soul-detail-utils.ts` | 详情页工具（allowlist cap 提取） |
+| `move/soul_object/sources/allowlist.move` | Allowlist Move 模块 |
+| `move/soul_object/sources/market.move` | 市场 Move 模块 |
 | `web/scripts/e2e-agent-purchase.ts` | Agent 购买脚本 — Test 20 |
 | `web/scripts/e2e-agent-decrypt.ts` | Agent 解密脚本 — Test 25（可能需修复） |
 | `prisma/schema.prisma` | DB schema — Phase -1 cleanup |
