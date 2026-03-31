@@ -56,16 +56,20 @@ export async function takeRateLimitTokenWithFallback(params: {
   key: string
   options: RateLimitOptions
   takeRemoteToken?: (() => Promise<{ success: boolean; reset: number }>) | null
+  onRemoteFallback?: ((details: { reason: 'remote_unavailable' | 'remote_error'; error?: unknown }) => void) | null
 }): Promise<RateLimitResult> {
   if (params.takeRemoteToken) {
     try {
       const { success, reset } = await params.takeRemoteToken()
       const retryAfterSeconds = Math.max(1, Math.ceil((reset - Date.now()) / 1000))
       return { limited: !success, retryAfterSeconds }
-    } catch {
+    } catch (error) {
+      params.onRemoteFallback?.({ reason: 'remote_error', error })
       // Degrade gracefully instead of turning transient remote limiter
       // failures into 500s on critical request paths.
     }
+  } else {
+    params.onRemoteFallback?.({ reason: 'remote_unavailable' })
   }
 
   return inMemoryTakeToken(params.key, params.options)

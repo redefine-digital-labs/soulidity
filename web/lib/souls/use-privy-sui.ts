@@ -1,12 +1,13 @@
 /**
  * Hook for signing and executing Sui transactions via Privy embedded wallet.
- * Reusable across publish, purchase, and grant flows.
+ * Reusable across publish, purchase, and allowlist flows.
  */
 
 import { useCallback } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useSignRawHash } from '@privy-io/react-auth/extended-chains'
 import { useSuiClient } from '@mysten/dapp-kit'
+import { bcs } from '@mysten/sui/bcs'
 import { messageWithIntent, toSerializedSignature } from '@mysten/sui/cryptography'
 import { publicKeyFromRawBytes } from '@mysten/sui/verify'
 import { blake2b } from '@noble/hashes/blake2.js'
@@ -41,8 +42,23 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes
 }
 
-function bytesToHex(bytes: Uint8Array): `0x${string}` {
+export function bytesToHex(bytes: Uint8Array): `0x${string}` {
   return ('0x' + Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
+}
+
+export { hexToBytes }
+
+export function normalizePrivyEd25519PublicKeyBytes(publicKeyHex: string): Uint8Array {
+  const publicKeyBytes = hexToBytes(publicKeyHex)
+  const normalizedBytes = publicKeyBytes.length === 33 ? publicKeyBytes.slice(1) : publicKeyBytes
+  if (normalizedBytes.length !== 32) {
+    throw new Error('Privy Sui public key must be 32 bytes after normalization')
+  }
+  return normalizedBytes
+}
+
+export function toSuiPersonalMessageBytes(message: Uint8Array): Uint8Array {
+  return bcs.byteVector().serialize(message).toBytes()
 }
 
 export function usePrivySuiSign() {
@@ -51,6 +67,28 @@ export function usePrivySuiSign() {
   const suiClient = useSuiClient()
 
   const suiWallet = getPrivySuiWallet(privyUser)
+
+  const signDigestWithPrivy = useCallback(
+    async (digestHex: `0x${string}`): Promise<string> => {
+      if (!suiWallet) throw new Error('No Sui wallet found in Privy account')
+
+      const { signature: rawSigHex } = await signRawHash({
+        address: suiWallet.address,
+        chainType: 'sui',
+        hash: digestHex,
+      })
+
+      const rawSigBytes = hexToBytes(rawSigHex)
+      const pkBytes = normalizePrivyEd25519PublicKeyBytes(suiWallet.publicKey)
+      const pubKey = publicKeyFromRawBytes('ED25519', pkBytes)
+      return toSerializedSignature({
+        signature: rawSigBytes,
+        signatureScheme: 'ED25519',
+        publicKey: pubKey,
+      })
+    },
+    [signRawHash, suiWallet],
+  )
 
   const signAndExecute = useCallback(
     async (tx: Transaction): Promise<SuiTxResult> => {
@@ -65,25 +103,7 @@ export function usePrivySuiSign() {
       const intentMessage = messageWithIntent('TransactionData', rawBytes)
       const digest = blake2b(intentMessage, { dkLen: 32 })
       const digestHex = bytesToHex(digest)
-
-      // Sign with Privy
-      const { signature: rawSigHex } = await signRawHash({
-        address: suiWallet.address,
-        chainType: 'sui',
-        hash: digestHex,
-      })
-
-      // Assemble serialized signature
-      const rawSigBytes = hexToBytes(rawSigHex)
-      let pkBytes = hexToBytes(suiWallet.publicKey)
-      // Privy may return 33 bytes (1-byte scheme flag + 32-byte raw key); strip the flag
-      if (pkBytes.length === 33) pkBytes = pkBytes.slice(1)
-      const pubKey = publicKeyFromRawBytes('ED25519', pkBytes)
-      const serializedSig = toSerializedSignature({
-        signature: rawSigBytes,
-        signatureScheme: 'ED25519',
-        publicKey: pubKey,
-      })
+      const serializedSig = await signDigestWithPrivy(digestHex)
 
       // Execute
       const result = await suiClient.executeTransactionBlock({
@@ -97,8 +117,17 @@ export function usePrivySuiSign() {
 
       return result
     },
-    [suiWallet, suiClient, signRawHash],
+    [signDigestWithPrivy, suiClient, suiWallet],
   )
 
-  return { suiWallet, signAndExecute }
+  const signPersonalMessage = useCallback(
+    async (message: Uint8Array): Promise<string> => {
+      const intentMessage = messageWithIntent('PersonalMessage', toSuiPersonalMessageBytes(message))
+      const digest = blake2b(intentMessage, { dkLen: 32 })
+      return signDigestWithPrivy(bytesToHex(digest))
+    },
+    [signDigestWithPrivy],
+  )
+
+  return { suiWallet, signAndExecute, signPersonalMessage }
 }

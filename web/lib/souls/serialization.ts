@@ -1,5 +1,5 @@
 import { materializeWalrusBlobUrls } from '@web/lib/services/walrus'
-import { serializeAtomicSuiAmount } from '@web/lib/souls/price-format'
+import { serializeAtomicAmount } from '@web/lib/souls/price-format'
 
 type SoulWithPreviewImages = {
   previewImages: string[]
@@ -9,9 +9,9 @@ export function serializeSoulPreviewImages<T extends SoulWithPreviewImages>(soul
   return {
     ...soul,
     previewImages: materializeWalrusBlobUrls(soul.previewImages),
-    ...('listedPriceSui' in soul ? {
-      listedPriceSui: serializeAtomicSuiAmount(
-        soul.listedPriceSui as { toString(): string } | string | number | bigint | null | undefined,
+    ...('listedPriceAtomic' in soul ? {
+      listedPriceAtomic: serializeAtomicAmount(
+        soul.listedPriceAtomic as { toString(): string } | string | number | bigint | null | undefined,
       ),
     } : {}),
   }

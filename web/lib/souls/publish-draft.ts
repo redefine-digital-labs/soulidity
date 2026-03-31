@@ -1,8 +1,10 @@
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 
+// Keep the storage key stable for wallet-scoped draft lookup across reloads.
+// Incompatible saved drafts are intentionally discarded by the serialized `version` gate.
 export const SOUL_PUBLISH_DRAFT_STORAGE_KEY = 'soul-publish-draft-v2'
 
-const SOUL_PUBLISH_DRAFT_VERSION = 2 as const
+const SOUL_PUBLISH_DRAFT_VERSION = 4 as const
 
 export type SoulPublishDraft = {
   version: typeof SOUL_PUBLISH_DRAFT_VERSION
@@ -12,7 +14,9 @@ export type SoulPublishDraft = {
   category: string
   tags: string[]
   imageUrl: string
-  priceSui: string
+  priceInput: string
+  listForSale: boolean
+  creatorRoyaltyBps: string
   readme: string
   previewBlobId: string | null
   previewFileKey: string | null
@@ -21,7 +25,7 @@ export type SoulPublishDraft = {
   metadataRef: string | null
   sealDekEnvelope: string | null
   soulObjectId: string | null
-  sellerKioskId: string | null
+  currentKioskId: string | null
   publishTxDigest: string | null
   dbMirroredAt: string | null
   updatedAt: string
@@ -30,6 +34,18 @@ export type SoulPublishDraft = {
 export type SoulPublishDraftPatch = Partial<
   Omit<SoulPublishDraft, 'version' | 'walletAddress' | 'updatedAt'>
 >
+
+export type SoulPublishRetrySnapshot = {
+  txDigest: string
+  soulObjectId: string
+  contentBlobId: string
+  contentBlobObjectId: string
+  sealDekEnvelope: string
+  category: string
+  tags: string[]
+  previewImages: string[]
+  readme: string | null
+}
 
 export interface StorageLike {
   getItem(key: string): string | null
@@ -44,7 +60,9 @@ type SoulPublishDraftInput = {
   category: string
   tags: string[]
   imageUrl: string
-  priceSui: string
+  priceInput: string
+  listForSale: boolean
+  creatorRoyaltyBps: string
   readme: string
 }
 
@@ -77,17 +95,30 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
 }
 
+function clearPreparedContentArtifacts(draft: SoulPublishDraft): SoulPublishDraft {
+  return {
+    ...draft,
+    contentBlobId: null,
+    contentBlobObjectId: null,
+    metadataRef: null,
+    sealDekEnvelope: null,
+  }
+}
+
 function sanitizeRecoveredProgress(draft: SoulPublishDraft): SoulPublishDraft {
   const hasSoulObjectId = draft.soulObjectId != null
-  const hasSellerKioskId = draft.sellerKioskId != null
+  const hasCurrentKioskId = draft.currentKioskId != null
   const hasPublishTxDigest = draft.publishTxDigest != null
-  if (hasSoulObjectId || (!hasSellerKioskId && !hasPublishTxDigest)) {
+  if (!hasSoulObjectId && !hasCurrentKioskId && !hasPublishTxDigest) {
+    return clearPreparedContentArtifacts(draft)
+  }
+  if (hasSoulObjectId || (!hasCurrentKioskId && !hasPublishTxDigest)) {
     return draft
   }
 
   return {
-    ...draft,
-    sellerKioskId: null,
+    ...clearPreparedContentArtifacts(draft),
+    currentKioskId: null,
     publishTxDigest: null,
   }
 }
@@ -101,7 +132,9 @@ export function createSoulPublishDraft(input: SoulPublishDraftInput): SoulPublis
     category: input.category,
     tags: input.tags,
     imageUrl: input.imageUrl,
-    priceSui: input.priceSui,
+    priceInput: input.priceInput,
+    listForSale: input.listForSale,
+    creatorRoyaltyBps: input.creatorRoyaltyBps,
     readme: input.readme,
     previewBlobId: null,
     previewFileKey: null,
@@ -110,7 +143,7 @@ export function createSoulPublishDraft(input: SoulPublishDraftInput): SoulPublis
     metadataRef: null,
     sealDekEnvelope: null,
     soulObjectId: null,
-    sellerKioskId: null,
+    currentKioskId: null,
     publishTxDigest: null,
     dbMirroredAt: null,
     updatedAt: nowIso(),
@@ -133,7 +166,9 @@ export function syncSoulPublishDraftForSubmit(
     category: input.category,
     tags: input.tags,
     imageUrl: input.imageUrl,
-    priceSui: input.priceSui,
+    priceInput: input.priceInput,
+    listForSale: input.listForSale,
+    creatorRoyaltyBps: input.creatorRoyaltyBps,
     readme: input.readme,
   })
 }
@@ -164,7 +199,9 @@ export function parseSoulPublishDraft(raw: string | null): SoulPublishDraft | nu
       || typeof parsed.category !== 'string'
       || !isStringArray(parsed.tags)
       || typeof parsed.imageUrl !== 'string'
-      || typeof parsed.priceSui !== 'string'
+      || typeof parsed.priceInput !== 'string'
+      || typeof parsed.listForSale !== 'boolean'
+      || typeof parsed.creatorRoyaltyBps !== 'string'
       || typeof parsed.readme !== 'string'
       || !isNullableString(parsed.previewBlobId)
       || !isNullableString(parsed.previewFileKey)
@@ -173,7 +210,7 @@ export function parseSoulPublishDraft(raw: string | null): SoulPublishDraft | nu
       || !isNullableString(parsed.metadataRef)
       || !isNullableString(parsed.sealDekEnvelope)
       || !isNullableString(parsed.soulObjectId)
-      || !isNullableString(parsed.sellerKioskId)
+      || !isNullableString(parsed.currentKioskId)
       || !isNullableString(parsed.publishTxDigest)
       || !isNullableString(parsed.dbMirroredAt)
       || typeof parsed.updatedAt !== 'string'
@@ -210,5 +247,36 @@ export function clearSoulPublishDraft(storage: StorageLike, walletAddress?: stri
 }
 
 export function draftHasOnChainProgress(draft: SoulPublishDraft | null) {
-  return Boolean(draft?.soulObjectId || draft?.sellerKioskId || draft?.publishTxDigest)
+  return Boolean(draft?.soulObjectId || draft?.currentKioskId || draft?.publishTxDigest)
+}
+
+export function readSoulPublishRetrySnapshot(
+  draft: SoulPublishDraft | null,
+): SoulPublishRetrySnapshot | null {
+  if (
+    !draft
+    || !draftHasOnChainProgress(draft)
+    || !draft.soulObjectId
+    || !draft.publishTxDigest
+    || !draft.contentBlobId
+    || !draft.contentBlobObjectId
+    || !draft.sealDekEnvelope
+    || !draft.category.trim()
+    || draft.tags.length === 0
+    || !draft.previewBlobId
+  ) {
+    return null
+  }
+
+  return {
+    txDigest: draft.publishTxDigest,
+    soulObjectId: draft.soulObjectId,
+    contentBlobId: draft.contentBlobId,
+    contentBlobObjectId: draft.contentBlobObjectId,
+    sealDekEnvelope: draft.sealDekEnvelope,
+    category: draft.category.trim(),
+    tags: [...draft.tags],
+    previewImages: [draft.previewBlobId],
+    readme: draft.readme.trim() || null,
+  }
 }

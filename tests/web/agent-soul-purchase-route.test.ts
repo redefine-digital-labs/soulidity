@@ -16,6 +16,7 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
     this.status = status
   }
 })
+const MockSoulPersonalKioskInvariantError = vi.hoisted(() => class MockSoulPersonalKioskInvariantError extends Error {})
 
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
@@ -65,6 +66,7 @@ vi.mock('@web/lib/souls/prepared-purchase', () => ({
 
 vi.mock('@web/lib/souls/personal-kiosk', () => ({
   resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
+  SoulPersonalKioskInvariantError: MockSoulPersonalKioskInvariantError,
 }))
 
 vi.mock('@web/lib/souls/tx-builder', () => ({
@@ -232,9 +234,9 @@ describe('agent soul purchase prepare route', () => {
     })
   })
 
-  it('returns 503 when Soul personal kiosk resolution hits an invariant error', async () => {
+  it('returns 409 when Soul personal kiosk resolution hits an invariant error', async () => {
     mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
-      new Error('Soul personal kiosk invariant violated: multiple kiosks detected for this wallet set'),
+      new MockSoulPersonalKioskInvariantError('Soul personal kiosk invariant violated: multiple kiosks detected for this wallet set'),
     )
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
@@ -243,9 +245,9 @@ describe('agent soul purchase prepare route', () => {
       { params: Promise.resolve({ id: SOUL_ID }) },
     )
 
-    expect(response.status).toBe(503)
+    expect(response.status).toBe(409)
     await expect(response.json()).resolves.toEqual({
-      error: 'Unable to prepare agent purchase right now',
+      error: 'Agent wallet has multiple Soul personal kiosks; choose the intended kiosk before purchasing.',
     })
   })
 

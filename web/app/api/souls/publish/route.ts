@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireIdentity } from '@web/lib/auth/identity'
+import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
 import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
 import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import {
   getVerifiedSoulState,
+  getTrustedPackageIds,
   OnChainVerificationError,
   sameSuiValue,
-  extractSoulListingEvent,
+  extractSoulPublishEvent,
 } from '@web/lib/souls/on-chain-verification'
 import { dbUpsertSoulAsset } from '@web/lib/souls/post-tx-db'
 import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
+import { readTransactionSender } from '@web/lib/souls/transaction-metadata'
 import { getSuccessfulTransactionBlock } from '@web/lib/souls/transaction'
 import { getStoredSoulTxSync, storeSoulTxSync } from '@web/lib/souls/tx-sync'
 import { parseOptionalObjectId, parseRequiredObjectId, parseRequiredTxDigest } from '@web/lib/souls/request-validation'
@@ -19,13 +22,16 @@ import { assertWalrusBlobId, normalizeWalrusBlobId } from '@web/lib/services/wal
 import { createSealClient, getSealRuntimeConfig } from '@web/lib/services/seal'
 import { createSealEnvelopeSidecar, type SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
 import { unsealDekEnvelope } from '@web/lib/services/dek-envelope'
+import { MAX_PREVIEW_IMAGES, MAX_TAGS } from '@web/lib/souls/tx-builder'
 
 const SOUL_PUBLISH_RATE_LIMIT = {
   max: 10,
   windowMs: 5 * 60 * 1000,
 } as const
 
-function parseStringArray(value: unknown, fieldName: string): string[] | null {
+const MAX_README_BYTES = 65_536
+
+function parseStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
     return null
   }
@@ -73,9 +79,9 @@ export async function POST(request: NextRequest) {
   const hasCategory = Object.hasOwn(requestBody, 'category')
   const category = parseOptionalString(requestBody.category)
   const hasTags = Object.hasOwn(requestBody, 'tags')
-  const tags = parseStringArray(requestBody.tags, 'tags')
+  const tags = parseStringArray(requestBody.tags)
   const hasPreviewImages = Object.hasOwn(requestBody, 'previewImages')
-  const previewImages = parseStringArray(requestBody.previewImages, 'previewImages')
+  const previewImages = parseStringArray(requestBody.previewImages)
   const readme = parseOptionalString(requestBody.readme)
   const hasSealDekEnvelope = Object.hasOwn(requestBody, 'sealDekEnvelope')
   const sealDekEnvelope = parseOptionalString(requestBody.sealDekEnvelope)
@@ -98,11 +104,20 @@ export async function POST(request: NextRequest) {
   if (hasTags && !tags) {
     return NextResponse.json({ error: 'tags must be a string array' }, { status: 400 })
   }
+  if (tags && tags.length > MAX_TAGS) {
+    return NextResponse.json({ error: `tags must contain at most ${MAX_TAGS} items` }, { status: 400 })
+  }
   if (hasPreviewImages && (!previewImages || !previewImages.every((value) => normalizeWalrusBlobId(value)))) {
     return NextResponse.json({ error: 'previewImages must be Walrus blob ids' }, { status: 400 })
   }
+  if (previewImages && previewImages.length > MAX_PREVIEW_IMAGES) {
+    return NextResponse.json({ error: `previewImages must contain at most ${MAX_PREVIEW_IMAGES} items` }, { status: 400 })
+  }
   if (hasSealDekEnvelope && !sealDekEnvelope) {
     return NextResponse.json({ error: 'sealDekEnvelope is required' }, { status: 400 })
+  }
+  if (readme && Buffer.byteLength(readme, 'utf8') > MAX_README_BYTES) {
+    return NextResponse.json({ error: `readme must be ${MAX_README_BYTES} bytes or less` }, { status: 400 })
   }
 
   const storedSync = await getStoredSoulTxSync({
@@ -153,10 +168,8 @@ export async function POST(request: NextRequest) {
   }
 
   let soulPackageId: string
-  let marketPackageId: string
   try {
     soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-    marketPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID')
   } catch (configError) {
     return NextResponse.json({ error: configError instanceof Error ? configError.message : 'Missing Soul config' }, { status: 503 })
   }
@@ -167,27 +180,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Bind a Sui wallet before publishing' }, { status: 403 })
     }
 
-    const transaction = await getSuccessfulTransactionBlock(txDigest)
-    let listingEvent: ReturnType<typeof extractSoulListingEvent>
-    let listingSource: 'adapter' | 'core'
-    try {
-      listingEvent = extractSoulListingEvent(transaction, marketPackageId)
-      listingSource = 'adapter'
-    } catch {
-      listingEvent = extractSoulListingEvent(transaction, soulPackageId)
-      listingSource = 'core'
+    const [transaction, soulState] = await Promise.all([
+      getSuccessfulTransactionBlock(txDigest),
+      getVerifiedSoulState(soulOnChainId, soulPackageId),
+    ])
+    const txSender = readTransactionSender(transaction)
+    if (!txSender || !walletAddresses.some((address) => sameSuiValue(address, txSender))) {
+      return NextResponse.json({ error: 'Transaction sender does not match the authenticated wallet' }, { status: 422 })
     }
-    if (!sameSuiValue(listingEvent.soulObjectId, soulOnChainId)) {
-      return NextResponse.json({ error: 'Transaction did not list the submitted Soul' }, { status: 422 })
+    const publishEvent = extractSoulPublishEvent(
+      transaction,
+      soulPackageId,
+      getTrustedPackageIds(soulPackageId, soulState.packageId),
+    )
+    const eventSoulObjectId = publishEvent.event.soulObjectId
+    const eventKioskId = publishEvent.event.kioskId
+    const eventKioskCapOnChainId = publishEvent.event.kioskCapOnChainId
+    const eventOwnerAddress = publishEvent.kind === 'listed'
+      ? publishEvent.event.sellerAddress
+      : publishEvent.event.ownerAddress
+
+    if (publishEvent.kind === 'listed' && publishEvent.event.priceAtomic <= 0n) {
+      return NextResponse.json({ error: 'Soul listing price must be greater than zero' }, { status: 422 })
     }
-    if (!walletAddresses.some((address) => sameSuiValue(address, listingEvent.sellerAddress))) {
-      return NextResponse.json({ error: 'Soul listing seller does not match the authenticated wallet' }, { status: 422 })
+    if (!sameSuiValue(eventSoulObjectId, soulOnChainId)) {
+      return NextResponse.json({ error: 'Transaction did not publish the submitted Soul' }, { status: 422 })
+    }
+    if (!walletAddresses.some((address) => sameSuiValue(address, eventOwnerAddress))) {
+      return NextResponse.json({ error: 'Soul publisher does not match the authenticated wallet' }, { status: 422 })
     }
 
-    const soulState = await getVerifiedSoulState(soulOnChainId, soulPackageId)
-    if (soulState.ownerKind !== 'object' || !sameSuiValue(soulState.ownerObjectId, listingEvent.sellerKioskId)) {
+    const soulKioskId = soulState.kioskParentId ?? soulState.ownerObjectId
+    if (soulState.ownerKind !== 'object' || !soulKioskId || !sameSuiValue(soulKioskId, eventKioskId)) {
       return NextResponse.json(
-        { error: 'Soul ownership has changed since this listing transaction' },
+        { error: 'Soul ownership has changed since this publish transaction' },
         { status: 409 },
       )
     }
@@ -208,7 +234,7 @@ export async function POST(request: NextRequest) {
 
     const isCreatorWallet = walletAddresses.some((address) => sameSuiValue(address, soulState.creatorAddress))
     if (!existingSoul && !isCreatorWallet) {
-      return NextResponse.json({ error: 'Only the Soul creator can mirror the initial listing' }, { status: 422 })
+      return NextResponse.json({ error: 'Only the Soul creator can mirror the initial publish' }, { status: 422 })
     }
     const creatorMemberId = existingSoul?.creatorMemberId ?? (isCreatorWallet ? identity.memberId : null)
 
@@ -232,12 +258,14 @@ export async function POST(request: NextRequest) {
       if (runtimeConfig.threshold <= 0 || runtimeConfig.serverConfigs.length === 0) {
         return NextResponse.json({ error: 'Seal is not configured for Soul publishing' }, { status: 503 })
       }
+      const sealPackageId = soulState.packageId ?? soulPackageId
 
       const unsealedEnvelope = unsealDekEnvelope(sealDekEnvelope!)
       try {
+        // Seal requires the Soul's original package id, not a later published-at upgrade id.
         sidecar = await createSealEnvelopeSidecar({
           sealClient: createSealClient(),
-          packageId: soulPackageId,
+          packageId: sealPackageId,
           soulObjectId: soulOnChainId,
           threshold: runtimeConfig.threshold,
           dek: unsealedEnvelope.dek,
@@ -255,16 +283,19 @@ export async function POST(request: NextRequest) {
       syncedReadme = readme
     }
 
+    const isListed = publishEvent.kind === 'listed'
     await dbUpsertSoulAsset({
       soulOnChainId,
       creatorAddress: soulState.creatorAddress,
       creatorMemberId,
-      currentOwnerAddress: listingEvent.sellerAddress,
+      creatorRoyaltyBps: soulState.creatorRoyaltyBps,
+      currentOwnerAddress: eventOwnerAddress,
       currentOwnerMemberId: identity.memberId,
-      sellerKioskId: listingEvent.sellerKioskId,
-      listedPriceSui: listingEvent.priceSui,
-      listingStatus: 'listed',
-      listingSource,
+      currentKioskId: eventKioskId,
+      currentKioskCapOnChainId: eventKioskCapOnChainId,
+      listingObjectOnChainId: isListed ? publishEvent.event.listingObjectId : null,
+      listedPriceAtomic: isListed ? publishEvent.event.priceAtomic : null,
+      listingStatus: isListed ? 'listed' : 'held',
       name: soulState.name,
       description: soulState.description,
       imageUrl: soulState.imageUrl,
@@ -276,16 +307,18 @@ export async function POST(request: NextRequest) {
       tags: syncedTags,
       previewImages: syncedPreviewImages,
       readme: syncedReadme,
-      grantVersion: soulState.grantVersion,
-      agentGrantAddress: soulState.agentGrant,
-      agentAccessCapOnChainId: null,
+      allowlistVersion: soulState.allowlistVersion,
+      allowlistAddress: soulState.allowlistAddress,
+      allowlistCapOnChainId: null,
     })
 
     const responseBody = {
       soulOnChainId,
-      sellerKioskId: listingEvent.sellerKioskId,
-      listedPriceSui: listingEvent.priceSui.toString(),
-      listingStatus: 'listed' as const,
+      currentKioskId: eventKioskId,
+      currentKioskCapOnChainId: eventKioskCapOnChainId,
+      listingObjectOnChainId: isListed ? publishEvent.event.listingObjectId : null,
+      listedPriceAtomic: isListed ? publishEvent.event.priceAtomic.toString() : null,
+      listingStatus: isListed ? 'listed' as const : 'held' as const,
     }
 
     await storeSoulTxSync({
@@ -299,6 +332,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(responseBody)
   } catch (publishError) {
+    if (isMultipleSuiWalletBindingsError(publishError)) {
+      return NextResponse.json({ error: publishError.message }, { status: 409 })
+    }
     if (publishError instanceof OnChainVerificationError) {
       return NextResponse.json(
         { error: getClientSafeOnChainVerificationErrorMessage(publishError) },

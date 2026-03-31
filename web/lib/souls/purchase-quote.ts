@@ -6,10 +6,10 @@ import { suiClient } from '@web/lib/sui'
 const DEV_INSPECT_SENDER = `0x${'1'.padStart(64, '0')}`
 
 export interface SoulPurchaseQuote {
-  marketplaceFeeSui: bigint
-  priceSui: bigint
-  royaltyFeeSui: bigint
-  totalSui: bigint
+  platformFeeAtomic: bigint
+  priceAtomic: bigint
+  creatorRoyaltyAtomic: bigint
+  totalAtomic: bigint
 }
 
 function bytesToBigInt(bytes: number[]): bigint {
@@ -41,39 +41,17 @@ function readU64ReturnValue(value: unknown, fieldName: string): bigint {
 }
 
 export async function getSoulPurchaseQuote(params: {
-  sellerKioskId: string
-  soulObjectId: string
+  listingObjectId: string
 }): Promise<SoulPurchaseQuote> {
-  const adapterPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID')
-  const marketplaceId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_CPU_MARKETPLACE_ID')
-  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
 
   const tx = new Transaction()
   tx.moveCall({
-    target: `${adapterPackageId}::market::quote_purchase`,
+    target: `${packageId}::market::quote_fixed_price`,
     arguments: [
-      tx.object(params.sellerKioskId),
-      tx.object(marketplaceId),
-      tx.object(transferPolicyId),
-      tx.object(params.soulObjectId),
-    ],
-  })
-
-  return parseQuoteDevInspectResult(tx)
-}
-
-export async function getSoulSecondaryPurchaseQuote(params: {
-  priceSui: bigint
-}): Promise<SoulPurchaseQuote> {
-  const soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
-
-  const tx = new Transaction()
-  tx.moveCall({
-    target: `${soulPackageId}::market::quote_purchase`,
-    arguments: [
-      tx.object(transferPolicyId),
-      tx.pure.u64(params.priceSui),
+      tx.object(marketConfigId),
+      tx.object(params.listingObjectId),
     ],
   })
 
@@ -96,9 +74,9 @@ async function parseQuoteDevInspectResult(tx: Transaction): Promise<SoulPurchase
   }
 
   return {
-    marketplaceFeeSui: readU64ReturnValue(returnValues[0], 'quote marketplace fee'),
-    priceSui: readU64ReturnValue(returnValues[1], 'quote listing price'),
-    royaltyFeeSui: readU64ReturnValue(returnValues[2], 'quote royalty fee'),
-    totalSui: readU64ReturnValue(returnValues[3], 'quote total'),
+    platformFeeAtomic: readU64ReturnValue(returnValues[0], 'quote platform fee'),
+    priceAtomic: readU64ReturnValue(returnValues[1], 'quote listing price'),
+    creatorRoyaltyAtomic: readU64ReturnValue(returnValues[2], 'quote creator royalty'),
+    totalAtomic: readU64ReturnValue(returnValues[3], 'quote total'),
   }
 }

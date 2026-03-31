@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 import {
@@ -15,6 +16,7 @@ export const MISSING_CLIENT_IP_ERROR = 'Unable to determine client IP'
 
 const globalRateLimitState = globalThis as typeof globalThis & {
   __clawnewsUpstashRedis?: Redis
+  __clawnewsRateLimitFallbackWarnings?: Set<string>
 }
 
 // --- Upstash Redis (production) ---
@@ -43,6 +45,24 @@ function createUpstashLimiter(opts: RateLimitOptions): Ratelimit | null {
   })
 }
 
+function warnRateLimitFallbackOnce(details: { reason: 'remote_unavailable' | 'remote_error'; error?: unknown }) {
+  const warnings = globalRateLimitState.__clawnewsRateLimitFallbackWarnings ?? new Set<string>()
+  if (!globalRateLimitState.__clawnewsRateLimitFallbackWarnings) {
+    globalRateLimitState.__clawnewsRateLimitFallbackWarnings = warnings
+  }
+
+  const warningKey = details.reason
+  if (warnings.has(warningKey)) {
+    return
+  }
+  warnings.add(warningKey)
+
+  console.warn('[rate-limit] Falling back to in-memory limiter', {
+    reason: details.reason,
+    error: details.error instanceof Error ? details.error.message : undefined,
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Public API — same interface as before
 // ---------------------------------------------------------------------------
@@ -56,6 +76,7 @@ export async function takeRateLimitToken(
     key,
     options,
     takeRemoteToken: limiter ? () => limiter.limit(key) : null,
+    onRemoteFallback: warnRateLimitFallbackOnce,
   })
 }
 
@@ -78,6 +99,19 @@ export function getRequestIp(headers: Headers): string | null {
     if (first) return first
   }
   return null
+}
+
+export function getAnonymousRateLimitFingerprint(headers: Headers): string | null {
+  const fingerprintParts = [
+    headers.get('user-agent')?.trim() ?? '',
+    headers.get('accept-language')?.trim() ?? '',
+    headers.get('sec-ch-ua')?.trim() ?? '',
+    headers.get('sec-ch-ua-platform')?.trim() ?? '',
+  ]
+  if (fingerprintParts.every((value) => value.length === 0)) {
+    return null
+  }
+  return createHash('sha256').update(fingerprintParts.join('\n')).digest('hex').slice(0, 24)
 }
 
 // --- Test helpers ---

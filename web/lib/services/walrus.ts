@@ -128,11 +128,31 @@ function extractBlobIdFromWalrusUrl(value: string): string | null {
   }
 }
 
+function tryDecimalU256ToBase64Url(value: string): string | null {
+  if (!/^\d+$/.test(value) || value.length < 10 || value.length > 78) return null
+  try {
+    let n = BigInt(value)
+    const bytes = new Uint8Array(32)
+    for (let i = 0; i < 32; i++) {
+      bytes[i] = Number(n & 0xffn)
+      n >>= 8n
+    }
+    if (n !== 0n) return null
+    const base64 = Buffer.from(bytes).toString('base64')
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  } catch {
+    return null
+  }
+}
+
 export function normalizeWalrusBlobId(value: unknown): string | null {
   if (typeof value !== 'string') return null
 
   const trimmed = value.trim()
   if (!trimmed) return null
+
+  const fromDecimal = tryDecimalU256ToBase64Url(trimmed)
+  if (fromDecimal) return fromDecimal
 
   const blobId = extractBlobIdFromWalrusUrl(trimmed) ?? trimmed
   if (

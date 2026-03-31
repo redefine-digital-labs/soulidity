@@ -1,7 +1,7 @@
 import { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 
-export type SoulTxSyncRouteKey = 'purchase' | 'publish' | 'grant:set' | 'grant:revoke'
+export type SoulTxSyncRouteKey = 'purchase' | 'publish' | 'delist' | 'allowlist:set' | 'allowlist:clear'
 
 type SoulTxSyncBody = Record<string, unknown>
 type SoulTxSyncDbClient = typeof prisma | Prisma.TransactionClient

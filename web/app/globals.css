@@ -25,6 +25,8 @@
   --accent-violet-dim: rgba(124, 58, 237, 0.08);
   --accent-blue: #2563eb;
   --accent-blue-dim: rgba(37, 99, 235, 0.08);
+  --accent-sealed: #64748b;
+  --accent-sealed-dim: rgba(100, 116, 139, 0.08);
   --font-display: 'Bricolage Grotesque', ui-serif, Georgia, serif;
   --font-body: 'Outfit', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -90,6 +92,13 @@ h1, h2, h3 {
   border-radius: var(--radius);
 }
 
+input.glass-panel:focus,
+textarea.glass-panel:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.08);
+  outline: none;
+}
+
 /* Subtle glow on interactive elements */
 .glow-cyan:hover {
   box-shadow: 0 0 20px rgba(8, 145, 178, 0.1);
@@ -115,6 +124,64 @@ h1, h2, h3 {
 .badge-violet { background: var(--accent-violet-dim); color: var(--accent-violet); }
 .badge-blue { background: var(--accent-blue-dim); color: var(--accent-blue); }
 .badge-muted { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border-subtle); }
+.badge-sealed { background: var(--accent-sealed-dim); color: var(--accent-sealed); }
+
+/* Status badge — overlaid on SoulCard images */
+.status-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.status-badge-listed {
+  background: rgba(8, 145, 178, 0.85);
+  color: white;
+}
+
+.status-badge-held {
+  background: rgba(5, 150, 105, 0.85);
+  color: white;
+}
+
+/* Sealed content panel */
+.sealed-panel {
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-sealed-dim);
+  border: 1px solid rgba(100, 116, 139, 0.15);
+}
+
+.sealed-panel-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent-sealed);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sealed-panel-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+}
+
+.sealed-panel-key { color: var(--text-muted); }
+.sealed-panel-val {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
 
 /* Gradient text */
 .text-gradient {
@@ -332,6 +399,39 @@ select.input-dark {
   background: var(--accent-cyan-dim);
   border-color: rgba(8, 145, 178, 0.3);
   color: var(--accent-cyan);
+}
+
+/* Skeleton loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-hover) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius);
+}
+
+/* Scrollbar hidden for horizontal scroll areas */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Purchase success animation */
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out both;
+}
+
+/* Focus visible ring */
+:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
 }
 
 /* Subtle separator */

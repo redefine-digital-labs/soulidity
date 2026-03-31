@@ -259,6 +259,45 @@ describe('soul publish route', () => {
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })
 
+  it('starts soul-state verification before the transaction fetch resolves', async () => {
+    let resolveTransaction: ((value: unknown) => void) | null = null
+    mockedGetSuccessfulTransactionBlock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTransaction = resolve
+    }))
+
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const responsePromise = POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+
+    resolveTransaction?.({
+      digest: TX_DIGEST,
+      transaction: {
+        data: {
+          sender: AUTHOR_ADDRESS,
+        },
+      },
+    })
+
+    const response = await responsePromise
+    expect(response.status).toBe(200)
+  })
+
   it('rejects preview image arrays that exceed the server-side publish limit before on-chain verification', async () => {
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(new Request('http://localhost/api/souls/publish', {

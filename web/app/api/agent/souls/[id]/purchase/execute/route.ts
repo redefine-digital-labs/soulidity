@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
+import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
 import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { suiClient } from '@web/lib/sui'
@@ -13,11 +14,21 @@ import {
   storePreparedSoulPurchaseExecutionDigest,
   ZOMBIE_CLAIM_AGE_THRESHOLD_MS,
 } from '@web/lib/souls/prepared-purchase'
-import { dbSetSoulOwnership } from '@web/lib/souls/post-tx-db'
+import {
+  dbSetSoulOwnership,
+  narrowListingStatus,
+  SoulMirrorOwnershipConflictError,
+} from '@web/lib/souls/post-tx-db'
+import {
+  buildPurchaseOwnershipConflictBody,
+  buildPurchaseOwnershipChangedBody,
+} from '@web/lib/souls/purchase-sync-state'
 import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import {
   extractSoulPurchasedEvent,
+  getTrustedPackageIds,
+  getVerifiedPersonalKioskCapState,
   getVerifiedSoulState,
   OnChainVerificationError,
   sameSuiValue,
@@ -35,6 +46,20 @@ const AGENT_EXECUTE_RATE_LIMIT = {
   windowMs: 60 * 1000,
 } as const
 const MAX_EXECUTE_SIGNATURE_LENGTH = 1024
+
+function tryExtractSoulPurchasedEventWithCurrentPackage(
+  transaction: Parameters<typeof extractSoulPurchasedEvent>[0],
+  packageId: string,
+) {
+  try {
+    return extractSoulPurchasedEvent(transaction, packageId)
+  } catch (error) {
+    if (error instanceof OnChainVerificationError) {
+      return null
+    }
+    throw error
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -74,10 +99,8 @@ export async function POST(
   }
 
   let soulPackageId: string
-  let marketPackageId: string
   try {
     soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-    marketPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID')
   } catch {
     return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
   }
@@ -86,7 +109,7 @@ export async function POST(
   try {
     agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
   } catch (walletError) {
-    if (walletError instanceof Error && walletError.name === 'MultipleSuiWalletBindingsError') {
+    if (isMultipleSuiWalletBindingsError(walletError)) {
       return NextResponse.json({ error: walletError.message }, { status: 409 })
     }
     throw walletError
@@ -118,21 +141,152 @@ export async function POST(
       return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
     }
 
-    try {
-      const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
-      if (soulState.ownerAddress && sameSuiValue(soulState.ownerAddress, agentAddress)) {
-        await dbSetSoulOwnership({
-          soulOnChainId: soul.onChainId,
-          currentOwnerAddress: soulState.ownerAddress,
-          listingStatus: 'held',
-          sellerKioskId: null,
-          listedPriceSui: null,
-          grantVersion: soulState.grantVersion,
+    let currentKioskId = typeof cachedBody.currentKioskId === 'string' ? cachedBody.currentKioskId : null
+    let currentKioskCapOnChainId = typeof cachedBody.currentKioskCapOnChainId === 'string' ? cachedBody.currentKioskCapOnChainId : null
+    if (!currentKioskId || !currentKioskCapOnChainId) {
+      try {
+        const recoveredTx = await getSuccessfulTransactionBlock(cachedBody.digest as string)
+        const recoveredDirectPurchaseEvent = tryExtractSoulPurchasedEventWithCurrentPackage(recoveredTx, soulPackageId)
+        const recoveredSoulState = await getVerifiedSoulState(
+          soul.onChainId,
+          soulPackageId,
+          recoveredDirectPurchaseEvent ? { expectedKioskId: recoveredDirectPurchaseEvent.buyerKioskId } : undefined,
+        )
+        const purchaseEvent = recoveredDirectPurchaseEvent ?? extractSoulPurchasedEvent(
+          recoveredTx,
+          soulPackageId,
+          getTrustedPackageIds(soulPackageId, recoveredSoulState.packageId),
+        )
+        if (!sameSuiValue(purchaseEvent.buyerAddress, agentAddress)) {
+          const mismatchBody = {
+            digest: cachedBody.digest,
+            soulOnChainId: soul.onChainId,
+            onChainSuccess: true,
+            dbSynced: false,
+            error: 'Purchased Soul owner does not match the agent wallet',
+          }
+          await finalizePreparedSoulPurchaseExecution({
+            preparedPurchaseId,
+            txDigest: cachedBody.digest as string,
+            resultStatusCode: 422,
+            resultBody: mismatchBody,
+          })
+          return NextResponse.json(mismatchBody, { status: 422 })
+        }
+        currentKioskId = purchaseEvent.buyerKioskId
+        currentKioskCapOnChainId = purchaseEvent.buyerKioskCapOnChainId
+      } catch (kioskRecoveryError) {
+        console.warn('[agent-purchase-execute] Skipping cached partial-result re-sync because kiosk ids are missing and on-chain recovery failed', {
+          preparedPurchaseId,
+          error: toSafeErrorDetails(kioskRecoveryError),
         })
+        return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
+      }
+    }
+
+    try {
+      const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId, {
+        expectedKioskId: currentKioskId,
+      })
+      const soulKioskIdRecovery = soulState.kioskParentId ?? soulState.ownerObjectId
+      if (
+        preparedPurchase.resultStatusCode === 207
+        && (
+          soulState.ownerKind !== 'object'
+          || !soulKioskIdRecovery
+          || !sameSuiValue(soulKioskIdRecovery, currentKioskId)
+        )
+      ) {
+        const ownershipChangedBody = buildPurchaseOwnershipChangedBody({
+          digest: cachedBody.digest as string,
+          soulOnChainId: soul.onChainId,
+        })
+        await finalizePreparedSoulPurchaseExecution({
+          preparedPurchaseId,
+          txDigest: cachedBody.digest as string,
+          resultStatusCode: 410,
+          resultBody: ownershipChangedBody,
+        })
+        return NextResponse.json(ownershipChangedBody, { status: 410 })
+      }
+      if (
+        soulState.ownerKind === 'object'
+        && soulKioskIdRecovery && sameSuiValue(
+          soulKioskIdRecovery,
+          currentKioskId,
+        )
+      ) {
+        const kioskCapState = await getVerifiedPersonalKioskCapState(currentKioskCapOnChainId)
+        if (
+          !sameSuiValue(kioskCapState.kioskId, currentKioskId)
+          || !sameSuiValue(kioskCapState.ownerAddress, agentAddress)
+        ) {
+          console.warn('[agent-purchase-execute] Recovered kiosk cap does not match the agent wallet', {
+            preparedPurchaseId,
+            expectedAgentAddress: agentAddress,
+            recoveredKioskId: kioskCapState.kioskId,
+            cachedKioskId: currentKioskId,
+            recoveredKioskCapOwner: kioskCapState.ownerAddress,
+          })
+          const mismatchBody = {
+            digest: cachedBody.digest,
+            soulOnChainId: soul.onChainId,
+            currentOwnerAddress: agentAddress,
+            currentKioskId,
+            currentKioskCapOnChainId,
+            onChainSuccess: true,
+            dbSynced: false,
+            error: 'Purchase ownership verification failed',
+          }
+          await finalizePreparedSoulPurchaseExecution({
+            preparedPurchaseId,
+            txDigest: cachedBody.digest as string,
+            resultStatusCode: 422,
+            resultBody: mismatchBody,
+          })
+          return NextResponse.json(mismatchBody, { status: 422 })
+        }
+        try {
+          await dbSetSoulOwnership({
+            soulOnChainId: soul.onChainId,
+            currentOwnerAddress: agentAddress,
+            currentOwnerMemberId: agent.agentMemberId,
+            currentKioskId,
+            currentKioskCapOnChainId,
+            listingObjectOnChainId: null,
+            listingStatus: 'held',
+            listedPriceAtomic: null,
+            allowlistVersion: soulState.allowlistVersion,
+            expectedCurrentOwnerAddress: soul.currentOwnerAddress,
+            expectedCurrentKioskId: soul.currentKioskId,
+            expectedListingStatus: narrowListingStatus(soul.listingStatus),
+          })
+        } catch (syncError) {
+          if (syncError instanceof SoulMirrorOwnershipConflictError) {
+            const conflictBody = buildPurchaseOwnershipConflictBody({
+              digest: cachedBody.digest as string,
+              soulOnChainId: soul.onChainId,
+              currentOwnerAddress: agentAddress,
+              currentKioskId,
+              currentKioskCapOnChainId,
+              ownerLabel: 'agent',
+            })
+            await finalizePreparedSoulPurchaseExecution({
+              preparedPurchaseId,
+              txDigest: cachedBody.digest as string,
+              resultStatusCode: 409,
+              resultBody: conflictBody,
+            })
+            return NextResponse.json(conflictBody, { status: 409 })
+          }
+          throw syncError
+        }
         const syncedBody = {
           digest: cachedBody.digest,
           soulOnChainId: soul.onChainId,
-          currentOwnerAddress: soulState.ownerAddress,
+          currentOwnerAddress: agentAddress,
+          currentKioskId,
+          currentKioskCapOnChainId,
           onChainSuccess: true,
           dbSynced: true,
         }
@@ -171,12 +325,17 @@ export async function POST(
     submittedTransaction: Parameters<typeof extractSoulPurchasedEvent>[0] & { digest: string },
     expectedSellerKioskId: string,
   ) => {
-    let purchaseEvent: ReturnType<typeof extractSoulPurchasedEvent>
-    try {
-      purchaseEvent = extractSoulPurchasedEvent(submittedTransaction, marketPackageId)
-    } catch {
-      purchaseEvent = extractSoulPurchasedEvent(submittedTransaction, soulPackageId)
-    }
+    const directPurchaseEvent = tryExtractSoulPurchasedEventWithCurrentPackage(submittedTransaction, soulPackageId)
+    const soulState = await getVerifiedSoulState(
+      soul.onChainId,
+      soulPackageId,
+      directPurchaseEvent ? { expectedKioskId: directPurchaseEvent.buyerKioskId } : undefined,
+    )
+    const purchaseEvent = directPurchaseEvent ?? extractSoulPurchasedEvent(
+      submittedTransaction,
+      soulPackageId,
+      getTrustedPackageIds(soulPackageId, soulState.packageId),
+    )
     if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
       return await finalizePreparedResult(submittedTransaction.digest, 422, { error: 'Transaction did not purchase the requested Soul' })
     }
@@ -191,36 +350,81 @@ export async function POST(
       })
     }
 
-    const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
-    if (!soulState.ownerAddress || !sameSuiValue(soulState.ownerAddress, agentAddress)) {
+    const soulKioskIdAgent = soulState.kioskParentId ?? soulState.ownerObjectId
+    if (soulState.ownerKind !== 'object' || !soulKioskIdAgent || !sameSuiValue(soulKioskIdAgent, purchaseEvent.buyerKioskId)) {
       return await finalizePreparedResult(submittedTransaction.digest, 422, {
-        error: 'Purchased Soul was not transferred to the agent wallet',
+        error: 'Purchased Soul was not moved into the agent kiosk',
       })
     }
 
-    let dbSynced = true
+    const buyerKioskCapState = await getVerifiedPersonalKioskCapState(purchaseEvent.buyerKioskCapOnChainId)
+    if (!sameSuiValue(buyerKioskCapState.kioskId, purchaseEvent.buyerKioskId)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul kiosk cap does not match the buyer kiosk',
+      })
+    }
+    if (!sameSuiValue(buyerKioskCapState.ownerAddress, agentAddress)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul kiosk cap does not belong to the agent wallet',
+      })
+    }
+
+    let statusCode = 200
+    let resultBody: Record<string, unknown>
     try {
       await dbSetSoulOwnership({
         soulOnChainId: soul.onChainId,
-        currentOwnerAddress: soulState.ownerAddress,
+        currentOwnerAddress: agentAddress,
+        currentOwnerMemberId: agent.agentMemberId,
+        currentKioskId: purchaseEvent.buyerKioskId,
+        currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+        listingObjectOnChainId: null,
         listingStatus: 'held',
-        sellerKioskId: null,
-        listedPriceSui: null,
-        grantVersion: soulState.grantVersion,
+        listedPriceAtomic: null,
+        allowlistVersion: soulState.allowlistVersion,
+        expectedCurrentOwnerAddress: soul.currentOwnerAddress,
+        expectedCurrentKioskId: soul.currentKioskId,
+        expectedListingStatus: narrowListingStatus(soul.listingStatus),
       })
+      resultBody = {
+        digest: submittedTransaction.digest,
+        soulOnChainId: soul.onChainId,
+        currentOwnerAddress: agentAddress,
+        currentKioskId: purchaseEvent.buyerKioskId,
+        currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+        listingStatus: 'held' as const,
+        onChainSuccess: true,
+        dbSynced: true,
+      }
     } catch (syncError) {
-      dbSynced = false
-      console.error('[agent-purchase-execute] Local soul sync failed', toSafeErrorDetails(syncError))
+      if (syncError instanceof SoulMirrorOwnershipConflictError) {
+        statusCode = 409
+        resultBody = buildPurchaseOwnershipConflictBody({
+          digest: submittedTransaction.digest,
+          soulOnChainId: soul.onChainId,
+          currentOwnerAddress: agentAddress,
+          currentKioskId: purchaseEvent.buyerKioskId,
+          currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+          ownerLabel: 'agent',
+        })
+      } else {
+        statusCode = 207
+        console.error('[agent-purchase-execute] Local soul sync failed', toSafeErrorDetails(syncError))
+        resultBody = {
+          digest: submittedTransaction.digest,
+          soulOnChainId: soul.onChainId,
+          currentOwnerAddress: agentAddress,
+          currentKioskId: purchaseEvent.buyerKioskId,
+          currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+          listingStatus: 'held' as const,
+          onChainSuccess: true,
+          dbSynced: false,
+          error: 'Transaction succeeded on chain, but local Soul sync failed.',
+        }
+      }
     }
 
-    return await finalizePreparedResult(submittedTransaction.digest, dbSynced ? 200 : 207, {
-      digest: submittedTransaction.digest,
-      soulOnChainId: soul.onChainId,
-      currentOwnerAddress: soulState.ownerAddress,
-      onChainSuccess: true,
-      dbSynced,
-      ...(dbSynced ? {} : { error: 'Transaction succeeded on chain, but local Soul sync failed.' }),
-    })
+    return await finalizePreparedResult(submittedTransaction.digest, statusCode, resultBody)
   }
 
   if (preparedPurchase.executedAt) {
@@ -313,8 +517,11 @@ export async function POST(
 
   if (result.effects?.status?.status !== 'success') {
     await releaseExecutionClaim()
-    const effectsError = result.effects?.status?.error ?? 'Transaction effects indicate failure'
-    return NextResponse.json({ error: effectsError }, { status: 400 })
+    console.error('[agent-purchase-execute] Transaction effects indicate failure', {
+      preparedPurchaseId,
+      error: result.effects?.status?.error ?? 'Transaction effects indicate failure',
+    })
+    return NextResponse.json({ error: 'Transaction effects indicate failure' }, { status: 400 })
   }
 
   await waitForTransactionBestEffort(suiClient, result.digest)

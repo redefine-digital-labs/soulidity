@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
+import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
 import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { suiClient } from '@web/lib/sui'
 import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
+import { CoinPaginationExhaustedError, selectCoinObjectIdsForAmountAcrossPages } from '@web/lib/souls/coin-selection'
 import { createPreparedSoulPurchase } from '@web/lib/souls/prepared-purchase'
-import { getSoulPurchaseQuote, getSoulSecondaryPurchaseQuote } from '@web/lib/souls/purchase-quote'
+import { resolveOwnedPersonalKiosk, SoulPersonalKioskInvariantError } from '@web/lib/souls/personal-kiosk'
+import { getSoulPurchaseQuote } from '@web/lib/souls/purchase-quote'
 import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
 import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
-import { buildBuySoulTx, buildBuySecondarySoulTx } from '@web/lib/souls/tx-builder'
+import { getRequiredPublicEnv } from '@web/lib/souls/config'
+import { buildBuySoulTx } from '@web/lib/souls/tx-builder'
+import { suiClient } from '@web/lib/sui'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,8 +23,26 @@ const AGENT_PURCHASE_RATE_LIMIT = {
   windowMs: 60 * 1000,
 } as const
 
-async function assertCoreListingStillActive(params: {
-  tx: ReturnType<typeof buildBuySecondarySoulTx>
+function getPaymentCoinSymbol(coinType: string) {
+  const parts = coinType.split('::')
+  return parts.at(-1) ?? 'payment coin'
+}
+
+function getMissingPaymentCoinMessage(coinType: string) {
+  return `No ${getPaymentCoinSymbol(coinType)} found in the agent wallet. You may need to acquire some first.`
+}
+
+function getCoinPaginationExhaustedMessage(coinType: string) {
+  return `Too many ${getPaymentCoinSymbol(coinType)} coin objects to prepare this purchase automatically. Consolidate them and try again.`
+}
+
+function assertAgentPurchaseBuildConfig() {
+  getRequiredPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
+  return getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE')
+}
+
+async function assertListingStillActive(params: {
+  tx: ReturnType<typeof buildBuySoulTx>
   buyerAddress: string
 }) {
   const inspection = await suiClient.devInspectTransactionBlock({
@@ -50,15 +72,18 @@ export async function POST(
 
   const { id } = await params
   const soul = await findSoulAssetDetailByRouteId(id)
-  if (!soul || soul.listingStatus !== 'listed' || !soul.sellerKioskId || soul.listedPriceSui == null) {
+  if (!soul || soul.listingStatus !== 'listed' || soul.listedPriceAtomic == null || !soul.listingObjectOnChainId) {
     return NextResponse.json({ error: 'Soul is not currently listed for sale' }, { status: 404 })
+  }
+  if (!soul.currentKioskId) {
+    return NextResponse.json({ error: 'Soul listing missing kiosk' }, { status: 409 })
   }
 
   let agentAddress: string | null
   try {
     agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
   } catch (walletError) {
-    if (walletError instanceof Error && walletError.name === 'MultipleSuiWalletBindingsError') {
+    if (isMultipleSuiWalletBindingsError(walletError)) {
       return NextResponse.json({ error: walletError.message }, { status: 409 })
     }
     throw walletError
@@ -67,46 +92,86 @@ export async function POST(
     return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 403 })
   }
 
+  let paymentCoinType: string
   try {
-    const isSecondary = soul.listingSource === 'core'
-    const quote = isSecondary
-      ? await getSoulSecondaryPurchaseQuote({ priceSui: BigInt(soul.listedPriceSui!.toString()) })
-      : await getSoulPurchaseQuote({ sellerKioskId: soul.sellerKioskId!, soulObjectId: soul.onChainId })
-    const feeAmountSui = quote.totalSui - quote.priceSui
+    paymentCoinType = assertAgentPurchaseBuildConfig()
+  } catch (configError) {
+    return NextResponse.json(
+      { error: configError instanceof Error ? configError.message : 'Service temporarily unavailable' },
+      { status: 503 },
+    )
+  }
 
-    const balance = await suiClient.getBalance({ owner: agentAddress })
-    const requiredBalance = quote.totalSui + PURCHASE_GAS_BUDGET_BUFFER_MIST
-    if (BigInt(balance.totalBalance) < requiredBalance) {
+  try {
+    const [resolvedBuyerKiosk, quote, gasBalance] = await Promise.all([
+      resolveOwnedPersonalKiosk({ ownerAddresses: [agentAddress] }),
+      getSoulPurchaseQuote({ listingObjectId: soul.listingObjectOnChainId }),
+      suiClient.getBalance({ owner: agentAddress }),
+    ])
+    if (resolvedBuyerKiosk.status === 'missing') {
       return NextResponse.json(
-        { error: `Insufficient SUI balance for purchase. Required: ${requiredBalance} MIST (includes gas reserve), available: ${balance.totalBalance} MIST.` },
+        { error: 'Agent wallet must initialize a Soul personal kiosk before purchasing' },
+        { status: 409 },
+      )
+    }
+    const paymentCoinSymbol = getPaymentCoinSymbol(paymentCoinType)
+    const paymentCoinObjectIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
+      owner: agentAddress,
+      coinType: paymentCoinType,
+      requiredAmount: quote.totalAtomic,
+    })
+    if (paymentCoinObjectIds === null) {
+      const paymentBalance = await suiClient.getBalance({ owner: agentAddress, coinType: paymentCoinType })
+      return NextResponse.json(
+        {
+          error: `Insufficient ${paymentCoinSymbol} balance for purchase. Required: ${quote.totalAtomic.toString()} atomic units, available: ${paymentBalance.totalBalance}.`,
+        },
+        { status: 402 },
+      )
+    }
+    if (paymentCoinObjectIds.length === 0) {
+      return NextResponse.json(
+        { error: getMissingPaymentCoinMessage(paymentCoinType) },
+        { status: 402 },
+      )
+    }
+
+    if (BigInt(gasBalance.totalBalance) < PURCHASE_GAS_BUDGET_BUFFER_MIST) {
+      return NextResponse.json(
+        {
+          error: `Insufficient SUI gas balance for purchase. Required reserve: ${PURCHASE_GAS_BUDGET_BUFFER_MIST} MIST, available: ${gasBalance.totalBalance} MIST.`,
+        },
         { status: 402 },
       )
     }
 
     const txParams = {
-      soulObjectId: soul.onChainId,
-      sellerKioskId: soul.sellerKioskId!,
-      buyerAddress: agentAddress,
-      priceSui: quote.priceSui,
-      feeAmountSui,
+      listingObjectId: soul.listingObjectOnChainId,
+      sellerKioskId: soul.currentKioskId,
+      buyerKioskId: resolvedBuyerKiosk.kiosk.currentKioskId,
+      buyerKioskCapOnChainId: resolvedBuyerKiosk.kiosk.currentKioskCapOnChainId,
+      totalAtomic: quote.totalAtomic,
+      paymentCoinObjectIds,
     }
-    const tx = isSecondary ? buildBuySecondarySoulTx(txParams) : buildBuySoulTx(txParams)
+    const tx = buildBuySoulTx(txParams)
     tx.setSender(agentAddress)
-    if (isSecondary) {
-      await assertCoreListingStillActive({
-        tx,
-        buyerAddress: agentAddress,
-      })
-    }
+    await assertListingStillActive({
+      tx,
+      buyerAddress: agentAddress,
+    })
 
     const txBytes = await tx.build({ client: suiClient })
     const txBytesBase64 = Buffer.from(txBytes).toString('base64')
     const preparedPurchase = await createPreparedSoulPurchase({
       agentMemberId: agent.agentMemberId,
       soulOnChainId: soul.onChainId,
-      sellerKioskId: soul.sellerKioskId,
+      listingObjectId: soul.listingObjectOnChainId,
+      sellerKioskId: soul.currentKioskId,
       agentAddress,
-      priceSui: quote.priceSui,
+      priceAtomic: quote.priceAtomic,
+      platformFeeAtomic: quote.platformFeeAtomic,
+      creatorRoyaltyAtomic: quote.creatorRoyaltyAtomic,
+      totalAtomic: quote.totalAtomic,
       txBytesBase64,
     })
 
@@ -115,14 +180,30 @@ export async function POST(
       txBytes: txBytesBase64,
       context: {
         soulOnChainId: soul.onChainId,
-        sellerKioskId: soul.sellerKioskId,
-        priceSui: quote.priceSui.toString(),
-        feeAmountSui: feeAmountSui.toString(),
+        listingObjectId: soul.listingObjectOnChainId,
+        sellerKioskId: soul.currentKioskId,
+        priceAtomic: quote.priceAtomic.toString(),
+        platformFeeAtomic: quote.platformFeeAtomic.toString(),
+        creatorRoyaltyAtomic: quote.creatorRoyaltyAtomic.toString(),
+        totalAtomic: quote.totalAtomic.toString(),
+        paymentCoinType,
         agentAddress,
         expiresAt: preparedPurchase.expiresAt.toISOString(),
       },
     })
   } catch (error) {
+    if (error instanceof SoulPersonalKioskInvariantError) {
+      return NextResponse.json(
+        { error: 'Agent wallet has multiple Soul personal kiosks; choose the intended kiosk before purchasing.' },
+        { status: 409 },
+      )
+    }
+    if (error instanceof CoinPaginationExhaustedError) {
+      return NextResponse.json(
+        { error: getCoinPaginationExhaustedMessage(paymentCoinType) },
+        { status: 409 },
+      )
+    }
     if (error instanceof OnChainVerificationError) {
       return NextResponse.json(
         { error: getClientSafeOnChainVerificationErrorMessage(error) },

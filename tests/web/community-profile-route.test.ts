@@ -136,6 +136,7 @@ describe('community profile route', () => {
       ],
     })
     expect(visitorPayload.uploadedSouls[0]).not.toHaveProperty('currentOwnerAddress')
+    expect(visitorPayload.uploadedSouls[0]).not.toHaveProperty('currentKioskId')
 
     expect(mockedPrisma.member.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       select: expect.objectContaining({

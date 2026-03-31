@@ -234,6 +234,38 @@ fun quote_purchase_rejects_creator_royalty_above_max_bps() {
 }
 
 #[test]
+#[expected_failure(abort_code = soul_object::soul::ECreatorRoyaltyTooHigh)]
+fun mint_and_list_fixed_price_rejects_creator_royalty_above_publish_cap() {
+    let admin = @0xA11CE;
+    let seller = admin;
+    let mut scenario = ts::begin(@0x0);
+
+    init_market_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, seller);
+    {
+        let mut config: market::MarketConfig = ts::take_shared(&scenario);
+        let (walrus_system, content_blob) = register_test_blob(ts::ctx(&mut scenario));
+
+        market::mint_and_list_fixed_price(
+            &mut config,
+            string::utf8(b"Genesis Soul"),
+            string::utf8(b"Single-owner artifact"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            content_blob,
+            SALE_PRICE,
+            2_501,
+            ts::ctx(&mut scenario),
+        );
+
+        std::unit_test::destroy(walrus_system);
+        ts::return_shared(config);
+        abort 0
+    }
+}
+
+#[test]
 #[expected_failure(abort_code = soul_object::market::ECombinedFeesTooHigh)]
 fun quote_purchase_rejects_combined_fees_above_max_bps() {
     let admin = @0xA11CE;
@@ -249,7 +281,7 @@ fun quote_purchase_rejects_combined_fees_above_max_bps() {
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
         let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
 
-        market::update_platform_fee_bps(&mut config, &admin_cap, 5_000);
+        market::update_platform_fee_bps(&mut config, &admin_cap, 8_000);
         market::quote_purchase(&config, 1_000, 6_000);
 
         ts::return_shared(config);
@@ -278,7 +310,7 @@ fun mint_and_list_fixed_price_rejects_combined_fees_above_max_bps() {
         let policy_cap: transfer_policy::TransferPolicyCap<soul::Soul> = ts::take_from_sender(&scenario);
         let treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
 
-        market::update_platform_fee_bps(&mut config, &admin_cap, 5_000);
+        market::update_platform_fee_bps(&mut config, &admin_cap, 8_000);
 
         ts::return_shared(config);
         ts::return_shared(policy);
@@ -300,7 +332,7 @@ fun mint_and_list_fixed_price_rejects_combined_fees_above_max_bps() {
             option::none(),
             content_blob,
             SALE_PRICE,
-            6_000,
+            2_500,
             ts::ctx(&mut scenario),
         );
 

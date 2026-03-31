@@ -259,6 +259,97 @@ describe('soul detail routes', () => {
     })
   })
 
+  it('reuses a short-lived cached purchase quote across repeated listed detail requests', async () => {
+    mockedToSoulAssetDetail
+      .mockReturnValueOnce({
+        id: 'asset-db-1',
+        onChainId: SOUL_ID,
+        name: 'Signal Soul',
+        description: 'desc',
+        imageUrl: 'https://example.com/soul.png',
+        category: 'Research',
+        tags: [],
+        previewImages: [],
+        creatorRoyaltyBps: 0,
+        listingObjectOnChainId: `0x${'6'.repeat(64)}`,
+        listedPriceAtomic: '1000000',
+        listingStatus: 'listed',
+        creatorAddress: `0x${'2'.repeat(64)}`,
+        currentOwnerAddress: `0x${'3'.repeat(64)}`,
+        createdAt: '2026-03-27T00:00:00.000Z',
+        updatedAt: '2026-03-27T00:00:00.000Z',
+        metadataRef: null,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: '0xblob',
+        currentKioskId: `0x${'4'.repeat(64)}`,
+        currentKioskCapOnChainId: `0x${'5'.repeat(64)}`,
+        readme: null,
+        allowlistAddress: null,
+        allowlistCapOnChainId: null,
+        allowlistVersion: '0',
+        creatorMemberId: 'creator-1',
+        currentOwnerMemberId: 'owner-1',
+        purchasePlatformFeeAtomic: null,
+        purchaseCreatorRoyaltyAtomic: null,
+        purchaseTotalAtomic: null,
+        quotedPriceAtomic: null,
+        isOwner: false,
+        isCreator: false,
+        isAllowlisted: false,
+      })
+      .mockReturnValueOnce({
+        id: 'asset-db-1',
+        onChainId: SOUL_ID,
+        name: 'Signal Soul',
+        description: 'desc',
+        imageUrl: 'https://example.com/soul.png',
+        category: 'Research',
+        tags: [],
+        previewImages: [],
+        creatorRoyaltyBps: 0,
+        listingObjectOnChainId: `0x${'6'.repeat(64)}`,
+        listedPriceAtomic: '1000000',
+        listingStatus: 'listed',
+        creatorAddress: `0x${'2'.repeat(64)}`,
+        currentOwnerAddress: `0x${'3'.repeat(64)}`,
+        createdAt: '2026-03-27T00:00:00.000Z',
+        updatedAt: '2026-03-27T00:00:00.000Z',
+        metadataRef: null,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: '0xblob',
+        currentKioskId: `0x${'4'.repeat(64)}`,
+        currentKioskCapOnChainId: `0x${'5'.repeat(64)}`,
+        readme: null,
+        allowlistAddress: null,
+        allowlistCapOnChainId: null,
+        allowlistVersion: '0',
+        creatorMemberId: 'creator-1',
+        currentOwnerMemberId: 'owner-1',
+        purchasePlatformFeeAtomic: null,
+        purchaseCreatorRoyaltyAtomic: null,
+        purchaseTotalAtomic: null,
+        quotedPriceAtomic: null,
+        isOwner: false,
+        isCreator: false,
+        isAllowlisted: false,
+      })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+
+    const firstResponse = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+    const secondResponse = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(200)
+    expect(mockedGetSoulPurchaseQuote).toHaveBeenCalledTimes(1)
+  })
+
   it('passes the authenticated viewer id into public detail serialization', async () => {
     mockedResolveIdentity.mockResolvedValueOnce({ memberId: 'owner-1' })
 
@@ -273,6 +364,37 @@ describe('soul detail routes', () => {
       viewerMemberId: 'owner-1',
       viewerWalletAddresses: [],
     })
+  })
+
+  it('starts viewer wallet lookup before the Soul detail query resolves for authenticated viewers', async () => {
+    mockedResolveIdentity.mockResolvedValueOnce({ memberId: 'owner-1' })
+    let resolveSoul: ((value: unknown) => void) | null = null
+    mockedFindSoulAssetDetailByRouteId.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSoul = resolve
+    }))
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const responsePromise = GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockedGetMemberSuiWalletAddresses).toHaveBeenCalledWith('owner-1')
+
+    resolveSoul?.({
+      id: 'asset-db-1',
+      onChainId: SOUL_ID,
+      creatorRoyaltyBps: 0,
+      listingObjectOnChainId: `0x${'6'.repeat(64)}`,
+      listedPriceAtomic: '1000000',
+      listingStatus: 'listed',
+      currentKioskId: `0x${'4'.repeat(64)}`,
+    })
+
+    const response = await responsePromise
+    expect(response.status).toBe(200)
   })
 
   it('marks the agent detail route as force-dynamic', async () => {

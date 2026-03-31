@@ -14,11 +14,6 @@ public struct SoulMinted has copy, drop {
 
 public struct SOUL has drop {}
 
-public struct SoulPackageAuthority has key {
-    id: UID,
-    publisher: Publisher,
-}
-
 public struct Soul has key, store {
     id: UID,
     name: String,
@@ -26,30 +21,50 @@ public struct Soul has key, store {
     image_url: String,
     metadata_ref: Option<String>,
     content_blob: Blob,
-    agent_grant: Option<address>,
-    grant_version: u64,
+    allowlist_address: Option<address>,
+    allowlist_version: u64,
     creator: address,
+    creator_royalty_bps: u16,
 }
+
+const ECreatorRoyaltyTooHigh: u64 = 0;
+const MAX_CREATOR_ROYALTY_BPS: u16 = 2_500;
 
 fun init(otw: SOUL, ctx: &mut TxContext) {
     let publisher = package::claim(otw, ctx);
     let recipient = ctx.sender();
     let soul_display = create_display(&publisher, ctx);
-    let authority = SoulPackageAuthority {
-        id: object::new(ctx),
-        publisher,
-    };
 
     transfer::public_transfer(soul_display, recipient);
-    transfer::transfer(authority, recipient);
+    publisher.burn();
 }
 
-public fun mint(
+public(package) fun mint(
     name: String,
     description: String,
     image_url: String,
     metadata_ref: Option<String>,
     content_blob: Blob,
+    ctx: &mut TxContext,
+): Soul {
+    mint_with_creator_royalty(
+        name,
+        description,
+        image_url,
+        metadata_ref,
+        content_blob,
+        0,
+        ctx,
+    )
+}
+
+public(package) fun mint_with_creator_royalty(
+    name: String,
+    description: String,
+    image_url: String,
+    metadata_ref: Option<String>,
+    content_blob: Blob,
+    creator_royalty_bps: u16,
     ctx: &mut TxContext,
 ): Soul {
     mint_with_creator(
@@ -59,22 +74,17 @@ public fun mint(
         image_url,
         metadata_ref,
         content_blob,
+        creator_royalty_bps,
         ctx,
     )
 }
 
-public fun publisher(self: &SoulPackageAuthority): &Publisher {
-    &self.publisher
-}
-
-public entry fun burn_authority(authority: SoulPackageAuthority) {
-    let SoulPackageAuthority { id, publisher } = authority;
-    id.delete();
-    publisher.burn();
-}
-
 public fun creator(self: &Soul): address {
     self.creator
+}
+
+public fun creator_royalty_bps(self: &Soul): u16 {
+    self.creator_royalty_bps
 }
 
 public fun name(self: &Soul): &String {
@@ -93,37 +103,37 @@ public fun metadata_ref(self: &Soul): &Option<String> {
     &self.metadata_ref
 }
 
-public fun agent_grant(self: &Soul): &Option<address> {
-    &self.agent_grant
+public fun allowlist_address(self: &Soul): &Option<address> {
+    &self.allowlist_address
 }
 
-public fun grant_version(self: &Soul): u64 {
-    self.grant_version
+public fun allowlist_version(self: &Soul): u64 {
+    self.allowlist_version
 }
 
 public fun content_blob_object_id(self: &Soul): ID {
     blob::object_id(&self.content_blob)
 }
 
-public(package) fun clear_agent_grant(self: &mut Soul) {
-    self.agent_grant = option::none();
-    self.grant_version = self.grant_version + 1;
+public(package) fun clear_allowlist_address(self: &mut Soul) {
+    self.allowlist_address = option::none();
+    self.allowlist_version = self.allowlist_version + 1;
 }
 
-public fun clear_agent_grant_if_present(self: &mut Soul): bool {
-    if (self.agent_grant.is_some()) {
-        self.agent_grant = option::none();
-        self.grant_version = self.grant_version + 1;
+public(package) fun clear_allowlist_address_if_present(self: &mut Soul): bool {
+    if (self.allowlist_address.is_some()) {
+        self.allowlist_address = option::none();
+        self.allowlist_version = self.allowlist_version + 1;
         true
     } else {
         false
     }
 }
 
-public(package) fun set_agent_grant(self: &mut Soul, agent: Option<address>): u64 {
-    self.agent_grant = agent;
-    self.grant_version = self.grant_version + 1;
-    self.grant_version
+public(package) fun set_allowlist_address(self: &mut Soul, allowlist_address: address): u64 {
+    self.allowlist_address = option::some(allowlist_address);
+    self.allowlist_version = self.allowlist_version + 1;
+    self.allowlist_version
 }
 
 fun mint_with_creator(
@@ -133,8 +143,10 @@ fun mint_with_creator(
     image_url: String,
     metadata_ref: Option<String>,
     content_blob: Blob,
+    creator_royalty_bps: u16,
     ctx: &mut TxContext,
 ): Soul {
+    assert!(creator_royalty_bps <= MAX_CREATOR_ROYALTY_BPS, ECreatorRoyaltyTooHigh);
     let blob_object_id = blob::object_id(&content_blob);
     let soul = Soul {
         id: object::new(ctx),
@@ -143,9 +155,10 @@ fun mint_with_creator(
         image_url,
         metadata_ref,
         content_blob,
-        agent_grant: option::none(),
-        grant_version: 0,
+        allowlist_address: option::none(),
+        allowlist_version: 0,
         creator,
+        creator_royalty_bps,
     };
 
     event::emit(SoulMinted {
@@ -171,12 +184,8 @@ fun create_display(publisher: &Publisher, ctx: &mut TxContext): Display<Soul> {
 public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
     let publisher = package::claim(SOUL {}, ctx);
     let soul_display = create_display(&publisher, ctx);
-    let authority = SoulPackageAuthority {
-        id: object::new(ctx),
-        publisher,
-    };
     transfer::public_transfer(soul_display, recipient);
-    transfer::transfer(authority, recipient);
+    publisher.burn();
 }
 
 #[test_only]
@@ -189,6 +198,29 @@ public fun mint_for_testing(
     content_blob: Blob,
     ctx: &mut TxContext,
 ): Soul {
+    mint_for_testing_with_creator_royalty(
+        creator,
+        name,
+        description,
+        image_url,
+        metadata_ref,
+        content_blob,
+        0,
+        ctx,
+    )
+}
+
+#[test_only]
+public fun mint_for_testing_with_creator_royalty(
+    creator: address,
+    name: String,
+    description: String,
+    image_url: String,
+    metadata_ref: Option<String>,
+    content_blob: Blob,
+    creator_royalty_bps: u16,
+    ctx: &mut TxContext,
+): Soul {
     mint_with_creator(
         creator,
         name,
@@ -196,6 +228,7 @@ public fun mint_for_testing(
         image_url,
         metadata_ref,
         content_blob,
+        creator_royalty_bps,
         ctx,
     )
 }
@@ -209,17 +242,11 @@ public fun destroy_for_testing(self: Soul): Blob {
         image_url: _,
         metadata_ref: _,
         content_blob,
-        agent_grant: _,
-        grant_version: _,
+        allowlist_address: _,
+        allowlist_version: _,
         creator: _,
+        creator_royalty_bps: _,
     } = self;
     id.delete();
     content_blob
-}
-
-#[test_only]
-public fun destroy_package_authority_for_testing(self: SoulPackageAuthority) {
-    let SoulPackageAuthority { id, publisher } = self;
-    id.delete();
-    publisher.burn();
 }

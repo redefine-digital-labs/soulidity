@@ -169,7 +169,7 @@ describe('on-chain verification helpers', () => {
     expect(mockedSuiClient.getObject).toHaveBeenCalledTimes(1)
   })
 
-  it('rejects creator royalty bps outside the supported 0-10000 range', async () => {
+  it('rejects creator royalty bps outside the supported 0-2500 range', async () => {
     mockedSuiClient.getObject.mockResolvedValue({
       data: {
         objectId: '0xsoul',
@@ -180,7 +180,7 @@ describe('on-chain verification helpers', () => {
           type: `${PACKAGE_ID}::soul::Soul`,
           fields: {
             creator: `0x${'2'.repeat(64)}`,
-            creator_royalty_bps: '10001',
+            creator_royalty_bps: '2501',
             name: 'Soul',
             description: 'Desc',
             image_url: 'https://example.com/soul.png',
@@ -335,6 +335,48 @@ describe('on-chain verification helpers', () => {
       soulObjectId,
       kioskId: kioskObjectId,
       kioskCapOnChainId: kioskCapObjectId,
+      sellerAddress: `0x${'1'.repeat(64)}`,
+      priceAtomic: 1000n,
+    })
+  })
+
+  it('uses the first trusted suffix-matched event when the exact package event is absent', async () => {
+    const { extractSoulListingEvent } = await import('../../web/lib/souls/on-chain-verification.ts')
+    const firstListingId = `0x${'a'.repeat(64)}`
+    const secondListingId = `0x${'b'.repeat(64)}`
+    const firstSoulId = `0x${'c'.repeat(64)}`
+    const secondSoulId = `0x${'d'.repeat(64)}`
+    const kioskObjectId = `0x${'8'.repeat(64)}`
+    const kioskCapObjectId = `0x${'6'.repeat(64)}`
+
+    expect(extractSoulListingEvent({
+      events: [
+        {
+          type: `${ORIGINAL_PACKAGE_ID}::market::SoulListed`,
+          parsedJson: {
+            listing_id: firstListingId,
+            soul_id: firstSoulId,
+            kiosk_id: kioskObjectId,
+            kiosk_cap_id: kioskCapObjectId,
+            seller: `0x${'1'.repeat(64)}`,
+            price: '1000',
+          },
+        },
+        {
+          type: `${ORIGINAL_PACKAGE_ID}::market::SoulListed`,
+          parsedJson: {
+            listing_id: secondListingId,
+            soul_id: secondSoulId,
+            kiosk_id: kioskObjectId,
+            kiosk_cap_id: kioskCapObjectId,
+            seller: `0x${'2'.repeat(64)}`,
+            price: '2000',
+          },
+        },
+      ],
+    }, PACKAGE_ID, [ORIGINAL_PACKAGE_ID])).toMatchObject({
+      listingObjectId: firstListingId,
+      soulObjectId: firstSoulId,
       sellerAddress: `0x${'1'.repeat(64)}`,
       priceAtomic: 1000n,
     })

@@ -68,9 +68,13 @@ function cleanupExpiredPreparedPurchases(): void {
 export async function createPreparedSoulPurchase(params: {
   agentMemberId: string
   soulOnChainId: string
+  listingObjectId: string
   sellerKioskId: string
   agentAddress: string
-  priceSui: bigint
+  priceAtomic: bigint
+  platformFeeAtomic: bigint
+  creatorRoyaltyAtomic: bigint
+  totalAtomic: bigint
   txBytesBase64: string
 }): Promise<{ id: string; expiresAt: Date }> {
   if (Buffer.byteLength(params.txBytesBase64, 'utf8') > MAX_PREPARED_TX_BYTES_BASE64) {
@@ -87,9 +91,13 @@ export async function createPreparedSoulPurchase(params: {
       data: {
         agentMemberId: params.agentMemberId,
         soulOnChainId: params.soulOnChainId,
+        listingObjectId: params.listingObjectId,
         sellerKioskId: params.sellerKioskId,
         agentAddress: params.agentAddress,
-        priceSui: params.priceSui.toString(),
+        priceAtomic: params.priceAtomic.toString(),
+        platformFeeAtomic: params.platformFeeAtomic.toString(),
+        creatorRoyaltyAtomic: params.creatorRoyaltyAtomic.toString(),
+        totalAtomic: params.totalAtomic.toString(),
         txBytesBase64: params.txBytesBase64,
         txBytesHash,
         expiresAt,
@@ -133,9 +141,13 @@ export async function createPreparedSoulPurchase(params: {
           },
           data: {
             soulOnChainId: params.soulOnChainId,
+            listingObjectId: params.listingObjectId,
             sellerKioskId: params.sellerKioskId,
             agentAddress: params.agentAddress,
-            priceSui: params.priceSui.toString(),
+            priceAtomic: params.priceAtomic.toString(),
+            platformFeeAtomic: params.platformFeeAtomic.toString(),
+            creatorRoyaltyAtomic: params.creatorRoyaltyAtomic.toString(),
+            totalAtomic: params.totalAtomic.toString(),
             txBytesBase64: params.txBytesBase64,
             expiresAt,
           },
@@ -158,9 +170,13 @@ export async function createPreparedSoulPurchase(params: {
             executedAt: null,
             executionTxDigest: null,
             soulOnChainId: params.soulOnChainId,
+            listingObjectId: params.listingObjectId,
             sellerKioskId: params.sellerKioskId,
             agentAddress: params.agentAddress,
-            priceSui: params.priceSui.toString(),
+            priceAtomic: params.priceAtomic.toString(),
+            platformFeeAtomic: params.platformFeeAtomic.toString(),
+            creatorRoyaltyAtomic: params.creatorRoyaltyAtomic.toString(),
+            totalAtomic: params.totalAtomic.toString(),
             txBytesBase64: params.txBytesBase64,
             expiresAt,
           },
@@ -188,9 +204,13 @@ export async function getPreparedSoulPurchaseForExecution(params: {
 }): Promise<{
   id: string
   soulOnChainId: string
+  listingObjectId: string
   sellerKioskId: string
   agentAddress: string
-  priceSui: bigint
+  priceAtomic: bigint
+  platformFeeAtomic: bigint
+  creatorRoyaltyAtomic: bigint
+  totalAtomic: bigint
   txBytesBase64: string
   txBytesHash: string
   expiresAt: Date
@@ -205,9 +225,13 @@ export async function getPreparedSoulPurchaseForExecution(params: {
       id: true,
       agentMemberId: true,
       soulOnChainId: true,
+      listingObjectId: true,
       sellerKioskId: true,
       agentAddress: true,
-      priceSui: true,
+      priceAtomic: true,
+      platformFeeAtomic: true,
+      creatorRoyaltyAtomic: true,
+      totalAtomic: true,
       txBytesBase64: true,
       txBytesHash: true,
       expiresAt: true,
@@ -233,9 +257,13 @@ export async function getPreparedSoulPurchaseForExecution(params: {
   return {
     id: prepared.id,
     soulOnChainId: prepared.soulOnChainId,
+    listingObjectId: prepared.listingObjectId,
     sellerKioskId: prepared.sellerKioskId,
     agentAddress: prepared.agentAddress,
-    priceSui: BigInt(prepared.priceSui.toString()),
+    priceAtomic: BigInt(prepared.priceAtomic.toString()),
+    platformFeeAtomic: BigInt(prepared.platformFeeAtomic.toString()),
+    creatorRoyaltyAtomic: BigInt(prepared.creatorRoyaltyAtomic.toString()),
+    totalAtomic: BigInt(prepared.totalAtomic.toString()),
     txBytesBase64: prepared.txBytesBase64,
     txBytesHash: prepared.txBytesHash,
     expiresAt: prepared.expiresAt,
@@ -253,9 +281,13 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
 }): Promise<{
   id: string
   soulOnChainId: string
+  listingObjectId: string
   sellerKioskId: string
   agentAddress: string
-  priceSui: bigint
+  priceAtomic: bigint
+  platformFeeAtomic: bigint
+  creatorRoyaltyAtomic: bigint
+  totalAtomic: bigint
   txBytesBase64: string
   txBytesHash: string
   executedAt: Date | null
@@ -305,9 +337,13 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
       select: {
         id: true,
         soulOnChainId: true,
+        listingObjectId: true,
         sellerKioskId: true,
         agentAddress: true,
-        priceSui: true,
+        priceAtomic: true,
+        platformFeeAtomic: true,
+        creatorRoyaltyAtomic: true,
+        totalAtomic: true,
         txBytesBase64: true,
         txBytesHash: true,
         executedAt: true,
@@ -324,9 +360,13 @@ export async function claimPreparedSoulPurchaseForExecution(params: {
     return {
       id: prepared.id,
       soulOnChainId: prepared.soulOnChainId,
+      listingObjectId: prepared.listingObjectId,
       sellerKioskId: prepared.sellerKioskId,
       agentAddress: prepared.agentAddress,
-      priceSui: BigInt(prepared.priceSui.toString()),
+      priceAtomic: BigInt(prepared.priceAtomic.toString()),
+      platformFeeAtomic: BigInt(prepared.platformFeeAtomic.toString()),
+      creatorRoyaltyAtomic: BigInt(prepared.creatorRoyaltyAtomic.toString()),
+      totalAtomic: BigInt(prepared.totalAtomic.toString()),
       txBytesBase64: prepared.txBytesBase64,
       txBytesHash: prepared.txBytesHash,
       executedAt: prepared.executedAt,

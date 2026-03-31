@@ -23,7 +23,11 @@ export interface AccessPolicyDescriptor {
   packageId: string
   soulObjectId: string
   moduleName: 'seal_policy'
-  functionName: 'seal_approve_owner' | 'seal_approve_agent'
+  functionName: 'seal_approve_owner_in_personal_kiosk' | 'seal_approve_allowlisted'
+  currentKioskId: string | null
+  currentKioskCapOnChainId: string | null
+  allowlistRegistryObjectId: string | null
+  soulAllowlistCapObjectId: string | null
 }
 
 export type SealSessionParams = AccessPolicyDescriptor
@@ -214,21 +218,55 @@ export function hasSealSessionConfig(): boolean {
 function getAccessPolicyDescriptor(
   soulObjectId: string,
   functionName: AccessPolicyDescriptor['functionName'],
+  params?: {
+    packageId?: string | null
+    currentKioskId?: string | null
+    currentKioskCapOnChainId?: string | null
+    allowlistRegistryObjectId?: string | null
+  },
 ): AccessPolicyDescriptor {
   return {
-    packageId: getSoulObjectPackageId(),
+    packageId: params?.packageId?.trim() || getSoulObjectPackageId(),
     soulObjectId,
     moduleName: 'seal_policy',
     functionName,
+    currentKioskId: params?.currentKioskId ?? null,
+    currentKioskCapOnChainId: params?.currentKioskCapOnChainId ?? null,
+    allowlistRegistryObjectId: params?.allowlistRegistryObjectId ?? null,
+    soulAllowlistCapObjectId: null,
   }
 }
 
-export function getOwnerSealSession(soulObjectId: string): SealSessionParams {
-  return getAccessPolicyDescriptor(soulObjectId, 'seal_approve_owner')
+export function getOwnerSealSession(params: {
+  packageId?: string | null
+  soulObjectId: string
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+}): SealSessionParams {
+  return getAccessPolicyDescriptor(
+    params.soulObjectId,
+    'seal_approve_owner_in_personal_kiosk',
+    {
+      packageId: params.packageId,
+      currentKioskId: params.currentKioskId,
+      currentKioskCapOnChainId: params.currentKioskCapOnChainId,
+    },
+  )
 }
 
-export function getAgentSealSession(soulObjectId: string): SealSessionParams {
-  return getAccessPolicyDescriptor(soulObjectId, 'seal_approve_agent')
+export function getAllowlistedSealSession(params: {
+  packageId?: string | null
+  soulObjectId: string
+  allowlistRegistryObjectId: string
+}): SealSessionParams {
+  return getAccessPolicyDescriptor(
+    params.soulObjectId,
+    'seal_approve_allowlisted',
+    {
+      packageId: params.packageId,
+      allowlistRegistryObjectId: params.allowlistRegistryObjectId,
+    },
+  )
 }
 
 export function getSealSessionTtlMinutes(): number {

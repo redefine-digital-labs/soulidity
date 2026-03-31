@@ -94,7 +94,7 @@ describe('personal kiosk resolution helpers', () => {
     expect(mockedGetVerifiedPersonalKioskCapStates).toHaveBeenCalledWith([])
   })
 
-  it('warns and picks first kiosk when multiple verified kiosk caps belong to the owner set', async () => {
+  it('rejects ambiguous resolution when multiple verified kiosk caps belong to the owner set', async () => {
     const FIRST_KIOSK_ID = `0x${'7'.repeat(64)}`
     mockedSuiClient.getOwnedObjects.mockReset()
     mockedSuiClient.getOwnedObjects.mockResolvedValueOnce({
@@ -114,22 +114,15 @@ describe('personal kiosk resolution helpers', () => {
         kioskId: SECOND_KIOSK_ID,
       }])
 
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/souls/personal-kiosk.ts')
+    const { resolveOwnedPersonalKiosk, SoulPersonalKioskInvariantError } = await import('../../web/lib/souls/personal-kiosk.ts')
+    const resolutionPromise = resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })
 
-    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
-      status: 'ready',
-      kiosk: {
-        ownerAddress: OWNER_ADDRESS,
-        currentKioskId: FIRST_KIOSK_ID,
-        currentKioskCapOnChainId: FIRST_CAP_ID,
-      },
-    })
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[personal-kiosk] Multiple kiosks detected for wallet set, using first',
-      expect.objectContaining({ count: 2, selectedCapId: FIRST_CAP_ID }),
+    await expect(resolutionPromise).rejects.toBeInstanceOf(
+      SoulPersonalKioskInvariantError,
     )
-    warnSpy.mockRestore()
+    await expect(resolutionPromise).rejects.toThrow(
+      'Multiple Soul personal kiosks detected for this wallet set',
+    )
   })
 
   it('propagates verification errors when kiosk-cap inspection fails', async () => {

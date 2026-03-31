@@ -1,23 +1,30 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { useParams } from 'next/navigation'
+import { AccessDownloadButton } from '@web/components/souls/access-download-button'
 import { PurchaseButton } from '@web/components/souls/purchase-button'
+import { ReadmePanel } from '@web/components/souls/readme-panel'
+import { PriceBreakdown } from '@web/components/souls/price-breakdown'
+import { StickyPurchaseBar } from '@web/components/souls/sticky-purchase-bar'
+import { ConfirmModal } from '@web/components/confirm-modal'
 import { useAuth } from '@web/components/auth-provider'
+import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import { useSoulDetail } from '@web/lib/souls/queries'
-import { buildListHeldSoulTx, buildRevokeAgentGrantTx, buildSetAgentGrantTx } from '@web/lib/souls/tx-builder'
-import { parseSuiPriceToMist } from '@web/lib/souls/pricing-input'
+import { extractCreatedAllowlistCapObjectId, toSafeBackgroundImage } from '@web/lib/souls/soul-detail-utils'
+import { buildListHeldSoulTx, buildCancelListingTx, buildClearAllowlistAddressTx, buildSetAllowlistAddressTx } from '@web/lib/souls/tx-builder'
+import { parseSoulPaymentAmountToAtomic } from '@web/lib/souls/pricing-input'
 import { mirrorRouteRequest, formatMirrorSyncError } from '@web/lib/souls/mirror-sync'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
-import { formatAtomicSuiForDisplay } from '@web/lib/souls/price-format'
+import { formatAtomicSoulPaymentForDisplay } from '@web/lib/souls/price-format'
 
-function extractCreatedAccessCapObjectId(result: { objectChanges?: Array<Record<string, unknown>> | null }) {
-  return result.objectChanges?.find((change) => (
-    change?.type === 'created'
-    && typeof change.objectId === 'string'
-    && typeof change.objectType === 'string'
-    && change.objectType.includes('::grant::SoulAccessCap')
-  ))?.objectId ?? null
+function requireCurrentKioskCapOnChainId(currentKioskCapOnChainId: string | null) {
+  if (!currentKioskCapOnChainId) {
+    throw new Error('Soul kiosk permissions are still syncing')
+  }
+  return currentKioskCapOnChainId
 }
 
 export default function SoulDetailPage() {
@@ -25,36 +32,73 @@ export default function SoulDetailPage() {
   const soulId = params.id as string
   const { user, getAuthHeaders } = useAuth()
   const { signAndExecute } = usePrivySuiSign()
-  const { data: soul, isLoading, error, refetch } = useSoulDetail(soulId, getAuthHeaders)
+  const { data: soul, isLoading, error, refetch } = useSoulDetail(soulId, getAuthHeaders, user?.id)
 
-  const [agentAddress, setAgentAddress] = useState('')
-  const [grantSubmitting, setGrantSubmitting] = useState(false)
-  const [grantError, setGrantError] = useState<string | null>(null)
+  const [allowlistAddress, setAllowlistAddress] = useState('')
+  const [allowlistSubmitting, setAllowlistSubmitting] = useState(false)
+  const [allowlistError, setAllowlistError] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const [listPrice, setListPrice] = useState('')
   const [listSubmitting, setListSubmitting] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
 
-  const previewImage = useMemo(() => soul?.previewImages[0] ?? soul?.imageUrl ?? null, [soul])
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
-  async function handleSetGrant() {
+  const [ownerSectionOpen, setOwnerSectionOpen] = useState(false)
+  const [purchaseSuccess, setPurchaseSuccess] = useState(false)
+
+  useEffect(() => {
+    if (soul?.isOwner && soul.listingStatus === 'held') {
+      setOwnerSectionOpen(true)
+    }
+  }, [soul?.isOwner, soul?.listingStatus])
+
+  const previewImage = useMemo(() => soul?.previewImages[0] ?? soul?.imageUrl ?? null, [soul])
+  const previewBackgroundImage = useMemo(() => toSafeBackgroundImage(previewImage), [previewImage])
+
+  async function handleSetAllowlist() {
+    if (allowlistSubmitting) return
     if (!soul) return
-    setGrantSubmitting(true)
-    setGrantError(null)
+    const normalizedAllowlistAddress = (() => {
+      const trimmed = allowlistAddress.trim()
+      if (!trimmed) {
+        return null
+      }
+      try {
+        const normalized = normalizeSuiAddress(trimmed)
+        return isValidSuiAddress(normalized) ? normalized : null
+      } catch {
+        return null
+      }
+    })()
+    if (!normalizedAllowlistAddress) {
+      setAllowlistError('Enter a valid Sui address')
+      return
+    }
+    setAllowlistSubmitting(true)
+    setAllowlistError(null)
     try {
-      const tx = buildSetAgentGrantTx({
+      const soulObjectPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+      const tx = buildSetAllowlistAddressTx({
         soulObjectId: soul.onChainId,
-        agentAddress,
+        currentKioskId: soul.currentKioskId,
+        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
+        allowlistAddress: normalizedAllowlistAddress,
       })
       const result = await signAndExecute(tx)
-      const soulAccessCapOnChainId = extractCreatedAccessCapObjectId(result as { objectChanges?: Array<Record<string, unknown>> | null })
-      if (!soulAccessCapOnChainId) {
-        throw new Error('Transaction succeeded but no Soul access cap was created')
+      const soulAllowlistCapOnChainId = extractCreatedAllowlistCapObjectId(
+        result as { objectChanges?: Array<Record<string, unknown>> | null },
+        soulObjectPackageId,
+      )
+      if (!soulAllowlistCapOnChainId) {
+        throw new Error('Transaction succeeded but no Soul allowlist cap was created')
       }
 
       const headers = await getAuthHeaders()
       await mirrorRouteRequest({
-        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/grant`,
+        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/allowlist`,
         init: {
           method: 'POST',
           headers: {
@@ -62,32 +106,37 @@ export default function SoulDetailPage() {
             ...headers,
           },
           body: JSON.stringify({
-            agentAddress,
-            soulAccessCapOnChainId,
+            allowlistAddress: normalizedAllowlistAddress,
+            soulAllowlistCapOnChainId,
             txDigest: result.digest,
           }),
         },
       })
 
-      setAgentAddress('')
+      setAllowlistAddress('')
       await refetch()
-    } catch (grantSyncError) {
-      setGrantError(formatMirrorSyncError(grantSyncError))
+    } catch (allowlistSyncError) {
+      setAllowlistError(formatMirrorSyncError(allowlistSyncError))
     } finally {
-      setGrantSubmitting(false)
+      setAllowlistSubmitting(false)
     }
   }
 
-  async function handleRevokeGrant() {
+  const executeClearAllowlist = useCallback(async () => {
     if (!soul) return
-    setGrantSubmitting(true)
-    setGrantError(null)
+    setConfirmClear(false)
+    setAllowlistSubmitting(true)
+    setAllowlistError(null)
     try {
-      const tx = buildRevokeAgentGrantTx({ soulObjectId: soul.onChainId })
+      const tx = buildClearAllowlistAddressTx({
+        soulObjectId: soul.onChainId,
+        currentKioskId: soul.currentKioskId,
+        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
+      })
       const result = await signAndExecute(tx)
       const headers = await getAuthHeaders()
       await mirrorRouteRequest({
-        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/grant`,
+        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/allowlist`,
         init: {
           method: 'DELETE',
           headers: {
@@ -98,27 +147,29 @@ export default function SoulDetailPage() {
         },
       })
       await refetch()
-    } catch (grantSyncError) {
-      setGrantError(formatMirrorSyncError(grantSyncError))
+    } catch (allowlistSyncError) {
+      setAllowlistError(formatMirrorSyncError(allowlistSyncError))
     } finally {
-      setGrantSubmitting(false)
+      setAllowlistSubmitting(false)
     }
-  }
+  }, [soul, signAndExecute, getAuthHeaders, refetch])
 
   async function handleListForSale() {
+    if (listSubmitting) return
     if (!soul || !user?.primarySuiAddress) return
-    const priceSui = parseSuiPriceToMist(listPrice)
-    if (!priceSui) {
-      setListError('Enter a valid price (min 0.001 SUI)')
+    const priceAtomic = parseSoulPaymentAmountToAtomic(listPrice)
+    if (!priceAtomic) {
+      setListError('Enter a valid USDC price')
       return
     }
     setListSubmitting(true)
     setListError(null)
     try {
       const tx = buildListHeldSoulTx({
-        ownerAddress: user.primarySuiAddress,
+        currentKioskId: soul.currentKioskId,
+        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
         soulObjectId: soul.onChainId,
-        priceSui,
+        priceAtomic,
       })
       const result = await signAndExecute(tx)
       const headers = await getAuthHeaders()
@@ -142,185 +193,443 @@ export default function SoulDetailPage() {
     }
   }
 
+  async function handleCancelListing() {
+    if (cancelSubmitting) return
+    if (!soul || !soul.listingObjectOnChainId) return
+    setCancelSubmitting(true)
+    setCancelError(null)
+    try {
+      const tx = buildCancelListingTx({
+        currentKioskId: soul.currentKioskId,
+        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
+        listingObjectId: soul.listingObjectOnChainId,
+      })
+      const result = await signAndExecute(tx)
+      const headers = await getAuthHeaders()
+      await mirrorRouteRequest({
+        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/delist`,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({ txDigest: result.digest }),
+        },
+      })
+      await refetch()
+    } catch (cancelSyncError) {
+      setCancelError(formatMirrorSyncError(cancelSyncError))
+    } finally {
+      setCancelSubmitting(false)
+    }
+  }
+
+  async function handlePurchaseSuccess() {
+    setPurchaseSuccess(true)
+    setTimeout(() => {
+      setPurchaseSuccess(false)
+      void refetch()
+    }, 1500)
+  }
+
+  const showStickyBar =
+    !!soul
+    && soul.listingStatus === 'listed'
+    && !soul.isOwner
+    && !!soul.listingObjectOnChainId
+    && !!soul.listedPriceAtomic
+
   return (
-    <div className="min-h-screen">
-      <main className="max-w-5xl mx-auto px-6 py-10">
+    <div className="min-h-screen pb-20 md:pb-0">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+        {/* Back navigation */}
+        <Link
+          href="/souls"
+          className="inline-flex items-center gap-1.5 text-sm mb-6"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Back to Souls
+        </Link>
+
         {isLoading ? (
           <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
         ) : error || !soul ? (
           <div style={{ color: 'var(--accent-rose)' }}>Failed to load Soul.</div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="flex flex-col gap-6">
-              {previewImage ? (
-                <div
-                  className="glass-card aspect-[4/3] bg-cover bg-center"
-                  style={{ backgroundImage: `url("${previewImage}")` }}
-                />
-              ) : null}
-              <div className="glass-panel p-6 flex flex-col gap-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
-                      {soul.category}
-                    </p>
-                    <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-                      {soul.name}
-                    </h1>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs uppercase tracking-[0.12em]" style={{ color: 'var(--text-muted)' }}>
-                      Status
-                    </p>
-                    <p style={{ color: soul.listingStatus === 'listed' ? 'var(--accent-cyan)' : 'var(--accent-emerald)' }}>
-                      {soul.listingStatus === 'listed' ? 'Listed' : 'Held'}
-                    </p>
-                  </div>
-                </div>
-                <p style={{ color: 'var(--text-secondary)' }}>{soul.description}</p>
-                <div className="flex flex-wrap gap-2">
-                  {soul.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-1 rounded-full text-xs"
-                      style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}
+          <>
+            {/* Desktop: 2-column grid. Mobile: single column */}
+            <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+              {/* LEFT COLUMN */}
+              <div className="flex flex-col gap-6">
+                {/* Preview image */}
+                <div className="relative">
+                  {previewBackgroundImage ? (
+                    <img
+                      src={previewImage ?? ''}
+                      alt={soul.name}
+                      className="w-full object-cover"
+                      style={{ aspectRatio: '4/3', borderRadius: 'var(--radius)' }}
+                    />
+                  ) : (
+                    <div
+                      className="glass-panel w-full flex items-center justify-center"
+                      style={{ aspectRatio: '4/3', minHeight: '200px' }}
                     >
-                      {tag}
-                    </span>
-                  ))}
+                      <span className="text-sm" style={{ color: 'var(--text-muted)' }}>No preview</span>
+                    </div>
+                  )}
+                  {/* Status badge overlay */}
+                  <span
+                    className={`status-badge ${soul.listingStatus === 'listed' ? 'status-badge-listed' : 'status-badge-held'}`}
+                  >
+                    {soul.listingStatus === 'listed' ? 'Listed' : 'Held'}
+                  </span>
                 </div>
+
+                {/* README panel — desktop only in left column */}
                 {soul.readme ? (
-                  <pre className="whitespace-pre-wrap text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {soul.readme}
-                  </pre>
+                  <div className="hidden lg:block">
+                    <ReadmePanel readme={soul.readme} />
+                  </div>
                 ) : null}
               </div>
-            </div>
 
-            <aside className="flex flex-col gap-6">
-              <div className="glass-panel p-6 flex flex-col gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.12em]" style={{ color: 'var(--text-muted)' }}>
-                    Price
+              {/* RIGHT COLUMN — sticky on desktop */}
+              <aside className="flex flex-col gap-5 lg:sticky lg:top-24 lg:self-start">
+                {/* Identity block */}
+                <div className="flex flex-col gap-3">
+                  <p
+                    className="text-[11px] uppercase tracking-[0.16em] font-medium"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {soul.category}
                   </p>
-                  <p className="text-2xl font-semibold" style={{ color: 'var(--accent-cyan)' }}>
-                    {soul.listedPriceSui ? formatAtomicSuiForDisplay(soul.listedPriceSui) : 'Not for sale'}
-                  </p>
-                </div>
-
-                {soul.listingStatus === 'listed' && !soul.isOwner && soul.sellerKioskId && soul.listedPriceSui && soul.purchaseFeeAmountSui ? (
-                  <PurchaseButton
-                    soulObjectId={soul.onChainId}
-                    sellerKioskId={soul.sellerKioskId}
-                    listedPriceSui={soul.listedPriceSui}
-                    feeAmountSui={soul.purchaseFeeAmountSui}
-                    quotedPriceSui={soul.quotedPriceSui}
-                    listingSource={soul.listingSource}
-                    onPurchased={async () => { await refetch() }}
-                  />
-                ) : soul.isOwner ? (
-                  <p style={{ color: 'var(--text-muted)' }}>You currently own this Soul.</p>
-                ) : (
-                  <p style={{ color: 'var(--text-muted)' }}>This Soul is not currently purchasable.</p>
-                )}
-              </div>
-
-              {soul.isOwner && soul.listingStatus === 'held' ? (
-                <>
-                <div className="glass-panel p-6 flex flex-col gap-4">
-                  <div>
-                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                      List for sale
-                    </h2>
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      Set a price and list this Soul on the secondary market.
+                  <h1
+                    className="font-bold leading-tight"
+                    style={{ fontSize: '28px', fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}
+                  >
+                    {soul.name}
+                  </h1>
+                  {soul.description ? (
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                      {soul.description}
                     </p>
-                  </div>
-                  <div className="flex flex-col gap-3">
-                    <input
-                      value={listPrice}
-                      onChange={(event) => setListPrice(event.target.value)}
-                      placeholder="Price in SUI (e.g. 1.5)"
-                      inputMode="decimal"
-                      className="glass-panel px-3 py-3 bg-transparent outline-none"
-                      style={{ color: 'var(--text-primary)' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleListForSale}
-                      disabled={listSubmitting || listPrice.trim().length === 0}
-                      className="px-4 py-3 rounded-xl font-semibold"
-                      style={{ background: 'var(--accent-cyan)', color: '#02131a', opacity: listSubmitting ? 0.7 : 1 }}
-                    >
-                      {listSubmitting ? 'Listing…' : 'List for sale'}
-                    </button>
-                  </div>
-                  {listError ? (
-                    <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{listError}</p>
+                  ) : null}
+                  {soul.tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {soul.tags.map((tag) => (
+                        <span key={tag} className="badge badge-muted">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
 
-                <div className="glass-panel p-6 flex flex-col gap-4">
-                  <div>
-                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                      Agent access
-                    </h2>
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      Grant a single agent wallet direct Seal access to this Soul.
-                    </p>
-                  </div>
+                <hr className="divider" />
 
-                  {soul.agentGrantAddress ? (
+                {/* Access / Price block */}
+                {(soul.isOwner || soul.isAllowlisted) ? (
+                  <div className="flex flex-col gap-3">
+                    <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Access content
+                    </h2>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Download and decrypt the sealed Soul bundle in your browser.
+                    </p>
+                    <AccessDownloadButton soulObjectId={soul.onChainId} />
+                  </div>
+                ) : soul.listingStatus === 'listed'
+                  && !soul.isOwner
+                  && soul.listingObjectOnChainId
+                  && soul.listedPriceAtomic
+                  && soul.purchasePlatformFeeAtomic
+                  && soul.purchaseCreatorRoyaltyAtomic ? (
+                  <div className="relative flex flex-col gap-4">
+                    <PriceBreakdown
+                      listedPriceAtomic={soul.listedPriceAtomic}
+                      purchasePlatformFeeAtomic={soul.purchasePlatformFeeAtomic}
+                      purchaseCreatorRoyaltyAtomic={soul.purchaseCreatorRoyaltyAtomic}
+                      purchaseTotalAtomic={soul.purchaseTotalAtomic ?? null}
+                    />
+                    <PurchaseButton
+                      soulObjectId={soul.onChainId}
+                      listingObjectId={soul.listingObjectOnChainId}
+                      sellerKioskId={soul.currentKioskId}
+                      listedPriceAtomic={soul.listedPriceAtomic}
+                      purchasePlatformFeeAtomic={soul.purchasePlatformFeeAtomic}
+                      purchaseCreatorRoyaltyAtomic={soul.purchaseCreatorRoyaltyAtomic}
+                      purchaseTotalAtomic={soul.purchaseTotalAtomic}
+                      quotedPriceAtomic={soul.quotedPriceAtomic}
+                      onPurchased={handlePurchaseSuccess}
+                    />
+                    {/* Purchase success overlay */}
+                    {purchaseSuccess ? (
+                      <div
+                        className="absolute inset-0 flex items-center justify-center rounded-[var(--radius)] animate-scale-in"
+                        style={{ background: 'rgba(5, 150, 105, 0.12)', border: '1px solid rgba(5, 150, 105, 0.25)' }}
+                      >
+                        <p
+                          className="text-sm font-semibold"
+                          style={{ color: 'var(--accent-emerald)' }}
+                        >
+                          Soul is yours
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : !soul.isOwner ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Not for sale</p>
+                ) : null}
+
+                <hr className="divider" />
+
+                {/* Sealed content panel */}
+                <div className="sealed-panel flex flex-col gap-2">
+                  <div className="sealed-panel-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <rect x="3" y="11" width="18" height="11" rx="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    Sealed Content
+                  </div>
+                  <div className="sealed-panel-row">
+                    <span className="sealed-panel-key">Bundle</span>
+                    <span className="sealed-panel-val">Encrypted</span>
+                  </div>
+                  <div className="sealed-panel-row">
+                    <span className="sealed-panel-key">Storage</span>
+                    <span className="sealed-panel-val">Walrus</span>
+                  </div>
+                  <div className="sealed-panel-row">
+                    <span className="sealed-panel-key">Access</span>
+                    <span className="sealed-panel-val">
+                      {soul.isOwner ? 'Owner' : soul.isAllowlisted ? 'Allowlisted' : 'Owner or Allowlisted'}
+                    </span>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    {soul.isOwner || soul.isAllowlisted
+                      ? 'You have access. Content downloads directly to your browser.'
+                      : 'Purchase unlocks Seal decryption. Content downloads directly to your browser.'}
+                  </p>
+                </div>
+
+                {/* Owner management — listed state */}
+                {soul.isOwner && soul.listingStatus === 'listed' ? (
+                  <>
+                    <hr className="divider" />
                     <div className="flex flex-col gap-3">
                       <div>
-                        <p className="text-xs uppercase tracking-[0.12em]" style={{ color: 'var(--text-muted)' }}>
-                          Current agent
-                        </p>
-                        <p className="break-all text-sm" style={{ color: 'var(--text-secondary)' }}>
-                          {soul.agentGrantAddress}
+                        <h2
+                          className="text-base font-semibold"
+                          style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}
+                        >
+                          Listing active
+                        </h2>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          Cancel the listing to manage allowlist access or change the price.
                         </p>
                       </div>
                       <button
                         type="button"
-                        onClick={handleRevokeGrant}
-                        disabled={grantSubmitting}
-                        className="px-4 py-3 rounded-xl font-semibold"
-                        style={{ background: 'var(--accent-rose)', color: 'white', opacity: grantSubmitting ? 0.7 : 1 }}
+                        onClick={handleCancelListing}
+                        aria-label="Cancel Soul listing"
+                        disabled={cancelSubmitting}
+                        className="btn btn-danger w-full"
                       >
-                        {grantSubmitting ? 'Revoking…' : 'Revoke access'}
+                        {cancelSubmitting ? 'Cancelling…' : 'Cancel listing'}
                       </button>
+                      {cancelError ? (
+                        <p className="text-xs" style={{ color: 'var(--accent-rose)' }}>{cancelError}</p>
+                      ) : null}
                     </div>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      <input
-                        value={agentAddress}
-                        onChange={(event) => setAgentAddress(event.target.value)}
-                        placeholder="0x... agent wallet"
-                        className="glass-panel px-3 py-3 bg-transparent outline-none"
-                        style={{ color: 'var(--text-primary)' }}
-                      />
+                  </>
+                ) : null}
+
+                {/* Owner management — held state (collapsible) */}
+                {soul.isOwner && soul.listingStatus === 'held' ? (
+                  <>
+                    <hr className="divider" />
+                    <div className="glass-panel overflow-hidden">
                       <button
                         type="button"
-                        onClick={handleSetGrant}
-                        disabled={grantSubmitting || agentAddress.trim().length === 0}
-                        className="px-4 py-3 rounded-xl font-semibold"
-                        style={{ background: 'var(--accent-cyan)', color: '#02131a', opacity: grantSubmitting ? 0.7 : 1 }}
+                        onClick={() => setOwnerSectionOpen((prev) => !prev)}
+                        className="w-full flex items-center justify-between p-4 text-left"
+                        style={{ color: 'var(--text-primary)' }}
+                        aria-expanded={ownerSectionOpen}
                       >
-                        {grantSubmitting ? 'Granting…' : 'Grant access'}
+                        <div>
+                          <h2
+                            className="text-base font-semibold"
+                            style={{ fontFamily: 'var(--font-display)' }}
+                          >
+                            Owner management
+                          </h2>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            List for sale or manage allowlist access
+                          </p>
+                        </div>
+                        <svg
+                          className="shrink-0 transition-transform duration-200"
+                          style={{
+                            transform: ownerSectionOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                            color: 'var(--text-muted)',
+                          }}
+                          width="20" height="20" viewBox="0 0 20 20" fill="none"
+                          aria-hidden="true"
+                        >
+                          <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
                       </button>
-                    </div>
-                  )}
 
-                  {grantError ? (
-                    <p className="text-sm" style={{ color: 'var(--accent-rose)' }}>{grantError}</p>
-                  ) : null}
-                </div>
-                </>
-              ) : null}
-            </aside>
-          </div>
+                      {ownerSectionOpen ? (
+                        <div className="px-4 pb-4 flex flex-col gap-6">
+                          {/* List for sale */}
+                          <div className="flex flex-col gap-3">
+                            <div>
+                              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                List for sale
+                              </h3>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                Set a USDC price and list this Soul NFT for sale.
+                              </p>
+                            </div>
+                            {soul.allowlistAddress ? (
+                              <p
+                                className="text-xs rounded-lg px-3 py-2"
+                                style={{ color: 'var(--accent-amber)', background: 'rgba(245, 158, 11, 0.10)' }}
+                              >
+                                Listing this Soul will revoke the current allowlisted address&apos;s access.
+                              </p>
+                            ) : null}
+                            <input
+                              value={listPrice}
+                              onChange={(event) => setListPrice(event.target.value)}
+                              aria-label="Price in USDC for listing"
+                              placeholder="Price in USDC (e.g. 1.5)"
+                              inputMode="decimal"
+                              className="input-dark"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleListForSale}
+                              aria-label="List this Soul for sale"
+                              disabled={listSubmitting || listPrice.trim().length === 0}
+                              className="btn btn-primary w-full"
+                            >
+                              {listSubmitting ? 'Listing…' : 'List for sale'}
+                            </button>
+                            {listError ? (
+                              <p className="text-xs" style={{ color: 'var(--accent-rose)' }}>{listError}</p>
+                            ) : null}
+                          </div>
+
+                          <hr className="divider" />
+
+                          {/* Manage allowlist */}
+                          <div className="flex flex-col gap-3">
+                            <div>
+                              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                Manage allowlist
+                              </h3>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                Add one extra Sui address that can decrypt this Soul alongside the owner.
+                              </p>
+                            </div>
+
+                            {soul.allowlistAddress ? (
+                              <div className="flex flex-col gap-3">
+                                <div>
+                                  <p
+                                    className="text-[11px] uppercase tracking-[0.12em]"
+                                    style={{ color: 'var(--text-muted)' }}
+                                  >
+                                    Current allowlist address
+                                  </p>
+                                  <p
+                                    className="break-all text-xs mt-1 font-mono"
+                                    style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
+                                  >
+                                    {soul.allowlistAddress}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmClear(true)}
+                                  aria-label="Clear Soul allowlist"
+                                  disabled={allowlistSubmitting}
+                                  className="btn btn-danger w-full"
+                                >
+                                  {allowlistSubmitting ? 'Clearing…' : 'Clear allowlist'}
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-3">
+                                <input
+                                  value={allowlistAddress}
+                                  onChange={(event) => setAllowlistAddress(event.target.value)}
+                                  aria-label="Sui address for allowlist"
+                                  placeholder="0x... Sui address"
+                                  className="input-dark"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSetAllowlist}
+                                  aria-label="Add address to Soul allowlist"
+                                  disabled={allowlistSubmitting || allowlistAddress.trim().length === 0}
+                                  className="btn btn-primary w-full"
+                                >
+                                  {allowlistSubmitting ? 'Updating…' : 'Add to allowlist'}
+                                </button>
+                              </div>
+                            )}
+
+                            {allowlistError ? (
+                              <p className="text-xs" style={{ color: 'var(--accent-rose)' }}>{allowlistError}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
+              </aside>
+            </div>
+
+            {/* README panel — mobile (below right column) */}
+            {soul.readme ? (
+              <div className="lg:hidden mt-6">
+                <ReadmePanel readme={soul.readme} />
+              </div>
+            ) : null}
+          </>
         )}
       </main>
+
+      {/* Sticky purchase bar — mobile only */}
+      {showStickyBar && soul?.listedPriceAtomic ? (
+        <StickyPurchaseBar
+          price={formatAtomicSoulPaymentForDisplay(soul.listedPriceAtomic)}
+          onPurchase={() => {
+            // Trigger is handled by PurchaseButton in the right column.
+            // The sticky bar is informational on mobile; the real action button
+            // is in the scrollable content above.
+          }}
+          purchasing={false}
+          disabled={true}
+        />
+      ) : null}
+
+      <ConfirmModal
+        open={confirmClear}
+        title="Revoke allowlist access"
+        message="This will revoke the allowlisted address's access. Continue?"
+        confirmLabel="Revoke"
+        variant="danger"
+        onConfirm={executeClearAllowlist}
+        onCancel={() => setConfirmClear(false)}
+      />
     </div>
   )
 }

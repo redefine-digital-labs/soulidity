@@ -17,6 +17,15 @@ export interface CoinPageLoaderLike {
   }): Promise<CoinPageLike>
 }
 
+const DEFAULT_MAX_COIN_PAGES = 20
+
+export class CoinPaginationExhaustedError extends Error {
+  constructor(readonly maxPages: number) {
+    super(`Coin pagination exceeded the ${maxPages}-page limit before collecting enough balance`)
+    this.name = 'CoinPaginationExhaustedError'
+  }
+}
+
 function toCoinBalance(value: string | number | bigint): bigint {
   if (typeof value === 'bigint') return value
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -64,18 +73,24 @@ export async function selectCoinObjectIdsForAmountAcrossPages(
     owner: string
     coinType: string
     requiredAmount: bigint
+    maxPages?: number
   },
 ): Promise<string[] | null> {
   if (params.requiredAmount <= 0n) {
     return []
   }
 
+  const maxPages =
+    typeof params.maxPages === 'number' && Number.isFinite(params.maxPages) && params.maxPages > 0
+      ? Math.trunc(params.maxPages)
+      : DEFAULT_MAX_COIN_PAGES
   const selected: string[] = []
   let runningTotal = 0n
   let sawPositiveBalanceCoin = false
   let sawAnyCoin = false
   let cursor: string | null | undefined = undefined
   const seenCursors = new Set<string>()
+  let pagesFetched = 0
 
   while (true) {
     const page = await client.getCoins({
@@ -83,6 +98,7 @@ export async function selectCoinObjectIdsForAmountAcrossPages(
       coinType: params.coinType,
       ...(cursor ? { cursor } : {}),
     })
+    pagesFetched += 1
 
     for (const coin of page.data) {
       if (!coin.coinObjectId) continue
@@ -102,6 +118,9 @@ export async function selectCoinObjectIdsForAmountAcrossPages(
 
     if (!page.hasNextPage) {
       break
+    }
+    if (pagesFetched >= maxPages) {
+      throw new CoinPaginationExhaustedError(maxPages)
     }
 
     if (!page.nextCursor) {

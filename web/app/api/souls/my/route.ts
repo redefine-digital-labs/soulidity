@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireIdentity } from '@web/lib/auth/identity'
+import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
 import { prisma } from '@web/lib/prisma'
 import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@web/lib/souls/repository'
 
@@ -9,7 +10,9 @@ export async function GET() {
     return error
   }
 
-  const [authored, owned] = await Promise.all([
+  const primaryWalletAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+
+  const [authored, owned, allowlisted] = await Promise.all([
     prisma.soulAsset.findMany({
       where: { creatorMemberId: identity.memberId },
       select: soulAssetSummarySelect,
@@ -20,10 +23,21 @@ export async function GET() {
       select: soulAssetSummarySelect,
       orderBy: { createdAt: 'desc' },
     }),
+    primaryWalletAddress
+      ? prisma.soulAsset.findMany({
+          where: {
+            allowlistAddress: primaryWalletAddress,
+            NOT: { currentOwnerMemberId: identity.memberId },
+          },
+          select: soulAssetSummarySelect,
+          orderBy: { createdAt: 'desc' },
+        })
+      : Promise.resolve([]),
   ])
 
   return NextResponse.json({
     authored: toSoulAssetSummaryList(authored),
     owned: toSoulAssetSummaryList(owned),
+    allowlisted: toSoulAssetSummaryList(allowlisted),
   })
 }

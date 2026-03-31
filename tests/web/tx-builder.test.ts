@@ -24,7 +24,7 @@ describe('tx builders', () => {
     process.env = { ...ORIGINAL_ENV }
   })
 
-  it('rejects creator royalty values outside the supported bps range', async () => {
+  it('rejects creator royalty values above the supported cap', async () => {
     const { buildMintAndListSoulTx } = await import('../../web/lib/souls/tx-builder.ts')
 
     expect(() => buildMintAndListSoulTx({
@@ -38,8 +38,8 @@ describe('tx builders', () => {
       previewImages: [],
       readme: null,
       priceAtomic: 1_000_000n,
-      creatorRoyaltyBps: 10_001,
-    })).toThrow('creatorRoyaltyBps must be between 0 and 10000')
+      creatorRoyaltyBps: 2_501,
+    })).toThrow('creatorRoyaltyBps must be between 0 and 2500')
   })
 
   it('rejects mint-and-list payloads that exceed the on-chain tag limit', async () => {

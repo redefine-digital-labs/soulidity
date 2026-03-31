@@ -1,24 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
+import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
 import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { getRequiredPublicEnv } from '@web/lib/souls/config'
-import {
-  getVerifiedSoulAccessCapState,
-  getVerifiedSoulState,
-  OnChainVerificationError,
-  sameSuiValue,
-} from '@web/lib/souls/on-chain-verification'
+import { getOptionalPublicEnv, getRequiredPublicEnv } from '@web/lib/souls/config'
+import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
+import { resolveSoulAccessPayload, SoulAccessDeniedError } from '@web/lib/souls/access'
 import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
 import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
 import {
   hasCredentialedSealServerConfigs,
-  getSealRuntimeConfig,
-  getOwnerSealSession,
-  getAgentSealSession,
   hasSealSessionConfig,
 } from '@web/lib/services/seal'
-import { getBlobUrl } from '@web/lib/services/walrus'
+
+export const dynamic = 'force-dynamic'
 
 const AGENT_ACCESS_RATE_LIMIT = {
   max: 60,
@@ -55,9 +50,6 @@ export async function GET(
   if (!soul) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
-  if (!soul.sealSidecar) {
-    return NextResponse.json({ error: 'Soul access is not ready yet' }, { status: 503 })
-  }
 
   let soulPackageId: string
   try {
@@ -65,12 +57,13 @@ export async function GET(
   } catch {
     return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
   }
+  const allowlistRegistryObjectId = getOptionalPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
 
   let agentAddress: string | null
   try {
     agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
   } catch (walletError) {
-    if (walletError instanceof Error && walletError.name === 'MultipleSuiWalletBindingsError') {
+    if (isMultipleSuiWalletBindingsError(walletError)) {
       return NextResponse.json({ error: walletError.message }, { status: 409 })
     }
     throw walletError
@@ -80,59 +73,16 @@ export async function GET(
   }
 
   try {
-    const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId)
-
-    let accessPolicy
-    let soulAccessCapObjectId: string | null = null
-
-    const isDirectOwner = soulState.ownerAddress && sameSuiValue(soulState.ownerAddress, agentAddress)
-
-    if (isDirectOwner) {
-      accessPolicy = getOwnerSealSession(soul.onChainId)
-    } else if (
-      soul.agentGrantAddress
-      && soul.agentAccessCapOnChainId
-      && sameSuiValue(soul.agentGrantAddress, agentAddress)
-      && sameSuiValue(soulState.agentGrant, agentAddress)
-    ) {
-      const capState = await getVerifiedSoulAccessCapState(soul.agentAccessCapOnChainId, soulPackageId)
-      if (
-        !sameSuiValue(capState.ownerAddress, agentAddress)
-        || !sameSuiValue(capState.soulObjectId, soul.onChainId)
-        || capState.grantVersion !== soulState.grantVersion
-      ) {
-        return NextResponse.json({ error: 'Soul access cap is no longer valid' }, { status: 403 })
-      }
-
-      accessPolicy = getAgentSealSession(soul.onChainId)
-      soulAccessCapObjectId = capState.objectId
-    } else {
-      return NextResponse.json({ error: 'Agent does not have access to this Soul' }, { status: 403 })
-    }
-
-    const seal = getSealRuntimeConfig()
-    return NextResponse.json({
-      artifact: {
-        walrusBlobUrl: getBlobUrl(soul.contentBlobId),
-        walrusBlobId: soul.contentBlobId,
-        contentBlobObjectId: soul.contentBlobObjectId,
-      },
-      accessPolicy: {
-        ...accessPolicy,
-        soulAccessCapObjectId,
-      },
-      seal: {
-        network: seal.network,
-        threshold: seal.threshold,
-        verifyKeyServers: seal.verifyKeyServers,
-        serverConfigs: seal.serverConfigs.map(({ objectId, weight }) => ({
-          objectId,
-          weight,
-        })),
-      },
-      sealSidecar: soul.sealSidecar,
-    })
+    return NextResponse.json(await resolveSoulAccessPayload({
+      soul,
+      viewerAddresses: [agentAddress],
+      soulPackageId,
+      allowlistRegistryObjectId,
+    }))
   } catch (accessError) {
+    if (accessError instanceof SoulAccessDeniedError) {
+      return NextResponse.json({ error: accessError.message }, { status: accessError.status })
+    }
     if (accessError instanceof OnChainVerificationError) {
       return NextResponse.json(
         { error: getClientSafeOnChainVerificationErrorMessage(accessError) },

@@ -142,7 +142,7 @@ function isValidDocumentId(value: string): boolean {
   return bytes[domainBytes.length] === DOCUMENT_ID_VERSION
 }
 
-function assertDocumentIdMatchesExpectedBinding(params: {
+export function assertDocumentIdMatchesExpectedBinding(params: {
   documentId: string
   expectedSoulObjectId: string
 }) {
@@ -408,7 +408,7 @@ export async function decryptBundle(params: {
 export async function buildSealApprovalTxBytes(params: {
   accessPolicy: AccessPolicyDescriptor
   documentId: string
-  soulAccessCapObjectId?: string | null
+  soulAllowlistCapObjectId?: string | null
 }): Promise<Uint8Array> {
   assertDocumentIdMatchesExpectedBinding({
     documentId: params.documentId,
@@ -417,16 +417,38 @@ export async function buildSealApprovalTxBytes(params: {
 
   const tx = new Transaction()
   const target = `${params.accessPolicy.packageId}::${params.accessPolicy.moduleName}::${params.accessPolicy.functionName}`
-  const argumentsForCall = [
-    tx.pure.vector('u8', Array.from(hexToBytes(params.documentId))),
-    tx.object(params.accessPolicy.soulObjectId),
-  ]
+  const documentIdArg = tx.pure.vector('u8', Array.from(hexToBytes(params.documentId)))
+  const soulIdArg = tx.pure.id(params.accessPolicy.soulObjectId)
+  let argumentsForCall
 
-  if (params.accessPolicy.functionName === 'seal_approve_agent') {
-    if (!params.soulAccessCapObjectId) {
-      throw new Error('soulAccessCapObjectId is required for agent Seal approval')
+  if (params.accessPolicy.functionName === 'seal_approve_owner_in_personal_kiosk') {
+    if (!params.accessPolicy.currentKioskId) {
+      throw new Error('currentKioskId is required for owner Seal approval')
     }
-    argumentsForCall.push(tx.object(params.soulAccessCapObjectId))
+    if (!params.accessPolicy.currentKioskCapOnChainId) {
+      throw new Error('currentKioskCapOnChainId is required for owner Seal approval')
+    }
+    argumentsForCall = [
+      documentIdArg,
+      tx.object(params.accessPolicy.currentKioskId),
+      tx.object(params.accessPolicy.currentKioskCapOnChainId),
+      soulIdArg,
+    ]
+  } else if (params.accessPolicy.functionName === 'seal_approve_allowlisted') {
+    if (!params.accessPolicy.allowlistRegistryObjectId) {
+      throw new Error('allowlistRegistryObjectId is required for allowlisted Seal approval')
+    }
+    if (!params.soulAllowlistCapObjectId) {
+      throw new Error('soulAllowlistCapObjectId is required for allowlisted Seal approval')
+    }
+    argumentsForCall = [
+      documentIdArg,
+      tx.object(params.accessPolicy.allowlistRegistryObjectId),
+      soulIdArg,
+      tx.object(params.soulAllowlistCapObjectId),
+    ]
+  } else {
+    throw new Error(`Unknown Seal approval function: ${params.accessPolicy.functionName}`)
   }
 
   tx.moveCall({

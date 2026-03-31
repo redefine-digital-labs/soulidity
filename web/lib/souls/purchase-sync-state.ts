@@ -56,3 +56,24 @@ export function buildPurchaseOwnershipConflictBody(params: {
     error: `Transaction succeeded on chain, but the local Soul mirror no longer matched the expected ${params.ownerLabel} ownership. Refresh the Soul detail instead of retrying.`,
   }
 }
+
+export function buildPurchaseOwnershipChangedBody(params: {
+  digest: string
+  soulOnChainId: string
+}) {
+  return {
+    digest: params.digest,
+    soulOnChainId: params.soulOnChainId,
+    onChainSuccess: true,
+    dbSynced: false,
+    ownershipChanged: true,
+    error: 'Soul ownership changed since the original purchase sync. Refresh the Soul detail instead of retrying.',
+  }
+}
+
+export function purchaseSyncBodiesEqual(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}

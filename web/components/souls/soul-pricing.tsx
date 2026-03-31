@@ -1,10 +1,10 @@
-import { formatAtomicSuiForDisplay } from '@web/lib/souls/price-format'
+import { formatAtomicSoulPaymentForDisplay } from '@web/lib/souls/price-format'
 
-export function SoulPricing({ listedPriceSui, listingStatus }: {
-  listedPriceSui: string | null
+export function SoulPricing({ listedPriceAtomic, listingStatus }: {
+  listedPriceAtomic: string | null
   listingStatus: 'listed' | 'held'
 }) {
-  if (listingStatus !== 'listed' || !listedPriceSui) {
+  if (listingStatus !== 'listed' || !listedPriceAtomic) {
     return (
       <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
         Not for sale
@@ -14,7 +14,7 @@ export function SoulPricing({ listedPriceSui, listingStatus }: {
 
   return (
     <span className="text-sm font-semibold" style={{ color: 'var(--accent-cyan)' }}>
-      {formatAtomicSuiForDisplay(listedPriceSui)}
+      {formatAtomicSoulPaymentForDisplay(listedPriceAtomic)}
     </span>
   )
 }

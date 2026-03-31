@@ -178,6 +178,26 @@ describe('resolveSoulAccessPayload', () => {
     })
   })
 
+  it('skips kiosk enumeration when the mirrored kiosk cap proves a different owner', async () => {
+    mockedGetVerifiedSoulState.mockResolvedValueOnce(makeVerifiedSoulState({
+      allowlistAddress: ALLOWLISTED_ADDRESS,
+    }))
+
+    const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
+    const payload = await resolveSoulAccessPayload({
+      soul: makeSoulRecord({
+        allowlistAddress: ALLOWLISTED_ADDRESS,
+        allowlistCapOnChainId: ACCESS_CAP_ID,
+      }),
+      viewerAddresses: [ALLOWLISTED_ADDRESS],
+      soulPackageId: PACKAGE_ID,
+      allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
+    })
+
+    expect(payload.accessKind).toBe('allowlisted')
+    expect(mockedGetOwnedObjects).not.toHaveBeenCalled()
+  })
+
   it('returns owner access when the verified personal kiosk cap belongs to the viewer', async () => {
     const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
     const payload = await resolveSoulAccessPayload({
@@ -236,6 +256,46 @@ describe('resolveSoulAccessPayload', () => {
       currentKioskId: KIOSK_ID,
       currentKioskCapOnChainId: KIOSK_CAP_ID,
     })
+  })
+
+  it('finds the matching viewer kiosk even when it is not the first discovered kiosk', async () => {
+    mockedGetVerifiedPersonalKioskCapState.mockResolvedValueOnce({
+      objectId: KIOSK_CAP_ID,
+      ownerAddress: OWNER_ADDRESS,
+      kioskId: `0x${'f'.repeat(64)}`,
+    })
+    mockedGetOwnedObjects.mockResolvedValueOnce({
+      data: [
+        { data: { objectId: '0xcap-a' } },
+        { data: { objectId: '0xcap-b' } },
+      ],
+      hasNextPage: false,
+      nextCursor: null,
+    })
+    mockedGetVerifiedPersonalKioskCapStates.mockResolvedValueOnce([
+      {
+        objectId: '0xcap-a',
+        ownerAddress: OWNER_ADDRESS,
+        kioskId: `0x${'a'.repeat(64)}`,
+      },
+      {
+        objectId: '0xcap-b',
+        ownerAddress: OWNER_ADDRESS,
+        kioskId: KIOSK_ID,
+      },
+    ])
+
+    const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
+    const payload = await resolveSoulAccessPayload({
+      soul: makeSoulRecord(),
+      viewerAddresses: [OWNER_ADDRESS],
+      soulPackageId: PACKAGE_ID,
+      allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
+    })
+
+    expect(payload.accessKind).toBe('owner')
+    expect(payload.viewerAddress).toBe(OWNER_ADDRESS)
+    expect(mockedGetVerifiedPersonalKioskCapStates).toHaveBeenCalledWith(['0xcap-a', '0xcap-b'])
   })
 
   it('uses the on-chain Soul package id when building owner seal access', async () => {
