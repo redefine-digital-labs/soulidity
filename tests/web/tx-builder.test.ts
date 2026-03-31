@@ -347,4 +347,23 @@ describe('tx builders', () => {
     })).toThrow('priceAtomic must be positive')
   })
 
+  it('builds cancel-listing txs without taking a MarketConfig write lock', async () => {
+    const { Transaction } = await import('@mysten/sui/transactions')
+    const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
+    moveCallSpy.mockImplementation(() => ({ $kind: 'Result', Result: 0 } as any))
+    const { buildCancelListingTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+    buildCancelListingTx({
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xcap',
+      listingObjectId: '0xlisting',
+    })
+
+    expect(moveCallSpy).toHaveBeenCalledTimes(1)
+    expect(moveCallSpy).toHaveBeenCalledWith(expect.objectContaining({
+      target: `${SOUL_OBJECT_PACKAGE_ID}::market::cancel_listing`,
+    }))
+    moveCallSpy.mockRestore()
+  })
+
 })

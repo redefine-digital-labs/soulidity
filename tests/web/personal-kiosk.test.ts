@@ -8,7 +8,7 @@ const SECOND_KIOSK_ID = `0x${'4'.repeat(64)}`
 const mockedSuiClient = vi.hoisted(() => ({
   getOwnedObjects: vi.fn(),
 }))
-const mockedGetVerifiedPersonalKioskCapState = vi.hoisted(() => vi.fn())
+const mockedGetVerifiedPersonalKioskCapStates = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/sui', () => ({
   suiClient: mockedSuiClient,
@@ -19,7 +19,7 @@ vi.mock('@web/lib/souls/kiosk-package', () => ({
 }))
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
-  getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
+  getVerifiedPersonalKioskCapStates: mockedGetVerifiedPersonalKioskCapStates,
   sameSuiValue: (a: string | null | undefined, b: string | null | undefined) => a?.toLowerCase() === b?.toLowerCase(),
 }))
 
@@ -35,17 +35,19 @@ describe('personal kiosk resolution helpers', () => {
       hasNextPage: false,
       nextCursor: null,
     })
-    mockedGetVerifiedPersonalKioskCapState
-      .mockResolvedValueOnce({
-        objectId: FIRST_CAP_ID,
-        ownerAddress: `0x${'f'.repeat(64)}`,
-        kioskId: `0x${'8'.repeat(64)}`,
-      })
-      .mockResolvedValueOnce({
-        objectId: SECOND_CAP_ID,
-        ownerAddress: OWNER_ADDRESS,
-        kioskId: SECOND_KIOSK_ID,
-      })
+    mockedGetVerifiedPersonalKioskCapStates
+      .mockResolvedValueOnce([
+        {
+          objectId: FIRST_CAP_ID,
+          ownerAddress: `0x${'f'.repeat(64)}`,
+          kioskId: `0x${'8'.repeat(64)}`,
+        },
+        {
+          objectId: SECOND_CAP_ID,
+          ownerAddress: OWNER_ADDRESS,
+          kioskId: SECOND_KIOSK_ID,
+        },
+      ])
   })
 
   it('pages through owned personal kiosk caps before concluding no kiosk exists', async () => {
@@ -71,7 +73,7 @@ describe('personal kiosk resolution helpers', () => {
       filter: { StructType: `${`0x${'9'.repeat(64)}`}::personal_kiosk::PersonalKioskCap` },
       options: { showType: true },
     })
-    expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(SECOND_CAP_ID)
+    expect(mockedGetVerifiedPersonalKioskCapStates).toHaveBeenCalledWith([FIRST_CAP_ID, SECOND_CAP_ID])
   })
 
   it('returns missing when no verified kiosk caps belong to the requested owners', async () => {
@@ -81,41 +83,53 @@ describe('personal kiosk resolution helpers', () => {
       hasNextPage: false,
       nextCursor: null,
     })
-    mockedGetVerifiedPersonalKioskCapState.mockReset()
+    mockedGetVerifiedPersonalKioskCapStates.mockReset()
+    mockedGetVerifiedPersonalKioskCapStates.mockResolvedValueOnce([])
 
     const { resolveOwnedPersonalKiosk } = await import('../../web/lib/souls/personal-kiosk.ts')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
       status: 'missing',
     })
-    expect(mockedGetVerifiedPersonalKioskCapState).not.toHaveBeenCalled()
+    expect(mockedGetVerifiedPersonalKioskCapStates).toHaveBeenCalledWith([])
   })
 
-  it('throws when more than one verified kiosk cap belongs to the owner set', async () => {
+  it('warns and picks first kiosk when multiple verified kiosk caps belong to the owner set', async () => {
+    const FIRST_KIOSK_ID = `0x${'7'.repeat(64)}`
     mockedSuiClient.getOwnedObjects.mockReset()
     mockedSuiClient.getOwnedObjects.mockResolvedValueOnce({
       data: [{ data: { objectId: FIRST_CAP_ID } }, { data: { objectId: SECOND_CAP_ID } }],
       hasNextPage: false,
       nextCursor: null,
     })
-    mockedGetVerifiedPersonalKioskCapState.mockReset()
-    mockedGetVerifiedPersonalKioskCapState
-      .mockResolvedValueOnce({
+    mockedGetVerifiedPersonalKioskCapStates.mockReset()
+    mockedGetVerifiedPersonalKioskCapStates
+      .mockResolvedValueOnce([{
         objectId: FIRST_CAP_ID,
         ownerAddress: OWNER_ADDRESS,
-        kioskId: `0x${'7'.repeat(64)}`,
-      })
-      .mockResolvedValueOnce({
+        kioskId: FIRST_KIOSK_ID,
+      }, {
         objectId: SECOND_CAP_ID,
         ownerAddress: OWNER_ADDRESS,
         kioskId: SECOND_KIOSK_ID,
-      })
+      }])
 
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { resolveOwnedPersonalKiosk } = await import('../../web/lib/souls/personal-kiosk.ts')
 
-    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toThrow(
-      'Soul personal kiosk invariant violated: multiple kiosks detected for this wallet set',
+    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
+      status: 'ready',
+      kiosk: {
+        ownerAddress: OWNER_ADDRESS,
+        currentKioskId: FIRST_KIOSK_ID,
+        currentKioskCapOnChainId: FIRST_CAP_ID,
+      },
+    })
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[personal-kiosk] Multiple kiosks detected for wallet set, using first',
+      expect.objectContaining({ count: 2, selectedCapId: FIRST_CAP_ID }),
     )
+    warnSpy.mockRestore()
   })
 
   it('propagates verification errors when kiosk-cap inspection fails', async () => {
@@ -125,8 +139,8 @@ describe('personal kiosk resolution helpers', () => {
       hasNextPage: false,
       nextCursor: null,
     })
-    mockedGetVerifiedPersonalKioskCapState.mockReset()
-    mockedGetVerifiedPersonalKioskCapState.mockRejectedValueOnce(new Error('RPC unavailable'))
+    mockedGetVerifiedPersonalKioskCapStates.mockReset()
+    mockedGetVerifiedPersonalKioskCapStates.mockRejectedValueOnce(new Error('RPC unavailable'))
 
     const { resolveOwnedPersonalKiosk } = await import('../../web/lib/souls/personal-kiosk.ts')
 

@@ -72,6 +72,7 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   extractSoulAllowlistSetEvent: mockedExtractSoulAllowlistSetEvent,
   extractSoulAllowlistClearedEvent: mockedExtractSoulAllowlistClearedEvent,
+  getTrustedPackageIds: (...packageIds: Array<string | null | undefined>) => packageIds.filter((value): value is string => Boolean(value)),
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   getVerifiedSoulAllowlistCapState: mockedGetVerifiedSoulAllowlistCapState,
   getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
@@ -604,7 +605,9 @@ describe('soul allowlist route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Soul allowlist set event is missing from the transaction',
     })
-    expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: KIOSK_ID,
+    })
   })
 
   it('returns 503 when the mirrored kiosk-cap id is still missing before allowlist set verification', async () => {
@@ -711,7 +714,9 @@ describe('soul allowlist route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Soul allowlist cleared event is missing from the transaction',
     })
-    expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: KIOSK_ID,
+    })
   })
 
   it('rate limits allowlist clear before reading Soul state', async () => {

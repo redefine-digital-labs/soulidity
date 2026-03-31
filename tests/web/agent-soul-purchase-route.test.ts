@@ -230,7 +230,6 @@ describe('agent soul purchase prepare route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Agent wallet must initialize a Soul personal kiosk before purchasing',
     })
-    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
   })
 
   it('returns 503 when Soul personal kiosk resolution hits an invariant error', async () => {
@@ -248,7 +247,6 @@ describe('agent soul purchase prepare route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Unable to prepare agent purchase right now',
     })
-    expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
   })
 
   it('returns 402 when the agent does not hold enough payment coin balance', async () => {
@@ -257,7 +255,7 @@ describe('agent soul purchase prepare route', () => {
       hasNextPage: false,
       nextCursor: null,
     })
-    mockedSuiClient.getBalance.mockImplementationOnce(async ({ coinType }: { coinType?: string }) => (
+    mockedSuiClient.getBalance.mockImplementation(async ({ coinType }: { coinType?: string }) => (
       coinType
         ? { totalBalance: '1000000' }
         : { totalBalance: '2000000000' }
@@ -296,7 +294,7 @@ describe('agent soul purchase prepare route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Too many USDC coin objects to prepare this purchase automatically. Consolidate them and try again.',
     })
-    expect(mockedSuiClient.getBalance).not.toHaveBeenCalled()
+    expect(mockedSuiClient.getBalance).toHaveBeenCalledWith({ owner: AGENT_ADDRESS })
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
   })
 
@@ -317,7 +315,7 @@ describe('agent soul purchase prepare route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'No USDC found in the agent wallet. You may need to acquire some first.',
     })
-    expect(mockedSuiClient.getBalance).not.toHaveBeenCalled()
+    expect(mockedSuiClient.getBalance).toHaveBeenCalledWith({ owner: AGENT_ADDRESS })
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
   })
 
@@ -335,6 +333,38 @@ describe('agent soul purchase prepare route', () => {
       error: 'Insufficient SUI gas balance for purchase. Required reserve: 50000000 MIST, available: 10000000 MIST.',
     })
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+  })
+
+  it('starts the SUI gas balance check before the purchase quote resolves', async () => {
+    let resolveQuote: ((value: {
+      platformFeeAtomic: bigint
+      priceAtomic: bigint
+      creatorRoyaltyAtomic: bigint
+      totalAtomic: bigint
+    }) => void) | null = null
+    mockedGetSoulPurchaseQuote.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveQuote = resolve
+    }))
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const responsePromise = POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockedSuiClient.getBalance).toHaveBeenCalledWith({ owner: AGENT_ADDRESS })
+
+    resolveQuote?.({
+      platformFeeAtomic: 50_000n,
+      priceAtomic: 1_000_000n,
+      creatorRoyaltyAtomic: 25_000n,
+      totalAtomic: 1_075_000n,
+    })
+
+    const response = await responsePromise
+    expect(response.status).toBe(200)
   })
 
   it('builds and persists a Soul purchase prepared transaction', async () => {

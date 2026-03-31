@@ -22,7 +22,9 @@ function buildValidDocumentId(soulObjectId: string) {
 const VALID_DOCUMENT_ID = buildValidDocumentId(SOUL_ID)
 
 const mockedGetVerifiedPersonalKioskCapState = vi.hoisted(() => vi.fn())
+const mockedGetVerifiedPersonalKioskCapStates = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulAllowlistCapState = vi.hoisted(() => vi.fn())
+const mockedGetVerifiedSoulAllowlistCapStates = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedGetOwnedObjects = vi.hoisted(() => vi.fn())
 const mockedGetAllowlistedSealSession = vi.hoisted(() => vi.fn())
@@ -35,7 +37,9 @@ const sameSuiValueImpl = sameSuiValueForTests
 
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
+  getVerifiedPersonalKioskCapStates: mockedGetVerifiedPersonalKioskCapStates,
   getVerifiedSoulAllowlistCapState: mockedGetVerifiedSoulAllowlistCapState,
+  getVerifiedSoulAllowlistCapStates: mockedGetVerifiedSoulAllowlistCapStates,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   sameSuiValue: sameSuiValueImpl,
 }))
@@ -114,6 +118,7 @@ describe('resolveSoulAccessPayload', () => {
       ownerAddress: OWNER_ADDRESS,
       kioskId: KIOSK_ID,
     })
+    mockedGetVerifiedPersonalKioskCapStates.mockResolvedValue([])
     mockedGetVerifiedSoulAllowlistCapState.mockResolvedValue({
       objectId: ACCESS_CAP_ID,
       ownerAddress: ALLOWLISTED_ADDRESS,
@@ -126,6 +131,7 @@ describe('resolveSoulAccessPayload', () => {
       hasNextPage: false,
       nextCursor: null,
     })
+    mockedGetVerifiedSoulAllowlistCapStates.mockResolvedValue([])
     mockedGetOwnerSealSession.mockReturnValue({
       packageId: PACKAGE_ID,
       functionName: 'seal_approve_owner_in_personal_kiosk',
@@ -186,6 +192,31 @@ describe('resolveSoulAccessPayload', () => {
     expect(payload.accessPolicy).toMatchObject({
       functionName: 'seal_approve_owner_in_personal_kiosk',
       soulAllowlistCapObjectId: null,
+    })
+  })
+
+  it('starts kiosk-cap verification before Soul ownership resolution finishes when the mirrored kiosk cap is known', async () => {
+    let resolveSoulState: ((value: VerifiedSoulState) => void) | null = null
+    mockedGetVerifiedSoulState.mockImplementationOnce(() => new Promise<VerifiedSoulState>((resolve) => {
+      resolveSoulState = resolve
+    }))
+
+    const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
+    const payloadPromise = resolveSoulAccessPayload({
+      soul: makeSoulRecord(),
+      viewerAddresses: [OWNER_ADDRESS],
+      soulPackageId: PACKAGE_ID,
+      allowlistRegistryObjectId: ALLOWLIST_REGISTRY_ID,
+    })
+
+    await Promise.resolve()
+
+    expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(KIOSK_CAP_ID)
+
+    resolveSoulState?.(makeVerifiedSoulState())
+    await expect(payloadPromise).resolves.toMatchObject({
+      accessKind: 'owner',
+      viewerAddress: OWNER_ADDRESS,
     })
   })
 
@@ -361,6 +392,15 @@ describe('resolveSoulAccessPayload', () => {
       hasNextPage: false,
       nextCursor: null,
     })
+    mockedGetVerifiedSoulAllowlistCapStates.mockResolvedValueOnce([
+      {
+        objectId: ACCESS_CAP_ID,
+        ownerAddress: ALLOWLISTED_ADDRESS,
+        soulObjectId: SOUL_ID,
+        allowlistedAddress: ALLOWLISTED_ADDRESS,
+        allowlistVersion: 7n,
+      },
+    ])
 
     const { resolveSoulAccessPayload } = await import('../../web/lib/souls/access.ts')
     const payload = await resolveSoulAccessPayload({
@@ -379,6 +419,7 @@ describe('resolveSoulAccessPayload', () => {
       functionName: 'seal_approve_allowlisted',
       soulAllowlistCapObjectId: ACCESS_CAP_ID,
     })
+    expect(mockedGetVerifiedSoulAllowlistCapStates).toHaveBeenCalledWith([ACCESS_CAP_ID], PACKAGE_ID)
   })
 
   it('fails closed when the Soul has no seal sidecar', async () => {

@@ -46,6 +46,11 @@ const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedSoulAllowlistCapState = vi.hoisted(() => vi.fn())
 const mockedGetVerifiedPersonalKioskCapState = vi.hoisted(() => vi.fn())
+const mockedFindViewerKioskMatchingOnChain = vi.hoisted(() => vi.fn())
+const mockedSuiClient = vi.hoisted(() => ({
+  getOwnedObjects: vi.fn(),
+}))
+const mockedGetVerifiedSoulAllowlistCapStates = vi.hoisted(() => vi.fn())
 const mockedHasSealSessionConfig = vi.hoisted(() => vi.fn())
 const mockedHasCredentialedSealServerConfigs = vi.hoisted(() => vi.fn())
 const mockedGetOwnerSealSession = vi.hoisted(() => vi.fn())
@@ -74,8 +79,17 @@ vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   getVerifiedSoulAllowlistCapState: mockedGetVerifiedSoulAllowlistCapState,
+  getVerifiedSoulAllowlistCapStates: mockedGetVerifiedSoulAllowlistCapStates,
   getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
   sameSuiValue: sameSuiValueForTests,
+}))
+
+vi.mock('@web/lib/souls/personal-kiosk', () => ({
+  findViewerKioskMatchingOnChain: mockedFindViewerKioskMatchingOnChain,
+}))
+
+vi.mock('@web/lib/sui', () => ({
+  suiClient: mockedSuiClient,
 }))
 
 vi.mock('@web/lib/services/seal', () => ({
@@ -148,6 +162,13 @@ describe('Soul agent access route', () => {
     })
     mockedGetSealSessionTtlMinutes.mockReturnValue(10)
     mockedGetBlobUrl.mockImplementation((blobId: string) => `https://walrus.example/${blobId}`)
+    mockedFindViewerKioskMatchingOnChain.mockResolvedValue(null)
+    mockedSuiClient.getOwnedObjects.mockResolvedValue({
+      data: [],
+      hasNextPage: false,
+      nextCursor: null,
+    })
+    mockedGetVerifiedSoulAllowlistCapStates.mockResolvedValue([])
   })
 
   it('rate limits before reading Soul access state', async () => {

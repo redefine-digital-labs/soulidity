@@ -28,3 +28,4 @@ src/mcp/
 tests/mcp/
 docker/review-memory/
 scripts/review-memory-*
+.gstack/

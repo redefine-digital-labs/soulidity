@@ -48,12 +48,22 @@ describe('soul detail helpers', () => {
     }, PACKAGE_ID)).toBe(`0x${'4'.repeat(64)}`)
   })
 
-  it('returns null when the created cap belongs to a different package namespace', () => {
+  it('falls back to suffix matching when tx results still use the pre-upgrade package id', () => {
     expect(extractCreatedAllowlistCapObjectId({
       objectChanges: [{
         type: 'created',
         objectId: ACCESS_CAP_ID,
         objectType: `${OTHER_PACKAGE_ID}::allowlist::SoulAllowlistCap`,
+      }],
+    }, PACKAGE_ID)).toBe(ACCESS_CAP_ID)
+  })
+
+  it('returns null when the created object belongs to a different module namespace', () => {
+    expect(extractCreatedAllowlistCapObjectId({
+      objectChanges: [{
+        type: 'created',
+        objectId: ACCESS_CAP_ID,
+        objectType: `${OTHER_PACKAGE_ID}::market::FixedPriceListing`,
       }],
     }, PACKAGE_ID)).toBeNull()
   })

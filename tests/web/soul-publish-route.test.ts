@@ -72,6 +72,7 @@ vi.mock('@web/lib/souls/transaction-metadata', () => ({
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   extractSoulPublishEvent: mockedExtractSoulPublishEvent,
+  getTrustedPackageIds: (...packageIds: Array<string | null | undefined>) => packageIds.filter((value): value is string => Boolean(value)),
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   sameSuiValue: sameSuiValueForTests,
 }))
@@ -230,6 +231,54 @@ describe('soul publish route', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
       error: 'readme must be 65536 bytes or less',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
+  it('rejects tag arrays that exceed the server-side publish limit before on-chain verification', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: Array.from({ length: 11 }, (_, index) => `tag-${index}`),
+        previewImages: ['blob-preview'],
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'tags must contain at most 10 items',
+    })
+    expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
+  it('rejects preview image arrays that exceed the server-side publish limit before on-chain verification', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(new Request('http://localhost/api/souls/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: TX_DIGEST,
+        soulOnChainId: SOUL_ID,
+        contentBlobId: 'blob-content',
+        contentBlobObjectId: CONTENT_BLOB_OBJECT_ID,
+        category: 'Research',
+        tags: ['alpha'],
+        previewImages: Array.from({ length: 11 }, (_, index) => `blob-preview-${index}`),
+        sealDekEnvelope: 'envelope',
+      }),
+    }) as any)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'previewImages must contain at most 10 items',
     })
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
   })

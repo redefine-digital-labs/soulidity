@@ -12,6 +12,7 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
 })
 
 const mockedResolveIdentity = vi.hoisted(() => vi.fn())
+const mockedGetAnonymousRateLimitFingerprint = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
 const mockedGetRequestIp = vi.hoisted(() => vi.fn())
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
@@ -29,6 +30,7 @@ vi.mock('@web/lib/auth/sui-wallet', () => ({
 }))
 
 vi.mock('@web/lib/rate-limit', () => ({
+  getAnonymousRateLimitFingerprint: mockedGetAnonymousRateLimitFingerprint,
   getRequestIp: mockedGetRequestIp,
   takeRateLimitToken: mockedTakeRateLimitToken,
 }))
@@ -56,6 +58,7 @@ describe('soul detail routes', () => {
     vi.resetModules()
 
     mockedResolveIdentity.mockResolvedValue(null)
+    mockedGetAnonymousRateLimitFingerprint.mockReturnValue('anon-fingerprint')
     mockedGetMemberSuiWalletAddresses.mockResolvedValue([])
     mockedGetRequestIp.mockReturnValue('203.0.113.10')
     mockedRequireAgentApiKey.mockResolvedValue({
@@ -148,7 +151,7 @@ describe('soul detail routes', () => {
     expect(mockedGetSoulPurchaseQuote).not.toHaveBeenCalled()
   })
 
-  it('uses a shared fallback rate-limit bucket when the request IP is unavailable', async () => {
+  it('uses an anonymous fingerprint rate-limit bucket when the request IP is unavailable', async () => {
     mockedGetRequestIp.mockReturnValueOnce(null)
 
     const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
@@ -164,7 +167,7 @@ describe('soul detail routes', () => {
 
     expect(response.status).toBe(200)
     expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
-      'soul-detail:no-ip',
+      'soul-detail:anon:anon-fingerprint',
       expect.objectContaining({ max: 120 }),
     )
     expect(mockedFindSoulAssetDetailByRouteId).toHaveBeenCalledWith(SOUL_ID)
@@ -187,7 +190,7 @@ describe('soul detail routes', () => {
     )
   })
 
-  it('still blocks shared fallback-bucket requests when the request IP is unavailable', async () => {
+  it('still blocks anonymous fingerprint bucket requests when the request IP is unavailable', async () => {
     mockedGetRequestIp.mockReturnValueOnce(null)
     mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 7 })
 
@@ -208,9 +211,28 @@ describe('soul detail routes', () => {
     })
     expect(response.headers.get('Retry-After')).toBe('7')
     expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
-      'soul-detail:no-ip',
+      'soul-detail:anon:anon-fingerprint',
       expect.objectContaining({ max: 120 }),
     )
+    expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
+  })
+
+  it('rejects anonymous requests when neither IP nor fingerprint is available', async () => {
+    mockedGetRequestIp.mockReturnValueOnce(null)
+    mockedGetAnonymousRateLimitFingerprint.mockReturnValueOnce(null)
+
+    const { GET } = await import('../../web/app/api/souls/[id]/route.ts')
+    const response = await GET(
+      new Request('http://localhost/api/souls/0xsoul') as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(429)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unable to determine client identity for rate limiting',
+    })
+    expect(response.headers.get('Retry-After')).toBe('60')
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
     expect(mockedFindSoulAssetDetailByRouteId).not.toHaveBeenCalled()
   })
 

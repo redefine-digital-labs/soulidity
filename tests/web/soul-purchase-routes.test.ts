@@ -66,6 +66,7 @@ vi.mock('@web/lib/souls/transaction', () => ({
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
+  getTrustedPackageIds: (...packageIds: Array<string | null | undefined>) => packageIds.filter((value): value is string => Boolean(value)),
   getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   sameSuiValue: sameSuiValueForTests,
@@ -261,6 +262,23 @@ describe('Soul purchase route', () => {
     expect(response.status).toBe(422)
     await expect(response.json()).resolves.toEqual({
       error: 'Transaction did not purchase the requested Soul',
+    })
+  })
+
+  it('passes the buyer kiosk id as an expectedKioskId hint when the current-package purchase event is available', async () => {
+    const { POST } = await import('../../web/app/api/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/souls/0xsoul/purchase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ txDigest: TX_DIGEST }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: BUYER_KIOSK_ID,
     })
   })
 

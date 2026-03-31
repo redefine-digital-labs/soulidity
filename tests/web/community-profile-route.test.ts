@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedResolveIdentity = vi.hoisted(() => vi.fn())
+const mockedGetAnonymousRateLimitFingerprint = vi.hoisted(() => vi.fn())
 const mockedGetRequestIp = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   member: {
@@ -18,6 +19,7 @@ vi.mock('@web/lib/prisma', () => ({
 }))
 
 vi.mock('@web/lib/rate-limit', () => ({
+  getAnonymousRateLimitFingerprint: mockedGetAnonymousRateLimitFingerprint,
   getRequestIp: mockedGetRequestIp,
   takeRateLimitToken: mockedTakeRateLimitToken,
 }))
@@ -30,6 +32,7 @@ describe('community profile route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    mockedGetAnonymousRateLimitFingerprint.mockReturnValue('anon-fingerprint')
     mockedGetRequestIp.mockReturnValue('203.0.113.20')
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
   })
@@ -177,6 +180,37 @@ describe('community profile route', () => {
     expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
       'community-profile:member:member-1',
       expect.objectContaining({ max: 60 }),
+    )
+  })
+
+  it('uses an anonymous fingerprint bucket when client IP is unavailable for an anonymous viewer', async () => {
+    mockedGetRequestIp.mockReturnValueOnce(null)
+    mockedResolveIdentity.mockResolvedValueOnce(null)
+    mockedPrisma.member.findUnique.mockResolvedValueOnce({
+      id: 'member-1',
+      tgName: 'claw',
+      displayName: 'Claw',
+      kind: 'human',
+      avatar: null,
+      bio: null,
+      level: 1,
+      exp: 0,
+      joinedAt: new Date('2026-03-01T00:00:00.000Z'),
+      walletBindings: [{ address: '0xowner' }],
+      posts: [],
+      achievements: [],
+      authoredSoulAssets: [],
+    })
+
+    const { GET } = await import('../../web/app/api/community/profile/[id]/route.ts')
+    const response = await GET(new Request('http://localhost/api/community/profile/member-1'), {
+      params: Promise.resolve({ id: 'member-1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'community-profile:anon:anon-fingerprint',
+      expect.objectContaining({ max: 120 }),
     )
   })
 })

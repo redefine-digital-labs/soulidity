@@ -108,6 +108,7 @@ vi.mock('@web/lib/souls/post-tx-db', () => ({
 vi.mock('@web/lib/souls/on-chain-verification', () => ({
   OnChainVerificationError: MockOnChainVerificationError,
   extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
+  getTrustedPackageIds: (...packageIds: Array<string | null | undefined>) => packageIds.filter((value): value is string => Boolean(value)),
   getVerifiedPersonalKioskCapState: mockedGetVerifiedPersonalKioskCapState,
   getVerifiedSoulState: mockedGetVerifiedSoulState,
   sameSuiValue: sameSuiValueForTests,
@@ -239,6 +240,23 @@ describe('agent soul purchase execute route', () => {
     await expect(response.json()).resolves.toEqual({ digest: '0xold', dbSynced: true })
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
     expect(mockedGetVerifiedSoulState).not.toHaveBeenCalled()
+  })
+
+  it('passes the buyer kiosk id as an expectedKioskId hint when the submitted purchase event uses the current package id', async () => {
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preparedPurchaseId: PREPARED_PURCHASE_ID, signature: 'sig' }),
+      }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: BUYER_KIOSK_ID,
+    })
   })
 
   it('returns 404 when the prepared purchase no longer exists for this Soul', async () => {
@@ -486,7 +504,9 @@ describe('agent soul purchase execute route', () => {
       onChainSuccess: true,
       dbSynced: true,
     })
-    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: BUYER_KIOSK_ID,
+    })
     expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
     expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
@@ -565,7 +585,9 @@ describe('agent soul purchase execute route', () => {
       currentKioskId: BUYER_KIOSK_ID,
       currentKioskCapOnChainId: BUYER_KIOSK_CAP_ID,
     })
-    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: BUYER_KIOSK_ID,
+    })
     expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
     expect(mockedFinalizePreparedSoulPurchaseExecution).not.toHaveBeenCalled()
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
@@ -737,7 +759,9 @@ describe('agent soul purchase execute route', () => {
       onChainSuccess: true,
       dbSynced: true,
     })
-    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: BUYER_KIOSK_ID,
+    })
     expect(mockedGetVerifiedPersonalKioskCapState).toHaveBeenCalledWith(BUYER_KIOSK_CAP_ID)
     expect(mockedDbSetSoulOwnership).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
@@ -887,7 +911,9 @@ describe('agent soul purchase execute route', () => {
 
     expect(response.status).toBe(422)
     await expect(response.json()).resolves.toEqual(cachedBody)
-    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID)
+    expect(mockedGetVerifiedSoulState).toHaveBeenCalledWith(SOUL_ID, PACKAGE_ID, {
+      expectedKioskId: BUYER_KIOSK_ID,
+    })
     expect(mockedDbSetSoulOwnership).not.toHaveBeenCalled()
     expect(mockedClaimPreparedSoulPurchaseForExecution).not.toHaveBeenCalled()
   })

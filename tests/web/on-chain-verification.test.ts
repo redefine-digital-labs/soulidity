@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedSuiClient = vi.hoisted(() => ({
   getObject: vi.fn(),
+  multiGetObjects: vi.fn(),
 }))
 const mockedGetVendoredKioskPackageAddress = vi.hoisted(() => vi.fn())
 const PACKAGE_ID = `0x${'9'.repeat(64)}`
 const COUNTERFEIT_PACKAGE_ID = `0x${'8'.repeat(64)}`
 const KIOSK_PACKAGE_ID = `0x${'7'.repeat(64)}`
+const ORIGINAL_PACKAGE_ID = `0x${'6'.repeat(64)}`
 
 vi.mock('@web/lib/sui', () => ({
   suiClient: mockedSuiClient,
@@ -42,6 +44,35 @@ describe('on-chain verification helpers', () => {
           type: `${COUNTERFEIT_PACKAGE_ID}::soul::Soul`,
           fields: {
             creator: `0x${'2'.repeat(64)}`,
+            name: 'Soul',
+            description: 'Desc',
+            image_url: 'https://example.com/soul.png',
+            metadata_ref: { vec: [] },
+            content_blob: { id: `0x${'3'.repeat(64)}` },
+            allowlist_address: { vec: [] },
+            allowlist_version: '0',
+          },
+        },
+      },
+    })
+
+    const { getVerifiedSoulState, OnChainVerificationError } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedSoulState('0xsoul', PACKAGE_ID)).rejects.toThrow(OnChainVerificationError)
+  })
+
+  it('rejects soul objects whose type only embeds the trusted suffix inside a counterfeit wrapper', async () => {
+    mockedSuiClient.getObject.mockResolvedValue({
+      data: {
+        objectId: '0xsoul',
+        owner: { AddressOwner: `0x${'1'.repeat(64)}` },
+        type: `${COUNTERFEIT_PACKAGE_ID}::fake_soul::Wrapper<${PACKAGE_ID}::soul::Soul>`,
+        content: {
+          dataType: 'moveObject',
+          type: `${COUNTERFEIT_PACKAGE_ID}::fake_soul::Wrapper<${PACKAGE_ID}::soul::Soul>`,
+          fields: {
+            creator: `0x${'2'.repeat(64)}`,
+            creator_royalty_bps: '0',
             name: 'Soul',
             description: 'Desc',
             image_url: 'https://example.com/soul.png',
@@ -100,6 +131,42 @@ describe('on-chain verification helpers', () => {
       allowlistAddress: canonicalAllowlisted,
       allowlistVersion: 2n,
     })
+  })
+
+  it('skips kiosk-parent resolution when the owner object already matches the expected kiosk id', async () => {
+    const kioskId = `0x${'5'.repeat(64)}`
+    mockedSuiClient.getObject.mockResolvedValueOnce({
+      data: {
+        objectId: '0xsoul',
+        owner: { ObjectOwner: kioskId },
+        type: `${PACKAGE_ID}::soul::Soul`,
+        content: {
+          dataType: 'moveObject',
+          type: `${PACKAGE_ID}::soul::Soul`,
+          fields: {
+            creator: `0x${'2'.repeat(64)}`,
+            creator_royalty_bps: '250',
+            name: 'Soul',
+            description: 'Desc',
+            image_url: 'https://example.com/soul.png',
+            metadata_ref: { vec: [] },
+            content_blob: { id: `0x${'3'.repeat(64)}` },
+            allowlist_address: { vec: [] },
+            allowlist_version: '0',
+          },
+        },
+      },
+    })
+
+    const { getVerifiedSoulState } = await import('../../web/lib/souls/on-chain-verification.ts')
+
+    await expect(getVerifiedSoulState('0xsoul', PACKAGE_ID, {
+      expectedKioskId: kioskId,
+    })).resolves.toMatchObject({
+      ownerObjectId: kioskId,
+      kioskParentId: null,
+    })
+    expect(mockedSuiClient.getObject).toHaveBeenCalledTimes(1)
   })
 
   it('rejects creator royalty bps outside the supported 0-10000 range', async () => {
@@ -299,6 +366,53 @@ describe('on-chain verification helpers', () => {
       sellerKioskId,
       buyerKioskId,
       buyerKioskCapOnChainId: buyerKioskCapObjectId,
+      buyerAddress: `0x${'1'.repeat(64)}`,
+      priceAtomic: 1000n,
+      platformFeeAtomic: 25n,
+      creatorRoyaltyAtomic: 100n,
+    })
+  })
+
+  it('ignores suffix-matched counterfeit events when trusted package ids are provided', async () => {
+    const { extractSoulPurchasedEvent } = await import('../../web/lib/souls/on-chain-verification.ts')
+    const soulObjectId = `0x${'7'.repeat(64)}`
+    const trustedBuyerKioskId = `0x${'6'.repeat(64)}`
+    const trustedBuyerKioskCapObjectId = `0x${'5'.repeat(64)}`
+
+    expect(extractSoulPurchasedEvent({
+      events: [
+        {
+          type: `${COUNTERFEIT_PACKAGE_ID}::market::SoulPurchased`,
+          parsedJson: {
+            soul_id: soulObjectId,
+            seller_kiosk_id: `0x${'a'.repeat(64)}`,
+            buyer_kiosk_id: `0x${'b'.repeat(64)}`,
+            buyer_kiosk_cap_id: `0x${'c'.repeat(64)}`,
+            buyer: `0x${'d'.repeat(64)}`,
+            price: '1',
+            platform_fee: '0',
+            creator_royalty: '0',
+          },
+        },
+        {
+          type: `${ORIGINAL_PACKAGE_ID}::market::SoulPurchased`,
+          parsedJson: {
+            soul_id: soulObjectId,
+            seller_kiosk_id: `0x${'8'.repeat(64)}`,
+            buyer_kiosk_id: trustedBuyerKioskId,
+            buyer_kiosk_cap_id: trustedBuyerKioskCapObjectId,
+            buyer: `0x${'1'.repeat(64)}`,
+            price: '1000',
+            platform_fee: '25',
+            creator_royalty: '100',
+          },
+        },
+      ],
+    }, PACKAGE_ID, [PACKAGE_ID, ORIGINAL_PACKAGE_ID])).toEqual({
+      soulObjectId,
+      sellerKioskId: `0x${'8'.repeat(64)}`,
+      buyerKioskId: trustedBuyerKioskId,
+      buyerKioskCapOnChainId: trustedBuyerKioskCapObjectId,
       buyerAddress: `0x${'1'.repeat(64)}`,
       priceAtomic: 1000n,
       platformFeeAtomic: 25n,

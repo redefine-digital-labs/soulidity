@@ -13,7 +13,7 @@ import PublishSoulPage from './page'
 const mockedPush = vi.hoisted(() => vi.fn())
 const mockedGetAuthHeaders = vi.hoisted(() => vi.fn())
 const mockedSignAndExecute = vi.hoisted(() => vi.fn())
-const mockedBuildMintAndListSoulTx = vi.hoisted(() => vi.fn())
+const mockedBuildMintOnlySoulTx = vi.hoisted(() => vi.fn())
 const mockedMirrorRouteRequest = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
   getNormalizedMoveModule: vi.fn(),
@@ -68,7 +68,7 @@ vi.mock('@web/lib/souls/use-privy-sui', () => ({
 }))
 
 vi.mock('@web/lib/souls/tx-builder', () => ({
-  buildMintAndListSoulTx: mockedBuildMintAndListSoulTx,
+  buildMintOnlySoulTx: mockedBuildMintOnlySoulTx,
 }))
 
 vi.mock('@web/lib/services/walrus', () => ({
@@ -129,14 +129,14 @@ describe('PublishSoulPage', () => {
         objectType: `${`0x${'9'.repeat(64)}`}::soul::Soul`,
       }],
     })
-    mockedBuildMintAndListSoulTx.mockReset()
-    mockedBuildMintAndListSoulTx.mockReturnValue({ kind: 'tx' })
+    mockedBuildMintOnlySoulTx.mockReset()
+    mockedBuildMintOnlySoulTx.mockReturnValue({ kind: 'tx' })
     mockedMirrorRouteRequest.mockReset()
     mockedMirrorRouteRequest.mockResolvedValue({})
     mockedSuiClient.getNormalizedMoveModule.mockReset()
     mockedSuiClient.getNormalizedMoveModule.mockResolvedValue({
       exposedFunctions: {
-        mint_and_list_fixed_price: {
+        mint_to_kiosk: {
           parameters: [
             { MutableReference: { Struct: { address: `0x${'9'.repeat(64)}`, module: 'market', name: 'MarketConfig', typeArguments: [] } } },
             { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
@@ -144,12 +144,11 @@ describe('PublishSoulPage', () => {
             { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
             { Struct: { address: '0x1', module: 'option', name: 'Option', typeArguments: [{ Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } }] } },
             { Struct: { address: `0x${'7'.repeat(64)}`, module: 'blob', name: 'Blob', typeArguments: [] } },
-            'U64',
             'U16',
             { MutableReference: { Struct: { address: '0x2', module: 'tx_context', name: 'TxContext', typeArguments: [] } } },
           ],
         },
-        mint_and_list_fixed_price_in_personal_kiosk: {
+        mint_in_personal_kiosk: {
           parameters: [
             { Reference: { Struct: { address: `0x${'9'.repeat(64)}`, module: 'market', name: 'MarketConfig', typeArguments: [] } } },
             { MutableReference: { Struct: { address: '0x2', module: 'kiosk', name: 'Kiosk', typeArguments: [] } } },
@@ -159,7 +158,6 @@ describe('PublishSoulPage', () => {
             { Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } },
             { Struct: { address: '0x1', module: 'option', name: 'Option', typeArguments: [{ Struct: { address: '0x1', module: 'string', name: 'String', typeArguments: [] } }] } },
             { Struct: { address: `0x${'7'.repeat(64)}`, module: 'blob', name: 'Blob', typeArguments: [] } },
-            'U64',
             'U16',
             { MutableReference: { Struct: { address: '0x2', module: 'tx_context', name: 'TxContext', typeArguments: [] } } },
           ],
@@ -233,7 +231,6 @@ describe('PublishSoulPage', () => {
     await setInputValue('Name', 'Signal Soul')
     await setInputValue('Description', 'Private research bundle')
     await setInputValue('Category', 'Research')
-    await setInputValue('Price (USDC)', '1.25')
     await setInputValue('Tags', 'alpha, macro')
 
     const previewButton = container.querySelector('button[data-upload-type="public"]') as HTMLButtonElement | null
@@ -268,9 +265,10 @@ describe('PublishSoulPage', () => {
     })
 
     expect(globalThis.fetch).toHaveBeenCalled()
-    expect(mockedBuildMintAndListSoulTx).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockedBuildMintOnlySoulTx).toHaveBeenCalledWith(expect.objectContaining({
       contentBlobObjectId: '0xblob',
       metadataRef: 'blob-metadata',
+      creatorRoyaltyBps: 0,
     }))
     expect(mockedSignAndExecute).toHaveBeenCalledTimes(1)
     expect(mockedMirrorRouteRequest).toHaveBeenCalledWith(expect.objectContaining({
@@ -330,7 +328,6 @@ describe('PublishSoulPage', () => {
     await setInputValue('Name', 'Signal Soul')
     await setInputValue('Description', 'Private research bundle')
     await setInputValue('Category', 'Research')
-    await setInputValue('Price (USDC)', '1.25')
     await setInputValue('Tags', 'alpha, macro')
 
     const previewButton = container.querySelector('button[data-upload-type="public"]') as HTMLButtonElement | null
@@ -355,7 +352,7 @@ describe('PublishSoulPage', () => {
       await Promise.resolve()
     })
 
-    expect(mockedBuildMintAndListSoulTx).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockedBuildMintOnlySoulTx).toHaveBeenCalledWith(expect.objectContaining({
       currentKioskId: '0xkiosk',
       currentKioskCapOnChainId: '0xcap',
     }))
@@ -364,7 +361,7 @@ describe('PublishSoulPage', () => {
   it('blocks publish before uploads when the configured Soul package ABI is stale', async () => {
     mockedSuiClient.getNormalizedMoveModule.mockResolvedValueOnce({
       exposedFunctions: {
-        mint_and_list_fixed_price: {
+        mint_to_kiosk: {
           parameters: [
             { Reference: { Struct: { address: `0x${'a'.repeat(64)}`, module: 'unft_standard', name: 'NftMintCap', typeArguments: [] } } },
             { MutableReference: { Struct: { address: `0x${'a'.repeat(64)}`, module: 'unft_standard', name: 'NftCollection', typeArguments: [] } } },
@@ -404,7 +401,6 @@ describe('PublishSoulPage', () => {
     await setInputValue('Name', 'Signal Soul')
     await setInputValue('Description', 'Private research bundle')
     await setInputValue('Category', 'Research')
-    await setInputValue('Price (USDC)', '1.25')
     await setInputValue('Tags', 'alpha, macro')
 
     const previewButton = container.querySelector('button[data-upload-type="public"]') as HTMLButtonElement | null
@@ -434,7 +430,7 @@ describe('PublishSoulPage', () => {
 
     expect(container.textContent).toContain('Current Soul package deployment is outdated')
     expect(fetchSpy).not.toHaveBeenCalled()
-    expect(mockedBuildMintAndListSoulTx).not.toHaveBeenCalled()
+    expect(mockedBuildMintOnlySoulTx).not.toHaveBeenCalled()
     expect(mockedSignAndExecute).not.toHaveBeenCalled()
   })
 
@@ -496,7 +492,7 @@ describe('PublishSoulPage', () => {
       await Promise.resolve()
     })
 
-    expect(mockedBuildMintAndListSoulTx).not.toHaveBeenCalled()
+    expect(mockedBuildMintOnlySoulTx).not.toHaveBeenCalled()
     expect(mockedSignAndExecute).not.toHaveBeenCalled()
     expect(mockedMirrorRouteRequest).toHaveBeenCalledTimes(1)
 

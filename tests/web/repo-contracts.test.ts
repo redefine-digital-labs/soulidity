@@ -52,9 +52,19 @@ describe('repository contract guards', () => {
   it('keeps tx sync route keys aligned with the Soul-only runtime', () => {
     const txSyncSource = readFileSync(join(repoRoot, 'web', 'lib', 'souls', 'tx-sync.ts'), 'utf8')
 
-    expect(txSyncSource).toContain(`'purchase' | 'publish' | 'allowlist:set' | 'allowlist:clear'`)
+    expect(txSyncSource).toContain(`'purchase' | 'publish' | 'delist' | 'allowlist:set' | 'allowlist:clear'`)
     expect(txSyncSource).not.toContain(`'release'`)
     expect(txSyncSource).not.toContain(`'renew'`)
+  })
+
+  it('adds a follow-up migration that allows the delist tx-sync route key', () => {
+    const migration = readFileSync(
+      join(repoRoot, 'prisma', 'migrations', '20260331173000_add_soul_delist_route_key', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(migration).toContain('DROP CONSTRAINT IF EXISTS "soul_tx_syncs_route_key_check"')
+    expect(migration).toContain(`CHECK ("route_key" IN ('purchase', 'publish', 'delist', 'allowlist:set', 'allowlist:clear'))`)
   })
 
   it('uses the local vendored Kiosk package as the PersonalKioskCap address source', () => {
@@ -84,9 +94,8 @@ describe('repository contract guards', () => {
     const adminTweetsPage = readFileSync(join(repoRoot, 'web', 'app', 'admin', 'tweets', 'page.tsx'), 'utf8')
     const accessDownloadButton = readFileSync(join(repoRoot, 'web', 'components', 'souls', 'access-download-button.tsx'), 'utf8')
 
-    expect(publishPage).toContain('buildMintAndListSoulTx')
-    expect(publishPage).toContain('100 = 1%, 500 = 5%, 10000 = 100%')
-    expect(publishPage).toContain('maxLength={5}')
+    expect(publishPage).toContain('buildMintOnlySoulTx')
+    expect(publishPage).not.toContain('buildMintAndListSoulTx')
     expect(publishPage).not.toContain('buildPublishReleaseTx')
     expect(purchaseButton).not.toContain('planType')
     expect(soulCard).toContain('toSafeBackgroundImage')
