@@ -6,6 +6,7 @@ const MARKET_CONFIG_ID = '0xmarketconfig'
 const TRANSFER_POLICY_ID = '0xpolicy'
 const ALLOWLIST_REGISTRY_ID = '0xallowlistregistry'
 const PAYMENT_COIN_TYPE = '0xpayment::usdc::USDC'
+const KIOSK_PACKAGE_ID = `0x${'b'.repeat(64)}`
 
 describe('tx builders', () => {
   beforeEach(() => {
@@ -17,6 +18,7 @@ describe('tx builders', () => {
       NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID: TRANSFER_POLICY_ID,
       NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID: ALLOWLIST_REGISTRY_ID,
       NEXT_PUBLIC_SOUL_PAYMENT_COIN_TYPE: PAYMENT_COIN_TYPE,
+      NEXT_PUBLIC_KIOSK_PACKAGE_ID: KIOSK_PACKAGE_ID,
     }
   })
 
@@ -200,6 +202,41 @@ describe('tx builders', () => {
       totalAtomic: 1_100_000n,
       paymentCoinObjectIds: [],
     })).toThrow('paymentCoinObjectIds must contain at least one coin object id')
+  })
+
+  it('builds a single PTB that creates, registers, and uses a buyer kiosk when none exists yet', async () => {
+    const { Transaction } = await import('@mysten/sui/transactions')
+    const moveCallSpy = vi.spyOn(Transaction.prototype, 'moveCall')
+    const splitCoinsSpy = vi.spyOn(Transaction.prototype, 'splitCoins')
+    const mergeCoinsSpy = vi.spyOn(Transaction.prototype, 'mergeCoins')
+    const kioskResult = [{ $kind: 'NestedResult', NestedResult: [0, 0] }, { $kind: 'NestedResult', NestedResult: [0, 1] }] as any
+    const personalCapResult = [{ $kind: 'NestedResult', NestedResult: [1, 0] }] as any
+    moveCallSpy
+      .mockImplementationOnce(() => kioskResult)
+      .mockImplementationOnce(() => personalCapResult)
+      .mockImplementation(() => ({ $kind: 'Result', Result: 0 } as any))
+    const { buildBuySoulTx } = await import('../../web/lib/souls/tx-builder.ts')
+
+    buildBuySoulTx({
+      listingObjectId: '0xlisting',
+      sellerKioskId: '0xkiosk',
+      totalAtomic: 1_100_000n,
+      paymentCoinObjectIds: ['0xcoin-a', '0xcoin-b'],
+    })
+
+    expect(moveCallSpy.mock.calls.map(([call]) => (call as Record<string, unknown>).target)).toEqual([
+      '0x2::kiosk::new',
+      `${KIOSK_PACKAGE_ID}::personal_kiosk::new`,
+      `${SOUL_OBJECT_PACKAGE_ID}::market::register_existing_personal_kiosk`,
+      `${SOUL_OBJECT_PACKAGE_ID}::market::buy_fixed_price`,
+      '0x2::transfer::public_share_object',
+      `${KIOSK_PACKAGE_ID}::personal_kiosk::transfer_to_sender`,
+    ])
+    expect(splitCoinsSpy).toHaveBeenCalledTimes(1)
+    expect(mergeCoinsSpy).toHaveBeenCalledTimes(1)
+    splitCoinsSpy.mockRestore()
+    mergeCoinsSpy.mockRestore()
+    moveCallSpy.mockRestore()
   })
 
   it('builds the Soul personal kiosk initialization move call', async () => {

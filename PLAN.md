@@ -9,10 +9,11 @@
    - 让 `mint_and_list_fixed_price` 直接 mint + list，不再接收 `mint_cap` / `collection`，并补已有 kiosk 的复用发布入口。
 3. 再改 Web 运行时与前端交互。
    - `config.ts`、`tx-builder.ts`、`purchase-quote.ts`、publish/purchase/personal-kiosk API 全部切到 `soul_object::market`。
-   - personal kiosk 解析只保留 `ready | missing`，把重复 kiosk 视为 invariant error。
+   - personal kiosk 解析只保留 `ready | missing`；多 kiosk 按“registry 优先，否则最小 kioskId”选定，不再依赖 DB `primaryKioskId`。
+   - publish 与 purchase 在 `missing` 下都自动建 kiosk；purchase 改成单 PTB 完成建 kiosk、注册和买入，删除显式 init 按钮分支。
    - 修复下载 MIME 传递，并把前端 `alert()` 改成 modal。
    - Souls publish 内容链路收口为“用户只选择原始文件，提交时由系统完成加密上传”；浏览器草稿仅在进入上链恢复阶段后保留内容上传中间态。
 4. 最后做清理、迁移和验证。
-   - 删除 adapter 活动包和旧 env / repo-contract 断言。
+   - 删除 adapter 活动包、`primaryKioskId` 旧 schema/migration/脚本，以及旧 env / repo-contract 断言。
    - 新增 Prisma 硬切 migration 清理 Soul 旧镜像数据。
    - 运行 `npm run typecheck`、`npm test`、`sui move test --path move/soul_object`。

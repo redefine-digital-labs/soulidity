@@ -8,7 +8,6 @@ const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
-const MockSoulPersonalKioskInvariantError = vi.hoisted(() => class MockSoulPersonalKioskInvariantError extends Error {})
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
@@ -24,7 +23,6 @@ vi.mock('@web/lib/rate-limit', () => ({
 
 vi.mock('@web/lib/souls/personal-kiosk', () => ({
   resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
-  SoulPersonalKioskInvariantError: MockSoulPersonalKioskInvariantError,
 }))
 
 describe('Soul personal kiosk route', () => {
@@ -74,21 +72,21 @@ describe('Soul personal kiosk route', () => {
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
-      error: 'Initialize a Soul personal kiosk before purchasing',
+      error: 'No Soul personal kiosk found for this wallet',
     })
   })
 
-  it('returns 409 when Soul personal kiosk resolution hits an invariant error', async () => {
+  it('returns 503 when Soul personal kiosk resolution fails unexpectedly', async () => {
     mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
-      new MockSoulPersonalKioskInvariantError('Soul personal kiosk invariant violated: multiple kiosks detected for this wallet set'),
+      new Error('unexpected kiosk resolution failure'),
     )
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
     const response = await GET()
 
-    expect(response.status).toBe(409)
+    expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
-      error: 'Multiple Soul personal kiosks are bound to this wallet; choose the intended kiosk before continuing.',
+      error: 'Unable to resolve Soul personal kiosk right now',
     })
   })
 

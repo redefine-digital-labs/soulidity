@@ -42,10 +42,12 @@
 3. `move/soul_object::market` 以 `MarketConfig` 为单例 personal kiosk registry 根对象；第二次 `init_personal_kiosk` 必须失败，`reuse_personal_kiosk` 只接受登记过的 cap。
 4. 仓库活动代码中不再存在 `unft_standard` 主链路依赖、`market_bootstrap.move`、`soul_market_adapter` 活动入口、`NEXT_PUBLIC_SOUL_MINT_CAP_ID`、`NEXT_PUBLIC_SOUL_COLLECTION_ID`、`NEXT_PUBLIC_SOUL_MARKET_ADAPTER_PACKAGE_ID`。
 5. Web tx builder、purchase quote、publish、purchase、personal kiosk 解析和相关 API 全部直连 `NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID::market::*`；publish 对“首次发布自动建 kiosk”和“已有 kiosk 复用发布”两条路径都已收口。
-6. Web personal kiosk 运行时只暴露 `ready | missing`；出现多个 cap 或 registry 不一致时，视为 invariant error，而不是继续返回 `multiple` 兼容状态。
-7. `web/components/souls/access-download-button.tsx` 下载时使用解密结果返回的 `mimeType` 创建 blob。
-8. 前端活动代码中不再存在 `alert(...)`；原先 alert 交互改为 modal 呈现。
-9. Prisma 新增硬切 migration，清理 Soul 旧镜像/准备态数据，确保新 package 切换后由新链重新镜像。
-10. `npm run typecheck`、`npm test`、`sui move test --path move/soul_object` 通过；若某项受外部环境阻塞，需明确记录阻塞原因。
-11. `web/app/souls/publish/page.tsx` 不再向用户暴露“Upload encrypted content bundle”式的两段式交互；用户只需选择原始内容文件，点击 Publish 后由系统调用上传接口完成加密上传、拿到 `contentBlobObjectId` 后再构建交易。
-12. `web/lib/souls/publish-draft.ts` 只在已进入可恢复的上链发布阶段时保留 `contentBlobId` / `contentBlobObjectId` / `sealDekEnvelope` / `metadataRef`；纯本地草稿不得残留这类系统中间态。
+6. Web personal kiosk 运行时只暴露 `ready | missing`；多 kiosk 按“链上 registry 优先，否则最小 `kioskId`”确定一个 kiosk，registry 不一致时视为 invariant error，而不是继续返回 `multiple` 兼容状态。
+7. Publish 和 purchase 在 `missing` 状态下都必须自动建 kiosk；purchase 必须在单个 PTB 中完成建 kiosk、注册和买入，不再要求额外初始化按钮或二次签名。
+8. `web/components/souls/access-download-button.tsx` 下载时使用解密结果返回的 `mimeType` 创建 blob。
+9. 前端活动代码中不再存在 `alert(...)`；原先 alert 交互改为 modal 呈现。
+10. Prisma 不得保留 `primary_kiosk_id` 之类的 DB 补丁真相；旧 schema、migration、脚本和测试契约必须同轮清理。
+11. Prisma 新增硬切 migration，清理 Soul 旧镜像/准备态数据，确保新 package 切换后由新链重新镜像。
+12. `npm run typecheck`、`npm test`、`sui move test --path move/soul_object` 通过；若某项受外部环境阻塞，需明确记录阻塞原因。
+13. `web/app/souls/publish/page.tsx` 不再向用户暴露“Upload encrypted content bundle”式的两段式交互；用户只需选择原始内容文件，点击 Publish 后由系统调用上传接口完成加密上传、拿到 `contentBlobObjectId` 后再构建交易。
+14. `web/lib/souls/publish-draft.ts` 只在已进入可恢复的上链发布阶段时保留 `contentBlobId` / `contentBlobObjectId` / `sealDekEnvelope` / `metadataRef`；纯本地草稿不得残留这类系统中间态。

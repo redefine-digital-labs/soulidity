@@ -279,15 +279,15 @@ model WalletChallenge {
 }
 
 model WalletBinding {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId    String   @map("member_id") @db.Uuid
-  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  chain       String   @default("sui")
-  address     String
-  isPrimary   Boolean  @default(true) @map("is_primary")
-  verifiedAt  DateTime @default(now()) @map("verified_at") @db.Timestamptz
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId       String   @map("member_id") @db.Uuid
+  member         Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  chain          String   @default("sui")
+  address        String
+  isPrimary      Boolean  @default(true) @map("is_primary")
+  verifiedAt     DateTime @default(now()) @map("verified_at") @db.Timestamptz
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([chain, address])
   @@unique([memberId, chain])

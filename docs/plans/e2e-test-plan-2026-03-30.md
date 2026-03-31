@@ -9,6 +9,16 @@ v6.1 新增功能（2026-03-31）：
 - **Cancel listing (delist)**：已上架 Soul 可取消上架，回到 held 状态
 - **List from detail page**：held 状态 Soul 可从详情页设价上架
 
+健康检查变更（2026-03-31，commit `498b030`）：
+- **Logout 修复**：`/api/auth/logout` 现在调用 Supabase signOut 并清除 session cookie（之前是 no-op）
+- **公开端点 rate limit**：leaderboard / stats / skills / companies / tags / categories / posts 均新增 30-60 req/min 限流
+- **Soul detail quote cache prune**：增加定期清理，防止内存泄漏
+- **Soul categories 缓存**：`/api/souls/categories` 增加 300s cached()
+- **安全响应头**：next.config.ts 添加 HSTS / X-Frame-Options: DENY / X-Content-Type-Options / Referrer-Policy
+- **e2e-agent-register.ts**：移除硬编码 fallback 助记词，现在必须通过 `AGENT_MNEMONIC` 环境变量提供
+- **Prisma 索引**：Comment 表新增 `memberId` 和 `[memberId, isAccepted]` 索引（迁移 `20260331180000`）
+- **依赖升级**：prisma 7.5→7.6，openai/grammy/pg/@mysten/sui 版本对齐
+
 本次目标：
 1. 清空 DB 中所有旧 Soul 开发数据
 2. 用 Chrome DevTools MCP 全自动跑 36 项测试（仅 2 次 Privy OTP 需手动输入）
@@ -35,24 +45,30 @@ DELETE FROM "soul_assets";
 ```
 通过 `npx prisma db execute` 或直接连 DB 执行。不清 members/wallet_bindings。
 
-### -1.2 验证测试账号存在
+### -1.2 应用新 Prisma 迁移
+```bash
+npx prisma migrate deploy --schema=prisma/schema.prisma
+```
+确认 `20260331180000_add_comment_member_indexes` 迁移已应用。
+
+### -1.3 验证测试账号存在
 查 DB 确认 Seller/Buyer member + wallet_binding 存在，Agent Alpha/Beta 有 API key。
 
-### -1.3 验证钱包余额
+### -1.4 验证钱包余额
 用 Sui RPC 检查：
 - Seller: ≥0.1 SUI gas
 - Buyer: ≥0.1 SUI gas + ≥2 test USDC
 - Agent Alpha: ≥0.1 SUI gas + ≥3 test USDC
 
-### -1.4 准备测试文件
+### -1.5 准备测试文件
 创建最小测试文件供 publish 上传：
 - 1x1 PNG 图片（preview image，通过 `UploadWalrus` 组件上传）
 - 小文本文件（content bundle，本地选择后由 publish 流程自动加密上传）
 
-### -1.5 确认 Next.js dev server 运行
+### -1.6 确认 Next.js dev server 运行
 `curl http://localhost:3000/souls` 确认可达。
 
-### -1.6 清空浏览器 localStorage 旧 draft
+### -1.7 清空浏览器 localStorage 旧 draft
 navigate 到 `/souls/publish` 后 `evaluate_script` 清除所有 `soul-publish-draft:*` key。
 
 ---
@@ -175,7 +191,7 @@ navigate 到 `/souls/publish` 后 `evaluate_script` 清除所有 `soul-publish-d
 ## Phase 2: Buyer 购买（5 tests）
 
 ### Test 11: Buyer 登录（手动 OTP）
-1. 登出 Seller：
+1. 登出 Seller（logout 现在会调用 Supabase signOut + 清除 session cookie）：
    - `click` nav 右侧用户头像按钮
    - `wait_for` dropdown 出现
    - `click` "退出登录" 按钮
@@ -394,22 +410,50 @@ Test 23 (agent purchase) → Tests 24-26, 28
 | `web/components/souls/purchase-button.tsx` | 购买按钮 — Test 9-10 |
 | `web/components/souls/upload-walrus.tsx` | Preview 文件上传 — Test 2-3 |
 | `web/app/api/souls/personal-kiosk/route.ts` | Personal kiosk 查询 — Test 9 |
+| `web/app/api/souls/[id]/route.ts` | Soul 详情 API（含 quote cache prune）— Phase 1-5 |
 | `web/app/api/souls/[id]/access/route.ts` | 人类 access 端点 — Test 19, 24 |
 | `web/app/api/souls/[id]/allowlist/route.ts` | Allowlist CRUD — Test 16, 19, 21 |
 | `web/app/api/souls/[id]/delist/route.ts` | 取消上架镜像同步 — Test 7 |
 | `web/app/api/souls/[id]/purchase/route.ts` | 购买镜像同步 — Test 13 |
+| `web/app/api/souls/categories/route.ts` | Soul 分类（新增 rate limit + 300s cache） |
 | `web/app/api/agent/souls/[id]/access/route.ts` | Agent access — Test 14-15, 21-22, 26-30 |
+| `web/app/api/auth/logout/route.ts` | 登出（修复：现在调用 Supabase signOut + 清 cookie）— Test 11 |
+| `web/lib/rate-limit.ts` | Rate limit 工具（新增到 7 个公开 GET 端点） |
 | `web/lib/souls/tx-builder.ts` | TX 构建（mint, mint-only, buy, list, cancel, allowlist） |
 | `web/lib/souls/access-download.ts` | 浏览器端解密下载逻辑 |
 | `web/lib/souls/access.ts` | 服务端 access payload 构建 |
 | `web/lib/souls/personal-kiosk.ts` | Personal kiosk 解析 |
 | `web/lib/souls/on-chain-verification.ts` | 链上状态验证 |
 | `web/lib/souls/soul-detail-utils.ts` | 详情页工具（allowlist cap 提取） |
+| `web/lib/scraper.ts` | URL 抓取（修复：DNS pinning 防 SSRF） |
+| `web/next.config.ts` | Next.js 配置（新增安全响应头：HSTS, X-Frame-Options: DENY 等） |
 | `move/soul_object/sources/allowlist.move` | Allowlist Move 模块 |
 | `move/soul_object/sources/market.move` | 市场 Move 模块 |
 | `web/scripts/e2e-agent-purchase.ts` | Agent 购买脚本 — Test 20 |
+| `web/scripts/e2e-agent-register.ts` | Agent 注册脚本（**需 `AGENT_MNEMONIC` 环境变量，无 fallback**） |
 | `web/scripts/e2e-agent-decrypt.ts` | Agent 解密脚本 — Test 25（可能需修复） |
-| `prisma/schema.prisma` | DB schema — Phase -1 cleanup |
+| `prisma/schema.prisma` | DB schema — Phase -1 cleanup + Comment 索引迁移 |
+
+## 注意事项（健康检查后）
+
+### Rate Limit 影响
+以下公开 GET 端点已加 rate limit（30-60 req/min per IP）：
+- `/api/community/leaderboard`、`/api/stats`、`/api/skills`、`/api/companies`
+- `/api/community/tags`、`/api/souls/categories`、`/api/community/posts`
+
+E2E 测试中这些端点不会被直接高频调用，但页面加载可能触发多个并行请求。本地开发环境无 Upstash Redis，会 fallback 到内存 rate limiter，不会跨实例累积，正常跑测试不会触发限流。
+
+### X-Frame-Options: DENY
+`next.config.ts` 新增 `X-Frame-Options: DENY`。如果 E2E 测试依赖 iframe 嵌入页面会被阻止。Privy 的 auth modal 使用自己的 iframe（不受此限制，因为 Privy iframe 加载的是 Privy 域名而非本站页面），不影响。
+
+### Logout Session 清除
+Test 11 登出 Seller 时，`POST /api/auth/logout` 现在会真正调用 Supabase `signOut()` 并清除 `sb-access-token` / `sb-refresh-token` cookie。登出后 Privy session 仍需要客户端 `logout()` 调用来清除（UI 按钮流程已包含此步骤），两者配合确保干净切换账号。
+
+### e2e-agent-register.ts 环境变量
+脚本不再包含 fallback 助记词。运行前必须设置 `AGENT_MNEMONIC` 环境变量：
+```bash
+AGENT_MNEMONIC="your twelve word mnemonic here" npx tsx web/scripts/e2e-agent-register.ts
+```
 
 ## 验证标准
 
