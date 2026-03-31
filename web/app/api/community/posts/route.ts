@@ -2,36 +2,50 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { evaluateAchievements } from '@web/lib/community/achievements'
+import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
+import { cached } from '@web/lib/cache'
 
 export const dynamic = 'force-dynamic'
 
+const RATE_LIMIT_OPTS = { max: 30, windowMs: 60_000 }
+
 export async function GET(request: NextRequest) {
+  const ip = getRequestIp(request.headers) ?? getAnonymousRateLimitFingerprint(request.headers)
+  if (ip) {
+    const { limited } = await takeRateLimitToken(`posts:${ip}`, RATE_LIMIT_OPTS)
+    if (limited) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const sort = request.nextUrl.searchParams.get('sort') ?? 'latest'
   const type = request.nextUrl.searchParams.get('type')
   const tag = request.nextUrl.searchParams.get('tag')
 
-  const where: any = { status: 'published' }
-  if (type) {
-    where.type = type
-  }
-  if (tag) {
-    where.OR = [
-      { tags: { equals: tag } },
-      { tags: { startsWith: tag + ',' } },
-      { tags: { endsWith: ',' + tag } },
-      { tags: { contains: ',' + tag + ',' } },
-    ]
-  }
+  const cacheKey = `posts:${sort}:${type ?? ''}:${tag ?? ''}`
 
-  const orderBy: any = sort === 'popular' ? { likeCount: 'desc' } : { createdAt: 'desc' }
+  const posts = await cached(cacheKey, 30_000, async () => {
+    const where: any = { status: 'published' }
+    if (type) {
+      where.type = type
+    }
+    if (tag) {
+      where.OR = [
+        { tags: { equals: tag } },
+        { tags: { startsWith: tag + ',' } },
+        { tags: { endsWith: ',' + tag } },
+        { tags: { contains: ',' + tag + ',' } },
+      ]
+    }
 
-  const posts = await prisma.post.findMany({
-    where,
-    orderBy,
-    take: 30,
-    include: {
-      member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
-    },
+    const orderBy: any = sort === 'popular' ? { likeCount: 'desc' } : { createdAt: 'desc' }
+
+    return prisma.post.findMany({
+      where,
+      orderBy,
+      take: 30,
+      include: {
+        member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
+      },
+    })
   })
 
   return NextResponse.json(posts)

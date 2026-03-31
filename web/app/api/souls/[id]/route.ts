@@ -23,8 +23,23 @@ const soulDetailQuoteCache = new Map<string, {
   promise: ReturnType<typeof getSoulPurchaseQuote>
 }>()
 
+const QUOTE_CACHE_MAX_SIZE = 500
+let lastQuoteCachePrune = 0
+const QUOTE_CACHE_PRUNE_INTERVAL_MS = 60_000
+
+function pruneQuoteCacheIfNeeded() {
+  const now = Date.now()
+  if (now - lastQuoteCachePrune < QUOTE_CACHE_PRUNE_INTERVAL_MS && soulDetailQuoteCache.size < QUOTE_CACHE_MAX_SIZE) return
+  lastQuoteCachePrune = now
+  for (const [key, entry] of soulDetailQuoteCache) {
+    if (entry.expiresAt <= now) soulDetailQuoteCache.delete(key)
+  }
+}
+
 function getCachedSoulPurchaseQuote(listingObjectId: string) {
   const now = Date.now()
+  pruneQuoteCacheIfNeeded()
+
   const cachedQuote = soulDetailQuoteCache.get(listingObjectId)
   if (cachedQuote && cachedQuote.expiresAt > now) {
     return cachedQuote.promise

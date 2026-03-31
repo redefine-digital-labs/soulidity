@@ -1,10 +1,18 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { cached } from '@web/lib/cache'
+import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+const RATE_LIMIT_OPTS = { max: 30, windowMs: 60_000 }
+
+export async function GET(request: NextRequest) {
+  const ip = getRequestIp(request.headers) ?? getAnonymousRateLimitFingerprint(request.headers)
+  if (ip) {
+    const { limited } = await takeRateLimitToken(`tags:${ip}`, RATE_LIMIT_OPTS)
+    if (limited) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
   const tags = await cached('community:tags', 300_000, async () => {
     const rows = await prisma.post.findMany({
       where: { status: 'published', tags: { not: null } },

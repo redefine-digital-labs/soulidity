@@ -50,17 +50,32 @@ async function validateUrl(raw: string): Promise<URL> {
 // --- Scraper ---
 
 export async function scrapeUrl(url: string): Promise<{ title: string; content: string }> {
-  await validateUrl(url)
+  const validated = await validateUrl(url)
+
+  // Pin DNS resolution to prevent DNS rebinding SSRF (TOCTOU mitigation)
+  const hostname = validated.hostname
+  let connectUrl = url
+  const extraHeaders: Record<string, string> = {}
+  if (!isIP(hostname)) {
+    const addrs = await dns.resolve4(hostname).catch(() => [] as string[])
+    if (addrs.length > 0) {
+      const pinnedIp = addrs[0]
+      validated.hostname = pinnedIp
+      connectUrl = validated.toString()
+      extraHeaders['Host'] = hostname
+    }
+  }
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 10000)
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(connectUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; CryptoOpenClaw/1.0)',
         'Accept': 'text/html',
+        ...extraHeaders,
       },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)

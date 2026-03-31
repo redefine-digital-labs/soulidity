@@ -15,6 +15,7 @@ export async function GET(
       member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
       comments: {
         orderBy: { createdAt: 'asc' },
+        take: 200,
         include: {
           member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
         },

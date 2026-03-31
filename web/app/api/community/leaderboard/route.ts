@@ -1,42 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { cached } from '@web/lib/cache'
+import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint, MISSING_CLIENT_IP_ERROR } from '@web/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
+const RATE_LIMIT_OPTS = { max: 30, windowMs: 60_000 }
+
 export async function GET(request: NextRequest) {
+  const ip = getRequestIp(request.headers) ?? getAnonymousRateLimitFingerprint(request.headers)
+  if (ip) {
+    const { limited } = await takeRateLimitToken(`leaderboard:${ip}`, RATE_LIMIT_OPTS)
+    if (limited) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const dimension = request.nextUrl.searchParams.get('dimension') ?? 'active'
 
   const data = await cached(`leaderboard:${dimension}`, 300_000, async () => {
     if (dimension === 'active') {
-      const members = await prisma.member.findMany({
-        where: { kind: { not: 'system' } },
-        select: {
-          id: true,
-          tgName: true,
-          avatar: true,
-          level: true,
-          _count: { select: { posts: true, comments: true } },
-        },
-      })
+      const ranked = await prisma.$queryRaw<
+        { id: string; tgName: string | null; avatar: string | null; level: number; postCount: bigint; commentCount: bigint; score: bigint }[]
+      >`
+        SELECT
+          m.id,
+          m.tg_name AS "tgName",
+          m.avatar,
+          m.level,
+          COALESCE(pc.cnt, 0) AS "postCount",
+          COALESCE(cc.cnt, 0) AS "commentCount",
+          COALESCE(pc.cnt, 0) * 10 + COALESCE(cc.cnt, 0) * 3 AS score
+        FROM members m
+        LEFT JOIN (SELECT member_id, COUNT(*)::int AS cnt FROM posts GROUP BY member_id) pc ON pc.member_id = m.id
+        LEFT JOIN (SELECT member_id, COUNT(*)::int AS cnt FROM comments GROUP BY member_id) cc ON cc.member_id = m.id
+        WHERE m.kind != 'system'
+          AND (COALESCE(pc.cnt, 0) * 10 + COALESCE(cc.cnt, 0) * 3) > 0
+        ORDER BY score DESC
+        LIMIT 20
+      `
 
-      const ranked = members
-        .map(m => ({
-          rank: 0,
-          id: m.id,
-          tgName: m.tgName,
-          avatar: m.avatar,
-          level: m.level,
-          score: m._count.posts * 10 + m._count.comments * 3,
-          postCount: m._count.posts,
-          commentCount: m._count.comments,
-        }))
-        .filter(m => m.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 20)
-      ranked.forEach((r, i) => (r.rank = i + 1))
-
-      return ranked
+      return ranked.map((r, i) => ({
+        rank: i + 1,
+        id: r.id,
+        tgName: r.tgName,
+        avatar: r.avatar,
+        level: r.level,
+        score: Number(r.score),
+        postCount: Number(r.postCount),
+        commentCount: Number(r.commentCount),
+      }))
     }
 
     if (dimension === 'helpful') {

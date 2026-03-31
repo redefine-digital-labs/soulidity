@@ -220,6 +220,8 @@ model Comment {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([postId])
+  @@index([memberId])
+  @@index([memberId, isAccepted])
   @@map("comments")
 }
 
