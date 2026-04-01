@@ -16,7 +16,14 @@ const MockOnChainVerificationError = vi.hoisted(() => class MockOnChainVerificat
     this.status = status
   }
 })
-const MockSoulPersonalKioskInvariantError = vi.hoisted(() => class MockSoulPersonalKioskInvariantError extends Error {})
+const MockSoulPersonalKioskInvariantError = vi.hoisted(() => class MockSoulPersonalKioskInvariantError extends Error {
+  kind: 'conflict' | 'service'
+
+  constructor(message: string, kind: 'conflict' | 'service' = 'service') {
+    super(message)
+    this.kind = kind
+  }
+})
 const mockedRequireAgentApiKey = vi.hoisted(() => vi.fn())
 const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -242,9 +249,29 @@ describe('agent soul purchase prepare route', () => {
     }))
   })
 
-  it('returns 503 when kiosk resolution hits an internal invariant error', async () => {
+  it('returns 409 when kiosk resolution hits a registry conflict invariant', async () => {
     mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
-      new MockSoulPersonalKioskInvariantError('registry stale'),
+      new MockSoulPersonalKioskInvariantError(
+        'Soul market registry points to a kiosk that is not owned by the current wallet',
+        'conflict',
+      ),
+    )
+
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')
+    const response = await POST(
+      new Request('http://localhost/api/agent/souls/0xsoul/purchase', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: SOUL_ID }) },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul market registry points to a kiosk that is not owned by the current wallet',
+    })
+  })
+
+  it('keeps service invariants on the generic 503 path', async () => {
+    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
+      new MockSoulPersonalKioskInvariantError('Soul market config type is unavailable on chain', 'service'),
     )
 
     const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/route.ts')

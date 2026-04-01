@@ -108,12 +108,6 @@ export async function POST(
       getSoulPurchaseQuote({ listingObjectId: soul.listingObjectOnChainId }),
       suiClient.getBalance({ owner: agentAddress }),
     ])
-    if (resolvedBuyerKiosk.status === 'missing') {
-      return NextResponse.json(
-        { error: 'Agent wallet must initialize a Soul personal kiosk before purchasing' },
-        { status: 409 },
-      )
-    }
     const paymentCoinSymbol = getPaymentCoinSymbol(paymentCoinType)
     const paymentCoinObjectIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
       owner: agentAddress,
@@ -148,10 +142,14 @@ export async function POST(
     const txParams = {
       listingObjectId: soul.listingObjectOnChainId,
       sellerKioskId: soul.currentKioskId,
-      buyerKioskId: resolvedBuyerKiosk.kiosk.currentKioskId,
-      buyerKioskCapOnChainId: resolvedBuyerKiosk.kiosk.currentKioskCapOnChainId,
       totalAtomic: quote.totalAtomic,
       paymentCoinObjectIds,
+      ...(resolvedBuyerKiosk.status === 'ready'
+        ? {
+            buyerKioskId: resolvedBuyerKiosk.kiosk.currentKioskId,
+            buyerKioskCapOnChainId: resolvedBuyerKiosk.kiosk.currentKioskCapOnChainId,
+          }
+        : {}),
     }
     const tx = buildBuySoulTx(txParams)
     tx.setSender(agentAddress)
@@ -192,11 +190,8 @@ export async function POST(
       },
     })
   } catch (error) {
-    if (error instanceof SoulPersonalKioskInvariantError) {
-      return NextResponse.json(
-        { error: 'Agent wallet has multiple Soul personal kiosks; choose the intended kiosk before purchasing.' },
-        { status: 409 },
-      )
+    if (error instanceof SoulPersonalKioskInvariantError && error.kind === 'conflict') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
     if (error instanceof CoinPaginationExhaustedError) {
       return NextResponse.json(

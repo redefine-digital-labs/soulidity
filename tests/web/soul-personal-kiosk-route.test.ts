@@ -8,6 +8,14 @@ const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
+const MockSoulPersonalKioskInvariantError = vi.hoisted(() => class MockSoulPersonalKioskInvariantError extends Error {
+  kind: 'conflict' | 'service'
+
+  constructor(message: string, kind: 'conflict' | 'service' = 'service') {
+    super(message)
+    this.kind = kind
+  }
+})
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
@@ -23,6 +31,7 @@ vi.mock('@web/lib/rate-limit', () => ({
 
 vi.mock('@web/lib/souls/personal-kiosk', () => ({
   resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
+  SoulPersonalKioskInvariantError: MockSoulPersonalKioskInvariantError,
 }))
 
 describe('Soul personal kiosk route', () => {
@@ -76,9 +85,40 @@ describe('Soul personal kiosk route', () => {
     })
   })
 
+  it('returns 409 when the registered Soul kiosk conflicts with the wallet-owned caps', async () => {
+    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
+      new MockSoulPersonalKioskInvariantError(
+        'Soul market registry points to a kiosk that is not owned by the current wallet',
+        'conflict',
+      ),
+    )
+
+    const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
+    const response = await GET()
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Soul market registry points to a kiosk that is not owned by the current wallet',
+    })
+  })
+
   it('returns 503 when Soul personal kiosk resolution fails unexpectedly', async () => {
     mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
       new Error('unexpected kiosk resolution failure'),
+    )
+
+    const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
+    const response = await GET()
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unable to resolve Soul personal kiosk right now',
+    })
+  })
+
+  it('keeps service-side Soul kiosk invariant failures on the generic 503 path', async () => {
+    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
+      new MockSoulPersonalKioskInvariantError('Soul market config type is unavailable on chain', 'service'),
     )
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')

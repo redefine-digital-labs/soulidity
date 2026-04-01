@@ -6,7 +6,7 @@ import { useAuth } from '@web/components/auth-provider'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import { CoinPaginationExhaustedError, selectCoinObjectIdsForAmountAcrossPages } from '@web/lib/souls/coin-selection'
 import { parsePurchaseAmounts } from '@web/lib/souls/purchase-amounts'
-import { buildBuySoulTx, buildInitSoulPersonalKioskTx } from '@web/lib/souls/tx-builder'
+import { buildBuySoulTx } from '@web/lib/souls/tx-builder'
 import { mirrorRouteRequest, formatMirrorSyncError } from '@web/lib/souls/mirror-sync'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
 import { formatAtomicSoulPaymentForDisplay } from '@web/lib/souls/price-format'
@@ -51,7 +51,6 @@ export function PurchaseButton(props: PurchaseButtonProps) {
   const { signAndExecute } = usePrivySuiSign()
   const suiClient = useSuiClient()
   const [submitting, setSubmitting] = useState(false)
-  const [initializingKiosk, setInitializingKiosk] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [personalKioskStatus, setPersonalKioskStatus] = useState<PersonalKioskStatus>('idle')
   const [buyerKioskId, setBuyerKioskId] = useState<string | null>(null)
@@ -98,7 +97,7 @@ export function PurchaseButton(props: PurchaseButtonProps) {
       setBuyerKioskCapOnChainId(null)
       if (response.status === 404) {
         setPersonalKioskStatus('missing')
-        setError(message)
+        setError(null)
         return { status: 'missing', message }
       }
       setPersonalKioskStatus('error')
@@ -120,34 +119,6 @@ export function PurchaseButton(props: PurchaseButtonProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.primarySuiAddress])
 
-  async function handleInitializeKiosk() {
-    if (initializingKiosk) return
-    if (!user?.primarySuiAddress) {
-      setError('Bind a Sui wallet before initializing a Soul kiosk')
-      return
-    }
-
-    setInitializingKiosk(true)
-    setError(null)
-    try {
-      const currentPersonalKiosk = await refreshPersonalKiosk()
-      if (currentPersonalKiosk.status === 'ready') {
-        return
-      }
-      if (currentPersonalKiosk.status !== 'missing') {
-        return
-      }
-
-      const tx = buildInitSoulPersonalKioskTx()
-      await signAndExecute(tx)
-      await refreshPersonalKiosk()
-    } catch (initError) {
-      setError(formatMirrorSyncError(initError))
-    } finally {
-      setInitializingKiosk(false)
-    }
-  }
-
   async function handlePurchase() {
     if (submitting) return
     if (!user?.primarySuiAddress) {
@@ -162,11 +133,7 @@ export function PurchaseButton(props: PurchaseButtonProps) {
       setError('Checking your Soul personal kiosk, try again in a moment')
       return
     }
-    if (personalKioskStatus === 'missing') {
-      setError('Initialize a Soul personal kiosk before purchasing')
-      return
-    }
-    if (!buyerKioskId || !buyerKioskCapOnChainId) {
+    if (personalKioskStatus !== 'missing' && (!buyerKioskId || !buyerKioskCapOnChainId)) {
       setError('Soul personal kiosk is unavailable right now')
       return
     }
@@ -189,10 +156,14 @@ export function PurchaseButton(props: PurchaseButtonProps) {
       const txParams = {
         listingObjectId: props.listingObjectId,
         sellerKioskId: props.sellerKioskId,
-        buyerKioskId,
-        buyerKioskCapOnChainId,
         totalAtomic: parsedAmounts.totalAtomic,
         paymentCoinObjectIds,
+        ...(buyerKioskId && buyerKioskCapOnChainId
+          ? {
+              buyerKioskId,
+              buyerKioskCapOnChainId,
+            }
+          : {}),
       }
       const tx = buildBuySoulTx(txParams)
       const result = await signAndExecute(tx)
@@ -222,39 +193,22 @@ export function PurchaseButton(props: PurchaseButtonProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      {personalKioskStatus === 'missing' ? (
-        <button
-          type="button"
-          onClick={handleInitializeKiosk}
-          disabled={initializingKiosk}
-          className="px-4 py-3 rounded-xl font-semibold border"
-          style={{
-            borderColor: 'var(--accent-cyan)',
-            color: 'var(--accent-cyan)',
-            opacity: initializingKiosk ? 0.7 : 1,
-          }}
-        >
-          {initializingKiosk ? 'Initializing Soul kiosk…' : 'Initialize Soul kiosk'}
-        </button>
-      ) : null}
       <button
         type="button"
         onClick={handlePurchase}
-        disabled={submitting || !parsedAmounts || personalKioskStatus !== 'ready'}
+        disabled={submitting || !parsedAmounts || (personalKioskStatus !== 'ready' && personalKioskStatus !== 'missing')}
         className="px-4 py-3 rounded-xl font-semibold"
         style={{
           background: 'var(--accent-cyan)',
           color: '#02131a',
-          opacity: submitting || !parsedAmounts || personalKioskStatus !== 'ready' ? 0.7 : 1,
+          opacity: submitting || !parsedAmounts || (personalKioskStatus !== 'ready' && personalKioskStatus !== 'missing') ? 0.7 : 1,
         }}
       >
         {submitting
           ? 'Purchasing…'
           : personalKioskStatus === 'loading'
             ? 'Checking Soul kiosk…'
-            : personalKioskStatus === 'missing'
-              ? 'Initialize kiosk to buy'
-              : parsedAmounts
+            : parsedAmounts
             ? `Buy for ${formatAtomicSoulPaymentForDisplay(parsedAmounts.totalAtomic.toString())}`
             : 'Price unavailable'}
       </button>

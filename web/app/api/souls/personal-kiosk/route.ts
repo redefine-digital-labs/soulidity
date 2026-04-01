@@ -48,18 +48,15 @@ export async function GET() {
     const resolvedPersonalKiosk = await resolveOwnedPersonalKiosk({ ownerAddresses: walletAddresses })
     if (resolvedPersonalKiosk.status === 'missing') {
       return NextResponse.json(
-        { error: 'Initialize a Soul personal kiosk before purchasing' },
+        { error: 'No Soul personal kiosk found for this wallet' },
         { status: 404 },
       )
     }
 
     return NextResponse.json(resolvedPersonalKiosk.kiosk)
   } catch (error) {
-    if (error instanceof SoulPersonalKioskInvariantError) {
-      return NextResponse.json(
-        { error: 'Multiple Soul personal kiosks are bound to this wallet; choose the intended kiosk before continuing.' },
-        { status: 409 },
-      )
+    if (error instanceof SoulPersonalKioskInvariantError && error.kind === 'conflict') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
     console.error('[soul-personal-kiosk] Failed to resolve owned Soul kiosk', {
       memberId: identity.memberId,
