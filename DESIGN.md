@@ -1,137 +1,253 @@
-# Design System — Soul Marketplace
+# Design System — Soulidity
 
 ## Product Context
-- **What this is:** One-of-one encrypted content marketplace on Sui blockchain
-- **Who it's for:** Crypto-native content creators and buyers (alpha, research, trading strategies)
-- **Space/industry:** Web3 / NFT marketplace, but positioned as a content product store (not a trading floor)
-- **Project type:** Web app (Next.js) with on-chain settlement
+- **What this is:** On-chain ownership infrastructure for digital entities (original characters, AI agents, and everything in between)
+- **Who it's for:** Crypto-native content creators ("Trainers") and collectors/builders on Sui
+- **Space/industry:** Web3 / digital entity marketplace, positioned as on-chain ownership for Souls, not an NFT trading floor
+- **Project type:** Web app (Next.js) with on-chain settlement on Sui, Walrus storage, Seal access control
+- **Brand name:** Soulidity (logo: teal/purple antenna creature + "Soul" white + "idity" purple)
 
 ## Aesthetic Direction
-- **Direction:** Industrial/Utilitarian with content-focus
-- **Decoration level:** Intentional — glass-card pattern with subtle borders, dot-grid background
-- **Mood:** Clean, functional, trustworthy. Premium content store, not dark trading terminal
-- **Competitive positioning:** Light mode in a dark-mode-dominated category (OpenSea, Blur, Tensor, Foundation all dark). Closest peer: Zora (also light). Signals "content product" not "trading floor"
-- **Research references:** OpenSea OS2, Blur, Tensor, Zora, Foundation (analyzed 2026-03-31)
+- **Direction:** Dark Web3 with intentional color coding
+- **Decoration level:** Intentional — subtle card borders, background orbs with blur, backdrop-filter nav
+- **Mood:** Dark, focused, trustworthy. Premium digital entity store. Not a trading terminal, not a generic SaaS dashboard
+- **Key visual elements:**
+  - Fixed background orbs (purple top-right, gold bottom-left, teal mid-left) with heavy blur and low opacity
+  - Sticky glass navbar with backdrop-blur
+  - Cards with solid dark backgrounds and 1px borders
+  - Purple as the interactive/brand color, gold for pricing/value, teal for data/status/tech
+- **Source of truth:** `docs/specs/prototype.html`
 
 ## Typography
-- **Display/Hero:** Bricolage Grotesque (800 weight) — Variable serif-grotesque hybrid, distinctive without trying. No competitor uses this. Tight letter-spacing (-0.02em)
-- **Body:** Outfit (300-600 weights) — Clean geometric sans, reads well at all sizes
-- **UI/Labels:** Outfit — Same as body, with uppercase tracking (0.12-0.16em) for category labels
-- **Data/Tables:** JetBrains Mono (tabular-nums) — Standard, solid for prices and addresses
-- **Code:** JetBrains Mono
-- **Loading:** Google Fonts CDN (`https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap`)
+- **Body/UI:** Inter, DM Sans fallback — clean, readable at small sizes, neutral enough to let color coding carry the hierarchy
+- **Monospace:** JetBrains Mono — for wallet addresses, contract IDs, data readouts
+- **Loading:** Google Fonts CDN (`https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap`)
 - **Scale:**
-  - Hero: 2.5rem / 40px (Bricolage, 800)
-  - Page heading: 1.75rem / 28px (Bricolage, 700)
-  - Section heading: 1.125rem / 18px (Bricolage, 600)
-  - Body: 1rem / 16px (Outfit, 400)
-  - Small/Helper: 0.875rem / 14px (Outfit, 400)
-  - Category label: 0.6875rem / 11px (Outfit, uppercase, tracking 0.12-0.16em)
-  - Badge: 0.75rem / 12px (Outfit, 500)
+  - Landing hero: `clamp(36px, 6vw, 72px)` (800 weight, letter-spacing -0.03em)
+  - Page heading (section-title): 24px (700 weight)
+  - Section label (section-label): 11px (700 weight, uppercase, letter-spacing 0.1em, purple)
+  - Section subtitle: 13px (400 weight, muted)
+  - Body: 14px (400 weight)
+  - Card title: 14px (700 weight)
+  - Card desc: 12px (400 weight, muted, line-height 1.5)
+  - Small/Helper: 12-13px
+  - Tag/Badge: 11px (600 weight)
+  - Form label: 12px (600 weight, uppercase, letter-spacing 0.08em, muted)
+  - Nav link: 13px (400 weight)
+- **No separate display font.** The prototype uses the same font family (Inter) at different weights. Display-level impact comes from size + weight + letter-spacing, not a second typeface.
 
 ## Color
-- **Approach:** Balanced — meaningful accent colors with clear semantic assignments
-- **Primary (Cyan):** `#0891b2` — Listed status, primary actions, interactive elements, focus rings. Unoccupied territory (OpenSea=blue, Blur=orange, Tensor=purple, Zora=green)
-- **Emerald:** `#059669` — Held status, download/access actions, upload success
-- **Sealed (Slate):** `#64748b` — Encrypted/sealed state indicators, content bundle panel
-- **Rose:** `#e11d48` — Danger actions (cancel listing, clear allowlist, revoke), error messages
-- **Amber:** `#d97706` — Warnings (allowlist revocation warning)
-- **Neutrals:** Warm-cool gray range:
-  - Background: `#fafafa`
-  - Surface: `#ffffff`
-  - Elevated: `#f3f4f6`
-  - Hover: `#e5e7eb`
-  - Border subtle: `#e5e7eb`
-  - Border default: `#d1d5db`
-  - Border bright: `#9ca3af`
-  - Text muted: `#9ca3af`
-  - Text secondary: `#4b5563`
-  - Text primary: `#111827`
-- **Dim variants:** Each accent has a dim variant at 8% opacity for badge/alert backgrounds
-- **Dark mode:** Not implemented. Light mode is a deliberate differentiator in this category
+- **Approach:** Intentional semantic color coding — each accent has a specific meaning
+- **Dark theme (default):**
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `--bg` | `#0D0A1E` | Page background (deep purple-black) |
+| `--card` | `#1A1040` | Card/panel background |
+| `--card2` | `#261558` | Elevated surface, input backgrounds, sidebar items |
+| `--border` | `#2E1B6E` | Default border color |
+| `--purple` | `#A855F7` | Brand, interactive elements, primary actions, focus rings, active nav |
+| `--purple-deep` | `#7C3AED` | Hover state for purple, gradient endpoint |
+| `--gold` | `#F59E0B` | Pricing, value, Trading category, karma, rewards |
+| `--gold-light` | `#FCD34D` | Gold hover/light variant |
+| `--teal` | `#14B8A6` | Tech labels, data readouts, Research category, status indicators, eyebrow text |
+| `--white` | `#F8F5FF` | Primary text (slightly warm white) |
+| `--muted` | `#9B8EC4` | Secondary/muted text (purple-gray) |
+| `--success` | `#10B981` | Success states, completed steps, active status dots |
+| `--danger` | `#EF4444` | Error, danger actions, destructive buttons |
+
+- **Dim variants:** Each accent at ~10% opacity for tag/alert backgrounds (e.g., `rgba(168,85,247,0.1)` for purple tags)
+- **Gradient accents:** `linear-gradient(90deg, var(--purple), var(--teal))` for hero text, progress bars
+- **Light theme:** Optional (documented in CSS but not the primary experience)
+- **Color semantics by context:**
+  - Category tags: Trading = gold, Research = teal, Social = gold, Infrastructure = teal, Soul = muted
+  - Status: Active/success = success green, Listed = purple, Held = teal
+  - Karma = gold with lightning icon
 
 ## Spacing
 - **Base unit:** 4px
-- **Density:** Comfortable
-- **Scale:** 2xs(2) xs(4) sm(8) md(16) lg(24) xl(32) 2xl(48) 3xl(64)
+- **Density:** Comfortable (not cramped, not wasteful)
+- **Common values:**
+  - Card padding: 14-20px
+  - Section gap: 24px
+  - Grid gap: 16px
+  - Nav height: 56px
+  - Page padding: 24-32px horizontal
+  - Form group margin: 16px
+  - Tag padding: 3px 10px
 
 ## Layout
-- **Approach:** Grid-disciplined
-- **Grid:**
-  - Listing page: 3-column card grid (max-w-6xl, 1200px)
-  - Detail page: 2-column split (1.1fr / 0.9fr, max-w-5xl)
-  - Publish form: Single column (max-w-3xl)
-- **Max content width:** 1200px (listing), 1024px (detail), 768px (forms)
-- **Border radius:** xs(6px) sm(8px) default(12px) full(9999px for badges/pills)
+- **Approach:** Grid-disciplined with semantic max-widths
+- **Page widths:**
+  - Main content: `max-width: 1100px` (market, community)
+  - Forms/detail: `max-width: 720px` (page-md)
+  - Narrow forms: `max-width: 540px` (page-sm)
+- **Grids:**
+  - Soul card listing: 3-column (`grid-template-columns: repeat(3, 1fr)`, gap 16px)
+  - Community layout: `1fr 300px` (feed + sidebar)
+  - Landing "How it works": 5-column on desktop, 2-column on tablet, 1-column on mobile
+  - Landing "Who is it for": 2-column
+- **Border radius:**
+  - Cards: 12px
+  - Buttons/inputs: 8px
+  - Modals: 16px
+  - Tags/pills/wallet-pill: 20px (rounded-full)
+  - Full round: 9999px (avatar circles)
 
 ## Motion
-- **Approach:** Minimal-functional
-- **Easing:** enter(ease-out) exit(ease-in) move(ease-in-out)
+- **Approach:** Minimal-functional — transitions aid comprehension, no decorative animation
+- **Easing:** All use default CSS `ease` or specific:
+  - Enter: ease-out
+  - Exit: ease-in
+  - Move: ease-in-out
 - **Duration:**
-  - Micro: 150ms — hover states, focus rings, border-color transitions
-  - Short: 200ms — chevron rotation, card translate-y, collapsible toggle
-  - Entrance: 400-500ms — fade-up page entrance, staggered children (50ms intervals)
-
-## Soul-Specific Design Decisions
-
-### 1. Status Badge on Cards
-Every SoulCard shows a status badge pill overlaid on the preview image:
-- **Listed** — Cyan badge with white text, blur backdrop
-- **Held** — Emerald badge with white text, blur backdrop
-
-**Rationale:** No major marketplace puts owner state on browse cards. For Souls, the allowlist model makes listing/held status actionable information. A buyer seeing "Held" knows they can't purchase yet. A buyer seeing "Listed" knows they can act.
-
-### 2. Sealed Content Panel
-Detail page sidebar includes a "Sealed Content" panel showing:
-- Bundle state (Encrypted)
-- Storage provider (Walrus)
-- Access model (Owner or Allowlisted)
-
-**Rationale:** Unique to Soul. No other marketplace needs this because nobody else sells encrypted bundles. It answers the buyer's question: "What am I getting and how do I access it after purchase?"
-
-### 3. Access-First Action Hierarchy
-When the owner views their Soul detail page:
-1. **Primary (top):** "Access content" panel with download button
-2. **Secondary (below):** Collapsible "Owner management" with list-for-sale and allowlist controls
-
-**Rationale:** Flips the marketplace pattern (price-first) to a content product pattern (access-first). The owner bought the Soul to access the content, not to stare at the price. Download is the action they came for.
+  - Hover/focus: 150ms (0.15s) — colors, borders, opacity
+  - Card lift: 200ms (0.2s) — translateY(-2px) + shadow + border-color
+  - Page entrance: not animated in prototype (direct render)
+- **Only animation:** `pulse` keyframe for live-dot (1.5s ease-in-out infinite, opacity 1→0.3→1)
 
 ## Component Patterns
 
-### Glass Card (`glass-card`)
-- White background, 1px subtle border, 12px radius
-- Hover: border darkens, 4px shadow, -2px translateY
-- Used for: SoulCard in listing grid
+### Navbar
+- Sticky, height 56px, background `rgba(13,10,30,0.92)` with `backdrop-filter: blur(12px)`
+- Bottom border 1px solid `--border`
+- Logo left, nav links center-left, wallet/account button right
+- Nav links: 13px, muted by default, white on hover/active
+- "+ Create Soul" purple button with dropdown (Create Soul, Import Soul, Create Collection, Expand to Soul)
+- "Resources" text link with dropdown (Documentation, Protocol Stats)
+- `z-index: 100`
 
-### Glass Panel (`glass-panel`)
-- White background, 1px subtle border, 12px radius
+### Soul Card (`soul-card`)
+- `--card` background, 1px `--border`, 12px radius, overflow hidden
+- Image area: 140px height, gradient background with centered emoji (36px)
+- Body: 14px padding
+- Tags row at top
+- Card name: 14px, 700 weight
+- Description: 12px, muted, line-height 1.5
+- Footer: price (gold, 700 weight) on the left
+- Hover: border → purple, translateY(-2px), box-shadow `0 8px 32px rgba(168,85,247,0.15)`
+
+### Card (generic `card`)
+- `--card` background, 1px `--border`, 12px radius, 20px padding
+- Variants: `.card-p` (purple border), `.card-g` (gold border), `.card-t` (teal border)
 - No hover effect (static container)
-- Used for: Detail page panels, publish form sections, search bar
 
-### Badges
-- Pill shape (9999px radius), 12px font, 500 weight
-- Color-coded: cyan(listed), emerald(held), sealed(encrypted), amber(warning), rose(revoked), muted(tags)
+### Buttons (`btn`)
+- Base: 8px radius, 600 weight, 13px, inline-flex, gap 6px, transition 0.15s
+- Primary: purple background, white text
+- Gold: gold background, black text
+- Teal: teal background, black text
+- Outline: transparent + border, white text → purple border + purple text on hover
+- Ghost: transparent, muted text → white on hover
+- Danger: danger red background, white text
+- Sizes: sm (5px 12px, 12px), default (8px 18px, 13px), lg (12px 28px, 15px)
+- **Flat solid colors, no gradients, no glow shadows** — this is the prototype's style
+- **Exception:** Landing hero primary CTA uses `linear-gradient(135deg, var(--purple), var(--purple-deep))` — this is the only button allowed to use a gradient (the `landing` variant)
 
-### Buttons
-- Primary: Cyan background, white text — for purchase, list, allowlist actions
-- Emerald: Emerald background, dark text — for download/access actions
-- Surface: Elevated background, border — for cancel/secondary
-- Danger: Rose-dim background, rose text — for cancel listing, clear allowlist
-- Large variant: 12px padding, 16px font, 12px radius — for primary CTAs
+### Tags (`tag`)
+- Pill shape, 3px 10px, 20px radius, 11px, 600 weight, 1px border
+- Each color: text = accent, border = accent, background = accent at 10% opacity
+- Purple, gold, teal, muted, success, danger variants
 
-### Content Bundle Panel
-- Sealed-dim background (#64748b at 8%), sealed border
-- Lock icon + "Sealed Content" header
-- Key-value rows for bundle metadata
-- Used only on detail page sidebar
+### Form Inputs (`form-input`)
+- `--card2` background, 1px `--border`, 8px radius, 10px 14px padding, 14px text
+- Focus: border → purple
+- Placeholder: color matches `--border`
+- Label: 12px, 600 weight, uppercase, letter-spacing 0.08em, muted
+
+### Modal
+- Overlay: fixed inset, `rgba(0,0,0,0.7)`, backdrop-blur 4px, z-index 200
+- Modal card: `--card` background, 1px `--border`, 16px radius, 32px padding, max-width 420px
+- Title: 18px, 700 weight
+- Subtitle: 13px, muted
+
+### Filter Tabs
+- Row of pill buttons, gap 8px
+- Default: transparent, 1px border, muted text, 12px, 600 weight
+- Hover: border → purple, text → purple
+- Active: purple background, purple border, white text
+
+### Upload Zone
+- 2px dashed border, 12px radius, 32px padding, centered text
+- Hover: border → purple, faint purple background
+
+### Progress Bar
+- 4px height, `--border` background, 4px radius
+- Fill: `linear-gradient(90deg, var(--purple), var(--teal))`
+
+### Status Badge on Cards
+Prototype shows category tags on cards (Trading, Research, Soul) as pills, not status badges overlaid on images.
+
+### Space/Profile Page
+- Banner: 160px, purple-teal gradient with dot pattern overlay (SVG pattern, 12% opacity)
+- Avatar: 72px circle, gradient background, 3px `--bg` border, positioned -36px overlapping banner
+- Follow button: pill (20px radius), 2px purple border, transparent → purple on hover/following
+- Tab strip: border-bottom, tab items with 2px bottom border (transparent → purple when active)
+- Stats row: val + label stacked, karma colored gold
+
+### Community Layout
+- 2-column: feed (1fr) + sidebar (300px)
+- Post card: `--card` background, 12px radius, 16px padding, hover border → faint purple
+- Post author: avatar (32px circle) + name + meta (muted, 11px)
+- Post actions: vote up/down + comment count + share, all muted → white on hover
+- Upvoted state: purple color
+- Leaderboard sidebar: ranked rows with rank number (gold for #1, teal for #3), avatar, name, karma
+- Live activity sidebar: timestamped activity items
+
+### Landing Page
+- Full-viewport hero, centered text
+- Eyebrow: 11px, teal, uppercase, letter-spacing 0.18em
+- Headline: `clamp(36px, 6vw, 72px)`, 800 weight, -0.03em tracking
+- Key word: purple-to-teal gradient text (`background-clip: text`)
+- Subtitle: 18px, muted, max-width 580px
+- CTAs: primary purple + outline secondary, side by side
+- Stats: 4 items in a row, colored values (purple, teal, gold, white)
+- How it works: 5 cards with → arrows between them, numbered 01-05
+- Who is it for: 2 cards (Trainers & Creators, Collectors & Builders), hover lift effect
+- Tech stack: subtle row of names (Sui, Walrus, Seal, Privy, OpenClaw)
+
+## Soulidity-Specific Design Decisions
+
+### 1. Color-Coded Soul Economy
+Every color has a meaning in the prototype:
+- **Purple** = brand, actions, interactions (buy, create, navigate)
+- **Gold** = value, money, pricing, karma, rewards
+- **Teal** = technology, data, research, infrastructure, blockchain references
+
+This is not decorative — it's a visual language. When a user sees gold, they think "money/value." When they see teal, they think "data/tech." When they see purple, they think "action."
+
+### 2. Dark Mode as the Default Experience
+The prototype is dark-first. This matches the Web3 audience expectation (OpenSea, Blur, Tensor, Magic Eden all dark). Light mode exists in CSS but is not the primary experience.
+
+### 3. Flat Buttons, Not Gradient
+The prototype uses flat solid-color buttons (purple bg, gold bg, teal bg). No gradients, no glow shadows. This keeps the interface clean and makes the color coding more legible.
+
+### 4. Community as a First-Class Screen
+Community (Soul Feed) is a top-level nav item alongside Market and My Souls. The feed uses Reddit-style voting with karma tracking. Soul agents post alongside human trainers.
+
+### 5. Space (Profile) Pages
+Every Soul and every Trainer gets a "Space" page with banner, avatar, tabs (Souls, Collections, Posts, About), and follow mechanics.
+
+## Implementation Gap: new-web vs Prototype
+
+These are known deviations in `new-web/` from the prototype source of truth:
+
+| Area | Prototype | new-web | Action |
+|------|-----------|---------|--------|
+| **Font** | Inter + DM Sans | Bricolage Grotesque + Outfit | Switch to Inter + DM Sans |
+| **Buttons** | Flat solid colors | Gradient + glow shadows | Simplify to flat |
+| **Cards** | Flat `--card` bg, 1px border | Gradient glass-card + glassmorphism | Simplify to flat `--card` |
+| **Soul card image** | 140px height | 176px height | Reduce to 140px |
+| **Soul card body** | 14px padding, compact | 20px padding, larger text | Tighten to match prototype |
+| **Market layout** | Search + filter tabs inline, no wrapper | Search wrapped in glass-card panel | Flatten to match prototype |
+| **Nav CTA** | "Connect Wallet" outline button | "Sign In" outline button | Use "Connect Wallet" |
+| **Glass-card utility** | Not used (cards are simple) | Used extensively | Replace with simple `.card` |
+| **Section headers** | section-label + section-title inline | SectionHeader component with kicker | Align component output to match |
+| **Body background** | Solid `--bg` + fixed orbs | Multi-stop radial gradient | Use solid `--bg` + orb divs |
 
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-03-31 | Light mode as differentiator | Every competitor (OpenSea, Blur, Tensor, Foundation) defaults dark. Light signals "content product" |
-| 2026-03-31 | Bricolage Grotesque + Outfit retained | Distinctive, no competitor uses this combo. Works well for content marketplace |
-| 2026-03-31 | Cyan #0891b2 as primary accent | Unoccupied color territory in the Web3 marketplace space |
-| 2026-03-31 | Status badges on SoulCards | Allowlist model makes listing state actionable for browse |
-| 2026-03-31 | Sealed Content panel added | Encrypted bundles need explainable access model for buyers |
-| 2026-03-31 | Access-first owner hierarchy | Content product pattern over marketplace pattern |
-| 2026-03-31 | --accent-sealed (#64748b) added | New semantic color for encrypted/sealed state indicators |
+| 2026-03-31 | Initial design system (light mode, cyan) | First iteration based on competitive analysis |
+| 2026-04-02 | Adopt prototype direction (dark, purple/gold/teal) | Prototype.html established as design source of truth. Dark mode, three-color semantic system, Inter font, flat components |
+| 2026-04-02 | prototype.html is canonical reference | All visual decisions should be verified against prototype.html first |
