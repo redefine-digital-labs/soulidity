@@ -223,143 +223,24 @@ describe('post-tx db soul asset mirror', () => {
     }))
   })
 
-  it('updates the mirrored allowlist fields for a soul', async () => {
+  it('rejects legacy allowlist mirror writes after the Soulidity hard cut', async () => {
     const { dbSetSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
-
-    await dbSetSoulAllowlist({
-      soulOnChainId: '0xsoul',
-      allowlistAddress: OWNER_ADDRESS,
-      allowlistCapOnChainId: '0xcap',
-      allowlistVersion: 3n,
-    })
-
-    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
-      where: { onChainId: '0xsoul' },
-      data: {
-        allowlistAddress: OWNER_ADDRESS,
-        allowlistCapOnChainId: '0xcap',
-        allowlistVersion: '3',
-      },
-    })
-  })
-
-  it('normalizes short-form allowlist addresses before mirroring them', async () => {
-    const { dbSetSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
-
-    await dbSetSoulAllowlist({
-      soulOnChainId: '0xsoul',
-      allowlistAddress: '0xA',
-      allowlistCapOnChainId: '0xcap',
-      allowlistVersion: 3n,
-    })
-
-    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
-      where: { onChainId: '0xsoul' },
-      data: {
-        allowlistAddress: `0x${'0'.repeat(63)}a`,
-        allowlistCapOnChainId: '0xcap',
-        allowlistVersion: '3',
-      },
-    })
-  })
-
-  it('guards allowlist mirror writes against stale ownership state', async () => {
-    const { dbSetSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
-
-    await dbSetSoulAllowlist({
-      soulOnChainId: '0xsoul',
-      allowlistAddress: OWNER_ADDRESS,
-      allowlistCapOnChainId: '0xcap',
-      allowlistVersion: 3n,
-      expectedCurrentOwnerAddress: OWNER_ADDRESS,
-      expectedCurrentKioskId: CURRENT_KIOSK_ID,
-      expectedListingStatus: 'held',
-    })
-
-    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
-      where: {
-        onChainId: '0xsoul',
-        currentOwnerAddress: OWNER_ADDRESS,
-        currentKioskId: CURRENT_KIOSK_ID,
-        listingStatus: 'held',
-      },
-      data: {
-        allowlistAddress: OWNER_ADDRESS,
-        allowlistCapOnChainId: '0xcap',
-        allowlistVersion: '3',
-      },
-    })
-  })
-
-  it('clears mirrored allowlist fields for a soul', async () => {
-    const { dbClearSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
-
-    await dbClearSoulAllowlist({
-      soulOnChainId: '0xsoul',
-      allowlistVersion: 4n,
-    })
-
-    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
-      where: { onChainId: '0xsoul' },
-      data: {
-        allowlistAddress: null,
-        allowlistCapOnChainId: null,
-        allowlistVersion: '4',
-      },
-    })
-  })
-
-  it('guards allowlist clear writes against stale ownership state', async () => {
-    const { dbClearSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
-
-    await dbClearSoulAllowlist({
-      soulOnChainId: '0xsoul',
-      allowlistVersion: 4n,
-      expectedCurrentOwnerAddress: OWNER_ADDRESS,
-      expectedCurrentKioskId: CURRENT_KIOSK_ID,
-      expectedListingStatus: 'held',
-    })
-
-    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
-      where: {
-        onChainId: '0xsoul',
-        currentOwnerAddress: OWNER_ADDRESS,
-        currentKioskId: CURRENT_KIOSK_ID,
-        listingStatus: 'held',
-      },
-      data: {
-        allowlistAddress: null,
-        allowlistCapOnChainId: null,
-        allowlistVersion: '4',
-      },
-    })
-  })
-
-  it('throws when clearing allowlist state for a Soul that is not mirrored locally', async () => {
-    mockedPrisma.soulAsset.updateMany.mockResolvedValueOnce({ count: 0 })
-
-    const { dbClearSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
-
-    await expect(dbClearSoulAllowlist({
-      soulOnChainId: '0xmissing',
-      allowlistVersion: 4n,
-    })).rejects.toThrow('Soul 0xmissing not found')
-  })
-
-  it('throws a conflict error when guarded allowlist writes lose an ownership race', async () => {
-    mockedPrisma.soulAsset.updateMany.mockResolvedValueOnce({ count: 0 })
-
-    const { dbSetSoulAllowlist, SoulMirrorOwnershipConflictError } = await import('../../web/lib/souls/post-tx-db.ts')
 
     await expect(dbSetSoulAllowlist({
       soulOnChainId: '0xsoul',
       allowlistAddress: OWNER_ADDRESS,
       allowlistCapOnChainId: '0xcap',
+      allowlistVersion: 3n,
+    })).rejects.toThrow('Legacy Soul allowlist mirror has been retired. Use Soulidity grants instead.')
+  })
+
+  it('rejects legacy allowlist clear writes after the Soulidity hard cut', async () => {
+    const { dbClearSoulAllowlist } = await import('../../web/lib/souls/post-tx-db.ts')
+
+    await expect(dbClearSoulAllowlist({
+      soulOnChainId: '0xsoul',
       allowlistVersion: 4n,
-      expectedCurrentOwnerAddress: OWNER_ADDRESS,
-      expectedCurrentKioskId: CURRENT_KIOSK_ID,
-      expectedListingStatus: 'held',
-    })).rejects.toBeInstanceOf(SoulMirrorOwnershipConflictError)
+    })).rejects.toThrow('Legacy Soul allowlist mirror has been retired. Use Soulidity grants instead.')
   })
 
   it('clears mirrored listing and allowlist state when ownership changes after purchase', async () => {
@@ -387,9 +268,6 @@ describe('post-tx db soul asset mirror', () => {
         listingObjectOnChainId: null,
         listingStatus: 'held',
         listedPriceAtomic: null,
-        allowlistAddress: null,
-        allowlistCapOnChainId: null,
-        allowlistVersion: '4',
       },
     })
   })
@@ -427,14 +305,11 @@ describe('post-tx db soul asset mirror', () => {
         listingObjectOnChainId: null,
         listingStatus: 'held',
         listedPriceAtomic: null,
-        allowlistAddress: null,
-        allowlistCapOnChainId: null,
-        allowlistVersion: '4',
       },
     })
   })
 
-  it('preserves an already-mirrored allowlist when ownership sync is retried after access is reconfigured', async () => {
+  it('preserves ownership sync without writing retired allowlist fields', async () => {
     const { dbSetSoulOwnership } = await import('../../web/lib/souls/post-tx-db.ts')
 
     await dbSetSoulOwnership({
@@ -460,7 +335,6 @@ describe('post-tx db soul asset mirror', () => {
         listingObjectOnChainId: null,
         listingStatus: 'held',
         listedPriceAtomic: null,
-        allowlistVersion: '5',
       },
     })
   })
@@ -484,7 +358,6 @@ describe('post-tx db soul asset mirror', () => {
     expect(updateArgs?.data).toMatchObject({
       listingObjectOnChainId: LISTING_OBJECT_ID,
       listingStatus: 'listed',
-      allowlistVersion: '5',
     })
     expect(updateArgs?.data?.listedPriceAtomic?.toString()).toBe('0')
   })

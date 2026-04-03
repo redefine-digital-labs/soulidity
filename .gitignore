@@ -10,6 +10,8 @@ docs/screenshots/
 CLAUDE.md
 .claude/
 
+e2e/
+
 /generated/prisma
 .worktrees/
 .autoteam/

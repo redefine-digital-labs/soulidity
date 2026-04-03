@@ -12,21 +12,22 @@ function requireExistingAliasTarget(relativePath: string) {
 
 export default defineConfig({
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@bot': fileURLToPath(new URL('./src/bot', import.meta.url)),
-      '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
-      '@web': fileURLToPath(new URL('./web', import.meta.url)),
-      'react/jsx-dev-runtime': requireExistingAliasTarget('./web/node_modules/react/jsx-dev-runtime.js'),
-      'react/jsx-runtime': requireExistingAliasTarget('./web/node_modules/react/jsx-runtime.js'),
-      'react-dom/client': requireExistingAliasTarget('./web/node_modules/react-dom/client.js'),
-      'react-dom': requireExistingAliasTarget('./web/node_modules/react-dom/index.js'),
-      react: requireExistingAliasTarget('./web/node_modules/react/index.js'),
+    alias: [
+      { find: /^@\//, replacement: `${fileURLToPath(new URL('./new-web/', import.meta.url))}/` },
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+      { find: '@bot', replacement: fileURLToPath(new URL('./src/bot', import.meta.url)) },
+      { find: '@shared', replacement: fileURLToPath(new URL('./src/shared', import.meta.url)) },
+      { find: '@web', replacement: fileURLToPath(new URL('./web', import.meta.url)) },
+      { find: 'react/jsx-dev-runtime', replacement: requireExistingAliasTarget('./web/node_modules/react/jsx-dev-runtime.js') },
+      { find: 'react/jsx-runtime', replacement: requireExistingAliasTarget('./web/node_modules/react/jsx-runtime.js') },
+      { find: 'react-dom/client', replacement: requireExistingAliasTarget('./web/node_modules/react-dom/client.js') },
+      { find: 'react-dom', replacement: requireExistingAliasTarget('./web/node_modules/react-dom/index.js') },
+      { find: 'react', replacement: requireExistingAliasTarget('./web/node_modules/react/index.js') },
       // These pin the workspace tests to the web package's bundled ESM entrypoints. Revisit them
       // when upgrading `@mysten/sui`, because the dist layout is an external package contract.
-      '@mysten/sui/transactions': requireExistingAliasTarget('./web/node_modules/@mysten/sui/dist/transactions/index.mjs'),
-      '@mysten/sui/bcs': requireExistingAliasTarget('./web/node_modules/@mysten/sui/dist/bcs/index.mjs'),
-    },
+      { find: '@mysten/sui/transactions', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/sui/dist/transactions/index.mjs') },
+      { find: '@mysten/sui/bcs', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/sui/dist/bcs/index.mjs') },
+    ],
   },
   test: {
     environment: 'node',
