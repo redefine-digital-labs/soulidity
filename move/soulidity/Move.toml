@@ -1,0 +1,12 @@
+[package]
+name = "soulidity"
+edition = "2024.beta"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
+usdc = { local = "../test_usdc" }
+Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/walrus", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }
+Kiosk = { local = "../vendor/kiosk", override = true }
+
+[addresses]
+soulidity = "0x0"
