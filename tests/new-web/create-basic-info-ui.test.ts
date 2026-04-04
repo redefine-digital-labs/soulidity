@@ -21,13 +21,13 @@ describe('new-web create basic info regression guards', () => {
     expect(source).not.toContain('List immediately')
   })
 
-  it('keeps the preview image control wired to UploadZone with local preview state', () => {
+  it('keeps the preview image control wired to UploadZone with context-driven preview state', () => {
     const source = readSource('new-web/app/create/page.tsx')
 
     expect(source).toContain("import { UploadZone } from '@/components/ui/upload-zone'")
-    expect(source).toContain('const [coverImageFile, setCoverImageFile] = useState<File | null>(null)')
+    expect(source).toContain('ctx.coverImageFile')
     expect(source).toContain('<UploadZone')
-    expect(source).toContain('onFileSelect={handleCoverImageSelect}')
+    expect(source).toContain('ctx.setCoverImage')
     expect(source).toContain('alt="Cover preview"')
     expect(source).toContain('Click to upload cover image')
   })
