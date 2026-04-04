@@ -771,7 +771,7 @@ describe('upsertMemoryEntryProjection', () => {
       expect(section.writerKind).toBe('granted-agent')
       expect(section.blobObjectId).toBe('0xblob_entry')
       expect(section.blobId).toBe('entry-blob-id')
-      expect(section.createdAtMs).toBe(1712345678000)
+      expect(section.createdAtMs).toBe(BigInt(1712345678000))
     }
   })
 })
@@ -830,7 +830,7 @@ describe('upsertSkillVersionProjection', () => {
       expect(section.blobObjectId).toBe('0xskillblob2')
       expect(section.blobId).toBe('skill-blob-2')
       expect(section.previousVersionOnChainId).toBe('0xver0')
-      expect(section.createdAtMs).toBe(1711111111000)
+      expect(section.createdAtMs).toBe(BigInt(1711111111000))
       expect(section.sealSidecar).toEqual({ version: 1, documentId: '0xdoc' })
     }
   })

@@ -167,6 +167,7 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
     name: string
     description: string
     imageUrl: string
+    imageFile?: File | null
     extraRoyaltyBps: number
     tradeable: boolean
   }): Promise<CreateCollectionSyncResult> {
@@ -183,11 +184,34 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
     setTxDigest(null)
     try {
       const authHeaders = await getAuthHeaders()
+
+      // Upload image to Walrus during the building phase (before TX / gas)
+      let resolvedImageUrl = params.imageUrl
+      if (params.imageFile) {
+        const formData = new FormData()
+        formData.append('file', params.imageFile)
+        const uploadRes = await fetch('/api/collections/upload-image', {
+          method: 'POST',
+          headers: authHeaders,
+          body: formData,
+        })
+        if (!uploadRes.ok) {
+          const uploadBody = await uploadRes.json().catch(() => ({}))
+          throw new Error(uploadBody.error || 'Cover image upload failed')
+        }
+        const uploadResult = await uploadRes.json()
+        resolvedImageUrl = uploadResult.imageUrl
+      }
+
       const personalKiosk = await resolvePersonalKiosk(authHeaders)
       const tx = buildCreateCollectionTx({
         currentKioskId: personalKiosk?.currentKioskId ?? null,
         currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
-        ...params,
+        name: params.name,
+        description: params.description,
+        imageUrl: resolvedImageUrl,
+        extraRoyaltyBps: params.extraRoyaltyBps,
+        tradeable: params.tradeable,
       })
       setCreateStatus('signing')
       const result = await signAndExecute(tx)
