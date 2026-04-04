@@ -11,17 +11,24 @@ export function createZaiAdapter(apiKey: string, model = 'glm-4.7'): LLMAdapter 
   })
   return {
     async generate(systemPrompt: string, userPrompt: string): Promise<string> {
-      const response = await client.chat.completions.create({
-        model,
-        max_tokens: 4096,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-      })
-      const text = response.choices[0]?.message?.content
-      if (!text) throw new Error('Empty response from LLM')
-      return text
+      const maxRetries = 2
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const response = await client.chat.completions.create({
+          model,
+          max_tokens: 4096,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        })
+        const text = response.choices[0]?.message?.content
+        if (text) return text
+        if (attempt < maxRetries) {
+          console.warn(`LLM returned empty response (attempt ${attempt + 1}/${maxRetries + 1}), retrying...`)
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+        }
+      }
+      throw new Error('Empty response from LLM after 3 attempts')
     },
   }
 }

@@ -1,0 +1,56 @@
+import { NextResponse } from 'next/server'
+import { resolveAgentByApiKey, type AgentIdentity } from '@web/lib/auth/resolve-agent'
+import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
+import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+
+const FAILED_AGENT_AUTH_LIMIT = { max: 60, windowMs: 60 * 1000 } as const
+
+function errorResponse(body: { error: string }, status: number) {
+  return NextResponse.json(body, { status })
+}
+
+async function rateLimitFailedAuth(request: Request) {
+  const ip = getRequestIp(new Headers(request.headers))
+  if (ip) {
+    const rl = await takeRateLimitToken(`agent-auth-failed:${ip}`, FAILED_AGENT_AUTH_LIMIT)
+    if (rl.limited) {
+      return errorResponse({ error: 'Too many invalid API key attempts' }, 429)
+    }
+  }
+  return errorResponse({ error: 'Unauthorized' }, 401)
+}
+
+export async function requireAgentWalletIdentity(
+  request: Request,
+): Promise<
+  | { agent: AgentIdentity; walletAddresses: string[] }
+  | { error: NextResponse }
+> {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader) {
+    return { error: errorResponse({ error: 'Unauthorized' }, 401) }
+  }
+
+  if (!authHeader.startsWith('Bearer sk-')) {
+    return { error: await rateLimitFailedAuth(request) }
+  }
+
+  const apiKey = authHeader.slice(7)
+  const agent = await resolveAgentByApiKey(apiKey)
+  if (!agent) {
+    return { error: await rateLimitFailedAuth(request) }
+  }
+
+  let walletAddresses: string[]
+  try {
+    walletAddresses = await getMemberSuiWalletAddresses(agent.agentMemberId)
+  } catch {
+    return { error: errorResponse({ error: 'Failed to resolve agent wallet' }, 500) }
+  }
+
+  if (walletAddresses.length === 0) {
+    return { error: errorResponse({ error: 'Agent has no bound Sui wallet' }, 403) }
+  }
+
+  return { agent, walletAddresses }
+}

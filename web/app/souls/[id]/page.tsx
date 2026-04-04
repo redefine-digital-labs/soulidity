@@ -1,20 +1,17 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { useParams } from 'next/navigation'
 import { AccessDownloadButton } from '@web/components/souls/access-download-button'
 import { PurchaseButton } from '@web/components/souls/purchase-button'
 import { ReadmePanel } from '@web/components/souls/readme-panel'
 import { PriceBreakdown } from '@web/components/souls/price-breakdown'
 import { StickyPurchaseBar } from '@web/components/souls/sticky-purchase-bar'
-import { ConfirmModal } from '@web/components/confirm-modal'
 import { useAuth } from '@web/components/auth-provider'
-import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import { useSoulDetail } from '@web/lib/souls/queries'
-import { extractCreatedAllowlistCapObjectId, toSafeBackgroundImage } from '@web/lib/souls/soul-detail-utils'
-import { buildListHeldSoulTx, buildCancelListingTx, buildClearAllowlistAddressTx, buildSetAllowlistAddressTx } from '@web/lib/souls/tx-builder'
+import { toSafeBackgroundImage } from '@web/lib/souls/soul-detail-utils'
+import { buildListHeldSoulTx, buildCancelListingTx } from '@web/lib/souls/tx-builder'
 import { parseSoulPaymentAmountToAtomic } from '@web/lib/souls/pricing-input'
 import { mirrorRouteRequest, formatMirrorSyncError } from '@web/lib/souls/mirror-sync'
 import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
@@ -34,11 +31,6 @@ export default function SoulDetailPage() {
   const { signAndExecute } = usePrivySuiSign()
   const { data: soul, isLoading, error, refetch } = useSoulDetail(soulId, getAuthHeaders, user?.id)
 
-  const [allowlistAddress, setAllowlistAddress] = useState('')
-  const [allowlistSubmitting, setAllowlistSubmitting] = useState(false)
-  const [allowlistError, setAllowlistError] = useState<string | null>(null)
-  const [confirmClear, setConfirmClear] = useState(false)
-
   const [listPrice, setListPrice] = useState('')
   const [listSubmitting, setListSubmitting] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
@@ -57,102 +49,6 @@ export default function SoulDetailPage() {
 
   const previewImage = useMemo(() => soul?.previewImages[0] ?? soul?.imageUrl ?? null, [soul])
   const previewBackgroundImage = useMemo(() => toSafeBackgroundImage(previewImage), [previewImage])
-
-  async function handleSetAllowlist() {
-    if (allowlistSubmitting) return
-    if (!soul) return
-    const normalizedAllowlistAddress = (() => {
-      const trimmed = allowlistAddress.trim()
-      if (!trimmed) {
-        return null
-      }
-      try {
-        const normalized = normalizeSuiAddress(trimmed)
-        return isValidSuiAddress(normalized) ? normalized : null
-      } catch {
-        return null
-      }
-    })()
-    if (!normalizedAllowlistAddress) {
-      setAllowlistError('Enter a valid Sui address')
-      return
-    }
-    setAllowlistSubmitting(true)
-    setAllowlistError(null)
-    try {
-      const soulObjectPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-      const tx = buildSetAllowlistAddressTx({
-        soulObjectId: soul.onChainId,
-        currentKioskId: soul.currentKioskId,
-        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
-        allowlistAddress: normalizedAllowlistAddress,
-      })
-      const result = await signAndExecute(tx)
-      const soulAllowlistCapOnChainId = extractCreatedAllowlistCapObjectId(
-        result as { objectChanges?: Array<Record<string, unknown>> | null },
-        soulObjectPackageId,
-      )
-      if (!soulAllowlistCapOnChainId) {
-        throw new Error('Transaction succeeded but no Soul allowlist cap was created')
-      }
-
-      const headers = await getAuthHeaders()
-      await mirrorRouteRequest({
-        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/allowlist`,
-        init: {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...headers,
-          },
-          body: JSON.stringify({
-            allowlistAddress: normalizedAllowlistAddress,
-            soulAllowlistCapOnChainId,
-            txDigest: result.digest,
-          }),
-        },
-      })
-
-      setAllowlistAddress('')
-      await refetch()
-    } catch (allowlistSyncError) {
-      setAllowlistError(formatMirrorSyncError(allowlistSyncError))
-    } finally {
-      setAllowlistSubmitting(false)
-    }
-  }
-
-  const executeClearAllowlist = useCallback(async () => {
-    if (!soul) return
-    setConfirmClear(false)
-    setAllowlistSubmitting(true)
-    setAllowlistError(null)
-    try {
-      const tx = buildClearAllowlistAddressTx({
-        soulObjectId: soul.onChainId,
-        currentKioskId: soul.currentKioskId,
-        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
-      })
-      const result = await signAndExecute(tx)
-      const headers = await getAuthHeaders()
-      await mirrorRouteRequest({
-        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/allowlist`,
-        init: {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            ...headers,
-          },
-          body: JSON.stringify({ txDigest: result.digest }),
-        },
-      })
-      await refetch()
-    } catch (allowlistSyncError) {
-      setAllowlistError(formatMirrorSyncError(allowlistSyncError))
-    } finally {
-      setAllowlistSubmitting(false)
-    }
-  }, [soul, signAndExecute, getAuthHeaders, refetch])
 
   async function handleListForSale() {
     if (listSubmitting) return
@@ -467,7 +363,7 @@ export default function SoulDetailPage() {
                             Owner management
                           </h2>
                           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            List for sale or manage allowlist access
+                            List for sale
                           </p>
                         </div>
                         <svg
@@ -495,14 +391,6 @@ export default function SoulDetailPage() {
                                 Set a USDC price and list this Soul NFT for sale.
                               </p>
                             </div>
-                            {soul.allowlistAddress ? (
-                              <p
-                                className="text-xs rounded-lg px-3 py-2"
-                                style={{ color: 'var(--accent-amber)', background: 'rgba(245, 158, 11, 0.10)' }}
-                              >
-                                Listing this Soul will revoke the current allowlisted address&apos;s access.
-                              </p>
-                            ) : null}
                             <input
                               value={listPrice}
                               onChange={(event) => setListPrice(event.target.value)}
@@ -525,70 +413,6 @@ export default function SoulDetailPage() {
                             ) : null}
                           </div>
 
-                          <hr className="divider" />
-
-                          {/* Manage allowlist */}
-                          <div className="flex flex-col gap-3">
-                            <div>
-                              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                Manage allowlist
-                              </h3>
-                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                Add one extra Sui address that can decrypt this Soul alongside the owner.
-                              </p>
-                            </div>
-
-                            {soul.allowlistAddress ? (
-                              <div className="flex flex-col gap-3">
-                                <div>
-                                  <p
-                                    className="text-[11px] uppercase tracking-[0.12em]"
-                                    style={{ color: 'var(--text-muted)' }}
-                                  >
-                                    Current allowlist address
-                                  </p>
-                                  <p
-                                    className="break-all text-xs mt-1 font-mono"
-                                    style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
-                                  >
-                                    {soul.allowlistAddress}
-                                  </p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmClear(true)}
-                                  aria-label="Clear Soul allowlist"
-                                  disabled={allowlistSubmitting}
-                                  className="btn btn-danger w-full"
-                                >
-                                  {allowlistSubmitting ? 'Clearing…' : 'Clear allowlist'}
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col gap-3">
-                                <input
-                                  value={allowlistAddress}
-                                  onChange={(event) => setAllowlistAddress(event.target.value)}
-                                  aria-label="Sui address for allowlist"
-                                  placeholder="0x... Sui address"
-                                  className="input-dark"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={handleSetAllowlist}
-                                  aria-label="Add address to Soul allowlist"
-                                  disabled={allowlistSubmitting || allowlistAddress.trim().length === 0}
-                                  className="btn btn-primary w-full"
-                                >
-                                  {allowlistSubmitting ? 'Updating…' : 'Add to allowlist'}
-                                </button>
-                              </div>
-                            )}
-
-                            {allowlistError ? (
-                              <p className="text-xs" style={{ color: 'var(--accent-rose)' }}>{allowlistError}</p>
-                            ) : null}
-                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -621,15 +445,6 @@ export default function SoulDetailPage() {
         />
       ) : null}
 
-      <ConfirmModal
-        open={confirmClear}
-        title="Revoke allowlist access"
-        message="This will revoke the allowlisted address's access. Continue?"
-        confirmLabel="Revoke"
-        variant="danger"
-        onConfirm={executeClearAllowlist}
-        onCancel={() => setConfirmClear(false)}
-      />
     </div>
   )
 }

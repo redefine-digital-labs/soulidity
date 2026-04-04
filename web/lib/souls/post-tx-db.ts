@@ -140,6 +140,9 @@ export async function dbUpsertSoulAsset(params: {
     where: { onChainId: params.soulOnChainId },
     create: {
       onChainId: params.soulOnChainId,
+      // Legacy web runtime is retired; preserve compilability with a self-keyed fallback.
+      stateOnChainId: params.soulOnChainId,
+      memoryOnChainId: params.soulOnChainId,
       creatorAddress,
       creatorMemberId,
       creatorRoyaltyBps: params.creatorRoyaltyBps,
@@ -161,9 +164,6 @@ export async function dbUpsertSoulAsset(params: {
       tags: params.tags,
       previewImages: params.previewImages,
       readme: params.readme ?? null,
-      allowlistVersion: params.allowlistVersion.toString(),
-      allowlistAddress: params.allowlistAddress ?? null,
-      allowlistCapOnChainId: params.allowlistCapOnChainId ?? null,
     },
     update: {
       creatorAddress,
@@ -186,9 +186,6 @@ export async function dbUpsertSoulAsset(params: {
       tags: params.tags,
       previewImages: params.previewImages,
       readme: params.readme ?? null,
-      allowlistVersion: params.allowlistVersion.toString(),
-      allowlistAddress: params.allowlistAddress ?? null,
-      allowlistCapOnChainId: params.allowlistCapOnChainId ?? null,
     },
   })
 }
@@ -203,21 +200,8 @@ export async function dbSetSoulAllowlist(params: {
   expectedListingStatus?: 'listed' | 'held'
   db?: SoulDbClient
 }) {
-  const db = params.db ?? prisma
-  const result = await db.soulAsset.updateMany({
-    where: buildSoulMirrorWhere(params),
-    data: {
-      allowlistAddress: normalizeStoredSuiAddress(params.allowlistAddress),
-      allowlistCapOnChainId: params.allowlistCapOnChainId,
-      allowlistVersion: params.allowlistVersion.toString(),
-    },
-  })
-  if (result.count === 0) {
-    if (hasSoulMirrorOwnershipGuard(params)) {
-      throw new SoulMirrorOwnershipConflictError(params.soulOnChainId)
-    }
-    throw new Error(`Soul ${params.soulOnChainId} not found`)
-  }
+  void params
+  throw new Error('Legacy Soul allowlist mirror has been retired. Use Soulidity grants instead.')
 }
 
 export async function dbClearSoulAllowlist(params: {
@@ -228,21 +212,8 @@ export async function dbClearSoulAllowlist(params: {
   expectedListingStatus?: 'listed' | 'held'
   db?: SoulDbClient
 }) {
-  const db = params.db ?? prisma
-  const result = await db.soulAsset.updateMany({
-    where: buildSoulMirrorWhere(params),
-    data: {
-      allowlistAddress: null,
-      allowlistCapOnChainId: null,
-      allowlistVersion: params.allowlistVersion.toString(),
-    },
-  })
-  if (result.count === 0) {
-    if (hasSoulMirrorOwnershipGuard(params)) {
-      throw new SoulMirrorOwnershipConflictError(params.soulOnChainId)
-    }
-    throw new Error(`Soul ${params.soulOnChainId} not found`)
-  }
+  void params
+  throw new Error('Legacy Soul allowlist mirror has been retired. Use Soulidity grants instead.')
 }
 
 export async function dbSetSoulOwnership(params: {
@@ -276,13 +247,6 @@ export async function dbSetSoulOwnership(params: {
       listingObjectOnChainId: params.listingObjectOnChainId,
       listingStatus: params.listingStatus,
       listedPriceAtomic: toNullableDecimal(params.listedPriceAtomic),
-      ...(params.preserveExistingAllowlistMirror
-        ? {}
-        : {
-            allowlistAddress: null,
-            allowlistCapOnChainId: null,
-          }),
-      allowlistVersion: params.allowlistVersion.toString(),
     },
   })
   if (result.count === 0) {

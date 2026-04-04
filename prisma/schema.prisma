@@ -168,6 +168,10 @@ model Member {
   walletBindings        WalletBinding[]
   authoredSoulAssets    SoulAsset[]           @relation("SoulAssetCreator")
   ownedSoulAssets       SoulAsset[]           @relation("SoulAssetOwner")
+  createdSoulCollections SoulCollectionAsset[] @relation("SoulCollectionCreator")
+  heldSoulCollections    SoulCollectionAsset[] @relation("SoulCollectionCurrentHolder")
+  issuedSoulGrants       SoulGrantRecord[]     @relation("SoulGrantIssuer")
+  receivedSoulGrants     SoulGrantRecord[]     @relation("SoulGrantGrantee")
   preparedSoulPurchases SoulPreparedPurchase[] @relation("SoulPreparedPurchaseAgentMember")
 
   @@index([tgId])
@@ -301,6 +305,8 @@ model WalletBinding {
 model SoulAsset {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   onChainId             String   @unique @map("on_chain_id")
+  stateOnChainId        String   @unique @map("state_on_chain_id")
+  memoryOnChainId       String   @unique @map("memory_on_chain_id")
   creatorMemberId       String?  @map("creator_member_id") @db.Uuid
   creatorMember         Member?  @relation("SoulAssetCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
   creatorAddress        String   @map("creator_address")
@@ -323,14 +329,22 @@ model SoulAsset {
   metadataRef           String?  @map("metadata_ref")
   contentBlobId         String   @map("content_blob_id")
   contentBlobObjectId   String   @map("content_blob_object_id")
+  provenanceKind        String   @default("native") @map("provenance_kind")
+  originRef             String?  @map("origin_ref")
+  collectionOnChainId   String?  @map("collection_on_chain_id")
+  collection            SoulCollectionAsset? @relation("CollectionSouls", fields: [collectionOnChainId], references: [onChainId], onDelete: SetNull)
+  grantCapacity         Int      @default(1) @map("grant_capacity")
+  activeGrantCount      Int      @default(0) @map("active_grant_count")
+  skillsOnChainId       String?  @unique @map("skills_on_chain_id")
+  latestSkillVersionOnChainId String? @unique @map("latest_skill_version_on_chain_id")
+  grantRecords          SoulGrantRecord[] @relation("SoulAssetGrantRecords")
+  skillVersions         SoulSkillVersionRecord[] @relation("SoulAssetSkillVersions")
   sealSidecar           Json?    @map("seal_sidecar")
   category              String
   tags                  String[]
   previewImages         String[] @map("preview_images")
   readme                String?
-  allowlistAddress      String?  @map("allowlist_address")
-  allowlistCapOnChainId String?  @unique @map("allowlist_cap_on_chain_id")
-  allowlistVersion      String   @default("0") @map("allowlist_version")
+  memoryEntries         SoulMemoryEntry[]
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -338,11 +352,113 @@ model SoulAsset {
   @@index([creatorAddress])
   @@index([currentOwnerMemberId, listingStatus])
   @@index([currentOwnerAddress, listingStatus])
+  @@index([collectionOnChainId, listingStatus])
+  @@index([skillsOnChainId])
   @@index([listingStatus, createdAt(sort: Desc)])
   @@index([currentKioskId, currentKioskCapOnChainId])
   @@index([category])
   @@index([createdAt(sort: Desc)])
   @@map("soul_assets")
+}
+
+model SoulCollectionAsset {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId            String   @unique @map("on_chain_id")
+  rightOnChainId       String   @unique @map("right_on_chain_id")
+  creatorMemberId      String?  @map("creator_member_id") @db.Uuid
+  creatorMember        Member?  @relation("SoulCollectionCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
+  creatorAddress       String   @map("creator_address")
+  currentHolderMemberId String? @map("current_holder_member_id") @db.Uuid
+  currentHolderMember  Member?  @relation("SoulCollectionCurrentHolder", fields: [currentHolderMemberId], references: [id], onDelete: SetNull)
+  currentHolderAddress String   @map("current_holder_address")
+  currentHolderKioskId String   @map("current_holder_kiosk_id")
+  name                 String
+  description          String
+  imageUrl             String   @map("image_url")
+  extraRoyaltyBps      Int      @default(0) @map("extra_royalty_bps")
+  tradeable            Boolean  @default(true)
+  listingObjectOnChainId String? @map("listing_object_on_chain_id")
+  listedPriceAtomic    Decimal? @map("listed_price_atomic") @db.Decimal(20, 0)
+  listingStatus        String   @default("held") @map("listing_status")
+  soulCount            Int      @default(0) @map("soul_count")
+  souls                SoulAsset[] @relation("CollectionSouls")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([creatorMemberId, listingStatus])
+  @@index([currentHolderMemberId, listingStatus])
+  @@index([currentHolderAddress, listingStatus])
+  @@index([listingStatus, createdAt(sort: Desc)])
+  @@map("soul_collection_assets")
+}
+
+model SoulGrantRecord {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId       String   @unique @map("on_chain_id")
+  soulOnChainId   String   @map("soul_on_chain_id")
+  soul            SoulAsset @relation("SoulAssetGrantRecords", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  issuedByMemberId String? @map("issued_by_member_id") @db.Uuid
+  issuedByMember  Member?  @relation("SoulGrantIssuer", fields: [issuedByMemberId], references: [id], onDelete: SetNull)
+  issuedByAddress String   @map("issued_by_address")
+  granteeMemberId String?  @map("grantee_member_id") @db.Uuid
+  granteeMember   Member?  @relation("SoulGrantGrantee", fields: [granteeMemberId], references: [id], onDelete: SetNull)
+  granteeAddress  String   @map("grantee_address")
+  scopes          String[]
+  status          String   @default("active")
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz
+  endedAt         DateTime? @map("ended_at") @db.Timestamptz
+  replacedByGrantOnChainId String? @map("replaced_by_grant_on_chain_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([soulOnChainId, status])
+  @@index([granteeAddress, status])
+  @@index([issuedByAddress, status])
+  @@index([replacedByGrantOnChainId])
+  @@map("soul_grant_records")
+}
+
+model SoulMemoryEntry {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId      String   @unique @map("on_chain_id")
+  soulOnChainId  String   @map("soul_on_chain_id")
+  soul           SoulAsset @relation(fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  memoryOnChainId String  @map("memory_on_chain_id")
+  entryIndex     Int      @map("entry_index")
+  writerAddress  String   @map("writer_address")
+  writerKind     String   @map("writer_kind")
+  blobObjectId   String   @map("blob_object_id")
+  blobId         String?  @map("blob_id")
+  createdAtMs    BigInt   @map("created_at_ms")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([memoryOnChainId, entryIndex])
+  @@index([soulOnChainId, entryIndex(sort: Desc)])
+  @@map("soul_memory_entries")
+}
+
+model SoulSkillVersionRecord {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId         String   @map("soul_on_chain_id")
+  soul                  SoulAsset @relation("SoulAssetSkillVersions", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  skillsOnChainId       String   @map("skills_on_chain_id")
+  versionOnChainId      String   @unique @map("version_on_chain_id")
+  versionNumber         Int      @map("version_number")
+  visibility            String
+  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz
+  blobObjectId          String   @map("blob_object_id")
+  blobId                String?  @map("blob_id")
+  previousVersionOnChainId String? @map("previous_version_on_chain_id")
+  sealSidecar           Json?    @map("seal_sidecar")
+  createdAtMs           BigInt   @map("created_at_ms")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([skillsOnChainId, versionNumber])
+  @@index([soulOnChainId, versionNumber(sort: Desc)])
+  @@index([skillsOnChainId])
+  @@map("soul_skill_version_records")
 }
 
 model SoulTxSync {

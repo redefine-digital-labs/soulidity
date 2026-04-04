@@ -116,7 +116,7 @@ describe('Soul detail access section', () => {
     expect(accessButton?.textContent).toBe('0x2')
   })
 
-  it('warns the owner before listing a Soul that still has an allowlist address', async () => {
+  it('does not show retired allowlist controls in owner management', async () => {
     mockUseSoulDetail.mockReturnValue({
       data: buildSoulDetail({
         isOwner: true,
@@ -132,6 +132,6 @@ describe('Soul detail access section', () => {
       root.render(<SoulDetailPage />)
     })
 
-    expect(container.textContent).toContain("Listing this Soul will revoke the current allowlisted address's access.")
+    expect(container.textContent).not.toContain('Manage allowlist')
   })
 })
