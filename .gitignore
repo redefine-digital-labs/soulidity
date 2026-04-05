@@ -10,6 +10,8 @@ docs/screenshots/
 CLAUDE.md
 .claude/
 
+/docs/design/
+
 e2e/
 
 /generated/prisma

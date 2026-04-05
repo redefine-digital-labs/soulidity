@@ -6,11 +6,23 @@ import {
   soulAssetSummarySelect,
   soulCollectionSummarySelect,
   soulGrantRecordSelect,
-  toSoulAssetSummaryList,
+  toSoulAssetSummary,
   toSoulCollectionSummaryList,
 } from '@/lib/soulidity/repository'
-
 export const dynamic = 'force-dynamic'
+
+const mySoulSelect = {
+  ...soulAssetSummarySelect,
+  collection: {
+    select: { name: true },
+  },
+  grantRecords: {
+    select: { granteeAddress: true, createdAt: true },
+    where: { status: 'active' as const },
+    orderBy: { createdAt: 'desc' as const },
+    take: 3,
+  },
+} as const
 
 export async function GET() {
   const { error, identity } = await requireIdentity()
@@ -20,33 +32,10 @@ export async function GET() {
 
   const walletAddresses = await getMemberSuiWalletAddresses(identity.memberId)
 
-  const [authored, owned, granted, collections, grants] = await Promise.all([
-    prisma.soulAsset.findMany({
-      where: { creatorMemberId: identity.memberId },
-      select: soulAssetSummarySelect,
-      orderBy: { createdAt: 'desc' },
-    }),
+  const [owned, collections, grants] = await Promise.all([
     prisma.soulAsset.findMany({
       where: { currentOwnerMemberId: identity.memberId },
-      select: soulAssetSummarySelect,
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.soulAsset.findMany({
-      where: {
-        grantRecords: {
-          some: {
-            status: 'active',
-            OR: [
-              { granteeMemberId: identity.memberId },
-              ...(walletAddresses.length > 0 ? [{ granteeAddress: { in: walletAddresses } }] : []),
-            ],
-          },
-        },
-        currentOwnerMemberId: {
-          not: identity.memberId,
-        },
-      },
-      select: soulAssetSummarySelect,
+      select: mySoulSelect,
       orderBy: { createdAt: 'desc' },
     }),
     prisma.soulCollectionAsset.findMany({
@@ -73,9 +62,14 @@ export async function GET() {
   ])
 
   return NextResponse.json({
-    authored: toSoulAssetSummaryList(authored),
-    owned: toSoulAssetSummaryList(owned),
-    granted: toSoulAssetSummaryList(granted),
+    owned: owned.map((r) => ({
+      ...toSoulAssetSummary(r),
+      collectionName: r.collection?.name ?? null,
+      activeGrantDetails: r.grantRecords.map((g: { granteeAddress: string; createdAt: Date }) => ({
+        granteeAddress: g.granteeAddress,
+        createdAt: g.createdAt.toISOString(),
+      })),
+    })),
     collections: toSoulCollectionSummaryList(collections),
     grants: grants.map((grant) => ({
       id: grant.id,

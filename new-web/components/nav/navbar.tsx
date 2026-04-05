@@ -53,10 +53,8 @@ function SoulidityLogo() {
 
 function navLinkClass(isActive: boolean) {
   return cn(
-    'relative text-[13px] font-medium tracking-[0.01em] transition-colors after:absolute after:-bottom-[18px] after:left-0 after:h-px after:w-full after:origin-left after:transition-transform',
-    isActive
-      ? 'text-foreground after:scale-x-100 after:bg-purple'
-      : 'text-muted hover:text-foreground after:scale-x-0 after:bg-purple/70',
+    'text-[13px] font-medium tracking-[0.01em] transition-colors',
+    isActive ? 'text-foreground' : 'text-muted hover:text-foreground',
   )
 }
 
@@ -67,7 +65,7 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
 
   return (
     <header className="sticky top-0 z-[100] border-b border-border bg-[var(--nav-bg)] backdrop-blur-[12px]">
-      <div className="mx-auto flex h-14 max-w-[1100px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-4 lg:gap-7">
           <SoulidityLogo />
 
@@ -98,7 +96,7 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
           ) : (
             <div className="hidden md:block">
               <Button variant="outline" size="sm" onClick={onConnectClick}>
-                Login
+                Connect Wallet
               </Button>
             </div>
           )}

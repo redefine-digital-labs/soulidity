@@ -102,23 +102,43 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
     )
   }
 
+  const signingSubLabel: Record<string, string> = {
+    building: 'Preparing transaction…',
+    signing: 'Entering escrow on SoulMarket · Sui',
+    syncing: 'Syncing on-chain state…',
+  }
+
   return (
     <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
-      <div className="bg-card2 border-b border-border px-4 sm:px-8 py-2.5 flex items-center gap-0 rounded-t-xl mb-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+      <div className="bg-card2 border border-border px-4 sm:px-6 py-2.5 flex items-center gap-3 rounded-t-xl mb-0">
         <div className="flex items-center gap-2 text-xs">
           <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-success text-white">✓</div>
           <span className="text-success">Set Price</span>
         </div>
-        <span className="mx-2.5 text-border text-[11px]">›</span>
         <div className="flex items-center gap-2 text-xs">
           <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-purple text-white">2</div>
           <span className="text-foreground font-semibold">Authorize</span>
         </div>
+        <div className="flex items-center gap-2 text-xs">
+          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-border text-muted">3</div>
+          <span className="text-muted">Listed</span>
+        </div>
       </div>
 
-      <div className="bg-card border border-border border-t-0 rounded-b-xl p-6">
-        <h2 className="font-display text-xl font-bold mb-1">Authorize listing</h2>
-        <p className="text-muted text-sm mb-6">The kiosk transfer and listing object are created only after this signature succeeds on chain.</p>
+      <div className="bg-card border border-border border-t-0 rounded-b-xl p-6 relative overflow-hidden">
+        {/* Signing overlay */}
+        {signing && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-bg/60 backdrop-blur-sm">
+            <div className="bg-card2 border border-purple rounded-2xl px-10 py-8 text-center max-w-[340px]">
+              <svg className="w-8 h-8 mx-auto mb-4 text-foreground animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-6.219-8.56" /></svg>
+              <p className="font-bold text-base mb-1">Listing Soul…</p>
+              <p className="text-muted text-sm">{signingSubLabel[status] ?? 'Processing…'}</p>
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1">Sell Soul</p>
+        <h2 className="font-display text-xl font-bold mb-1">Step 2 — Authorize Listing</h2>
+        <p className="text-muted text-sm mb-6">Sign to authorize the marketplace contract to hold your Soul in escrow.</p>
 
         <div className="bg-card2 border border-purple rounded-xl overflow-hidden mb-5">
           <div className="px-4 py-2.5 border-b border-border">
@@ -129,24 +149,34 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
             <span className="font-semibold">{soul.name}</span>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
-            <span className="text-muted">Ask price</span>
-            <span className="font-semibold text-gold">{formatAtomicAmountForDisplay(priceAtomic)}</span>
+            <span className="text-muted">Contract</span>
+            <span className="font-mono text-xs text-teal">SoulMarket::list_soul</span>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
-            <span className="text-muted">Creator royalty</span>
-            <span>{(soul.creatorRoyaltyBps / 100).toFixed(2)}%</span>
+            <span className="text-muted">Listing Price</span>
+            <span className="font-semibold">{formatAtomicAmountForDisplay(priceAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
-            <span className="text-muted">Collection royalty</span>
-            <span>{soul.collection ? `${(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%` : 'None'}</span>
+            <span className="text-muted">Creator Royalty</span>
+            <span className="text-teal">{soul.creatorRoyaltyBps / 100}% → {soul.isCreator ? 'You' : formatAddress(soul.creatorAddress)} · <span className="text-[11px]">enforced on-chain</span></span>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
-            <span className="text-muted">Escrow kiosk</span>
-            <span className="font-mono text-xs text-teal">{formatAddress(soul.currentKioskId)}</span>
+            <span className="text-muted">Platform Fee</span>
+            <span>{soul.platformFeeBps != null ? `${(soul.platformFeeBps / 100).toFixed(1)}% → Soulidity` : '—'}</span>
+          </div>
+          <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+            <span className="text-muted">Escrow</span>
+            <span className="font-semibold">Soul transferred to contract</span>
+          </div>
+          <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+            <span className="text-muted">SoulGrant</span>
+            {soul.activeGrants.length > 0
+              ? <span className="text-danger">{soul.activeGrants.length} active · Voided on transfer ✕</span>
+              : <span className="text-muted">No active grants</span>}
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5">
-            <span className="text-muted">Grant impact</span>
-            <span>{soul.activeGrantCount > 0 ? `${soul.activeGrantCount} grant(s) become invalid after sale` : 'No active grant'}</span>
+            <span className="text-muted">Gas</span>
+            <span>~0.001 SUI</span>
           </div>
         </div>
 
@@ -156,8 +186,9 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
           </p>
         )}
 
-        <div className="bg-card2 border border-border rounded-xl px-4 py-3 mb-6 text-xs text-muted leading-relaxed">
-          The server will only mirror the listing after the submitted digest resolves successfully and the emitted `SoulListed` event matches this owner wallet.
+        <div className="rounded-xl border border-gold/30 bg-gold/5 px-4 py-3 mb-6 text-sm text-gold leading-relaxed flex items-start gap-2">
+          <span className="text-base mt-0.5">⚡</span>
+          <span>Once listed, your Soul enters escrow. You can delist anytime to reclaim it if unsold.</span>
         </div>
 
         <div className="flex gap-2.5">
@@ -172,7 +203,7 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
               void listSoul(priceAtomic)
             }}
             disabled={signing}
-            className="flex-1 bg-gold text-black font-bold text-[15px] px-7 py-3 rounded-lg hover:bg-gold-light transition disabled:opacity-50"
+            className="flex-1 bg-gold text-white font-bold text-[15px] px-7 py-3 rounded-lg hover:bg-gold-light transition disabled:opacity-50"
           >
             {signing ? (signingLabel[status] ?? '⟳ Signing…') : '✓ Sign & List'}
           </button>

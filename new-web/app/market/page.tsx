@@ -14,14 +14,21 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
 
 const filterTabs = [
-  { id: 'all', label: 'All Souls' },
+  { id: 'all', label: 'All' },
+  { id: 'trading', label: 'Trading' },
+  { id: 'research', label: 'Research' },
+  { id: 'social', label: 'Social' },
   { id: 'defi', label: 'DeFi' },
-  { id: 'art', label: 'Art & OC' },
+  { id: 'nft', label: 'NFT' },
   { id: 'infra', label: 'Infrastructure' },
 ]
 
 const tagColors: Record<string, TagColor> = {
+  trading: 'gold',
+  research: 'teal',
+  social: 'gold',
   defi: 'gold',
+  nft: 'purple',
   art: 'purple',
   infrastructure: 'teal',
   imported: 'teal',
@@ -57,7 +64,10 @@ export default function MarketPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [marketView, setMarketView] = useState<'souls' | 'collections'>('souls')
 
-  const categoryMap: Record<string, string> = { all: '', defi: 'defi', art: 'art', infra: 'infrastructure' }
+  const categoryMap: Record<string, string> = {
+    all: '', trading: 'trading', research: 'research', social: 'social',
+    defi: 'defi', nft: 'nft', infra: 'infrastructure',
+  }
   const { data: soulsData, isLoading: soulsLoading } = useSoulsList({
     page: 1,
     category: categoryMap[activeFilter] || '',
@@ -68,15 +78,7 @@ export default function MarketPage() {
     q: searchQuery,
   })
 
-  const visibleSouls = (soulsData?.items ?? []).filter((soul) => {
-    if (soul.listingStatus !== 'listed') {
-      return false
-    }
-    if (activeFilter === 'art') {
-      return !['defi', 'infrastructure'].includes(soul.category.toLowerCase())
-    }
-    return true
-  })
+  const visibleSouls = (soulsData?.items ?? []).filter((soul) => soul.listingStatus === 'listed')
 
   const visibleCollections = collectionsData?.items ?? []
 
@@ -85,7 +87,7 @@ export default function MarketPage() {
       <SectionHeader
         label="Soul Market"
         title="Digital Entity Marketplace"
-        subtitle="Browse live Soulidity listings, collection rights, and ownership state mirrored from chain."
+        subtitle="Browse and collect AI agents & original characters on-chain"
         action={
           <div className="mt-2 flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row">
             <Link href="/my-souls" className={buttonStyles({ variant: 'outline' })}>My Souls</Link>
@@ -94,29 +96,33 @@ export default function MarketPage() {
         }
       />
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 flex-1 space-y-4">
+      <div className="space-y-4">
+        <div className="relative max-w-[320px]">
+          <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" strokeLinecap="round" />
+          </svg>
           <Input
             type="text"
-            placeholder="Search souls, creators, or collections..."
+            placeholder="Search souls..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full sm:max-w-[360px]"
+            className="w-full pl-9"
           />
-          {marketView === 'souls' && (
-            <FilterTabs tabs={filterTabs} activeId={activeFilter} onChange={setActiveFilter} />
-          )}
         </div>
 
         <FilterTabs
           tabs={[
-            { id: 'souls', label: 'Soul Listings' },
-            { id: 'collections', label: 'Collection Rights' },
+            { id: 'souls', label: 'Individual Souls' },
+            { id: 'collections', label: '+ Collections' },
           ]}
           activeId={marketView}
           onChange={(id) => setMarketView(id as 'souls' | 'collections')}
-          className="w-full lg:w-auto"
         />
+
+        {marketView === 'souls' && (
+          <FilterTabs tabs={filterTabs} activeId={activeFilter} onChange={setActiveFilter} />
+        )}
       </div>
 
       {marketView === 'souls' && (
@@ -146,24 +152,21 @@ export default function MarketPage() {
                   href={`/souls/${encodeURIComponent(soul.onChainId)}`}
                   className="card card-hover group overflow-hidden cursor-pointer"
                 >
-                  <div className="flex h-[160px] items-end p-4" style={buildHeroStyle(soul.imageUrl)}>
-                    <Tag color="success">{soul.provenanceKind}</Tag>
+                  <div className="flex h-[140px] items-center justify-center" style={buildHeroStyle(soul.imageUrl)}>
+                    {!soul.imageUrl && <span className="text-4xl">🤖</span>}
                   </div>
-                  <div className="p-4 space-y-3">
+                  <div className="space-y-2.5 p-3.5">
                     <div className="flex flex-wrap gap-1.5">
                       <Tag color={resolveTagColor(soul.category)}>{soul.category}</Tag>
-                      {soul.tags.slice(0, 2).map((tag) => (
-                        <Tag key={`${soul.id}-${tag}`} color="muted">{tag}</Tag>
-                      ))}
+                      <Tag color="muted">Soul</Tag>
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-foreground">{soul.name}</h3>
+                      <h3 className="text-sm font-bold text-foreground">{soul.name}</h3>
                       <p className="mt-1 line-clamp-2 text-xs leading-[1.5] text-muted">{soul.description}</p>
                     </div>
-                    <div className="flex items-center justify-between text-xs text-muted">
-                      <span>Creator {formatAddress(soul.creatorAddress)}</span>
-                      <span>{formatAtomicAmountForDisplay(soul.listedPriceAtomic)}</span>
-                    </div>
+                    {soul.listedPriceAtomic && (
+                      <p className="text-sm font-bold text-gold">{formatAtomicAmountForDisplay(soul.listedPriceAtomic)}</p>
+                    )}
                   </div>
                 </Link>
               ))}

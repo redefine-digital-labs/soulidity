@@ -1,14 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import type { SoulAssetDetail } from '@/lib/soulidity/types'
 import { buildIssueGrantTx, buildRevokeGrantScopeTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
 
 const DEFAULT_ISSUE_SCOPE_MASK = 1 | 2
 
-export function useGrant(soul: SoulAssetDetail | null) {
+/** Minimal soul shape required by the grant hook. */
+export interface GrantableSoul {
+  onChainId: string
+  stateOnChainId: string
+  activeGrants?: Array<{ granteeAddress: string }>
+}
+
+export function useGrant(soul: GrantableSoul | null) {
   const [pending, setPending] = useState<'issue' | 'revoke' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { suiWallet, signAndExecute } = usePrivySuiSign()
@@ -54,7 +60,7 @@ export function useGrant(soul: SoulAssetDetail | null) {
     }
 
     const resolvedGranteeAddress = granteeAddress
-      ?? (soul.activeGrants.length === 1 ? soul.activeGrants[0]?.granteeAddress ?? null : null)
+      ?? (soul.activeGrants?.length === 1 ? soul.activeGrants[0]?.granteeAddress ?? null : null)
     if (!resolvedGranteeAddress) {
       throw new Error('granteeAddress is required when a Soul has multiple active grants')
     }

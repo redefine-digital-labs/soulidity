@@ -1,16 +1,18 @@
 'use client'
 
-import { use } from 'react'
+import { use, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
 import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tag } from '@/components/ui/tag'
-import { buttonStyles } from '@/components/ui/button'
+import { Button, buttonStyles } from '@/components/ui/button'
 import { SkillsPanel } from '@/components/souls/skills-panel'
+import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import type { SoulAssetDetail } from '@/lib/soulidity/types'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -37,23 +39,32 @@ function buildHeroStyle(imageUrl: string | null | undefined) {
 }
 
 function ListingCta({
-  soulId,
-  isOwner,
-  listed,
+  soul,
   priceLabel,
+  onUpdatePrice,
+  onDelist,
 }: {
-  soulId: string
-  isOwner: boolean
-  listed: boolean
+  soul: SoulAssetDetail
   priceLabel: string
+  onUpdatePrice: () => void
+  onDelist: () => void
 }) {
   const router = useRouter()
   const { requireAuth } = useRequireAuth()
+  const listed = soul.listingStatus === 'listed'
 
-  if (isOwner) {
+  if (soul.isOwner) {
+    if (listed) {
+      return (
+        <>
+          <Button variant="gold" onClick={onUpdatePrice}>Update Price</Button>
+          <Button variant="outline" onClick={onDelist}>Delist</Button>
+        </>
+      )
+    }
     return (
-      <Link href={`/souls/${encodeURIComponent(soulId)}/sell`} className={buttonStyles({ variant: 'gold' })}>
-        {listed ? 'Manage Listing' : 'List Soul'}
+      <Link href={`/souls/${encodeURIComponent(soul.onChainId)}/sell`} className={buttonStyles({ variant: 'gold' })}>
+        List Soul
       </Link>
     )
   }
@@ -67,7 +78,7 @@ function ListingCta({
       type="button"
       onClick={() => {
         requireAuth(() => {
-          router.push(`/souls/${encodeURIComponent(soulId)}/buy`)
+          router.push(`/souls/${encodeURIComponent(soul.onChainId)}/buy`)
         })
       }}
       className={buttonStyles({ variant: 'gold' })}
@@ -81,6 +92,8 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params)
   const { user, getAuthHeaders } = useAuth()
   const { data: soul, isLoading, error } = useSoulDetail(id, getAuthHeaders, user?.id)
+  const [showUpdatePrice, setShowUpdatePrice] = useState(false)
+  const [showDelist, setShowDelist] = useState(false)
 
   if (isLoading) {
     return (
@@ -163,19 +176,11 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               <div className="mt-1 font-display text-2xl font-bold text-gold">{priceLabel}</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <ListingCta
-                  soulId={soul.onChainId}
-                  isOwner={soul.isOwner}
-                  listed={soul.listingStatus === 'listed'}
+                  soul={soul}
                   priceLabel={priceLabel}
+                  onUpdatePrice={() => setShowUpdatePrice(true)}
+                  onDelist={() => setShowDelist(true)}
                 />
-                {soul.listingStatus === 'listed' && soul.isOwner && (
-                  <Link
-                    href={`/souls/${encodeURIComponent(soul.onChainId)}/sell`}
-                    className={buttonStyles({ variant: 'outline' })}
-                  >
-                    Update Price
-                  </Link>
-                )}
               </div>
             </div>
           </div>
@@ -308,6 +313,13 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
       </div>
+
+      {soul.isOwner && soul.listingStatus === 'listed' && (
+        <>
+          <UpdatePriceModal soul={soul} open={showUpdatePrice} onClose={() => setShowUpdatePrice(false)} />
+          <DelistModal soul={soul} open={showDelist} onClose={() => setShowDelist(false)} />
+        </>
+      )}
     </div>
   )
 }

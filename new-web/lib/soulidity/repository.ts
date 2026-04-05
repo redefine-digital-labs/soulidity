@@ -360,6 +360,7 @@ export function toSoulAssetDetail(
     viewerMemberId: string | null
     viewerAddresses?: string[]
     quote?: SoulQuoteBreakdown | null
+    platformFeeBps?: number | null
   },
 ): SoulAssetDetail {
   const viewerAddresses = new Set((params.viewerAddresses ?? []).map((value) => value.toLowerCase()))
@@ -384,6 +385,7 @@ export function toSoulAssetDetail(
     isCreator,
     isGrantedAgent,
     quote: params.quote ?? null,
+    platformFeeBps: params.platformFeeBps ?? null,
   }
 }
 

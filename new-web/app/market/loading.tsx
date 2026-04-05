@@ -6,9 +6,14 @@ export default function MarketLoading() {
         <div className="h-7 w-48 bg-card2 rounded animate-pulse mb-2" />
         <div className="h-4 w-80 bg-card2 rounded animate-pulse" />
       </div>
-      <div className="h-11 w-full bg-card2 rounded-xl animate-pulse mb-6" />
+      <div className="h-11 w-full bg-card2 rounded-lg animate-pulse mb-4" />
+      <div className="flex gap-2 mb-4">
+        {[1, 2].map((i) => (
+          <div key={i} className="h-8 w-28 bg-card2 rounded-full animate-pulse" />
+        ))}
+      </div>
       <div className="flex gap-2 mb-6">
-        {[1, 2, 3, 4].map((i) => (
+        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
           <div key={i} className="h-8 w-20 bg-card2 rounded-full animate-pulse" />
         ))}
       </div>

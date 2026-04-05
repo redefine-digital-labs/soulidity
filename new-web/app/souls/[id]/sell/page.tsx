@@ -8,11 +8,6 @@ import { Input } from '@/components/ui/input'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 
-function formatAddress(value: string | null | undefined) {
-  if (!value) return '—'
-  return `${value.slice(0, 6)}…${value.slice(-4)}`
-}
-
 export default function SellPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user, getAuthHeaders } = useAuth()
@@ -85,30 +80,45 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
+  const platformFeePct = soul.platformFeeBps != null ? soul.platformFeeBps / 100 : null
+  const creatorRoyaltyPct = soul.creatorRoyaltyBps / 100
+  const collectionRoyaltyPct = soul.collection ? soul.collection.extraRoyaltyBps / 100 : 0
+  const creatorRoyaltyReturnsToSeller = soul.isCreator && creatorRoyaltyPct > 0
+  const youReceivePct = platformFeePct != null
+    ? (100 - platformFeePct - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct) - collectionRoyaltyPct).toFixed(1)
+    : null
+
   const authorizeHref = priceAtomic
     ? `/souls/${encodeURIComponent(soul.onChainId)}/sell/authorize?price=${encodeURIComponent(price)}`
     : null
 
   return (
     <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
-      <div className="bg-card2 border-b border-border px-4 sm:px-8 py-2.5 flex items-center gap-0 rounded-t-xl mb-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+      {/* Stepper bar */}
+      <div className="bg-card2 border border-border px-4 sm:px-6 py-2.5 flex items-center gap-3 rounded-t-xl mb-0">
         <div className="flex items-center gap-2 text-xs">
           <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-purple text-white">1</div>
           <span className="text-foreground font-semibold">Set Price</span>
         </div>
-        <span className="mx-2.5 text-border text-[11px]">›</span>
         <div className="flex items-center gap-2 text-xs">
           <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-border text-muted">2</div>
           <span className="text-muted">Authorize</span>
         </div>
+        <div className="flex items-center gap-2 text-xs">
+          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-border text-muted">3</div>
+          <span className="text-muted">Listed</span>
+        </div>
       </div>
 
+      {/* Main content */}
       <div className="bg-card border border-border border-t-0 rounded-b-xl p-6 space-y-5">
+        {/* Title */}
         <div>
-          <h2 className="font-display text-xl font-bold mb-1">List Soul</h2>
-          <p className="text-muted text-sm">Choose the asking price, then sign the real Soulidity listing transaction on the next screen.</p>
+          <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1">Sell Soul</p>
+          <h2 className="font-display text-xl font-bold">Step 1 — Set Your Price</h2>
         </div>
 
+        {/* Soul preview card */}
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card2 p-4">
           <div
             className="w-12 h-12 rounded-lg border border-border bg-card flex items-center justify-center text-lg font-semibold shrink-0"
@@ -122,66 +132,78 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-bold text-sm">{soul.name}</p>
-            <p className="text-xs text-muted">Owner {formatAddress(soul.currentOwnerAddress)}</p>
+            <p className="text-xs text-muted capitalize">{soul.category || 'Soul'}</p>
           </div>
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-success/10 text-success border border-success/30">
+            For Sale
+          </span>
         </div>
 
+        {/* Listing price input */}
         <div className="space-y-2">
-          <label className="page-kicker text-muted">Listing Price</label>
-          <div className="flex items-center bg-card2 border border-border rounded-xl overflow-hidden focus-within:border-purple transition">
-            <Input
-              type="number"
-              min="0"
-              step="0.000001"
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
-              className="border-0 bg-transparent rounded-none focus:border-0"
-              placeholder="0.00"
-            />
-            <span className="px-4 text-sm font-semibold text-muted border-l border-border py-3">USDC</span>
-          </div>
-          <p className="text-xs text-muted">Soulidity expects 6 decimal places for the payment coin. Example: `12.5`.</p>
+          <label className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
+            Listing Price (USDC) <span className="text-danger">*</span>
+          </label>
+          <Input
+            type="number"
+            min="0"
+            step="0.000001"
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            placeholder="0.00"
+          />
           {priceError && <p className="text-danger text-xs">{priceError}</p>}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-border bg-card2 p-4">
-            <div className="page-kicker text-muted mb-3">Resale Split</div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted">Creator royalty</span>
-                <span>{(soul.creatorRoyaltyBps / 100).toFixed(2)}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Collection royalty</span>
-                <span>{soul.collection ? `${(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%` : 'None'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Protocol fee</span>
-                <span>Calculated at checkout</span>
-              </div>
+        {/* Fee breakdown */}
+        <div className="rounded-xl border border-border bg-card2 overflow-hidden">
+          {soul.listedPriceAtomic && (
+            <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+              <span className="text-muted">Current listing price</span>
+              <span className="font-semibold">{formatAtomicAmountForDisplay(soul.listedPriceAtomic)}</span>
             </div>
+          )}
+          <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+            <span className="text-muted">Platform fee</span>
+            <span>{platformFeePct != null ? `${platformFeePct}%` : '—'}</span>
           </div>
-
-          <div className="rounded-xl border border-border bg-card2 p-4">
-            <div className="page-kicker text-muted mb-3">Grant & Escrow</div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted">Active grant</span>
-                <span>{soul.activeGrantCount > 0 ? `${soul.activeGrantCount} grant(s) invalid after transfer` : 'None'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Kiosk escrow</span>
-                <span>Required</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Current kiosk</span>
-                <span className="font-mono text-xs text-teal">{formatAddress(soul.currentKioskId)}</span>
-              </div>
+          <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+            <span className="text-muted">
+              Creator royalty <span className="text-[10px] text-teal ml-1">on-chain enforced</span>
+            </span>
+            <span>{creatorRoyaltyPct}%{creatorRoyaltyReturnsToSeller ? ' (returns to you)' : ''}</span>
+          </div>
+          {collectionRoyaltyPct > 0 && (
+            <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+              <span className="text-muted">Collection royalty</span>
+              <span>{collectionRoyaltyPct}%</span>
             </div>
+          )}
+          <div className="flex justify-between text-sm px-4 py-2.5">
+            <span className="font-semibold">You receive</span>
+            <span className="font-semibold text-success">{youReceivePct != null ? `${youReceivePct}% of sale price` : '—'}</span>
           </div>
         </div>
 
+        {/* Warning: grants voided */}
+        {soul.activeGrantCount > 0 && <div className="rounded-xl border border-gold/30 bg-gold/5 px-4 py-3 text-sm">
+          <p className="font-semibold text-gold mb-1">
+            <svg className="inline-block w-4 h-4 mr-1 -mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Active SoulGrant will be voided on sale.
+          </p>
+          <p className="text-muted text-xs leading-relaxed">
+            Once this Soul transfers to a new owner, the current agent authorization is automatically revoked on-chain.
+            The buyer starts with no active grant and must re-authorize their own agent.
+          </p>
+        </div>}
+
+        {/* Info: escrow notice */}
+        <div className="rounded-xl border border-purple/30 bg-purple/5 px-4 py-3 text-sm text-purple/80 leading-relaxed">
+          Your Soul will be <span className="font-semibold text-purple">escrowed</span> in the contract during the listing.
+          You can delist and reclaim it anytime before a sale.
+        </div>
+
+        {/* Action buttons */}
         <div className="flex gap-2.5">
           <Link
             href={`/souls/${encodeURIComponent(soul.onChainId)}`}
@@ -192,14 +214,14 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           {authorizeHref ? (
             <Link
               href={authorizeHref}
-              className="flex-1 bg-gold text-black font-bold text-[15px] px-7 py-3 rounded-lg hover:bg-gold-light transition text-center"
+              className="flex-1 bg-purple text-white font-bold text-[15px] px-7 py-3 rounded-lg hover:bg-purple-deep transition text-center"
             >
               Next: Authorize →
             </Link>
           ) : (
             <button
               disabled
-              className="flex-1 bg-gold text-black font-bold text-[15px] px-7 py-3 rounded-lg opacity-40 cursor-not-allowed"
+              className="flex-1 bg-purple text-white font-bold text-[15px] px-7 py-3 rounded-lg opacity-40 cursor-not-allowed"
             >
               Enter a valid price
             </button>

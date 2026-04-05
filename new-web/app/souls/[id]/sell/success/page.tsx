@@ -33,56 +33,83 @@ export default function SellSuccessPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
-      <div className="bg-card border border-border rounded-xl p-6 text-center pt-10">
+      {/* Stepper bar */}
+      <div className="bg-card2 border border-border px-4 sm:px-6 py-2.5 flex items-center gap-3 rounded-t-xl mb-0">
+        <div className="flex items-center gap-2 text-xs">
+          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-success text-white">✓</div>
+          <span className="text-success">Set Price</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-success text-white">✓</div>
+          <span className="text-success">Authorize</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-purple text-white">✓</div>
+          <span className="text-foreground font-semibold">Listed</span>
+        </div>
+      </div>
+
+      <div className="bg-card border border-border border-t-0 rounded-b-xl p-6 text-center pt-10">
         <div className="w-[72px] h-[72px] rounded-full bg-success/15 border-2 border-success flex items-center justify-center text-3xl mx-auto mb-5">
           🏷️
         </div>
 
-        <h2 className="font-display text-xl font-bold mb-2">Soul listed</h2>
+        <h2 className="font-display text-2xl font-bold mb-2">Soul Listed!</h2>
         <p className="text-muted mb-7">
-          {soul ? (
-            <>
-              <span className="font-semibold text-foreground">{soul.name}</span> is now offered at{' '}
-              <span className="text-gold font-semibold">{priceDisplay}</span>.
-            </>
-          ) : (
-            'The listing digest has been submitted and the projection is syncing.'
-          )}
+          Your Soul is now live in the marketplace at{' '}
+          <span className="text-gold font-semibold">{priceDisplay}</span>.
         </p>
 
-        <div className="bg-card2 border border-border rounded-xl p-4 text-left mb-5 space-y-2 text-sm">
-          <div className="flex justify-between">
+        <div className="bg-card2 border border-border rounded-xl overflow-hidden text-left mb-5 text-sm">
+          <div className="flex justify-between px-4 py-2.5 border-b border-border">
             <span className="text-muted">Soul</span>
             <span className="font-semibold">{soul?.name ?? id}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted">Listing price</span>
+          <div className="flex justify-between px-4 py-2.5 border-b border-border">
+            <span className="text-muted">Price</span>
             <span className="text-gold font-semibold">{priceDisplay}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between px-4 py-2.5 border-b border-border">
+            <span className="text-muted">Listing Window</span>
+            <span className="font-semibold">No expiry — delist manually</span>
+          </div>
+          <div className="flex justify-between px-4 py-2.5">
             <span className="text-muted">Status</span>
-            <span className="text-success">● Live in kiosk market</span>
+            <span className="text-success">● Listed in Market</span>
           </div>
         </div>
 
-        <div className="bg-purple/10 border border-purple/20 rounded-xl px-4 py-3 mb-7 text-left text-xs text-purple/80 leading-relaxed">
-          The Soul stays in the owner kiosk flow and can be delisted later by the current owner. Any active grant is no longer durable across a completed transfer.
+        <div className="rounded-xl border border-teal/30 bg-teal/5 px-4 py-3 mb-7 text-left text-sm text-teal/90 leading-relaxed flex items-start gap-2">
+          <span className="text-base mt-0.5">💡</span>
+          <span>
+            Soul is now in <span className="font-semibold text-teal">escrow</span>. It moves from{' '}
+            <span className="font-semibold text-foreground">Owned</span> →{' '}
+            <span className="font-semibold text-foreground">Listings</span> tab in My Souls.
+            You can delist anytime before a buyer completes the purchase.
+          </span>
         </div>
 
-        <div className="flex gap-2.5">
+        <div className="flex gap-2.5 mb-4">
           <Link
             href="/market"
-            className="flex-1 bg-purple text-white font-bold text-sm px-4.5 py-2.5 rounded-lg hover:bg-purple-deep transition text-center"
+            className="flex-1 bg-transparent text-foreground border border-border font-semibold text-sm px-4 py-2.5 rounded-lg hover:border-purple transition text-center"
           >
-            View Market
+            View in Market
           </Link>
           <Link
             href="/my-souls"
-            className="flex-1 bg-transparent text-foreground border border-border font-semibold text-sm px-4.5 py-2.5 rounded-lg hover:border-purple transition text-center"
+            className="flex-1 bg-purple text-white font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-purple-deep transition text-center"
           >
-            My Souls
+            My Souls →
           </Link>
         </div>
+
+        <Link
+          href="/community"
+          className="text-purple text-sm hover:text-purple-deep transition"
+        >
+          📣 Announce Listing to Community →
+        </Link>
       </div>
     </div>
   )

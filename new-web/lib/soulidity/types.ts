@@ -290,6 +290,7 @@ export interface SoulAssetDetail extends SoulAssetSummary {
   isCreator: boolean
   isGrantedAgent: boolean
   quote: SoulQuoteBreakdown | null
+  platformFeeBps: number | null
 }
 
 export interface SoulsListResponse {
@@ -306,10 +307,18 @@ export interface CollectionsListResponse {
   totalPages: number
 }
 
+export interface MySoulActiveGrant {
+  granteeAddress: string
+  createdAt: string
+}
+
+export interface MySoulEntry extends SoulAssetSummary {
+  collectionName: string | null
+  activeGrantDetails: MySoulActiveGrant[]
+}
+
 export interface MySoulsResponse {
-  authored: SoulAssetSummary[]
-  owned: SoulAssetSummary[]
-  granted: SoulAssetSummary[]
+  owned: MySoulEntry[]
   collections: SoulCollectionAssetSummary[]
   grants: SoulGrantRecord[]
 }

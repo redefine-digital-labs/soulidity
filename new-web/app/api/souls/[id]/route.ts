@@ -106,20 +106,22 @@ export async function GET(
   }
 
   let quote = null
-  if (soul.listingStatus === 'listed' && soul.listedPriceAtomic != null) {
-    try {
-      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-      const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
-      const config = await getMarketConfig(marketConfigId, packageId)
+  let platformFeeBps: number | null = null
+  try {
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+    const config = await getMarketConfig(marketConfigId, packageId)
+    platformFeeBps = config.platformFeeBps
+    if (soul.listingStatus === 'listed' && soul.listedPriceAtomic != null) {
       quote = quoteSoulPurchase(config, {
         priceAtomic: BigInt(soul.listedPriceAtomic.toString()),
         creatorRoyaltyBps: soul.creatorRoyaltyBps,
         collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
       })
-    } catch (detailError) {
-      if (!(detailError instanceof OnChainVerificationError)) {
-        console.warn('[soul-detail] Failed to compute Soulidity quote', detailError)
-      }
+    }
+  } catch (detailError) {
+    if (!(detailError instanceof OnChainVerificationError)) {
+      console.warn('[soul-detail] Failed to fetch MarketConfig or compute Soulidity quote', detailError)
     }
   }
 
@@ -127,7 +129,9 @@ export async function GET(
     viewerMemberId: identity?.memberId ?? null,
     viewerAddresses: viewerWalletAddresses,
     quote,
+    platformFeeBps,
   })
 
   return NextResponse.json(detail)
 }
+
