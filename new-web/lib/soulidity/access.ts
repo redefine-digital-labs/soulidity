@@ -20,6 +20,9 @@ export async function resolveSoulAccessPayload(params: {
     .map((address) => normalizeSuiValue(address))
     .filter((value): value is string => value != null)
   const state = await getSoulStateObject(params.soul.stateOnChainId, params.packageId)
+  // Prefer the on-chain resolved package — after a Sui package upgrade the env
+  // package may differ from the type-defining package that Seal ciphertext is bound to.
+  const resolvedPackageId = state.packageId ?? params.packageId
 
   if (!params.soul.sealSidecar) {
     throw new SoulAccessDeniedError('Soul Seal sidecar is missing', 409)
@@ -38,7 +41,7 @@ export async function resolveSoulAccessPayload(params: {
         contentBlobObjectId: params.soul.contentBlobObjectId,
       },
       accessPolicy: {
-        packageId: params.packageId,
+        packageId: resolvedPackageId,
         soulObjectId: params.soul.onChainId,
         stateObjectId: params.soul.stateOnChainId,
         moduleName: 'seal_policy',
@@ -67,7 +70,7 @@ export async function resolveSoulAccessPayload(params: {
     throw new SoulAccessDeniedError('Only the owner or the active granted agent can access this Soul')
   }
 
-  const grant = await getSoulGrantObject(activeSealSlot.grantId, params.packageId)
+  const grant = await getSoulGrantObject(activeSealSlot.grantId, resolvedPackageId)
   if (!sameSuiValue(grant.granteeAddress, granteeMatch)) {
     throw new SoulAccessDeniedError('The active SoulGrant does not belong to this wallet')
   }
@@ -85,7 +88,7 @@ export async function resolveSoulAccessPayload(params: {
       contentBlobObjectId: params.soul.contentBlobObjectId,
     },
     accessPolicy: {
-      packageId: params.packageId,
+      packageId: resolvedPackageId,
       soulObjectId: params.soul.onChainId,
       stateObjectId: params.soul.stateOnChainId,
       moduleName: 'seal_policy',

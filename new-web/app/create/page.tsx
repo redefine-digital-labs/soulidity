@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { buttonStyles } from '@/components/ui/button'
 import { UploadZone } from '@/components/ui/upload-zone'
+import { useCreateSoul } from '@/components/providers/create-soul-provider'
 
 const royaltyOptions = [
   { value: 0, label: 'Off', desc: '0%' },
@@ -21,57 +23,39 @@ function FieldLabel({
   label,
   required = false,
   optional = false,
+  error,
 }: {
   label: string
   required?: boolean
   optional?: boolean
+  error?: string | null
 }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="page-kicker text-muted">{label}</span>
       {required ? <span className="text-xs font-semibold text-danger">*</span> : null}
       {optional ? <span className="text-[11px] font-medium text-muted/80">(optional)</span> : null}
+      {error ? <span className="text-[11px] font-medium text-danger">{error}</span> : null}
     </div>
   )
 }
 
 export default function CreateSoulPage() {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [category, setCategory] = useState<(typeof categoryOptions)[number]>('Trading')
-  const [tags, setTags] = useState('')
-  const [royalty, setRoyalty] = useState(500)
-  const [coverImageFile, setCoverImageFile] = useState<File | null>(null)
-  const [coverImagePreviewUrl, setCoverImagePreviewUrl] = useState<string | null>(null)
-  const previewUrlRef = useRef<string | null>(null)
+  const router = useRouter()
+  const ctx = useCreateSoul()
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
-  useEffect(() => {
-    return () => {
-      if (previewUrlRef.current) {
-        URL.revokeObjectURL(previewUrlRef.current)
-      }
+  function handleNext() {
+    const nextErrors: Record<string, string> = {}
+    if (!ctx.name.trim()) nextErrors.name = 'Required'
+    if (!ctx.description.trim()) nextErrors.description = 'Required'
+    if (!ctx.coverImageFile) nextErrors.coverImageFile = 'Required'
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors)
+      return
     }
-  }, [])
-
-  function handleCoverImageSelect(file: File) {
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current)
-    }
-
-    const nextPreviewUrl = URL.createObjectURL(file)
-    previewUrlRef.current = nextPreviewUrl
-    setCoverImageFile(file)
-    setCoverImagePreviewUrl(nextPreviewUrl)
-  }
-
-  function handleCoverImageClear() {
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current)
-    }
-
-    previewUrlRef.current = null
-    setCoverImageFile(null)
-    setCoverImagePreviewUrl(null)
+    setErrors({})
+    router.push('/create/content')
   }
 
   return (
@@ -85,21 +69,21 @@ export default function CreateSoulPage() {
 
         <div className="space-y-5">
           <div className="space-y-2">
-            <FieldLabel label="Soul Name" required />
+            <FieldLabel label="Soul Name" required error={errors.name} />
             <Input
               placeholder="e.g. AlphaScout, Kaze no Akira..."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={ctx.name}
+              onChange={(e) => ctx.setName(e.target.value)}
               className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple"
             />
           </div>
 
           <div className="space-y-2">
-            <FieldLabel label="Description" required />
+            <FieldLabel label="Description" required error={errors.description} />
             <Textarea
               placeholder="Describe your Soul — what it does, who it's for, what makes it unique..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={ctx.description}
+              onChange={(e) => ctx.setDescription(e.target.value)}
               className="min-h-[104px] resize-none rounded-xl border-purple/35 bg-card2/90 px-4 py-3 placeholder:text-[#5f4f90] focus:border-purple"
             />
           </div>
@@ -108,8 +92,8 @@ export default function CreateSoulPage() {
             <FieldLabel label="Category" required />
             <div className="relative">
               <Select
-                value={category}
-                onChange={(event) => setCategory(event.target.value as (typeof categoryOptions)[number])}
+                value={ctx.category}
+                onChange={(event) => ctx.setCategory(event.target.value)}
                 className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 pr-11 text-sm text-foreground focus:border-purple"
               >
                 {categoryOptions.map((option) => (
@@ -133,41 +117,41 @@ export default function CreateSoulPage() {
             <FieldLabel label="Tags (comma-separated)" />
             <Input
               placeholder="e.g. ai, trading, signals"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
+              value={ctx.tags}
+              onChange={(e) => ctx.setTags(e.target.value)}
               className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple"
             />
           </div>
 
           <div className="space-y-2">
-            <FieldLabel label="Preview Image" required />
-            {!coverImageFile ? (
+            <FieldLabel label="Preview Image" required error={errors.coverImageFile} />
+            {!ctx.coverImageFile ? (
               <UploadZone
                 icon="🖼️"
                 label="Click to upload cover image"
                 sublabel="JPEG, PNG, WebP, GIF · max 10MB"
                 accept="image/png,image/jpeg,image/webp,image/gif"
-                onFileSelect={handleCoverImageSelect}
+                onFileSelect={(file) => ctx.setCoverImage(file)}
                 className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
               />
             ) : (
               <div className="card flex items-center gap-4 border-purple/30 bg-card2/75 px-4 py-4">
-                {coverImagePreviewUrl && (
+                {ctx.coverImagePreviewUrl && (
                   <img
-                    src={coverImagePreviewUrl}
+                    src={ctx.coverImagePreviewUrl}
                     alt="Cover preview"
                     className="h-14 w-14 shrink-0 rounded-xl border border-purple/25 object-cover"
                   />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-foreground">{coverImageFile.name}</div>
+                  <div className="truncate text-sm font-semibold text-foreground">{ctx.coverImageFile.name}</div>
                   <div className="text-xs text-muted">
-                    {(coverImageFile.size / 1024).toFixed(1)} KB · local preview ready
+                    {(ctx.coverImageFile.size / 1024).toFixed(1)} KB · local preview ready
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={handleCoverImageClear}
+                  onClick={() => ctx.setCoverImage(null)}
                   className="shrink-0 rounded-lg border border-purple/25 px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-purple/45 hover:text-foreground"
                 >
                   Replace
@@ -183,9 +167,9 @@ export default function CreateSoulPage() {
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setRoyalty(opt.value)}
+                  onClick={() => ctx.setRoyalty(opt.value)}
                   className={`relative flex min-h-[72px] min-w-0 flex-col items-center justify-center rounded-2xl border px-2 pb-3 pt-3 text-center transition ${
-                    royalty === opt.value
+                    ctx.royalty === opt.value
                       ? 'border-purple bg-purple/12 shadow-[0_10px_24px_rgba(124,58,237,0.18)]'
                       : 'border-border bg-card2/40 hover:border-purple/40 hover:bg-purple/6'
                   }`}
@@ -234,8 +218,9 @@ export default function CreateSoulPage() {
           >
             Cancel
           </Link>
-          <Link
-            href="/create/content"
+          <button
+            type="button"
+            onClick={handleNext}
             className={buttonStyles({
               variant: 'landing',
               size: 'lg',
@@ -243,7 +228,7 @@ export default function CreateSoulPage() {
             })}
           >
             Next: Living Content <span aria-hidden="true">→</span>
-          </Link>
+          </button>
         </div>
       </PageContainer>
     </div>

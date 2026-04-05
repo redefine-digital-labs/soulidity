@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { unsealDekEnvelope } from '@web/lib/services/dek-envelope'
+import { createSealClient, getSealRuntimeConfig } from '@web/lib/services/seal'
+import { createSealEnvelopeSidecar, createSkillVersionSealEnvelopeSidecar, type SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
 import { extractSoulMintedToKioskEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
-import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, getSoulSkillsObject, getSoulStateObject, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'
@@ -63,6 +66,68 @@ export async function POST(request: Request) {
     }
 
     const minted = extractSoulMintedToKioskEvent(transaction, packageId)
+
+    // Unseal DEK envelopes into proper SealEnvelopeSidecars for downstream access
+    const rawSoulEnvelope = typeof body?.sealSidecar === 'string' ? body.sealSidecar : null
+    const rawSkillsEnvelope = typeof body?.skillsSealSidecar === 'string' ? body.skillsSealSidecar : null
+
+    let soulSidecar: SealEnvelopeSidecar | null = null
+    let skillsSidecar: SealEnvelopeSidecar | null = null
+
+    // Resolve on-chain package for Seal binding — after a Sui package upgrade the env
+    // package may differ from the type-defining package embedded in on-chain objects.
+    // Seal ciphertext must be bound to the same package used by the access-time approval TX.
+    const soulState = (rawSoulEnvelope || rawSkillsEnvelope)
+      ? await getSoulStateObject(minted.stateId, packageId)
+      : null
+    const sealPackageId = soulState?.packageId ?? packageId
+
+    if (rawSoulEnvelope) {
+      const runtimeConfig = getSealRuntimeConfig()
+      if (runtimeConfig.threshold <= 0 || runtimeConfig.serverConfigs.length === 0) {
+        return NextResponse.json({ error: 'Seal is not configured for Soul publishing' }, { status: 503 })
+      }
+      const unsealedEnvelope = unsealDekEnvelope(rawSoulEnvelope)
+      try {
+        soulSidecar = await createSealEnvelopeSidecar({
+          sealClient: createSealClient(),
+          packageId: sealPackageId,
+          soulObjectId: minted.soulId,
+          threshold: runtimeConfig.threshold,
+          dek: unsealedEnvelope.dek,
+          iv: unsealedEnvelope.iv,
+          contentHash: unsealedEnvelope.contentHash,
+          mimeType: unsealedEnvelope.mimeType,
+          fileName: unsealedEnvelope.fileName,
+        })
+      } finally {
+        unsealedEnvelope.dek.fill(0)
+      }
+    }
+
+    if (rawSkillsEnvelope && soulState?.skillsId) {
+      const skills = await getSoulSkillsObject(soulState.skillsId, packageId)
+      if (skills.latestVersionId) {
+        const runtimeConfig = getSealRuntimeConfig()
+        const unsealedSkillsEnvelope = unsealDekEnvelope(rawSkillsEnvelope)
+        try {
+          skillsSidecar = await createSkillVersionSealEnvelopeSidecar({
+            sealClient: createSealClient(),
+            packageId: sealPackageId,
+            versionObjectId: skills.latestVersionId,
+            threshold: runtimeConfig.threshold,
+            dek: unsealedSkillsEnvelope.dek,
+            iv: unsealedSkillsEnvelope.iv,
+            contentHash: unsealedSkillsEnvelope.contentHash,
+            mimeType: unsealedSkillsEnvelope.mimeType,
+            fileName: unsealedSkillsEnvelope.fileName,
+          })
+        } finally {
+          unsealedSkillsEnvelope.dek.fill(0)
+        }
+      }
+    }
+
     const mirrored = await syncSoulProjectionFromChain({
       packageId,
       soulObjectId: minted.soulId,
@@ -72,8 +137,8 @@ export async function POST(request: Request) {
       tags: parseStringArray(body?.tags, 12),
       previewImages: parseStringArray(body?.previewImages, 8),
       readme: typeof body?.readme === 'string' ? body.readme : null,
-      sealSidecar: body?.sealSidecar != null ? body.sealSidecar as never : null,
-      latestSkillVersionSealSidecar: body?.skillsSealSidecar != null ? body.skillsSealSidecar as never : null,
+      sealSidecar: soulSidecar,
+      latestSkillVersionSealSidecar: skillsSidecar,
       creatorMemberId: auth.identity.memberId,
       currentOwnerMemberId: auth.identity.memberId,
     })

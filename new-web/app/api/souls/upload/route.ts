@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
+import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
+import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { sealDekEnvelope } from '@web/lib/services/dek-envelope'
 import {
@@ -12,7 +14,7 @@ import {
   validateSoulUploadSignature,
 } from '@/lib/soulidity/upload-validation'
 
-import { uploadPublic } from '@web/lib/services/walrus'
+import { uploadPublic, getBlobUrl } from '@web/lib/services/walrus'
 
 const MAX_UPLOAD_FORMDATA_BYTES = MAX_SOUL_UPLOAD_BYTES + 1_024 * 1_024
 const SOUL_UPLOAD_RATE_LIMIT = {
@@ -68,6 +70,7 @@ export async function POST(req: NextRequest) {
   }
   const file = formData.get('file')
   const type = formData.get('type')
+  const clientSendObjectTo = formData.get('sendObjectTo')
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'No file provided' }, { status: 400 })
@@ -93,24 +96,42 @@ export async function POST(req: NextRequest) {
   }
   const contentHash = createHash('sha256').update(buffer).digest('hex')
 
-  if (type === 'public') {
-    const uploaded = await uploadPublic(buffer)
-    return NextResponse.json({ ...uploaded, contentHash })
-  }
-
-  // type === 'encrypted': AES-GCM-256 encrypt before uploading to Walrus
-  let ownerAddress: string | null
+  // Resolve the member's bound wallet for ownership validation
+  let memberWalletAddress: string | null
   try {
-    ownerAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
+    memberWalletAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
   } catch (walletError) {
-    if (walletError instanceof Error && walletError.name === 'MultipleSuiWalletBindingsError') {
-      return NextResponse.json({ error: walletError.message }, { status: 409 })
+    if (isMultipleSuiWalletBindingsError(walletError)) {
+      return NextResponse.json({ error: (walletError as Error).message }, { status: 409 })
     }
     throw walletError
   }
-  if (!ownerAddress) {
+
+  // Validate client-provided sendObjectTo against the member's wallet
+  const clientSendTo = typeof clientSendObjectTo === 'string' && clientSendObjectTo.trim() ? clientSendObjectTo.trim() : null
+  if (clientSendTo) {
+    if (!memberWalletAddress) {
+      return NextResponse.json({ error: 'Bind a Sui wallet before specifying upload ownership' }, { status: 403 })
+    }
+    try {
+      if (normalizeSuiAddress(clientSendTo) !== normalizeSuiAddress(memberWalletAddress)) {
+        return NextResponse.json({ error: 'sendObjectTo does not match the signed-in wallet' }, { status: 403 })
+      }
+    } catch {
+      return NextResponse.json({ error: 'Invalid sendObjectTo address' }, { status: 400 })
+    }
+  }
+
+  if (type === 'public') {
+    const uploaded = await uploadPublic(buffer, clientSendTo ? { sendObjectTo: clientSendTo } : undefined)
+    return NextResponse.json({ ...uploaded, contentHash, blobUrl: getBlobUrl(uploaded.blobId) })
+  }
+
+  // type === 'encrypted': AES-GCM-256 encrypt before uploading to Walrus
+  if (!memberWalletAddress) {
     return NextResponse.json({ error: 'Bind a Sui wallet before uploading encrypted Soul content' }, { status: 403 })
   }
+  const ownerAddress = memberWalletAddress
 
   const dek = randomBytes(32)
   const iv = randomBytes(12)
@@ -122,5 +143,5 @@ export async function POST(req: NextRequest) {
   })
   const envelope = sealDekEnvelope({ dek, iv, contentHash, mimeType: file.type || 'application/octet-stream', fileName: file.name || 'bundle' })
 
-  return NextResponse.json({ ...uploaded, contentHash, sealDekEnvelope: envelope })
+  return NextResponse.json({ ...uploaded, contentHash, sealDekEnvelope: envelope, blobUrl: getBlobUrl(uploaded.blobId) })
 }

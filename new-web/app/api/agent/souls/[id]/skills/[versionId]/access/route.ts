@@ -88,6 +88,9 @@ export async function GET(
   }
 
   const state = await getSoulStateObject(soul.stateOnChainId, getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'))
+  // Prefer the on-chain resolved package — after a Sui package upgrade the env
+  // package may differ from the type-defining package that Seal ciphertext is bound to.
+  const resolvedPackageId = state.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const viewerAddresses = auth.walletAddresses
     .map((address) => normalizeSuiValue(address))
     .filter((value): value is string => value != null)
@@ -102,7 +105,7 @@ export async function GET(
         blobObjectId: version.blobObjectId,
       },
       accessPolicy: {
-        packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+        packageId: resolvedPackageId,
         stateObjectId: soul.stateOnChainId,
         skillsObjectId: soul.skillsOnChainId,
         versionObjectId: version.versionOnChainId,
@@ -127,7 +130,7 @@ export async function GET(
     return NextResponse.json({ error: 'Only the owner or an active skills grant can access this version' }, { status: 403 })
   }
 
-  const grant = await getSoulGrantObject(activeSkillsSlot.grantId, getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'))
+  const grant = await getSoulGrantObject(activeSkillsSlot.grantId, resolvedPackageId)
   const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
   if (!viewerMatch) {
     return NextResponse.json({ error: 'The active skills grant does not belong to this wallet' }, { status: 403 })
@@ -147,7 +150,7 @@ export async function GET(
       blobObjectId: version.blobObjectId,
     },
     accessPolicy: {
-      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+      packageId: resolvedPackageId,
       stateObjectId: soul.stateOnChainId,
       skillsObjectId: soul.skillsOnChainId,
       versionObjectId: version.versionOnChainId,

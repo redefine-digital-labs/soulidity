@@ -2,11 +2,13 @@
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
+import { useCreateSoul } from '@/components/providers/create-soul-provider'
 
 const steps = [
   { label: 'Basic Info' },
@@ -388,14 +390,24 @@ function UploadTarget({
   )
 }
 
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function UploadStatus({
   tone,
   title,
   subtitle,
+  onClear,
 }: {
   tone: CardTone
   title: string
   subtitle: string
+  onClear?: () => void
 }) {
   return (
     <div
@@ -407,18 +419,40 @@ function UploadStatus({
       <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/18 text-success">
         <CheckIcon className="h-3.5 w-3.5" />
       </span>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className={cn('text-[13px] font-semibold', toneStyles[tone].successAccent)}>{title}</div>
         <div className="mt-1 text-[10px] leading-4 text-muted">{subtitle}</div>
       </div>
+      {onClear && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
+          aria-label="Remove file"
+        >
+          <CloseIcon className="h-3 w-3" />
+        </button>
+      )}
     </div>
   )
 }
 
 export default function CreateContentPage() {
-  const [memorySeed, setMemorySeed] = useState('')
-  const [charFile, setCharFile] = useState<File | null>(null)
-  const [skillsFile, setSkillsFile] = useState<File | null>(null)
+  const router = useRouter()
+  const ctx = useCreateSoul()
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  function handleNext() {
+    const nextErrors: Record<string, string> = {}
+    if (!ctx.charFile) nextErrors.charFile = 'Soul Character file is required'
+    if (!ctx.memorySeed.trim()) nextErrors.memorySeed = 'Memory Seed is required'
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors)
+      return
+    }
+    setErrors({})
+    router.push('/create/preview')
+  }
 
   return (
     <div className="relative z-10 border-t border-purple/20">
@@ -451,7 +485,7 @@ export default function CreateContentPage() {
             }
             description="The foundational identity file for this Soul - personality, backstory, traits, tone, and world-rules. Uploaded as a .md file. Every update creates a new git commit; history is permanent and auditable. SoulGrant always serves agents the latest commit on main."
           >
-            {!charFile ? (
+            {!ctx.charFile ? (
               <>
                 <UploadTarget
                   tone="amber"
@@ -459,8 +493,11 @@ export default function CreateContentPage() {
                   label="Click to upload Soul Character file"
                   subtitle=".md format only • becomes v1 on main branch"
                   accept=".md,text/markdown"
-                  onSelect={setCharFile}
+                  onSelect={ctx.setCharFile}
                 />
+                {errors.charFile && (
+                  <p className="mt-2 text-[11px] font-medium text-danger">{errors.charFile}</p>
+                )}
                 <button
                   type="button"
                   onClick={downloadCharacterTemplate}
@@ -475,8 +512,9 @@ export default function CreateContentPage() {
             ) : (
               <UploadStatus
                 tone="amber"
-                title={`${charFile.name} uploaded · v1 · main`}
-                subtitle={`Git commit: ${mockCommit(charFile)} · Stored on Walrus · append-only from here · ${formatFileSize(charFile)}`}
+                title={`${ctx.charFile.name} uploaded · v1 · main`}
+                subtitle={`Git commit: ${mockCommit(ctx.charFile)} · Stored on Walrus · append-only from here · ${formatFileSize(ctx.charFile)}`}
+                onClear={() => ctx.setCharFile(null)}
               />
             )}
           </ContentCard>
@@ -500,14 +538,16 @@ export default function CreateContentPage() {
             description="The founding memory of this Soul - origin context, initial directives, or backstory. Once minted this becomes the first immutable commit in the memory chain on Walrus. SoulGrant interactions will append new memory blocks on top of it."
           >
             <textarea
-              value={memorySeed}
+              value={ctx.memorySeed}
               maxLength={memorySeedLimit}
-              onChange={(event) => setMemorySeed(event.target.value.slice(0, memorySeedLimit))}
+              onChange={(event) => ctx.setMemorySeed(event.target.value.slice(0, memorySeedLimit))}
               placeholder="e.g. AlphaScout was initialized on April 1, 2026, trained on 48 hours of on-chain DeFi flow data from Sui mainnet. Its first directive was to identify alpha signals in emerging DEX pools..."
               className="min-h-[132px] w-full resize-none rounded-[14px] border border-[#4c2b82] bg-[rgba(18,11,36,0.78)] px-4 py-3 text-[12px] leading-6 text-foreground outline-none transition placeholder:text-[#6f5aa2] focus:border-[#8d5cf6]"
             />
             <div className="mt-2 flex items-center justify-between gap-3 text-[10px]">
-              <span className="text-muted">{memorySeed.length} / 2000 characters</span>
+              <span className={cn('text-muted', errors.memorySeed && 'text-danger')}>
+                {errors.memorySeed || `${ctx.memorySeed.length} / 2000 characters`}
+              </span>
               <span className="inline-flex items-center gap-1.5 text-[#b689ff]">
                 <LockIcon className="h-3.5 w-3.5" />
                 immutable once minted • stored on Walrus
@@ -533,20 +573,21 @@ export default function CreateContentPage() {
             }
             description="Upload knowledge docs, skill definitions, system prompts, and behavioral configs. Can be added or updated after minting - each update is a new git commit on main. Agents access via SoulGrant."
           >
-            {!skillsFile ? (
+            {!ctx.skillsFile ? (
               <UploadTarget
                 tone="teal"
                 icon={<PackageIcon className="h-8 w-8" />}
                 label="Click to upload bundle file"
                 subtitle=".zip, .json, .character, any format • encrypted via Seal"
                 accept=".zip,.json,.character,.md,.txt,application/zip,application/json"
-                onSelect={setSkillsFile}
+                onSelect={ctx.setSkillsFile}
               />
             ) : (
               <UploadStatus
                 tone="teal"
                 title="Skills & Docs encrypted & ready"
-                subtitle={`Stored on Walrus · Seal policy registered · CID: ${mockCid(skillsFile)} · ${formatFileSize(skillsFile)}`}
+                subtitle={`Stored on Walrus · Seal policy registered · CID: ${mockCid(ctx.skillsFile)} · ${formatFileSize(ctx.skillsFile)}`}
+                onClear={() => ctx.setSkillsFile(null)}
               />
             )}
           </ContentCard>
@@ -574,8 +615,9 @@ export default function CreateContentPage() {
           >
             ← Back
           </Link>
-          <Link
-            href="/create/preview"
+          <button
+            type="button"
+            onClick={handleNext}
             className={buttonStyles({
               variant: 'landing',
               size: 'lg',
@@ -585,7 +627,7 @@ export default function CreateContentPage() {
             })}
           >
             Next: Soul Awakened <span aria-hidden="true">→</span>
-          </Link>
+          </button>
         </div>
       </PageContainer>
     </div>

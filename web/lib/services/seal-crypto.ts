@@ -13,6 +13,8 @@ const IV_BYTES = 12
 const DOCUMENT_ID_NONCE_BYTES = 16
 const DOCUMENT_ID_DOMAIN = 'soul-seal:'
 const DOCUMENT_ID_VERSION = 0x01
+const SKILL_DOCUMENT_ID_DOMAIN = 'soul-skill:'
+const SKILL_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
 const MAX_ENCRYPTED_DEK_BASE64_LENGTH = 16 * 1024
 
 export interface SealEnvelopeSidecar {
@@ -324,6 +326,63 @@ export async function createSealEnvelopeSidecar(params: {
   const keyMaterial = createSealKeyMaterial(params.dek, params.contentHash)
   try {
     const documentId = generateSealDocumentId(params.soulObjectId, params.nonce)
+    const { encryptedObject } = await params.sealClient.encrypt({
+      threshold: params.threshold,
+      packageId: params.packageId,
+      id: documentId,
+      data: keyMaterial,
+    })
+
+    return {
+      version: 1,
+      mode: 'seal-envelope',
+      documentId,
+      encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
+      iv: bytesToBase64(params.iv),
+      cipher: AES_GCM_CIPHER_LABEL,
+      mimeType: params.mimeType,
+      fileName: params.fileName,
+      contentHash: params.contentHash,
+    }
+  } finally {
+    keyMaterial.fill(0)
+  }
+}
+
+export function generateSkillDocumentId(versionObjectId: string): string {
+  const versionBytes = hexToBytes(versionObjectId)
+  return bytesToHex(new Uint8Array([
+    ...new TextEncoder().encode(SKILL_DOCUMENT_ID_DOMAIN),
+    DOCUMENT_ID_VERSION,
+    ...versionBytes,
+    ...SKILL_DOCUMENT_ID_NONCE,
+  ]))
+}
+
+export async function createSkillVersionSealEnvelopeSidecar(params: {
+  sealClient: Pick<SealClient, 'encrypt'>
+  packageId: string
+  versionObjectId: string
+  threshold: number
+  dek: Uint8Array
+  iv: Uint8Array
+  contentHash: string
+  mimeType: string
+  fileName: string
+}): Promise<SealEnvelopeSidecar> {
+  if (params.dek.length !== DEK_BYTES) {
+    throw new Error('Seal envelope DEK must be 32 bytes')
+  }
+  if (params.iv.length !== IV_BYTES) {
+    throw new Error(`Seal envelope IV must be ${IV_BYTES} bytes`)
+  }
+  if (!CONTENT_HASH_HEX_PATTERN.test(params.contentHash)) {
+    throw new Error('contentHash must be a 64-character hex string')
+  }
+
+  const keyMaterial = createSealKeyMaterial(params.dek, params.contentHash)
+  try {
+    const documentId = generateSkillDocumentId(params.versionObjectId)
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
       packageId: params.packageId,

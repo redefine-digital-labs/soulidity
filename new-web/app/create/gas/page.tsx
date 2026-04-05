@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useSuiClient } from '@mysten/dapp-kit'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
@@ -11,6 +13,11 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { buildListSoulTx } from '@/lib/soulidity/tx/list'
 import { buildIssueGrantTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
+import {
+  selectReusableUploadResults,
+  useCreateSoul,
+  type UploadResults,
+} from '@/components/providers/create-soul-provider'
 
 const steps = [
   { label: 'Basic Info' },
@@ -20,9 +27,126 @@ const steps = [
   { label: 'On-chain' },
 ]
 
+const royaltyLabels: Record<number, string> = {
+  0: 'Off · 0% (locked on-chain)',
+  250: 'Low · 2.5% (locked on-chain)',
+  500: 'Standard · 5% (locked on-chain)',
+  1000: 'High · 10% (locked on-chain)',
+}
+
+type UploadPhase =
+  | 'idle'
+  | 'uploading-cover'
+  | 'uploading-character'
+  | 'uploading-memory'
+  | 'uploading-skills'
+  | 'done'
+
+const uploadPhaseLabels: Record<UploadPhase, string> = {
+  'idle': '',
+  'uploading-cover': 'Uploading cover image…',
+  'uploading-character': 'Encrypting & uploading character file…',
+  'uploading-memory': 'Uploading memory seed…',
+  'uploading-skills': 'Encrypting & uploading skills bundle…',
+  'done': 'Uploads complete',
+}
+
+// ── SUI balance checking ──
+
+const SUI_COIN_TYPE = '0x2::sui::SUI'
+// Minimum SUI balance required for gas (~0.02 SUI with margin)
+const MIN_SUI_BALANCE = 20_000_000n // 0.02 SUI (9 decimals)
+
+function formatBalance(atomicBalance: bigint, decimals: number): string {
+  const whole = atomicBalance / 10n ** BigInt(decimals)
+  const frac = atomicBalance % 10n ** BigInt(decimals)
+  const fracStr = frac.toString().padStart(decimals, '0').slice(0, 4).replace(/0+$/, '')
+  return fracStr ? `${whole}.${fracStr}` : whole.toString()
+}
+
+interface BalanceState {
+  sui: bigint | null
+  loading: boolean
+}
+
+function useWalletBalances(walletAddress: string | null) {
+  const suiClient = useSuiClient()
+  const [state, setState] = useState<BalanceState>({ sui: null, loading: true })
+
+  const refresh = useCallback(async () => {
+    if (!walletAddress) {
+      setState({ sui: null, loading: false })
+      return
+    }
+    setState((prev) => ({ ...prev, loading: true }))
+    try {
+      const suiRes = await suiClient.getBalance({ owner: walletAddress, coinType: SUI_COIN_TYPE })
+      setState({
+        sui: BigInt(suiRes.totalBalance),
+        loading: false,
+      })
+    } catch {
+      setState({ sui: null, loading: false })
+    }
+  }, [walletAddress, suiClient])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  return { ...state, refresh }
+}
+
+async function uploadFile(
+  file: File,
+  type: 'public' | 'encrypted',
+  headers: Record<string, string>,
+  sendObjectTo?: string,
+) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('type', type)
+  if (sendObjectTo) formData.append('sendObjectTo', sendObjectTo)
+  const res = await fetch('/api/souls/upload', { method: 'POST', headers, body: formData })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Upload failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+function TxRow({
+  label,
+  children,
+  align = 'center',
+}: {
+  label: string
+  children: React.ReactNode
+  align?: 'center' | 'top'
+}) {
+  return (
+    <div className={`flex justify-between gap-4 py-3 text-[13px] ${align === 'top' ? 'items-start' : 'items-center'}`}>
+      <span className="text-muted shrink-0">{label}</span>
+      <span className="text-right">{children}</span>
+    </div>
+  )
+}
+
+function checkMintRecovery(userId: string | undefined): boolean {
+  if (typeof window === 'undefined' || !userId) return false
+  try {
+    const raw = sessionStorage.getItem('soul-mint-recovery')
+    if (raw) {
+      const recovery = JSON.parse(raw)
+      return !!recovery.txDigest && recovery.userId === userId
+    }
+  } catch {}
+  return false
+}
+
 export default function CreateGasPage() {
-  const { status, error, txDigest, publish, suiWallet } = usePublish()
-  const { getAuthHeaders } = useAuth()
+  const router = useRouter()
+  const ctx = useCreateSoul()
+  const { status, error, txDigest, publishData, publish, suiWallet } = usePublish()
+  const { getAuthHeaders, user } = useAuth()
   const { signAndExecute } = usePrivySuiSign()
   const publishRef = useRef(publish)
   const getAuthHeadersRef = useRef(getAuthHeaders)
@@ -30,6 +154,40 @@ export default function CreateGasPage() {
   publishRef.current = publish
   getAuthHeadersRef.current = getAuthHeaders
   signAndExecuteRef.current = signAndExecute
+
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
+  const [deployError, setDeployError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  // ── Balance checking ──
+  const balances = useWalletBalances(suiWallet?.address ?? null)
+  const suiInsufficient = balances.sui !== null && balances.sui < MIN_SUI_BALANCE
+  const balanceBlocked = suiInsufficient
+
+  // Guard: redirect to earliest incomplete step when required data is missing
+  const missingStep1 = !ctx.name || !ctx.description || !ctx.coverImageFile
+  const missingStep2 = !ctx.charFile || !ctx.memorySeed.trim()
+
+  // Detect pending mint recovery: on-chain TX succeeded but sync was interrupted.
+  // useState initializer reads sessionStorage synchronously to avoid race with redirect effect.
+  const [hasMintRecovery] = useState(() => checkMintRecovery(user?.id))
+  const inRecovery = hasMintRecovery && status !== 'done'
+
+  useEffect(() => {
+    if (status === 'done' || checkMintRecovery(user?.id)) return
+    if (missingStep1) {
+      router.replace('/create')
+    } else if (missingStep2) {
+      router.replace('/create/content')
+    }
+  }, [missingStep1, missingStep2, status, router, user?.id])
+
+  // Store publish result in context when done
+  useEffect(() => {
+    if (status === 'done' && publishData) {
+      ctx.setPublishResult(publishData)
+    }
+  }, [status, publishData, ctx])
 
   // Expose publish + authenticated upload + list for E2E testing
   useEffect(() => {
@@ -108,79 +266,383 @@ export default function CreateGasPage() {
     }
   }, [])
 
+  async function handleDeploy() {
+    if (!ctx.coverImageFile || !ctx.charFile || !ctx.memorySeed.trim() || !suiWallet) return
+
+    setDeployError(null)
+    ctx.setPublishResult(null)
+    const walletAddress = suiWallet.address
+
+    try {
+      const authHeaders = await getAuthHeaders()
+      const results: UploadResults = selectReusableUploadResults(ctx.uploadResults, walletAddress)
+
+      // 1. Upload cover image (public, no sendObjectTo — only used as URL, not TX object)
+      if (!results.coverImage) {
+        setUploadPhase('uploading-cover')
+        results.coverImage = await uploadFile(ctx.coverImageFile, 'public', authHeaders)
+      }
+
+      // 2. Upload character file (encrypted) — Blob object referenced in TX, must be owned by signer
+      if (!results.charFile) {
+        setUploadPhase('uploading-character')
+        results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletAddress)
+      }
+
+      // 3. Upload memory seed (public) — Blob object referenced in TX, must be owned by signer
+      if (!results.memorySeed) {
+        setUploadPhase('uploading-memory')
+        const memorySeedBlob = new Blob([ctx.memorySeed], { type: 'text/plain' })
+        const memorySeedFile = new File([memorySeedBlob], 'memory-seed.txt', { type: 'text/plain' })
+        results.memorySeed = await uploadFile(memorySeedFile, 'public', authHeaders, walletAddress)
+      }
+
+      // 4. Upload skills file (encrypted, optional) — Blob object referenced in TX, must be owned by signer
+      if (ctx.skillsFile && !results.skillsFile) {
+        setUploadPhase('uploading-skills')
+        results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletAddress)
+      }
+
+      // Store upload results in context for retry support
+      ctx.setUploadResults(results)
+      setUploadPhase('done')
+
+      // Narrow types — all required uploads must be present at this point
+      if (!results.coverImage || !results.charFile || !results.memorySeed) {
+        throw new Error('Required uploads missing')
+      }
+      if (!results.charFile.blobObjectId) {
+        throw new Error('Character file upload was deduplicated by Walrus and no owned Blob object was created. Please modify your character file slightly and retry.')
+      }
+      if (!results.memorySeed.blobObjectId) {
+        throw new Error('This exact memory seed text already exists on Walrus. Please add a unique detail to your memory seed so it can be stored as a distinct on-chain founding memory.')
+      }
+      if (results.skillsFile && !results.skillsFile.blobObjectId) {
+        throw new Error('Skills bundle upload was deduplicated by Walrus and no owned Blob object was created. Please modify your skills file slightly and retry.')
+      }
+
+      // 5. Call publish (builds TX → signs → syncs)
+      const parsedTags = ctx.tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+
+      await publish({
+        name: ctx.name,
+        description: ctx.description,
+        category: ctx.category,
+        tags: parsedTags,
+        imageUrl: results.coverImage.blobUrl,
+        previewImages: [results.coverImage.blobUrl],
+        protectedBlobObjectId: results.charFile.blobObjectId,
+        foundingMemoryBlobObjectId: results.memorySeed.blobObjectId,
+        skillsBlobObjectId: results.skillsFile?.blobObjectId ?? null,
+        skillsVisibility: 'private',
+        creatorRoyaltyBps: ctx.royalty,
+        sealSidecar: results.charFile.sealDekEnvelope ?? null,
+        skillsSealSidecar: results.skillsFile?.sealDekEnvelope ?? null,
+      })
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Deploy failed')
+      setUploadPhase('idle')
+    }
+  }
+
+  // Resume sync for a pending mint recovery (on-chain TX succeeded, sync failed/interrupted)
+  async function handleResume() {
+    if (!suiWallet || !txDigest) return
+    setDeployError(null)
+    try {
+      // Recovery path in usePublish skips build+sign and uses stored sync body
+      await publish({
+        name: '', description: '', category: '', tags: [], imageUrl: '',
+        previewImages: [], protectedBlobObjectId: '', creatorRoyaltyBps: 0,
+      })
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Resume failed')
+    }
+  }
+
+  function handleAbandonRecovery() {
+    ctx.reset()
+    router.replace('/create')
+  }
+
+  if (!inRecovery && status !== 'done' && (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memorySeed.trim())) return null
+
+  const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
+  const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
+  const isBusy = uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing'
+  const combinedError = deployError || error
+
   return (
-    <div className="relative z-10">
+    <div className="relative z-10 border-t border-purple/20">
       <FlowBar steps={steps} currentStep={3} />
 
-      <PageContainer size="sm" className="space-y-6">
+      <PageContainer size="sm" className="space-y-5 pt-7 sm:pt-9">
         <SectionHeader
           label="Create Soul"
-          title="Step 4 — Pay Gas"
-          subtitle="Review your Soul details and pay the Sui gas fee to mint on-chain."
+          title={inRecovery ? 'Step 4 — Resume Sync' : 'Step 4 — Pay Gas'}
+          subtitle={inRecovery
+            ? 'Your previous mint transaction succeeded. Complete the sync to finish creating your Soul.'
+            : 'Your Soul will be minted as a Soul object on Sui. Review the transaction before signing.'}
+          className="mb-1"
         />
 
-        {/* Wallet status */}
-        <div className="card px-5 py-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted">Connected wallet</span>
-            <span className="text-sm font-mono text-foreground">
-              {suiWallet ? `${suiWallet.address.slice(0, 8)}...${suiWallet.address.slice(-6)}` : 'Not connected'}
-            </span>
+        {inRecovery ? (
+          <div className="rounded-2xl border border-[#F59E0B]/40 bg-[#F59E0B]/8 p-5 space-y-3">
+            <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#F59E0B]">
+              Pending Soul Mint
+            </div>
+            <p className="text-sm text-muted leading-relaxed">
+              A previous mint transaction succeeded on-chain but the mirror sync was interrupted.
+              Resume to complete the process, or start over to create a new Soul.
+            </p>
+            {txDigest && (
+              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-black/20 px-3 py-2">
+                <span className="text-[10px] text-muted">TX Digest</span>
+                <span className="font-mono text-xs text-teal">{txDigest.slice(0, 16)}…</span>
+              </div>
+            )}
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted">Network</span>
-            <span className="text-sm text-foreground">{process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'}</span>
+        ) : (
+          <>
+        {/* Transaction Preview card */}
+        <div className="rounded-2xl border border-purple/30 bg-card p-5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#F59E0B] mb-4">
+            Transaction Preview
+          </div>
+
+          <div className="divide-y divide-border/50">
+            <TxRow label="Contract">
+              <span className="font-mono text-teal">market::mint_native_in_personal_kiosk</span>
+            </TxRow>
+            <TxRow label="Network">
+              <span className="font-semibold text-foreground">{networkLabel}</span>
+            </TxRow>
+            <TxRow label="Soul Name">
+              <span className="font-semibold text-foreground">{ctx.name}</span>
+            </TxRow>
+            <TxRow label="Soul Character">
+              <span className="text-foreground">{ctx.charFile?.name}</span>
+              <span className="text-muted ml-1.5">(encrypted via Seal)</span>
+            </TxRow>
+            <TxRow label="Memory Seed">
+              <span className="text-foreground">{ctx.memorySeed.length} chars</span>
+              <span className="text-muted ml-1.5">(append-only)</span>
+            </TxRow>
+            {ctx.skillsFile && (
+              <TxRow label="Skills & Docs">
+                <span className="text-foreground">{ctx.skillsFile.name}</span>
+                <span className="text-muted ml-1.5">(Seal encrypted)</span>
+              </TxRow>
+            )}
+            <TxRow label="Creator Royalty">
+              <span className="font-semibold text-[#F59E0B]">
+                {royaltyLabels[ctx.royalty] ?? `${ctx.royalty / 100}% (locked on-chain)`}
+              </span>
+            </TxRow>
+            <TxRow label="Soul Policy" align="top">
+              <span className="text-muted leading-relaxed">
+                SoulGrant reads main · Grant-gated write · All layers append-only · No fork · Revocable
+              </span>
+            </TxRow>
+            <TxRow label="Estimated Gas">
+              <span className="text-foreground">~0.005 SUI</span>
+            </TxRow>
+            <TxRow label="Walrus Storage">
+              <span className="text-muted">Paid by publisher node</span>
+            </TxRow>
           </div>
         </div>
 
-        {/* Publish status */}
-        <div className="card px-5 py-4 space-y-3" data-testid="publish-status">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted">Status</span>
-            <span className={`text-sm font-semibold ${
-              status === 'done' ? 'text-success' :
-              status === 'error' ? 'text-danger' :
-              status === 'idle' ? 'text-muted' : 'text-purple'
-            }`}>
-              {status === 'idle' && 'Ready to publish'}
-              {status === 'building' && '⟳ Building TX…'}
-              {status === 'signing' && '⟳ Signing…'}
-              {status === 'syncing' && '⟳ Syncing…'}
-              {status === 'done' && '✓ Published'}
-              {status === 'error' && '✗ Failed'}
-            </span>
+        {/* Balance warning */}
+        {!balances.loading && balanceBlocked && (
+          <div className="rounded-2xl border border-danger/40 bg-danger/8 p-4 space-y-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-danger">
+              Insufficient Balance
+            </div>
+            {suiInsufficient && (
+              <p className="text-xs text-danger/90">
+                SUI balance: <span className="font-mono font-semibold">{formatBalance(balances.sui!, 9)} SUI</span>
+                {' '}— need at least <span className="font-semibold">0.02 SUI</span> for gas fees.
+              </p>
+            )}
+            {suiWallet && (
+              <div className="flex items-center gap-2 rounded-lg border border-danger/20 bg-black/20 px-3 py-2">
+                <span className="text-[10px] text-muted shrink-0">Your address:</span>
+                <code className="min-w-0 text-[11px] font-mono text-foreground">{suiWallet.address.slice(0, 20)}…{suiWallet.address.slice(-20)}</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(suiWallet.address)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                  className={`shrink-0 rounded p-1 transition-colors ${copied ? 'text-success' : 'text-muted/60 hover:text-foreground'}`}
+                  aria-label="Copy address"
+                >
+                  {copied ? (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="m3.5 8.25 2.5 2.5L12.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect x="5.5" y="5.5" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" stroke="currentColor" strokeWidth="1.5" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] text-muted">
+                Top up with SUI before deploying.
+              </p>
+              <button
+                type="button"
+                disabled={balances.loading}
+                onClick={() => balances.refresh()}
+                className={`shrink-0 rounded p-1 text-muted/60 transition-colors hover:text-foreground ${balances.loading ? 'animate-spin' : ''}`}
+                aria-label="Refresh balance"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M2.5 8a5.5 5.5 0 0 1 9.95-3.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M10 2l2.75 2.75L10 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M13.5 8a5.5 5.5 0 0 1-9.95 3.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
           </div>
-          {txDigest && (
+        )}
+          </>
+        )}
+
+        {/* Publish status (hidden until active) */}
+        {(status !== 'idle' || combinedError) && (
+          <div className="card px-5 py-4 space-y-3" data-testid="publish-status">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted">TX Digest</span>
-              <span className="text-sm font-mono text-foreground">{txDigest.slice(0, 16)}…</span>
+              <span className="text-sm text-muted">Status</span>
+              <span className={`text-sm font-semibold ${
+                status === 'done' ? 'text-success' :
+                status === 'error' || combinedError ? 'text-danger' : 'text-purple'
+              }`}>
+                {uploadPhase !== 'idle' && uploadPhase !== 'done' && uploadPhaseLabels[uploadPhase]}
+                {uploadPhase === 'done' && status === 'building' && '⟳ Building TX…'}
+                {status === 'signing' && '⟳ Signing…'}
+                {status === 'syncing' && '⟳ Syncing…'}
+                {status === 'done' && '✓ Published'}
+                {status === 'error' && '✗ Failed'}
+              </span>
             </div>
-          )}
-          {error && (
-            <div className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-4 py-3">
-              {error}
+            {txDigest && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted">TX Digest</span>
+                <span className="text-sm font-mono text-foreground">{txDigest.slice(0, 16)}…</span>
+              </div>
+            )}
+            {combinedError && (
+              <div className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-4 py-3">
+                {combinedError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Deploying overlay */}
+        {isBusy && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="rounded-2xl border border-purple/30 bg-card2 p-10 text-center max-w-sm mx-4 shadow-[0_24px_60px_rgba(124,58,237,0.25)]">
+              <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-2 border-purple/30 border-t-purple" />
+              <h2 className="text-lg font-bold mb-2">
+                {uploadPhase !== 'idle' && uploadPhase !== 'done'
+                  ? 'Uploading to Walrus…'
+                  : 'Deploying Soul…'}
+              </h2>
+              <p className="text-sm text-muted">
+                {uploadPhase !== 'idle' && uploadPhase !== 'done'
+                  ? uploadPhaseLabels[uploadPhase]
+                  : `Writing to ${networkLabel} · Registering Seal policy`}
+              </p>
             </div>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <div className="flex flex-col-reverse gap-2.5 sm:flex-row">
+          {inRecovery ? (
+            <button
+              type="button"
+              onClick={handleAbandonRecovery}
+              className={buttonStyles({
+                variant: 'outline',
+                size: 'lg',
+                className:
+                  'w-full rounded-[10px] border-purple/20 bg-transparent px-4 py-2.5 text-[13px] text-foreground hover:border-purple/45 hover:text-foreground sm:w-auto sm:min-w-[76px]',
+              })}
+            >
+              Start Over
+            </button>
+          ) : (
+            <Link
+              href="/create/preview"
+              className={buttonStyles({
+                variant: 'outline',
+                size: 'lg',
+                className:
+                  'w-full rounded-[10px] border-purple/20 bg-transparent px-4 py-2.5 text-[13px] text-foreground hover:border-purple/45 hover:text-foreground sm:w-auto sm:min-w-[76px]',
+              })}
+            >
+              ← Back
+            </Link>
           )}
-        </div>
-
-        {/* Info note */}
-        <div className="rounded-[10px] border border-purple/30 bg-purple/10 px-4 py-4 text-sm leading-6 text-purple">
-          ⛽ Gas is paid in SUI. The mint transaction creates a Soul object in your personal kiosk.
-          Privy embedded wallet will auto-sign.
-        </div>
-
-        <div className="flex flex-col-reverse sm:flex-row gap-3">
-          <Link href="/create/preview" className={buttonStyles({ variant: 'outline', size: 'lg', className: 'w-full sm:w-auto' })}>
-            ← Back
-          </Link>
           {status === 'done' ? (
-            <Link href="/create/success" className={buttonStyles({ variant: 'primary', size: 'lg', full: true })}>
+            <Link
+              href="/create/success"
+              className={buttonStyles({ variant: 'gold', size: 'lg', full: true, className: 'rounded-[10px] px-4 py-2.5 text-[13px]' })}
+            >
               Continue <span aria-hidden="true">→</span>
             </Link>
+          ) : inRecovery ? (
+            <button
+              type="button"
+              disabled={isBusy || !suiWallet || !txDigest}
+              onClick={handleResume}
+              className={buttonStyles({
+                variant: 'gold',
+                size: 'lg',
+                full: true,
+                className: `rounded-[10px] px-4 py-2.5 text-[13px] ${isBusy ? 'opacity-60 cursor-wait' : ''} ${!suiWallet || !txDigest ? 'opacity-50 cursor-not-allowed' : ''}`,
+              })}
+            >
+              {!suiWallet
+                ? 'No Sui Wallet Connected'
+                : !txDigest
+                  ? 'Loading recovery…'
+                  : isBusy
+                    ? `${status}…`
+                    : 'Resume Sync'}
+            </button>
           ) : (
-            <div className={buttonStyles({ variant: 'ghost', size: 'lg', full: true, className: 'text-center opacity-60 cursor-default' })}>
-              {status === 'idle' ? 'Waiting for publish trigger…' : `${status}…`}
-            </div>
+            <button
+              type="button"
+              disabled={isBusy || balanceBlocked || !suiWallet}
+              onClick={handleDeploy}
+              className={buttonStyles({
+                variant: 'gold',
+                size: 'lg',
+                full: true,
+                className: `rounded-[10px] px-4 py-2.5 text-[13px] ${isBusy ? 'opacity-60 cursor-wait' : ''} ${balanceBlocked || !suiWallet ? 'opacity-50 cursor-not-allowed' : ''}`,
+              })}
+            >
+              {!suiWallet
+                ? 'No Sui Wallet Connected'
+                : balanceBlocked
+                  ? 'Insufficient Balance'
+                  : isBusy
+                    ? (uploadPhaseLabels[uploadPhase] || `${status}…`)
+                    : '✓ Sign & Deploy'}
+            </button>
           )}
         </div>
       </PageContainer>
