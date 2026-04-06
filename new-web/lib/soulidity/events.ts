@@ -185,6 +185,17 @@ export function extractSoulListingCancelledEvent(transaction: TransactionLike, p
   }
 }
 
+export function extractSoulAddedToCollectionEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::collection::SoulAddedToCollection`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulAddedToCollection event is missing from the transaction')
+  }
+  return {
+    collectionId: readObjectId(event.collection_id, 'SoulAddedToCollection collection_id'),
+    soulId: readObjectId(event.soul_id, 'SoulAddedToCollection soul_id'),
+  }
+}
+
 export function extractCollectionMintedToKioskEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
   const event = extractTypedEvent(transaction, `${packageId}::market::CollectionMintedToKiosk`, trustedPackageIds)
   if (!event) {

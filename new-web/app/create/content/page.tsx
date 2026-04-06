@@ -18,8 +18,6 @@ const steps = [
   { label: 'On-chain' },
 ]
 
-const memorySeedLimit = 2000
-
 const soulCharacterTemplate = `# Soul Character
 
 ## Identity
@@ -445,7 +443,7 @@ export default function CreateContentPage() {
   function handleNext() {
     const nextErrors: Record<string, string> = {}
     if (!ctx.charFile) nextErrors.charFile = 'Soul Character file is required'
-    if (!ctx.memorySeed.trim()) nextErrors.memorySeed = 'Memory Seed is required'
+    if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory Seed file (memory.md) is required'
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
       return
@@ -535,24 +533,30 @@ export default function CreateContentPage() {
                 <span>no delete</span>
               </>
             }
-            description="The founding memory of this Soul - origin context, initial directives, or backstory. Once minted this becomes the first immutable commit in the memory chain on Walrus. SoulGrant interactions will append new memory blocks on top of it."
+            description="The founding memory of this Soul - origin context, initial directives, or backstory. Upload a .md file. Once minted this becomes the first immutable commit in the memory chain on Walrus. SoulGrant interactions will append new memory blocks on top of it."
           >
-            <textarea
-              value={ctx.memorySeed}
-              maxLength={memorySeedLimit}
-              onChange={(event) => ctx.setMemorySeed(event.target.value.slice(0, memorySeedLimit))}
-              placeholder="e.g. AlphaScout was initialized on April 1, 2026, trained on 48 hours of on-chain DeFi flow data from Sui mainnet. Its first directive was to identify alpha signals in emerging DEX pools..."
-              className="min-h-[132px] w-full resize-none rounded-[14px] border border-[#4c2b82] bg-[rgba(18,11,36,0.78)] px-4 py-3 text-[12px] leading-6 text-foreground outline-none transition placeholder:text-[#6f5aa2] focus:border-[#8d5cf6]"
-            />
-            <div className="mt-2 flex items-center justify-between gap-3 text-[10px]">
-              <span className={cn('text-muted', errors.memorySeed && 'text-danger')}>
-                {errors.memorySeed || `${ctx.memorySeed.length} / 2000 characters`}
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-[#b689ff]">
-                <LockIcon className="h-3.5 w-3.5" />
-                immutable once minted • stored on Walrus
-              </span>
-            </div>
+            {!ctx.memoryFile ? (
+              <>
+                <UploadTarget
+                  tone="violet"
+                  icon={<SeedIcon className="h-8 w-8" />}
+                  label="Click to upload Memory Seed file"
+                  subtitle=".md format only • becomes founding memory commit"
+                  accept=".md,text/markdown"
+                  onSelect={ctx.setMemoryFile}
+                />
+                {errors.memoryFile && (
+                  <p className="mt-2 text-[11px] font-medium text-danger">{errors.memoryFile}</p>
+                )}
+              </>
+            ) : (
+              <UploadStatus
+                tone="violet"
+                title={`${ctx.memoryFile.name} uploaded · founding memory`}
+                subtitle={`Stored on Walrus · immutable once minted · ${formatFileSize(ctx.memoryFile)}`}
+                onClear={() => ctx.setMemoryFile(null)}
+              />
+            )}
           </ContentCard>
 
           <ContentCard

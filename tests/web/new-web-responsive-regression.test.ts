@@ -25,9 +25,7 @@ describe('new-web responsive regression guards', () => {
   it('stacks market controls before widening into rows', () => {
     const source = readSource('new-web/app/market/page.tsx')
 
-    expect(source).toContain('flex flex-col gap-4')
-    expect(source).toContain('lg:flex-row lg:items-end lg:justify-between')
-    expect(source).toContain('min-w-0 flex-1')
+    expect(source).toContain('flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row')
   })
 
   it('stacks step actions on narrow screens in the create and import flows', () => {

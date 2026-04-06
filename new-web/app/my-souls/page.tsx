@@ -13,6 +13,7 @@ import { FilterTabs } from '@/components/nav/filter-tabs'
 import { buttonStyles } from '@/components/ui/button'
 import { GrantModal } from '@/components/souls/grant-modal'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import { CollectionSection } from '@/components/collections/collection-section'
 import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord } from '@/lib/soulidity/types'
 
 const tabs = [
@@ -50,7 +51,8 @@ function getFallbackSoulEmoji(soul: MySoulEntry) {
 /* ------------------------------------------------------------------ */
 
 function SoulCard({ soul, onGrantClick }: { soul: MySoulEntry; onGrantClick: () => void }) {
-  const isListed = soul.listingStatus === 'listed'
+  const isListed = soul.listingStatus === 'listed' || soul.listingStatus === 'floor-violation'
+  const isFloorViolation = soul.listingStatus === 'floor-violation'
   const hasActiveGrant = soul.activeGrantCount > 0
   const detailHref = `/souls/${encodeURIComponent(soul.onChainId)}`
   const sellHref = `/souls/${encodeURIComponent(soul.onChainId)}/sell`
@@ -108,12 +110,12 @@ function SoulCard({ soul, onGrantClick }: { soul: MySoulEntry; onGrantClick: () 
           </button>
           {isListed ? (
             <>
-              <Tag color="success">Listed</Tag>
+              <Tag color={isFloorViolation ? 'danger' : 'success'}>{isFloorViolation ? 'Below Floor' : 'Listed'}</Tag>
               <span className="text-sm font-semibold text-gold">
                 {soul.listedPriceAtomic ? formatAtomicAmountForDisplay(soul.listedPriceAtomic) : '\u2014'}
               </span>
               <Link href={detailHref} className={buttonStyles({ variant: 'outline', size: 'sm' })}>
-                Delist
+                {isFloorViolation ? 'Update Price' : 'Delist'}
               </Link>
             </>
           ) : (
@@ -126,9 +128,19 @@ function SoulCard({ soul, onGrantClick }: { soul: MySoulEntry; onGrantClick: () 
 
       {/* Listing bar — shown first when listed */}
       {isListed && (
-        <div className="flex flex-col gap-1 border border-b-0 border-t-0 border-success/25 bg-success/[0.06] px-4 py-2 text-[11px] sm:flex-row sm:items-center sm:justify-between">
-          <span className="font-semibold text-success">{'\uD83D\uDDA5'} Active listing</span>
-          <span className="text-muted">Listed on Sui &middot; visible in Market &middot; delist anytime before sale</span>
+        <div className={`flex flex-col gap-1 border border-b-0 border-t-0 px-4 py-2 text-[11px] sm:flex-row sm:items-center sm:justify-between ${
+          isFloorViolation
+            ? 'border-danger/25 bg-danger/[0.06]'
+            : 'border-success/25 bg-success/[0.06]'
+        }`}>
+          <span className={`font-semibold ${isFloorViolation ? 'text-danger' : 'text-success'}`}>
+            {isFloorViolation ? '\u26A0 Below collection floor' : '\uD83D\uDDA5 Active listing'}
+          </span>
+          <span className="text-muted">
+            {isFloorViolation
+              ? 'Listed on Sui but hidden from marketplace \u00b7 delist or update price'
+              : 'Listed on Sui \u00b7 visible in Market \u00b7 delist anytime before sale'}
+          </span>
         </div>
       )}
 
@@ -211,40 +223,6 @@ function ListedCollectionCard({ collection }: { collection: SoulCollectionAssetS
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Collection Row (Owned tab)                                         */
-/* ------------------------------------------------------------------ */
-
-function CollectionRow({ collection }: { collection: SoulCollectionAssetSummary }) {
-  return (
-    <div className="card rounded-xl p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="font-bold text-sm">{collection.name}</div>
-            <Tag color={collection.listingStatus === 'listed' ? 'gold' : collection.tradeable ? 'muted' : 'danger'}>
-              {collection.listingStatus === 'listed' ? 'listed' : collection.tradeable ? 'held' : 'non-tradeable'}
-            </Tag>
-          </div>
-          <div className="text-xs text-muted mt-1">
-            {collection.soulCount} Souls &middot; Holder {formatAddress(collection.currentHolderAddress)}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gold font-semibold">
-            {collection.listedPriceAtomic ? formatAtomicAmountForDisplay(collection.listedPriceAtomic) : 'Not listed'}
-          </span>
-          <Link
-            href={`/collections/${encodeURIComponent(collection.onChainId)}`}
-            className={buttonStyles({ variant: 'outline', size: 'sm' })}
-          >
-            View
-          </Link>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 /* ------------------------------------------------------------------ */
 /*  Grant Row                                                          */
@@ -291,7 +269,7 @@ export default function MySoulsPage() {
   const { data: myData, isLoading } = useMySouls(user?.id ?? null, getAuthHeaders)
 
   const ownedCount = myData?.owned.length ?? 0
-  const listingsCount = (myData?.owned.filter((s) => s.listingStatus === 'listed').length ?? 0)
+  const listingsCount = (myData?.owned.filter((s) => s.listingStatus === 'listed' || s.listingStatus === 'floor-violation').length ?? 0)
     + (myData?.collections.filter((c) => c.listingStatus === 'listed').length ?? 0)
 
   if (loading || !ready) {
@@ -321,11 +299,19 @@ export default function MySoulsPage() {
     )
   }
 
-  const listings = myData?.owned.filter((s) => s.listingStatus === 'listed') ?? []
+  const listings = myData?.owned.filter((s) => s.listingStatus === 'listed' || s.listingStatus === 'floor-violation') ?? []
   const listedCollections = myData?.collections.filter((c) => c.listingStatus === 'listed') ?? []
 
+  const collectionsCount = myData?.collections.length ?? 0
+
   const tabsWithCounts = tabs.map((tab) => {
-    const count = tab.id === 'owned' ? ownedCount : tab.id === 'listings' ? listingsCount : null
+    const count = tab.id === 'owned'
+      ? ownedCount
+      : tab.id === 'collections'
+        ? collectionsCount
+        : tab.id === 'listings'
+          ? listingsCount
+          : null
     return { id: tab.id, label: count != null ? `${tab.label} (${count})` : tab.label }
   })
 
@@ -380,9 +366,7 @@ export default function MySoulsPage() {
 
       {!isLoading && myData && activeTab === 'collections' && (
         myData.collections.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            {myData.collections.map((c) => <CollectionRow key={c.id} collection={c} />)}
-          </div>
+          <CollectionSection collections={myData.collections} currentUserId={user?.id ?? null} />
         ) : (
           <EmptyState icon={'\uD83D\uDCE6'} label="No collection rights yet" sublabel="Collection rights held by this account will show here." />
         )

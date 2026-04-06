@@ -103,7 +103,7 @@ export async function POST(
         currentOwnerMemberId: soul.currentOwnerMemberId,
         listingObjectOnChainId: soul.listingObjectOnChainId,
         listedPriceAtomic: soul.listedPriceAtomic ? BigInt(soul.listedPriceAtomic.toString()) : null,
-        listingStatus: soul.listingStatus === 'listed' ? 'listed' : 'held',
+        listingStatus: soul.listingStatus as 'held' | 'listed' | 'floor-violation',
       })
       await endSoulGrantProjectionFromChain({
         grantOnChainId: revoked.grantId,
@@ -144,7 +144,7 @@ export async function POST(
         currentOwnerMemberId: soul.currentOwnerMemberId,
         listingObjectOnChainId: soul.listingObjectOnChainId,
         listedPriceAtomic: soul.listedPriceAtomic ? BigInt(soul.listedPriceAtomic.toString()) : null,
-        listingStatus: soul.listingStatus === 'listed' ? 'listed' : 'held',
+        listingStatus: soul.listingStatus as 'held' | 'listed' | 'floor-violation',
       })
       if (superseded?.oldGrantId) {
         await endSoulGrantProjectionFromChain({

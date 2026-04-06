@@ -15,6 +15,7 @@ interface NavbarProps {
   onDisconnect?: () => void
   userEmoji?: string | null
   userName?: string | null
+  walletAddress?: string | null
 }
 
 const navLinks = [
@@ -58,7 +59,7 @@ function navLinkClass(isActive: boolean) {
   )
 }
 
-export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName }: NavbarProps) {
+export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName, walletAddress }: NavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -90,13 +91,14 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
               balance=""
               emoji={userEmoji ?? '🌟'}
               userName={userName}
+              walletAddress={walletAddress}
               onDisconnect={onDisconnect ?? (() => {})}
               onNavigate={(href) => router.push(href)}
             />
           ) : (
             <div className="hidden md:block">
               <Button variant="outline" size="sm" onClick={onConnectClick}>
-                Connect Wallet
+                Login
               </Button>
             </div>
           )}

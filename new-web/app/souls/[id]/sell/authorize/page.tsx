@@ -102,6 +102,24 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
     )
   }
 
+  // Floor price enforcement — reject below-floor prices even if navigated here directly
+  const collectionFloor = soul.collection?.floorPriceAtomic ? BigInt(soul.collection.floorPriceAtomic) : null
+  if (collectionFloor != null && priceAtomic < collectionFloor) {
+    return (
+      <div className="max-w-[560px] mx-auto px-6 py-10">
+        <EmptyState
+          icon="🚫"
+          label="Below collection floor"
+          sublabel={`Minimum listing price for this collection is ${formatAtomicAmountForDisplay(collectionFloor.toString())}.`}
+          actionLabel="Set Price"
+          onAction={() => {
+            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}/sell`
+          }}
+        />
+      </div>
+    )
+  }
+
   const signingSubLabel: Record<string, string> = {
     building: 'Preparing transaction…',
     signing: 'Entering escrow on SoulMarket · Sui',

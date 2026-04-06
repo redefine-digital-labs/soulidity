@@ -8,7 +8,11 @@ interface UploadZoneProps {
   label?: string
   sublabel?: string
   accept?: string
+  /** Enable folder (directory) selection instead of single file */
+  directory?: boolean
   onFileSelect?: (file: File) => void
+  /** Callback for directory mode — receives all files in the selected folder */
+  onFilesSelect?: (files: FileList) => void
   className?: string
 }
 
@@ -17,7 +21,9 @@ function UploadZone({
   label = 'Click to upload or drag and drop',
   sublabel,
   accept,
+  directory,
   onFileSelect,
+  onFilesSelect,
   className,
 }: UploadZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -27,11 +33,15 @@ function UploadZone({
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file && onFileSelect) {
-      onFileSelect(file)
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    if (directory && onFilesSelect) {
+      onFilesSelect(files)
+    } else if (onFileSelect && files[0]) {
+      onFileSelect(files[0])
     }
-    // Reset input so same file can be re-selected
+    // Reset input so same selection can be re-selected
     e.target.value = ''
   }
 
@@ -41,10 +51,20 @@ function UploadZone({
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
-    const file = e.dataTransfer.files?.[0]
-    if (file && onFileSelect) {
-      onFileSelect(file)
+    const files = e.dataTransfer.files
+    if (!files || files.length === 0) return
+
+    if (directory && onFilesSelect) {
+      onFilesSelect(files)
+    } else if (onFileSelect && files[0]) {
+      onFileSelect(files[0])
     }
+  }
+
+  // Build extra attributes for directory mode
+  const inputProps: Record<string, string> = {}
+  if (directory) {
+    inputProps.webkitdirectory = ''
   }
 
   return (
@@ -66,10 +86,11 @@ function UploadZone({
       <input
         ref={inputRef}
         type="file"
-        accept={accept}
+        accept={directory ? undefined : accept}
         onChange={handleChange}
         className="sr-only"
         tabIndex={-1}
+        {...inputProps}
       />
 
       {icon && (

@@ -32,7 +32,7 @@ export async function syncSoulProjectionFromChain(params: {
   currentKioskCapOnChainId?: string | null
   listingObjectOnChainId?: string | null
   listedPriceAtomic?: bigint | null
-  listingStatus?: 'held' | 'listed'
+  listingStatus?: 'held' | 'listed' | 'floor-violation'
   latestSkillVersionSealSidecar?: SealEnvelopeSidecar | null
 }) {
   const [soul, state, memory] = await Promise.all([
@@ -89,6 +89,7 @@ export async function syncCollectionProjectionFromChain(params: {
   listingObjectOnChainId?: string | null
   listedPriceAtomic?: bigint | null
   listingStatus?: 'held' | 'listed'
+  floorPriceAtomic?: bigint | null
 }) {
   const collection = await getSoulCollectionObject(params.collectionObjectId, params.packageId)
   const right = await getSoulCollectionRightObject(collection.rightId, params.packageId)
@@ -101,6 +102,7 @@ export async function syncCollectionProjectionFromChain(params: {
     listingObjectOnChainId: params.listingObjectOnChainId ?? null,
     listedPriceAtomic: params.listedPriceAtomic ?? null,
     listingStatus: params.listingStatus ?? 'held',
+    floorPriceAtomic: params.floorPriceAtomic ?? null,
   })
 }
 

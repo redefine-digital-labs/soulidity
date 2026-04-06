@@ -86,7 +86,7 @@ export default function CreatePreviewPage() {
 
   // Guard: redirect to earliest incomplete step when required data is missing
   const missingStep1 = !ctx.name || !ctx.description || !ctx.coverImageFile
-  const missingStep2 = !ctx.charFile || !ctx.memorySeed.trim()
+  const missingStep2 = !ctx.charFile || !ctx.memoryFile
   useEffect(() => {
     if (missingStep1) {
       router.replace('/create')
@@ -95,7 +95,7 @@ export default function CreatePreviewPage() {
     }
   }, [missingStep1, missingStep2, router])
 
-  if (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memorySeed.trim()) return null
+  if (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile) return null
 
   return (
     <div className="relative z-10 border-t border-purple/20">
@@ -151,14 +151,12 @@ export default function CreatePreviewPage() {
           </ReviewCard>
 
           <ReviewCard tone="green" icon="🌱" label="Memory Seed">
-            <p className="text-xs text-muted leading-relaxed">
-              {ctx.memorySeed.length > 150
-                ? `${ctx.memorySeed.slice(0, 150)}…`
-                : ctx.memorySeed}
+            <p className="text-sm text-foreground font-medium">
+              {ctx.memoryFile!.name} · founding memory
             </p>
             <div className="flex items-center gap-1.5 text-[10px] text-success">
               <span>✍</span>
-              <span>{ctx.memorySeed.length} characters · founding memory</span>
+              <span>Uploaded · immutable after mint</span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-muted">
               <span>🔒</span>

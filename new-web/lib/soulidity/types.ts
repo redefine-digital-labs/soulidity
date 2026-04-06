@@ -1,6 +1,6 @@
 import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
 
-export type SoulListingStatus = 'held' | 'listed'
+export type SoulListingStatus = 'held' | 'listed' | 'floor-violation'
 export type SoulGrantStatus = 'active' | 'revoked' | 'expired' | 'superseded' | 'invalidated'
 export type SoulGrantScope = 'seal' | 'memory' | 'skills'
 export type SoulAccessKind = 'owner' | 'granted-agent'
@@ -264,6 +264,7 @@ export interface SoulCollectionAssetSummary {
   description: string
   imageUrl: string
   extraRoyaltyBps: number
+  floorPriceAtomic: string | null
   tradeable: boolean
   listingObjectOnChainId: string | null
   listedPriceAtomic: string | null
@@ -275,6 +276,23 @@ export interface SoulCollectionAssetSummary {
 
 export interface SoulCollectionAssetDetail extends SoulCollectionAssetSummary {
   souls: SoulAssetSummary[]
+}
+
+export interface CollectionDetailStats {
+  soulFloorAtomic: string | null
+  soulHolders: number
+  soulVolume: string | null
+}
+
+export interface CollectionDetailResponse extends SoulCollectionAssetDetail {
+  quote: {
+    priceAtomic: string
+    platformFeeAtomic: string
+    totalAtomic: string
+  } | null
+  isHolder: boolean
+  isCreator: boolean
+  stats: CollectionDetailStats
 }
 
 export interface SoulAssetDetail extends SoulAssetSummary {

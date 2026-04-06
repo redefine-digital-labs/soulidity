@@ -9,6 +9,7 @@ export async function upsertCollectionProjection(params: {
   listingObjectOnChainId?: string | null
   listedPriceAtomic?: bigint | null
   listingStatus?: 'held' | 'listed'
+  floorPriceAtomic?: bigint | null
 }) {
   const soulCount = await prisma.soulAsset.count({
     where: { collectionOnChainId: params.collection.objectId },
@@ -32,6 +33,7 @@ export async function upsertCollectionProjection(params: {
       listedPriceAtomic: params.listedPriceAtomic?.toString() ?? null,
       listingStatus: params.listingStatus ?? 'held',
       soulCount,
+      ...(params.floorPriceAtomic != null ? { floorPriceAtomic: params.floorPriceAtomic.toString() } : {}),
     },
     create: {
       onChainId: params.collection.objectId,
@@ -50,6 +52,7 @@ export async function upsertCollectionProjection(params: {
       listedPriceAtomic: params.listedPriceAtomic?.toString() ?? null,
       listingStatus: params.listingStatus ?? 'held',
       soulCount,
+      ...(params.floorPriceAtomic != null ? { floorPriceAtomic: params.floorPriceAtomic.toString() } : {}),
     },
   })
 }

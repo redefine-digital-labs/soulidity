@@ -23,7 +23,7 @@ function asAtomicString(value: { toString(): string } | null | undefined) {
 }
 
 function asListingStatus(value: string): SoulListingStatus {
-  return value === 'listed' ? 'listed' : 'held'
+  return value === 'listed' ? 'listed' : value === 'floor-violation' ? 'floor-violation' : 'held'
 }
 
 export function parseRouteObjectId(id: string) {
@@ -160,6 +160,7 @@ export const soulCollectionSummarySelect = {
   description: true,
   imageUrl: true,
   extraRoyaltyBps: true,
+  floorPriceAtomic: true,
   tradeable: true,
   listingObjectOnChainId: true,
   listedPriceAtomic: true,
@@ -297,6 +298,7 @@ export function toSoulCollectionSummary(record: SoulCollectionSummaryRecord): So
     description: record.description,
     imageUrl: record.imageUrl,
     extraRoyaltyBps: record.extraRoyaltyBps,
+    floorPriceAtomic: asAtomicString(record.floorPriceAtomic),
     tradeable: record.tradeable,
     listingObjectOnChainId: record.listingObjectOnChainId,
     listedPriceAtomic: asAtomicString(record.listedPriceAtomic),

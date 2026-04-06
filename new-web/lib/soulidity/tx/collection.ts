@@ -12,6 +12,11 @@ type CreateCollectionTxParams = {
   tradeable: boolean
 }
 
+type AddSoulToCollectionTxParams = {
+  collectionObjectId: string
+  stateObjectId: string
+}
+
 export function buildCreateCollectionTx(params: CreateCollectionTxParams) {
   validateCollectionArgs(params)
 
@@ -39,5 +44,18 @@ export function buildCreateCollectionTx(params: CreateCollectionTxParams) {
   })
 
   finishBuyerKioskArgs(tx, personalKiosk)
+  return tx
+}
+
+export function buildAddSoulToCollectionTx(params: AddSoulToCollectionTxParams) {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::collection::add_soul`,
+    arguments: [
+      tx.object(params.collectionObjectId),
+      tx.object(params.stateObjectId),
+    ],
+  })
   return tx
 }

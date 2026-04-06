@@ -166,7 +166,7 @@ export default function CreateGasPage() {
 
   // Guard: redirect to earliest incomplete step when required data is missing
   const missingStep1 = !ctx.name || !ctx.description || !ctx.coverImageFile
-  const missingStep2 = !ctx.charFile || !ctx.memorySeed.trim()
+  const missingStep2 = !ctx.charFile || !ctx.memoryFile
 
   // Detect pending mint recovery: on-chain TX succeeded but sync was interrupted.
   // useState initializer reads sessionStorage synchronously to avoid race with redirect effect.
@@ -267,7 +267,7 @@ export default function CreateGasPage() {
   }, [])
 
   async function handleDeploy() {
-    if (!ctx.coverImageFile || !ctx.charFile || !ctx.memorySeed.trim() || !suiWallet) return
+    if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile || !suiWallet) return
 
     setDeployError(null)
     ctx.setPublishResult(null)
@@ -292,9 +292,7 @@ export default function CreateGasPage() {
       // 3. Upload memory seed (public) — Blob object referenced in TX, must be owned by signer
       if (!results.memorySeed) {
         setUploadPhase('uploading-memory')
-        const memorySeedBlob = new Blob([ctx.memorySeed], { type: 'text/plain' })
-        const memorySeedFile = new File([memorySeedBlob], 'memory-seed.txt', { type: 'text/plain' })
-        results.memorySeed = await uploadFile(memorySeedFile, 'public', authHeaders, walletAddress)
+        results.memorySeed = await uploadFile(ctx.memoryFile!, 'public', authHeaders, walletAddress)
       }
 
       // 4. Upload skills file (encrypted, optional) — Blob object referenced in TX, must be owned by signer
@@ -368,7 +366,7 @@ export default function CreateGasPage() {
     router.replace('/create')
   }
 
-  if (!inRecovery && status !== 'done' && (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memorySeed.trim())) return null
+  if (!inRecovery && status !== 'done' && (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile)) return null
 
   const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
   const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
@@ -428,7 +426,7 @@ export default function CreateGasPage() {
               <span className="text-muted ml-1.5">(encrypted via Seal)</span>
             </TxRow>
             <TxRow label="Memory Seed">
-              <span className="text-foreground">{ctx.memorySeed.length} chars</span>
+              <span className="text-foreground">{ctx.memoryFile?.name}</span>
               <span className="text-muted ml-1.5">(append-only)</span>
             </TxRow>
             {ctx.skillsFile && (

@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server'
+import { prisma } from '@web/lib/prisma'
+import { resolveIdentity } from '@web/lib/auth/identity'
+import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
@@ -30,12 +33,44 @@ export async function GET(
   }
 
   const { id } = await params
+
+  // Resolve viewer identity (optional — anonymous viewers get isHolder=false, isCreator=false)
+  const identity = await resolveIdentity()
+  const viewerAddresses = identity
+    ? await getMemberSuiWalletAddresses(identity.memberId).catch(() => [] as string[])
+    : []
+
   const collection = await findSoulCollectionDetailByRouteId(id)
   if (!collection) {
     return NextResponse.json({ error: 'Collection not found' }, { status: 404 })
   }
 
   const detail = toSoulCollectionDetail(collection)
+
+  // Viewer ownership checks
+  const isHolder = viewerAddresses.includes(detail.currentHolderAddress)
+    || (identity != null && detail.currentHolderMemberId === identity.memberId)
+  const isCreator = viewerAddresses.includes(detail.creatorAddress)
+    || (identity != null && detail.creatorMemberId === identity.memberId)
+
+  // Aggregate stats: soul floor + soul holders
+  const [floorResult, holdersResult] = await Promise.all([
+    prisma.soulAsset.aggregate({
+      where: { collectionOnChainId: detail.onChainId, listingStatus: 'listed' },
+      _min: { listedPriceAtomic: true },
+    }),
+    prisma.soulAsset.groupBy({
+      by: ['currentOwnerAddress'],
+      where: { collectionOnChainId: detail.onChainId },
+    }),
+  ])
+
+  const stats = {
+    soulFloorAtomic: floorResult._min.listedPriceAtomic?.toString() ?? null,
+    soulHolders: holdersResult.length,
+    soulVolume: null as string | null,
+  }
+
   const quote = collection.listingStatus === 'listed' && collection.listedPriceAtomic != null
     ? quoteCollectionPurchase(
         await getMarketConfig(
@@ -49,5 +84,8 @@ export async function GET(
   return NextResponse.json({
     ...detail,
     quote,
+    isHolder,
+    isCreator,
+    stats,
   })
 }

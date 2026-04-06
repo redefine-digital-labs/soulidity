@@ -12,6 +12,7 @@ import { Tag, type TagColor } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import type { SoulCollectionAssetSummary } from '@/lib/soulidity/types'
 
 const filterTabs = [
   { id: 'all', label: 'All' },
@@ -59,10 +60,48 @@ function buildHeroStyle(imageUrl: string | null | undefined) {
   }
 }
 
+function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary }) {
+  return (
+    <Link
+      href={`/collections/${encodeURIComponent(collection.onChainId)}`}
+      className="card card-hover group overflow-hidden cursor-pointer"
+    >
+      <div className="h-[132px] p-4 flex items-end" style={buildHeroStyle(collection.imageUrl)}>
+        <Tag color={collection.listingStatus === 'listed' ? 'gold' : collection.tradeable ? 'muted' : 'danger'}>
+          {collection.listingStatus === 'listed' ? 'Listed' : collection.tradeable ? 'Held' : 'Non-tradeable'}
+        </Tag>
+      </div>
+      <div className="p-4 space-y-3">
+        <div>
+          <h3 className="text-base font-bold text-foreground">{collection.name}</h3>
+          <p className="mt-1 line-clamp-2 text-xs leading-[1.5] text-muted">{collection.description}</p>
+        </div>
+        <div className="grid gap-2 rounded-lg border border-border bg-card2 p-3 text-xs text-muted">
+          <div className="flex items-center justify-between">
+            <span>Listed price</span>
+            <span className="font-semibold text-gold">
+              {collection.listedPriceAtomic ? formatAtomicAmountForDisplay(collection.listedPriceAtomic) : 'Not listed'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Souls</span>
+            <span className="font-semibold text-foreground">{collection.soulCount}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Holder</span>
+            <span className="font-semibold text-foreground">{formatAddress(collection.currentHolderAddress)}</span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
 export default function MarketPage() {
   const [activeFilter, setActiveFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [marketView, setMarketView] = useState<'souls' | 'collections'>('souls')
+  const [collectionTab, setCollectionTab] = useState<'for-sale' | 'all'>('all')
 
   const categoryMap: Record<string, string> = {
     all: '', trading: 'trading', research: 'research', social: 'social',
@@ -177,57 +216,49 @@ export default function MarketPage() {
 
       {marketView === 'collections' && (
         <>
+          <FilterTabs
+            tabs={[
+              { id: 'all', label: `All Collections` },
+              { id: 'for-sale', label: `Caps for Sale` },
+            ]}
+            activeId={collectionTab}
+            onChange={(id) => setCollectionTab(id as 'for-sale' | 'all')}
+          />
+
           {collectionsLoading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 3 }).map((_, index) => (
                 <div key={index} className="h-[280px] rounded-xl bg-card animate-pulse" />
               ))}
             </div>
-          ) : visibleCollections.length === 0 ? (
-            <EmptyState
-              icon="📦"
-              label="No live collection rights"
-              sublabel="Tradable collection rights will show up here after the holder lists them."
-            />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3">
-              {visibleCollections.map((collection) => (
-                <Link
-                  key={collection.id}
-                  href={`/collections/${encodeURIComponent(collection.onChainId)}`}
-                  className="card card-hover group overflow-hidden cursor-pointer"
-                >
-                  <div className="h-[132px] p-4 flex items-end" style={buildHeroStyle(collection.imageUrl)}>
-                    <Tag color={collection.listingStatus === 'listed' ? 'gold' : collection.tradeable ? 'muted' : 'danger'}>
-                      {collection.listingStatus === 'listed' ? 'Listed' : collection.tradeable ? 'Held' : 'Non-tradeable'}
-                    </Tag>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <div>
-                      <h3 className="text-base font-bold text-foreground">{collection.name}</h3>
-                      <p className="mt-1 line-clamp-2 text-xs leading-[1.5] text-muted">{collection.description}</p>
-                    </div>
-                    <div className="grid gap-2 rounded-lg border border-border bg-card2 p-3 text-xs text-muted">
-                      <div className="flex items-center justify-between">
-                        <span>Listed price</span>
-                        <span className="font-semibold text-gold">
-                          {collection.listedPriceAtomic ? formatAtomicAmountForDisplay(collection.listedPriceAtomic) : 'Not listed'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Souls</span>
-                        <span className="font-semibold text-foreground">{collection.soulCount}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Holder</span>
-                        <span className="font-semibold text-foreground">{formatAddress(collection.currentHolderAddress)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
+          ) : (() => {
+            const filtered = collectionTab === 'for-sale'
+              ? visibleCollections.filter((c) => c.listingStatus === 'listed')
+              : visibleCollections
+            return filtered.length === 0 ? (
+              <EmptyState
+                icon="📦"
+                label={
+                  searchQuery
+                    ? `No collections matching "${searchQuery}"`
+                    : collectionTab === 'for-sale'
+                      ? 'No collection caps listed for sale yet'
+                      : 'No collections yet'
+                }
+                sublabel={
+                  collectionTab === 'for-sale'
+                    ? 'Collection caps will appear here when holders list them for sale.'
+                    : 'Soul collections will appear here once created.'
+                }
+              />
+            ) : (
+              <div className="grid grid-cols-1 gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3">
+                {filtered.map((collection) => (
+                  <CollectionCard key={collection.id} collection={collection} />
+                ))}
+              </div>
+            )
+          })()}
         </>
       )}
     </PageContainer>

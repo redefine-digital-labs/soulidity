@@ -1,6 +1,7 @@
 'use client'
 
 import { AuthGate } from '@/components/auth/auth-gate'
+import { CreateCollectionProvider } from '@/components/providers/create-collection-provider'
 
 export default function CreateCollectionLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,7 +11,9 @@ export default function CreateCollectionLayout({ children }: { children: React.R
       sublabel="Creating a Collection uses authenticated routes plus a wallet signature before the on-chain mirror can settle."
       className="max-w-[680px]"
     >
-      {children}
+      <CreateCollectionProvider>
+        {children}
+      </CreateCollectionProvider>
     </AuthGate>
   )
 }

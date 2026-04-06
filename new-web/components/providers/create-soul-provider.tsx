@@ -77,8 +77,8 @@ interface CreateSoulContextValue {
   setCoverImage: (file: File | null) => void
 
   // Step 2
-  memorySeed: string
-  setMemorySeed: (v: string) => void
+  memoryFile: File | null
+  setMemoryFile: (file: File | null) => void
   charFile: File | null
   setCharFile: (file: File | null) => void
   skillsFile: File | null
@@ -115,7 +115,7 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
   const previewUrlRef = useRef<string | null>(null)
 
   // Step 2
-  const [memorySeed, setMemorySeedRaw] = useState('')
+  const [memoryFile, setMemoryFileRaw] = useState<File | null>(null)
   const [charFile, setCharFileRaw] = useState<File | null>(null)
   const [skillsFile, setSkillsFileRaw] = useState<File | null>(null)
 
@@ -136,8 +136,8 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
     setUploadResultsRaw(prev => prev ? { ...prev, skillsFile: undefined } : prev)
   }, [])
 
-  const setMemorySeed = useCallback((v: string) => {
-    setMemorySeedRaw(v)
+  const setMemoryFile = useCallback((file: File | null) => {
+    setMemoryFileRaw(file)
     setUploadResultsRaw(prev => prev ? { ...prev, memorySeed: undefined } : prev)
   }, [])
   const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(null)
@@ -203,7 +203,7 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
     setTags('')
     setRoyalty(500)
     setCoverImage(null)
-    setMemorySeedRaw('')
+    setMemoryFileRaw(null)
     setCharFileRaw(null)
     setSkillsFileRaw(null)
     setUploadResultsRaw(null)
@@ -222,7 +222,7 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
       tags, setTags,
       royalty, setRoyalty,
       coverImageFile, coverImagePreviewUrl, setCoverImage,
-      memorySeed, setMemorySeed,
+      memoryFile, setMemoryFile,
       charFile, setCharFile,
       skillsFile, setSkillsFile,
       uploadResults, setUploadResults,

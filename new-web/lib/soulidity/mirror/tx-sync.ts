@@ -14,6 +14,7 @@ export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'collection:list',
   'collection:delist',
   'collection:buy',
+  'collection:add-soul',
   'import',
   'personal-join',
   'agent-buy',

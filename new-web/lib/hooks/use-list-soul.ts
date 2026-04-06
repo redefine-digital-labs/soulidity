@@ -32,6 +32,16 @@ export function useListSoul(soul: SoulAssetDetail | null) {
       return
     }
 
+    // Enforce collection floor price before building the on-chain TX
+    if (soul.collection?.floorPriceAtomic) {
+      const floorAtomic = BigInt(soul.collection.floorPriceAtomic)
+      if (priceAtomic < floorAtomic) {
+        setError('Listing price is below the collection floor price')
+        setStatus('error')
+        return
+      }
+    }
+
     try {
       setStatus('building')
       setError(null)

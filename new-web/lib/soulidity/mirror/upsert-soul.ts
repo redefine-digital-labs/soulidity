@@ -17,9 +17,9 @@ export async function upsertSoulProjection(params: {
   sealSidecar?: Prisma.InputJsonValue | null
   listingObjectOnChainId?: string | null
   listedPriceAtomic?: bigint | null
-  listingStatus?: 'held' | 'listed'
+  listingStatus?: 'held' | 'listed' | 'floor-violation'
 }) {
-  return prisma.soulAsset.upsert({
+  const result = await prisma.soulAsset.upsert({
     where: { onChainId: params.soul.objectId },
     update: {
       stateOnChainId: params.state.objectId,
@@ -87,4 +87,18 @@ export async function upsertSoulProjection(params: {
       readme: params.readme ?? null,
     },
   })
+
+  // Keep collection soulCount in sync when a Soul belongs to a collection
+  const collectionId = params.state.collectionId
+  if (collectionId) {
+    const count = await prisma.soulAsset.count({
+      where: { collectionOnChainId: collectionId },
+    })
+    await prisma.soulCollectionAsset.updateMany({
+      where: { onChainId: collectionId },
+      data: { soulCount: count },
+    })
+  }
+
+  return result
 }

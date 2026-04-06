@@ -24,6 +24,10 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     }
   }
 
+  // Floor price enforcement: soul in a collection must list at or above the floor
+  const collectionFloor = soul?.collection?.floorPriceAtomic ? BigInt(soul.collection.floorPriceAtomic) : null
+  const belowFloor = priceAtomic != null && collectionFloor != null && priceAtomic < collectionFloor
+
   if (isLoading) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-8">
@@ -64,13 +68,17 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
-  if (soul.listingStatus === 'listed' && soul.listedPriceAtomic) {
+  if ((soul.listingStatus === 'listed' || soul.listingStatus === 'floor-violation') && soul.listedPriceAtomic) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
         <EmptyState
           icon="🏷️"
-          label="Soul already listed"
-          sublabel={`Current listing: ${formatAtomicAmountForDisplay(soul.listedPriceAtomic)}.`}
+          label={soul.listingStatus === 'floor-violation' ? 'Listed below collection floor' : 'Soul already listed'}
+          sublabel={
+            soul.listingStatus === 'floor-violation'
+              ? `Current listing: ${formatAtomicAmountForDisplay(soul.listedPriceAtomic)}. This is below the collection floor price and is hidden from the marketplace. Delist or update the price from the Soul detail page.`
+              : `Current listing: ${formatAtomicAmountForDisplay(soul.listedPriceAtomic)}.`
+          }
           actionLabel="Open Soul"
           onAction={() => {
             window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
@@ -88,7 +96,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     ? (100 - platformFeePct - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct) - collectionRoyaltyPct).toFixed(1)
     : null
 
-  const authorizeHref = priceAtomic
+  const authorizeHref = priceAtomic && !belowFloor
     ? `/souls/${encodeURIComponent(soul.onChainId)}/sell/authorize?price=${encodeURIComponent(price)}`
     : null
 
@@ -153,6 +161,11 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
             placeholder="0.00"
           />
           {priceError && <p className="text-danger text-xs">{priceError}</p>}
+          {belowFloor && collectionFloor && (
+            <p className="text-danger text-xs">
+              Minimum price for this collection is {formatAtomicAmountForDisplay(collectionFloor.toString())}
+            </p>
+          )}
         </div>
 
         {/* Fee breakdown */}

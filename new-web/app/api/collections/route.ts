@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim() || ''
 
   const where: Record<string, unknown> = {}
-  if (request.nextUrl.searchParams.get('listed') !== 'false') {
+  const listedOnly = request.nextUrl.searchParams.get('listed')
+  if (listedOnly === 'true') {
     where.listingStatus = 'listed'
   }
   if (q) {
@@ -57,7 +58,11 @@ export async function GET(request: NextRequest) {
     prisma.soulCollectionAsset.findMany({
       where,
       select: soulCollectionSummarySelect,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { listingStatus: 'desc' },  // 'listed' before 'held'
+        { soulCount: 'desc' },
+        { createdAt: 'desc' },
+      ],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),

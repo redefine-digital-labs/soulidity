@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { extractSoulListedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
@@ -69,6 +70,8 @@ export async function POST(
       return NextResponse.json({ error: 'Transaction listed a different Soulidity object' }, { status: 422 })
     }
 
+    // Always mirror the committed chain state first — on-chain is source of truth.
+    // Floor price is an app-level constraint checked after sync to avoid stale projections.
     const mirrored = await syncSoulProjectionFromChain({
       packageId,
       soulObjectId: soul.onChainId,
@@ -86,12 +89,33 @@ export async function POST(
       listingStatus: 'listed',
     })
 
-    const responseBody = {
+    let responseBody: Record<string, unknown> = {
       txDigest,
       soulOnChainId: mirrored.onChainId,
       listingObjectOnChainId: mirrored.listingObjectOnChainId,
       listedPriceAtomic: mirrored.listedPriceAtomic,
       listingStatus: mirrored.listingStatus,
+    }
+
+    // Collection floor price is an app-level policy enforced after mirroring on-chain state.
+    // Below-floor listings are valid on-chain but suppressed from marketplace reads via
+    // a distinct listing status so they don't appear alongside policy-compliant listings.
+    const floorViolation = (() => {
+      if (!soul.collection?.floorPriceAtomic) return false
+      const floorAtomic = BigInt(soul.collection.floorPriceAtomic.toString())
+      return listed.priceAtomic < floorAtomic
+    })()
+
+    if (floorViolation) {
+      await prisma.soulAsset.updateMany({
+        where: { onChainId: soul.onChainId },
+        data: { listingStatus: 'floor-violation' },
+      })
+      responseBody = {
+        ...responseBody,
+        listingStatus: 'floor-violation',
+        floorWarning: 'Listing price is below the collection floor price',
+      }
     }
 
     await storeSoulidityTxSync({

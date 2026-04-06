@@ -18,7 +18,7 @@ describe('new-web auth gating regression guards', () => {
     const source = readSource('new-web/app/souls/[id]/page.tsx')
 
     expect(source).toContain('const { requireAuth } = useRequireAuth()')
-    expect(source).toContain('router.push(`/souls/${encodeURIComponent(soulId)}/buy`)')
+    expect(source).toContain('router.push(`/souls/${encodeURIComponent(soul.onChainId)}/buy`)')
     expect(source).not.toContain('<Link href={`/souls/${encodeURIComponent(soulId)}/buy`}')
   })
 
