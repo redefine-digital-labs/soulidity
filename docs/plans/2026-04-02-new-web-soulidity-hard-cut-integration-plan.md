@@ -112,7 +112,6 @@
 - Modify: `new-web/app/souls/[id]/sell/authorize/page.tsx`
 - Modify: `new-web/app/my-souls/page.tsx`
 - Modify: `new-web/app/collections/[id]/page.tsx`
-- Modify: `new-web/app/collections/[id]/buy/page.tsx`
 - Modify: `new-web/app/create/**`
 - Modify: `new-web/app/import/**`
 - Modify: `new-web/app/wrap-link/**`
@@ -121,7 +120,7 @@
 - [ ] 移除 `mockSouls` / `mockCollections` 在关键业务页的依赖。
 - [ ] publish / buy / list / delist 全部改走真实 hook 和真实签名执行。
 - [ ] Grant 管理 UI 改为 issue / revoke / current grant 状态，不再出现 allowlist 词汇。
-- [ ] Collection detail / buy / list 页面从 prototype 数据态切到真实 API。
+- [ ] Collection detail / list 页面从 prototype 数据态切到真实 API，购买统一收口到 detail 页内联动作。
 - [ ] Create / Import / Personal Join 页面改成真实交易准备流程，替换 placeholder contract 文案。
 - [ ] 清理不存在的 `/create-collection` 等伪入口，改成真实页面或移除入口。
 

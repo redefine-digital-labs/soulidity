@@ -85,13 +85,14 @@ describe('repository contract guards', () => {
   })
 
   it('removes allowlist, simulated tx, mock fallback, and dead create-collection entrypoints from active new-web code', () => {
-    const pattern = /\ballowlist\b|0x_simulated_|mockSouls|mockCollections|\/create-collection\b|simulated upload|simulate the upload/i
+    const pattern = /\ballowlist\b|0x_simulated_|mockSouls|mockCollections|\/create-collection\/|simulated upload|simulate the upload/i
     const offenders = collectMatches(pattern)
     expect(offenders).toEqual([])
   })
 
   it('keeps the hard-cut Soulidity route surface and removes the legacy allowlist route', () => {
     expect(existsSync(join(newWebRoot, 'app', 'api', 'souls', '[id]', 'allowlist', 'route.ts'))).toBe(false)
+    expect(existsSync(join(newWebRoot, 'app', 'collections', '[id]', 'buy', 'page.tsx'))).toBe(false)
 
     expect(existsSync(join(newWebRoot, 'app', 'api', 'souls', '[id]', 'grant', 'route.ts'))).toBe(true)
     expect(existsSync(join(newWebRoot, 'app', 'api', 'collections', 'route.ts'))).toBe(true)
@@ -100,6 +101,11 @@ describe('repository contract guards', () => {
     expect(existsSync(join(newWebRoot, 'app', 'api', 'collections', '[id]', 'list', 'route.ts'))).toBe(true)
     expect(existsSync(join(newWebRoot, 'app', 'api', 'import', 'route.ts'))).toBe(true)
     expect(existsSync(join(newWebRoot, 'app', 'api', 'wrap-link', 'personal', 'route.ts'))).toBe(true)
+  })
+
+  it('keeps collection purchase entrypoints collapsed into the collection detail page', () => {
+    const offenders = collectMatches(/\/collections\/[^'"]+\/buy|CollectionBuyPage|Confirm collection purchase/)
+    expect(offenders).toEqual([])
   })
 
   it('defines the Soulidity tx-sync route key contract in the new mirror runtime', () => {
@@ -115,6 +121,7 @@ describe('repository contract guards', () => {
     expect(txSyncSource).toContain(`'grant:revoke'`)
     expect(txSyncSource).toContain(`'collection:list'`)
     expect(txSyncSource).toContain(`'collection:buy'`)
+    expect(txSyncSource).toContain(`'collection:add-soul'`)
     expect(txSyncSource).toContain(`'import'`)
     expect(txSyncSource).toContain(`'personal-join'`)
   })

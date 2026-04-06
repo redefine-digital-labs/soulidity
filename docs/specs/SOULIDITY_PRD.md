@@ -502,7 +502,7 @@ Two paths:
 
 `expand-personal-1` → `expand-personal-2` → `expand-personal-preview` → `expand-personal-gas` → `expand-success`
 
-1. **Select NFT** — Input NFT contract address + Token ID, or connect wallet and pick from owned NFTs
+1. **Select NFT** — Input NFT contract address + Token ID, or login and pick from owned NFTs
 2. **Configure Soul Layer** — Upload Soul Character, write Memory Seed, set activation policy (Public / Holder-only / Creator-only)
 3. **Preview** — Rendered Soul card with "🔗 Expanded" tag
 4. **Gas** — Sign to publish the Soul wrapper

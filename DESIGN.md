@@ -240,7 +240,7 @@ These are known deviations in `new-web/` from the prototype source of truth:
 | **Soul card image** | 140px height | 176px height | Reduce to 140px |
 | **Soul card body** | 14px padding, compact | 20px padding, larger text | Tighten to match prototype |
 | **Market layout** | Search + filter tabs inline, no wrapper | Search wrapped in glass-card panel | Flatten to match prototype |
-| **Nav CTA** | "Connect Wallet" outline button | "Sign In" outline button | Use "Connect Wallet" |
+| **Nav CTA** | "Login" outline button | "Sign In" outline button | Use "Login" |
 | **Glass-card utility** | Not used (cards are simple) | Used extensively | Replace with simple `.card` |
 | **Section headers** | section-label + section-title inline | SectionHeader component with kicker | Align component output to match |
 | **Body background** | Solid `--bg` + fixed orbs | Multi-stop radial gradient | Use solid `--bg` + orb divs |

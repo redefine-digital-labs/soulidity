@@ -143,7 +143,7 @@ DELETE FROM "soul_assets";
 2. `wait_for` text "Soul Market"
 3. `evaluate_script` 验证搜索框 `input[placeholder="Search souls, creators, or collections..."]` 存在
 4. `evaluate_script` 验证页面含 "No live Soul listings"
-5. `evaluate_script` 验证 navbar 有 "Connect Wallet" 按钮
+5. `evaluate_script` 验证 navbar 有 "Login" 按钮
 
 ### Test 0.3: 截图存档
 `take_screenshot` → `e2e/phase0-market-empty.png`
@@ -154,10 +154,10 @@ DELETE FROM "soul_assets";
 
 ### Test 1.1: Seller 登录（手动 OTP #1）
 1. `navigate_page` → `http://localhost:3100/market`
-2. `click` navbar "Connect Wallet" 按钮（selector: `button:has-text("Connect Wallet")`，desktop 视口下在 navbar 右侧）
+2. `click` navbar "Login" 按钮（selector: `button:has-text("Login")`，desktop 视口下在 navbar 右侧）
 3. Privy 邮箱 modal 弹出 — 在 Privy iframe 中 `fill` email `ithinco@gmail.com` 并提交
 4. **暂停等用户输入 OTP** — `wait_for` AccountButton 出现（selector: navbar 中 `.rounded-full.border.border-border.bg-card2` 按钮），timeout 120s
-5. `evaluate_script` 确认 "Connect Wallet" 按钮不存在
+5. `evaluate_script` 确认 "Login" 按钮不存在
 6. `take_screenshot` → `e2e/phase1-seller-login.png`
 
 ### Test 1.2: 创建向导 Step 1 — Basic Info
@@ -275,10 +275,10 @@ DELETE FROM "soul_assets";
 1. `click` navbar AccountButton（`.rounded-full.border.border-border.bg-card2` 按钮）
 2. `wait_for` dropdown 出现（含 "Sign Out" 文字）
 3. `click` "Sign Out"（`button:has-text("Sign Out")`，红色 `text-danger`）
-4. `wait_for` "Connect Wallet" 按钮重新出现
+4. `wait_for` "Login" 按钮重新出现
 
 ### Test 3.2: Buyer 登录（手动 OTP #2）
-1. `click` "Connect Wallet"
+1. `click` "Login"
 2. Privy modal 填 `tenxhunter@gmail.com`
 3. **暂停等用户输入 OTP** — timeout 120s
 4. `wait_for` AccountButton 出现
@@ -635,7 +635,7 @@ Phase 8 (new feature pages) → 独立
 
 | 元素 | Selector | 页面 |
 |------|----------|------|
-| Connect Wallet | `button:has-text("Connect Wallet")` | Navbar |
+| Login | `button:has-text("Login")` | Navbar |
 | AccountButton | `.rounded-full.border.border-border.bg-card2` | Navbar |
 | Sign Out | `button:has-text("Sign Out")` (text-danger) | AccountButton dropdown |
 | Search 框 | `input[placeholder="Search souls, creators, or collections..."]` | /market |
@@ -674,7 +674,7 @@ Phase 8 (new feature pages) → 独立
 | `new-web/app/create/content/page.tsx` | 创建 Step 2 — Phase 1.3 |
 | `new-web/app/create/preview/page.tsx` | 创建 Step 3 — Phase 1.4 |
 | `new-web/app/my-souls/page.tsx` | My Souls 5-tab — Phase 1.11, 3.6, 4.5 |
-| `new-web/components/nav/navbar.tsx` | 导航栏 + Connect Wallet |
+| `new-web/components/nav/navbar.tsx` | 导航栏 + Login |
 | `new-web/components/nav/account-button.tsx` | 账户下拉 + Sign Out |
 | `new-web/components/providers/auth-provider.tsx` | Privy auth context |
 

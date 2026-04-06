@@ -20,7 +20,7 @@
 
 ### 3. `new-web` 的关键产品页仍有原型态残留
 
-- `new-web/app/market/page.tsx`、`new-web/app/collections/[id]/page.tsx`、`new-web/app/collections/[id]/buy/page.tsx`、`new-web/app/my-souls/page.tsx` 等仍依赖 `mockSouls` / `mockCollections`。
+- `new-web/app/market/page.tsx`、`new-web/app/collections/[id]/page.tsx`、`new-web/app/my-souls/page.tsx` 等仍依赖 `mockSouls` / `mockCollections`。
 - `new-web/app/souls/[id]/page.tsx` 和买卖页仍使用 mock fallback，而不是纯真实数据。
 - 导航里存在 `/create-collection` 之类未真正落地的入口，说明当前产品路径还不是可收口状态。
 

@@ -15,7 +15,7 @@ import type {
 // ---------------------------------------------------------------------------
 const mockedPrisma = vi.hoisted(() => ({
   soulAsset: { upsert: vi.fn(), count: vi.fn() },
-  soulCollectionAsset: { upsert: vi.fn() },
+  soulCollectionAsset: { upsert: vi.fn(), updateMany: vi.fn() },
   soulGrantRecord: { upsert: vi.fn(), updateMany: vi.fn() },
   soulMemoryEntry: { upsert: vi.fn() },
   soulSkillVersionRecord: { upsert: vi.fn(), updateMany: vi.fn() },
