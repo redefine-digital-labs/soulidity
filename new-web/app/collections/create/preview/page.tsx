@@ -183,7 +183,7 @@ export default function PreviewPage() {
 
   const floor = ctx.floorPrice || '0'
   const royaltyDisplay = formatRoyalty(ctx.extraRoyaltyBps)
-  const displayName = user?.tgName || 'you'
+  const displayName = user?.displayName || user?.tgName || 'you'
   const soulNames = ctx.batchSouls.map((s) => s.name).join(', ')
 
   const isBusy = status !== 'idle' && status !== 'done' && status !== 'error'

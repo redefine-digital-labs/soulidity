@@ -19,6 +19,9 @@ export async function GET() {
       avatar: true,
       level: true,
       bio: true,
+      handle: true,
+      twitterUrl: true,
+      websiteUrl: true,
       kind: true,
       walletBindings: {
         where: { chain: 'sui' },
@@ -36,10 +39,14 @@ export async function GET() {
   return NextResponse.json({
     user: {
       id: member.id,
-      tgName: member.displayName || member.tgName,
+      tgName: member.tgName,
+      displayName: member.displayName,
       avatar: member.avatar,
       level: member.level,
       bio: member.bio,
+      handle: member.handle,
+      twitterUrl: member.twitterUrl,
+      websiteUrl: member.websiteUrl,
       kind: member.kind,
       primarySuiAddress: member.walletBindings[0]?.address ?? null,
     },

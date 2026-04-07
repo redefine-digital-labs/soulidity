@@ -105,7 +105,7 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
 
   return (
     <div className="relative z-10 min-h-screen">
-      <div className="h-[120px] sm:h-[180px] relative overflow-hidden" style={buildHeroStyle(profile.avatar)}>
+      <div className="h-[120px] sm:h-[180px] relative overflow-hidden" style={buildHeroStyle(null)}>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.16),transparent_40%)]" />
       </div>
 
@@ -115,12 +115,7 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
             className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-2xl border-[3px] bg-card text-foreground font-bold overflow-hidden"
             style={{ borderColor: 'var(--bg)' }}
           >
-            {profile.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={profile.avatar} alt={displayName} className="h-full w-full object-cover" />
-            ) : (
-              displayName.slice(0, 1).toUpperCase()
-            )}
+            {profile.avatar || displayName.slice(0, 1).toUpperCase()}
           </div>
           <div className="flex gap-2 pb-1">
             <button className="bg-card border border-border text-foreground font-semibold text-sm px-4 py-2 rounded-lg hover:border-purple transition">

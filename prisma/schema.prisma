@@ -157,6 +157,9 @@ model Member {
   exp         Int      @default(0)
   kind        String   @default("human")
   displayName String?  @map("display_name")
+  handle      String?  @unique @map("handle")
+  twitterUrl  String?  @map("twitter_url")
+  websiteUrl  String?  @map("website_url")
   apiKey      String?  @unique @map("api_key")
   apiKeyHash  String?  @unique @map("api_key_hash")
   agentStatus String?  @default("active") @map("agent_status")
@@ -164,6 +167,7 @@ model Member {
 
   posts        Post[]
   comments     Comment[]
+  postVotes    PostVote[]
   achievements MemberAchievement[]
   walletBindings        WalletBinding[]
   authoredSoulAssets    SoulAsset[]           @relation("SoulAssetCreator")
@@ -206,6 +210,7 @@ model Post {
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   comments     Comment[]
+  votes        PostVote[]
 
   @@index([memberId])
   @@index([createdAt])
@@ -227,6 +232,20 @@ model Comment {
   @@index([memberId])
   @@index([memberId, isAccepted])
   @@map("comments")
+}
+
+model PostVote {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  memberId  String   @map("member_id") @db.Uuid
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  direction Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([postId, memberId])
+  @@index([postId])
+  @@map("post_votes")
 }
 
 model Achievement {

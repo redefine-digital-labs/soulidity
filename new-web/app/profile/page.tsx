@@ -1,13 +1,49 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AuthGate } from '@/components/auth/auth-gate'
+import { useAuth } from '@/components/providers/auth-provider'
+import { useUpdateProfile } from '@/lib/hooks/use-profile'
 
 export default function ProfilePage() {
+  const { user } = useAuth()
+  const { status, error, updateProfile } = useUpdateProfile()
+
   const [displayName, setDisplayName] = useState('')
   const [handle, setHandle] = useState('')
   const [bio, setBio] = useState('')
   const [emoji, setEmoji] = useState('🤖')
+  const [twitterUrl, setTwitterUrl] = useState('')
+  const [websiteUrl, setWebsiteUrl] = useState('')
+  const [hydratedUserId, setHydratedUserId] = useState<string | null>(null)
+
+  // Pre-populate form from current user data; re-seed when user identity changes
+  useEffect(() => {
+    if (user && user.id !== hydratedUserId) {
+      setDisplayName(user.displayName ?? user.tgName ?? '')
+      setHandle(user.handle ?? '')
+      setBio(user.bio ?? '')
+      setEmoji(user.avatar ?? '🤖')
+      setTwitterUrl(user.twitterUrl ?? '')
+      setWebsiteUrl(user.websiteUrl ?? '')
+      setHydratedUserId(user.id)
+    }
+  }, [user, hydratedUserId])
+
+  async function handleSave() {
+    try {
+      await updateProfile({
+        displayName: displayName.trim() || null,
+        avatar: emoji,
+        bio: bio.trim() || null,
+        handle: handle.trim() || null,
+        twitterUrl: twitterUrl.trim() || null,
+        websiteUrl: websiteUrl.trim() || null,
+      })
+    } catch { /* error set in hook */ }
+  }
+
+  const isSaving = status === 'saving'
 
   return (
     <AuthGate
@@ -81,15 +117,35 @@ export default function ProfilePage() {
           <input
             className="w-full bg-card2 border border-border rounded-lg px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-purple placeholder:text-border mb-2"
             placeholder="X / Twitter URL"
+            value={twitterUrl}
+            onChange={(e) => setTwitterUrl(e.target.value)}
           />
           <input
             className="w-full bg-card2 border border-border rounded-lg px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-purple placeholder:text-border"
             placeholder="Personal website URL"
+            value={websiteUrl}
+            onChange={(e) => setWebsiteUrl(e.target.value)}
           />
         </div>
 
-        <button className="w-full bg-purple text-white font-bold text-[15px] px-7 py-3 rounded-xl hover:bg-purple-deep transition">
-          Save Profile
+        {/* Feedback */}
+        {status === 'success' && (
+          <div className="mb-4 rounded-lg border border-teal/30 bg-teal/8 px-4 py-2.5">
+            <p className="text-xs font-semibold text-teal">Profile saved successfully</p>
+          </div>
+        )}
+        {error && (
+          <div className="mb-4 rounded-lg border border-danger/30 bg-danger/8 px-4 py-2.5">
+            <p className="text-xs font-semibold text-danger">{error}</p>
+          </div>
+        )}
+
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className={`w-full bg-purple text-white font-bold text-[15px] px-7 py-3 rounded-xl hover:bg-purple-deep transition ${isSaving ? 'opacity-60 cursor-wait' : ''}`}
+        >
+          {isSaving ? 'Saving…' : 'Save Profile'}
         </button>
       </div>
     </AuthGate>

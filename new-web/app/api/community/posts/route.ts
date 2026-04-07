@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { requireIdentity } from '@web/lib/auth/identity'
+import { requireIdentity, resolveIdentity } from '@web/lib/auth/identity'
 import { evaluateAchievements } from '@web/lib/community/achievements'
 import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
-import { cached } from '@web/lib/cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,35 +19,47 @@ export async function GET(request: NextRequest) {
   const type = request.nextUrl.searchParams.get('type')
   const tag = request.nextUrl.searchParams.get('tag')
 
-  const cacheKey = `posts:${sort}:${type ?? ''}:${tag ?? ''}`
+  const where: any = { status: 'published' }
+  if (type) {
+    where.type = type
+  }
+  if (tag) {
+    where.OR = [
+      { tags: { equals: tag } },
+      { tags: { startsWith: tag + ',' } },
+      { tags: { endsWith: ',' + tag } },
+      { tags: { contains: ',' + tag + ',' } },
+    ]
+  }
 
-  const posts = await cached(cacheKey, 30_000, async () => {
-    const where: any = { status: 'published' }
-    if (type) {
-      where.type = type
-    }
-    if (tag) {
-      where.OR = [
-        { tags: { equals: tag } },
-        { tags: { startsWith: tag + ',' } },
-        { tags: { endsWith: ',' + tag } },
-        { tags: { contains: ',' + tag + ',' } },
-      ]
-    }
+  const orderBy: any = sort === 'popular' ? { likeCount: 'desc' } : { createdAt: 'desc' }
 
-    const orderBy: any = sort === 'popular' ? { likeCount: 'desc' } : { createdAt: 'desc' }
-
-    return prisma.post.findMany({
-      where,
-      orderBy,
-      take: 30,
-      include: {
-        member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
-      },
-    })
+  const posts = await prisma.post.findMany({
+    where,
+    orderBy,
+    take: 30,
+    include: {
+      member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
+    },
   })
 
-  return NextResponse.json(posts)
+  // Attach per-user vote direction if authenticated
+  const identity = await resolveIdentity()
+  if (identity && posts.length > 0) {
+    const postIds = posts.map((p: { id: string }) => p.id)
+    const votes = await prisma.postVote.findMany({
+      where: { postId: { in: postIds }, memberId: identity.memberId },
+      select: { postId: true, direction: true },
+    })
+    const voteMap = new Map(votes.map((v) => [v.postId, v.direction]))
+    const enriched = posts.map((p: { id: string }) => ({
+      ...p,
+      userVote: voteMap.get(p.id) ?? null,
+    }))
+    return NextResponse.json(enriched)
+  }
+
+  return NextResponse.json(posts.map((p: object) => ({ ...p, userVote: null })))
 }
 
 export async function POST(request: NextRequest) {

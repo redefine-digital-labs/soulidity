@@ -6,7 +6,12 @@ import { usePrivy } from '@privy-io/react-auth'
 export interface AuthUser {
   id: string
   tgName: string | null
+  displayName: string | null
   avatar: string | null
+  bio: string | null
+  handle: string | null
+  twitterUrl: string | null
+  websiteUrl: string | null
   level: number
   kind: string
   primarySuiAddress: string | null

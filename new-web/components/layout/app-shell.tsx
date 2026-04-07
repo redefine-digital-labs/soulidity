@@ -26,8 +26,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         connected={!!user}
         onConnectClick={login}
         onDisconnect={logout}
-        userEmoji={user?.avatar ? undefined : '🌟'}
-        userName={user?.tgName}
+        userEmoji={user?.avatar ?? '🌟'}
+        userName={user?.displayName || user?.tgName}
         walletAddress={user?.primarySuiAddress}
       />
       <main className="relative min-h-[calc(100vh-56px)] overflow-x-clip">
