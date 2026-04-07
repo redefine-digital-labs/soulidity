@@ -52,6 +52,7 @@ import {
   extractSoulGrantRevokedEvent,
   extractMemoryEntryAppendedEvent,
   extractSkillVersionAppendedEvent,
+  tryExtractSkillVersionAppendedEvent,
   extractSkillVersionDeletedEvent,
   isGrantActive,
 } from '../../new-web/lib/soulidity/events'
@@ -399,6 +400,35 @@ describe('extractSkillVersionAppendedEvent', () => {
     expect(() => extractSkillVersionAppendedEvent(makeEmptyTx(), PKG)).toThrow(
       'SkillVersionAppended event is missing',
     )
+  })
+})
+
+describe('tryExtractSkillVersionAppendedEvent', () => {
+  const eventType = `${PKG}::skills::SkillVersionAppended`
+
+  it('returns parsed event when present', () => {
+    const tx = makeTx(eventType, {
+      skills_id: addr('1'),
+      soul_id: addr('2'),
+      skill_name: 'reporter',
+      version_index: 0,
+      is_public: true,
+      created_at_ms: '1700000000000',
+      blob_object_id: addr('3'),
+    })
+    expect(tryExtractSkillVersionAppendedEvent(tx, PKG)).toEqual({
+      skillsId: addr('1'),
+      soulId: addr('2'),
+      skillName: 'reporter',
+      versionIndex: 0,
+      visibility: 'public',
+      createdAtMs: 1700000000000,
+      blobObjectId: addr('3'),
+    })
+  })
+
+  it('returns null when event is missing', () => {
+    expect(tryExtractSkillVersionAppendedEvent(makeEmptyTx(), PKG)).toBeNull()
   })
 })
 
