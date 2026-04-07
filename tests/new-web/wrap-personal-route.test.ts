@@ -45,7 +45,7 @@ vi.mock('@web/lib/services/seal-crypto', () => ({
 
 vi.mock('@/lib/soulidity/events', () => ({
   extractSoulMintedToKioskEvent: mockedExtractSoulMintedToKioskEvent,
-  extractMemoryEntryAppendedEvent: mockedExtractMemoryEntryAppendedEvent,
+  tryExtractMemoryEntryAppendedEvent: mockedExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent: mockedExtractSkillVersionAppendedEvent,
 }))
 
