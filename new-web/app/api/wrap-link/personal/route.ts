@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { extractSoulMintedToKioskEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
@@ -63,6 +64,28 @@ export async function POST(request: Request) {
     }
 
     const minted = extractSoulMintedToKioskEvent(transaction, packageId)
+    const rawSoulEnvelope = typeof body?.sealSidecar === 'string' ? body.sealSidecar : null
+    const rawSkillsEnvelope = typeof body?.skillsSealSidecar === 'string' ? body.skillsSealSidecar : null
+
+    let soulSidecar = null
+    let skillsSidecar = null
+    try {
+      const builtSidecars = await buildSyncSealSidecars({
+        packageId,
+        soulObjectId: minted.soulId,
+        stateObjectId: minted.stateId,
+        rawSoulEnvelope,
+        rawSkillsEnvelope,
+      })
+      soulSidecar = builtSidecars.soulSidecar
+      skillsSidecar = builtSidecars.skillsSidecar
+    } catch (error) {
+      if (error instanceof SealSidecarSyncConfigError) {
+        return NextResponse.json({ error: error.message }, { status: 503 })
+      }
+      throw error
+    }
+
     const mirrored = await syncSoulProjectionFromChain({
       packageId,
       soulObjectId: minted.soulId,
@@ -72,11 +95,8 @@ export async function POST(request: Request) {
       tags: parseStringArray(body?.tags, 12),
       previewImages: parseStringArray(body?.previewImages, 8),
       readme: typeof body?.readme === 'string' ? body.readme : null,
-      sealSidecar: body?.sealSidecar && typeof body.sealSidecar === 'object' ? body.sealSidecar as never : null,
-      latestSkillVersionSealSidecar:
-        body?.skillsSealSidecar && typeof body.skillsSealSidecar === 'object'
-          ? body.skillsSealSidecar as never
-          : null,
+      sealSidecar: soulSidecar,
+      latestSkillVersionSealSidecar: skillsSidecar,
       creatorMemberId: auth.identity.memberId,
       currentOwnerMemberId: auth.identity.memberId,
     })

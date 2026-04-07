@@ -53,6 +53,28 @@ export function buildPersonalJoinSoulTx(params: PersonalJoinTxParams) {
     buyerKioskId: params.currentKioskId,
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
+
+  // Place the source NFT into the personal kiosk first (contract requires it).
+  // PersonalKioskCap wraps KioskOwnerCap — use borrow_val/return_val to extract it for kiosk::place.
+  const kioskPackageId = process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID?.trim() || '0x2'
+  const [kioskOwnerCap, borrowHotPotato] = tx.moveCall({
+    target: `${kioskPackageId}::personal_kiosk::borrow_val`,
+    arguments: [personalKiosk.buyerKioskCap],
+  })
+  tx.moveCall({
+    target: '0x2::kiosk::place',
+    typeArguments: [params.sourceObjectType],
+    arguments: [
+      personalKiosk.buyerKiosk,
+      kioskOwnerCap,
+      tx.object(params.sourceObjectId),
+    ],
+  })
+  tx.moveCall({
+    target: `${kioskPackageId}::personal_kiosk::return_val`,
+    arguments: [personalKiosk.buyerKioskCap, kioskOwnerCap, borrowHotPotato],
+  })
+
   tx.moveCall({
     target: `${packageId}::market::mint_joined_in_personal_kiosk`,
     typeArguments: [params.sourceObjectType],

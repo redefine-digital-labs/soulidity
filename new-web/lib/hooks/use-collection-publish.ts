@@ -201,6 +201,20 @@ async function resolvePersonalKiosk(headers: Record<string, string>, walletAddre
   return res.json()
 }
 
+const MIME_MAP: Record<string, string> = {
+  '.md': 'text/markdown', '.txt': 'text/plain',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp', '.gif': 'image/gif',
+  '.json': 'application/json', '.zip': 'application/zip',
+}
+
+function withMime(file: File): File {
+  const ext = file.name.includes('.') ? '.' + file.name.split('.').pop()!.toLowerCase() : ''
+  const expected = MIME_MAP[ext]
+  if (!expected || file.type === expected) return file
+  return new File([file], file.name, { type: expected })
+}
+
 async function uploadFile(
   file: File,
   type: 'public' | 'encrypted',
@@ -208,7 +222,7 @@ async function uploadFile(
   sendObjectTo?: string,
 ) {
   const formData = new FormData()
-  formData.append('file', file)
+  formData.append('file', withMime(file))
   formData.append('type', type)
   if (sendObjectTo) formData.append('sendObjectTo', sendObjectTo)
   const res = await fetch('/api/souls/upload', { method: 'POST', headers, body: formData })

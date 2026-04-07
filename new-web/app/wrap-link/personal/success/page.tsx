@@ -1,78 +1,105 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { FlowBar } from '@/components/nav/flow-bar'
+import { PageContainer } from '@/components/layout/page-container'
+import { buttonStyles } from '@/components/ui/button'
+import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 
-function FlowBar({ steps, current }: { steps: string[]; current: number }) {
+export default function WrapSuccessPage() {
+  const router = useRouter()
+  const ctx = useWrap()
+
+  useEffect(() => {
+    if (!ctx.publishResult) {
+      router.replace('/wrap-link/personal')
+    }
+  }, [ctx.publishResult, router])
+
+  if (!ctx.publishResult) return null
+
+  const { txDigest, soulOnChainId, provenanceKind, originRef } = ctx.publishResult
+  const nft = ctx.selectedNft
+
   return (
-    <div className="bg-card2 border-b border-border px-4 sm:px-8 py-2.5 flex items-center overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-      {steps.map((label, i) => (
-        <span key={label} className="contents">
-          {i > 0 && <span className="mx-2.5 text-border text-[11px]">›</span>}
-          <div className="flex items-center gap-2 text-xs">
-            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-              i < current ? 'bg-success' : i === current ? 'bg-purple' : 'bg-border'
-            }`}>{i < current ? '✓' : i + 1}</div>
-            <span className={i < current ? 'text-success' : i === current ? 'text-foreground font-semibold' : 'text-muted'}>
-              {label}
-            </span>
+    <>
+      <FlowBar steps={wrapSteps} currentStep={3} />
+      <div className="relative z-10 border-t border-purple/20">
+        <PageContainer size="sm" className="py-12 text-center space-y-6">
+          {/* Icon */}
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-teal/15 text-3xl">
+            🔗
           </div>
-        </span>
-      ))}
-    </div>
-  )
-}
 
-export default function PersonalSuccessPage() {
-  return (
-    <div className="relative z-10">
-      <FlowBar steps={['Select NFT', 'Configure', 'Preview', 'Gas', 'Success']} current={5} />
+          <div>
+            <h1 className="font-display text-2xl font-bold text-foreground">Soul Expanded</h1>
+            <p className="mt-2 text-sm text-muted">
+              Your NFT now carries a Soul layer on Soulidity. The original NFT is unchanged.
+            </p>
+          </div>
 
-      <div className="max-w-[540px] mx-auto px-6 py-12 text-center">
-        <div className="text-6xl mb-4">🎉</div>
-        <p className="text-[11px] font-bold text-success uppercase tracking-[0.1em] mb-2">Transaction Confirmed</p>
-        <h1 className="font-display text-3xl font-bold mb-2">Soul Layer Live!</h1>
-        <p className="text-muted text-sm mb-8">Your Soul layer is now anchored on Sui. CyberBeast #0042 has a living Soul.</p>
+          {/* Confirmation card */}
+          <div className="mx-auto max-w-md rounded-2xl border border-purple/30 bg-card2/55 p-5 text-left">
+            <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-muted">
+              On-Chain Confirmation
+            </p>
 
-        <div className="bg-card border border-border rounded-xl p-5 mb-8 text-left">
-          <div className="flex flex-col gap-2.5 text-sm">
-            <div className="flex justify-between py-2 border-b border-border">
-              <span className="text-muted">NFT</span>
-              <span className="font-semibold">CyberBeast #0042</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-border">
-              <span className="text-muted">Soul Object ID</span>
-              <span className="font-mono text-xs text-teal">0xf3a1…b8d2</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-border">
-              <span className="text-muted">Wrap Type</span>
-              <span className="text-purple text-xs font-semibold">Personal</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-border">
-              <span className="text-muted">Activation Policy</span>
-              <span className="text-xs">🔑 Holder-only</span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-muted">Status</span>
-              <span className="text-success text-xs font-semibold">● Active</span>
+            {nft && (
+              <div className="flex items-center gap-3 mb-4">
+                {nft.imageUrl ? (
+                  <img src={nft.imageUrl} alt={nft.name} className="h-10 w-10 shrink-0 rounded-lg border border-border/50 object-cover" />
+                ) : (
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-sm font-bold text-purple">
+                    {nft.name.slice(0, 2).toUpperCase()}
+                  </span>
+                )}
+                <span className="text-sm font-bold text-foreground">{nft.name}</span>
+              </div>
+            )}
+
+            <div className="space-y-2.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-muted">Soul Object</span>
+                <span className="font-mono text-teal">{soulOnChainId.slice(0, 10)}…{soulOnChainId.slice(-4)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted">Wrap Type</span>
+                <span className="font-semibold text-foreground">{provenanceKind}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted">Origin Ref</span>
+                <span className="font-mono text-foreground">{originRef.slice(0, 16)}…</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted">TX</span>
+                <span className="font-mono text-teal">{txDigest.slice(0, 12)}…</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted">Status</span>
+                <span className="font-semibold text-teal">Live on Sui</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex gap-3">
-          <Link
-            href="/my-souls"
-            className="flex-1 block bg-transparent border border-border text-foreground font-semibold text-sm text-center px-5 py-3 rounded-xl hover:border-purple transition"
-          >
-            My Souls
-          </Link>
-          <Link
-            href="/market"
-            className="flex-1 block bg-purple text-white font-bold text-sm text-center px-5 py-3 rounded-xl hover:opacity-90 transition"
-          >
-            View Market →
-          </Link>
-        </div>
+          {/* Actions */}
+          <div className="flex items-center justify-center gap-3">
+            <Link
+              href="/my-souls"
+              className={buttonStyles({ variant: 'primary', size: 'lg', className: 'rounded-xl' })}
+            >
+              View My Souls
+            </Link>
+            <Link
+              href="/market"
+              className={buttonStyles({ variant: 'outline', size: 'lg', className: 'rounded-xl border-border text-foreground hover:border-purple' })}
+            >
+              Explore Market
+            </Link>
+          </div>
+        </PageContainer>
       </div>
-    </div>
+    </>
   )
 }
