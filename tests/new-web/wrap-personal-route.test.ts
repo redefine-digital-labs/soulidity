@@ -21,6 +21,7 @@ const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
 const mockedReadTransactionSender = vi.hoisted(() => vi.fn())
 const mockedWaitForTransactionBestEffort = vi.hoisted(() => vi.fn())
 const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
+const mockedResolveWalrusBlobId = vi.hoisted(() => vi.fn())
 const mockedAssertTransactionSender = vi.hoisted(() => vi.fn())
 const mockedRequireHumanWalletIdentity = vi.hoisted(() => vi.fn())
 
@@ -79,6 +80,7 @@ vi.mock('@/lib/soulidity/queries', () => ({
   readTransactionSender: mockedReadTransactionSender,
   waitForTransactionBestEffort: mockedWaitForTransactionBestEffort,
   getSoulStateObject: mockedGetSoulStateObject,
+  resolveWalrusBlobId: mockedResolveWalrusBlobId,
 }))
 
 vi.mock('@/lib/soulidity/server', () => ({
@@ -154,6 +156,7 @@ describe('POST /api/wrap-link/personal', () => {
       packageId: RESOLVED_PACKAGE_ID,
       skillsId: SKILLS_ID,
     })
+    mockedResolveWalrusBlobId.mockResolvedValue('walrus-blob-id-mock')
     mockedUnsealDekEnvelope.mockImplementation((envelope: string) => ({
       dek: Uint8Array.from({ length: 32 }, () => (
         envelope === 'skills-envelope' ? 3 : envelope === 'memory-envelope' ? 2 : 1
