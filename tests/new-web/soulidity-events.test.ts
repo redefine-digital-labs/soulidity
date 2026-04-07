@@ -52,6 +52,7 @@ import {
   extractSoulGrantRevokedEvent,
   extractMemoryEntryAppendedEvent,
   extractSkillVersionAppendedEvent,
+  extractSkillVersionDeletedEvent,
   isGrantActive,
 } from '../../new-web/lib/soulidity/events'
 
@@ -314,32 +315,29 @@ describe('extractMemoryEntryAppendedEvent', () => {
   it('extracts fields from a valid event', () => {
     const tx = makeTx(eventType, {
       memory_id: addr('1'),
-      entry_id: addr('2'),
       soul_id: addr('3'),
-      index: 0,
+      timestamp_key: '1718452800000',
       writer: addr('4'),
       writer_kind: 1,
-      created_at_ms: '1700000000000',
+      created_at_ms: '1718452800000',
       blob_object_id: addr('5'),
     })
     expect(extractMemoryEntryAppendedEvent(tx, PKG)).toEqual({
       memoryId: addr('1'),
-      entryId: addr('2'),
       soulId: addr('3'),
-      index: 0,
+      timestampKey: 1718452800000,
       writerAddress: addr('4'),
       writerKind: 1,
-      createdAtMs: 1700000000000,
+      createdAtMs: 1718452800000,
       blobObjectId: addr('5'),
     })
   })
 
-  it('handles object-style blob_object_id', () => {
+  it('handles object-style blob_object_id and numeric timestamp values', () => {
     const tx = makeTx(eventType, {
       memory_id: addr('1'),
-      entry_id: addr('2'),
       soul_id: addr('3'),
-      index: '5',
+      timestamp_key: 123,
       writer: addr('4'),
       writer_kind: 2,
       created_at_ms: 1700000000000,
@@ -347,7 +345,7 @@ describe('extractMemoryEntryAppendedEvent', () => {
     })
     const result = extractMemoryEntryAppendedEvent(tx, PKG)
     expect(result.blobObjectId).toBe(addr('5'))
-    expect(result.index).toBe(5)
+    expect(result.timestampKey).toBe(123)
   })
 
   it('throws when event is missing', () => {
@@ -360,64 +358,69 @@ describe('extractMemoryEntryAppendedEvent', () => {
 describe('extractSkillVersionAppendedEvent', () => {
   const eventType = `${PKG}::skills::SkillVersionAppended`
 
-  it('extracts a public skill version with previous version', () => {
+  it('extracts a public skill slot', () => {
     const tx = makeTx(eventType, {
       skills_id: addr('1'),
       soul_id: addr('2'),
-      version_id: addr('3'),
-      version: 2,
-      previous_version_id: { vec: [addr('4')] },
+      skill_name: 'reporter',
+      version_index: 2,
       is_public: true,
       created_at_ms: '1700000000000',
-      blob_object_id: addr('5'),
+      blob_object_id: addr('3'),
     })
     expect(extractSkillVersionAppendedEvent(tx, PKG)).toEqual({
       skillsId: addr('1'),
       soulId: addr('2'),
-      versionId: addr('3'),
-      versionNumber: 2,
-      previousVersionId: addr('4'),
+      skillName: 'reporter',
+      versionIndex: 2,
       visibility: 'public',
       createdAtMs: 1700000000000,
-      blobObjectId: addr('5'),
+      blobObjectId: addr('3'),
     })
   })
 
-  it('extracts a private skill version with no previous version', () => {
+  it('extracts a private skill slot', () => {
     const tx = makeTx(eventType, {
       skills_id: addr('1'),
       soul_id: addr('2'),
-      version_id: addr('3'),
-      version: 0,
-      previous_version_id: { vec: [] },
+      skill_name: 'planner',
+      version_index: '0',
       is_public: false,
       created_at_ms: '1700000000000',
-      blob_object_id: addr('5'),
+      blob_object_id: addr('3'),
     })
     const result = extractSkillVersionAppendedEvent(tx, PKG)
     expect(result.visibility).toBe('private')
-    expect(result.previousVersionId).toBeNull()
-    expect(result.versionNumber).toBe(0)
-  })
-
-  it('handles null previous_version_id', () => {
-    const tx = makeTx(eventType, {
-      skills_id: addr('1'),
-      soul_id: addr('2'),
-      version_id: addr('3'),
-      version: 1,
-      previous_version_id: null,
-      is_public: true,
-      created_at_ms: '1700000000000',
-      blob_object_id: addr('5'),
-    })
-    expect(extractSkillVersionAppendedEvent(tx, PKG).previousVersionId).toBeNull()
+    expect(result.skillName).toBe('planner')
+    expect(result.versionIndex).toBe(0)
   })
 
   it('throws when event is missing', () => {
     expect(() => extractSkillVersionAppendedEvent(makeEmptyTx(), PKG)).toThrow(
       'SkillVersionAppended event is missing',
     )
+  })
+})
+
+describe('extractSkillVersionDeletedEvent', () => {
+  const eventType = `${PKG}::skills::SkillVersionDeleted`
+
+  it('extracts composite skill coordinates from a delete event', () => {
+    const tx = makeTx(eventType, {
+      skills_id: addr('1'),
+      soul_id: addr('2'),
+      skill_name: 'planner',
+      version_index: 4,
+      deleted_by: addr('3'),
+    })
+
+    expect(extractSkillVersionDeletedEvent(tx, PKG)).toEqual({
+      skillsId: addr('1'),
+      soulId: addr('2'),
+      skillName: 'planner',
+      versionIndex: 4,
+      deletedByAddress: addr('3'),
+    })
   })
 })
 

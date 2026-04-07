@@ -69,6 +69,7 @@ describe('syncSoulProjectionFromChain', () => {
       currentOwnerAddress: '0xowner',
       currentKioskId: '0xkiosk',
       creatorRoyaltyBps: 500,
+      memoryId: '0xmemory',
       collectionId: null,
       grantCapacity: 3,
       activeGrantCount: 1,
@@ -92,26 +93,11 @@ describe('syncSoulProjectionFromChain', () => {
     })
     mockedUpsertSoulProjection.mockResolvedValue({
       onChainId: '0xsoul',
-      latestSkillVersionOnChainId: '0xversion1',
-    })
-    mockedUpsertSkillVersionProjection.mockResolvedValue({
-      versionOnChainId: '0xversion1',
     })
   })
 
-  it('upserts the latest mirrored skill version alongside the soul projection', async () => {
+  it('upserts only the soul projection and stops mirroring a synthetic latest skill version pointer', async () => {
     const { syncSoulProjectionFromChain } = await import('../../new-web/lib/soulidity/mirror/sync-helpers')
-    const skillSealSidecar = {
-      version: 1,
-      mode: 'seal-envelope',
-      documentId: '0x1234',
-      encryptedDek: 'ZW5jcnlwdGVk',
-      iv: 'AAAAAAAAAAAAAAAA',
-      cipher: 'AES-GCM-256',
-      mimeType: 'text/markdown',
-      fileName: 'skills.md',
-      contentHash: 'a'.repeat(64),
-    } as const
 
     await syncSoulProjectionFromChain({
       packageId: '0xpackage',
@@ -121,17 +107,10 @@ describe('syncSoulProjectionFromChain', () => {
       category: 'agents',
       tags: ['alpha'],
       previewImages: [],
-      latestSkillVersionSealSidecar: skillSealSidecar,
     })
 
-    expect(mockedUpsertSoulProjection).toHaveBeenCalledWith(expect.objectContaining({
-      latestSkillVersionOnChainId: '0xversion1',
-    }))
-    expect(mockedUpsertSkillVersionProjection).toHaveBeenCalledWith({
-      version: expect.objectContaining({ objectId: '0xversion1' }),
-      soulOnChainId: '0xsoul',
-      skillsOnChainId: '0xskills',
-      sealSidecar: skillSealSidecar,
-    })
+    expect(mockedUpsertSoulProjection.mock.calls[0][0]).not.toHaveProperty('latestSkillVersionOnChainId')
+    expect(mockedGetSkillVersionObject).not.toHaveBeenCalled()
+    expect(mockedUpsertSkillVersionProjection).not.toHaveBeenCalled()
   })
 })

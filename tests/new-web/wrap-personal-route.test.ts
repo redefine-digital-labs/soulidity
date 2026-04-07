@@ -5,10 +5,15 @@ const mockedUnsealDekEnvelope = vi.hoisted(() => vi.fn())
 const mockedGetSealRuntimeConfig = vi.hoisted(() => vi.fn())
 const mockedCreateSealClient = vi.hoisted(() => vi.fn())
 const mockedCreateSealEnvelopeSidecar = vi.hoisted(() => vi.fn())
+const mockedCreateMemoryEntrySealEnvelopeSidecar = vi.hoisted(() => vi.fn())
 const mockedCreateSkillVersionSealEnvelopeSidecar = vi.hoisted(() => vi.fn())
 const mockedExtractSoulMintedToKioskEvent = vi.hoisted(() => vi.fn())
+const mockedExtractMemoryEntryAppendedEvent = vi.hoisted(() => vi.fn())
+const mockedExtractSkillVersionAppendedEvent = vi.hoisted(() => vi.fn())
 const mockedGetRequiredSoulidityEnv = vi.hoisted(() => vi.fn())
 const mockedSyncSoulProjectionFromChain = vi.hoisted(() => vi.fn())
+const mockedUpsertMemoryEntryProjection = vi.hoisted(() => vi.fn())
+const mockedUpsertSkillVersionProjection = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulidityTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulidityTxSync = vi.hoisted(() => vi.fn())
 const mockedParseRequiredTxDigest = vi.hoisted(() => vi.fn())
@@ -16,7 +21,6 @@ const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
 const mockedReadTransactionSender = vi.hoisted(() => vi.fn())
 const mockedWaitForTransactionBestEffort = vi.hoisted(() => vi.fn())
 const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
-const mockedGetSoulSkillsObject = vi.hoisted(() => vi.fn())
 const mockedAssertTransactionSender = vi.hoisted(() => vi.fn())
 const mockedRequireHumanWalletIdentity = vi.hoisted(() => vi.fn())
 
@@ -35,11 +39,14 @@ vi.mock('@web/lib/services/seal', () => ({
 
 vi.mock('@web/lib/services/seal-crypto', () => ({
   createSealEnvelopeSidecar: mockedCreateSealEnvelopeSidecar,
+  createMemoryEntrySealEnvelopeSidecar: mockedCreateMemoryEntrySealEnvelopeSidecar,
   createSkillVersionSealEnvelopeSidecar: mockedCreateSkillVersionSealEnvelopeSidecar,
 }))
 
 vi.mock('@/lib/soulidity/events', () => ({
   extractSoulMintedToKioskEvent: mockedExtractSoulMintedToKioskEvent,
+  extractMemoryEntryAppendedEvent: mockedExtractMemoryEntryAppendedEvent,
+  extractSkillVersionAppendedEvent: mockedExtractSkillVersionAppendedEvent,
 }))
 
 vi.mock('@/lib/soulidity/env', () => ({
@@ -48,6 +55,14 @@ vi.mock('@/lib/soulidity/env', () => ({
 
 vi.mock('@/lib/soulidity/mirror/sync-helpers', () => ({
   syncSoulProjectionFromChain: mockedSyncSoulProjectionFromChain,
+}))
+
+vi.mock('@/lib/soulidity/mirror/upsert-memory', () => ({
+  upsertMemoryEntryProjection: mockedUpsertMemoryEntryProjection,
+}))
+
+vi.mock('@/lib/soulidity/mirror/upsert-skill', () => ({
+  upsertSkillVersionProjection: mockedUpsertSkillVersionProjection,
 }))
 
 vi.mock('@/lib/soulidity/mirror/tx-sync', () => ({
@@ -64,7 +79,6 @@ vi.mock('@/lib/soulidity/queries', () => ({
   readTransactionSender: mockedReadTransactionSender,
   waitForTransactionBestEffort: mockedWaitForTransactionBestEffort,
   getSoulStateObject: mockedGetSoulStateObject,
-  getSoulSkillsObject: mockedGetSoulSkillsObject,
 }))
 
 vi.mock('@/lib/soulidity/server', () => ({
@@ -79,7 +93,6 @@ const SOUL_ID = `0x${'2'.repeat(64)}`
 const STATE_ID = `0x${'3'.repeat(64)}`
 const MEMORY_ID = `0x${'4'.repeat(64)}`
 const SKILLS_ID = `0x${'5'.repeat(64)}`
-const SKILL_VERSION_ID = `0x${'6'.repeat(64)}`
 const WALLET_ADDRESS = `0x${'1'.repeat(64)}`
 
 function makeRequest(body: Record<string, unknown>) {
@@ -114,6 +127,24 @@ describe('POST /api/wrap-link/personal', () => {
       stateId: STATE_ID,
       memoryId: MEMORY_ID,
     })
+    mockedExtractMemoryEntryAppendedEvent.mockReturnValue({
+      memoryId: MEMORY_ID,
+      soulId: SOUL_ID,
+      timestampKey: 1710000000000,
+      writerAddress: WALLET_ADDRESS,
+      writerKind: 0,
+      createdAtMs: 1710000000000,
+      blobObjectId: `0x${'7'.repeat(64)}`,
+    })
+    mockedExtractSkillVersionAppendedEvent.mockReturnValue({
+      skillsId: SKILLS_ID,
+      soulId: SOUL_ID,
+      skillName: 'reporter',
+      versionIndex: 0,
+      visibility: 'private',
+      createdAtMs: 1710000000001,
+      blobObjectId: `0x${'8'.repeat(64)}`,
+    })
     mockedGetSealRuntimeConfig.mockReturnValue({
       threshold: 2,
       serverConfigs: [{ objectId: '0xserver', weight: 1 }],
@@ -123,15 +154,20 @@ describe('POST /api/wrap-link/personal', () => {
       packageId: RESOLVED_PACKAGE_ID,
       skillsId: SKILLS_ID,
     })
-    mockedGetSoulSkillsObject.mockResolvedValue({
-      latestVersionId: SKILL_VERSION_ID,
-    })
     mockedUnsealDekEnvelope.mockImplementation((envelope: string) => ({
-      dek: Uint8Array.from({ length: 32 }, envelope === 'skills-envelope' ? () => 2 : () => 1),
-      iv: Uint8Array.from({ length: 12 }, envelope === 'skills-envelope' ? () => 4 : () => 3),
-      contentHash: envelope === 'skills-envelope' ? 'b'.repeat(64) : 'a'.repeat(64),
+      dek: Uint8Array.from({ length: 32 }, () => (
+        envelope === 'skills-envelope' ? 3 : envelope === 'memory-envelope' ? 2 : 1
+      )),
+      iv: Uint8Array.from({ length: 12 }, () => (
+        envelope === 'skills-envelope' ? 5 : envelope === 'memory-envelope' ? 4 : 3
+      )),
+      contentHash: envelope === 'skills-envelope'
+        ? 'b'.repeat(64)
+        : envelope === 'memory-envelope'
+          ? 'c'.repeat(64)
+          : 'a'.repeat(64),
       mimeType: envelope === 'skills-envelope' ? 'application/zip' : 'text/markdown',
-      fileName: envelope === 'skills-envelope' ? 'skills.zip' : 'character.md',
+      fileName: envelope === 'skills-envelope' ? 'skills.zip' : envelope === 'memory-envelope' ? 'memory.md' : 'character.md',
     }))
     mockedCreateSealEnvelopeSidecar.mockResolvedValue({
       version: 1,
@@ -144,6 +180,17 @@ describe('POST /api/wrap-link/personal', () => {
       fileName: 'character.md',
       contentHash: 'a'.repeat(64),
     })
+    mockedCreateMemoryEntrySealEnvelopeSidecar.mockResolvedValue({
+      version: 1,
+      mode: 'seal-envelope',
+      documentId: '0xmemory-doc',
+      encryptedDek: 'memory-encrypted',
+      iv: 'memory-iv',
+      cipher: 'AES-GCM-256',
+      mimeType: 'text/markdown',
+      fileName: 'memory.md',
+      contentHash: 'c'.repeat(64),
+    })
     mockedCreateSkillVersionSealEnvelopeSidecar.mockResolvedValue({
       version: 1,
       mode: 'seal-envelope',
@@ -155,6 +202,8 @@ describe('POST /api/wrap-link/personal', () => {
       fileName: 'skills.zip',
       contentHash: 'b'.repeat(64),
     })
+    mockedUpsertMemoryEntryProjection.mockResolvedValue(undefined)
+    mockedUpsertSkillVersionProjection.mockResolvedValue(undefined)
     mockedSyncSoulProjectionFromChain.mockResolvedValue({
       onChainId: SOUL_ID,
       provenanceKind: 'personal-join',
@@ -173,21 +222,32 @@ describe('POST /api/wrap-link/personal', () => {
       txDigest: TX_DIGEST,
       category: 'personal-join',
       sealSidecar: 'char-envelope',
+      memorySealSidecar: 'memory-envelope',
       skillsSealSidecar: 'skills-envelope',
     })
 
     expect(response.status).toBe(200)
     expect(mockedUnsealDekEnvelope).toHaveBeenNthCalledWith(1, 'char-envelope')
-    expect(mockedUnsealDekEnvelope).toHaveBeenNthCalledWith(2, 'skills-envelope')
+    expect(mockedUnsealDekEnvelope).toHaveBeenNthCalledWith(2, 'memory-envelope')
+    expect(mockedUnsealDekEnvelope).toHaveBeenNthCalledWith(3, 'skills-envelope')
     expect(mockedCreateSealEnvelopeSidecar).toHaveBeenCalledWith(expect.objectContaining({
       packageId: RESOLVED_PACKAGE_ID,
       soulObjectId: SOUL_ID,
       mimeType: 'text/markdown',
       fileName: 'character.md',
     }))
+    expect(mockedCreateMemoryEntrySealEnvelopeSidecar).toHaveBeenCalledWith(expect.objectContaining({
+      packageId: RESOLVED_PACKAGE_ID,
+      memoryObjectId: MEMORY_ID,
+      timestampKey: 1710000000000,
+      mimeType: 'text/markdown',
+      fileName: 'memory.md',
+    }))
     expect(mockedCreateSkillVersionSealEnvelopeSidecar).toHaveBeenCalledWith(expect.objectContaining({
       packageId: RESOLVED_PACKAGE_ID,
-      versionObjectId: SKILL_VERSION_ID,
+      skillsObjectId: SKILLS_ID,
+      skillName: 'reporter',
+      versionIndex: 0,
       mimeType: 'application/zip',
       fileName: 'skills.zip',
     }))
@@ -196,7 +256,12 @@ describe('POST /api/wrap-link/personal', () => {
       stateObjectId: STATE_ID,
       memoryObjectId: MEMORY_ID,
       sealSidecar: expect.objectContaining({ documentId: '0xsoul-doc' }),
-      latestSkillVersionSealSidecar: expect.objectContaining({ documentId: '0xskill-doc' }),
+    }))
+    expect(mockedUpsertMemoryEntryProjection).toHaveBeenCalledWith(expect.objectContaining({
+      sealSidecar: expect.objectContaining({ documentId: '0xmemory-doc' }),
+    }))
+    expect(mockedUpsertSkillVersionProjection).toHaveBeenCalledWith(expect.objectContaining({
+      sealSidecar: expect.objectContaining({ documentId: '0xskill-doc' }),
     }))
   })
 

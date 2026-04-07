@@ -422,6 +422,7 @@ describe('list.ts — buildListCollectionTx', () => {
 // delist.ts — buildDelistSoulTx, buildDelistCollectionTx
 // =========================================================================
 import { buildDelistSoulTx, buildDelistCollectionTx } from '../../new-web/lib/soulidity/tx/delist'
+import { buildUpdateListingPriceTx } from '../../new-web/lib/soulidity/tx/update-price'
 
 describe('delist.ts — buildDelistSoulTx', () => {
   const VALID_PARAMS = {
@@ -446,6 +447,35 @@ describe('delist.ts — buildDelistCollectionTx', () => {
   it('returns a Transaction with valid params', () => {
     const tx = buildDelistCollectionTx(VALID_PARAMS)
     expect(tx).toBeInstanceOf(Transaction)
+  })
+})
+
+describe('update-price.ts — buildUpdateListingPriceTx', () => {
+  const VALID_PARAMS = {
+    currentKioskId: OBJ('22'),
+    currentKioskCapOnChainId: OBJ('33'),
+    stateObjectId: OBJ('11'),
+    soulObjectId: OBJ('44'),
+    listingObjectId: OBJ('55'),
+    newPriceAtomic: 2_000_000n,
+  }
+
+  it('ensures the kiosk is registered again before relisting', () => {
+    const tx = buildUpdateListingPriceTx(VALID_PARAMS)
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(commands).toEqual([
+      'cancel_soul_listing',
+      'ensure_personal_kiosk_registered',
+      'list_soul_fixed_price',
+    ])
+  })
+
+  it('throws when newPriceAtomic is zero', () => {
+    expect(() => buildUpdateListingPriceTx({ ...VALID_PARAMS, newPriceAtomic: 0n }))
+      .toThrow('newPriceAtomic must be positive')
   })
 })
 
@@ -638,6 +668,7 @@ describe('skills.ts — buildAppendSkillVersionTx', () => {
   const VALID_PARAMS = {
     stateObjectId: OBJ('11'),
     skillsObjectId: OBJ('s1'),
+    skillName: 'reporter',
     blobObjectId: OBJ('b1'),
     visibility: 'public' as const,
   }
@@ -668,7 +699,8 @@ describe('skills.ts — buildDeleteSkillVersionTx', () => {
   const VALID_PARAMS = {
     stateObjectId: OBJ('11'),
     skillsObjectId: OBJ('s1'),
-    versionObjectId: OBJ('v1'),
+    skillName: 'reporter',
+    versionIndex: 2,
   }
 
   it('returns a Transaction as owner (no grant)', () => {

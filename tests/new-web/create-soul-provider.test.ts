@@ -18,20 +18,21 @@ const baseUploadResults: UploadResults = {
     blobObjectId: '0xchar',
     contentHash: 'char-hash',
     blobUrl: 'https://example.com/char',
-    sealDekEnvelope: { kind: 'char' },
+    sealDekEnvelope: 'char-envelope',
   },
   memorySeed: {
     blobId: 'memory-blob',
     blobObjectId: '0xmemory',
     contentHash: 'memory-hash',
     blobUrl: 'https://example.com/memory',
+    sealDekEnvelope: 'memory-envelope',
   },
   skillsFile: {
     blobId: 'skills-blob',
     blobObjectId: '0xskills',
     contentHash: 'skills-hash',
     blobUrl: 'https://example.com/skills',
-    sealDekEnvelope: { kind: 'skills' },
+    sealDekEnvelope: 'skills-envelope',
   },
 }
 

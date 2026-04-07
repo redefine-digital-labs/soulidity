@@ -72,10 +72,8 @@ function makeSoulMemoryObject(overrides?: Partial<SoulMemoryObject>): SoulMemory
     objectId: '0xmemory',
     packageId: '0xpkg',
     soulId: '0xsoul123',
-    nextIndex: 0,
     entryCount: 0,
-    lastEntryId: null,
-    lastEntryCreatedAtMs: null,
+    entriesTableId: '0xtable',
     ...overrides,
   }
 }
@@ -126,28 +124,26 @@ function makeCollectionRightObject(overrides?: Partial<SoulCollectionRightObject
 
 function makeMemoryEntryObject(overrides?: Partial<MemoryEntryObject>): MemoryEntryObject {
   return {
-    objectId: '0xentry1',
     packageId: '0xpkg',
+    memoryId: '0xmemory',
     soulId: '0xsoul123',
-    index: 0,
+    timestampKey: 1710000000000,
     writerAddress: '0xwriter',
     writerKind: 'owner',
     createdAtMs: 1710000000000,
     blobObjectId: '0xblobobj',
     blobId: 'blob-id-entry',
-    previousEntryId: null,
     ...overrides,
   }
 }
 
 function makeSkillVersionObject(overrides?: Partial<SkillVersionObject>): SkillVersionObject {
   return {
-    objectId: '0xver1',
     packageId: '0xpkg',
     soulId: '0xsoul123',
     skillsId: '0xskills',
-    versionNumber: 1,
-    previousVersionId: null,
+    skillName: 'reporter',
+    versionIndex: 1,
     visibility: 'public',
     deleted: false,
     createdAtMs: 1710000000000,
@@ -316,7 +312,6 @@ describe('upsertSoulProjection', () => {
       state,
       memory,
       currentKioskCapOnChainId: '0xkioskcap',
-      latestSkillVersionOnChainId: '0xver1',
       creatorMemberId: 'member-creator',
       currentOwnerMemberId: 'member-owner',
       category: 'agents',
@@ -348,7 +343,7 @@ describe('upsertSoulProjection', () => {
       expect(section.grantCapacity).toBe(3)
       expect(section.activeGrantCount).toBe(0)
       expect(section.skillsOnChainId).toBe('0xskills')
-      expect(section.latestSkillVersionOnChainId).toBe('0xver1')
+      expect(section).not.toHaveProperty('latestSkillVersionOnChainId')
       expect(section.category).toBe('agents')
       expect(section.tags).toEqual(['ai', 'bot'])
       expect(section.previewImages).toEqual(['img1', 'img2'])
@@ -376,7 +371,7 @@ describe('upsertSoulProjection', () => {
     const call = mockedPrisma.soulAsset.upsert.mock.calls[0][0]
     expect(call.create.creatorMemberId).toBeNull()
     expect(call.create.currentOwnerMemberId).toBeNull()
-    expect(call.create.latestSkillVersionOnChainId).toBeNull()
+    expect(call.create).not.toHaveProperty('latestSkillVersionOnChainId')
     expect(call.create.listingObjectOnChainId).toBeNull()
     expect(call.create.readme).toBeNull()
   })
@@ -711,67 +706,57 @@ describe('upsertCollectionProjection', () => {
 describe('upsertMemoryEntryProjection', () => {
   beforeEach(() => vi.resetAllMocks())
 
-  it('calls prisma.soulMemoryEntry.upsert with entry.objectId as unique key', async () => {
-    mockedPrisma.soulMemoryEntry.upsert.mockResolvedValue({ onChainId: '0xentry1' })
+  it('calls prisma.soulMemoryEntry.upsert with memoryOnChainId + timestampKey composite key', async () => {
+    mockedPrisma.soulMemoryEntry.upsert.mockResolvedValue({ id: 'memory-entry-1' })
 
     const { upsertMemoryEntryProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-memory')
 
     await upsertMemoryEntryProjection({
       entry: makeMemoryEntryObject(),
-      memoryOnChainId: '0xmemory',
+      sealSidecar: { version: 1, documentId: '0xmem-doc' },
     })
 
     expect(mockedPrisma.soulMemoryEntry.upsert).toHaveBeenCalledOnce()
     const call = mockedPrisma.soulMemoryEntry.upsert.mock.calls[0][0]
 
-    expect(call.where).toEqual({ onChainId: '0xentry1' })
-    expect(call.create.onChainId).toBe('0xentry1')
+    expect(call.where).toEqual({
+      memoryOnChainId_timestampKey: {
+        memoryOnChainId: '0xmemory',
+        timestampKey: BigInt(1710000000000),
+      },
+    })
   })
 
-  it('uses memoryOnChainId as FK (from params, not entry)', async () => {
-    mockedPrisma.soulMemoryEntry.upsert.mockResolvedValue({ onChainId: '0xentry1' })
+  it('maps timestampKey, writer fields, blob fields, and sealSidecar', async () => {
+    mockedPrisma.soulMemoryEntry.upsert.mockResolvedValue({ id: 'memory-entry-1' })
 
     const { upsertMemoryEntryProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-memory')
 
     await upsertMemoryEntryProjection({
-      entry: makeMemoryEntryObject(),
-      memoryOnChainId: '0xmemory_fk',
-    })
-
-    const call = mockedPrisma.soulMemoryEntry.upsert.mock.calls[0][0]
-    expect(call.create.memoryOnChainId).toBe('0xmemory_fk')
-    expect(call.update.memoryOnChainId).toBe('0xmemory_fk')
-  })
-
-  it('maps all entry fields correctly', async () => {
-    mockedPrisma.soulMemoryEntry.upsert.mockResolvedValue({ onChainId: '0xentry1' })
-
-    const { upsertMemoryEntryProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-memory')
-
-    const entry = makeMemoryEntryObject({
-      soulId: '0xsoul_abc',
-      index: 7,
-      writerAddress: '0xw',
-      writerKind: 'granted-agent',
-      blobObjectId: '0xblob_entry',
-      blobId: 'entry-blob-id',
-      createdAtMs: 1712345678000,
-    })
-
-    await upsertMemoryEntryProjection({
-      entry,
-      memoryOnChainId: '0xmemory',
+      entry: makeMemoryEntryObject({
+        memoryId: '0xmemory_fk',
+        soulId: '0xsoul_abc',
+        timestampKey: 1712345678000,
+        writerAddress: '0xw',
+        writerKind: 'granted-agent',
+        blobObjectId: '0xblob_entry',
+        blobId: 'entry-blob-id',
+        createdAtMs: 1712345678000,
+      }),
+      sealSidecar: { version: 1, documentId: '0xmem-doc' },
     })
 
     const call = mockedPrisma.soulMemoryEntry.upsert.mock.calls[0][0]
     for (const section of [call.create, call.update]) {
+      expect(section.memoryOnChainId).toBe('0xmemory_fk')
       expect(section.soulOnChainId).toBe('0xsoul_abc')
-      expect(section.entryIndex).toBe(7)
+      expect(section.timestampKey).toBe(BigInt(1712345678000))
       expect(section.writerAddress).toBe('0xw')
       expect(section.writerKind).toBe('granted-agent')
       expect(section.blobObjectId).toBe('0xblob_entry')
       expect(section.blobId).toBe('entry-blob-id')
       expect(section.createdAtMs).toBe(BigInt(1712345678000))
+      expect(section.sealSidecar).toEqual({ version: 1, documentId: '0xmem-doc' })
     }
   })
 })
@@ -782,8 +767,8 @@ describe('upsertMemoryEntryProjection', () => {
 describe('upsertSkillVersionProjection', () => {
   beforeEach(() => vi.resetAllMocks())
 
-  it('calls prisma.soulSkillVersionRecord.upsert with versionOnChainId as where key', async () => {
-    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ versionOnChainId: '0xver1' })
+  it('calls prisma.soulSkillVersionRecord.upsert with skillsOnChainId + skillName + versionIndex composite key', async () => {
+    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
     const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
 
@@ -796,19 +781,24 @@ describe('upsertSkillVersionProjection', () => {
     expect(mockedPrisma.soulSkillVersionRecord.upsert).toHaveBeenCalledOnce()
     const call = mockedPrisma.soulSkillVersionRecord.upsert.mock.calls[0][0]
 
-    expect(call.where).toEqual({ versionOnChainId: '0xver1' })
-    expect(call.create.versionOnChainId).toBe('0xver1')
+    expect(call.where).toEqual({
+      skillsOnChainId_skillName_versionIndex: {
+        skillsOnChainId: '0xskills',
+        skillName: 'reporter',
+        versionIndex: 1,
+      },
+    })
   })
 
-  it('maps visibility, version fields, and FKs correctly', async () => {
-    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ versionOnChainId: '0xver1' })
+  it('maps skillName, versionIndex, visibility, and sidecar fields correctly', async () => {
+    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
     const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
 
     const version = makeSkillVersionObject({
-      versionNumber: 3,
+      skillName: 'planner',
+      versionIndex: 3,
       visibility: 'private',
-      previousVersionId: '0xver0',
       blobObjectId: '0xskillblob2',
       blobId: 'skill-blob-2',
       createdAtMs: 1711111111000,
@@ -825,18 +815,18 @@ describe('upsertSkillVersionProjection', () => {
     for (const section of [call.create, call.update]) {
       expect(section.soulOnChainId).toBe('0xsoul_xyz')
       expect(section.skillsOnChainId).toBe('0xskills_abc')
-      expect(section.versionNumber).toBe(3)
+      expect(section.skillName).toBe('planner')
+      expect(section.versionIndex).toBe(3)
       expect(section.visibility).toBe('private')
       expect(section.blobObjectId).toBe('0xskillblob2')
       expect(section.blobId).toBe('skill-blob-2')
-      expect(section.previousVersionOnChainId).toBe('0xver0')
       expect(section.createdAtMs).toBe(BigInt(1711111111000))
       expect(section.sealSidecar).toEqual({ version: 1, documentId: '0xdoc' })
     }
   })
 
   it('handles deletedAt undefined vs null correctly', async () => {
-    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ versionOnChainId: '0xver1' })
+    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
     const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
 
@@ -854,7 +844,7 @@ describe('upsertSkillVersionProjection', () => {
     expect(call1.create.deletedAt).toBeNull()
 
     vi.resetAllMocks()
-    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ versionOnChainId: '0xver1' })
+    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
     // When deletedAt is explicitly null, update should pass null (clear field)
     await upsertSkillVersionProjection({
@@ -870,7 +860,7 @@ describe('upsertSkillVersionProjection', () => {
   })
 
   it('passes an explicit deletedAt date', async () => {
-    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ versionOnChainId: '0xver1' })
+    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
     const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
 
@@ -888,7 +878,7 @@ describe('upsertSkillVersionProjection', () => {
   })
 
   it('sealSidecar defaults to undefined when not provided', async () => {
-    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ versionOnChainId: '0xver1' })
+    mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
     const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
 
@@ -910,20 +900,26 @@ describe('upsertSkillVersionProjection', () => {
 describe('markSkillVersionDeleted', () => {
   beforeEach(() => vi.resetAllMocks())
 
-  it('calls prisma.soulSkillVersionRecord.updateMany with deletedAt', async () => {
+  it('calls prisma.soulSkillVersionRecord.updateMany with composite key and deletedAt', async () => {
     mockedPrisma.soulSkillVersionRecord.updateMany.mockResolvedValue({ count: 1 })
 
     const { markSkillVersionDeleted } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
 
     const deletedAt = new Date('2026-04-02')
     await markSkillVersionDeleted({
-      versionOnChainId: '0xver1',
+      skillsOnChainId: '0xskills',
+      skillName: 'planner',
+      versionIndex: 3,
       deletedAt,
     })
 
     expect(mockedPrisma.soulSkillVersionRecord.updateMany).toHaveBeenCalledOnce()
     const call = mockedPrisma.soulSkillVersionRecord.updateMany.mock.calls[0][0]
-    expect(call.where).toEqual({ versionOnChainId: '0xver1' })
+    expect(call.where).toEqual({
+      skillsOnChainId: '0xskills',
+      skillName: 'planner',
+      versionIndex: 3,
+    })
     expect(call.data.deletedAt).toEqual(deletedAt)
   })
 
@@ -933,7 +929,11 @@ describe('markSkillVersionDeleted', () => {
     const { markSkillVersionDeleted } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
 
     const before = new Date()
-    await markSkillVersionDeleted({ versionOnChainId: '0xver1' })
+    await markSkillVersionDeleted({
+      skillsOnChainId: '0xskills',
+      skillName: 'planner',
+      versionIndex: 3,
+    })
     const after = new Date()
 
     const call = mockedPrisma.soulSkillVersionRecord.updateMany.mock.calls[0][0]

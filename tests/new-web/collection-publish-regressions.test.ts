@@ -34,10 +34,15 @@ describe('collection publish regression guards', () => {
   it('scopes collection publish state in sessionStorage and clears it on reset', () => {
     const providerSource = readSource('new-web/components/providers/create-collection-provider.tsx')
     const hookSource = readSource('new-web/lib/hooks/use-collection-publish.ts')
+    const appProvidersSource = readSource('new-web/components/providers/app-providers.tsx')
 
     expect(providerSource).toContain("const PUBLISH_RESULT_KEY = 'collection-publish-result'")
     expect(providerSource).toContain('sessionStorage.removeItem(MINT_RECOVERY_KEY)')
+    expect(providerSource).toContain('attachSoulidityDeploymentSignature')
     expect(hookSource).toContain('draftSignature')
+    expect(hookSource).toContain('attachSoulidityDeploymentSignature')
+    expect(appProvidersSource).toContain('syncSoulidityDeploymentSession')
+    expect(appProvidersSource).toContain('window.location.reload()')
   })
 
   it('keeps collection create API errors generic for clients', () => {

@@ -83,7 +83,6 @@ function makeSoulAssetRow(overrides: Record<string, unknown> = {}) {
     grantCapacity: 2,
     activeGrantCount: 0,
     skillsOnChainId: null,
-    latestSkillVersionOnChainId: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -138,14 +137,14 @@ function makeGrantRecordRow(overrides: Record<string, unknown> = {}) {
 function makeMemoryEntryRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'mem-uuid-1',
-    onChainId: '0x' + 'b1'.repeat(32),
     soulOnChainId: '0x' + '11'.repeat(32),
     memoryOnChainId: '0x' + '33'.repeat(32),
-    entryIndex: 0,
+    timestampKey: BigInt(1718452800000),
     writerAddress: '0x' + '55'.repeat(32),
     writerKind: 'founder',
     blobObjectId: '0x' + 'c1'.repeat(32),
     blobId: 'mem-blob-1',
+    sealSidecar: null,
     createdAtMs: 1718452800000,
     createdAt: NOW,
     updatedAt: NOW,
@@ -158,13 +157,12 @@ function makeSkillVersionRow(overrides: Record<string, unknown> = {}) {
     id: 'skill-uuid-1',
     soulOnChainId: '0x' + '11'.repeat(32),
     skillsOnChainId: '0x' + 'd1'.repeat(32),
-    versionOnChainId: '0x' + 'e1'.repeat(32),
-    versionNumber: 1,
+    skillName: 'reporter',
+    versionIndex: 1,
     visibility: 'public',
     deletedAt: null,
     blobObjectId: '0x' + 'f1'.repeat(32),
     blobId: 'skill-blob-1',
-    previousVersionOnChainId: null,
     sealSidecar: null,
     createdAtMs: 1718452800000,
     createdAt: NOW,
@@ -464,7 +462,7 @@ describe('toSoulMemoryEntryRecord', () => {
 
     expect(result.id).toBe('mem-uuid-1')
     expect(result.writerKind).toBe('founder')
-    expect(result.entryIndex).toBe(0)
+    expect(result.timestampKey).toBe(1718452800000)
     expect(result.blobId).toBe('mem-blob-1')
     expect(result.createdAtMs).toBe(1718452800000)
     expect(result.createdAt).toBe('2024-06-15T12:00:00.000Z')
@@ -494,11 +492,11 @@ describe('toSoulSkillVersionRecord', () => {
     const result = toSoulSkillVersionRecord(row as never)
 
     expect(result.id).toBe('skill-uuid-1')
-    expect(result.versionNumber).toBe(1)
+    expect(result.skillName).toBe('reporter')
+    expect(result.versionIndex).toBe(1)
     expect(result.visibility).toBe('public')
     expect(result.deletedAt).toBeNull()
     expect(result.sealSidecar).toBeNull()
-    expect(result.previousVersionOnChainId).toBeNull()
     expect(result.createdAt).toBe('2024-06-15T12:00:00.000Z')
   })
 
@@ -529,9 +527,11 @@ describe('toSoulSkillVersionRecord', () => {
     expect(toSoulSkillVersionRecord(row as never).sealSidecar).toEqual(sidecar)
   })
 
-  it('preserves previousVersionOnChainId', () => {
-    const row = makeSkillVersionRow({ previousVersionOnChainId: '0xprev' })
-    expect(toSoulSkillVersionRecord(row as never).previousVersionOnChainId).toBe('0xprev')
+  it('preserves skillName and versionIndex for non-default slots', () => {
+    const row = makeSkillVersionRow({ skillName: 'planner', versionIndex: 4 })
+    const result = toSoulSkillVersionRecord(row as never)
+    expect(result.skillName).toBe('planner')
+    expect(result.versionIndex).toBe(4)
   })
 })
 

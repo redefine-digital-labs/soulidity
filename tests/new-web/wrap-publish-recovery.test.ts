@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { attachSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
 import { sanitizeWrapRecoveryState } from '@/lib/hooks/use-wrap-publish'
 
 function readSource(relativePath: string) {
@@ -10,49 +11,67 @@ function readSource(relativePath: string) {
 
 describe('sanitizeWrapRecoveryState', () => {
   it('accepts a same-user recovery payload with matching sync digest', () => {
-    expect(sanitizeWrapRecoveryState(JSON.stringify({
+    expect(sanitizeWrapRecoveryState(JSON.stringify(attachSoulidityDeploymentSignature({
       userId: 'member-1',
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: '5YzRecoveryDigest',
         category: 'personal-join',
         sealSidecar: 'char-envelope',
+        memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
       },
-    }), 'member-1')).toEqual({
+    })), 'member-1')).toEqual(expect.objectContaining({
       userId: 'member-1',
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: '5YzRecoveryDigest',
         category: 'personal-join',
         sealSidecar: 'char-envelope',
+        memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
       },
-    })
+    }))
   })
 
-  it('rejects recovery state from a different user or mismatched sync body', () => {
-    expect(sanitizeWrapRecoveryState(JSON.stringify({
+  it('rejects recovery state from a different user, mismatched deployment, or mismatched sync body', () => {
+    expect(sanitizeWrapRecoveryState(JSON.stringify(attachSoulidityDeploymentSignature({
       userId: 'member-2',
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: '5YzRecoveryDigest',
         category: 'personal-join',
         sealSidecar: 'char-envelope',
+        memorySealSidecar: 'memory-envelope',
+        skillsSealSidecar: null,
+      },
+    })), 'member-1')).toBeNull()
+
+    expect(sanitizeWrapRecoveryState(JSON.stringify({
+      ...attachSoulidityDeploymentSignature({}),
+      deploymentSignature: 'testnet|0xstale',
+      userId: 'member-1',
+      txDigest: '5YzRecoveryDigest',
+      syncBody: {
+        txDigest: '5YzRecoveryDigest',
+        category: 'personal-join',
+        sealSidecar: 'char-envelope',
+        memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
       },
     }), 'member-1')).toBeNull()
 
-    expect(sanitizeWrapRecoveryState(JSON.stringify({
+    expect(sanitizeWrapRecoveryState(JSON.stringify(attachSoulidityDeploymentSignature({
       userId: 'member-1',
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: 'DifferentDigest',
         category: 'personal-join',
         sealSidecar: 'char-envelope',
+        memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
       },
-    }), 'member-1')).toBeNull()
+    })), 'member-1')).toBeNull()
   })
 })
 
