@@ -2,11 +2,12 @@ import Link from 'next/link'
 
 const docs = [
   { emoji: '🚀', title: 'Getting Started', desc: 'Connect your wallet, browse Souls, make your first purchase, and understand the ownership model.' },
+  { emoji: '📐', title: 'Soul Content Format', desc: 'Canonical soul.md, founding memory, and skills.zip contract for the fresh-deploy content architecture.', href: '/resources/content-format' },
   { emoji: '🔐', title: 'SoulGrant — Authorization API', desc: 'Issue, scope, supersede, and revoke AI agent access to Soul data via Seal, Memory, and Skills.' },
   { emoji: '📜', title: 'Smart Contract Reference', desc: 'SoulSeries, SoulRelease, SoulGrant, SoulCollection — Move module docs, object schemas, event types.' },
   { emoji: '🌊', title: 'Walrus & Seal Integration', desc: 'How Soul data is encrypted at rest on Walrus and access-controlled via Seal policy objects.' },
   { emoji: '📖', title: 'Soul Memory Architecture', desc: 'Append-only memory on Walrus — Memory at mint, SoulGrant write-back flow, and immutability guarantees.' },
-  { emoji: '🧠', title: 'Skills & Docs Versioning', desc: 'Git-like branching and tagging for Soul skill files and documentation layers.' },
+  { emoji: '🧠', title: 'Skills & Docs Revisions', desc: 'How skills.zip bundles map to skillName/versionIndex, privacy modes, and soft-delete behavior.' },
   { emoji: '🔗', title: 'Wrap + Link Guide', desc: 'Add a Soul layer on top of any existing NFT without touching the original contract.' },
   { emoji: '⚙️', title: 'API & SDK Reference', desc: 'REST endpoints, TypeScript SDK, and integration patterns for builders on Soulidity.' },
 ]
@@ -30,8 +31,9 @@ export default function ResourcesDocsPage() {
       <p className="text-muted text-sm mb-5">Technical guides, protocol specs, and integration references for builders on Soulidity.</p>
 
       <div className="flex flex-col gap-3">
-        {docs.map((doc) => (
-          <div
+        {docs.map((doc) => {
+          const card = (
+            <div
             key={doc.title}
             className="bg-card border border-border rounded-xl p-5 cursor-pointer hover:border-purple transition"
           >
@@ -43,7 +45,18 @@ export default function ResourcesDocsPage() {
               <span className="text-muted">→</span>
             </div>
           </div>
-        ))}
+          )
+
+          if (doc.href) {
+            return (
+              <Link key={doc.title} href={doc.href}>
+                {card}
+              </Link>
+            )
+          }
+
+          return card
+        })}
       </div>
     </div>
   )

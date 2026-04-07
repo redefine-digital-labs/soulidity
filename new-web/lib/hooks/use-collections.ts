@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { CreateCollectionSyncResult } from '@/lib/collections/create-form-state'
 import type { CollectionDetailResponse, CollectionsListResponse, SoulCollectionAssetDetail } from '@/lib/soulidity/types'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildBuyCollectionTx } from '@/lib/soulidity/tx/buy'
 import { buildCreateCollectionTx } from '@/lib/soulidity/tx/collection'
 import { buildListCollectionTx } from '@/lib/soulidity/tx/list'
@@ -15,8 +16,11 @@ import { useAuth } from '@/components/providers/auth-provider'
 
 export type CreateCollectionStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
 
-function resolvePersonalKiosk(headers: Record<string, string>) {
-  return fetch('/api/souls/personal-kiosk', { cache: 'no-store', headers })
+function resolvePersonalKiosk(headers: Record<string, string>, walletAddress?: string | null) {
+  const url = walletAddress
+    ? `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`
+    : '/api/souls/personal-kiosk'
+  return fetch(url, { cache: 'no-store', headers })
     .then(async (res) => {
       if (res.status === 404) return null
       if (!res.ok) {
@@ -79,7 +83,7 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const personalKiosk = await resolvePersonalKiosk(authHeaders)
+      const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
       const coinType = process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE ?? '0x0::usdc::USDC'
       const requiredAtomic = BigInt(collection.quote.totalAtomic)
       const selectedCoinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
@@ -90,6 +94,13 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
       if (!selectedCoinIds || selectedCoinIds.length === 0) {
         throw new Error('Insufficient payment balance')
       }
+      await assertObjectInputsExist(suiClient, {
+        'Seller kiosk': collection.currentHolderKioskId,
+        Collection: collection.onChainId,
+        'Collection listing': collection.listingObjectOnChainId,
+        'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+        'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+      })
 
       const tx = buildBuyCollectionTx({
         sellerKioskId: collection.currentHolderKioskId,
@@ -128,10 +139,16 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const personalKiosk = await resolvePersonalKiosk(authHeaders)
+      const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
       if (!personalKiosk) {
         throw new Error('Initialize your personal kiosk before listing a collection')
       }
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': personalKiosk.currentKioskId,
+        'Your personal kiosk capability': personalKiosk.currentKioskCapOnChainId,
+        Collection: collection.onChainId,
+        'Collection right': collection.rightOnChainId,
+      })
       const tx = buildListCollectionTx({
         currentKioskId: personalKiosk.currentKioskId,
         currentKioskCapOnChainId: personalKiosk.currentKioskCapOnChainId,
@@ -198,7 +215,11 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
         resolvedImageUrl = uploadResult.imageUrl
       }
 
-      const personalKiosk = await resolvePersonalKiosk(authHeaders)
+      const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+        'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+      })
       const tx = buildCreateCollectionTx({
         currentKioskId: personalKiosk?.currentKioskId ?? null,
         currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
@@ -244,7 +265,7 @@ export type CollectionListingStatus = 'idle' | 'signing' | 'syncing'
 export function useCollectionListing(collection: { onChainId: string; rightOnChainId: string; listingObjectOnChainId: string | null } | null) {
   const [status, setStatus] = useState<CollectionListingStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
 
   async function list(priceAtomic: bigint) {
@@ -253,8 +274,14 @@ export function useCollectionListing(collection: { onChainId: string; rightOnCha
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const kiosk = await resolvePersonalKiosk(authHeaders)
+      const kiosk = await resolvePersonalKiosk(authHeaders, suiWallet?.address)
       if (!kiosk) throw new Error('Initialize your personal kiosk before listing')
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': kiosk.currentKioskId,
+        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        Collection: collection.onChainId,
+        'Collection right': collection.rightOnChainId,
+      })
       const tx = buildListCollectionTx({
         currentKioskId: kiosk.currentKioskId,
         currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
@@ -289,8 +316,13 @@ export function useCollectionListing(collection: { onChainId: string; rightOnCha
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const kiosk = await resolvePersonalKiosk(authHeaders)
+      const kiosk = await resolvePersonalKiosk(authHeaders, suiWallet?.address)
       if (!kiosk) throw new Error('Personal kiosk not found')
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': kiosk.currentKioskId,
+        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        'Collection listing': collection.listingObjectOnChainId,
+      })
       const tx = buildDelistCollectionTx({
         currentKioskId: kiosk.currentKioskId,
         currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
@@ -323,8 +355,15 @@ export function useCollectionListing(collection: { onChainId: string; rightOnCha
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const kiosk = await resolvePersonalKiosk(authHeaders)
+      const kiosk = await resolvePersonalKiosk(authHeaders, suiWallet?.address)
       if (!kiosk) throw new Error('Personal kiosk not found')
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': kiosk.currentKioskId,
+        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        Collection: collection.onChainId,
+        'Collection right': collection.rightOnChainId,
+        'Collection listing': collection.listingObjectOnChainId,
+      })
       const tx = buildUpdateCollectionListingPriceTx({
         currentKioskId: kiosk.currentKioskId,
         currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,

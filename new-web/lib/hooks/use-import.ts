@@ -2,9 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Transaction } from '@mysten/sui/transactions'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildImportSoulTx } from '@/lib/soulidity/tx/import'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
+import {
+  attachSoulidityDeploymentSignature,
+  hasCurrentSoulidityDeploymentSignature,
+} from '@/lib/soulidity/client-session'
 
 const IMPORT_RECOVERY_KEY = 'soul-import-recovery'
 
@@ -12,6 +17,7 @@ interface ImportRecoveryState {
   userId: string
   txDigest: string
   syncBody: Record<string, unknown>
+  deploymentSignature: string
 }
 
 export type ImportStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -35,11 +41,13 @@ export interface ImportParams {
   protectedBlobObjectId: string
   foundingMemoryBlobObjectId?: string | null
   skillsBlobObjectId?: string | null
+  initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
   originRef: string
   creatorRoyaltyBps: number
-  sealSidecar?: object | null
-  skillsSealSidecar?: object | null
+  sealSidecar?: string | null
+  memorySealSidecar?: string | null
+  skillsSealSidecar?: string | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -58,7 +66,7 @@ export function useImport() {
   const [error, setError] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const [importData, setImportData] = useState<ImportSyncResponse | null>(null)
-  const { suiWallet, signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders, user } = useAuth()
   const recoveryRef = useRef<ImportRecoveryState | null>(null)
 
@@ -68,7 +76,7 @@ export function useImport() {
       const raw = sessionStorage.getItem(IMPORT_RECOVERY_KEY)
       if (raw) {
         const recovery: ImportRecoveryState = JSON.parse(raw)
-        if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id) {
+        if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
           recoveryRef.current = recovery
           setTxDigest(recovery.txDigest)
         } else if (user?.id) {
@@ -94,6 +102,13 @@ export function useImport() {
       if (!digest) {
         setStatus('building')
         const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
+        await assertObjectInputsExist(suiClient, {
+          'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+          'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+          'Soul character blob': params.protectedBlobObjectId,
+          'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
+          'Skills blob': params.skillsBlobObjectId ?? null,
+        })
         const tx: Transaction = buildImportSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
           currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
@@ -104,6 +119,7 @@ export function useImport() {
           protectedBlobObjectId: params.protectedBlobObjectId,
           foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId ?? null,
           skillsBlobObjectId: params.skillsBlobObjectId ?? null,
+          initialSkillName: params.initialSkillName ?? null,
           skillsVisibility: params.skillsVisibility ?? 'private',
           originRef: params.originRef,
           creatorRoyaltyBps: params.creatorRoyaltyBps,
@@ -123,9 +139,10 @@ export function useImport() {
           previewImages: params.previewImages,
           readme: params.readme ?? null,
           sealSidecar: params.sealSidecar ?? null,
+          memorySealSidecar: params.memorySealSidecar ?? null,
           skillsSealSidecar: params.skillsSealSidecar ?? null,
         }
-        recoveryRef.current = { userId: user?.id ?? '', txDigest: executedDigest, syncBody }
+        recoveryRef.current = attachSoulidityDeploymentSignature({ userId: user?.id ?? '', txDigest: executedDigest, syncBody })
         try { sessionStorage.setItem(IMPORT_RECOVERY_KEY, JSON.stringify(recoveryRef.current)) } catch {}
       }
 
@@ -139,6 +156,7 @@ export function useImport() {
             previewImages: params.previewImages,
             readme: params.readme ?? null,
             sealSidecar: params.sealSidecar ?? null,
+            memorySealSidecar: params.memorySealSidecar ?? null,
             skillsSealSidecar: params.skillsSealSidecar ?? null,
           }
 

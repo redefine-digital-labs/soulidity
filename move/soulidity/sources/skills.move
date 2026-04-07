@@ -1,6 +1,8 @@
 module soulidity::skills;
 
+use std::string::{Self as string, String};
 use sui::clock::Clock;
+use sui::dynamic_object_field as dof;
 use sui::event;
 use sui::table;
 use soulidity::grant::{Self as grant, SoulGrant};
@@ -10,32 +12,30 @@ use walrus::blob::{Self as blob, Blob};
 const EDocumentIdTooShort: u64 = 0;
 const EDocumentIdPrefixMismatch: u64 = 1;
 const ESkillsStateMismatch: u64 = 2;
-const ESkillVersionSoulMismatch: u64 = 3;
-const ESkillVersionSkillsMismatch: u64 = 4;
-const ESkillVersionDeleted: u64 = 5;
+const ESkillSlotMissing: u64 = 3;
+const ESkillVersionDeleted: u64 = 4;
+const EEmptySkillName: u64 = 5;
 
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
 
-public struct SoulSkills has key {
-    id: UID,
-    soul_id: ID,
-    next_version: u64,
-    version_count: u64,
-    latest_version_id: Option<ID>,
-    version_index: table::Table<u64, ID>,
-}
-
-public struct SkillVersion has key, store {
-    id: UID,
-    soul_id: ID,
-    skills_id: ID,
-    version: u64,
-    previous_version_id: Option<ID>,
+public struct SkillSlot has copy, drop, store {
+    blob_object_id: ID,
     is_public: bool,
     deleted: bool,
     created_at_ms: u64,
-    content_blob: Blob,
+}
+
+public struct SoulSkills has key {
+    id: UID,
+    soul_id: ID,
+    skills: table::Table<String, vector<SkillSlot>>,
+    skill_count: u64,
+}
+
+public struct SkillBlobKey has copy, drop, store {
+    skill_name: String,
+    version_index: u64,
 }
 
 public struct SoulSkillsCreated has copy, drop {
@@ -46,9 +46,8 @@ public struct SoulSkillsCreated has copy, drop {
 public struct SkillVersionAppended has copy, drop {
     skills_id: ID,
     soul_id: ID,
-    version_id: ID,
-    version: u64,
-    previous_version_id: Option<ID>,
+    skill_name: String,
+    version_index: u64,
     is_public: bool,
     created_at_ms: u64,
     blob_object_id: ID,
@@ -57,7 +56,8 @@ public struct SkillVersionAppended has copy, drop {
 public struct SkillVersionDeleted has copy, drop {
     skills_id: ID,
     soul_id: ID,
-    version_id: ID,
+    skill_name: String,
+    version_index: u64,
     deleted_by: address,
 }
 
@@ -69,54 +69,43 @@ public fun skills_id(self: &SoulSkills): ID {
     object::id(self)
 }
 
-public fun version_count(self: &SoulSkills): u64 {
-    self.version_count
+public fun skill_count(self: &SoulSkills): u64 {
+    self.skill_count
 }
 
-public fun latest_version_id(self: &SoulSkills): &Option<ID> {
-    &self.latest_version_id
+public fun contains_skill(self: &SoulSkills, skill_name: String): bool {
+    table::contains(&self.skills, skill_name)
 }
 
-public fun version_id_for(self: &SoulSkills, version_number: u64): ID {
-    *table::borrow(&self.version_index, version_number)
+public fun version_count(self: &SoulSkills, skill_name: String): u64 {
+    if (!table::contains(&self.skills, copy skill_name)) {
+        return 0
+    };
+    table::borrow(&self.skills, skill_name).length()
 }
 
-public fun skills_id_on_version(self: &SkillVersion): ID {
-    self.skills_id
+public fun blob_object_id_for(self: &SoulSkills, skill_name: String, version_index: u64): ID {
+    borrow_slot(self, skill_name, version_index).blob_object_id
 }
 
-public fun version_number(self: &SkillVersion): u64 {
-    self.version
+public fun version_is_public(self: &SoulSkills, skill_name: String, version_index: u64): bool {
+    borrow_slot(self, skill_name, version_index).is_public
 }
 
-public fun previous_version_id(self: &SkillVersion): &Option<ID> {
-    &self.previous_version_id
+public fun version_is_deleted(self: &SoulSkills, skill_name: String, version_index: u64): bool {
+    borrow_slot(self, skill_name, version_index).deleted
 }
 
-public fun is_public(self: &SkillVersion): bool {
-    self.is_public
-}
-
-public fun is_deleted(self: &SkillVersion): bool {
-    self.deleted
-}
-
-public fun created_at_ms(self: &SkillVersion): u64 {
-    self.created_at_ms
-}
-
-public fun content_blob_object_id(self: &SkillVersion): ID {
-    blob::object_id(&self.content_blob)
+public fun version_created_at_ms(self: &SoulSkills, skill_name: String, version_index: u64): u64 {
+    borrow_slot(self, skill_name, version_index).created_at_ms
 }
 
 public(package) fun create(soul_id: ID, ctx: &mut TxContext): SoulSkills {
     let skills = SoulSkills {
         id: object::new(ctx),
         soul_id,
-        next_version: 1,
-        version_count: 0,
-        latest_version_id: option::none(),
-        version_index: table::new(ctx),
+        skills: table::new(ctx),
+        skill_count: 0,
     };
 
     event::emit(SoulSkillsCreated {
@@ -129,73 +118,84 @@ public(package) fun create(soul_id: ID, ctx: &mut TxContext): SoulSkills {
 
 public(package) fun append_initial_version(
     skills: &mut SoulSkills,
+    skill_name: String,
     is_public: bool,
     content_blob: Blob,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
-    append_version_impl(skills, is_public, content_blob, clock, ctx)
+): u64 {
+    append_version_impl(skills, skill_name, is_public, content_blob, clock, ctx)
 }
 
 public fun append_version_as_owner(
     skills: &mut SoulSkills,
     state: &SoulState,
+    skill_name: String,
     is_public: bool,
     content_blob: Blob,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
+): u64 {
     soul::assert_owner(state, ctx.sender());
     assert_skills_matches_state(skills, state);
-    append_version_impl(skills, is_public, content_blob, clock, ctx)
+    append_version_impl(skills, skill_name, is_public, content_blob, clock, ctx)
 }
 
 public fun append_version_as_granted_agent(
     skills: &mut SoulSkills,
     state: &SoulState,
     soul_grant: &SoulGrant,
+    skill_name: String,
     is_public: bool,
     content_blob: Blob,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
+): u64 {
     assert_skills_matches_state(skills, state);
     grant::assert_active_with_scope(state, soul_grant, grant::scope_skills(), clock, ctx);
-    append_version_impl(skills, is_public, content_blob, clock, ctx)
+    append_version_impl(skills, skill_name, is_public, content_blob, clock, ctx)
 }
 
 public fun delete_version_as_owner(
-    skills: &SoulSkills,
-    version: &mut SkillVersion,
+    skills: &mut SoulSkills,
     state: &SoulState,
+    skill_name: String,
+    version_index: u64,
     ctx: &TxContext,
 ) {
     soul::assert_owner(state, ctx.sender());
-    assert_version_matches(skills, version, state);
-    version.deleted = true;
+    assert_skills_matches_state(skills, state);
+    let slot = borrow_slot_mut(skills, copy skill_name, version_index);
+    assert!(!slot.deleted, ESkillVersionDeleted);
+    slot.deleted = true;
     event::emit(SkillVersionDeleted {
         skills_id: object::id(skills),
         soul_id: soul::soul_id(state),
-        version_id: object::id(version),
+        skill_name,
+        version_index,
         deleted_by: ctx.sender(),
     });
 }
 
 public fun delete_version_as_granted_agent(
-    skills: &SoulSkills,
-    version: &mut SkillVersion,
+    skills: &mut SoulSkills,
     state: &SoulState,
+    skill_name: String,
+    version_index: u64,
     soul_grant: &SoulGrant,
     clock: &Clock,
     ctx: &TxContext,
 ) {
-    assert_version_matches(skills, version, state);
+    assert_skills_matches_state(skills, state);
     grant::assert_active_with_scope(state, soul_grant, grant::scope_skills(), clock, ctx);
-    version.deleted = true;
+    let slot = borrow_slot_mut(skills, copy skill_name, version_index);
+    assert!(!slot.deleted, ESkillVersionDeleted);
+    slot.deleted = true;
     event::emit(SkillVersionDeleted {
         skills_id: object::id(skills),
         soul_id: soul::soul_id(state),
-        version_id: object::id(version),
+        skill_name,
+        version_index,
         deleted_by: ctx.sender(),
     });
 }
@@ -204,90 +204,117 @@ entry fun approve_private_read_owner(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
-    version: &SkillVersion,
+    skill_name: String,
+    version_index: u64,
     ctx: &TxContext,
 ) {
-    assert_matching_document_id(id, object::id(version));
+    assert_matching_document_id(id, object::id(skills), copy skill_name, version_index);
     soul::assert_owner(state, ctx.sender());
-    assert_version_matches(skills, version, state);
-    assert!(!version.deleted, ESkillVersionDeleted);
+    assert_skills_matches_state(skills, state);
+    let slot = borrow_slot(skills, skill_name, version_index);
+    assert!(!slot.deleted, ESkillVersionDeleted);
 }
 
 entry fun approve_private_read_granted_agent(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
-    version: &SkillVersion,
+    skill_name: String,
+    version_index: u64,
     soul_grant: &SoulGrant,
     clock: &Clock,
     ctx: &TxContext,
 ) {
-    assert_matching_document_id(id, object::id(version));
-    assert_version_matches(skills, version, state);
-    assert!(!version.deleted, ESkillVersionDeleted);
+    assert_matching_document_id(id, object::id(skills), copy skill_name, version_index);
+    assert_skills_matches_state(skills, state);
+    let slot = borrow_slot(skills, skill_name, version_index);
+    assert!(!slot.deleted, ESkillVersionDeleted);
     grant::assert_active_with_scope(state, soul_grant, grant::scope_skills(), clock, ctx);
 }
 
 fun append_version_impl(
     skills: &mut SoulSkills,
+    skill_name: String,
     is_public: bool,
     content_blob: Blob,
     clock: &Clock,
-    ctx: &mut TxContext,
-): ID {
-    let previous_version_id = skills.latest_version_id;
-    let version_number = skills.next_version;
-    let version = SkillVersion {
-        id: object::new(ctx),
-        soul_id: skills.soul_id,
-        skills_id: object::id(skills),
-        version: version_number,
-        previous_version_id,
+    _ctx: &mut TxContext,
+): u64 {
+    assert!(!string::is_empty(&skill_name), EEmptySkillName);
+
+    let created_at_ms = clock.timestamp_ms();
+    let blob_object_id = blob::object_id(&content_blob);
+    let slot = SkillSlot {
+        blob_object_id,
         is_public,
         deleted: false,
-        created_at_ms: clock.timestamp_ms(),
-        content_blob,
+        created_at_ms,
     };
-    let version_id = object::id(&version);
-    let blob_object_id = blob::object_id(&version.content_blob);
 
-    skills.next_version = skills.next_version + 1;
-    skills.version_count = skills.version_count + 1;
-    skills.latest_version_id = option::some(version_id);
-    table::add(&mut skills.version_index, version_number, version_id);
+    let version_index = if (table::contains(&skills.skills, copy skill_name)) {
+        let slots = table::borrow_mut(&mut skills.skills, copy skill_name);
+        let next_index = slots.length();
+        vector::push_back(slots, slot);
+        next_index
+    } else {
+        table::add(&mut skills.skills, copy skill_name, vector[slot]);
+        skills.skill_count = skills.skill_count + 1;
+        0
+    };
 
-    transfer::share_object(version);
+    dof::add(
+        &mut skills.id,
+        SkillBlobKey {
+            skill_name: copy skill_name,
+            version_index,
+        },
+        content_blob,
+    );
     event::emit(SkillVersionAppended {
         skills_id: object::id(skills),
         soul_id: skills.soul_id,
-        version_id,
-        version: skills.next_version - 1,
-        previous_version_id,
+        skill_name,
+        version_index,
         is_public,
-        created_at_ms: clock.timestamp_ms(),
+        created_at_ms,
         blob_object_id,
     });
 
-    version_id
+    version_index
 }
 
 fun assert_skills_matches_state(skills: &SoulSkills, state: &SoulState) {
     assert!(skills.soul_id == soul::soul_id(state), ESkillsStateMismatch);
 }
 
-fun assert_version_matches(skills: &SoulSkills, version: &SkillVersion, state: &SoulState) {
-    assert_skills_matches_state(skills, state);
-    assert!(version.soul_id == soul::soul_id(state), ESkillVersionSoulMismatch);
-    assert!(version.skills_id == object::id(skills), ESkillVersionSkillsMismatch);
+fun borrow_slot(skills: &SoulSkills, skill_name: String, version_index: u64): &SkillSlot {
+    assert!(table::contains(&skills.skills, copy skill_name), ESkillSlotMissing);
+    let slots = table::borrow(&skills.skills, skill_name);
+    assert!(version_index < slots.length(), ESkillSlotMissing);
+    vector::borrow(slots, version_index)
 }
 
-fun assert_matching_document_id(id: vector<u8>, version_id: ID) {
+fun borrow_slot_mut(skills: &mut SoulSkills, skill_name: String, version_index: u64): &mut SkillSlot {
+    assert!(table::contains(&skills.skills, copy skill_name), ESkillSlotMissing);
+    let slots = table::borrow_mut(&mut skills.skills, skill_name);
+    assert!(version_index < slots.length(), ESkillSlotMissing);
+    vector::borrow_mut(slots, version_index)
+}
+
+fun assert_matching_document_id(
+    id: vector<u8>,
+    skills_id: ID,
+    skill_name: String,
+    version_index: u64,
+) {
     let domain = b"soul-skill:";
     let domain_len = domain.length();
-    let version_id_bytes = version_id.to_bytes();
-    let version_id_len = version_id_bytes.length();
+    let skills_id_bytes = skills_id.to_bytes();
+    let skills_id_len = skills_id_bytes.length();
+    let skill_name_bytes = string::as_bytes(&skill_name);
+    let skill_name_len = skill_name_bytes.length();
     assert!(
-        id.length() >= domain_len + 1 + version_id_len + DOCUMENT_ID_NONCE_BYTES,
+        id.length() >= domain_len + 1 + skills_id_len + skill_name_len + 1 + 8 + DOCUMENT_ID_NONCE_BYTES,
         EDocumentIdTooShort,
     );
 
@@ -299,11 +326,32 @@ fun assert_matching_document_id(id: vector<u8>, version_id: ID) {
 
     assert!(id[domain_len] == DOCUMENT_ID_VERSION, EDocumentIdPrefixMismatch);
 
-    let version_id_offset = domain_len + 1;
+    let skills_id_offset = domain_len + 1;
     i = 0;
-    while (i < version_id_len) {
-        assert!(id[version_id_offset + i] == version_id_bytes[i], EDocumentIdPrefixMismatch);
+    while (i < skills_id_len) {
+        assert!(id[skills_id_offset + i] == skills_id_bytes[i], EDocumentIdPrefixMismatch);
         i = i + 1;
+    };
+
+    let skill_name_offset = skills_id_offset + skills_id_len;
+    i = 0;
+    while (i < skill_name_len) {
+        assert!(id[skill_name_offset + i] == skill_name_bytes[i], EDocumentIdPrefixMismatch);
+        i = i + 1;
+    };
+    assert!(id[skill_name_offset + skill_name_len] == 0x00, EDocumentIdPrefixMismatch);
+
+    assert_u64_segment(&id, skill_name_offset + skill_name_len + 1, version_index);
+}
+
+fun assert_u64_segment(id: &vector<u8>, start: u64, value: u64) {
+    let mut shift = 56;
+    let mut index = 0;
+    while (index < 8) {
+        let expected = ((value >> shift) & 0xFF) as u8;
+        assert!(id[start + index] == expected, EDocumentIdPrefixMismatch);
+        shift = if (shift >= 8) shift - 8 else 0;
+        index = index + 1;
     };
 }
 
@@ -316,10 +364,11 @@ public(package) fun approve_private_read_as_owner_for_testing(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
-    version: &SkillVersion,
+    skill_name: String,
+    version_index: u64,
     ctx: &TxContext,
 ) {
-    approve_private_read_owner(id, state, skills, version, ctx)
+    approve_private_read_owner(id, state, skills, skill_name, version_index, ctx)
 }
 
 #[test_only]
@@ -327,10 +376,23 @@ public(package) fun approve_private_read_as_granted_agent_for_testing(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
-    version: &SkillVersion,
+    skill_name: String,
+    version_index: u64,
     soul_grant: &SoulGrant,
     clock: &Clock,
     ctx: &TxContext,
 ) {
-    approve_private_read_granted_agent(id, state, skills, version, soul_grant, clock, ctx)
+    approve_private_read_granted_agent(id, state, skills, skill_name, version_index, soul_grant, clock, ctx)
+}
+
+#[test_only]
+public fun destroy_for_testing(self: SoulSkills) {
+    let SoulSkills {
+        id,
+        soul_id: _,
+        skills,
+        skill_count: _,
+    } = self;
+    table::drop(skills);
+    id.delete();
 }

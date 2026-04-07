@@ -355,7 +355,6 @@ model SoulAsset {
   grantCapacity         Int      @default(1) @map("grant_capacity")
   activeGrantCount      Int      @default(0) @map("active_grant_count")
   skillsOnChainId       String?  @unique @map("skills_on_chain_id")
-  latestSkillVersionOnChainId String? @unique @map("latest_skill_version_on_chain_id")
   grantRecords          SoulGrantRecord[] @relation("SoulAssetGrantRecords")
   skillVersions         SoulSkillVersionRecord[] @relation("SoulAssetSkillVersions")
   sealSidecar           Json?    @map("seal_sidecar")
@@ -440,21 +439,21 @@ model SoulGrantRecord {
 
 model SoulMemoryEntry {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  onChainId      String   @unique @map("on_chain_id")
   soulOnChainId  String   @map("soul_on_chain_id")
   soul           SoulAsset @relation(fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
   memoryOnChainId String  @map("memory_on_chain_id")
-  entryIndex     Int      @map("entry_index")
+  timestampKey   BigInt   @map("timestamp_key")
   writerAddress  String   @map("writer_address")
   writerKind     String   @map("writer_kind")
   blobObjectId   String   @map("blob_object_id")
   blobId         String?  @map("blob_id")
+  sealSidecar    Json?    @map("seal_sidecar")
   createdAtMs    BigInt   @map("created_at_ms")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@unique([memoryOnChainId, entryIndex])
-  @@index([soulOnChainId, entryIndex(sort: Desc)])
+  @@unique([memoryOnChainId, timestampKey])
+  @@index([soulOnChainId, timestampKey(sort: Desc)])
   @@map("soul_memory_entries")
 }
 
@@ -463,20 +462,19 @@ model SoulSkillVersionRecord {
   soulOnChainId         String   @map("soul_on_chain_id")
   soul                  SoulAsset @relation("SoulAssetSkillVersions", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
   skillsOnChainId       String   @map("skills_on_chain_id")
-  versionOnChainId      String   @unique @map("version_on_chain_id")
-  versionNumber         Int      @map("version_number")
+  skillName             String   @map("skill_name")
+  versionIndex          Int      @map("version_index")
   visibility            String
   deletedAt             DateTime? @map("deleted_at") @db.Timestamptz
   blobObjectId          String   @map("blob_object_id")
   blobId                String?  @map("blob_id")
-  previousVersionOnChainId String? @map("previous_version_on_chain_id")
   sealSidecar           Json?    @map("seal_sidecar")
   createdAtMs           BigInt   @map("created_at_ms")
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@unique([skillsOnChainId, versionNumber])
-  @@index([soulOnChainId, versionNumber(sort: Desc)])
+  @@unique([skillsOnChainId, skillName, versionIndex])
+  @@index([soulOnChainId, skillName, versionIndex(sort: Desc)])
   @@index([skillsOnChainId])
   @@map("soul_skill_version_records")
 }

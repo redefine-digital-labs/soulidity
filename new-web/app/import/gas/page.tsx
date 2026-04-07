@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useSuiClient } from '@mysten/dapp-kit'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -15,6 +16,8 @@ import {
 } from '@/lib/hooks/use-wallet-balances'
 import { useImport, type ImportParams } from '@/lib/hooks/use-import'
 import { useAuth } from '@/components/providers/auth-provider'
+import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
+import { findMissingObjectIds } from '@/lib/soulidity/object-inputs'
 import {
   selectReusableUploadResults,
   useImportSoul,
@@ -49,7 +52,7 @@ const uploadPhaseLabels: Record<UploadPhase, string> = {
   idle: '',
   'uploading-cover': 'Uploading cover image\u2026',
   'uploading-character': 'Encrypting & uploading character file\u2026',
-  'uploading-memory': 'Uploading memory\u2026',
+  'uploading-memory': 'Encrypting & uploading memory\u2026',
   'uploading-skills': 'Encrypting & uploading skills bundle\u2026',
   done: 'Uploads complete',
 }
@@ -97,7 +100,7 @@ function checkImportRecovery(userId: string | undefined): boolean {
     const raw = sessionStorage.getItem('soul-import-recovery')
     if (raw) {
       const recovery = JSON.parse(raw)
-      return !!recovery.txDigest && recovery.userId === userId
+      return !!recovery.txDigest && recovery.userId === userId && hasCurrentSoulidityDeploymentSignature(recovery)
     }
   } catch {}
   return false
@@ -105,6 +108,7 @@ function checkImportRecovery(userId: string | undefined): boolean {
 
 export default function ImportGasPage() {
   const router = useRouter()
+  const suiClient = useSuiClient()
   const ctx = useImportSoul()
   const { status, error, txDigest, importData, importSoul, suiWallet } = useImport()
   const { getAuthHeaders, user } = useAuth()
@@ -140,8 +144,9 @@ export default function ImportGasPage() {
   useEffect(() => {
     if (status === 'done' && importData) {
       ctx.setImportResult(importData)
+      router.replace('/import/success')
     }
-  }, [status, importData, ctx])
+  }, [status, importData, ctx, router])
 
   async function handleDeploy() {
     if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile || !suiWallet) return
@@ -153,6 +158,20 @@ export default function ImportGasPage() {
     try {
       const authHeaders = await getAuthHeaders()
       const results: UploadResults = selectReusableUploadResults(ctx.uploadResults, walletAddress)
+      const missingCachedObjectIds = new Set(await findMissingObjectIds(suiClient, [
+        results.charFile?.blobObjectId,
+        results.memorySeed?.blobObjectId,
+        results.skillsFile?.blobObjectId,
+      ]))
+      if (results.charFile && missingCachedObjectIds.has(results.charFile.blobObjectId)) {
+        results.charFile = undefined
+      }
+      if (results.memorySeed && missingCachedObjectIds.has(results.memorySeed.blobObjectId)) {
+        results.memorySeed = undefined
+      }
+      if (results.skillsFile && missingCachedObjectIds.has(results.skillsFile.blobObjectId)) {
+        results.skillsFile = undefined
+      }
 
       // 1. Upload cover image
       if (!results.coverImage) {
@@ -166,10 +185,10 @@ export default function ImportGasPage() {
         results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletAddress)
       }
 
-      // 3. Upload memory (public)
+      // 3. Upload memory (encrypted)
       if (!results.memorySeed) {
         setUploadPhase('uploading-memory')
-        results.memorySeed = await uploadFile(ctx.memoryFile!, 'public', authHeaders, walletAddress)
+        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletAddress)
       }
 
       // 4. Upload skills file (encrypted, optional)
@@ -193,6 +212,9 @@ export default function ImportGasPage() {
       if (!results.memorySeed.blobObjectId) {
         throw new Error('Memory already exists on Walrus. Please modify your memory file slightly and retry.')
       }
+      if (typeof results.memorySeed.sealDekEnvelope !== 'string' || !results.memorySeed.sealDekEnvelope.trim()) {
+        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
+      }
       if (results.skillsFile && !results.skillsFile.blobObjectId) {
         throw new Error('Skills bundle was deduplicated by Walrus. Please modify your skills file slightly and retry.')
       }
@@ -209,10 +231,12 @@ export default function ImportGasPage() {
         protectedBlobObjectId: results.charFile.blobObjectId,
         foundingMemoryBlobObjectId: results.memorySeed.blobObjectId,
         skillsBlobObjectId: results.skillsFile?.blobObjectId ?? null,
+        initialSkillName: results.skillsFile?.skillName ?? null,
         skillsVisibility: 'private',
         originRef: ctx.originRef,
         creatorRoyaltyBps: ctx.royalty,
         sealSidecar: results.charFile.sealDekEnvelope ?? null,
+        memorySealSidecar: results.memorySeed.sealDekEnvelope ?? null,
         skillsSealSidecar: results.skillsFile?.sealDekEnvelope ?? null,
       })
     } catch (err) {
@@ -307,7 +331,7 @@ export default function ImportGasPage() {
                 </TxRow>
                 <TxRow label="Memory">
                   <span className="text-foreground">{ctx.memoryFile?.name}</span>
-                  <span className="ml-1.5 text-muted">(append-only)</span>
+                  <span className="ml-1.5 text-muted">(encrypted founding entry)</span>
                 </TxRow>
                 {ctx.skillsFile && (
                   <TxRow label="Skills & Docs">
@@ -318,6 +342,11 @@ export default function ImportGasPage() {
                 <TxRow label="Creator Royalty">
                   <span className="font-semibold text-[#F59E0B]">
                     {royaltyLabels[ctx.royalty] ?? `${ctx.royalty / 100}% (locked on-chain)`}
+                  </span>
+                </TxRow>
+                <TxRow label="Soul Policy" align="top">
+                  <span className="text-muted leading-relaxed">
+                    Character locked after mint · Grant-gated memory writes · Skills private by default · Revocable
                   </span>
                 </TxRow>
                 <TxRow label="Estimated Gas">

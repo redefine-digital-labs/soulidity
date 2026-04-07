@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -48,6 +48,13 @@ export default function SelectNftPage() {
   const { data: nfts, isLoading } = useKioskNfts(suiWallet?.address)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (!ctx.selectedNft || !nfts) return
+    if (!nfts.some((nft) => nft.objectId === ctx.selectedNft?.objectId)) {
+      ctx.setSelectedNft(null)
+    }
+  }, [ctx, nfts])
 
   const filteredNfts = useMemo(() => {
     if (!nfts) return []

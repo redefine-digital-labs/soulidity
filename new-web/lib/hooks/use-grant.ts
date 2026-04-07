@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildIssueGrantTx, buildRevokeGrantScopeTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -17,7 +18,7 @@ export interface GrantableSoul {
 export function useGrant(soul: GrantableSoul | null) {
   const [pending, setPending] = useState<'issue' | 'revoke' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const { suiWallet, signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
 
   async function issueGrant(granteeAddress: string, expiresAtMs?: number | null, scopeMask = DEFAULT_ISSUE_SCOPE_MASK) {
@@ -29,6 +30,9 @@ export function useGrant(soul: GrantableSoul | null) {
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
+      await assertObjectInputsExist(suiClient, {
+        'Soul state': soul.stateOnChainId,
+      })
       const tx = buildIssueGrantTx({
         stateObjectId: soul.stateOnChainId,
         granteeAddress,
@@ -69,6 +73,9 @@ export function useGrant(soul: GrantableSoul | null) {
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
+      await assertObjectInputsExist(suiClient, {
+        'Soul state': soul.stateOnChainId,
+      })
       const tx = buildRevokeGrantTx({
         stateObjectId: soul.stateOnChainId,
         granteeAddress: resolvedGranteeAddress,
@@ -101,6 +108,9 @@ export function useGrant(soul: GrantableSoul | null) {
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
+      await assertObjectInputsExist(suiClient, {
+        'Soul state': soul.stateOnChainId,
+      })
       const tx = buildRevokeGrantScopeTx({
         stateObjectId: soul.stateOnChainId,
         granteeAddress,

@@ -138,15 +138,15 @@ export default function CreatePreviewPage() {
 
           <ReviewCard tone="teal" icon="📄" label="Soul Character">
             <p className="text-sm text-foreground font-medium">
-              {ctx.charFile.name} · v1 · main
+              {ctx.charFile.name}
             </p>
             <div className="flex items-center gap-1.5 text-[10px] text-success">
               <span>✍</span>
-              <span>Git versioned · main active</span>
+              <span>Prepared for encrypted upload</span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-muted">
-              <span>⊘</span>
-              <span>Append-only · no delete</span>
+              <span>🔒</span>
+              <span>Locks after mint · standard soul.md</span>
             </div>
           </ReviewCard>
 
@@ -156,11 +156,11 @@ export default function CreatePreviewPage() {
             </p>
             <div className="flex items-center gap-1.5 text-[10px] text-success">
               <span>✍</span>
-              <span>Uploaded · immutable after mint</span>
+              <span>Prepared as the first memory entry</span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-muted">
               <span>🔒</span>
-              <span>Immutable after mint · no delete</span>
+              <span>Encrypted at mint · preserved after mint</span>
             </div>
           </ReviewCard>
 
@@ -172,11 +172,11 @@ export default function CreatePreviewPage() {
                 </p>
                 <div className="flex items-center gap-1.5 text-[10px] text-success">
                   <span>✍</span>
-                  <span>Git versioned · main active</span>
+                  <span>Private by default</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-[10px] text-muted">
-                  <span>⊘</span>
-                  <span>Update anytime · no delete</span>
+                  <span>🔐</span>
+                  <span>Additional revisions can be added later</span>
                 </div>
               </>
             ) : (
@@ -196,12 +196,11 @@ export default function CreatePreviewPage() {
         {/* Live Memory — full width */}
         <ReviewCard tone="muted" icon="💾" label="Live Memory">
           <p className="text-xs text-muted leading-relaxed">
-            Empty at mint. Grows through SoulGrant interactions on Walrus — each session
-            appends a new commit.
+            Starts empty at mint. SoulGrant-authorized sessions can add encrypted memory entries on Walrus as this Soul accumulates history.
           </p>
           <div className="flex items-center gap-1.5 text-[10px] text-muted">
             <span>⊘</span>
-            <span>Append-only · no edits · no deletes · SoulGrant writes here</span>
+            <span>Add-only history · grant-gated writes</span>
           </div>
         </ReviewCard>
 
@@ -211,35 +210,28 @@ export default function CreatePreviewPage() {
             Content & Memory Policy
           </div>
           <p className="text-xs text-muted leading-relaxed mb-4">
-            All three content layers are git-versioned and append-only. SoulGrant agents always read from{' '}
-            <span className="font-bold text-foreground">main</span>. Live Memory grows through SoulGrant
-            interactions on Walrus and cannot be edited or deleted by anyone, including you.
+            Soul Character is sealed and locked at mint. Founding memory becomes the first encrypted memory entry. Skills bundles stay private by default, and live memory grows through grant-authorized writes on Walrus.
           </p>
           <div className="space-y-2.5">
             <PolicyItem
               allowed
-              title="SoulGrant reads main"
-              description="agents always use latest commit on main; full version history preserved & auditable"
+              title="Character locked after mint"
+              description="the selected soul.md becomes the canonical identity layer for this Soul"
             />
             <PolicyItem
               allowed
               title="Grant-gated write"
-              description="only authorized agents can append to Live Memory or update Skills & Docs"
+              description="only the owner or an active grant can add live memory or manage private skill bundles"
             />
             <PolicyItem
               allowed
               title="Revocable access"
-              description="revoke grant anytime; memory stays on Walrus, writes stop immediately"
+              description="revoke a grant anytime; Seal approvals stop resolving immediately"
             />
             <PolicyItem
-              allowed={false}
-              title="No delete — ever"
-              description="Soul Character, Memory, Skills & Docs, Live Memory: all append-only, no delete"
-            />
-            <PolicyItem
-              allowed={false}
-              title="No fork"
-              description="this Soul cannot be duplicated or branched by others"
+              allowed
+              title="History stays intact"
+              description="founding memory remains preserved while later sessions add new entries instead of replacing it"
             />
           </div>
         </div>

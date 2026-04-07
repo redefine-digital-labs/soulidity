@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useSuiClient } from '@mysten/dapp-kit'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -12,6 +13,8 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { buildListSoulTx } from '@/lib/soulidity/tx/list'
 import { buildIssueGrantTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
+import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
+import { findMissingObjectIds } from '@/lib/soulidity/object-inputs'
 import {
   selectReusableUploadResults,
   useCreateSoul,
@@ -51,7 +54,7 @@ const uploadPhaseLabels: Record<UploadPhase, string> = {
   'idle': '',
   'uploading-cover': 'Uploading cover image…',
   'uploading-character': 'Encrypting & uploading character file…',
-  'uploading-memory': 'Uploading memory…',
+  'uploading-memory': 'Encrypting & uploading memory…',
   'uploading-skills': 'Encrypting & uploading skills bundle…',
   'done': 'Uploads complete',
 }
@@ -96,7 +99,7 @@ function checkMintRecovery(userId: string | undefined): boolean {
     const raw = sessionStorage.getItem('soul-mint-recovery')
     if (raw) {
       const recovery = JSON.parse(raw)
-      return !!recovery.txDigest && recovery.userId === userId
+      return !!recovery.txDigest && recovery.userId === userId && hasCurrentSoulidityDeploymentSignature(recovery)
     }
   } catch {}
   return false
@@ -104,6 +107,7 @@ function checkMintRecovery(userId: string | undefined): boolean {
 
 export default function CreateGasPage() {
   const router = useRouter()
+  const suiClient = useSuiClient()
   const ctx = useCreateSoul()
   const { status, error, txDigest, publishData, publish, suiWallet } = usePublish()
   const { getAuthHeaders, user } = useAuth()
@@ -146,8 +150,9 @@ export default function CreateGasPage() {
   useEffect(() => {
     if (status === 'done' && publishData) {
       ctx.setPublishResult(publishData)
+      router.replace('/create/success')
     }
-  }, [status, publishData, ctx])
+  }, [status, publishData, ctx, router])
 
   // Expose publish + authenticated upload + list for E2E testing
   useEffect(() => {
@@ -236,6 +241,20 @@ export default function CreateGasPage() {
     try {
       const authHeaders = await getAuthHeaders()
       const results: UploadResults = selectReusableUploadResults(ctx.uploadResults, walletAddress)
+      const missingCachedObjectIds = new Set(await findMissingObjectIds(suiClient, [
+        results.charFile?.blobObjectId,
+        results.memorySeed?.blobObjectId,
+        results.skillsFile?.blobObjectId,
+      ]))
+      if (results.charFile && missingCachedObjectIds.has(results.charFile.blobObjectId)) {
+        results.charFile = undefined
+      }
+      if (results.memorySeed && missingCachedObjectIds.has(results.memorySeed.blobObjectId)) {
+        results.memorySeed = undefined
+      }
+      if (results.skillsFile && missingCachedObjectIds.has(results.skillsFile.blobObjectId)) {
+        results.skillsFile = undefined
+      }
 
       // 1. Upload cover image (public, no sendObjectTo — only used as URL, not TX object)
       if (!results.coverImage) {
@@ -249,10 +268,10 @@ export default function CreateGasPage() {
         results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletAddress)
       }
 
-      // 3. Upload memory (public) — Blob object referenced in TX, must be owned by signer
+      // 3. Upload memory (encrypted) — Blob object referenced in TX, must be owned by signer
       if (!results.memorySeed) {
         setUploadPhase('uploading-memory')
-        results.memorySeed = await uploadFile(ctx.memoryFile!, 'public', authHeaders, walletAddress)
+        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletAddress)
       }
 
       // 4. Upload skills file (encrypted, optional) — Blob object referenced in TX, must be owned by signer
@@ -275,6 +294,9 @@ export default function CreateGasPage() {
       if (!results.memorySeed.blobObjectId) {
         throw new Error('This exact memory text already exists on Walrus. Please add a unique detail to your memory so it can be stored as a distinct on-chain founding memory.')
       }
+      if (typeof results.memorySeed.sealDekEnvelope !== 'string' || !results.memorySeed.sealDekEnvelope.trim()) {
+        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
+      }
       if (results.skillsFile && !results.skillsFile.blobObjectId) {
         throw new Error('Skills bundle upload was deduplicated by Walrus and no owned Blob object was created. Please modify your skills file slightly and retry.')
       }
@@ -295,9 +317,11 @@ export default function CreateGasPage() {
         protectedBlobObjectId: results.charFile.blobObjectId,
         foundingMemoryBlobObjectId: results.memorySeed.blobObjectId,
         skillsBlobObjectId: results.skillsFile?.blobObjectId ?? null,
+        initialSkillName: results.skillsFile?.skillName ?? null,
         skillsVisibility: 'private',
         creatorRoyaltyBps: ctx.royalty,
         sealSidecar: results.charFile.sealDekEnvelope ?? null,
+        memorySealSidecar: results.memorySeed.sealDekEnvelope ?? null,
         skillsSealSidecar: results.skillsFile?.sealDekEnvelope ?? null,
       })
     } catch (err) {
@@ -387,7 +411,7 @@ export default function CreateGasPage() {
             </TxRow>
             <TxRow label="Memory">
               <span className="text-foreground">{ctx.memoryFile?.name}</span>
-              <span className="text-muted ml-1.5">(append-only)</span>
+              <span className="text-muted ml-1.5">(encrypted founding entry)</span>
             </TxRow>
             {ctx.skillsFile && (
               <TxRow label="Skills & Docs">
@@ -402,7 +426,7 @@ export default function CreateGasPage() {
             </TxRow>
             <TxRow label="Soul Policy" align="top">
               <span className="text-muted leading-relaxed">
-                SoulGrant reads main · Grant-gated write · All layers append-only · No fork · Revocable
+                Character locked after mint · Grant-gated memory writes · Skills private by default · Revocable
               </span>
             </TxRow>
             <TxRow label="Estimated Gas">

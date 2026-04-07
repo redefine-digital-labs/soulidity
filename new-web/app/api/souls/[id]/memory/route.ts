@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { extractMemoryEntryAppendedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import { upsertMemoryEntryProjection } from '@/lib/soulidity/mirror/upsert-memory'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
-import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
 import type { SoulWriterKind } from '@/lib/soulidity/types'
 
@@ -51,8 +52,7 @@ export async function POST(
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  // Memory appends are naturally idempotent — the upsert uses the on-chain
-  // entry ID as unique key, so we skip tx-sync idempotency checks.
+  const rawMemoryEnvelope = typeof body?.rawMemoryEnvelope === 'string' ? body.rawMemoryEnvelope : null
 
   try {
     await waitForTransactionBestEffort(txDigest)
@@ -68,27 +68,47 @@ export async function POST(
       return NextResponse.json({ error: 'Transaction appended a memory entry for a different Soul' }, { status: 422 })
     }
 
+    let memorySidecar = null
+    try {
+      const builtSidecars = await buildSyncSealSidecars({
+        packageId,
+        soulObjectId: soul.onChainId,
+        stateObjectId: soul.stateOnChainId,
+        rawMemoryEnvelope,
+        memoryBinding: {
+          memoryObjectId: appended.memoryId,
+          timestampKey: appended.timestampKey,
+        },
+      })
+      memorySidecar = builtSidecars.memorySidecar
+    } catch (error) {
+      if (error instanceof SealSidecarSyncConfigError) {
+        return NextResponse.json({ error: error.message }, { status: 503 })
+      }
+      throw error
+    }
+
+    const memoryBlobId = await resolveWalrusBlobId(appended.blobObjectId)
     await upsertMemoryEntryProjection({
       entry: {
-        objectId: appended.entryId,
         packageId,
+        memoryId: appended.memoryId,
         soulId: appended.soulId,
-        index: appended.index,
+        timestampKey: appended.timestampKey,
         writerAddress: appended.writerAddress,
         writerKind: writerKindToString(appended.writerKind),
         createdAtMs: appended.createdAtMs,
         blobObjectId: appended.blobObjectId,
-        blobId: null,
-        previousEntryId: null,
+        blobId: memoryBlobId,
       },
-      memoryOnChainId: appended.memoryId,
+      sealSidecar: memorySidecar,
     })
 
     const responseBody = {
       txDigest,
       soulOnChainId: appended.soulId,
-      memoryEntryOnChainId: appended.entryId,
-      entryIndex: appended.index,
+      memoryOnChainId: appended.memoryId,
+      timestampKey: appended.timestampKey,
     }
 
     return NextResponse.json(responseBody)

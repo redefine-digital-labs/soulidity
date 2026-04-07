@@ -8,6 +8,7 @@ import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
+import { useKioskNfts } from '@/lib/hooks/use-kiosk-nfts'
 import { useWrapPublish } from '@/lib/hooks/use-wrap-publish'
 
 const statusLabels: Record<string, string> = {
@@ -21,19 +22,26 @@ export default function PreviewSignPage() {
   const router = useRouter()
   const ctx = useWrap()
   const { status, error, txDigest, result, publish, suiWallet } = useWrapPublish()
+  const { data: nfts } = useKioskNfts(suiWallet?.address)
 
-  const missingStep1 = !ctx.selectedNft
-  const missingStep2 = !ctx.charFile || !ctx.memoryFile
   const hasPendingRecovery = Boolean(txDigest)
+  const selectedNftAvailable = !!ctx.selectedNft && (!nfts || nfts.some((nft) => nft.objectId === ctx.selectedNft?.objectId))
+  const missingStep1 = !ctx.selectedNft || (!hasPendingRecovery && nfts != null && !selectedNftAvailable)
+  const missingStep2 = !ctx.charFile || !ctx.memoryFile
   const isRecoveryMode = hasPendingRecovery && (missingStep1 || missingStep2)
 
   useEffect(() => {
+    if (!hasPendingRecovery && ctx.selectedNft && nfts && !selectedNftAvailable) {
+      ctx.setSelectedNft(null)
+      router.replace('/wrap-link/personal')
+      return
+    }
     if (missingStep1 && !hasPendingRecovery) {
       router.replace('/wrap-link/personal')
     } else if (missingStep2 && !hasPendingRecovery) {
       router.replace('/wrap-link/personal/configure')
     }
-  }, [missingStep1, missingStep2, hasPendingRecovery, router])
+  }, [ctx, ctx.selectedNft, nfts, selectedNftAvailable, missingStep1, missingStep2, hasPendingRecovery, router])
 
   useEffect(() => {
     if (status === 'done' && result) {

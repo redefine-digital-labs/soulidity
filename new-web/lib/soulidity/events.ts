@@ -98,6 +98,13 @@ function readOptionalNumber(value: unknown, fieldName: string): number | null {
   return null
 }
 
+function readString(value: unknown, fieldName: string) {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim()
+  }
+  throw new OnChainVerificationError(`${fieldName} is missing on chain`)
+}
+
 function readPackageIdFromType(type: string) {
   const packageId = type.split('::', 1)[0]
   return packageId ? normalizeSuiValue(packageId) : null
@@ -341,9 +348,22 @@ export function extractMemoryEntryAppendedEvent(transaction: TransactionLike, pa
   }
   return {
     memoryId: readObjectId(event.memory_id, 'MemoryEntryAppended memory_id'),
-    entryId: readObjectId(event.entry_id, 'MemoryEntryAppended entry_id'),
     soulId: readObjectId(event.soul_id, 'MemoryEntryAppended soul_id'),
-    index: readNumber(event.index, 'MemoryEntryAppended index'),
+    timestampKey: readNumber(event.timestamp_key, 'MemoryEntryAppended timestamp_key'),
+    writerAddress: readAddress(event.writer, 'MemoryEntryAppended writer'),
+    writerKind: readNumber(event.writer_kind, 'MemoryEntryAppended writer_kind'),
+    createdAtMs: readNumber(event.created_at_ms, 'MemoryEntryAppended created_at_ms'),
+    blobObjectId: readObjectId(event.blob_object_id, 'MemoryEntryAppended blob_object_id'),
+  }
+}
+
+export function tryExtractMemoryEntryAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::memory::MemoryEntryAppended`, trustedPackageIds)
+  if (!event) return null
+  return {
+    memoryId: readObjectId(event.memory_id, 'MemoryEntryAppended memory_id'),
+    soulId: readObjectId(event.soul_id, 'MemoryEntryAppended soul_id'),
+    timestampKey: readNumber(event.timestamp_key, 'MemoryEntryAppended timestamp_key'),
     writerAddress: readAddress(event.writer, 'MemoryEntryAppended writer'),
     writerKind: readNumber(event.writer_kind, 'MemoryEntryAppended writer_kind'),
     createdAtMs: readNumber(event.created_at_ms, 'MemoryEntryAppended created_at_ms'),
@@ -359,9 +379,22 @@ export function extractSkillVersionAppendedEvent(transaction: TransactionLike, p
   return {
     skillsId: readObjectId(event.skills_id, 'SkillVersionAppended skills_id'),
     soulId: readObjectId(event.soul_id, 'SkillVersionAppended soul_id'),
-    versionId: readObjectId(event.version_id, 'SkillVersionAppended version_id'),
-    versionNumber: readNumber(event.version, 'SkillVersionAppended version'),
-    previousVersionId: readOptionalObjectId(event.previous_version_id, 'SkillVersionAppended previous_version_id'),
+    skillName: readString(event.skill_name, 'SkillVersionAppended skill_name'),
+    versionIndex: readNumber(event.version_index, 'SkillVersionAppended version_index'),
+    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
+    createdAtMs: readNumber(event.created_at_ms, 'SkillVersionAppended created_at_ms'),
+    blobObjectId: readObjectId(event.blob_object_id, 'SkillVersionAppended blob_object_id'),
+  }
+}
+
+export function tryExtractSkillVersionAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::skills::SkillVersionAppended`, trustedPackageIds)
+  if (!event) return null
+  return {
+    skillsId: readObjectId(event.skills_id, 'SkillVersionAppended skills_id'),
+    soulId: readObjectId(event.soul_id, 'SkillVersionAppended soul_id'),
+    skillName: readString(event.skill_name, 'SkillVersionAppended skill_name'),
+    versionIndex: readNumber(event.version_index, 'SkillVersionAppended version_index'),
     visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
     createdAtMs: readNumber(event.created_at_ms, 'SkillVersionAppended created_at_ms'),
     blobObjectId: readObjectId(event.blob_object_id, 'SkillVersionAppended blob_object_id'),
@@ -376,7 +409,8 @@ export function extractSkillVersionDeletedEvent(transaction: TransactionLike, pa
   return {
     skillsId: readObjectId(event.skills_id, 'SkillVersionDeleted skills_id'),
     soulId: readObjectId(event.soul_id, 'SkillVersionDeleted soul_id'),
-    versionId: readObjectId(event.version_id, 'SkillVersionDeleted version_id'),
+    skillName: readString(event.skill_name, 'SkillVersionDeleted skill_name'),
+    versionIndex: readNumber(event.version_index, 'SkillVersionDeleted version_index'),
     deletedByAddress: readAddress(event.deleted_by, 'SkillVersionDeleted deleted_by'),
   }
 }

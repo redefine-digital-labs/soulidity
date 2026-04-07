@@ -2,6 +2,10 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
+import {
+  attachSoulidityDeploymentSignature,
+  hasCurrentSoulidityDeploymentSignature,
+} from '@/lib/soulidity/client-session'
 
 const PUBLISH_RESULT_KEY = 'soul-publish-result'
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
@@ -20,14 +24,15 @@ interface EncryptedUploadResult {
   blobObjectId: string
   contentHash: string
   blobUrl: string
-  sealDekEnvelope: object
+  sealDekEnvelope: string
+  skillName?: string | null
 }
 
 export interface UploadResults {
   ownerAddress?: string
   coverImage?: PublicUploadResult
   charFile?: EncryptedUploadResult
-  memorySeed?: PublicUploadResult
+  memorySeed?: EncryptedUploadResult
   skillsFile?: EncryptedUploadResult
 }
 
@@ -56,6 +61,12 @@ export interface PublishResult {
   stateOnChainId: string
   memoryOnChainId: string
   listingStatus: string
+}
+
+interface StoredPublishResult {
+  userId?: string
+  result?: PublishResult
+  deploymentSignature?: string
 }
 
 // ── Context value ──
@@ -149,8 +160,8 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
     try {
       const raw = sessionStorage.getItem(PUBLISH_RESULT_KEY)
       if (raw) {
-        const stored = JSON.parse(raw)
-        if (stored.userId === user?.id && stored.result) {
+        const stored = JSON.parse(raw) as StoredPublishResult
+        if (stored.userId === user?.id && stored.result && hasCurrentSoulidityDeploymentSignature(stored)) {
           setPublishResultRaw(stored.result)
         } else {
           sessionStorage.removeItem(PUBLISH_RESULT_KEY)
@@ -164,7 +175,7 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
     setPublishResultRaw(result)
     try {
       if (result && user?.id) {
-        sessionStorage.setItem(PUBLISH_RESULT_KEY, JSON.stringify({ userId: user.id, result }))
+        sessionStorage.setItem(PUBLISH_RESULT_KEY, JSON.stringify(attachSoulidityDeploymentSignature({ userId: user.id, result })))
       } else {
         sessionStorage.removeItem(PUBLISH_RESULT_KEY)
       }

@@ -3,6 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import type { CollectionSyncResponse } from '@/lib/hooks/use-collection-publish'
+import {
+  attachSoulidityDeploymentSignature,
+  hasCurrentSoulidityDeploymentSignature,
+} from '@/lib/soulidity/client-session'
 
 const PUBLISH_RESULT_KEY = 'collection-publish-result'
 const MINT_RECOVERY_KEY = 'collection-mint-recovery'
@@ -24,6 +28,13 @@ export interface CollectionSuccessSnapshot {
   extraRoyaltyBps: number
   tradeable: boolean
   soulNames: string[]
+}
+
+interface StoredCollectionPublishResult {
+  userId?: string
+  result?: CollectionSyncResponse
+  snapshot?: CollectionSuccessSnapshot | null
+  deploymentSignature?: string
 }
 
 // ── Batch soul entry (template metadata only — files come from folder) ──
@@ -156,8 +167,8 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
     try {
       const raw = sessionStorage.getItem(PUBLISH_RESULT_KEY)
       if (raw) {
-        const stored = JSON.parse(raw)
-        if (stored.userId === user?.id && stored.result) {
+        const stored = JSON.parse(raw) as StoredCollectionPublishResult
+        if (stored.userId === user?.id && stored.result && hasCurrentSoulidityDeploymentSignature(stored)) {
           setPublishResultRaw(stored.result)
           if (stored.snapshot) setSuccessSnapshot(stored.snapshot)
         } else {
@@ -172,7 +183,7 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
       const recoveryRaw = sessionStorage.getItem(MINT_RECOVERY_KEY)
       if (recoveryRaw) {
         const recovery = JSON.parse(recoveryRaw)
-        if (recovery.userId === user?.id && recovery.txDigest && recovery.collectionMeta) {
+        if (recovery.userId === user?.id && recovery.txDigest && recovery.collectionMeta && hasCurrentSoulidityDeploymentSignature(recovery)) {
           const meta = recovery.collectionMeta
           setName(meta.name ?? '')
           setDescription(meta.description ?? '')
@@ -208,7 +219,10 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
     setSuccessSnapshot(snapshot ?? null)
     try {
       if (result && user?.id) {
-        sessionStorage.setItem(PUBLISH_RESULT_KEY, JSON.stringify({ userId: user.id, result, snapshot: snapshot ?? null }))
+        sessionStorage.setItem(
+          PUBLISH_RESULT_KEY,
+          JSON.stringify(attachSoulidityDeploymentSignature({ userId: user.id, result, snapshot: snapshot ?? null })),
+        )
       } else {
         sessionStorage.removeItem(PUBLISH_RESULT_KEY)
       }

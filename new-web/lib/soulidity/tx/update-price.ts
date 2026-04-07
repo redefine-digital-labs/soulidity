@@ -29,7 +29,16 @@ export function buildUpdateListingPriceTx(params: {
     ],
   })
 
-  // Step 2: Relist at new price
+  // Step 2: Repair stale market registry bindings before relisting.
+  tx.moveCall({
+    target: `${packageId}::market::ensure_personal_kiosk_registered`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(params.currentKioskCapOnChainId),
+    ],
+  })
+
+  // Step 3: Relist at new price
   if (params.collectionObjectId) {
     tx.moveCall({
       target: `${packageId}::market::list_soul_fixed_price_with_collection`,

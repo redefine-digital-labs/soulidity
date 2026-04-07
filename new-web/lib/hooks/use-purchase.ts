@@ -2,14 +2,18 @@
 
 import { useState } from 'react'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildBuySoulTx } from '@/lib/soulidity/tx/buy'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
 
 export type PurchaseStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
 
-async function resolvePersonalKiosk(headers: Record<string, string>) {
-  const res = await fetch('/api/souls/personal-kiosk', { cache: 'no-store', headers })
+async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress?: string | null) {
+  const url = walletAddress
+    ? `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`
+    : '/api/souls/personal-kiosk'
+  const res = await fetch(url, { cache: 'no-store', headers })
   if (!res.ok) {
     if (res.status === 404) return null
     const body = await res.json().catch(() => ({}))
@@ -46,7 +50,7 @@ export function usePurchase(soul: SoulAssetDetail | null) {
       setStatus('building')
       setError(null)
       const authHeaders = await getAuthHeaders()
-      const personalKiosk = await resolvePersonalKiosk(authHeaders)
+      const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
       const coinType = process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE ?? '0x0::usdc::USDC'
       const coins = await suiClient.getCoins({ owner: suiWallet.address, coinType })
       const requiredAtomic = BigInt(soul.quote.totalAtomic)
@@ -64,6 +68,14 @@ export function usePurchase(soul: SoulAssetDetail | null) {
       if (accumulated < requiredAtomic) {
         throw new Error('Insufficient payment balance')
       }
+      await assertObjectInputsExist(suiClient, {
+        'Seller kiosk': soul.currentKioskId,
+        'Soul state': soul.stateOnChainId,
+        'Soul listing': soul.listingObjectOnChainId,
+        Collection: soul.collectionOnChainId,
+        'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+        'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+      })
 
       const tx = buildBuySoulTx({
         sellerKioskId: soul.currentKioskId,

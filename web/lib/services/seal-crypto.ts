@@ -13,6 +13,8 @@ const IV_BYTES = 12
 const DOCUMENT_ID_NONCE_BYTES = 16
 const DOCUMENT_ID_DOMAIN = 'soul-seal:'
 const DOCUMENT_ID_VERSION = 0x01
+const MEMORY_DOCUMENT_ID_DOMAIN = 'soul-memory:'
+const MEMORY_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x4d)
 const SKILL_DOCUMENT_ID_DOMAIN = 'soul-skill:'
 const SKILL_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
 const MAX_ENCRYPTED_DEK_BASE64_LENGTH = 16 * 1024
@@ -56,6 +58,19 @@ function hexToBytes(value: string): Uint8Array {
 
 function bytesToHex(bytes: Uint8Array): string {
   return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+}
+
+function u64ToBytes(value: number): Uint8Array {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error('u64 value must be a non-negative safe integer')
+  }
+  const bytes = new Uint8Array(8)
+  let remaining = BigInt(value)
+  for (let index = 7; index >= 0; index -= 1) {
+    bytes[index] = Number(remaining & 0xffn)
+    remaining >>= 8n
+  }
+  return bytes
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -359,10 +374,46 @@ export function generateSkillDocumentId(versionObjectId: string): string {
   ]))
 }
 
-export async function createSkillVersionSealEnvelopeSidecar(params: {
+export function generateMemoryDocumentId(memoryObjectId: string, timestampKey: number): string {
+  const memoryBytes = hexToBytes(memoryObjectId)
+  const timestampBytes = u64ToBytes(timestampKey)
+  return bytesToHex(new Uint8Array([
+    ...new TextEncoder().encode(MEMORY_DOCUMENT_ID_DOMAIN),
+    DOCUMENT_ID_VERSION,
+    ...memoryBytes,
+    ...timestampBytes,
+    ...MEMORY_DOCUMENT_ID_NONCE,
+  ]))
+}
+
+export function generateSkillDocumentIdForVersion(
+  skillsObjectId: string,
+  skillName: string,
+  versionIndex: number,
+): string {
+  if (!skillName.trim()) {
+    throw new Error('skillName is required')
+  }
+
+  const skillsBytes = hexToBytes(skillsObjectId)
+  const skillNameBytes = new TextEncoder().encode(skillName.trim())
+  const versionBytes = u64ToBytes(versionIndex)
+  return bytesToHex(new Uint8Array([
+    ...new TextEncoder().encode(SKILL_DOCUMENT_ID_DOMAIN),
+    DOCUMENT_ID_VERSION,
+    ...skillsBytes,
+    ...skillNameBytes,
+    0x00,
+    ...versionBytes,
+    ...SKILL_DOCUMENT_ID_NONCE,
+  ]))
+}
+
+export async function createMemoryEntrySealEnvelopeSidecar(params: {
   sealClient: Pick<SealClient, 'encrypt'>
   packageId: string
-  versionObjectId: string
+  memoryObjectId: string
+  timestampKey: number
   threshold: number
   dek: Uint8Array
   iv: Uint8Array
@@ -382,7 +433,60 @@ export async function createSkillVersionSealEnvelopeSidecar(params: {
 
   const keyMaterial = createSealKeyMaterial(params.dek, params.contentHash)
   try {
-    const documentId = generateSkillDocumentId(params.versionObjectId)
+    const documentId = generateMemoryDocumentId(params.memoryObjectId, params.timestampKey)
+    const { encryptedObject } = await params.sealClient.encrypt({
+      threshold: params.threshold,
+      packageId: params.packageId,
+      id: documentId,
+      data: keyMaterial,
+    })
+
+    return {
+      version: 1,
+      mode: 'seal-envelope',
+      documentId,
+      encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
+      iv: bytesToBase64(params.iv),
+      cipher: AES_GCM_CIPHER_LABEL,
+      mimeType: params.mimeType,
+      fileName: params.fileName,
+      contentHash: params.contentHash,
+    }
+  } finally {
+    keyMaterial.fill(0)
+  }
+}
+
+export async function createSkillVersionSealEnvelopeSidecar(params: {
+  sealClient: Pick<SealClient, 'encrypt'>
+  packageId: string
+  skillsObjectId: string
+  skillName: string
+  versionIndex: number
+  threshold: number
+  dek: Uint8Array
+  iv: Uint8Array
+  contentHash: string
+  mimeType: string
+  fileName: string
+}): Promise<SealEnvelopeSidecar> {
+  if (params.dek.length !== DEK_BYTES) {
+    throw new Error('Seal envelope DEK must be 32 bytes')
+  }
+  if (params.iv.length !== IV_BYTES) {
+    throw new Error(`Seal envelope IV must be ${IV_BYTES} bytes`)
+  }
+  if (!CONTENT_HASH_HEX_PATTERN.test(params.contentHash)) {
+    throw new Error('contentHash must be a 64-character hex string')
+  }
+
+  const keyMaterial = createSealKeyMaterial(params.dek, params.contentHash)
+  try {
+    const documentId = generateSkillDocumentIdForVersion(
+      params.skillsObjectId,
+      params.skillName,
+      params.versionIndex,
+    )
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
       packageId: params.packageId,

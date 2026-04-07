@@ -14,6 +14,7 @@ const ENotSoulOwner: u64 = 1;
 const ECollectionAlreadyBound: u64 = 2;
 const EInvalidOwner: u64 = 3;
 const ESkillsAlreadyBound: u64 = 4;
+const EMemoryAlreadyBound: u64 = 5;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
@@ -50,6 +51,7 @@ public struct SoulState has key {
     ownership_epoch: u64,
     grant_capacity: u64,
     active_grants: vector<ActiveGrantSlot>,
+    memory_id: Option<ID>,
     skills_id: Option<ID>,
     collection_id: Option<ID>,
 }
@@ -149,6 +151,10 @@ public fun active_grant_count(self: &SoulState): u64 {
     self.active_grants.length()
 }
 
+public fun memory_id(self: &SoulState): &Option<ID> {
+    &self.memory_id
+}
+
 public fun skills_id(self: &SoulState): &Option<ID> {
     &self.skills_id
 }
@@ -206,6 +212,7 @@ public(package) fun create_state(
     creator_royalty_bps: u16,
     owner: address,
     kiosk_id: ID,
+    memory_id: Option<ID>,
     ctx: &mut TxContext,
 ): SoulState {
     assert!(owner != @0x0, EInvalidOwner);
@@ -221,6 +228,7 @@ public(package) fun create_state(
         ownership_epoch: 0,
         grant_capacity: DEFAULT_GRANT_CAPACITY,
         active_grants: vector[],
+        memory_id,
         skills_id: option::none(),
         collection_id: option::none(),
     }
@@ -255,6 +263,11 @@ public(package) fun assert_owner(state: &SoulState, owner: address) {
 public(package) fun bind_collection(state: &mut SoulState, collection_id: ID) {
     assert!(state.collection_id.is_none(), ECollectionAlreadyBound);
     state.collection_id = option::some(collection_id);
+}
+
+public(package) fun set_memory_id(state: &mut SoulState, memory_id: ID) {
+    assert!(state.memory_id.is_none(), EMemoryAlreadyBound);
+    state.memory_id = option::some(memory_id);
 }
 
 public(package) fun set_skills_id(state: &mut SoulState, skills_id: ID) {
@@ -396,6 +409,7 @@ public fun destroy_state_for_testing(self: SoulState) {
         ownership_epoch: _,
         grant_capacity: _,
         active_grants: _,
+        memory_id: _,
         skills_id: _,
         collection_id: _,
     } = self;

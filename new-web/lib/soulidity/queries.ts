@@ -4,8 +4,6 @@ import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import type {
   ActiveGrantSlotObject,
   CollectionListingObject,
-  SkillVersionObject,
-  MemoryEntryObject,
   ResolvedPersonalKiosk,
   SoulCollectionObject,
   SoulCollectionRightObject,
@@ -49,12 +47,23 @@ const MAX_BPS = 10_000n
 const MAX_U64 = 18_446_744_073_709_551_615n
 const OPTIONAL_VECTOR_MAX_DEPTH = 4
 const KIOSK_PACKAGE_ENV_KEY = 'NEXT_PUBLIC_KIOSK_PACKAGE_ID'
+const MAX_KIOSK_CAP_PAGES = 5
 
 export class OnChainVerificationError extends Error {
   constructor(message: string, readonly status = 422) {
     super(message)
     this.name = 'OnChainVerificationError'
   }
+}
+
+function isMissingObjectResponse(response: { data?: unknown; error?: { code?: string; error?: string; message?: string } | null }) {
+  if (!response.data) {
+    return true
+  }
+
+  const errorCode = response.error?.code ?? ''
+  const errorMessage = [response.error?.error, response.error?.message, errorCode].filter(Boolean).join(' ')
+  return /not.?exist|not.?found|requested entity was not found/i.test(errorMessage)
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -253,6 +262,12 @@ function readNestedObjectId(value: unknown, fieldName: string, depth = 0): strin
   if ('id' in record && typeof record.id === 'string') {
     return readObjectId(record.id, fieldName)
   }
+  if ('id' in record && record.id) {
+    const nestedId = readNestedObjectId(record.id, fieldName, depth + 1)
+    if (nestedId) {
+      return nestedId
+    }
+  }
   if ('bytes' in record && typeof record.bytes === 'string') {
     return readObjectId(record.bytes, fieldName)
   }
@@ -294,6 +309,21 @@ function readWalrusBlobId(value: unknown, fieldName: string): string | null {
     return null
   }
   return normalized
+}
+
+/**
+ * Read a Walrus Blob object on-chain and return its blob_id (content hash).
+ * Returns null if the object doesn't have a parseable blob_id field.
+ */
+export async function resolveWalrusBlobId(blobObjectId: string): Promise<string | null> {
+  const response = await suiClient.getObject({
+    id: blobObjectId,
+    options: { showContent: true },
+  })
+  const content = response.data?.content
+  if (!content || content.dataType !== 'moveObject') return null
+  const fields = (content as { fields?: unknown }).fields
+  return readWalrusBlobId(fields, 'Walrus Blob blob_id')
 }
 
 function getObjectOwnerKind(owner: unknown): 'address' | 'object' | 'shared' | 'immutable' | 'unknown' {
@@ -549,6 +579,7 @@ export async function getSoulStateObject(objectId: string, packageId: string): P
     grantCapacity: readNumber(fields.grant_capacity, 'SoulState grant_capacity'),
     activeGrantCount: activeGrants.length,
     activeGrants,
+    memoryId: readNestedObjectId(fields.memory_id, 'SoulState memory_id'),
     skillsId: readNestedObjectId(fields.skills_id, 'SoulState skills_id'),
     collectionId: readOptionalString(fields.collection_id, 'SoulState collection_id'),
   }
@@ -683,34 +714,10 @@ export async function getSoulMemoryObject(objectId: string, packageId: string): 
     objectId,
     packageId: resolvedPackageId,
     soulId: readObjectId(fields.soul_id, 'SoulMemory soul_id'),
-    nextIndex: readNumber(fields.next_index, 'SoulMemory next_index'),
     entryCount: readNumber(fields.entry_count, 'SoulMemory entry_count'),
-    lastEntryId: readOptionalString(fields.last_entry_id, 'SoulMemory last_entry_id'),
-    lastEntryCreatedAtMs: readOptionalNumber(fields.last_entry_created_at_ms, 'SoulMemory last_entry_created_at_ms'),
-  }
-}
-
-export async function getMemoryEntryObject(objectId: string, packageId: string): Promise<MemoryEntryObject> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::memory::MemoryEntry`
-  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  return {
-    objectId,
-    packageId: resolvedPackageId,
-    soulId: readObjectId(fields.soul_id, 'MemoryEntry soul_id'),
-    index: readNumber(fields.index, 'MemoryEntry index'),
-    writerAddress: readAddress(fields.writer, 'MemoryEntry writer'),
-    writerKind: readWriterKind(fields.writer_kind, 'MemoryEntry writer_kind'),
-    createdAtMs: readNumber(fields.created_at_ms, 'MemoryEntry created_at_ms'),
-    blobObjectId: readNestedObjectId(fields.content_blob, 'MemoryEntry content_blob') ?? objectId,
-    blobId: readWalrusBlobId(fields.content_blob, 'MemoryEntry content_blob'),
-    previousEntryId: readOptionalString(fields.prev_entry_id, 'MemoryEntry prev_entry_id'),
+    entriesTableId:
+      readNestedObjectId(fields.entries, 'SoulMemory entries')
+      ?? readObjectId(fields.entries, 'SoulMemory entries'),
   }
 }
 
@@ -728,34 +735,10 @@ export async function getSoulSkillsObject(objectId: string, packageId: string): 
     objectId,
     packageId: resolvedPackageId,
     soulId: readObjectId(fields.soul_id, 'SoulSkills soul_id'),
-    nextVersion: readNumber(fields.next_version, 'SoulSkills next_version'),
-    versionCount: readNumber(fields.version_count, 'SoulSkills version_count'),
-    latestVersionId: readNestedObjectId(fields.latest_version_id, 'SoulSkills latest_version_id'),
-  }
-}
-
-export async function getSkillVersionObject(objectId: string, packageId: string): Promise<SkillVersionObject> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::skills::SkillVersion`
-  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  return {
-    objectId,
-    packageId: resolvedPackageId,
-    soulId: readObjectId(fields.soul_id, 'SkillVersion soul_id'),
-    skillsId: readObjectId(fields.skills_id, 'SkillVersion skills_id'),
-    versionNumber: readNumber(fields.version, 'SkillVersion version'),
-    previousVersionId: readNestedObjectId(fields.previous_version_id, 'SkillVersion previous_version_id'),
-    visibility: readSkillVisibility(fields.is_public, 'SkillVersion is_public'),
-    deleted: Boolean(fields.deleted),
-    createdAtMs: readNumber(fields.created_at_ms, 'SkillVersion created_at_ms'),
-    blobObjectId: readNestedObjectId(fields.content_blob, 'SkillVersion content_blob') ?? objectId,
-    blobId: readWalrusBlobId(fields.content_blob, 'SkillVersion content_blob'),
+    skillCount: readNumber(fields.skill_count, 'SoulSkills skill_count'),
+    skillsTableId:
+      readNestedObjectId(fields.skills, 'SoulSkills skills')
+      ?? readObjectId(fields.skills, 'SoulSkills skills'),
   }
 }
 
@@ -817,35 +800,74 @@ export async function getRegisteredPersonalKiosk(params: {
 
 export async function listOwnedPersonalKioskCaps(ownerAddress: string): Promise<ResolvedPersonalKiosk[]> {
   const personalKioskCapType = `${getVendoredKioskPackageAddress()}::personal_kiosk::PersonalKioskCap`
-  const page = await suiClient.getOwnedObjects({
-    owner: ownerAddress,
-    filter: { StructType: personalKioskCapType },
-    options: {
-      showOwner: true,
-      showContent: true,
-      showType: true,
-    },
-  })
+  const kiosks: ResolvedPersonalKiosk[] = []
+  let cursor: string | null | undefined = undefined
+  let pagesRead = 0
 
-  return page.data.flatMap((entry) => {
-    try {
-      const objectId = typeof entry.data?.objectId === 'string' ? entry.data.objectId : null
-      if (!objectId) return []
-      const { fields } = expectMoveObject(
-        { data: entry.data ?? null } as ObjectLike,
-        objectId,
-        personalKioskCapType,
-      )
-      const kioskId = readNestedObjectId(fields.cap, 'PersonalKioskCap cap.for')
-      const resolvedOwnerAddress = getObjectOwnerAddress(entry.data?.owner)
-      if (!kioskId || !resolvedOwnerAddress) return []
-      return [{
-        ownerAddress: resolvedOwnerAddress,
-        currentKioskId: kioskId,
-        currentKioskCapOnChainId: objectId,
-      }]
-    } catch {
-      return []
-    }
+  do {
+    const page = await suiClient.getOwnedObjects({
+      owner: ownerAddress,
+      ...(cursor ? { cursor } : {}),
+      filter: { StructType: personalKioskCapType },
+      options: {
+        showOwner: true,
+        showContent: true,
+        showType: true,
+      },
+    })
+
+    kiosks.push(...page.data.flatMap((entry) => {
+      try {
+        const objectId = typeof entry.data?.objectId === 'string' ? entry.data.objectId : null
+        if (!objectId) return []
+        const { fields } = expectMoveObject(
+          { data: entry.data ?? null } as ObjectLike,
+          objectId,
+          personalKioskCapType,
+        )
+        const kioskId = readNestedObjectId(fields.cap, 'PersonalKioskCap cap.for')
+        const resolvedOwnerAddress = getObjectOwnerAddress(entry.data?.owner)
+        const normalizedObjectId = readObjectId(objectId, 'PersonalKioskCap objectId')
+        if (!kioskId || !resolvedOwnerAddress) return []
+        return [{
+          ownerAddress: resolvedOwnerAddress,
+          currentKioskId: kioskId,
+          currentKioskCapOnChainId: normalizedObjectId,
+        }]
+      } catch {
+        return []
+      }
+    }))
+
+    pagesRead++
+    if (pagesRead >= MAX_KIOSK_CAP_PAGES) break
+    cursor = page.hasNextPage ? page.nextCursor : null
+  } while (cursor)
+
+  return kiosks
+}
+
+export async function filterExistingPersonalKiosks(kiosks: ResolvedPersonalKiosk[]): Promise<ResolvedPersonalKiosk[]> {
+  if (kiosks.length === 0) {
+    return []
+  }
+
+  const ids = [...new Set(kiosks.flatMap((kiosk) => [
+    kiosk.currentKioskId,
+    kiosk.currentKioskCapOnChainId,
+  ]))]
+  const responses = await suiClient.multiGetObjects({
+    ids,
+    options: { showType: true },
   })
+  const existingIds = new Set(
+    responses.flatMap((response, index) => (
+      isMissingObjectResponse(response) ? [] : [ids[index]!]
+    )),
+  )
+
+  return kiosks.filter((kiosk) => (
+    existingIds.has(kiosk.currentKioskId)
+    && existingIds.has(kiosk.currentKioskCapOnChainId)
+  ))
 }

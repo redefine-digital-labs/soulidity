@@ -1,11 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
 import type { KioskNft } from '@/lib/hooks/use-kiosk-nfts'
 import type { WrapPublishResult } from '@/components/providers/wrap-provider'
+import {
+  attachSoulidityDeploymentSignature,
+  hasCurrentSoulidityDeploymentSignature,
+} from '@/lib/soulidity/client-session'
 
 const WRAP_MINT_RECOVERY_KEY = 'soul-wrap-personal-recovery'
 
@@ -13,6 +18,7 @@ interface WrapSyncBody {
   txDigest: string
   category: 'personal-join'
   sealSidecar: string | null
+  memorySealSidecar: string | null
   skillsSealSidecar: string | null
 }
 
@@ -20,6 +26,7 @@ interface WrapRecoveryState {
   userId: string
   txDigest: string
   syncBody: WrapSyncBody
+  deploymentSignature: string
 }
 
 export type WrapPublishStatus = 'idle' | 'uploading' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -39,6 +46,7 @@ function isWrapSyncBody(value: unknown): value is WrapSyncBody {
     && candidate.txDigest.length > 0
     && candidate.category === 'personal-join'
     && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'string')
+    && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'string')
     && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'string')
 }
 
@@ -47,7 +55,12 @@ export function sanitizeWrapRecoveryState(raw: string | null, userId: string | n
 
   try {
     const parsed = JSON.parse(raw) as Partial<WrapRecoveryState>
-    if (parsed.userId !== userId || typeof parsed.txDigest !== 'string' || !isWrapSyncBody(parsed.syncBody)) {
+    if (
+      parsed.userId !== userId
+      || typeof parsed.txDigest !== 'string'
+      || !isWrapSyncBody(parsed.syncBody)
+      || !hasCurrentSoulidityDeploymentSignature(parsed)
+    ) {
       return null
     }
     if (parsed.syncBody.txDigest !== parsed.txDigest) {
@@ -57,6 +70,7 @@ export function sanitizeWrapRecoveryState(raw: string | null, userId: string | n
       userId,
       txDigest: parsed.txDigest,
       syncBody: parsed.syncBody,
+      deploymentSignature: parsed.deploymentSignature,
     }
   } catch {
     return null
@@ -112,7 +126,7 @@ export function useWrapPublish() {
   const [error, setError] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const [result, setResult] = useState<WrapPublishResult | null>(null)
-  const { suiWallet, signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders, user } = useAuth()
   const recoveryRef = useRef<WrapRecoveryState | null>(null)
 
@@ -169,10 +183,13 @@ export function useWrapPublish() {
           throw new Error('Character file was deduplicated. Please modify the content to make it unique.')
         }
 
-        // 2. Upload memory file (public)
-        const memUpload = await uploadFile(params.memoryFile, 'public', authHeaders, walletAddress)
+        // 2. Upload memory file (encrypted)
+        const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletAddress)
         if (!memUpload.blobObjectId) {
           throw new Error('Memory file was deduplicated. Please modify the content to make it unique.')
+        }
+        if (typeof memUpload.sealDekEnvelope !== 'string' || !memUpload.sealDekEnvelope.trim()) {
+          throw new Error('Memory file upload is missing Seal recovery data.')
         }
 
         // 3. Upload skills file (encrypted, optional)
@@ -184,6 +201,14 @@ export function useWrapPublish() {
         // 4. Resolve kiosk + build TX
         setStatus('building')
         const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
+        await assertObjectInputsExist(suiClient, {
+          'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+          'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+          'Wrapped soul character blob': charUpload.blobObjectId,
+          'Wrapped founding memory blob': memUpload.blobObjectId,
+          'Wrapped skills blob': skillsUpload?.blobObjectId ?? null,
+          'Source NFT': params.nft.objectId,
+        })
 
         const tx = buildPersonalJoinSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -196,6 +221,7 @@ export function useWrapPublish() {
           protectedBlobObjectId: charUpload.blobObjectId,
           foundingMemoryBlobObjectId: memUpload.blobObjectId,
           skillsBlobObjectId: skillsUpload?.blobObjectId ?? null,
+          initialSkillName: skillsUpload?.skillName ?? null,
           originRef: `sui:${params.nft.objectId}`,
           creatorRoyaltyBps: params.royalty,
         })
@@ -208,14 +234,17 @@ export function useWrapPublish() {
         setTxDigest(executedDigest)
 
         const recovery: WrapRecoveryState = {
-          userId: user?.id ?? '',
-          txDigest: executedDigest,
-          syncBody: {
+          ...attachSoulidityDeploymentSignature({
+            userId: user?.id ?? '',
             txDigest: executedDigest,
-            category: 'personal-join',
-            sealSidecar: typeof charUpload.sealDekEnvelope === 'string' ? charUpload.sealDekEnvelope : null,
-            skillsSealSidecar: typeof skillsUpload?.sealDekEnvelope === 'string' ? skillsUpload.sealDekEnvelope : null,
-          },
+            syncBody: {
+              txDigest: executedDigest,
+              category: 'personal-join',
+              sealSidecar: typeof charUpload.sealDekEnvelope === 'string' ? charUpload.sealDekEnvelope : null,
+              memorySealSidecar: typeof memUpload.sealDekEnvelope === 'string' ? memUpload.sealDekEnvelope : null,
+              skillsSealSidecar: typeof skillsUpload?.sealDekEnvelope === 'string' ? skillsUpload.sealDekEnvelope : null,
+            },
+          }),
         }
         recoveryRef.current = recovery
         try {

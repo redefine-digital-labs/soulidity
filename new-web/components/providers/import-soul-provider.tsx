@@ -4,6 +4,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ParsedField, ParseStats } from '@/lib/import/file-parser'
 import type { FieldMapping, SoulTargetField } from '@/lib/import/field-mapping'
 import { useAuth } from '@/components/providers/auth-provider'
+import {
+  attachSoulidityDeploymentSignature,
+  hasCurrentSoulidityDeploymentSignature,
+} from '@/lib/soulidity/client-session'
 
 const IMPORT_RESULT_KEY = 'soul-import-result'
 const IMPORT_RECOVERY_KEY = 'soul-import-recovery'
@@ -22,14 +26,15 @@ interface EncryptedUploadResult {
   blobObjectId: string
   contentHash: string
   blobUrl: string
-  sealDekEnvelope: object
+  sealDekEnvelope: string
+  skillName?: string | null
 }
 
 export interface UploadResults {
   ownerAddress?: string
   coverImage?: PublicUploadResult
   charFile?: EncryptedUploadResult
-  memorySeed?: PublicUploadResult
+  memorySeed?: EncryptedUploadResult
   skillsFile?: EncryptedUploadResult
 }
 
@@ -55,6 +60,12 @@ export interface ImportResult {
   soulOnChainId: string
   provenanceKind: string
   originRef: string
+}
+
+interface StoredImportResult {
+  userId?: string
+  result?: ImportResult
+  deploymentSignature?: string
 }
 
 // ── Context ──
@@ -163,8 +174,8 @@ export function ImportSoulProvider({ children }: { children: React.ReactNode }) 
     try {
       const raw = sessionStorage.getItem(IMPORT_RESULT_KEY)
       if (raw) {
-        const stored = JSON.parse(raw)
-        if (stored.userId === user.id && stored.result) {
+        const stored = JSON.parse(raw) as StoredImportResult
+        if (stored.userId === user.id && stored.result && hasCurrentSoulidityDeploymentSignature(stored)) {
           setImportResultRaw(stored.result)
         } else {
           sessionStorage.removeItem(IMPORT_RESULT_KEY)
@@ -178,7 +189,7 @@ export function ImportSoulProvider({ children }: { children: React.ReactNode }) 
     setImportResultRaw(result)
     try {
       if (result && user?.id) {
-        sessionStorage.setItem(IMPORT_RESULT_KEY, JSON.stringify({ userId: user.id, result }))
+        sessionStorage.setItem(IMPORT_RESULT_KEY, JSON.stringify(attachSoulidityDeploymentSignature({ userId: user.id, result })))
       } else {
         sessionStorage.removeItem(IMPORT_RESULT_KEY)
       }

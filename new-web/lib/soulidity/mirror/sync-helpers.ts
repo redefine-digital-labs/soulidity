@@ -1,14 +1,13 @@
 import type { Prisma } from '../../../../generated/prisma/client'
 import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
+import type { SkillVersionObject } from '@/lib/soulidity/types'
 import {
   getRegisteredPersonalKiosk,
-  getSkillVersionObject,
   getSoulCollectionObject,
   getSoulCollectionRightObject,
   getSoulGrantObject,
   getSoulMemoryObject,
   getSoulObject,
-  getSoulSkillsObject,
   getSoulStateObject,
 } from '@/lib/soulidity/queries'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
@@ -33,23 +32,12 @@ export async function syncSoulProjectionFromChain(params: {
   listingObjectOnChainId?: string | null
   listedPriceAtomic?: bigint | null
   listingStatus?: 'held' | 'listed' | 'floor-violation'
-  latestSkillVersionSealSidecar?: SealEnvelopeSidecar | null
 }) {
   const [soul, state, memory] = await Promise.all([
     getSoulObject(params.soulObjectId, params.packageId),
     getSoulStateObject(params.stateObjectId, params.packageId),
     getSoulMemoryObject(params.memoryObjectId, params.packageId),
   ])
-  const skills = state.skillsId ? await getSoulSkillsObject(state.skillsId, params.packageId) : null
-  if (skills?.latestVersionId) {
-    const latestVersion = await getSkillVersionObject(skills.latestVersionId, params.packageId)
-    await upsertSkillVersionProjection({
-      version: latestVersion,
-      soulOnChainId: params.soulObjectId,
-      skillsOnChainId: skills.objectId,
-      sealSidecar: params.latestSkillVersionSealSidecar ?? null,
-    })
-  }
 
   // Resolve kiosk cap ID: use caller-provided value, fall back to registry lookup
   let kioskCapOnChainId = params.currentKioskCapOnChainId ?? null
@@ -67,7 +55,6 @@ export async function syncSoulProjectionFromChain(params: {
     state,
     memory,
     currentKioskCapOnChainId: kioskCapOnChainId,
-    latestSkillVersionOnChainId: skills?.latestVersionId ?? null,
     creatorMemberId: params.creatorMemberId ?? null,
     currentOwnerMemberId: params.currentOwnerMemberId ?? null,
     category: params.category,
@@ -146,16 +133,14 @@ export async function endActiveSoulGrantProjectionsFromChain(params: {
 }
 
 export async function syncSkillVersionProjectionFromChain(params: {
-  packageId: string
-  versionObjectId: string
+  version: SkillVersionObject
   soulOnChainId: string
   skillsOnChainId: string
   deletedAt?: Date | null
   sealSidecar?: SealEnvelopeSidecar | null
 }) {
-  const version = await getSkillVersionObject(params.versionObjectId, params.packageId)
   return upsertSkillVersionProjection({
-    version,
+    version: params.version,
     soulOnChainId: params.soulOnChainId,
     skillsOnChainId: params.skillsOnChainId,
     deletedAt: params.deletedAt ?? null,
@@ -164,7 +149,9 @@ export async function syncSkillVersionProjectionFromChain(params: {
 }
 
 export async function markSkillVersionDeletedFromChain(params: {
-  versionOnChainId: string
+  skillsOnChainId: string
+  skillName: string
+  versionIndex: number
   deletedAt?: Date | null
 }) {
   return markSkillVersionDeleted(params)

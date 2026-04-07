@@ -2,14 +2,13 @@ import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { extractSkillVersionAppendedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import {
-  syncSkillVersionProjectionFromChain,
-  syncSoulProjectionFromChain,
-} from '@/lib/soulidity/mirror/sync-helpers'
+import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
+import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
+import { upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
-import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +31,6 @@ export async function GET(
   return NextResponse.json({
     soulOnChainId: soul.onChainId,
     skillsOnChainId: soul.skillsOnChainId,
-    latestSkillVersionOnChainId: soul.latestSkillVersionOnChainId,
     items: soul.skillVersions.map((version) => ({
       ...version,
       soulOnChainId: version.soulOnChainId,
@@ -93,6 +91,8 @@ export async function POST(
       return NextResponse.json({ error: 'Transaction appended a skill version for a different Soul' }, { status: 422 })
     }
 
+    const rawSkillsEnvelope = typeof body?.rawSkillsEnvelope === 'string' ? body.rawSkillsEnvelope : null
+
     const mirroredSoul = await syncSoulProjectionFromChain({
       packageId,
       soulObjectId: soul.onChainId,
@@ -109,20 +109,51 @@ export async function POST(
       listedPriceAtomic: soul.listedPriceAtomic ? BigInt(soul.listedPriceAtomic.toString()) : null,
       listingStatus: soul.listingStatus as 'held' | 'listed' | 'floor-violation',
     })
-    const mirroredVersion = await syncSkillVersionProjectionFromChain({
-      packageId,
-      versionObjectId: appended.versionId,
+    let skillSidecar = null
+    try {
+      const builtSidecars = await buildSyncSealSidecars({
+        packageId,
+        soulObjectId: soul.onChainId,
+        stateObjectId: soul.stateOnChainId,
+        rawSkillsEnvelope,
+        skillBinding: {
+          skillsObjectId: appended.skillsId,
+          skillName: appended.skillName,
+          versionIndex: appended.versionIndex,
+        },
+      })
+      skillSidecar = builtSidecars.skillsSidecar
+    } catch (error) {
+      if (error instanceof SealSidecarSyncConfigError) {
+        return NextResponse.json({ error: error.message }, { status: 503 })
+      }
+      throw error
+    }
+    const skillBlobId = await resolveWalrusBlobId(appended.blobObjectId)
+    const mirroredVersion = await upsertSkillVersionProjection({
+      version: {
+        packageId,
+        soulId: appended.soulId,
+        skillsId: appended.skillsId,
+        skillName: appended.skillName,
+        versionIndex: appended.versionIndex,
+        visibility: appended.visibility,
+        deleted: false,
+        createdAtMs: appended.createdAtMs,
+        blobObjectId: appended.blobObjectId,
+        blobId: skillBlobId,
+      },
       soulOnChainId: soul.onChainId,
       skillsOnChainId: appended.skillsId,
-      sealSidecar: body?.sealSidecar && typeof body.sealSidecar === 'object' ? body.sealSidecar as never : null,
+      sealSidecar: skillSidecar,
     })
 
     const responseBody = {
       txDigest,
       soulOnChainId: mirroredSoul.onChainId,
       skillsOnChainId: appended.skillsId,
-      versionOnChainId: mirroredVersion.versionOnChainId,
-      latestSkillVersionOnChainId: mirroredSoul.latestSkillVersionOnChainId,
+      skillName: mirroredVersion.skillName,
+      versionIndex: mirroredVersion.versionIndex,
     }
 
     await storeSoulidityTxSync({

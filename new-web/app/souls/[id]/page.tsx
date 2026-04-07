@@ -299,7 +299,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                 {soul.memoryEntries.map((entry) => (
                   <div key={entry.id} className="rounded-lg border border-border/80 bg-white/[0.03] px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-                      <span>#{entry.entryIndex}</span>
+                      <span>{entry.timestampKey}</span>
                       <span>{entry.writerKind}</span>
                       <span>{formatDate(entry.createdAt)}</span>
                     </div>

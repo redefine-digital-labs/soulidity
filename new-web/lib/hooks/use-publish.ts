@@ -2,9 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Transaction } from '@mysten/sui/transactions'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
+import {
+  attachSoulidityDeploymentSignature,
+  hasCurrentSoulidityDeploymentSignature,
+} from '@/lib/soulidity/client-session'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
@@ -12,6 +17,7 @@ interface MintRecoveryState {
   userId: string
   txDigest: string
   syncBody: Record<string, unknown>
+  deploymentSignature: string
 }
 
 export type PublishStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -36,10 +42,12 @@ export interface PublishParams {
   protectedBlobObjectId: string
   foundingMemoryBlobObjectId?: string | null
   skillsBlobObjectId?: string | null
+  initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
-  skillsSealSidecar?: object | null
+  skillsSealSidecar?: string | null
+  memorySealSidecar?: string | null
   creatorRoyaltyBps: number
-  sealSidecar?: object | null
+  sealSidecar?: string | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -58,7 +66,7 @@ export function usePublish() {
   const [error, setError] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const [publishData, setPublishData] = useState<PublishSyncResponse | null>(null)
-  const { suiWallet, signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders, user } = useAuth()
   const recoveryRef = useRef<MintRecoveryState | null>(null)
 
@@ -69,7 +77,7 @@ export function usePublish() {
       const raw = sessionStorage.getItem(MINT_RECOVERY_KEY)
       if (raw) {
         const recovery: MintRecoveryState = JSON.parse(raw)
-        if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id) {
+        if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
           recoveryRef.current = recovery
           setTxDigest(recovery.txDigest)
         } else {
@@ -95,6 +103,13 @@ export function usePublish() {
       if (!digest) {
         setStatus('building')
         const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
+        await assertObjectInputsExist(suiClient, {
+          'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+          'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+          'Soul character blob': params.protectedBlobObjectId,
+          'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
+          'Skills blob': params.skillsBlobObjectId ?? null,
+        })
         const tx: Transaction = buildPublishSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
           currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
@@ -105,6 +120,7 @@ export function usePublish() {
           protectedBlobObjectId: params.protectedBlobObjectId,
           foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId ?? null,
           skillsBlobObjectId: params.skillsBlobObjectId ?? null,
+          initialSkillName: params.initialSkillName ?? null,
           skillsVisibility: params.skillsVisibility ?? 'private',
           creatorRoyaltyBps: params.creatorRoyaltyBps,
         })
@@ -123,9 +139,10 @@ export function usePublish() {
           previewImages: params.previewImages,
           readme: params.readme ?? null,
           sealSidecar: params.sealSidecar ?? null,
+          memorySealSidecar: params.memorySealSidecar ?? null,
           skillsSealSidecar: params.skillsSealSidecar ?? null,
         }
-        recoveryRef.current = { userId: user?.id ?? '', txDigest: executedDigest, syncBody }
+        recoveryRef.current = attachSoulidityDeploymentSignature({ userId: user?.id ?? '', txDigest: executedDigest, syncBody })
         try { sessionStorage.setItem(MINT_RECOVERY_KEY, JSON.stringify(recoveryRef.current)) } catch {}
       }
 
@@ -140,6 +157,7 @@ export function usePublish() {
             previewImages: params.previewImages,
             readme: params.readme ?? null,
             sealSidecar: params.sealSidecar ?? null,
+            memorySealSidecar: params.memorySealSidecar ?? null,
             skillsSealSidecar: params.skillsSealSidecar ?? null,
           }
 

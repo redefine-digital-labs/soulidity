@@ -10,29 +10,34 @@ export async function upsertSkillVersionProjection(params: {
   sealSidecar?: object | null
 }) {
   return prisma.soulSkillVersionRecord.upsert({
-    where: { versionOnChainId: params.version.objectId },
+    where: {
+      skillsOnChainId_skillName_versionIndex: {
+        skillsOnChainId: params.skillsOnChainId,
+        skillName: params.version.skillName,
+        versionIndex: params.version.versionIndex,
+      },
+    },
     update: {
       soulOnChainId: params.soulOnChainId,
       skillsOnChainId: params.skillsOnChainId,
-      versionNumber: params.version.versionNumber,
+      skillName: params.version.skillName,
+      versionIndex: params.version.versionIndex,
       visibility: params.version.visibility,
       deletedAt: params.deletedAt === undefined ? undefined : params.deletedAt,
       blobObjectId: params.version.blobObjectId,
       blobId: params.version.blobId,
-      previousVersionOnChainId: params.version.previousVersionId,
       sealSidecar: params.sealSidecar ?? undefined,
       createdAtMs: toProjectionBigInt(params.version.createdAtMs, 'SkillVersion createdAtMs'),
     },
     create: {
       soulOnChainId: params.soulOnChainId,
       skillsOnChainId: params.skillsOnChainId,
-      versionOnChainId: params.version.objectId,
-      versionNumber: params.version.versionNumber,
+      skillName: params.version.skillName,
+      versionIndex: params.version.versionIndex,
       visibility: params.version.visibility,
       deletedAt: params.deletedAt ?? null,
       blobObjectId: params.version.blobObjectId,
       blobId: params.version.blobId,
-      previousVersionOnChainId: params.version.previousVersionId,
       sealSidecar: params.sealSidecar ?? undefined,
       createdAtMs: toProjectionBigInt(params.version.createdAtMs, 'SkillVersion createdAtMs'),
     },
@@ -40,11 +45,17 @@ export async function upsertSkillVersionProjection(params: {
 }
 
 export async function markSkillVersionDeleted(params: {
-  versionOnChainId: string
+  skillsOnChainId: string
+  skillName: string
+  versionIndex: number
   deletedAt?: Date | null
 }) {
   return prisma.soulSkillVersionRecord.updateMany({
-    where: { versionOnChainId: params.versionOnChainId },
+    where: {
+      skillsOnChainId: params.skillsOnChainId,
+      skillName: params.skillName,
+      versionIndex: params.versionIndex,
+    },
     data: {
       deletedAt: params.deletedAt ?? new Date(),
     },

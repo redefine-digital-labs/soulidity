@@ -6,12 +6,15 @@ import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
+import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { buttonStyles } from '@/components/ui/button'
 import { UploadZone } from '@/components/ui/upload-zone'
 import { cn } from '@/lib/utils/cn'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { useImportSoul } from '@/components/providers/import-soul-provider'
 import { MAPPING_OPTIONS, type SoulTargetField } from '@/lib/import/field-mapping'
+import { SOUL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
+import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
 const steps = [
   { label: 'Choose Source' },
@@ -31,29 +34,6 @@ const royaltyOptions = [
   { value: 1000, label: 'High', desc: '10%' },
 ] as const
 
-const soulCharacterTemplate = `# Soul Character
-
-## Identity
-- Name:
-- Category:
-- Tone:
-
-## Personality
-- Core traits:
-- Speaking style:
-- Non-negotiable rules:
-
-## Backstory
-- Origin:
-- Mission:
-- Operating context:
-
-## Skills
-- Primary skill:
-- Secondary skill:
-- Limits:
-`
-
 function formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   return `${Math.max(bytes / 1024, 0.1).toFixed(1)} KB`
@@ -67,34 +47,23 @@ function formatBadge(fileName: string): string {
 }
 
 function downloadCharacterTemplate() {
-  const blob = new Blob([soulCharacterTemplate], { type: 'text/markdown;charset=utf-8' })
+  const blob = new Blob([SOUL_MD_TEMPLATE], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = 'soul-character-template.md'
+  link.download = 'soul.md'
   document.body.appendChild(link)
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
 }
 
-function compactHash(source: string, length: number) {
-  let hash = 2166136261
-  for (let i = 0; i < source.length; i += 1) {
-    hash ^= source.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return Math.abs(hash).toString(36).padStart(length, '0').slice(0, length)
-}
-
-function mockCommit(file: File) {
-  return `a${compactHash(`${file.name}:${file.size}:${file.lastModified}`, 6)}`
-}
-
 export default function ImportMapPage() {
   const router = useRouter()
   const ctx = useImportSoul()
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [skillBundleError, setSkillBundleError] = useState<string | null>(null)
+  const [skillBundleName, setSkillBundleName] = useState<string | null>(null)
 
   // Guard
   useEffect(() => {
@@ -114,6 +83,20 @@ export default function ImportMapPage() {
     }
     setErrors({})
     router.push('/import/preview')
+  }
+
+  async function handleSkillsFileSelect(file: File) {
+    const result = await validateSelectedSkillBundle(file)
+    if (!result.ok) {
+      ctx.setSkillsFile(null)
+      setSkillBundleName(null)
+      setSkillBundleError(result.error)
+      return
+    }
+
+    setSkillBundleError(null)
+    setSkillBundleName(result.skillName)
+    ctx.setSkillsFile(file)
   }
 
   if (ctx.parsedFields.length === 0) return null
@@ -241,7 +224,7 @@ export default function ImportMapPage() {
         {/* Info note */}
         <div className="rounded-xl border border-purple/20 bg-purple/6 px-4 py-3 text-[11px] leading-5 text-muted">
           <span className="mr-1.5 text-purple">💡</span>
-          Fields info added after mint — Soul Character (appended only) · Memory (immutable after mint) · Skills & Docs editable anytime...
+          Finish the mint-required layers here: Soul Character and founding memory are required. Skills & Docs stay optional and can be added or revised later.
         </div>
 
         {/* Soul Character section */}
@@ -262,7 +245,7 @@ export default function ImportMapPage() {
 
           <p className="mt-3 text-[11px] leading-5 text-muted">
             The foundational identity file for this Soul — personality, backstory, traits, tone, and world-rules.
-            Required before minting. Upload a <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#f4c36c]">soul.md</code> file.
+            Required before minting. Upload a <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#f4c36c]">soul.md</code> file using the shared template.
           </p>
 
           <div className="mt-3">
@@ -270,8 +253,8 @@ export default function ImportMapPage() {
               <>
                 <UploadZone
                   icon="📄"
-                  label="Click to upload Soul Character file"
-                  sublabel=".md format only · becomes v1 on main branch"
+                  label="Click to upload soul.md"
+                  sublabel=".md format only · use the shared soul.md template"
                   accept=".md,text/markdown"
                   onFileSelect={ctx.setCharFile}
                   className="rounded-[14px] border-[#8b6324] bg-[rgba(18,11,35,0.72)] px-5 py-8 hover:border-[#d89d42] hover:bg-[rgba(33,19,58,0.82)]"
@@ -303,10 +286,10 @@ export default function ImportMapPage() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-semibold text-[#f4c36c]">
-                    {ctx.charFile.name} uploaded · v1 · main
+                    {ctx.charFile.name} ready for encrypted mint
                   </div>
                   <div className="mt-1 text-[10px] leading-4 text-muted">
-                    Git commit: {mockCommit(ctx.charFile)} · will be located in this transaction
+                    Validated locally · shared soul.md structure · {formatSize(ctx.charFile.size)}
                   </div>
                 </div>
                 <button
@@ -339,7 +322,7 @@ export default function ImportMapPage() {
           </div>
           <p className="mt-3 text-[11px] leading-5 text-muted">
             The founding memory of this Soul — origin context, initial directives, or backstory.
-            Immutable after mint. Upload as <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#cfb0ff]">memory.md</code>.
+            Locked after mint. Upload as <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#cfb0ff]">memory.md</code> using the founding memory template.
           </p>
           <div className="mt-3">
             {!ctx.memoryFile ? (
@@ -365,10 +348,10 @@ export default function ImportMapPage() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-semibold text-[#cfb0ff]">
-                    {ctx.memoryFile.name} uploaded · founding memory
+                    {ctx.memoryFile.name} ready as founding memory
                   </div>
                   <div className="mt-1 text-[10px] leading-4 text-muted">
-                    Stored on Walrus · immutable once minted · {formatSize(ctx.memoryFile.size)}
+                    Encrypted at mint · becomes the first memory entry · {formatSize(ctx.memoryFile.size)}
                   </div>
                 </div>
                 <button
@@ -402,18 +385,23 @@ export default function ImportMapPage() {
           </div>
           <p className="mt-3 text-[11px] leading-5 text-muted">
             Knowledge docs, skill definitions, system prompts, and behavioral configs.
-            Can be added or updated after minting. Encrypted via Seal.
+            Use a ZIP bundle with <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#8ceae0]">SKILL.md</code> frontmatter. Private bundles are encrypted by default and can be revised later.
           </p>
           <div className="mt-3">
             {!ctx.skillsFile ? (
-              <UploadZone
-                icon="📦"
-                label="Click to upload bundle file"
-                sublabel=".zip, .json, .character, any format · encrypted via Seal"
-                accept=".zip,.json,.character,.md,.txt,application/zip,application/json"
-                onFileSelect={ctx.setSkillsFile}
-                className="rounded-[14px] border-[#1b636d] bg-[rgba(14,18,40,0.76)] px-5 py-8 hover:border-[#42c9bd] hover:bg-[rgba(18,24,52,0.84)]"
-              />
+              <>
+                <UploadZone
+                  icon="📦"
+                  label="Click to upload bundle file"
+                  sublabel=".zip only · encrypted via Seal"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  onFileSelect={(file) => {
+                    void handleSkillsFileSelect(file)
+                  }}
+                  className="rounded-[14px] border-[#1b636d] bg-[rgba(14,18,40,0.76)] px-5 py-8 hover:border-[#42c9bd] hover:bg-[rgba(18,24,52,0.84)]"
+                />
+                <SkillBundleFormatHint error={skillBundleError} className="mt-3" />
+              </>
             ) : (
               <div className="flex items-start gap-3 rounded-[14px] border border-[#1d6f78] bg-[linear-gradient(180deg,rgba(10,56,61,0.96),rgba(9,34,38,0.98))] px-3.5 py-3 sm:px-4">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/18 text-success">
@@ -423,15 +411,19 @@ export default function ImportMapPage() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-semibold text-[#8ceae0]">
-                    Skills & Docs encrypted & ready
+                    Skills & Docs bundle ready
                   </div>
                   <div className="mt-1 text-[10px] leading-4 text-muted">
-                    Stored on Walrus · Seal policy registered · {formatSize(ctx.skillsFile.size)}
+                    Skill: {skillBundleName ?? 'read from SKILL.md'} · ZIP bundle verified locally · {formatSize(ctx.skillsFile.size)}
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => ctx.setSkillsFile(null)}
+                  onClick={() => {
+                    ctx.setSkillsFile(null)
+                    setSkillBundleName(null)
+                    setSkillBundleError(null)
+                  }}
                   className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
                   aria-label="Remove file"
                 >

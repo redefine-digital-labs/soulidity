@@ -1,13 +1,22 @@
+import { unzipSync } from 'fflate'
+import { parseSkillMd } from '@/lib/soulidity/content-schema'
+import { SKILL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
+
 export const MAX_SOUL_UPLOAD_BYTES = 50 * 1024 * 1024
 export const FILE_TOO_LARGE_ERROR = 'File exceeds 50 MB limit'
 export const JSON_METADATA_TOO_LARGE_ERROR = 'JSON metadata exceeds 5 MB limit'
+export const SKILL_BUNDLE_NOT_ZIP_ERROR = "Can't use this file. Upload a .zip file for Skills & Docs."
+export const SKILL_BUNDLE_MISSING_SKILL_MD_ERROR = "Can't use this ZIP file. Put SKILL.md at the ZIP root or inside one folder, then upload it again."
+export const SKILL_BUNDLE_INVALID_FRONTMATTER_ERROR = "Can't use this ZIP file. SKILL.md must start with frontmatter and include name."
+export const INVALID_SKILL_BUNDLE_ERROR = "Can't use this skill bundle. Upload a .zip file with SKILL.md at the root or inside one folder, and make sure SKILL.md frontmatter includes name."
+export const SKILL_BUNDLE_FORMAT_SUMMARY = 'Upload a .zip file. The archive can place SKILL.md at the root or inside one folder. SKILL.md must start with frontmatter and include name.'
+export const SKILL_BUNDLE_FRONTMATTER_EXAMPLE = SKILL_MD_TEMPLATE
 const PUBLIC_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const PUBLIC_METADATA_MIME_TYPES = new Set(['application/json'])
-const PUBLIC_TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'application/markdown'])
+const PUBLIC_ZIP_MIME_TYPES = new Set(['application/zip', 'application/x-zip-compressed'])
 const MAX_PUBLIC_JSON_METADATA_BYTES = 5 * 1024 * 1024
-const MAX_PUBLIC_TEXT_BYTES = 5 * 1024 * 1024
 const MIN_ENCRYPTED_PAYLOAD_BYTES = 32
-export const PUBLIC_UPLOAD_ERROR = 'Public uploads must be JPEG, PNG, WebP, GIF images, JSON metadata, or plain-text skill documents'
+export const PUBLIC_UPLOAD_ERROR = 'Public uploads must be JPEG, PNG, WebP, GIF images, JSON metadata, or ZIP skill bundles'
 const ENCRYPTED_UPLOAD_ERROR = 'Encrypted upload is too small (minimum 32 bytes)'
 
 export function validateSoulUploadFile(file: Pick<File, 'size' | 'type'>, type: 'public' | 'encrypted') {
@@ -19,10 +28,13 @@ export function validateSoulUploadFile(file: Pick<File, 'size' | 'type'>, type: 
     if (file.type === 'application/json' && file.size > MAX_PUBLIC_JSON_METADATA_BYTES) {
       return JSON_METADATA_TOO_LARGE_ERROR
     }
+    // Allow empty MIME through to signature-based validation — some browsers
+    // and OS integrations leave the type blank for valid .zip files.
     if (
-      !PUBLIC_IMAGE_MIME_TYPES.has(file.type)
+      file.type !== ''
+      && !PUBLIC_IMAGE_MIME_TYPES.has(file.type)
       && !PUBLIC_METADATA_MIME_TYPES.has(file.type)
-      && !PUBLIC_TEXT_MIME_TYPES.has(file.type)
+      && !PUBLIC_ZIP_MIME_TYPES.has(file.type)
     ) {
       return PUBLIC_UPLOAD_ERROR
     }
@@ -63,6 +75,15 @@ function hasGifSignature(bytes: Uint8Array) {
   return hasPrefix(bytes, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || hasPrefix(bytes, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])
 }
 
+export function hasZipSignature(bytes: Uint8Array) {
+  return hasPrefix(bytes, [0x50, 0x4b, 0x03, 0x04])
+}
+
+function isSkillMdZipPath(name: string) {
+  const normalized = name.replace(/\\/g, '/')
+  return normalized === 'SKILL.md' || normalized.endsWith('/SKILL.md')
+}
+
 function isJsonPayload(bytes: Uint8Array) {
   if (bytes.length > MAX_PUBLIC_JSON_METADATA_BYTES) {
     return false
@@ -80,24 +101,6 @@ function isJsonPayload(bytes: Uint8Array) {
   }
 }
 
-function isPlainTextPayload(bytes: Uint8Array) {
-  if (bytes.length > MAX_PUBLIC_TEXT_BYTES) {
-    return false
-  }
-
-  try {
-    const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    const trimmed = raw.trim()
-    if (trimmed.length === 0) {
-      return false
-    }
-
-    return !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(raw)
-  } catch {
-    return false
-  }
-}
-
 export function validateSoulUploadSignature(
   bytes: Uint8Array,
   type: 'public' | 'encrypted',
@@ -107,8 +110,20 @@ export function validateSoulUploadSignature(
     if (mimeType === 'application/json') {
       return isJsonPayload(bytes) ? null : PUBLIC_UPLOAD_ERROR
     }
-    if (PUBLIC_TEXT_MIME_TYPES.has(mimeType)) {
-      return isPlainTextPayload(bytes) ? null : PUBLIC_UPLOAD_ERROR
+    if (PUBLIC_ZIP_MIME_TYPES.has(mimeType)) {
+      return hasZipSignature(bytes) ? null : PUBLIC_UPLOAD_ERROR
+    }
+    // When MIME is empty (browser omitted it), accept any recognised signature.
+    if (mimeType === '') {
+      if (
+        hasZipSignature(bytes)
+        || hasJpegSignature(bytes) || hasPngSignature(bytes)
+        || hasWebpSignature(bytes) || hasGifSignature(bytes)
+        || isJsonPayload(bytes)
+      ) {
+        return null
+      }
+      return PUBLIC_UPLOAD_ERROR
     }
     if (hasJpegSignature(bytes) || hasPngSignature(bytes) || hasWebpSignature(bytes) || hasGifSignature(bytes)) {
       return null
@@ -121,4 +136,71 @@ export function validateSoulUploadSignature(
   }
 
   return ENCRYPTED_UPLOAD_ERROR
+}
+
+function parseSkillBundleMetadata(bytes: Uint8Array): { skillName: string } {
+  if (!hasZipSignature(bytes)) {
+    throw new Error(SKILL_BUNDLE_NOT_ZIP_ERROR)
+  }
+
+  let files: Record<string, Uint8Array>
+  try {
+    files = unzipSync(bytes, {
+      // Only extract SKILL.md so unrelated archive entries cannot blow up server memory.
+      filter(file) {
+        return isSkillMdZipPath(file.name)
+      },
+    })
+  } catch {
+    throw new Error(INVALID_SKILL_BUNDLE_ERROR)
+  }
+
+  const skillMdEntry = Object.entries(files).find(([name]) => {
+    return isSkillMdZipPath(name)
+  })
+  if (!skillMdEntry) {
+    throw new Error(SKILL_BUNDLE_MISSING_SKILL_MD_ERROR)
+  }
+
+  const source = new TextDecoder().decode(skillMdEntry[1])
+  let skillName: string | null = null
+  try {
+    skillName = parseSkillMd(source).frontmatter.name
+  } catch {
+    skillName = null
+  }
+  if (!skillName) {
+    throw new Error(SKILL_BUNDLE_INVALID_FRONTMATTER_ERROR)
+  }
+
+  return { skillName }
+}
+
+export function extractSkillBundleMetadata(bytes: Uint8Array): { skillName: string } {
+  return parseSkillBundleMetadata(bytes)
+}
+
+export async function validateSelectedSkillBundle(
+  file: Pick<File, 'name' | 'type' | 'size' | 'arrayBuffer'>,
+): Promise<{ ok: true; skillName: string } | { ok: false; error: string }> {
+  if (file.size > MAX_SOUL_UPLOAD_BYTES) {
+    return { ok: false, error: FILE_TOO_LARGE_ERROR }
+  }
+
+  const normalizedName = file.name.trim().toLowerCase()
+  const looksLikeZip = normalizedName.endsWith('.zip') || PUBLIC_ZIP_MIME_TYPES.has(file.type) || file.type === ''
+  if (!looksLikeZip) {
+    return { ok: false, error: SKILL_BUNDLE_NOT_ZIP_ERROR }
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  try {
+    const metadata = parseSkillBundleMetadata(bytes)
+    return { ok: true, skillName: metadata.skillName }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : INVALID_SKILL_BUNDLE_ERROR,
+    }
+  }
 }

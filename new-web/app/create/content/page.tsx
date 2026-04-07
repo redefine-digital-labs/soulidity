@@ -7,8 +7,11 @@ import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
+import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { cn } from '@/lib/utils/cn'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
+import { SOUL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
+import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
 const steps = [
   { label: 'Basic Info' },
@@ -17,29 +20,6 @@ const steps = [
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
-
-const soulCharacterTemplate = `# Soul Character
-
-## Identity
-- Name:
-- Category:
-- Tone:
-
-## Personality
-- Core traits:
-- Speaking style:
-- Non-negotiable rules:
-
-## Backstory
-- Origin:
-- Mission:
-- Operating context:
-
-## Skills
-- Primary skill:
-- Secondary skill:
-- Limits:
-`
 
 type CardTone = 'amber' | 'violet' | 'teal'
 
@@ -105,45 +85,26 @@ function formatFileSize(file: File) {
   return `${Math.max(file.size / 1024, 0.1).toFixed(1)} KB`
 }
 
-function compactHash(source: string, length: number) {
-  let hash = 2166136261
-
-  for (let i = 0; i < source.length; i += 1) {
-    hash ^= source.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-
-  return Math.abs(hash).toString(36).padStart(length, '0').slice(0, length)
-}
-
-function mockCommit(file: File) {
-  return `a${compactHash(`${file.name}:${file.size}:${file.lastModified}`, 6)}`
-}
-
-function mockCid(file: File) {
-  return `bafkrei...${compactHash(`${file.name}:${file.type}:${file.size}`, 4)}`
-}
-
 function downloadCharacterTemplate() {
-  const blob = new Blob([soulCharacterTemplate], {
+  const blob = new Blob([SOUL_MD_TEMPLATE], {
     type: 'text/markdown;charset=utf-8',
   })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
 
   link.href = url
-  link.download = 'soul-character-template.md'
+  link.download = 'soul.md'
   document.body.appendChild(link)
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
 }
 
-function GitBranchIcon({ className }: { className?: string }) {
+function LayerIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
       <path
-        d="M4 2.5a1.5 1.5 0 1 1 0 3A1.5 1.5 0 0 1 4 2.5Zm0 8a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM4 5.5v5m0-5.2c2.3 0 2.8-.3 3.7-1.2C8.4 3.4 9.2 3 10.5 3M4 10.5c2.7 0 3.8-.1 5-.9.9-.6 1.5-1.6 1.5-3.1"
+        d="M3.25 4.25h9.5M3.25 8h9.5M3.25 11.75h9.5M2.25 4.25a1 1 0 1 0 0 .01M2.25 8a1 1 0 1 0 0 .01M2.25 11.75a1 1 0 1 0 0 .01"
         stroke="currentColor"
         strokeWidth="1.35"
         strokeLinecap="round"
@@ -232,20 +193,6 @@ function LockIcon({ className }: { className?: string }) {
   )
 }
 
-function CommitIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
-      <path
-        d="M2.75 8h10.5M8 3.25v9.5M4.25 8a3.75 3.75 0 1 0 7.5 0 3.75 3.75 0 0 0-7.5 0Z"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 function MetaLine({
   tone,
   children,
@@ -255,7 +202,7 @@ function MetaLine({
 }) {
   return (
     <div className={cn('mt-1 flex items-center gap-1.5 text-[10px] font-medium tracking-[0.01em]', toneStyles[tone].meta)}>
-      <GitBranchIcon className="h-3.5 w-3.5 shrink-0" />
+      <LayerIcon className="h-3.5 w-3.5 shrink-0" />
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">{children}</div>
     </div>
   )
@@ -439,6 +386,22 @@ export default function CreateContentPage() {
   const router = useRouter()
   const ctx = useCreateSoul()
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [skillBundleError, setSkillBundleError] = useState<string | null>(null)
+  const [skillBundleName, setSkillBundleName] = useState<string | null>(null)
+
+  async function handleSkillsFileSelect(file: File) {
+    const result = await validateSelectedSkillBundle(file)
+    if (!result.ok) {
+      ctx.setSkillsFile(null)
+      setSkillBundleName(null)
+      setSkillBundleError(result.error)
+      return
+    }
+
+    setSkillBundleError(null)
+    setSkillBundleName(result.skillName)
+    ctx.setSkillsFile(file)
+  }
 
   function handleNext() {
     const nextErrors: Record<string, string> = {}
@@ -460,7 +423,7 @@ export default function CreateContentPage() {
         <SectionHeader
           label="Create Soul"
           title="Step 2 - Living Content"
-          subtitle="Three layers define your Soul. Character and Memory are required before minting. All content is git-versioned - append-only, no deletion."
+          subtitle="Three layers define your Soul. Character and founding memory are required before minting. Character locks at mint, memory starts encrypted, and skills stay private by default."
           className="mb-1"
         />
 
@@ -472,24 +435,24 @@ export default function CreateContentPage() {
             icon={<DocumentIcon className="h-4.5 w-4.5" />}
             meta={
               <>
-                <span>Git versioned</span>
+                <span>Standard soul.md</span>
                 <span className="opacity-45">•</span>
-                <span>SoulGrant reads main</span>
+                <span>Seal encrypted</span>
                 <span className="opacity-45">•</span>
-                <span>append-only</span>
+                <span>locked after mint</span>
                 <span className="opacity-45">•</span>
-                <span>no delete</span>
+                <span>one per Soul</span>
               </>
             }
-            description="The foundational identity file for this Soul - personality, backstory, traits, tone, and world-rules. Uploaded as a .md file. Every update creates a new git commit; history is permanent and auditable. SoulGrant always serves agents the latest commit on main."
+            description="The foundational identity file for this Soul - personality, backstory, traits, tone, and world-rules. Upload a markdown file using the standard soul.md structure. It is encrypted during upload and becomes the locked character layer once this Soul is minted."
           >
             {!ctx.charFile ? (
               <>
                 <UploadTarget
                   tone="amber"
                   icon={<DocumentIcon className="h-8 w-8" />}
-                  label="Click to upload Soul Character file"
-                  subtitle=".md format only • becomes v1 on main branch"
+                  label="Click to upload soul.md"
+                  subtitle=".md format only • use the shared soul.md template"
                   accept=".md,text/markdown"
                   onSelect={ctx.setCharFile}
                 />
@@ -510,8 +473,8 @@ export default function CreateContentPage() {
             ) : (
               <UploadStatus
                 tone="amber"
-                title={`${ctx.charFile.name} uploaded · v1 · main`}
-                subtitle={`Git commit: ${mockCommit(ctx.charFile)} · Stored on Walrus · append-only from here · ${formatFileSize(ctx.charFile)}`}
+                title={`${ctx.charFile.name} ready for encrypted upload`}
+                subtitle={`Standard soul.md structure · locks after mint · ${formatFileSize(ctx.charFile)}`}
                 onClear={() => ctx.setCharFile(null)}
               />
             )}
@@ -524,24 +487,24 @@ export default function CreateContentPage() {
             icon={<SeedIcon className="h-4.5 w-4.5" />}
             meta={
               <>
-                <span>Git versioned</span>
+                <span>Founding memory</span>
                 <span className="opacity-45">•</span>
-                <span>append-only after mint</span>
+                <span>Seal encrypted</span>
                 <span className="opacity-45">•</span>
-                <span>no edit</span>
+                <span>locked after mint</span>
                 <span className="opacity-45">•</span>
-                <span>no delete</span>
+                <span>first memory entry</span>
               </>
             }
-            description="The founding memory of this Soul - origin context, initial directives, or backstory. Upload a .md file. Once minted this becomes the first immutable commit in the memory chain on Walrus. SoulGrant interactions will append new memory blocks on top of it."
+            description="The founding memory of this Soul - origin context, initial directives, or backstory. Upload a markdown file that becomes the first encrypted memory entry at mint. Later SoulGrant sessions can add new memory entries without replacing this seed."
           >
             {!ctx.memoryFile ? (
               <>
                 <UploadTarget
                   tone="violet"
                   icon={<SeedIcon className="h-8 w-8" />}
-                  label="Click to upload Memory file"
-                  subtitle=".md format only • becomes founding memory commit"
+                  label="Click to upload memory.md"
+                  subtitle=".md format only • founding memory template"
                   accept=".md,text/markdown"
                   onSelect={ctx.setMemoryFile}
                 />
@@ -552,8 +515,8 @@ export default function CreateContentPage() {
             ) : (
               <UploadStatus
                 tone="violet"
-                title={`${ctx.memoryFile.name} uploaded · founding memory`}
-                subtitle={`Stored on Walrus · immutable once minted · ${formatFileSize(ctx.memoryFile)}`}
+                title={`${ctx.memoryFile.name} ready as founding memory`}
+                subtitle={`Encrypted at mint · becomes the first memory entry · ${formatFileSize(ctx.memoryFile)}`}
                 onClear={() => ctx.setMemoryFile(null)}
               />
             )}
@@ -566,32 +529,41 @@ export default function CreateContentPage() {
             icon={<PackageIcon className="h-4.5 w-4.5" />}
             meta={
               <>
-                <span>Git versioned</span>
+                <span>ZIP bundle only</span>
                 <span className="opacity-45">•</span>
-                <span>SoulGrant reads main</span>
+                <span>private by default</span>
                 <span className="opacity-45">•</span>
-                <span>can update anytime</span>
+                <span>new revisions later</span>
                 <span className="opacity-45">•</span>
-                <span>no delete</span>
+                <span>grant-controlled access</span>
               </>
             }
-            description="Upload knowledge docs, skill definitions, system prompts, and behavioral configs. Can be added or updated after minting - each update is a new git commit on main. Agents access via SoulGrant."
+            description="Upload knowledge docs, skill definitions, system prompts, and behavioral configs as a ZIP bundle with SKILL.md frontmatter. Private bundles are encrypted by default, and authorized writers can add new revisions later."
           >
             {!ctx.skillsFile ? (
-              <UploadTarget
-                tone="teal"
-                icon={<PackageIcon className="h-8 w-8" />}
-                label="Click to upload bundle file"
-                subtitle=".zip, .json, .character, any format • encrypted via Seal"
-                accept=".zip,.json,.character,.md,.txt,application/zip,application/json"
-                onSelect={ctx.setSkillsFile}
-              />
+              <>
+                <UploadTarget
+                  tone="teal"
+                  icon={<PackageIcon className="h-8 w-8" />}
+                  label="Click to upload bundle file"
+                  subtitle=".zip only • encrypted via Seal"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  onSelect={(file) => {
+                    void handleSkillsFileSelect(file)
+                  }}
+                />
+                <SkillBundleFormatHint error={skillBundleError} className="mt-3" />
+              </>
             ) : (
               <UploadStatus
                 tone="teal"
-                title="Skills & Docs encrypted & ready"
-                subtitle={`Stored on Walrus · Seal policy registered · CID: ${mockCid(ctx.skillsFile)} · ${formatFileSize(ctx.skillsFile)}`}
-                onClear={() => ctx.setSkillsFile(null)}
+                title="Skills & Docs bundle ready"
+                subtitle={`Skill: ${skillBundleName ?? 'read from SKILL.md'} · ZIP bundle verified locally · ${formatFileSize(ctx.skillsFile)}`}
+                onClear={() => {
+                  ctx.setSkillsFile(null)
+                  setSkillBundleName(null)
+                  setSkillBundleError(null)
+                }}
               />
             )}
           </ContentCard>
@@ -599,10 +571,10 @@ export default function CreateContentPage() {
 
         <div className="rounded-[12px] border border-purple/30 bg-purple/10 px-4 py-3">
           <div className="flex items-start gap-2.5 text-[11px] leading-5 text-[#b9a4df]">
-            <CommitIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#d4b5ff]" />
+            <LockIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#d4b5ff]" />
             <p>
-              All content is git-versioned. You can only add new commits - history is permanent and cannot be deleted.
-              SoulGrant agents always read from main.
+              Mint creates one locked character layer, one encrypted founding memory entry, and an optional private skills bundle.
+              Later SoulGrant sessions can add new memory entries or new skill revisions without rewriting the originals.
             </p>
           </div>
         </div>

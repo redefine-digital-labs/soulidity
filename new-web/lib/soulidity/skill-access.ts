@@ -1,13 +1,12 @@
 import { SealClient, SessionKey } from '@mysten/seal'
 import { Transaction } from '@mysten/sui/transactions'
+import { generateSkillDocumentIdForVersion } from '@web/lib/services/seal-crypto'
 import type { SkillAccessResponse } from '@/lib/soulidity/types'
 
 const AES_GCM_ALGORITHM = 'AES-GCM'
 const AES_GCM_CIPHER = 'AES-GCM-256'
 const CONTENT_HASH_BYTES = 32
 const DEK_BYTES = 32
-const DOCUMENT_ID_DOMAIN = 'soul-skill:'
-const DOCUMENT_ID_VERSION = 0x01
 const IV_BYTES = 12
 const SUI_CLOCK_OBJECT_ID = '0x6'
 
@@ -84,21 +83,19 @@ async function importAesKey(rawKey: Uint8Array) {
   )
 }
 
-function assertSkillDocumentMatchesVersion(documentIdHex: string, versionObjectId: string) {
-  const documentIdBytes = hexToBytes(documentIdHex)
-  const prefix = new Uint8Array([
-    ...new TextEncoder().encode(DOCUMENT_ID_DOMAIN),
-    DOCUMENT_ID_VERSION,
-    ...hexToBytes(versionObjectId),
-  ])
-
-  if (documentIdBytes.length < prefix.length) {
-    throw new Error('Skill document id is too short')
-  }
-  for (let index = 0; index < prefix.length; index += 1) {
-    if (documentIdBytes[index] !== prefix[index]) {
-      throw new Error('Skill document id does not match the requested version')
-    }
+function assertSkillDocumentMatchesVersion(params: {
+  documentIdHex: string
+  skillsObjectId: string
+  skillName: string
+  versionIndex: number
+}) {
+  const expectedDocumentId = generateSkillDocumentIdForVersion(
+    params.skillsObjectId,
+    params.skillName,
+    params.versionIndex,
+  ).toLowerCase()
+  if (params.documentIdHex.toLowerCase() !== expectedDocumentId) {
+    throw new Error('Skill document id does not match the requested version')
   }
 }
 
@@ -123,7 +120,8 @@ function parseSkillAccessResponse(payload: unknown): SkillAccessResponse {
     && typeof payload.accessPolicy.packageId === 'string'
     && typeof payload.accessPolicy.stateObjectId === 'string'
     && typeof payload.accessPolicy.skillsObjectId === 'string'
-    && typeof payload.accessPolicy.versionObjectId === 'string'
+    && typeof payload.accessPolicy.skillName === 'string'
+    && typeof payload.accessPolicy.versionIndex === 'number'
     && payload.accessPolicy.moduleName === 'skills'
     && (
       payload.accessPolicy.functionName === 'approve_private_read_owner'
@@ -162,7 +160,12 @@ async function buildSkillApprovalTxBytes(params: {
   access: Extract<SkillAccessResponse, { visibility: 'private' }>
   suiClient: unknown
 }) {
-  assertSkillDocumentMatchesVersion(params.access.accessPolicy.documentIdHex, params.access.accessPolicy.versionObjectId)
+  assertSkillDocumentMatchesVersion({
+    documentIdHex: params.access.accessPolicy.documentIdHex,
+    skillsObjectId: params.access.accessPolicy.skillsObjectId,
+    skillName: params.access.accessPolicy.skillName,
+    versionIndex: params.access.accessPolicy.versionIndex,
+  })
 
   const tx = new Transaction()
   tx.moveCall({
@@ -173,7 +176,8 @@ async function buildSkillApprovalTxBytes(params: {
             tx.pure.vector('u8', Array.from(hexToBytes(params.access.accessPolicy.documentIdHex))),
             tx.object(params.access.accessPolicy.stateObjectId),
             tx.object(params.access.accessPolicy.skillsObjectId),
-            tx.object(params.access.accessPolicy.versionObjectId),
+            tx.pure.string(params.access.accessPolicy.skillName),
+            tx.pure.u64(params.access.accessPolicy.versionIndex),
             tx.object(params.access.accessPolicy.soulGrantObjectId!),
             tx.object(SUI_CLOCK_OBJECT_ID),
           ]
@@ -181,7 +185,8 @@ async function buildSkillApprovalTxBytes(params: {
             tx.pure.vector('u8', Array.from(hexToBytes(params.access.accessPolicy.documentIdHex))),
             tx.object(params.access.accessPolicy.stateObjectId),
             tx.object(params.access.accessPolicy.skillsObjectId),
-            tx.object(params.access.accessPolicy.versionObjectId),
+            tx.pure.string(params.access.accessPolicy.skillName),
+            tx.pure.u64(params.access.accessPolicy.versionIndex),
           ],
   })
 
@@ -190,13 +195,14 @@ async function buildSkillApprovalTxBytes(params: {
 
 export async function fetchSkillAccess(params: {
   soulObjectId: string
-  versionObjectId: string
+  skillName: string
+  versionIndex: number
   getAuthHeaders: () => Promise<HeadersInit>
   fetchImpl?: FetchLike
 }) {
   const fetchImpl = params.fetchImpl ?? fetch
   const response = await fetchImpl(
-    `/api/souls/${encodeURIComponent(params.soulObjectId)}/skills/${encodeURIComponent(params.versionObjectId)}/access`,
+    `/api/souls/${encodeURIComponent(params.soulObjectId)}/skills/${encodeURIComponent(params.skillName)}/versions/${encodeURIComponent(String(params.versionIndex))}/access`,
     { headers: await params.getAuthHeaders() },
   )
   const payload = await response.json().catch(() => null)

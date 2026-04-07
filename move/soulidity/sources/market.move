@@ -1,5 +1,6 @@
 module soulidity::market;
 
+use std::string;
 use kiosk::kiosk_lock_rule;
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
@@ -292,7 +293,7 @@ public fun register_existing_personal_kiosk(
     assert!(!config.paused, EMarketPaused);
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
     let kiosk_cap_id = object::id(personal_kiosk_cap);
-    register_personal_kiosk(config, ctx.sender(), kiosk_id, kiosk_cap_id);
+    upsert_personal_kiosk_registration(config, ctx.sender(), kiosk_id, kiosk_cap_id);
 }
 
 public fun ensure_personal_kiosk_registered(
@@ -302,14 +303,9 @@ public fun ensure_personal_kiosk_registered(
 ) {
     assert!(!config.paused, EMarketPaused);
     let owner = ctx.sender();
-    let key = PersonalKioskOwnerKey { owner };
-    if (df::exists_(&config.id, key)) {
-        return
-    };
-
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
     let kiosk_cap_id = object::id(personal_kiosk_cap);
-    register_personal_kiosk(config, owner, kiosk_id, kiosk_cap_id);
+    upsert_personal_kiosk_registration(config, owner, kiosk_id, kiosk_cap_id);
 }
 
 public fun reuse_personal_kiosk(
@@ -340,6 +336,7 @@ public fun mint_native_in_personal_kiosk(
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
+    initial_skill_name: std::string::String,
     skills_public: bool,
     creator_royalty_bps: u16,
     clock: &Clock,
@@ -357,6 +354,7 @@ public fun mint_native_in_personal_kiosk(
         protected_blob,
         founding_memory_blob,
         skills_blob,
+        initial_skill_name,
         skills_public,
         creator_royalty_bps,
         soul::provenance_native(),
@@ -378,6 +376,7 @@ public fun mint_imported_in_personal_kiosk(
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
+    initial_skill_name: std::string::String,
     skills_public: bool,
     origin_ref: std::string::String,
     creator_royalty_bps: u16,
@@ -396,6 +395,7 @@ public fun mint_imported_in_personal_kiosk(
         protected_blob,
         founding_memory_blob,
         skills_blob,
+        initial_skill_name,
         skills_public,
         creator_royalty_bps,
         soul::provenance_imported(),
@@ -418,6 +418,7 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
+    initial_skill_name: std::string::String,
     skills_public: bool,
     origin_ref: std::string::String,
     creator_royalty_bps: u16,
@@ -437,6 +438,7 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
         protected_blob,
         founding_memory_blob,
         skills_blob,
+        initial_skill_name,
         skills_public,
         creator_royalty_bps,
         soul::provenance_personal_join(),
@@ -814,6 +816,7 @@ fun mint_soul_in_personal_kiosk_impl(
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
+    initial_skill_name: std::string::String,
     skills_public: bool,
     creator_royalty_bps: u16,
     provenance_kind: u8,
@@ -841,17 +844,18 @@ fun mint_soul_in_personal_kiosk_impl(
         ctx,
     );
     let soul_id = object::id(&soul_obj);
+    let mut memory_obj = memory::create(soul_id, ctx);
+    let memory_id = object::id(&memory_obj);
     let mut state = soul::create_state(
         soul_id,
         owner,
         creator_royalty_bps,
         owner,
         kiosk_id,
+        option::some(memory_id),
         ctx,
     );
-    let mut memory_obj = memory::create(soul_id, ctx);
     let state_id = object::id(&state);
-    let memory_id = object::id(&memory_obj);
     let mut founding_memory_blob = founding_memory_blob;
     if (founding_memory_blob.is_some()) {
         let blob = option::extract(&mut founding_memory_blob);
@@ -863,7 +867,14 @@ fun mint_soul_in_personal_kiosk_impl(
     if (skills_blob.is_some()) {
         let skill_blob = option::extract(&mut skills_blob);
         let mut skills_book = skills::create(soul_id, ctx);
-        let _ = skills::append_initial_version(&mut skills_book, skills_public, skill_blob, clock, ctx);
+        let _ = skills::append_initial_version(
+            &mut skills_book,
+            initial_skill_name,
+            skills_public,
+            skill_blob,
+            clock,
+            ctx,
+        );
         soul::set_skills_id(&mut state, object::id(&skills_book));
         skills::share_skills(skills_book);
     };
@@ -1083,6 +1094,31 @@ fun register_personal_kiosk(
             kiosk_cap_id,
         },
     );
+}
+
+fun upsert_personal_kiosk_registration(
+    config: &mut MarketConfig,
+    owner: address,
+    kiosk_id: ID,
+    kiosk_cap_id: ID,
+) {
+    if (df::exists_(&config.id, PersonalKioskOwnerKey { owner })) {
+        let registration = df::borrow_mut<PersonalKioskOwnerKey, PersonalKioskRegistration>(
+            &mut config.id,
+            PersonalKioskOwnerKey { owner },
+        );
+        registration.kiosk_id = kiosk_id;
+        registration.kiosk_cap_id = kiosk_cap_id;
+    } else {
+        df::add(
+            &mut config.id,
+            PersonalKioskOwnerKey { owner },
+            PersonalKioskRegistration {
+                kiosk_id,
+                kiosk_cap_id,
+            },
+        );
+    };
 }
 
 fun borrow_personal_kiosk_registration(

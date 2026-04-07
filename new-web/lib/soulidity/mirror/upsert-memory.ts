@@ -4,30 +4,37 @@ import { toProjectionBigInt } from '@/lib/soulidity/projection-scalars'
 
 export async function upsertMemoryEntryProjection(params: {
   entry: MemoryEntryObject
-  memoryOnChainId: string
+  sealSidecar?: object | null
 }) {
+  const timestampKey = toProjectionBigInt(params.entry.timestampKey, 'MemoryEntry timestampKey')
   return prisma.soulMemoryEntry.upsert({
-    where: { onChainId: params.entry.objectId },
+    where: {
+      memoryOnChainId_timestampKey: {
+        memoryOnChainId: params.entry.memoryId,
+        timestampKey,
+      },
+    },
     update: {
       soulOnChainId: params.entry.soulId,
-      memoryOnChainId: params.memoryOnChainId,
-      entryIndex: params.entry.index,
+      memoryOnChainId: params.entry.memoryId,
+      timestampKey,
       writerAddress: params.entry.writerAddress,
       writerKind: params.entry.writerKind,
       blobObjectId: params.entry.blobObjectId,
       blobId: params.entry.blobId,
       createdAtMs: toProjectionBigInt(params.entry.createdAtMs, 'MemoryEntry createdAtMs'),
+      sealSidecar: params.sealSidecar ?? undefined,
     },
     create: {
-      onChainId: params.entry.objectId,
       soulOnChainId: params.entry.soulId,
-      memoryOnChainId: params.memoryOnChainId,
-      entryIndex: params.entry.index,
+      memoryOnChainId: params.entry.memoryId,
+      timestampKey,
       writerAddress: params.entry.writerAddress,
       writerKind: params.entry.writerKind,
       blobObjectId: params.entry.blobObjectId,
       blobId: params.entry.blobId,
       createdAtMs: toProjectionBigInt(params.entry.createdAtMs, 'MemoryEntry createdAtMs'),
+      sealSidecar: params.sealSidecar ?? undefined,
     },
   })
 }

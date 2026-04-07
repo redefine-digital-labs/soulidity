@@ -7,7 +7,7 @@ use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRi
 use soulidity::grant::{Self as grant, SoulGrant};
 use soulidity::market::{Self as market, CollectionListing, MarketConfig, SoulListing};
 use soulidity::memory::{Self as memory, SoulMemory};
-use soulidity::skills::{Self as skills, SkillVersion, SoulSkills};
+use soulidity::skills::{Self as skills, SoulSkills};
 use soulidity::seal_policy;
 use soulidity::soul::{Self as soul, Soul, SoulState};
 use sui::clock::{Self as clock, Clock};
@@ -131,6 +131,63 @@ fun soul_document_id(soul_id: ID): vector<u8> {
     soul_document_id_with_version(soul_id, 0x01)
 }
 
+fun append_u64_be_bytes(id: &mut vector<u8>, value: u64) {
+    let mut shift = 56u8;
+    let mut index = 0u64;
+    while (index < 8u64) {
+        id.push_back(((value >> shift) & 0xFF) as u8);
+        shift = if (shift >= 8u8) shift - 8u8 else 0u8;
+        index = index + 1u64;
+    };
+}
+
+fun memory_document_id(memory_id: ID, timestamp_key: u64): vector<u8> {
+    let mut id = b"soul-memory:";
+    let memory_id_bytes = memory_id.to_bytes();
+    let mut memory_id_index = 0;
+    id.push_back(0x01);
+    while (memory_id_index < memory_id_bytes.length()) {
+        id.push_back(memory_id_bytes[memory_id_index]);
+        memory_id_index = memory_id_index + 1;
+    };
+    append_u64_be_bytes(&mut id, timestamp_key);
+    let mut i = 0u64;
+    while (i < 16u64) {
+        id.push_back(0x4D);
+        i = i + 1u64;
+    };
+    id
+}
+
+fun skill_document_id(skills_id: ID, skill_name: std::string::String, version_index: u64): vector<u8> {
+    let mut id = b"soul-skill:";
+    let skills_id_bytes = skills_id.to_bytes();
+    let skill_name_bytes = string::as_bytes(&skill_name);
+    let mut skills_id_index = 0;
+    let mut skill_name_index = 0;
+    id.push_back(0x01);
+    while (skills_id_index < skills_id_bytes.length()) {
+        id.push_back(skills_id_bytes[skills_id_index]);
+        skills_id_index = skills_id_index + 1;
+    };
+    while (skill_name_index < skill_name_bytes.length()) {
+        id.push_back(skill_name_bytes[skill_name_index]);
+        skill_name_index = skill_name_index + 1;
+    };
+    id.push_back(0x00);
+    append_u64_be_bytes(&mut id, version_index);
+    let mut i = 0u64;
+    while (i < 16u64) {
+        id.push_back(0x5A);
+        i = i + 1u64;
+    };
+    id
+}
+
+fun default_skill_name(): std::string::String {
+    string::utf8(b"default")
+}
+
 fun init_protocol_for_testing(scenario: &mut ts::Scenario, admin: address) {
     ts::next_tx(scenario, admin);
     {
@@ -195,6 +252,7 @@ fun mint_native_in_personal_kiosk_no_skills(
         protected_blob,
         founding_memory_blob,
         option::none(),
+        string::utf8(b"default"),
         false,
         creator_royalty_bps,
         &clock_obj,
@@ -232,6 +290,7 @@ fun mint_imported_in_personal_kiosk_no_skills(
         protected_blob,
         founding_memory_blob,
         option::none(),
+        string::utf8(b"default"),
         false,
         origin_ref,
         creator_royalty_bps,
@@ -272,6 +331,7 @@ fun mint_joined_in_personal_kiosk_no_skills<T: key + store>(
         protected_blob,
         founding_memory_blob,
         option::none(),
+        string::utf8(b"default"),
         false,
         origin_ref,
         creator_royalty_bps,
@@ -1216,9 +1276,12 @@ fun native_soul_mint_creates_state_memory_and_founding_entry() {
         assert!(soul::soul_id(&state) == soul_id, 1);
         assert!(soul::current_owner(&state) == creator, 2);
         assert!(soul::current_kiosk_id(&state) == creator_kiosk_id, 3);
+        let memory_id = object::id(&memory_book);
+
         assert!(memory::soul_id(&memory_book) == soul_id, 4);
-        assert!(memory::entry_count(&memory_book) == 1, 5);
-        assert!(memory::next_index(&memory_book) == 1, 6);
+        assert!(soul::memory_id(&state).contains(&memory_id), 5);
+        assert!(memory::entry_count(&memory_book) == 1, 6);
+        assert!(memory::contains_entry(&memory_book, 0), 7);
 
         ts::return_shared(state);
         ts::return_shared(memory_book);
@@ -1917,6 +1980,9 @@ fun memory_append_by_owner_and_granted_agent_is_monotonic() {
         let clock_obj: Clock = ts::take_shared(&scenario);
         let owner_blob: blob::Blob = ts::take_from_sender(&scenario);
 
+        let owner_timestamp = clock::timestamp_ms(&clock_obj);
+        let owner_blob_id = blob::object_id(&owner_blob);
+
         let _ = memory::append_as_owner(
             &mut memory_book,
             &state,
@@ -1926,10 +1992,18 @@ fun memory_append_by_owner_and_granted_agent_is_monotonic() {
         );
 
         assert!(memory::entry_count(&memory_book) == 1, 26);
-        assert!(memory::next_index(&memory_book) == 1, 27);
+        assert!(memory::contains_entry(&memory_book, owner_timestamp), 27);
+        assert!(memory::blob_object_id_for(&memory_book, owner_timestamp) == owner_blob_id, 28);
 
         ts::return_shared(state);
         ts::return_shared(memory_book);
+        ts::return_shared(clock_obj);
+    };
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        let mut clock_obj: Clock = ts::take_shared(&scenario);
+        clock::set_for_testing(&mut clock_obj, 1);
         ts::return_shared(clock_obj);
     };
 
@@ -1941,6 +2015,9 @@ fun memory_append_by_owner_and_granted_agent_is_monotonic() {
         let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
         let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
 
+        let agent_timestamp = clock::timestamp_ms(&clock_obj);
+        let agent_blob_id = blob::object_id(&agent_blob);
+
         let _ = memory::append_as_granted_agent(
             &mut memory_book,
             &state,
@@ -1950,8 +2027,9 @@ fun memory_append_by_owner_and_granted_agent_is_monotonic() {
             ts::ctx(&mut scenario),
         );
 
-        assert!(memory::entry_count(&memory_book) == 2, 28);
-        assert!(memory::next_index(&memory_book) == 2, 29);
+        assert!(memory::entry_count(&memory_book) == 2, 29);
+        assert!(memory::contains_entry(&memory_book, agent_timestamp), 30);
+        assert!(memory::blob_object_id_for(&memory_book, agent_timestamp) == agent_blob_id, 31);
 
         ts::return_shared(state);
         ts::return_shared(memory_book);
@@ -3090,6 +3168,7 @@ fun multiple_active_grants_respect_capacity() {
             protected_blob,
             option::none(),
             option::none(),
+            default_skill_name(),
             false,
             CREATOR_ROYALTY_BPS,
             &clock_obj,
@@ -3177,6 +3256,7 @@ fun grant_issue_rejects_unknown_scope_bits() {
             protected_blob,
             option::none(),
             option::none(),
+            default_skill_name(),
             false,
             CREATOR_ROYALTY_BPS,
             &clock_obj,
@@ -3345,6 +3425,7 @@ fun founding_memory_uses_real_clock_timestamp_and_optional_skills_init() {
             protected_blob,
             option::some(founding_memory_blob),
             option::some(skill_blob),
+            default_skill_name(),
             false,
             CREATOR_ROYALTY_BPS,
             &clock_obj,
@@ -3362,26 +3443,26 @@ fun founding_memory_uses_real_clock_timestamp_and_optional_skills_init() {
     {
         let state: SoulState = ts::take_shared(&scenario);
         let memory_book: SoulMemory = ts::take_shared(&scenario);
+        let memory_id = object::id(&memory_book);
         let skills_id = *soul::skills_id(&state).borrow();
         let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let version_id = *skills::latest_version_id(&skills_book).borrow();
-        let version: SkillVersion = ts::take_shared_by_id(&scenario, version_id);
 
-        assert!(memory::last_entry_created_at_ms_for_testing(&memory_book) == 777, 102);
-        assert!(skills::version_count(&skills_book) == 1, 103);
-        assert!(!skills::is_public(&version), 104);
+        assert!(soul::memory_id(&state).contains(&memory_id), 102);
+        assert!(memory::contains_entry(&memory_book, 777), 103);
+        assert!(skills::skill_count(&skills_book) == 1, 104);
+        assert!(skills::version_count(&skills_book, default_skill_name()) == 1, 105);
+        assert!(!skills::version_is_public(&skills_book, default_skill_name(), 0), 106);
 
         ts::return_shared(state);
         ts::return_shared(memory_book);
         ts::return_shared(skills_book);
-        ts::return_shared(version);
     };
 
     ts::end(scenario);
 }
 
 #[test]
-fun skills_versions_are_indexed_by_version_number() {
+fun skills_versions_are_indexed_by_skill_name_and_version_index() {
     let admin = @0xA11CE;
     let creator = @0xC0DE;
     let mut scenario = ts::begin(@0x0);
@@ -3425,6 +3506,7 @@ fun skills_versions_are_indexed_by_version_number() {
             protected_blob,
             option::none(),
             option::some(initial_skill_blob),
+            default_skill_name(),
             false,
             CREATOR_ROYALTY_BPS,
             &clock_obj,
@@ -3445,20 +3527,22 @@ fun skills_versions_are_indexed_by_version_number() {
         let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
         let clock_obj: Clock = ts::take_shared(&scenario);
         let second_skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let first_version_id = *skills::latest_version_id(&skills_book).borrow();
+        let first_blob_id = skills::blob_object_id_for(&skills_book, default_skill_name(), 0);
 
-        let second_version_id = skills::append_version_as_owner(
+        let second_version_index = skills::append_version_as_owner(
             &mut skills_book,
             &state,
+            default_skill_name(),
             true,
             second_skill_blob,
             &clock_obj,
             ts::ctx(&mut scenario),
         );
 
-        assert!(skills::version_id_for(&skills_book, 1) == first_version_id, 106);
-        assert!(skills::version_id_for(&skills_book, 2) == second_version_id, 107);
-        assert!(skills::version_count(&skills_book) == 2, 108);
+        assert!(second_version_index == 1, 106);
+        assert!(skills::skill_count(&skills_book) == 1, 107);
+        assert!(skills::version_count(&skills_book, default_skill_name()) == 2, 108);
+        assert!(skills::blob_object_id_for(&skills_book, default_skill_name(), 0) == first_blob_id, 109);
 
         ts::return_shared(state);
         ts::return_shared(skills_book);
@@ -3470,19 +3554,253 @@ fun skills_versions_are_indexed_by_version_number() {
         let state: SoulState = ts::take_shared(&scenario);
         let skills_id = *soul::skills_id(&state).borrow();
         let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let first_version_id = skills::version_id_for(&skills_book, 1);
-        let second_version_id = skills::version_id_for(&skills_book, 2);
-        let first_version: SkillVersion = ts::take_shared_by_id(&scenario, first_version_id);
-        let second_version: SkillVersion = ts::take_shared_by_id(&scenario, second_version_id);
 
-        assert!(skills::latest_version_id(&skills_book).contains(&second_version_id), 109);
-        assert!(skills::previous_version_id(&first_version).is_none(), 110);
-        assert!(skills::previous_version_id(&second_version).contains(&first_version_id), 111);
+        assert!(!skills::version_is_deleted(&skills_book, default_skill_name(), 0), 110);
+        assert!(skills::version_is_public(&skills_book, default_skill_name(), 1), 111);
+        assert!(skills::version_created_at_ms(&skills_book, default_skill_name(), 1) == 0, 112);
 
         ts::return_shared(state);
         ts::return_shared(skills_book);
-        ts::return_shared(first_version);
-        ts::return_shared(second_version);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun owner_memory_seal_approval_uses_memory_id_and_timestamp_key() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blobs_to_recipients(
+            creator,
+            BLOB_ROOT_HASH_A,
+            creator,
+            BLOB_ROOT_HASH_B,
+            ts::ctx(&mut scenario),
+        );
+        let mut clock_obj: Clock = ts::take_shared(&scenario);
+        clock::set_for_testing(&mut clock_obj, 777);
+        ts::return_shared(clock_obj);
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Memory Seal Soul"),
+            string::utf8(b"Memory seal binding"),
+            string::utf8(b"https://example.com/memory-seal.png"),
+            option::none(),
+            protected_blob,
+            option::some(founding_memory_blob),
+            option::none(),
+            default_skill_name(),
+            false,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let memory_book: SoulMemory = ts::take_shared(&scenario);
+
+        seal_policy::seal_approve_memory_owner_for_testing(
+            memory_document_id(object::id(&memory_book), 777),
+            &state,
+            &memory_book,
+            777,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(state);
+        ts::return_shared(memory_book);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun skills_private_read_and_delete_use_skill_name_and_version_index() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blobs_to_three_recipients(
+            creator,
+            BLOB_ROOT_HASH_A,
+            creator,
+            BLOB_ROOT_HASH_B,
+            creator,
+            BLOB_ROOT_HASH_C,
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let initial_skill_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Private Skill Soul"),
+            string::utf8(b"Private skill access"),
+            string::utf8(b"https://example.com/private-skill.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            option::some(initial_skill_blob),
+            default_skill_name(),
+            false,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let skills_id = *soul::skills_id(&state).borrow();
+        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
+
+        skills::approve_private_read_as_owner_for_testing(
+            skill_document_id(skills_id, default_skill_name(), 0),
+            &state,
+            &skills_book,
+            default_skill_name(),
+            0,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(state);
+        ts::return_shared(skills_book);
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let skills_id = *soul::skills_id(&state).borrow();
+        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
+
+        skills::delete_version_as_owner(
+            &mut skills_book,
+            &state,
+            default_skill_name(),
+            0,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(skills::version_is_deleted(&skills_book, default_skill_name(), 0), 113);
+
+        ts::return_shared(state);
+        ts::return_shared(skills_book);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun stale_personal_kiosk_registration_can_be_rebound_to_current_cap() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    let original_kiosk_id: ID;
+    let replacement_kiosk_id: ID;
+    let replacement_cap_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let mut config: MarketConfig = ts::take_shared(&scenario);
+        original_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        ts::return_shared(config);
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let (mut replacement_kiosk, replacement_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
+        replacement_kiosk_id = object::id(&replacement_kiosk);
+        let replacement_personal_cap = personal_kiosk::new(
+            &mut replacement_kiosk,
+            replacement_owner_cap,
+            ts::ctx(&mut scenario),
+        );
+        replacement_cap_id = object::id(&replacement_personal_cap);
+
+        transfer::public_share_object(replacement_kiosk);
+        personal_kiosk::transfer_to_sender(replacement_personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let mut config: MarketConfig = ts::take_shared(&scenario);
+        let replacement_personal_cap: PersonalKioskCap =
+            ts::take_from_sender_by_id(&scenario, replacement_cap_id);
+
+        market::ensure_personal_kiosk_registered(
+            &mut config,
+            &replacement_personal_cap,
+            ts::ctx(&mut scenario),
+        );
+        let rebound_kiosk_id = market::reuse_personal_kiosk(
+            &config,
+            replacement_personal_cap,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(rebound_kiosk_id == replacement_kiosk_id, 106);
+        assert!(rebound_kiosk_id != original_kiosk_id, 107);
+
+        ts::return_shared(config);
     };
 
     ts::end(scenario);

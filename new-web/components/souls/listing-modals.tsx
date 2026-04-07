@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildUpdateListingPriceTx } from '@/lib/soulidity/tx/update-price'
 import { buildDelistSoulTx } from '@/lib/soulidity/tx/delist'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
@@ -15,8 +16,11 @@ import type { SoulAssetDetail } from '@/lib/soulidity/types'
 /*  Shared                                                             */
 /* ------------------------------------------------------------------ */
 
-async function fetchPersonalKiosk(authHeaders: Record<string, string>) {
-  const res = await fetch('/api/souls/personal-kiosk', { cache: 'no-store', headers: authHeaders })
+async function fetchPersonalKiosk(authHeaders: Record<string, string>, walletAddress?: string | null) {
+  const url = walletAddress
+    ? `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`
+    : '/api/souls/personal-kiosk'
+  const res = await fetch(url, { cache: 'no-store', headers: authHeaders })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error || 'Failed to resolve personal kiosk')
@@ -38,7 +42,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
   const [price, setPrice] = useState('')
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
 
@@ -68,7 +72,15 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const kiosk = await fetchPersonalKiosk(authHeaders)
+      const kiosk = await fetchPersonalKiosk(authHeaders, suiWallet?.address)
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': kiosk.currentKioskId,
+        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        'Soul state': soul.stateOnChainId,
+        Soul: soul.onChainId,
+        'Soul listing': soul.listingObjectOnChainId,
+        Collection: soul.collectionOnChainId,
+      })
       const tx = buildUpdateListingPriceTx({
         currentKioskId: kiosk.currentKioskId,
         currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
@@ -166,7 +178,7 @@ interface DelistModalProps {
 export function DelistModal({ soul, open, onClose }: DelistModalProps) {
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
 
@@ -180,7 +192,12 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const kiosk = await fetchPersonalKiosk(authHeaders)
+      const kiosk = await fetchPersonalKiosk(authHeaders, suiWallet?.address)
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': kiosk.currentKioskId,
+        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        'Soul listing': soul.listingObjectOnChainId,
+      })
       const tx = buildDelistSoulTx({
         currentKioskId: kiosk.currentKioskId,
         currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,

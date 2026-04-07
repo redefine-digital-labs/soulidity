@@ -7,7 +7,6 @@ export async function upsertSoulProjection(params: {
   state: SoulStateObject
   memory: SoulMemoryObject
   currentKioskCapOnChainId: string
-  latestSkillVersionOnChainId?: string | null
   creatorMemberId?: string | null
   currentOwnerMemberId?: string | null
   category: string
@@ -46,7 +45,6 @@ export async function upsertSoulProjection(params: {
       grantCapacity: params.state.grantCapacity,
       activeGrantCount: params.state.activeGrantCount,
       skillsOnChainId: params.state.skillsId,
-      latestSkillVersionOnChainId: params.latestSkillVersionOnChainId ?? null,
       sealSidecar: params.sealSidecar ?? Prisma.DbNull,
       category: params.category,
       tags: params.tags,
@@ -79,7 +77,6 @@ export async function upsertSoulProjection(params: {
       grantCapacity: params.state.grantCapacity,
       activeGrantCount: params.state.activeGrantCount,
       skillsOnChainId: params.state.skillsId,
-      latestSkillVersionOnChainId: params.latestSkillVersionOnChainId ?? null,
       sealSidecar: params.sealSidecar ?? Prisma.DbNull,
       category: params.category,
       tags: params.tags,

@@ -3,10 +3,12 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Alert } from '@/components/ui/alert'
+import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { Tag } from '@/components/ui/tag'
 import { UploadZone } from '@/components/ui/upload-zone'
 import { useSkills } from '@/lib/hooks/use-skills'
 import type { SoulAssetDetail, SoulSkillVisibility, SoulSkillVersionRecord } from '@/lib/soulidity/types'
+import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -19,11 +21,13 @@ function formatDate(value: string | null | undefined) {
 }
 
 function formatVersionFileName(version: SoulSkillVersionRecord) {
-  return `v${version.versionNumber}`
+  return `${version.skillName} v${version.versionIndex}`
 }
 
 export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
   const [visibility, setVisibility] = useState<SoulSkillVisibility>('private')
   const { pending, error, canManageSkills, skillGrant, appendSkillVersion, deleteSkillVersion, openSkillVersion } = useSkills(soul)
 
@@ -37,6 +41,22 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
     if (!selectedFile) return
     await appendSkillVersion(selectedFile, visibility)
     setSelectedFile(null)
+    setSelectedSkillName(null)
+    setSelectionError(null)
+  }
+
+  async function handleFileSelect(file: File) {
+    const result = await validateSelectedSkillBundle(file)
+    if (!result.ok) {
+      setSelectedFile(null)
+      setSelectedSkillName(null)
+      setSelectionError(result.error)
+      return
+    }
+
+    setSelectionError(null)
+    setSelectedSkillName(result.skillName)
+    setSelectedFile(file)
   }
 
   return (
@@ -45,7 +65,7 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
         <div>
           <div className="page-kicker text-muted mb-2">Skills</div>
           <p className="text-sm text-muted">
-            Versions are append-only. Private versions require owner access or an active `skills` grant to decrypt.
+            Each upload creates a new revision. Private versions require owner access or an active `skills` grant to decrypt.
           </p>
         </div>
         <Tag color={soul.skillsOnChainId ? 'teal' : 'muted'}>
@@ -69,12 +89,18 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
 
           <UploadZone
             icon="🧠"
-            label={selectedFile ? selectedFile.name : 'Upload a new skill version'}
-            sublabel={selectedFile ? `${Math.max(1, Math.round(selectedFile.size / 1024))} KB selected` : 'Markdown, text, or JSON supported. Private versions are encrypted before upload.'}
-            accept=".md,.markdown,.txt,.json,text/markdown,text/plain,application/json"
-            onFileSelect={setSelectedFile}
+            label={selectedFile ? selectedFile.name : 'Upload a ZIP skill bundle'}
+            sublabel={selectedFile ? `${Math.max(1, Math.round(selectedFile.size / 1024))} KB selected · Skill: ${selectedSkillName ?? 'read from SKILL.md'}` : 'Only ZIP bundles with SKILL.md frontmatter are accepted. Private versions are encrypted before upload.'}
+            accept=".zip,application/zip,application/x-zip-compressed"
+            onFileSelect={(file) => {
+              void handleFileSelect(file)
+            }}
             className="py-6"
           />
+
+          {(!selectedFile || selectionError) && (
+            <SkillBundleFormatHint error={selectionError} />
+          )}
 
           <div className="flex flex-wrap gap-2">
             <Button
@@ -158,12 +184,16 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
 
               <div className="mt-3 grid gap-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted">Blob</span>
-                  <span>{formatAddress(version.blobObjectId)}</span>
+                  <span className="text-muted">Skill</span>
+                  <span>{version.skillName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted">Previous</span>
-                  <span>{formatAddress(version.previousVersionOnChainId)}</span>
+                  <span className="text-muted">Version</span>
+                  <span>{version.versionIndex}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Blob</span>
+                  <span>{formatAddress(version.blobObjectId)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Created</span>

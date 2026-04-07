@@ -12,6 +12,7 @@ type PublishTxParams = {
   protectedBlobObjectId: string
   foundingMemoryBlobObjectId?: string | null
   skillsBlobObjectId?: string | null
+  initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
   creatorRoyaltyBps: number
 }
@@ -58,6 +59,7 @@ export function buildPublishSoulTx(params: PublishTxParams) {
       tx.object(params.protectedBlobObjectId),
       buildFoundingMemoryArg(tx, params.foundingMemoryBlobObjectId),
       buildSkillsArg(tx, params.skillsBlobObjectId),
+      tx.pure.string(params.initialSkillName || 'default'),
       tx.pure.bool((params.skillsVisibility ?? 'private') === 'public'),
       tx.pure.u16(params.creatorRoyaltyBps),
       tx.object(SUI_CLOCK_OBJECT_ID),

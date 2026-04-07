@@ -2,17 +2,24 @@
 
 import { useState } from 'react'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildListSoulTx } from '@/lib/soulidity/tx/list'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
 
 export type ListStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
 
+function buildPersonalKioskUrl(walletAddress?: string | null) {
+  return walletAddress
+    ? `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`
+    : '/api/souls/personal-kiosk'
+}
+
 export function useListSoul(soul: SoulAssetDetail | null) {
   const [status, setStatus] = useState<ListStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
-  const { suiWallet, signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
 
   async function listSoul(priceAtomic: bigint) {
@@ -46,12 +53,19 @@ export function useListSoul(soul: SoulAssetDetail | null) {
       setStatus('building')
       setError(null)
       const authHeaders = await getAuthHeaders()
-      const kioskRes = await fetch('/api/souls/personal-kiosk', { cache: 'no-store', headers: authHeaders })
+      const kioskRes = await fetch(buildPersonalKioskUrl(suiWallet.address), { cache: 'no-store', headers: authHeaders })
       if (!kioskRes.ok) {
         const body = await kioskRes.json().catch(() => ({}))
         throw new Error(body.error || 'Failed to resolve personal kiosk')
       }
       const kiosk = await kioskRes.json()
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': kiosk.currentKioskId,
+        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        'Soul state': soul.stateOnChainId,
+        Soul: soul.onChainId,
+        Collection: soul.collectionOnChainId,
+      })
 
       const tx = buildListSoulTx({
         currentKioskId: kiosk.currentKioskId,

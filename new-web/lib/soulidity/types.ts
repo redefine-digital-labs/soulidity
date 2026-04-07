@@ -51,6 +51,7 @@ export interface SoulStateObject {
   grantCapacity: number
   activeGrantCount: number
   activeGrants: ActiveGrantSlotObject[]
+  memoryId?: string | null
   skillsId: string | null
   collectionId: string | null
 }
@@ -119,41 +120,36 @@ export interface SoulMemoryObject {
   objectId: string
   packageId: string
   soulId: string
-  nextIndex: number
   entryCount: number
-  lastEntryId: string | null
-  lastEntryCreatedAtMs: number | null
+  entriesTableId: string
 }
 
 export interface MemoryEntryObject {
-  objectId: string
   packageId: string
+  memoryId: string
   soulId: string
-  index: number
+  timestampKey: number
   writerAddress: string
   writerKind: SoulWriterKind
   createdAtMs: number
   blobObjectId: string
   blobId: string | null
-  previousEntryId: string | null
 }
 
 export interface SoulSkillsObject {
   objectId: string
   packageId: string
   soulId: string
-  nextVersion: number
-  versionCount: number
-  latestVersionId: string | null
+  skillCount: number
+  skillsTableId: string
 }
 
 export interface SkillVersionObject {
-  objectId: string
   packageId: string
   soulId: string
   skillsId: string
-  versionNumber: number
-  previousVersionId: string | null
+  skillName: string
+  versionIndex: number
   visibility: SoulSkillVisibility
   deleted: boolean
   createdAtMs: number
@@ -197,7 +193,6 @@ export interface SoulAssetSummary {
   grantCapacity: number
   activeGrantCount: number
   skillsOnChainId: string | null
-  latestSkillVersionOnChainId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -221,14 +216,14 @@ export interface SoulGrantRecord {
 
 export interface SoulMemoryEntryRecord {
   id: string
-  onChainId: string
   soulOnChainId: string
   memoryOnChainId: string
-  entryIndex: number
+  timestampKey: number
   writerAddress: string
   writerKind: SoulWriterKind
   blobObjectId: string
   blobId: string | null
+  sealSidecar?: SealEnvelopeSidecar | null
   createdAtMs: number
   createdAt: string
   updatedAt: string
@@ -238,13 +233,12 @@ export interface SoulSkillVersionRecord {
   id: string
   soulOnChainId: string
   skillsOnChainId: string
-  versionOnChainId: string
-  versionNumber: number
+  skillName: string
+  versionIndex: number
   visibility: SoulSkillVisibility
   deletedAt: string | null
   blobObjectId: string
   blobId: string | null
-  previousVersionOnChainId: string | null
   sealSidecar: SealEnvelopeSidecar | null
   createdAtMs: number
   createdAt: string
@@ -391,7 +385,8 @@ export type SkillAccessResponse =
         packageId: string
         stateObjectId: string
         skillsObjectId: string
-        versionObjectId: string
+        skillName: string
+        versionIndex: number
         moduleName: 'skills'
         functionName: 'approve_private_read_owner' | 'approve_private_read_granted_agent'
         soulGrantObjectId: string | null
@@ -412,6 +407,38 @@ export type SkillAccessResponse =
       accessKind: SkillAccessKind
       sessionTtlMin: number
     }
+
+export interface MemoryAccessResponse {
+  artifact: {
+    walrusBlobUrl: string
+    walrusBlobId: string
+    blobObjectId: string
+  }
+  accessPolicy: {
+    packageId: string
+    stateObjectId: string
+    memoryObjectId: string
+    timestampKey: number
+    moduleName: 'seal_policy'
+    functionName: 'seal_approve_memory_owner' | 'seal_approve_memory_granted_agent'
+    soulGrantObjectId: string | null
+    documentIdHex: string
+  }
+  seal: {
+    network: 'testnet' | 'mainnet'
+    threshold: number
+    verifyKeyServers: boolean
+    serverConfigs: Array<{
+      objectId: string
+      weight: number
+      aggregatorUrl?: string
+    }>
+  }
+  sealSidecar: SealEnvelopeSidecar
+  viewerAddress: string
+  accessKind: SoulAccessKind
+  sessionTtlMin: number
+}
 
 export interface ResolvedPersonalKiosk {
   ownerAddress: string

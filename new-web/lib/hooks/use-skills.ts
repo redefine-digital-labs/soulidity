@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { useQueryClient } from '@tanstack/react-query'
 import type { SoulAssetDetail, SoulSkillVersionRecord } from '@/lib/soulidity/types'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { fetchSkillAccess, loadDecryptedPrivateSkillVersion } from '@/lib/soulidity/skill-access'
 import { buildAppendSkillVersionTx, buildDeleteSkillVersionTx } from '@/lib/soulidity/tx/skills'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
@@ -14,7 +15,8 @@ type PendingSkillAction = 'append' | 'delete' | 'read' | null
 type UploadedSkillPayload = {
   blobId: string
   blobObjectId: string | null
-  sealDekEnvelope?: object | null
+  sealDekEnvelope?: string | null
+  skillName?: string | null
 }
 
 function sameSuiAddress(left: string, right: string) {
@@ -102,9 +104,20 @@ export function useSkills(soul: SoulAssetDetail | null) {
       if (!blobObjectId) {
         throw new Error('Uploaded skill payload is missing blobObjectId')
       }
+      const skillName = typeof uploaded.skillName === 'string' ? uploaded.skillName.trim() : ''
+      if (!skillName) {
+        throw new Error('Uploaded skill bundle is missing skillName')
+      }
+      await assertObjectInputsExist(suiClient, {
+        'Soul state': soul.stateOnChainId,
+        'Skills root': soul.skillsOnChainId,
+        'Uploaded skill bundle': blobObjectId,
+        'Skills grant': soul.isOwner ? null : skillGrant?.onChainId ?? null,
+      })
       const tx = buildAppendSkillVersionTx({
         stateObjectId: soul.stateOnChainId,
         skillsObjectId: soul.skillsOnChainId,
+        skillName,
         blobObjectId,
         visibility,
         grantObjectId: soul.isOwner ? null : skillGrant?.onChainId ?? null,
@@ -116,7 +129,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           txDigest: result.digest,
-          sealSidecar: visibility === 'private' ? uploaded.sealDekEnvelope ?? null : null,
+          rawSkillsEnvelope: visibility === 'private' ? uploaded.sealDekEnvelope ?? null : null,
         }),
       })
       const payload = await response.json().catch(() => null)
@@ -153,16 +166,22 @@ export function useSkills(soul: SoulAssetDetail | null) {
     setPending('delete')
     setError(null)
     try {
+      await assertObjectInputsExist(suiClient, {
+        'Soul state': soul.stateOnChainId,
+        'Skills root': soul.skillsOnChainId,
+        'Skills grant': soul.isOwner ? null : skillGrant?.onChainId ?? null,
+      })
       const tx = buildDeleteSkillVersionTx({
         stateObjectId: soul.stateOnChainId,
         skillsObjectId: soul.skillsOnChainId,
-        versionObjectId: version.versionOnChainId,
+        skillName: version.skillName,
+        versionIndex: version.versionIndex,
         grantObjectId: soul.isOwner ? null : skillGrant?.onChainId ?? null,
       })
       const result = await signAndExecute(tx)
       const authHeaders = await getAuthHeaders()
       const response = await fetch(
-        `/api/souls/${encodeURIComponent(soul.onChainId)}/skills/${encodeURIComponent(version.versionOnChainId)}/delete`,
+        `/api/souls/${encodeURIComponent(soul.onChainId)}/skills/${encodeURIComponent(version.skillName)}/versions/${encodeURIComponent(String(version.versionIndex))}/delete`,
         {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
@@ -199,7 +218,8 @@ export function useSkills(soul: SoulAssetDetail | null) {
     try {
       const access = await fetchSkillAccess({
         soulObjectId: soul.onChainId,
-        versionObjectId: version.versionOnChainId,
+        skillName: version.skillName,
+        versionIndex: version.versionIndex,
         getAuthHeaders,
       })
 
@@ -223,7 +243,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
       try {
         createDownloadLink(
           new Blob([decrypted.bytes], { type: decrypted.mimeType || 'application/octet-stream' }),
-          decrypted.fileName || `soul-skill-v${version.versionNumber}.bin`,
+          decrypted.fileName || `soul-skill-${version.skillName}-v${version.versionIndex}.bin`,
         )
       } finally {
         decrypted.bytes.fill(0)

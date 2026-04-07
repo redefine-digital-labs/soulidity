@@ -143,15 +143,15 @@ export default function ImportPreviewPage() {
           {/* Soul Character */}
           <ReviewCard tone="teal" icon="📄" label="Soul Character">
             <p className="text-sm font-medium text-foreground">
-              {ctx.charFile!.name} · v1 · main
+              {ctx.charFile!.name}
             </p>
             <div className="flex items-center gap-1.5 text-[10px] text-success">
               <span>✍</span>
-              <span>Git versioned · main active</span>
+              <span>Prepared for encrypted upload</span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-muted">
-              <span>⊘</span>
-              <span>Append-only · no delete</span>
+              <span>🔒</span>
+              <span>Locks after mint · standard soul.md</span>
             </div>
           </ReviewCard>
 
@@ -162,11 +162,11 @@ export default function ImportPreviewPage() {
             </p>
             <div className="flex items-center gap-1.5 text-[10px] text-success">
               <span>✍</span>
-              <span>Uploaded · immutable after mint</span>
+              <span>Prepared as the first memory entry</span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-muted">
               <span>🔒</span>
-              <span>Immutable after mint · no delete</span>
+              <span>Encrypted at mint · preserved after mint</span>
             </div>
           </ReviewCard>
         </div>
@@ -179,11 +179,11 @@ export default function ImportPreviewPage() {
             </p>
             <div className="flex items-center gap-1.5 text-[10px] text-success">
               <span>✍</span>
-              <span>Git versioned · main active</span>
+              <span>Private by default</span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-muted">
-              <span>⊘</span>
-              <span>Update anytime · no delete</span>
+              <span>🔐</span>
+              <span>Additional revisions can be added later</span>
             </div>
           </ReviewCard>
         )}
@@ -194,17 +194,15 @@ export default function ImportPreviewPage() {
             Content & Memory Policy
           </div>
           <p className="mb-4 text-xs leading-relaxed text-muted">
-            All three content layers are git-versioned and append-only. SoulGrant agents always read from{' '}
-            <span className="font-bold text-foreground">main</span>. Live Memory grows through SoulGrant
-            interactions on Walrus and cannot be edited or deleted by anyone, including you.
+            Imported provenance stays visible, while the new Soul content follows the same sealed character, encrypted founding memory, and private-by-default skills model as native minting. Live memory grows later through grant-authorized writes on Walrus.
           </p>
           <div className="space-y-2.5">
             {[
-              { allowed: true, title: 'SoulGrant reads main', desc: 'agents always use latest commit on main; full version history preserved & auditable' },
-              { allowed: true, title: 'Grant-gated write', desc: 'only authorized agents can append to Live Memory or update Skills & Docs' },
-              { allowed: true, title: 'Revocable access', desc: 'revoke grant anytime; memory stays on Walrus, writes stop immediately' },
-              { allowed: false, title: 'No delete — ever', desc: 'Soul Character, Memory, Skills & Docs, Live Memory: all append-only, no delete' },
-              { allowed: false, title: 'No fork', desc: 'this Soul cannot be duplicated or branched by others' },
+              { allowed: true, title: 'Imported provenance stays visible', desc: 'origin ref and import status remain attached to the minted Soul' },
+              { allowed: true, title: 'Character locked after mint', desc: 'the selected soul.md becomes the canonical identity layer for this Soul' },
+              { allowed: true, title: 'Grant-gated write', desc: 'only the owner or an active grant can add live memory or manage private skill bundles' },
+              { allowed: true, title: 'Revocable access', desc: 'revoke a grant anytime; Seal approvals stop resolving immediately' },
+              { allowed: true, title: 'History stays intact', desc: 'founding memory remains preserved while later sessions add new entries instead of replacing it' },
             ].map((item) => (
               <div key={item.title} className="flex items-start gap-2">
                 <span className={cn('mt-0.5 shrink-0', item.allowed ? 'text-success' : 'text-danger')}>

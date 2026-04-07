@@ -6,15 +6,20 @@ import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
+import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
+import { useKioskNfts } from '@/lib/hooks/use-kiosk-nfts'
+import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
 function FileUploadCard({
   label,
   required,
   file,
   accept,
+  acceptLabel,
   onSelect,
   onClear,
   tone,
@@ -23,6 +28,7 @@ function FileUploadCard({
   required?: boolean
   file: File | null
   accept: string
+  acceptLabel?: string
   onSelect: (f: File) => void
   onClear: () => void
   tone: 'amber' | 'violet' | 'teal'
@@ -56,7 +62,7 @@ function FileUploadCard({
           className={`w-full rounded-lg border border-dashed ${t.border} px-4 py-6 text-center transition hover:border-purple`}
         >
           <p className="text-sm font-semibold text-foreground">Click to upload</p>
-          <p className="mt-1 text-xs text-muted">{accept} format</p>
+          <p className="mt-1 text-xs text-muted">{acceptLabel ?? `${accept} format`}</p>
         </button>
       ) : (
         <div className="flex items-center gap-3 rounded-lg border border-teal/30 bg-teal/8 px-3 py-2.5">
@@ -72,16 +78,27 @@ function FileUploadCard({
 export default function ConfigurePage() {
   const router = useRouter()
   const ctx = useWrap()
+  const { suiWallet } = usePrivySuiSign()
+  const { data: nfts } = useKioskNfts(suiWallet?.address)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [skillBundleError, setSkillBundleError] = useState<string | null>(null)
+  const [skillBundleName, setSkillBundleName] = useState<string | null>(null)
+  const selectedNftAvailable = !!ctx.selectedNft && (!nfts || nfts.some((nft) => nft.objectId === ctx.selectedNft?.objectId))
 
   // Guard: redirect if no NFT selected
   useEffect(() => {
+    if (ctx.selectedNft && nfts && !selectedNftAvailable) {
+      ctx.setSelectedNft(null)
+      router.replace('/wrap-link/personal')
+      return
+    }
+
     if (!ctx.selectedNft) {
       router.replace('/wrap-link/personal')
     }
-  }, [ctx.selectedNft, router])
+  }, [ctx, ctx.selectedNft, nfts, selectedNftAvailable, router])
 
-  if (!ctx.selectedNft) return null
+  if (!ctx.selectedNft || (nfts && !selectedNftAvailable)) return null
 
   function handleNext() {
     const nextErrors: Record<string, string> = {}
@@ -93,6 +110,20 @@ export default function ConfigurePage() {
     }
     setErrors({})
     router.push('/wrap-link/personal/preview')
+  }
+
+  async function handleSkillsFileSelect(file: File) {
+    const result = await validateSelectedSkillBundle(file)
+    if (!result.ok) {
+      ctx.setSkillsFile(null)
+      setSkillBundleName(null)
+      setSkillBundleError(result.error)
+      return
+    }
+
+    setSkillBundleError(null)
+    setSkillBundleName(result.skillName)
+    ctx.setSkillsFile(file)
   }
 
   return (
@@ -128,6 +159,7 @@ export default function ConfigurePage() {
               required
               file={ctx.charFile}
               accept=".md,text/markdown"
+              acceptLabel=".md only"
               onSelect={ctx.setCharFile}
               onClear={() => ctx.setCharFile(null)}
               tone="amber"
@@ -139,6 +171,7 @@ export default function ConfigurePage() {
               required
               file={ctx.memoryFile}
               accept=".md,text/markdown"
+              acceptLabel=".md only"
               onSelect={ctx.setMemoryFile}
               onClear={() => ctx.setMemoryFile(null)}
               tone="violet"
@@ -148,11 +181,21 @@ export default function ConfigurePage() {
             <FileUploadCard
               label="Skills & Docs"
               file={ctx.skillsFile}
-              accept=".zip,.json,.md"
-              onSelect={ctx.setSkillsFile}
-              onClear={() => ctx.setSkillsFile(null)}
+              accept=".zip,application/zip,application/x-zip-compressed"
+              acceptLabel={ctx.skillsFile && skillBundleName ? `.zip only · Skill: ${skillBundleName}` : '.zip only'}
+              onSelect={(file) => {
+                void handleSkillsFileSelect(file)
+              }}
+              onClear={() => {
+                ctx.setSkillsFile(null)
+                setSkillBundleName(null)
+                setSkillBundleError(null)
+              }}
               tone="teal"
             />
+            {(!ctx.skillsFile || skillBundleError) && (
+              <SkillBundleFormatHint error={skillBundleError} />
+            )}
           </div>
 
           <div className="flex items-center gap-3">

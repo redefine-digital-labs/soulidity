@@ -12,6 +12,7 @@ type ImportSoulTxParams = {
   protectedBlobObjectId: string
   foundingMemoryBlobObjectId?: string | null
   skillsBlobObjectId?: string | null
+  initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
   originRef: string
   creatorRoyaltyBps: number
@@ -62,6 +63,7 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
       tx.object(params.protectedBlobObjectId),
       buildFoundingMemoryArg(tx, params.foundingMemoryBlobObjectId),
       buildSkillsArg(tx, params.skillsBlobObjectId),
+      tx.pure.string(params.initialSkillName || 'default'),
       tx.pure.bool((params.skillsVisibility ?? 'private') === 'public'),
       tx.pure.string(params.originRef),
       tx.pure.u16(params.creatorRoyaltyBps),

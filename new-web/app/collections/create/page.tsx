@@ -30,10 +30,10 @@ function FieldLabel({ label, hint, required }: { label: string; hint?: string; r
 }
 
 const memoryPolicyRules = [
-  { label: 'Soul Character required', desc: 'foundational .md · v1 on main · append-only · per Soul' },
-  { label: 'Grant-gated write', desc: 'only authorized agents can write Memory' },
-  { label: 'Append-only Memory', desc: 'no deletion, no edits' },
-  { label: 'No fork', desc: 'memory cannot be copied' },
+  { label: 'Soul Character required', desc: 'standard soul.md template · one locked identity layer per Soul' },
+  { label: 'Founding memory locked', desc: 'each mint starts with one encrypted memory seed' },
+  { label: 'Grant-gated write', desc: 'only authorized agents can add later memory entries' },
+  { label: 'History preserved', desc: 'new sessions add records instead of replacing the seed' },
   { label: 'Revocable access', desc: 'SoulGrant can be revoked anytime' },
 ]
 

@@ -337,7 +337,7 @@ export default function PreviewPage() {
               />
               <SettingRow
                 label="Memory Policy"
-                value="Grant-gated · Append-only · No fork"
+                value="Grant-gated writes · founding memory locked · history preserved"
                 bold
               />
               <SettingRow label="Estimated Gas" value="~0.032 SUI" bold />

@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { extractSoulMintedToKioskEvent } from '@/lib/soulidity/events'
+import {
+  tryExtractMemoryEntryAppendedEvent,
+  tryExtractSkillVersionAppendedEvent,
+  extractSoulMintedToKioskEvent,
+} from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
+import { upsertMemoryEntryProjection } from '@/lib/soulidity/mirror/upsert-memory'
+import { upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
-import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
+import type { SoulWriterKind } from '@/lib/soulidity/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +30,12 @@ function parseStringArray(value: unknown, maxItems: number) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, maxItems)
+}
+
+function writerKindToString(kind: number): SoulWriterKind {
+  if (kind === 0) return 'founder'
+  if (kind === 2) return 'granted-agent'
+  return 'owner'
 }
 
 export async function POST(request: Request) {
@@ -64,12 +77,16 @@ export async function POST(request: Request) {
     }
 
     const minted = extractSoulMintedToKioskEvent(transaction, packageId)
+    const foundingMemory = tryExtractMemoryEntryAppendedEvent(transaction, packageId)
+    const initialSkill = tryExtractSkillVersionAppendedEvent(transaction, packageId)
 
     // Unseal DEK envelopes into proper SealEnvelopeSidecars for downstream access
     const rawSoulEnvelope = typeof body?.sealSidecar === 'string' ? body.sealSidecar : null
+    const rawMemoryEnvelope = typeof body?.memorySealSidecar === 'string' ? body.memorySealSidecar : null
     const rawSkillsEnvelope = typeof body?.skillsSealSidecar === 'string' ? body.skillsSealSidecar : null
 
     let soulSidecar = null
+    let memorySidecar = null
     let skillsSidecar = null
     try {
       const builtSidecars = await buildSyncSealSidecars({
@@ -77,9 +94,20 @@ export async function POST(request: Request) {
         soulObjectId: minted.soulId,
         stateObjectId: minted.stateId,
         rawSoulEnvelope,
+        rawMemoryEnvelope,
+        memoryBinding: foundingMemory ? {
+          memoryObjectId: foundingMemory.memoryId,
+          timestampKey: foundingMemory.timestampKey,
+        } : null,
         rawSkillsEnvelope,
+        skillBinding: initialSkill ? {
+          skillsObjectId: initialSkill.skillsId,
+          skillName: initialSkill.skillName,
+          versionIndex: initialSkill.versionIndex,
+        } : null,
       })
       soulSidecar = builtSidecars.soulSidecar
+      memorySidecar = builtSidecars.memorySidecar
       skillsSidecar = builtSidecars.skillsSidecar
     } catch (error) {
       if (error instanceof SealSidecarSyncConfigError) {
@@ -98,16 +126,56 @@ export async function POST(request: Request) {
       previewImages: parseStringArray(body?.previewImages, 8),
       readme: typeof body?.readme === 'string' ? body.readme : null,
       sealSidecar: soulSidecar,
-      latestSkillVersionSealSidecar: skillsSidecar,
       creatorMemberId: auth.identity.memberId,
       currentOwnerMemberId: auth.identity.memberId,
     })
+    if (foundingMemory) {
+      const memoryBlobId = await resolveWalrusBlobId(foundingMemory.blobObjectId)
+      await upsertMemoryEntryProjection({
+        entry: {
+          packageId,
+          memoryId: foundingMemory.memoryId,
+          soulId: foundingMemory.soulId,
+          timestampKey: foundingMemory.timestampKey,
+          writerAddress: foundingMemory.writerAddress,
+          writerKind: writerKindToString(foundingMemory.writerKind),
+          createdAtMs: foundingMemory.createdAtMs,
+          blobObjectId: foundingMemory.blobObjectId,
+          blobId: memoryBlobId,
+        },
+        sealSidecar: memorySidecar,
+      })
+    }
+    if (initialSkill) {
+      const skillBlobId = await resolveWalrusBlobId(initialSkill.blobObjectId)
+      await upsertSkillVersionProjection({
+        version: {
+          packageId,
+          soulId: initialSkill.soulId,
+          skillsId: initialSkill.skillsId,
+          skillName: initialSkill.skillName,
+          versionIndex: initialSkill.versionIndex,
+          visibility: initialSkill.visibility,
+          deleted: false,
+          createdAtMs: initialSkill.createdAtMs,
+          blobObjectId: initialSkill.blobObjectId,
+          blobId: skillBlobId,
+        },
+        soulOnChainId: initialSkill.soulId,
+        skillsOnChainId: initialSkill.skillsId,
+        sealSidecar: skillsSidecar,
+      })
+    }
 
     const responseBody = {
       txDigest,
       soulOnChainId: mirrored.onChainId,
       stateOnChainId: mirrored.stateOnChainId,
       memoryOnChainId: mirrored.memoryOnChainId,
+      foundingMemoryTimestampKey: foundingMemory?.timestampKey ?? null,
+      skillsOnChainId: initialSkill?.skillsId ?? null,
+      initialSkillName: initialSkill?.skillName ?? null,
+      initialSkillVersionIndex: initialSkill?.versionIndex ?? null,
       listingStatus: mirrored.listingStatus,
     }
 

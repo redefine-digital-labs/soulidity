@@ -93,7 +93,6 @@ export const soulAssetSummarySelect = {
   grantCapacity: true,
   activeGrantCount: true,
   skillsOnChainId: true,
-  latestSkillVersionOnChainId: true,
   createdAt: true,
   updatedAt: true,
 } as const
@@ -117,14 +116,14 @@ export const soulGrantRecordSelect = {
 
 export const soulMemoryEntrySelect = {
   id: true,
-  onChainId: true,
   soulOnChainId: true,
   memoryOnChainId: true,
-  entryIndex: true,
+  timestampKey: true,
   writerAddress: true,
   writerKind: true,
   blobObjectId: true,
   blobId: true,
+  sealSidecar: true,
   createdAtMs: true,
   createdAt: true,
   updatedAt: true,
@@ -134,13 +133,12 @@ export const soulSkillVersionSelect = {
   id: true,
   soulOnChainId: true,
   skillsOnChainId: true,
-  versionOnChainId: true,
-  versionNumber: true,
+  skillName: true,
+  versionIndex: true,
   visibility: true,
   deletedAt: true,
   blobObjectId: true,
   blobId: true,
-  previousVersionOnChainId: true,
   sealSidecar: true,
   createdAtMs: true,
   createdAt: true,
@@ -191,15 +189,16 @@ export const soulAssetDetailSelect = {
   memoryEntries: {
     select: soulMemoryEntrySelect,
     orderBy: {
-      entryIndex: 'desc',
+      timestampKey: 'desc',
     },
     take: 20,
   },
   skillVersions: {
     select: soulSkillVersionSelect,
-    orderBy: {
-      versionNumber: 'desc',
-    },
+    orderBy: [
+      { skillName: 'asc' as const },
+      { versionIndex: 'desc' as const },
+    ] as Prisma.SoulSkillVersionRecordOrderByWithRelationInput[],
   },
 } as const
 
@@ -251,14 +250,14 @@ export function toSoulGrantRecord(record: SoulGrantRecordRecord): SoulGrantRecor
 export function toSoulMemoryEntryRecord(record: SoulMemoryEntryRecordRow): SoulMemoryEntryRecord {
   return {
     id: record.id,
-    onChainId: record.onChainId,
     soulOnChainId: record.soulOnChainId,
     memoryOnChainId: record.memoryOnChainId,
-    entryIndex: record.entryIndex,
+    timestampKey: toProjectionNumber(record.timestampKey, 'SoulMemoryEntry.timestampKey'),
     writerAddress: record.writerAddress,
     writerKind: record.writerKind === 'founder' ? 'founder' : record.writerKind === 'granted-agent' ? 'granted-agent' : 'owner',
     blobObjectId: record.blobObjectId,
     blobId: record.blobId,
+    sealSidecar: (record.sealSidecar ?? null) as SoulMemoryEntryRecord['sealSidecar'],
     createdAtMs: toProjectionNumber(record.createdAtMs, 'SoulMemoryEntry.createdAtMs'),
     createdAt: asIso(record.createdAt),
     updatedAt: asIso(record.updatedAt),
@@ -270,13 +269,12 @@ export function toSoulSkillVersionRecord(record: SoulSkillVersionRecordRow): Sou
     id: record.id,
     soulOnChainId: record.soulOnChainId,
     skillsOnChainId: record.skillsOnChainId,
-    versionOnChainId: record.versionOnChainId,
-    versionNumber: record.versionNumber,
+    skillName: record.skillName,
+    versionIndex: record.versionIndex,
     visibility: record.visibility === 'public' ? 'public' : 'private',
     deletedAt: record.deletedAt ? asIso(record.deletedAt) : null,
     blobObjectId: record.blobObjectId,
     blobId: record.blobId,
-    previousVersionOnChainId: record.previousVersionOnChainId,
     sealSidecar: (record.sealSidecar ?? null) as SoulSkillVersionRecord['sealSidecar'],
     createdAtMs: toProjectionNumber(record.createdAtMs, 'SoulSkillVersionRecord.createdAtMs'),
     createdAt: asIso(record.createdAt),
@@ -350,7 +348,6 @@ export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSum
     grantCapacity: record.grantCapacity,
     activeGrantCount: record.activeGrantCount,
     skillsOnChainId: record.skillsOnChainId,
-    latestSkillVersionOnChainId: record.latestSkillVersionOnChainId,
     createdAt: asIso(record.createdAt),
     updatedAt: asIso(record.updatedAt),
   }

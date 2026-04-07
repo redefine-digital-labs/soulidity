@@ -10,6 +10,8 @@ import {
   FILE_TOO_LARGE_ERROR,
   JSON_METADATA_TOO_LARGE_ERROR,
   MAX_SOUL_UPLOAD_BYTES,
+  extractSkillBundleMetadata,
+  hasZipSignature,
   validateSoulUploadFile,
   validateSoulUploadSignature,
 } from '@/lib/soulidity/upload-validation'
@@ -94,6 +96,21 @@ export async function POST(req: NextRequest) {
   if (signatureError) {
     return NextResponse.json({ error: signatureError }, { status: 400 })
   }
+  const skillBundleMetadata = hasZipSignature(buffer)
+    ? (() => {
+        try {
+          return extractSkillBundleMetadata(buffer)
+        } catch (error) {
+          if (error instanceof Error) {
+            return error
+          }
+          throw error
+        }
+      })()
+    : null
+  if (skillBundleMetadata instanceof Error) {
+    return NextResponse.json({ error: skillBundleMetadata.message }, { status: 400 })
+  }
   const contentHash = createHash('sha256').update(buffer).digest('hex')
 
   // Resolve the member's bound wallet for ownership validation
@@ -124,7 +141,12 @@ export async function POST(req: NextRequest) {
 
   if (type === 'public') {
     const uploaded = await uploadPublic(buffer, clientSendTo ? { sendObjectTo: clientSendTo } : undefined)
-    return NextResponse.json({ ...uploaded, contentHash, blobUrl: getBlobUrl(uploaded.blobId) })
+    return NextResponse.json({
+      ...uploaded,
+      contentHash,
+      blobUrl: getBlobUrl(uploaded.blobId),
+      skillName: skillBundleMetadata?.skillName ?? null,
+    })
   }
 
   // type === 'encrypted': AES-GCM-256 encrypt before uploading to Walrus
@@ -143,5 +165,11 @@ export async function POST(req: NextRequest) {
   })
   const envelope = sealDekEnvelope({ dek, iv, contentHash, mimeType: file.type || 'application/octet-stream', fileName: file.name || 'bundle' })
 
-  return NextResponse.json({ ...uploaded, contentHash, sealDekEnvelope: envelope, blobUrl: getBlobUrl(uploaded.blobId) })
+  return NextResponse.json({
+    ...uploaded,
+    contentHash,
+    sealDekEnvelope: envelope,
+    blobUrl: getBlobUrl(uploaded.blobId),
+    skillName: skillBundleMetadata?.skillName ?? null,
+  })
 }
