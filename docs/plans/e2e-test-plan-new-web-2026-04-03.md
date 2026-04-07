@@ -174,7 +174,7 @@ DELETE FROM "soul_assets";
 2. `wait_for` text "Step 2 — Living Content"
 3. `click` upload 区域（`button:has-text("Upload Soul Character file")`）→ 模拟上传成功
 4. `wait_for` text "soul_character.md uploaded"
-5. `fill` Memory Seed（`textarea[placeholder*="founding memory"]`）: `Founding memory for E2E Soul Alpha.`
+5. `fill` Memory（`textarea[placeholder*="founding memory"]`）: `Founding memory for E2E Soul Alpha.`
 
 ### Test 1.4: 创建向导 Step 3 — Preview
 1. `click` "Awaken this Soul →"（`a[href="/create/preview"]`）
@@ -646,7 +646,7 @@ Phase 8 (new feature pages) → 独立
 | Royalty Standard | `button:has-text("Standard")` | /create |
 | Next Step | `a[href="/create/content"]` | /create |
 | Upload Character | `button:has-text("Upload Soul Character file")` | /create/content |
-| Memory Seed | `textarea[placeholder*="founding memory"]` | /create/content |
+| Memory | `textarea[placeholder*="founding memory"]` | /create/content |
 | Buy button | `button:has-text("Buy for")` | /souls/{id}/buy |
 | Sign & List | `button:has-text("Sign & List")` | /souls/{id}/sell/authorize |
 | Next: Authorize | `a:has-text("Next: Authorize")` | /souls/{id}/sell |

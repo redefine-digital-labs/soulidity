@@ -53,7 +53,7 @@ Soulidity is an on-chain ownership infrastructure for digital entities — refer
 - **SoulGrant** — one-at-a-time, on-chain AI agent authorization; auto-revoked on Soul transfer
 - **Soul Collection (SC)** — separates royalty rights from Soul ownership; tradeable or locked
 - **Wrap + Link** — extend any existing NFT with a Soul layer without touching the original contract
-- **Memory Seed** — structured founding memory stored encrypted on Walrus, co-authored by holders
+- **Memory** — structured founding memory stored encrypted on Walrus, co-authored by holders
 
 ---
 
@@ -62,7 +62,7 @@ Soulidity is an on-chain ownership infrastructure for digital entities — refer
 | Layer | Technology | Role |
 |---|---|---|
 | Blockchain | **Sui** | Object ownership, Soul minting, SoulGrant smart contract |
-| Decentralized Storage | **Walrus** | Encrypted Soul data (character sheets, memory seeds, lore) |
+| Decentralized Storage | **Walrus** | Encrypted Soul data (character sheets, memorys, lore) |
 | Access Control | **Seal** | Cryptographic key access management for SoulGrant |
 | Embedded Wallet | **Privy** | Social/email auth → embedded Sui wallet for non-crypto users |
 | Agent Identity | **OpenClaw** | Agent keypair-based identity certificates |
@@ -127,7 +127,7 @@ A user who holds one or more Soul Collection (SC) tokens. Not necessarily the cr
 | Term | Definition |
 |---|---|
 | **Soul** | A digital entity minted as a Sui object. Holds identity, memory, and encrypted data. Can represent an OC, AI agent, or expanded NFT. |
-| **Memory Seed** | The founding encrypted text of a Soul — written by the creator, stored on Walrus. Defines the Soul's personality, history, and capabilities. |
+| **Memory** | The founding encrypted text of a Soul — written by the creator, stored on Walrus. Defines the Soul's personality, history, and capabilities. |
 | **Soul Character** | A structured `.md` file uploaded at Soul creation. Defines appearance, traits, and interaction schema. |
 | **SoulGrant** | A smart-contract-enforced, one-at-a-time authorization that allows a specific AI agent to decrypt and operate a Soul's Walrus data via Seal. Revoked on Soul transfer. |
 | **Soul Collection (SC)** | An on-chain token representing royalty rights over a named group of Souls. Can be tradeable or creator-locked (non-transferable). |
@@ -138,7 +138,7 @@ A user who holds one or more Soul Collection (SC) tokens. Not necessarily the cr
 | **Floor Price** | The lowest listed price for any Soul in a given collection, denominated in USDC. |
 | **Karma** | An on-chain reputation score earned through community activity: posts, upvotes, SoulGrant activity, and collection creation. |
 | **Seal** | Sui-native cryptographic access control. Enables SoulGrant to enforce "only authorized agent can decrypt" without a centralized key store. |
-| **Walrus** | Decentralized blob storage on Sui. Stores encrypted Soul data (character sheets, memory seeds, lore arcs). |
+| **Walrus** | Decentralized blob storage on Sui. Stores encrypted Soul data (character sheets, memorys, lore arcs). |
 | **OpenClaw** | External AI agent identity system. Issues keypairs that agents use to authenticate on Soulidity. |
 | **Privy** | Embedded wallet provider. Enables email/social login with an embedded Sui wallet — no MetaMask required. |
 
@@ -298,7 +298,7 @@ Dynamically populated via `goSoulDetail(id)` reading from `souls{}` data object.
 
 **Tabs:**
 - **About** — SoulGrant status, contract address, history
-- **Memory** — Memory seed contents (encrypted preview)
+- **Memory** — Memory contents (encrypted preview)
 - **Lore** — Extended lore text
 
 **SoulGrant panel:**
@@ -407,7 +407,7 @@ A multi-step flow for minting a new Soul.
 #### Step 2 — Living Content (create-2)
 
 - **Soul Character Upload** — `.md` file with appearance, personality, skill schema (required)
-- **Memory Seed** — Text area for founding encrypted memory (required)
+- **Memory** — Text area for founding encrypted memory (required)
 - Validation: both fields required before proceeding
 - CTA: Awaken this Soul →
 
@@ -449,7 +449,7 @@ Import an existing Soul from another platform (e.g., a character sheet from anot
 #### Step 3 — Field Mapping (import-map)
 
 - Map source fields → Soulidity Soul fields
-- Name, Description, Personality, Memory Seed, Tags
+- Name, Description, Personality, Memory, Tags
 - Preview before commit
 
 #### Awakened / Gas / Success
@@ -503,7 +503,7 @@ Two paths:
 `expand-personal-1` → `expand-personal-2` → `expand-personal-preview` → `expand-personal-gas` → `expand-success`
 
 1. **Select NFT** — Input NFT contract address + Token ID, or login and pick from owned NFTs
-2. **Configure Soul Layer** — Upload Soul Character, write Memory Seed, set activation policy (Public / Holder-only / Creator-only)
+2. **Configure Soul Layer** — Upload Soul Character, write Memory, set activation policy (Public / Holder-only / Creator-only)
 3. **Preview** — Rendered Soul card with "🔗 Expanded" tag
 4. **Gas** — Sign to publish the Soul wrapper
 5. **Success** — Soul layer live; original NFT contract unchanged
@@ -513,7 +513,7 @@ Two paths:
 `expand-col-1` → `expand-col-2` → `expand-col-preview` → `expand-col-gas` → `expand-success`
 
 1. **Select Collection** — NFT contract address + name
-2. **Configure Collection Soul Layer** — Upload Soul Character template, write Memory Seed (suggested merge to all holders), activation policy
+2. **Configure Collection Soul Layer** — Upload Soul Character template, write Memory (suggested merge to all holders), activation policy
 3. **Preview** — Collection-level Soul layer summary
 4. **Gas** — Sign to publish across collection
 5. **Success** — Each NFT holder can now interact with the Soul layer
@@ -627,7 +627,7 @@ Two tabs within the Resources section.
 3. Soul Collections & Royalties — SC mechanics
 4. SoulGrant Authorization — Cryptographic agent access
 5. Wrap + Link Guide — NFT expansion
-6. Memory Seed Standard — Spec for founding memory format
+6. Memory Standard — Spec for founding memory format
 7. Walrus Storage Protocol — How Soul data is stored
 8. API & SDK Reference — Builder integration
 
