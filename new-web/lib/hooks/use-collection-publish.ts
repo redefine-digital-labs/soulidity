@@ -240,9 +240,9 @@ function createCharacterFile(soul: BatchSoulToMint): File {
   return new File([blob], `${soul.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`, { type: 'text/markdown' })
 }
 
-/** Fallback: auto-generate memory seed file (when no folder files) */
+/** Fallback: auto-generate memory file (when no folder files) */
 function createMemorySeedFile(soul: BatchSoulToMint): File {
-  const content = `${soul.name} memory seed.\n`
+  const content = `${soul.name} memory.\n`
   const blob = new Blob([content], { type: 'text/plain' })
   return new File([blob], 'memory-seed.txt', { type: 'text/plain' })
 }
@@ -456,11 +456,11 @@ export function useCollectionPublish(draftSignature?: string | null) {
             throw new Error(`Character file upload for Soul "${soul.name}" is missing Seal recovery data.`)
           }
 
-          // Memory seed — from folder's memory.md, fallback to auto-generated
+          // Memory — from folder's memory.md, fallback to auto-generated
           const memFile = folder?.memoryFile ?? createMemorySeedFile(soul)
           const memUpload = await uploadFile(memFile, 'public', authHeaders, walletAddress)
           if (!memUpload.blobObjectId) {
-            throw new Error(`Memory seed upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
+            throw new Error(`Memory upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
           }
 
           let skillsBlobObjectId: string | null = null

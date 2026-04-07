@@ -1,6 +1,7 @@
 'use client'
 
 import { AuthGate } from '@/components/auth/auth-gate'
+import { ImportSoulProvider } from '@/components/providers/import-soul-provider'
 
 export default function ImportLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,7 +11,9 @@ export default function ImportLayout({ children }: { children: React.ReactNode }
       sublabel="Importing content, mapping fields, and submitting the on-chain import all require your authenticated session."
       className="max-w-[680px]"
     >
-      {children}
+      <ImportSoulProvider>
+        {children}
+      </ImportSoulProvider>
     </AuthGate>
   )
 }

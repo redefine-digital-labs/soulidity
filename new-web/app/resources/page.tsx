@@ -5,7 +5,7 @@ const docs = [
   { emoji: '🔐', title: 'SoulGrant — Authorization API', desc: 'Issue, scope, supersede, and revoke AI agent access to Soul data via Seal, Memory, and Skills.' },
   { emoji: '📜', title: 'Smart Contract Reference', desc: 'SoulSeries, SoulRelease, SoulGrant, SoulCollection — Move module docs, object schemas, event types.' },
   { emoji: '🌊', title: 'Walrus & Seal Integration', desc: 'How Soul data is encrypted at rest on Walrus and access-controlled via Seal policy objects.' },
-  { emoji: '📖', title: 'Soul Memory Architecture', desc: 'Append-only memory on Walrus — Memory Seed at mint, SoulGrant write-back flow, and immutability guarantees.' },
+  { emoji: '📖', title: 'Soul Memory Architecture', desc: 'Append-only memory on Walrus — Memory at mint, SoulGrant write-back flow, and immutability guarantees.' },
   { emoji: '🧠', title: 'Skills & Docs Versioning', desc: 'Git-like branching and tagging for Soul skill files and documentation layers.' },
   { emoji: '🔗', title: 'Wrap + Link Guide', desc: 'Add a Soul layer on top of any existing NFT without touching the original contract.' },
   { emoji: '⚙️', title: 'API & SDK Reference', desc: 'REST endpoints, TypeScript SDK, and integration patterns for builders on Soulidity.' },

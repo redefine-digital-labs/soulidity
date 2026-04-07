@@ -83,7 +83,7 @@ function SoulRow({ soul, folder, index }: { soul: BatchSoulEntry; folder?: SoulF
             <path d="M9.5 2v3h3" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
           </svg>
         </span>
-        <span title="Memory seed (memory.md)" className={folder?.memoryFile ? 'text-gold' : 'text-muted/40'}>
+        <span title="Memory (memory.md)" className={folder?.memoryFile ? 'text-gold' : 'text-muted/40'}>
           <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4">
             <path d="M8 13V9m0 0c0-2.2 1.5-4.2 4.4-4.4 0 3.2-1.8 4.4-4.4 4.4Zm0 0c0-2-1-3.7-3.8-4.2 0 2.8 1.5 4.2 3.8 4.2Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>

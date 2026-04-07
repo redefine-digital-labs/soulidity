@@ -1,9 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useSuiClient } from '@mysten/dapp-kit'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
@@ -18,6 +17,12 @@ import {
   useCreateSoul,
   type UploadResults,
 } from '@/components/providers/create-soul-provider'
+import { TxRow } from '@/components/shared/tx-row'
+import {
+  MIN_SUI_BALANCE,
+  formatBalance,
+  useWalletBalances,
+} from '@/lib/hooks/use-wallet-balances'
 
 const steps = [
   { label: 'Basic Info' },
@@ -46,54 +51,11 @@ const uploadPhaseLabels: Record<UploadPhase, string> = {
   'idle': '',
   'uploading-cover': 'Uploading cover image…',
   'uploading-character': 'Encrypting & uploading character file…',
-  'uploading-memory': 'Uploading memory seed…',
+  'uploading-memory': 'Uploading memory…',
   'uploading-skills': 'Encrypting & uploading skills bundle…',
   'done': 'Uploads complete',
 }
 
-// ── SUI balance checking ──
-
-const SUI_COIN_TYPE = '0x2::sui::SUI'
-// Minimum SUI balance required for gas (~0.02 SUI with margin)
-const MIN_SUI_BALANCE = 20_000_000n // 0.02 SUI (9 decimals)
-
-function formatBalance(atomicBalance: bigint, decimals: number): string {
-  const whole = atomicBalance / 10n ** BigInt(decimals)
-  const frac = atomicBalance % 10n ** BigInt(decimals)
-  const fracStr = frac.toString().padStart(decimals, '0').slice(0, 4).replace(/0+$/, '')
-  return fracStr ? `${whole}.${fracStr}` : whole.toString()
-}
-
-interface BalanceState {
-  sui: bigint | null
-  loading: boolean
-}
-
-function useWalletBalances(walletAddress: string | null) {
-  const suiClient = useSuiClient()
-  const [state, setState] = useState<BalanceState>({ sui: null, loading: true })
-
-  const refresh = useCallback(async () => {
-    if (!walletAddress) {
-      setState({ sui: null, loading: false })
-      return
-    }
-    setState((prev) => ({ ...prev, loading: true }))
-    try {
-      const suiRes = await suiClient.getBalance({ owner: walletAddress, coinType: SUI_COIN_TYPE })
-      setState({
-        sui: BigInt(suiRes.totalBalance),
-        loading: false,
-      })
-    } catch {
-      setState({ sui: null, loading: false })
-    }
-  }, [walletAddress, suiClient])
-
-  useEffect(() => { refresh() }, [refresh])
-
-  return { ...state, refresh }
-}
 
 const MIME_MAP: Record<string, string> = {
   '.md': 'text/markdown', '.txt': 'text/plain',
@@ -127,22 +89,6 @@ async function uploadFile(
   return res.json()
 }
 
-function TxRow({
-  label,
-  children,
-  align = 'center',
-}: {
-  label: string
-  children: React.ReactNode
-  align?: 'center' | 'top'
-}) {
-  return (
-    <div className={`flex justify-between gap-4 py-3 text-[13px] ${align === 'top' ? 'items-start' : 'items-center'}`}>
-      <span className="text-muted shrink-0">{label}</span>
-      <span className="text-right">{children}</span>
-    </div>
-  )
-}
 
 function checkMintRecovery(userId: string | undefined): boolean {
   if (typeof window === 'undefined' || !userId) return false
@@ -303,7 +249,7 @@ export default function CreateGasPage() {
         results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletAddress)
       }
 
-      // 3. Upload memory seed (public) — Blob object referenced in TX, must be owned by signer
+      // 3. Upload memory (public) — Blob object referenced in TX, must be owned by signer
       if (!results.memorySeed) {
         setUploadPhase('uploading-memory')
         results.memorySeed = await uploadFile(ctx.memoryFile!, 'public', authHeaders, walletAddress)
@@ -327,7 +273,7 @@ export default function CreateGasPage() {
         throw new Error('Character file upload was deduplicated by Walrus and no owned Blob object was created. Please modify your character file slightly and retry.')
       }
       if (!results.memorySeed.blobObjectId) {
-        throw new Error('This exact memory seed text already exists on Walrus. Please add a unique detail to your memory seed so it can be stored as a distinct on-chain founding memory.')
+        throw new Error('This exact memory text already exists on Walrus. Please add a unique detail to your memory so it can be stored as a distinct on-chain founding memory.')
       }
       if (results.skillsFile && !results.skillsFile.blobObjectId) {
         throw new Error('Skills bundle upload was deduplicated by Walrus and no owned Blob object was created. Please modify your skills file slightly and retry.')
@@ -439,7 +385,7 @@ export default function CreateGasPage() {
               <span className="text-foreground">{ctx.charFile?.name}</span>
               <span className="text-muted ml-1.5">(encrypted via Seal)</span>
             </TxRow>
-            <TxRow label="Memory Seed">
+            <TxRow label="Memory">
               <span className="text-foreground">{ctx.memoryFile?.name}</span>
               <span className="text-muted ml-1.5">(append-only)</span>
             </TxRow>

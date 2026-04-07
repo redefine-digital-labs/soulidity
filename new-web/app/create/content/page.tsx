@@ -443,7 +443,7 @@ export default function CreateContentPage() {
   function handleNext() {
     const nextErrors: Record<string, string> = {}
     if (!ctx.charFile) nextErrors.charFile = 'Soul Character file is required'
-    if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory Seed file (memory.md) is required'
+    if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory file (memory.md) is required'
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
       return
@@ -460,7 +460,7 @@ export default function CreateContentPage() {
         <SectionHeader
           label="Create Soul"
           title="Step 2 - Living Content"
-          subtitle="Three layers define your Soul. Character and Memory Seed are required before minting. All content is git-versioned - append-only, no deletion."
+          subtitle="Three layers define your Soul. Character and Memory are required before minting. All content is git-versioned - append-only, no deletion."
           className="mb-1"
         />
 
@@ -519,7 +519,7 @@ export default function CreateContentPage() {
 
           <ContentCard
             tone="violet"
-            title="Memory Seed"
+            title="Memory"
             badge={<RequirementBadge tone="violet">Required</RequirementBadge>}
             icon={<SeedIcon className="h-4.5 w-4.5" />}
             meta={
@@ -540,7 +540,7 @@ export default function CreateContentPage() {
                 <UploadTarget
                   tone="violet"
                   icon={<SeedIcon className="h-8 w-8" />}
-                  label="Click to upload Memory Seed file"
+                  label="Click to upload Memory file"
                   subtitle=".md format only • becomes founding memory commit"
                   accept=".md,text/markdown"
                   onSelect={ctx.setMemoryFile}

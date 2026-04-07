@@ -86,7 +86,7 @@ export default function ConfigurePage() {
   function handleNext() {
     const nextErrors: Record<string, string> = {}
     if (!ctx.charFile) nextErrors.charFile = 'Soul Character file is required'
-    if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory Seed file (memory.md) is required'
+    if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory file (memory.md) is required'
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
       return
@@ -103,7 +103,7 @@ export default function ConfigurePage() {
           <SectionHeader
             label="Personal Join"
             title="Add Soul Layers"
-            subtitle="Upload the character definition and memory seed for this Soul."
+            subtitle="Upload the character definition and memory for this Soul."
             className="mb-1"
           />
 
@@ -135,7 +135,7 @@ export default function ConfigurePage() {
             {errors.charFile && <p className="text-[11px] font-medium text-danger">{errors.charFile}</p>}
 
             <FileUploadCard
-              label="Memory Seed"
+              label="Memory"
               required
               file={ctx.memoryFile}
               accept=".md,text/markdown"

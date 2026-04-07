@@ -1,18 +1,12 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
-
-const SOURCES = [
-  { id: 'character-ai', emoji: '💬', label: 'Character.AI', desc: 'Import from a Character.AI export file.' },
-  { id: 'novel-ai', emoji: '📝', label: 'NovelAI', desc: 'Import from a NovelAI character card.' },
-  { id: 'custom-json', emoji: '📋', label: 'Custom JSON', desc: 'Import from a structured JSON file.' },
-  { id: 'other', emoji: '📁', label: 'Other', desc: 'Import any supported markdown or text payload.' },
-]
+import { useImportSoul } from '@/components/providers/import-soul-provider'
 
 const steps = [
   { label: 'Choose Source' },
@@ -23,43 +17,117 @@ const steps = [
   { label: 'On-chain' },
 ]
 
+const SOURCES = [
+  {
+    id: 'local-file' as const,
+    icon: '📁',
+    label: 'Local File',
+    desc: 'Upload a .JSON, .MD, or folder export from OpenRouter, Claude Projects, Mindplug, or any custom format. Fields will be auto-detected and mapped automatically.',
+    enabled: true,
+  },
+  {
+    id: 'open-eliza' as const,
+    label: 'OpenEliza',
+    icon: '🤖',
+    desc: 'Subscribe to node and OpenEliza agents directly. Import name, description, and skill bundles.',
+    enabled: false,
+    badge: 'Coming Soon',
+  },
+  {
+    id: 'toplpa' as const,
+    label: 'Toplpa.so',
+    icon: '🔗',
+    desc: 'Paste a character URL and auto-import name, description, and cover image from any public CharacterCard profile.',
+    enabled: false,
+    badge: 'Coming Soon',
+  },
+] as const
+
 export default function ImportPage() {
-  const [selected, setSelected] = useState<string | null>(null)
+  const router = useRouter()
+  const ctx = useImportSoul()
+
+  function handleSelect(id: 'local-file') {
+    ctx.setSourceType(id)
+  }
+
+  function handleNext() {
+    if (ctx.sourceType) {
+      router.push('/import/upload')
+    }
+  }
 
   return (
-    <div className="relative z-10">
+    <div className="relative z-10 border-t border-purple/20">
       <FlowBar steps={steps} currentStep={0} />
 
-      <PageContainer size="sm" className="space-y-6">
+      <PageContainer size="sm" className="space-y-6 pt-7 sm:pt-9">
         <SectionHeader
           label="Import Soul"
-          title="Step 1 — Choose Source"
-          subtitle="Pick the source system. The import flow now follows the same card language and step rhythm as the prototype."
+          title="Choose Source"
+          subtitle="Select where your existing Soul data lives. It will be mapped to Basic Info, Character, Memory, and Skills layers — and minted as an imported Soul on Sui."
         />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {SOURCES.map((src) => (
-            <button
-              key={src.id}
-              type="button"
-              onClick={() => setSelected(src.id)}
-              className={`rounded-xl border px-5 py-5 text-left transition ${selected === src.id ? 'border-purple bg-purple/10' : 'card hover:border-purple/50'}`}
-            >
-              <span className="mb-3 block text-3xl">{src.emoji}</span>
-              <p className="font-display text-[1.35rem] font-bold tracking-[-0.03em] text-foreground">{src.label}</p>
-              <p className="mt-2 text-sm leading-7 text-muted">{src.desc}</p>
-            </button>
-          ))}
+        <div className="space-y-3">
+          {SOURCES.map((src) => {
+            const isSelected = ctx.sourceType === src.id
+            const isDisabled = !src.enabled
+
+            return (
+              <button
+                key={src.id}
+                type="button"
+                disabled={isDisabled}
+                onClick={() => src.enabled && handleSelect(src.id as 'local-file')}
+                className={`relative flex w-full items-start gap-4 rounded-2xl border px-5 py-5 text-left transition ${
+                  isSelected
+                    ? 'border-purple bg-purple/10 shadow-[0_8px_24px_rgba(124,58,237,0.15)]'
+                    : isDisabled
+                      ? 'cursor-not-allowed border-border/50 bg-card2/40 opacity-60'
+                      : 'border-border bg-card2/60 hover:border-purple/50 hover:bg-card2/80'
+                }`}
+              >
+                <span className="mt-0.5 text-2xl">{src.icon}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[15px] font-bold text-foreground">{src.label}</span>
+                    {'badge' in src && src.badge && (
+                      <span className="rounded-full border border-purple/30 bg-purple/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-purple">
+                        {src.badge}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-[13px] leading-6 text-muted">{src.desc}</p>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
-        <Link
-          href="/import/upload"
-          aria-disabled={!selected}
-          tabIndex={!selected ? -1 : undefined}
-          className={`${buttonStyles({ variant: 'primary', size: 'lg', full: true })} ${!selected ? 'pointer-events-none opacity-45' : ''}`}
-        >
-          Next: Upload File <span aria-hidden="true">→</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/market"
+            className={buttonStyles({
+              variant: 'outline',
+              size: 'lg',
+              className: 'w-[112px] rounded-xl border-border bg-transparent text-foreground hover:border-purple hover:text-foreground',
+            })}
+          >
+            ← Cancel
+          </Link>
+          <button
+            type="button"
+            disabled={!ctx.sourceType}
+            onClick={handleNext}
+            className={buttonStyles({
+              variant: 'landing',
+              size: 'lg',
+              className: `min-w-0 flex-1 rounded-xl ${!ctx.sourceType ? 'pointer-events-none opacity-45' : ''}`,
+            })}
+          >
+            Next: Upload File <span aria-hidden="true">→</span>
+          </button>
+        </div>
       </PageContainer>
     </div>
   )

@@ -114,7 +114,7 @@ export default function PreviewSignPage() {
                     <span className="text-teal font-semibold">{ctx.charFile!.name} · ✓</span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-foreground">Memory Seed</span>
+                    <span className="text-foreground">Memory</span>
                     <span className="text-teal font-semibold">{ctx.memoryFile!.name} · ✓</span>
                   </div>
                   {ctx.skillsFile && (

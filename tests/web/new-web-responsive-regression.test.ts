@@ -33,6 +33,6 @@ describe('new-web responsive regression guards', () => {
     const importUploadSource = readSource('new-web/app/import/upload/page.tsx')
 
     expect(createContentSource).toContain('flex-col-reverse gap-2.5 sm:flex-row')
-    expect(importUploadSource).toContain('flex-col-reverse sm:flex-row')
+    expect(importUploadSource).toContain('flex-col-reverse gap-2.5 sm:flex-row')
   })
 })

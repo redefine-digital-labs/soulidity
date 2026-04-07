@@ -150,7 +150,7 @@ export default function CreatePreviewPage() {
             </div>
           </ReviewCard>
 
-          <ReviewCard tone="green" icon="🌱" label="Memory Seed">
+          <ReviewCard tone="green" icon="🌱" label="Memory">
             <p className="text-sm text-foreground font-medium">
               {ctx.memoryFile!.name} · founding memory
             </p>
@@ -234,7 +234,7 @@ export default function CreatePreviewPage() {
             <PolicyItem
               allowed={false}
               title="No delete — ever"
-              description="Soul Character, Memory Seed, Skills & Docs, Live Memory: all append-only, no delete"
+              description="Soul Character, Memory, Skills & Docs, Live Memory: all append-only, no delete"
             />
             <PolicyItem
               allowed={false}

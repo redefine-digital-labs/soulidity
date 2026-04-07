@@ -1,122 +1,248 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { FlowBar } from '@/components/nav/flow-bar'
+import { PageContainer } from '@/components/layout/page-container'
+import { SectionHeader } from '@/components/layout/section-header'
+import { buttonStyles } from '@/components/ui/button'
+import { cn } from '@/lib/utils/cn'
+import { useImportSoul } from '@/components/providers/import-soul-provider'
 
-function FlowBar({ steps, current }: { steps: string[]; current: number }) {
+const steps = [
+  { label: 'Choose Source' },
+  { label: 'Upload File' },
+  { label: 'Map Fields' },
+  { label: 'Soul Awakened' },
+  { label: 'Pay Gas' },
+  { label: 'On-chain' },
+]
+
+const royaltyLabels: Record<number, string> = {
+  0: 'Off \u00b7 0%',
+  250: 'Low \u00b7 2.5%',
+  500: 'Standard \u00b7 5%',
+  1000: 'High \u00b7 10%',
+}
+
+type ReviewTone = 'gold' | 'teal' | 'green' | 'orange' | 'muted' | 'purple'
+
+const toneStyles: Record<ReviewTone, { border: string; header: string }> = {
+  gold: { border: 'border-[#7b5a1e]', header: 'text-[#F59E0B]' },
+  teal: { border: 'border-[#165c65]', header: 'text-teal' },
+  green: { border: 'border-[#1b6040]', header: 'text-success' },
+  orange: { border: 'border-[#7b4a1e]', header: 'text-[#F97316]' },
+  purple: { border: 'border-purple/30', header: 'text-purple' },
+  muted: { border: 'border-border', header: 'text-muted' },
+}
+
+function ReviewCard({
+  tone,
+  icon,
+  label,
+  children,
+  className,
+}: {
+  tone: ReviewTone
+  icon: string
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
+  const styles = toneStyles[tone]
   return (
-    <div className="bg-card2 border-b border-border px-4 sm:px-8 py-2.5 flex items-center overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-      {steps.map((label, i) => (
-        <span key={label} className="contents">
-          {i > 0 && <span className="mx-2.5 text-border text-[11px]">›</span>}
-          <div className="flex items-center gap-2 text-xs">
-            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-              i < current ? 'bg-success' : i === current ? 'bg-purple' : 'bg-border'
-            }`}>{i < current ? '✓' : i + 1}</div>
-            <span className={i < current ? 'text-success' : i === current ? 'text-foreground font-semibold' : 'text-muted'}>
-              {label}
-            </span>
-          </div>
-        </span>
-      ))}
+    <div className={cn('rounded-2xl border bg-card p-4', styles.border, className)}>
+      <div className={cn('text-[11px] font-bold uppercase tracking-[0.08em] mb-2.5', styles.header)}>
+        {icon} {label}
+      </div>
+      <div className="space-y-2">{children}</div>
     </div>
   )
 }
 
-const steps = ['Choose Source', 'Upload File', 'Map Fields', 'Soul Awakened', 'Pay Gas', 'On-chain']
+function truncateHash(hash: string, len = 12) {
+  if (hash.length <= len) return hash
+  return `${hash.slice(0, 8)}…${hash.slice(-4)}`
+}
 
 export default function ImportPreviewPage() {
-  const [visible, setVisible] = useState(false)
+  const router = useRouter()
+  const ctx = useImportSoul()
 
+  const missing = !ctx.resolvedName || !ctx.resolvedDescription || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile
   useEffect(() => {
-    const t = setTimeout(() => setVisible(true), 60)
-    return () => clearTimeout(t)
-  }, [])
+    if (missing) router.replace('/import/map')
+  }, [missing, router])
+
+  if (missing) return null
 
   return (
-    <div className="relative z-10">
-      <FlowBar steps={steps} current={3} />
+    <div className="relative z-10 border-t border-purple/20">
+      <FlowBar steps={steps} currentStep={3} />
 
-      <div className="max-w-[540px] mx-auto px-6 py-8">
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Import Soul</p>
-        <h1 className="font-display text-2xl font-bold mb-1">Step 4 — Soul Awakened</h1>
-        <p className="text-muted text-sm mb-8">Preview how your imported Soul will appear in the marketplace.</p>
+      <PageContainer size="md" className="space-y-5 pt-7 sm:pt-9">
+        <SectionHeader
+          label="Import Soul"
+          title="✦ Soul Awakened"
+          subtitle="Your imported Soul is assembled. Review what will live on-chain before minting."
+          className="mb-1"
+        />
 
-        {/* Soul preview card */}
-        <div
-          className="transition-all duration-700"
-          style={{
-            opacity: visible ? 1 : 0,
-            transform: visible ? 'translateY(0)' : 'translateY(18px)',
-          }}
-        >
-          <div className="bg-card border border-border rounded-2xl overflow-hidden mb-6">
-            {/* Card header */}
-            <div
-              className="h-24 flex items-end px-5 pb-4"
-              style={{ background: 'linear-gradient(135deg, var(--card2) 0%, var(--purple-deep) 100%)' }}
-            >
-              <div className="w-14 h-14 rounded-xl border-2 border-border bg-card flex items-center justify-center text-2xl -mb-7">
-                🤖
-              </div>
-            </div>
-
-            {/* Card body */}
-            <div className="px-5 pt-9 pb-5">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <h2 className="font-display font-bold text-lg leading-tight">AlphaScout</h2>
-                  <p className="text-muted text-xs">by you</p>
-                </div>
-                <span className="bg-purple/15 text-purple text-[11px] font-semibold px-2.5 py-1 rounded-full">
-                  Imported
-                </span>
-              </div>
-
-              <p className="text-sm text-muted mb-4 leading-relaxed">
-                On-chain signal agent for DeFi alpha detection. Analytical and data-driven, anchored on Walrus with Seal-encrypted memory.
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          {/* Basic Info */}
+          <ReviewCard tone="gold" icon="🔒" label="Basic Info">
+            <div>
+              <h3 className="text-[15px] font-bold text-foreground">{ctx.resolvedName}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-muted">
+                {ctx.resolvedDescription.length > 120
+                  ? `${ctx.resolvedDescription.slice(0, 120)}…`
+                  : ctx.resolvedDescription}
               </p>
-
-              <div className="flex flex-wrap gap-1.5 mb-4">
-                {['trading', 'defi', 'signals'].map((tag) => (
-                  <span
-                    key={tag}
-                    className="bg-card2 border border-border text-muted text-[11px] px-2 py-0.5 rounded-full"
-                  >
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-muted border-t border-border pt-3">
-                <span>🔐 Walrus · Seal encrypted</span>
-                <span className="text-teal">● On-chain</span>
-              </div>
             </div>
-          </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted">Creator Royalty</span>
+              <span className="font-semibold text-[#F59E0B]">
+                {royaltyLabels[ctx.royalty] ?? `${ctx.royalty / 100}%`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted">Category</span>
+              <span className="font-medium text-foreground">{ctx.category}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-[#c89a4a]">
+              <span>🔒</span>
+              <span>Locked after mint</span>
+            </div>
+          </ReviewCard>
 
-          {/* Info note */}
-          <div className="bg-purple/10 border border-purple/30 rounded-xl px-4 py-3 mb-6 flex items-start gap-2.5 text-xs text-purple">
-            <span>✨</span>
-            <span>This preview reflects the mapped fields from your import. Once deployed, the Soul is immutably anchored on Sui.</span>
+          {/* Import Source */}
+          <ReviewCard tone="purple" icon="📥" label="Import Source">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-foreground">{ctx.rawFile?.name ?? 'Unknown'}</span>
+              <span className="rounded-full border border-purple/30 bg-purple/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-purple">
+                Imported
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted">Origin Ref</span>
+              <span className="font-mono text-[10px] text-teal">{truncateHash(ctx.originRef)}</span>
+            </div>
+            {ctx.parseStats && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted">Parsing Score</span>
+                <span className="font-semibold text-success">{ctx.parseStats.parsingScore}%</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-[10px] text-purple/80">
+              <span>📦</span>
+              <span>Provenance: imported · tracked on-chain</span>
+            </div>
+          </ReviewCard>
+
+          {/* Soul Character */}
+          <ReviewCard tone="teal" icon="📄" label="Soul Character">
+            <p className="text-sm font-medium text-foreground">
+              {ctx.charFile!.name} · v1 · main
+            </p>
+            <div className="flex items-center gap-1.5 text-[10px] text-success">
+              <span>✍</span>
+              <span>Git versioned · main active</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted">
+              <span>⊘</span>
+              <span>Append-only · no delete</span>
+            </div>
+          </ReviewCard>
+
+          {/* Memory */}
+          <ReviewCard tone="green" icon="🌱" label="Memory">
+            <p className="text-sm font-medium text-foreground">
+              {ctx.memoryFile!.name} · founding memory
+            </p>
+            <div className="flex items-center gap-1.5 text-[10px] text-success">
+              <span>✍</span>
+              <span>Uploaded · immutable after mint</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted">
+              <span>🔒</span>
+              <span>Immutable after mint · no delete</span>
+            </div>
+          </ReviewCard>
+        </div>
+
+        {/* Skills & Docs (if uploaded) */}
+        {ctx.skillsFile && (
+          <ReviewCard tone="orange" icon="🧠" label="Skills & Docs">
+            <p className="text-sm font-medium text-foreground">
+              {ctx.skillsFile.name}
+            </p>
+            <div className="flex items-center gap-1.5 text-[10px] text-success">
+              <span>✍</span>
+              <span>Git versioned · main active</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted">
+              <span>⊘</span>
+              <span>Update anytime · no delete</span>
+            </div>
+          </ReviewCard>
+        )}
+
+        {/* Content & Memory Policy */}
+        <div className="rounded-2xl border border-purple/30 bg-purple/6 p-5">
+          <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-purple">
+            Content & Memory Policy
+          </div>
+          <p className="mb-4 text-xs leading-relaxed text-muted">
+            All three content layers are git-versioned and append-only. SoulGrant agents always read from{' '}
+            <span className="font-bold text-foreground">main</span>. Live Memory grows through SoulGrant
+            interactions on Walrus and cannot be edited or deleted by anyone, including you.
+          </p>
+          <div className="space-y-2.5">
+            {[
+              { allowed: true, title: 'SoulGrant reads main', desc: 'agents always use latest commit on main; full version history preserved & auditable' },
+              { allowed: true, title: 'Grant-gated write', desc: 'only authorized agents can append to Live Memory or update Skills & Docs' },
+              { allowed: true, title: 'Revocable access', desc: 'revoke grant anytime; memory stays on Walrus, writes stop immediately' },
+              { allowed: false, title: 'No delete — ever', desc: 'Soul Character, Memory, Skills & Docs, Live Memory: all append-only, no delete' },
+              { allowed: false, title: 'No fork', desc: 'this Soul cannot be duplicated or branched by others' },
+            ].map((item) => (
+              <div key={item.title} className="flex items-start gap-2">
+                <span className={cn('mt-0.5 shrink-0', item.allowed ? 'text-success' : 'text-danger')}>
+                  {item.allowed ? '✓' : '✗'}
+                </span>
+                <p className="text-xs leading-relaxed text-muted">
+                  <span className="font-semibold text-foreground">{item.title}</span> — {item.desc}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="flex gap-2.5">
+        {/* Navigation */}
+        <div className="flex flex-col-reverse gap-2.5 sm:flex-row">
           <Link
             href="/import/map"
-            className="bg-transparent text-foreground border border-border rounded-lg px-4.5 py-2 text-sm font-semibold hover:border-purple transition"
+            className={buttonStyles({
+              variant: 'outline',
+              size: 'lg',
+              className: 'w-full rounded-[10px] border-purple/20 bg-transparent px-4 py-2.5 text-[13px] text-foreground hover:border-purple/45 hover:text-foreground sm:w-auto sm:min-w-[76px]',
+            })}
           >
             ← Back
           </Link>
           <Link
             href="/import/gas"
-            className="flex-1 text-center bg-purple text-white font-bold text-[15px] px-7 py-3 rounded-xl hover:bg-purple-deep transition"
+            className={buttonStyles({
+              variant: 'landing',
+              size: 'lg',
+              full: true,
+              className: 'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
+            })}
           >
-            Proceed to Pay Gas →
+            Next: Pay Gas <span aria-hidden="true">→</span>
           </Link>
         </div>
-      </div>
+      </PageContainer>
     </div>
   )
 }

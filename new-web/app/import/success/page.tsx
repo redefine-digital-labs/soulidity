@@ -1,99 +1,130 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { FlowBar } from '@/components/nav/flow-bar'
+import { PageContainer } from '@/components/layout/page-container'
+import { useImportSoul } from '@/components/providers/import-soul-provider'
 
-function FlowBar({ steps, current }: { steps: string[]; current: number }) {
-  return (
-    <div className="bg-card2 border-b border-border px-4 sm:px-8 py-2.5 flex items-center overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-      {steps.map((label, i) => (
-        <span key={label} className="contents">
-          {i > 0 && <span className="mx-2.5 text-border text-[11px]">›</span>}
-          <div className="flex items-center gap-2 text-xs">
-            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-              i < current ? 'bg-success' : i === current ? 'bg-purple' : 'bg-border'
-            }`}>{i < current ? '✓' : i + 1}</div>
-            <span className={i < current ? 'text-success' : i === current ? 'text-foreground font-semibold' : 'text-muted'}>
-              {label}
-            </span>
-          </div>
-        </span>
-      ))}
-    </div>
-  )
+const steps = [
+  { label: 'Choose Source' },
+  { label: 'Upload File' },
+  { label: 'Map Fields' },
+  { label: 'Soul Awakened' },
+  { label: 'Pay Gas' },
+  { label: 'On-chain' },
+]
+
+function truncateId(id: string) {
+  if (id.length <= 12) return id
+  return `${id.slice(0, 6)}…${id.slice(-4)}`
 }
 
-const steps = ['Choose Source', 'Upload File', 'Map Fields', 'Soul Awakened', 'Pay Gas', 'On-chain']
-
 export default function ImportSuccessPage() {
-  return (
-    <div className="relative z-10">
-      <FlowBar steps={steps} current={5} />
+  const router = useRouter()
+  const ctx = useImportSoul()
+  const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
+  const networkLabel = network === 'mainnet' ? 'Mainnet' : network.charAt(0).toUpperCase() + network.slice(1)
 
-      <div className="max-w-[540px] mx-auto px-6 py-12 text-center">
+  useEffect(() => {
+    if (ctx.isHydrated && !ctx.importResult) {
+      router.replace('/import')
+    }
+  }, [ctx.isHydrated, ctx.importResult, router])
+
+  if (!ctx.importResult) return null
+
+  const { txDigest, soulOnChainId, originRef } = ctx.importResult
+
+  return (
+    <div className="relative z-10 border-t border-purple/20">
+      <FlowBar steps={steps} currentStep={5} />
+
+      <PageContainer size="sm" className="py-12 text-center">
         {/* Success icon */}
         <div
-          className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-4xl mx-auto mb-6"
+          className="mx-auto mb-6 flex h-[72px] w-[72px] items-center justify-center rounded-full text-4xl"
           style={{ background: 'rgba(16, 185, 129, 0.15)', border: '2px solid var(--success)' }}
         >
           🚀
         </div>
 
-        <h1 className="font-display text-3xl font-bold mb-2">Soul Born</h1>
-        <p className="text-muted text-sm mb-10 max-w-[380px] mx-auto leading-relaxed">
+        <h1 className="mb-2 text-3xl font-bold">Soul Born</h1>
+        <p className="mx-auto mb-10 max-w-[380px] text-sm leading-relaxed text-muted">
           Your imported Soul is permanently anchored on Sui. It exists on-chain forever — immutable, sovereign, and ready to trade.
         </p>
 
-        {/* Info card */}
-        <div className="bg-card2 border border-border rounded-xl p-5 mb-8 text-left">
-          <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-4">Transaction Details</p>
-
-          <div className="flex justify-between text-sm py-2.5 border-b border-border">
-            <span className="text-muted">SoulSeries Object ID</span>
-            <span className="text-xs font-mono text-teal">0x9f2a…c7e4</span>
+        {/* Transaction details */}
+        <div className="mb-8 rounded-xl border border-border bg-card2 p-5 text-left">
+          <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+            <span className="text-muted">Soul Object ID</span>
+            <span className="font-mono text-xs text-teal">{truncateId(soulOnChainId)}</span>
           </div>
-          <div className="flex justify-between text-sm py-2.5 border-b border-border">
+          <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
             <span className="text-muted">Tx Hash</span>
-            <span className="text-xs font-mono text-teal">0xb2c1…84af</span>
+            <span className="font-mono text-xs text-teal">{truncateId(txDigest)}</span>
           </div>
-          <div className="flex justify-between text-sm py-2.5 border-b border-border">
+          <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
             <span className="text-muted">Source</span>
-            <span className="text-xs font-mono text-muted">📁 alphascout_export.json</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-foreground">{ctx.rawFile?.name ?? 'External file'}</span>
+              <span className="rounded-full border border-purple/30 bg-purple/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-purple">
+                Imported
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between items-center text-sm py-2.5">
+          <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+            <span className="text-muted">Origin Ref</span>
+            <span className="font-mono text-xs text-muted">{truncateId(originRef)}</span>
+          </div>
+          <div className="flex items-center justify-between py-2.5 text-sm">
             <span className="text-muted">Status</span>
-            <span className="text-success text-xs font-semibold flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />
-              Live on Mainnet
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
+              Live on {networkLabel}
             </span>
           </div>
         </div>
 
         {/* Action cards */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="mb-6 grid grid-cols-2 gap-3 text-left">
           <Link
-            href="/souls/alpha-scout/sell"
-            className="bg-card border-2 border-gold rounded-xl p-5 flex flex-col items-center gap-2.5 hover:bg-card2 transition text-center"
+            href={`/souls/${soulOnChainId}`}
+            className="group rounded-xl border-2 border-gold bg-card p-5 transition hover:bg-card2"
           >
-            <span className="text-2xl">💰</span>
-            <span className="font-display font-bold text-sm text-gold">List for Sale Now</span>
-            <span className="text-muted text-xs leading-relaxed">Set a price and earn from your Soul</span>
+            <span className="mb-2.5 block text-2xl">💰</span>
+            <span className="block text-sm font-bold">List for Sale Now</span>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted">
+              Set a price and list your Soul in the marketplace immediately.
+            </p>
+            <span className="mt-3 block text-xs font-semibold text-teal">
+              Set Price → List →
+            </span>
           </Link>
 
           <Link
             href="/my-souls"
-            className="bg-card border border-border rounded-xl p-5 flex flex-col items-center gap-2.5 hover:border-purple transition text-center"
+            className="group rounded-xl border border-border bg-card p-5 transition hover:border-purple"
           >
-            <span className="text-2xl">🔐</span>
-            <span className="font-display font-bold text-sm">Manage in My Souls</span>
-            <span className="text-muted text-xs leading-relaxed">Grant access, update settings</span>
+            <span className="mb-2.5 block text-2xl">🔐</span>
+            <span className="block text-sm font-bold">Manage in My Souls</span>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted">
+              Go to your dashboard to authorize an AI agent, manage versions, or list later.
+            </p>
+            <span className="mt-3 block text-xs font-semibold text-muted group-hover:text-purple">
+              Go to My Souls →
+            </span>
           </Link>
         </div>
 
-        {/* Ghost link */}
-        <Link href="/market" className="text-sm text-muted hover:text-purple transition underline underline-offset-4">
-          View in Market →
+        <Link
+          href="/market"
+          className="text-sm text-muted underline underline-offset-4 transition hover:text-purple"
+        >
+          View in Market
         </Link>
-      </div>
+      </PageContainer>
     </div>
   )
 }

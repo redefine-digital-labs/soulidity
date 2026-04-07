@@ -248,7 +248,7 @@ export default function AddSoulsPage() {
   template.xlsx        ← filled template
   1/                   ← Row 1
     soul.md            ← character file (required)
-    memory.md          ← memory seed (required)
+    memory.md          ← memory (required)
     image.png          ← preview image (optional)
   2/                   ← Row 2
     soul.md

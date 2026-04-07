@@ -65,7 +65,7 @@ export default function PersonalGasPage() {
             <span className="text-xs font-mono text-muted">bafkrei…a3f8c</span>
           </div>
           <div className="flex justify-between text-sm py-2.5 border-b border-border">
-            <span className="text-muted">Memory Seed CID</span>
+            <span className="text-muted">Memory CID</span>
             <span className="text-xs font-mono text-muted">bafkrei…7m2q</span>
           </div>
           <div className="flex justify-between text-sm py-2.5 border-b border-border">
@@ -84,7 +84,7 @@ export default function PersonalGasPage() {
 
         <div className="bg-card2 border border-border rounded-xl px-4 py-3 mb-6 flex items-start gap-2.5 text-xs text-muted">
           <span>ℹ️</span>
-          <span>Signing this transaction wraps the Soul layer on-chain. The NFT is not transferred. The Soul character and memory seed are content-addressed and immutable after deployment.</span>
+          <span>Signing this transaction wraps the Soul layer on-chain. The NFT is not transferred. The Soul character and memory are content-addressed and immutable after deployment.</span>
         </div>
 
         <div className="flex gap-2.5">
