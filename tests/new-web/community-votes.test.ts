@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedQueryRaw = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   post: {
-    findUnique: vi.fn(),
-    update: vi.fn(),
+    findFirst: vi.fn(),
   },
   postVote: {
     findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
-    count: vi.fn(),
   },
+  $queryRaw: mockedQueryRaw,
+  $transaction: vi.fn(),
 }))
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 
@@ -41,10 +42,17 @@ describe('POST /api/community/posts/[id]/vote', () => {
     vi.resetModules()
     mockedRequireIdentity.mockResolvedValue({ error: null, identity: IDENTITY })
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
-    mockedPrisma.post.findUnique.mockResolvedValue({ id: POST_ID })
+    mockedPrisma.post.findFirst.mockResolvedValue({ id: POST_ID })
     mockedPrisma.postVote.findUnique.mockResolvedValue(null) // no existing vote
-    mockedPrisma.postVote.count.mockResolvedValue(0)
-    mockedPrisma.post.update.mockResolvedValue({})
+
+    // $transaction executes the callback with the mock prisma as tx
+    mockedPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockedPrisma) => Promise<unknown>) => {
+      return fn(mockedPrisma)
+    })
+
+    // Default $queryRaw: SELECT FOR UPDATE returns nothing important,
+    // UPDATE RETURNING returns like_count
+    mockedQueryRaw.mockResolvedValue([{ like_count: 0 }])
   })
 
   async function callVote(body: Record<string, unknown>) {
@@ -53,9 +61,10 @@ describe('POST /api/community/posts/[id]/vote', () => {
   }
 
   it('creates upvote successfully', async () => {
-    mockedPrisma.postVote.count
-      .mockResolvedValueOnce(1)  // upvotes
-      .mockResolvedValueOnce(0)  // downvotes
+    // First $queryRaw = SELECT FOR UPDATE, second = UPDATE RETURNING
+    mockedQueryRaw
+      .mockResolvedValueOnce([{ id: POST_ID }])  // FOR UPDATE
+      .mockResolvedValueOnce([{ like_count: 1 }]) // UPDATE RETURNING
     const res = await callVote({ direction: 1 })
     expect(res.status).toBe(200)
     expect(mockedPrisma.postVote.create).toHaveBeenCalled()
@@ -68,7 +77,9 @@ describe('POST /api/community/posts/[id]/vote', () => {
     mockedPrisma.postVote.findUnique.mockResolvedValueOnce({
       id: 'vote-1', postId: POST_ID, memberId: 'member-1', direction: 1,
     })
-    mockedPrisma.postVote.count.mockResolvedValue(0)
+    mockedQueryRaw
+      .mockResolvedValueOnce([{ id: POST_ID }])  // FOR UPDATE
+      .mockResolvedValueOnce([{ like_count: 0 }]) // UPDATE RETURNING
     const res = await callVote({ direction: 1 })
     expect(res.status).toBe(200)
     expect(mockedPrisma.postVote.delete).toHaveBeenCalled()
@@ -80,9 +91,9 @@ describe('POST /api/community/posts/[id]/vote', () => {
     mockedPrisma.postVote.findUnique.mockResolvedValueOnce({
       id: 'vote-1', postId: POST_ID, memberId: 'member-1', direction: 1,
     })
-    mockedPrisma.postVote.count
-      .mockResolvedValueOnce(0)  // upvotes (after flip)
-      .mockResolvedValueOnce(1)  // downvotes
+    mockedQueryRaw
+      .mockResolvedValueOnce([{ id: POST_ID }])   // FOR UPDATE
+      .mockResolvedValueOnce([{ like_count: -1 }]) // UPDATE RETURNING
     const res = await callVote({ direction: -1 })
     expect(res.status).toBe(200)
     expect(mockedPrisma.postVote.update).toHaveBeenCalled()
@@ -99,7 +110,7 @@ describe('POST /api/community/posts/[id]/vote', () => {
   })
 
   it('returns 404 for non-existent post', async () => {
-    mockedPrisma.post.findUnique.mockResolvedValueOnce(null)
+    mockedPrisma.post.findFirst.mockResolvedValueOnce(null)
     const res = await callVote({ direction: 1 })
     expect(res.status).toBe(404)
   })
