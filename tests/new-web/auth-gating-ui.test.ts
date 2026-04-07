@@ -30,11 +30,10 @@ describe('new-web auth gating regression guards', () => {
     expect(source).toContain('void login()')
   })
 
-  it('keeps the wrap-link entry cards behind requireAuth interception', () => {
+  it('keeps the wrap-link entry behind requireAuth interception', () => {
     const source = readSource('new-web/app/wrap-link/page.tsx')
 
     expect(source).toContain("router.push('/wrap-link/personal')")
-    expect(source).toContain("router.push('/wrap-link/collection')")
     expect(source).toContain('const { requireAuth } = useRequireAuth()')
   })
 
