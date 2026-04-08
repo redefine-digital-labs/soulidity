@@ -12,6 +12,16 @@ function loadMigrationSql() {
 }
 
 describe('Soulidity projection migrations', () => {
+  it('contains a migration that adds community post channel/article linkage columns', () => {
+    const sql = loadMigrationSql()
+
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS "channel" TEXT NOT NULL DEFAULT \'general\'')
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS "article_id" UUID')
+    expect(sql).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "posts_article_id_key"')
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "posts_channel_idx"')
+    expect(sql).toContain('ADD CONSTRAINT "posts_article_id_fkey"')
+  })
+
   it('contains a migration that upgrades soul_memory_entries to timestamp_key addressing', () => {
     const sql = loadMigrationSql()
 
