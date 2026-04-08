@@ -1,5 +1,7 @@
 # Agent API Migration to Soulidity Implementation Plan
 
+> **STATUS: COMPLETED & SUPERSEDED** — This plan was executed and the migration is done. Some code examples below reference old route shapes (`[versionId]`) and old fields (`versionOnChainId`) that no longer exist. The current implementation uses `[skillName]/versions/[versionIndex]` routes and `(skillsOnChainId, skillName, versionIndex)` composite keys. See `new-web/app/api/agent/souls/` for the current implementation.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Migrate Agent API from legacy `web/` (allowlist) to `new-web/` (Soulidity Grant system), so all agent operations run on port 3100 via Grant-based access control.

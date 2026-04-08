@@ -81,16 +81,8 @@ describe('syncSoulProjectionFromChain', () => {
     })
     mockedGetSoulSkillsObject.mockResolvedValue({
       objectId: '0xskills',
-      latestVersionId: '0xversion1',
-    })
-    mockedGetSkillVersionObject.mockResolvedValue({
-      objectId: '0xversion1',
-      versionNumber: 1,
-      visibility: 'private',
-      blobObjectId: '0xskillblob',
-      blobId: 'skill-blob-id',
-      previousVersionId: null,
-      createdAtMs: 1710000000000,
+      skillCount: 1,
+      skillsTableId: '0xskillstable',
     })
     mockedUpsertSoulProjection.mockResolvedValue({
       onChainId: '0xsoul',
