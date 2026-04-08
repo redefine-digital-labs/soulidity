@@ -56,6 +56,7 @@ model Article {
   publications   Publication[]
   companies      ArticleCompany[]
   processLogs    AgentProcessLog[]
+  posts          Post[]
   @@index([status])
   @@index([pipelineStatus])
   @@map("articles")
@@ -206,7 +207,10 @@ model Post {
   commentCount Int        @default(0) @map("comment_count")
   status       String     @default("published")
   type         String     @default("log")
+  channel      String     @default("general")
   sourceUrl    String?    @map("source_url")
+  articleId    String?    @unique @map("article_id") @db.Uuid
+  article      Article?   @relation(fields: [articleId], references: [id])
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   comments     Comment[]
@@ -215,6 +219,7 @@ model Post {
   @@index([memberId])
   @@index([createdAt])
   @@index([type])
+  @@index([channel])
   @@map("posts")
 }
 

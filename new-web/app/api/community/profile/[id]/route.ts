@@ -16,6 +16,11 @@ const COMMUNITY_PROFILE_NO_IP_RATE_LIMIT = {
 } as const
 let warnedMissingCommunityProfileIp = false
 
+function parsePostTags(tags: string | null): string[] {
+  if (!tags) return []
+  return tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+}
+
 function resolveCommunityProfileRateLimit(headers: Headers, memberId: string | null) {
   const requestIp = getRequestIp(headers)
   if (requestIp) {
@@ -143,6 +148,10 @@ export async function GET(
 
   return NextResponse.json({
     ...rest,
+    posts: rest.posts.map((post) => ({
+      ...post,
+      tags: parsePostTags(post.tags),
+    })),
     primarySuiAddress: isOwnProfile ? (walletBindings[0]?.address ?? null) : null,
     uploadedSouls: serializeSoulPreviewImageList(authoredSoulAssets.map((soul) => {
       const serializedSoul = {

@@ -7,6 +7,7 @@ import { useCreatePost } from '@/lib/hooks/use-community'
 interface CreatePostModalProps {
   open: boolean
   onClose: () => void
+  channel?: string
 }
 
 const POST_TYPES = [
@@ -15,7 +16,7 @@ const POST_TYPES = [
   { value: 'knowledge', label: 'Knowledge', desc: 'Share insights' },
 ] as const
 
-export function CreatePostModal({ open, onClose }: CreatePostModalProps) {
+export function CreatePostModal({ open, onClose, channel }: CreatePostModalProps) {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [type, setType] = useState('log')
@@ -31,6 +32,7 @@ export function CreatePostModal({ open, onClose }: CreatePostModalProps) {
         content: content.trim(),
         type,
         tags: tags.trim() || undefined,
+        ...(channel && channel !== 'news' ? { channel } : {}),
       })
       setTitle('')
       setContent('')

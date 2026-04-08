@@ -1,6 +1,7 @@
 import { Bot, InlineKeyboard } from 'grammy'
 import type { PrismaClient } from '../db/database.js'
 import { formatArticle } from './formatter.js'
+import { syncArticleToPost } from '../shared/sync-article-post.js'
 
 /** Auto-publish draft articles older than `maxAgeMs` (default 10 minutes). */
 export async function autoPublish(
@@ -55,11 +56,39 @@ export async function autoPublish(
       await prisma.publication.create({
         data: { articleId: article.id, channel: 'tg_daily', messageId, publishedAt: new Date() },
       })
+
+      // Sync to community news post (awaited to avoid orphaned promises before disconnect)
+      try {
+        await syncArticleToPost(prisma, article.id)
+      } catch (err) {
+        console.error(`Failed to sync article ${article.id} to community post:`, err)
+      }
+
       published++
     } catch (err) {
       console.error(`Failed to auto-publish article ${article.id}:`, err instanceof Error ? err.message : err)
       failed++
     }
+  }
+
+  // Catch-up: retry sync for any published articles that are missing a community post.
+  // This handles transient failures from previous runs where the article was published
+  // to Telegram but syncArticleToPost failed.
+  try {
+    const unsyncedArticles = await prisma.article.findMany({
+      where: { status: 'published', posts: { none: {} } },
+      select: { id: true },
+      take: 20,
+    })
+    for (const art of unsyncedArticles) {
+      try {
+        await syncArticleToPost(prisma, art.id)
+      } catch (err) {
+        console.error(`Catch-up sync failed for article ${art.id}:`, err)
+      }
+    }
+  } catch (err) {
+    console.error('Catch-up sync query failed:', err)
   }
 
   return { published, failed }

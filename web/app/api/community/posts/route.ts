@@ -19,13 +19,18 @@ export async function GET(request: NextRequest) {
   const sort = request.nextUrl.searchParams.get('sort') ?? 'latest'
   const type = request.nextUrl.searchParams.get('type')
   const tag = request.nextUrl.searchParams.get('tag')
+  const channel = request.nextUrl.searchParams.get('channel')
+  const timeRange = request.nextUrl.searchParams.get('timeRange')
 
-  const cacheKey = `posts:${sort}:${type ?? ''}:${tag ?? ''}`
+  const cacheKey = `posts:${sort}:${type ?? ''}:${tag ?? ''}:${channel ?? ''}:${timeRange ?? ''}`
 
   const posts = await cached(cacheKey, 30_000, async () => {
     const where: any = { status: 'published' }
     if (type) {
       where.type = type
+    }
+    if (channel) {
+      where.channel = channel
     }
     if (tag) {
       where.OR = [
@@ -35,8 +40,21 @@ export async function GET(request: NextRequest) {
         { tags: { contains: ',' + tag + ',' } },
       ]
     }
+    if (timeRange) {
+      const cutoffMs: Record<string, number> = {
+        past_hour: 3_600_000,
+        today: 86_400_000,
+        this_week: 7 * 86_400_000,
+        this_month: 30 * 86_400_000,
+      }
+      if (cutoffMs[timeRange]) {
+        where.createdAt = { gte: new Date(Date.now() - cutoffMs[timeRange]) }
+      }
+    }
 
-    const orderBy: any = sort === 'popular' ? { likeCount: 'desc' } : { createdAt: 'desc' }
+    const orderBy: any = sort === 'popular' ? { likeCount: 'desc' }
+      : sort === 'discussed' ? { commentCount: 'desc' }
+      : { createdAt: 'desc' }
 
     return prisma.post.findMany({
       where,
@@ -90,6 +108,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `type must be one of: ${VALID_POST_TYPES.join(', ')}` }, { status: 400 })
   }
 
+  // 'news' channel is reserved for backend article sync (syncArticleToPost)
+  const VALID_CHANNELS = ['general', 'questions']
+  const postChannel = body.channel ?? 'general'
+  if (!VALID_CHANNELS.includes(postChannel)) {
+    return NextResponse.json({ error: `channel must be one of: ${VALID_CHANNELS.join(', ')}` }, { status: 400 })
+  }
+
   const post = await prisma.post.create({
     data: {
       memberId: identity!.memberId,
@@ -97,6 +122,7 @@ export async function POST(request: NextRequest) {
       content,
       tags: normalizedTags,
       type: postType,
+      channel: postChannel,
     },
   })
 

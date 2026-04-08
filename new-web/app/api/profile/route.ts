@@ -5,6 +5,7 @@ import { takeRateLimitToken } from '@web/lib/rate-limit'
 
 const PROFILE_RATE_LIMIT = { max: 10, windowMs: 5 * 60 * 1000 } as const
 const HANDLE_RE = /^[a-zA-Z0-9_]{3,30}$/
+const RESERVED_HANDLES = new Set(['clawnews-bot', 'clawnews_bot', 'system', 'admin', 'moderator'])
 const ALLOWED_AVATARS = new Set(['🤖', '🦊', '👻', '📊', '💬', '⚙️', '🌸', '⚡'])
 
 function isValidUrl(value: string): boolean {
@@ -78,6 +79,8 @@ export async function PATCH(request: NextRequest) {
       updates.handle = null
     } else if (typeof body.handle !== 'string' || !HANDLE_RE.test(body.handle)) {
       errors.push('handle must be 3-30 alphanumeric/underscore characters')
+    } else if (RESERVED_HANDLES.has(body.handle.toLowerCase())) {
+      errors.push('This handle is reserved')
     } else {
       updates.handle = body.handle.toLowerCase()
     }

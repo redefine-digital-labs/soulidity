@@ -29,6 +29,8 @@ export interface CommunityPost {
   content: string
   tags: string | null
   type: string
+  channel: string
+  sourceUrl: string | null
   likeCount: number
   commentCount: number
   createdAt: string
@@ -51,7 +53,7 @@ export interface LeaderboardEntry {
 
 // ── Query hooks ──
 
-export function usePosts(params: { sort?: string; type?: string; tag?: string } = {}) {
+export function usePosts(params: { sort?: string; type?: string; tag?: string; channel?: string; timeRange?: string } = {}) {
   const { getAuthHeaders } = useAuth()
 
   return useQuery<CommunityPost[]>({
@@ -61,9 +63,30 @@ export function usePosts(params: { sort?: string; type?: string; tag?: string } 
       if (params.sort) sp.set('sort', params.sort)
       if (params.type) sp.set('type', params.type)
       if (params.tag) sp.set('tag', params.tag)
+      if (params.channel) sp.set('channel', params.channel)
+      if (params.timeRange) sp.set('timeRange', params.timeRange)
       const headers = await getAuthHeaders().catch(() => ({}))
       const res = await fetch(`/api/community/posts?${sp}`, { cache: 'no-store', headers })
       if (!res.ok) throw new Error('Failed to fetch posts')
+      return res.json()
+    },
+  })
+}
+
+export interface ChannelInfo {
+  id: string
+  label: string
+  icon: string
+  description: string
+  postCount: number
+}
+
+export function useChannels() {
+  return useQuery<ChannelInfo[]>({
+    queryKey: ['community-channels'],
+    queryFn: async () => {
+      const res = await fetch('/api/community/channels', { cache: 'no-store' })
+      if (!res.ok) throw new Error('Failed to fetch channels')
       return res.json()
     },
   })
@@ -114,7 +137,7 @@ export function useCreatePost() {
   const [error, setError] = useState<string | null>(null)
 
   const mutation = useMutation({
-    mutationFn: async (payload: { title: string; content: string; type?: string; tags?: string }) => {
+    mutationFn: async (payload: { title: string; content: string; type?: string; tags?: string; channel?: string }) => {
       const headers = await getAuthHeaders()
       const res = await fetch('/api/community/posts', {
         method: 'POST',
