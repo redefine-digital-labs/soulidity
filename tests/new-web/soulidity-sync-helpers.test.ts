@@ -16,6 +16,7 @@ vi.mock('@/lib/soulidity/queries', () => ({
   getSoulSkillsObject: mockedGetSoulSkillsObject,
   getSkillVersionObject: mockedGetSkillVersionObject,
   getRegisteredPersonalKiosk: mockedGetRegisteredPersonalKiosk,
+  listOwnedPersonalKioskCaps: vi.fn().mockResolvedValue([]),
   getSoulCollectionObject: vi.fn(),
   getSoulCollectionRightObject: vi.fn(),
   getSoulGrantObject: vi.fn(),
