@@ -259,6 +259,11 @@ function readNestedObjectId(value: unknown, fieldName: string, depth = 0): strin
 
   const record = asRecord(value)
   if (!record) return null
+  // Check `for` before `id` — KioskOwnerCap has both `for` (target kiosk ID)
+  // and `id` (cap UID). The caller wants `for` when it exists.
+  if ('for' in record) {
+    return readObjectId(record.for, fieldName)
+  }
   if ('id' in record && typeof record.id === 'string') {
     return readObjectId(record.id, fieldName)
   }
@@ -270,9 +275,6 @@ function readNestedObjectId(value: unknown, fieldName: string, depth = 0): strin
   }
   if ('bytes' in record && typeof record.bytes === 'string') {
     return readObjectId(record.bytes, fieldName)
-  }
-  if ('for' in record) {
-    return readObjectId(record.for, fieldName)
   }
   if (record.fields) {
     return readNestedObjectId(record.fields, fieldName, depth + 1)

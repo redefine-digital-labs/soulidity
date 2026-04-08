@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
 
 const AGENT_PURCHASE_RATE_LIMIT = { max: 10, windowMs: 5 * 60 * 1000 } as const
 const PREPARED_PURCHASE_TTL_MS = 10 * 60 * 1000
-const PAYMENT_COIN_TYPE = '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC'
+const PAYMENT_COIN_TYPE = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
 
 export async function POST(
   request: Request,

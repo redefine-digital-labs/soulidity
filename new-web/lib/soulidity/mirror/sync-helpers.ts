@@ -9,6 +9,7 @@ import {
   getSoulMemoryObject,
   getSoulObject,
   getSoulStateObject,
+  listOwnedPersonalKioskCaps,
 } from '@/lib/soulidity/queries'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { upsertCollectionProjection } from '@/lib/soulidity/mirror/upsert-collection'
@@ -39,7 +40,7 @@ export async function syncSoulProjectionFromChain(params: {
     getSoulMemoryObject(params.memoryObjectId, params.packageId),
   ])
 
-  // Resolve kiosk cap ID: use caller-provided value, fall back to registry lookup
+  // Resolve kiosk cap ID: caller-provided → registry lookup → owned-object scan
   let kioskCapOnChainId = params.currentKioskCapOnChainId ?? null
   if (!kioskCapOnChainId) {
     const registered = await getRegisteredPersonalKiosk({
@@ -47,7 +48,23 @@ export async function syncSoulProjectionFromChain(params: {
       marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
       ownerAddress: state.currentOwnerAddress,
     })
-    kioskCapOnChainId = registered?.kioskCapOnChainId ?? state.currentKioskId
+    if (registered) {
+      kioskCapOnChainId = registered.kioskCapOnChainId
+    } else {
+      // Registry lookup missed (e.g. RPC indexing lag) — scan owned PersonalKioskCap
+      // objects and match by kiosk ID to avoid storing a Kiosk object ID as a cap ID
+      const ownedCaps = await listOwnedPersonalKioskCaps(state.currentOwnerAddress)
+      const matched = ownedCaps.find(cap => cap.currentKioskId === state.currentKioskId)
+      if (matched) {
+        kioskCapOnChainId = matched.currentKioskCapOnChainId
+      } else {
+        throw new Error(
+          `[syncSoulProjection] Could not resolve PersonalKioskCap for kiosk ${state.currentKioskId} owned by ${state.currentOwnerAddress}. ` +
+          `Registry lookup and owned-object scan (${ownedCaps.length} caps found) both missed. ` +
+          `Sync cannot proceed — retry after RPC indexing catches up.`
+        )
+      }
+    }
   }
 
   return upsertSoulProjection({

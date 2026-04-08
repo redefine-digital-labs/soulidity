@@ -20,12 +20,14 @@
 
 import { createHash } from 'node:crypto'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
+import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { Transaction } from '@mysten/sui/transactions'
 import { SealClient, SessionKey } from '@mysten/seal'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100'
-const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC!
+const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC
+const AGENT_PRIVATE_KEY = process.env.AGENT_PRIVATE_KEY
 const AGENT_API_KEY = process.env.AGENT_API_KEY!
 const SOUL_ID = process.env.SOUL_ID!
 const SUI_NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet') as 'mainnet' | 'testnet' | 'devnet'
@@ -129,12 +131,14 @@ async function aesGcmDecrypt(encryptedData: Uint8Array, dek: Uint8Array, iv: Uin
 }
 
 async function main() {
-  if (!AGENT_MNEMONIC || !AGENT_API_KEY || !SOUL_ID) {
-    console.error('Usage: AGENT_MNEMONIC=... AGENT_API_KEY=... SOUL_ID=... npx tsx new-web/scripts/e2e-agent-decrypt.ts')
+  if ((!AGENT_MNEMONIC && !AGENT_PRIVATE_KEY) || !AGENT_API_KEY || !SOUL_ID) {
+    console.error('Usage: AGENT_MNEMONIC=... (or AGENT_PRIVATE_KEY=suiprivkey1...) AGENT_API_KEY=... SOUL_ID=... npx tsx new-web/scripts/e2e-agent-decrypt.ts')
     process.exit(1)
   }
 
-  const keypair = Ed25519Keypair.deriveKeypair(AGENT_MNEMONIC)
+  const keypair = AGENT_PRIVATE_KEY
+    ? Ed25519Keypair.fromSecretKey(decodeSuiPrivateKey(AGENT_PRIVATE_KEY).secretKey)
+    : Ed25519Keypair.deriveKeypair(AGENT_MNEMONIC!)
   const agentAddress = keypair.toSuiAddress()
   console.log(`Agent address: ${agentAddress}`)
   console.log(`Target: ${BASE_URL}`)

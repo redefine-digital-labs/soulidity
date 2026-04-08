@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import {
   tryExtractMemoryEntryAppendedEvent,
@@ -129,6 +130,15 @@ export async function POST(request: Request) {
       creatorMemberId: auth.identity.memberId,
       currentOwnerMemberId: auth.identity.memberId,
     })
+    // Patch: if event found skills but chain query missed it (RPC indexing lag)
+    if (initialSkill?.skillsId && !mirrored.skillsOnChainId) {
+      await prisma.soulAsset.update({
+        where: { onChainId: mirrored.onChainId },
+        data: { skillsOnChainId: initialSkill.skillsId },
+      })
+      mirrored.skillsOnChainId = initialSkill.skillsId
+    }
+
     if (foundingMemory) {
       const memoryBlobId = await resolveWalrusBlobId(foundingMemory.blobObjectId)
       await upsertMemoryEntryProjection({

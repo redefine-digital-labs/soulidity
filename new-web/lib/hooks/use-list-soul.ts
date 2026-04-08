@@ -9,12 +9,6 @@ import { useAuth } from '@/components/providers/auth-provider'
 
 export type ListStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
 
-function buildPersonalKioskUrl(walletAddress?: string | null) {
-  return walletAddress
-    ? `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`
-    : '/api/souls/personal-kiosk'
-}
-
 export function useListSoul(soul: SoulAssetDetail | null) {
   const [status, setStatus] = useState<ListStatus>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -53,23 +47,23 @@ export function useListSoul(soul: SoulAssetDetail | null) {
       setStatus('building')
       setError(null)
       const authHeaders = await getAuthHeaders()
-      const kioskRes = await fetch(buildPersonalKioskUrl(suiWallet.address), { cache: 'no-store', headers: authHeaders })
-      if (!kioskRes.ok) {
-        const body = await kioskRes.json().catch(() => ({}))
-        throw new Error(body.error || 'Failed to resolve personal kiosk')
+      // Use the soul's own kiosk (where it was minted), not a generic resolved kiosk
+      const soulKioskId = soul.currentKioskId
+      const soulKioskCapId = soul.currentKioskCapOnChainId
+      if (!soulKioskId || !soulKioskCapId) {
+        throw new Error('Soul kiosk info is missing — the Soul may not be held in a personal kiosk')
       }
-      const kiosk = await kioskRes.json()
       await assertObjectInputsExist(suiClient, {
-        'Your personal kiosk': kiosk.currentKioskId,
-        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        'Soul kiosk': soulKioskId,
+        'Soul kiosk capability': soulKioskCapId,
         'Soul state': soul.stateOnChainId,
         Soul: soul.onChainId,
         Collection: soul.collectionOnChainId,
       })
 
       const tx = buildListSoulTx({
-        currentKioskId: kiosk.currentKioskId,
-        currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
+        currentKioskId: soulKioskId,
+        currentKioskCapOnChainId: soulKioskCapId,
         stateObjectId: soul.stateOnChainId,
         soulObjectId: soul.onChainId,
         priceAtomic,

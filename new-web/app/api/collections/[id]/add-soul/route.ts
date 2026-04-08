@@ -6,7 +6,7 @@ import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { findSoulCollectionDetailByRouteId } from '@/lib/soulidity/repository'
-import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, OnChainVerificationError, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'
@@ -65,7 +65,7 @@ export async function POST(
     }
 
     const added = extractSoulAddedToCollectionEvent(transaction, packageId)
-    if (added.collectionId !== collection.onChainId) {
+    if (added.collectionId.toLowerCase() !== collection.onChainId.toLowerCase()) {
       return NextResponse.json({ error: 'Transaction targeted a different collection' }, { status: 422 })
     }
 
@@ -121,12 +121,18 @@ export async function POST(
 
     return NextResponse.json(responseBody)
   } catch (error) {
-    console.error('[collection-add-soul] Failed to mirror add-soul transaction', {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    const isVerification = error instanceof OnChainVerificationError
+    console.error('[collection-add-soul] Mirror failed', {
       memberId: auth.identity.memberId,
       txDigest,
       collectionId: collection.onChainId,
-      error,
+      errorType: isVerification ? 'verification' : 'unknown',
+      errorMsg,
     })
-    return NextResponse.json({ error: 'Failed to mirror add-soul transaction' }, { status: 500 })
+    return NextResponse.json(
+      { error: isVerification ? `Event verification failed: ${errorMsg}` : 'Failed to mirror add-soul transaction' },
+      { status: isVerification ? 422 : 500 },
+    )
   }
 }

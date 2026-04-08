@@ -16,10 +16,12 @@
  */
 
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
+import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100'
-const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC!
+const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC
+const AGENT_PRIVATE_KEY = process.env.AGENT_PRIVATE_KEY // suiprivkey1... format
 const AGENT_API_KEY = process.env.AGENT_API_KEY!
 const SOUL_ID = process.env.SOUL_ID!
 
@@ -32,12 +34,14 @@ function authHeaders() {
 }
 
 async function main() {
-  if (!AGENT_MNEMONIC || !AGENT_API_KEY || !SOUL_ID) {
-    console.error('Usage: AGENT_MNEMONIC=... AGENT_API_KEY=... SOUL_ID=... npx tsx new-web/scripts/e2e-agent-purchase.ts')
+  if ((!AGENT_MNEMONIC && !AGENT_PRIVATE_KEY) || !AGENT_API_KEY || !SOUL_ID) {
+    console.error('Usage: AGENT_MNEMONIC=... (or AGENT_PRIVATE_KEY=suiprivkey1...) AGENT_API_KEY=... SOUL_ID=... npx tsx new-web/scripts/e2e-agent-purchase.ts')
     process.exit(1)
   }
 
-  const keypair = Ed25519Keypair.deriveKeypair(AGENT_MNEMONIC)
+  const keypair = AGENT_PRIVATE_KEY
+    ? Ed25519Keypair.fromSecretKey(decodeSuiPrivateKey(AGENT_PRIVATE_KEY).secretKey)
+    : Ed25519Keypair.deriveKeypair(AGENT_MNEMONIC!)
   const agentAddress = normalizeSuiAddress(keypair.toSuiAddress())
   console.log(`Agent address: ${agentAddress}`)
   console.log(`Target: ${BASE_URL}`)
