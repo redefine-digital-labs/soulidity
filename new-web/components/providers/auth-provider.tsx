@@ -15,6 +15,7 @@ export interface AuthUser {
   level: number
   kind: string
   primarySuiAddress: string | null
+  isAdmin: boolean
 }
 
 interface AuthContextValue {

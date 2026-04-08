@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCollectionDetail, useCollectionActions } from '@/lib/hooks/use-collections'
 import { useAuth } from '@/components/providers/auth-provider'
+import { useToast } from '@/components/ui/toast'
 import { EmptyState } from '@/components/ui/empty-state'
 import { CollectionHeader } from '@/components/collections/collection-header'
 import { CollectionHeaderActions, resolveCollectionViewVariant } from '@/components/collections/collection-header-actions'
@@ -20,6 +21,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
   const { data: collection, isLoading, error } = useCollectionDetail(id, getAuthHeaders, user?.id)
   const { pending: actionPending, error: actionError, buyCollection } = useCollectionActions(collection ?? null)
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [activeModal, setActiveModal] = useState<CollectionAction | null>(null)
   const [buySuccess, setBuySuccess] = useState(false)
 
@@ -29,9 +31,13 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
       queryClient.invalidateQueries({ queryKey: ['collection', id] })
       queryClient.invalidateQueries({ queryKey: ['my-souls'] })
       queryClient.invalidateQueries({ queryKey: ['collections'] })
+      showToast('Collection purchased successfully!', 'success')
       setBuySuccess(true)
       setTimeout(() => setBuySuccess(false), 4000)
-    } catch { /* error already set in hook */ }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Purchase failed'
+      showToast(`Collection purchase failed: ${msg}`, 'danger')
+    }
   }
 
   function handleModalClose() {

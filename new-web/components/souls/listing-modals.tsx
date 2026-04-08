@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
@@ -45,6 +46,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
   const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
 
   let priceAtomic: bigint | null = null
   let priceError: string | null = null
@@ -105,10 +107,13 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
 
       void queryClient.invalidateQueries({ queryKey: ['soul'] })
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+      showToast('Listing price updated', 'success')
       setPrice('')
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Update price failed')
+      const msg = e instanceof Error ? e.message : 'Update price failed'
+      setError(msg)
+      showToast(`Price update failed: ${msg}`, 'danger')
     } finally {
       setStatus('idle')
     }
@@ -181,6 +186,7 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
   const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
 
   const currentPrice = soul.listedPriceAtomic
     ? formatAtomicAmountForDisplay(soul.listedPriceAtomic)
@@ -218,9 +224,12 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
 
       void queryClient.invalidateQueries({ queryKey: ['soul'] })
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+      showToast('Soul delisted successfully', 'success')
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Delist failed')
+      const msg = e instanceof Error ? e.message : 'Delist failed'
+      setError(msg)
+      showToast(`Delist failed: ${msg}`, 'danger')
     } finally {
       setStatus('idle')
     }

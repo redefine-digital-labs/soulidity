@@ -18,6 +18,13 @@ export async function upsertSoulProjection(params: {
   listedPriceAtomic?: bigint | null
   listingStatus?: 'held' | 'listed' | 'floor-violation'
 }) {
+  // Prevent RPC indexing lag from nulling out a previously-mirrored skillsOnChainId.
+  // On-chain state queries can transiently return null for skills_id right after a
+  // purchase or ownership transfer. Only overwrite with a non-null chain value.
+  const skillsUpdate = params.state.skillsId != null
+    ? { skillsOnChainId: params.state.skillsId }
+    : {}
+
   const result = await prisma.soulAsset.upsert({
     where: { onChainId: params.soul.objectId },
     update: {
@@ -44,7 +51,7 @@ export async function upsertSoulProjection(params: {
       collectionOnChainId: params.state.collectionId,
       grantCapacity: params.state.grantCapacity,
       activeGrantCount: params.state.activeGrantCount,
-      skillsOnChainId: params.state.skillsId,
+      ...skillsUpdate,
       sealSidecar: params.sealSidecar ?? Prisma.DbNull,
       category: params.category,
       tags: params.tags,

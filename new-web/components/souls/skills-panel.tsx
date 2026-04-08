@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Alert } from '@/components/ui/alert'
 import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
@@ -20,8 +20,116 @@ function formatDate(value: string | null | undefined) {
   return new Date(value).toLocaleString()
 }
 
-function formatVersionFileName(version: SoulSkillVersionRecord) {
-  return `${version.skillName} v${version.versionIndex}`
+function groupVersionsBySkillName(versions: SoulSkillVersionRecord[]) {
+  const groups = new Map<string, SoulSkillVersionRecord[]>()
+  for (const version of versions) {
+    const existing = groups.get(version.skillName)
+    if (existing) {
+      existing.push(version)
+    } else {
+      groups.set(version.skillName, [version])
+    }
+  }
+  // Sort versions within each group by versionIndex descending (newest first)
+  for (const group of groups.values()) {
+    group.sort((a, b) => b.versionIndex - a.versionIndex)
+  }
+  return groups
+}
+
+interface SkillGroupProps {
+  skillName: string
+  versions: SoulSkillVersionRecord[]
+  canManageSkills: boolean
+  pending: 'append' | 'delete' | 'read' | null
+  onDelete: (version: SoulSkillVersionRecord) => void
+  onOpen: (version: SoulSkillVersionRecord) => void
+}
+
+function SkillGroup({ skillName, versions, canManageSkills, pending, onDelete, onOpen }: SkillGroupProps) {
+  const [expanded, setExpanded] = useState(true)
+  const activeCount = versions.filter((v) => !v.deletedAt).length
+  const latestActive = versions.find((v) => !v.deletedAt)
+
+  return (
+    <div className="rounded-lg border border-border/80 bg-white/[0.03] overflow-hidden">
+      <button
+        type="button"
+        className="w-full px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-left hover:bg-white/[0.03] transition-colors"
+        onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
+      >
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <span className="font-semibold text-sm truncate">{skillName}</span>
+          <Tag color="teal">
+            v{latestActive?.versionIndex ?? versions[0]?.versionIndex ?? 0}
+          </Tag>
+          <Tag color="muted">{activeCount} active</Tag>
+          {versions.length > activeCount && (
+            <Tag color="danger">{versions.length - activeCount} deleted</Tag>
+          )}
+        </div>
+        <span className="text-muted text-xs ml-auto">{expanded ? '▲' : '▼'}</span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border/60 divide-y divide-border/40">
+          {versions.map((version) => (
+            <div key={version.id} className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tag color="teal">v{version.versionIndex}</Tag>
+                  <Tag color={version.visibility === 'public' ? 'gold' : 'purple'}>
+                    {version.visibility === 'public' ? 'Public' : 'Private'}
+                  </Tag>
+                  {version.deletedAt && <Tag color="danger">Deleted</Tag>}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={version.visibility === 'public' ? 'outline' : 'primary'}
+                    disabled={Boolean(version.deletedAt) || pending === 'read'}
+                    onClick={() => onOpen(version)}
+                  >
+                    {pending === 'read' ? 'Opening…' : version.visibility === 'public' ? 'Open Blob' : 'Decrypt'}
+                  </Button>
+                  {canManageSkills && !version.deletedAt && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="danger"
+                      disabled={pending === 'delete'}
+                      onClick={() => onDelete(version)}
+                    >
+                      {pending === 'delete' ? 'Deleting…' : 'Delete'}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted">Blob object</span>
+                  <span className="font-mono text-xs text-teal">{formatAddress(version.blobObjectId)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Uploaded</span>
+                  <span>{formatDate(version.createdAt)}</span>
+                </div>
+                {version.deletedAt && (
+                  <div className="flex justify-between">
+                    <span className="text-muted">Deleted</span>
+                    <span className="text-danger">{formatDate(version.deletedAt)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
@@ -30,6 +138,7 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [visibility, setVisibility] = useState<SoulSkillVisibility>('private')
   const { pending, error, canManageSkills, skillGrant, appendSkillVersion, deleteSkillVersion, openSkillVersion } = useSkills(soul)
+  const groupedVersions = useMemo(() => groupVersionsBySkillName(soul.skillVersions), [soul.skillVersions])
 
   const uploaderLabel = soul.isOwner
     ? 'owner'
@@ -142,71 +251,20 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
         </p>
       )}
 
-      {soul.skillVersions.length === 0 ? (
+      {groupedVersions.size === 0 ? (
         <p className="text-sm text-muted">No skills version has been mirrored for this Soul yet.</p>
       ) : (
         <div className="space-y-3">
-          {soul.skillVersions.map((version) => (
-            <div key={version.id} className="rounded-lg border border-border/80 bg-white/[0.03] px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Tag color={version.visibility === 'public' ? 'gold' : 'purple'}>{version.visibility}</Tag>
-                  <Tag color="muted">{formatVersionFileName(version)}</Tag>
-                  {version.deletedAt ? <Tag color="danger">deleted</Tag> : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={version.visibility === 'public' ? 'outline' : 'primary'}
-                    disabled={Boolean(version.deletedAt) || pending === 'read'}
-                    onClick={() => {
-                      void openSkillVersion(version)
-                    }}
-                  >
-                    {pending === 'read' ? 'Opening…' : version.visibility === 'public' ? 'Open Blob' : 'Decrypt'}
-                  </Button>
-                  {canManageSkills && !version.deletedAt ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="danger"
-                      disabled={pending === 'delete'}
-                      onClick={() => {
-                        void deleteSkillVersion(version)
-                      }}
-                    >
-                      {pending === 'delete' ? 'Deleting…' : 'Delete'}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="mt-3 grid gap-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted">Skill</span>
-                  <span>{version.skillName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Version</span>
-                  <span>{version.versionIndex}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Blob</span>
-                  <span>{formatAddress(version.blobObjectId)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Created</span>
-                  <span>{formatDate(version.createdAt)}</span>
-                </div>
-                {version.deletedAt ? (
-                  <div className="flex justify-between">
-                    <span className="text-muted">Deleted</span>
-                    <span>{formatDate(version.deletedAt)}</span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+          {Array.from(groupedVersions.entries()).map(([skillName, versions]) => (
+            <SkillGroup
+              key={skillName}
+              skillName={skillName}
+              versions={versions}
+              canManageSkills={canManageSkills}
+              pending={pending}
+              onDelete={(version) => { void deleteSkillVersion(version) }}
+              onOpen={(version) => { void openSkillVersion(version) }}
+            />
           ))}
         </div>
       )}

@@ -178,6 +178,9 @@ model Member {
   issuedSoulGrants       SoulGrantRecord[]     @relation("SoulGrantIssuer")
   receivedSoulGrants     SoulGrantRecord[]     @relation("SoulGrantGrantee")
   preparedSoulPurchases SoulPreparedPurchase[] @relation("SoulPreparedPurchaseAgentMember")
+  following    Follow[] @relation("follower")
+  followers    Follow[] @relation("following")
+  bookmarks    Bookmark[]
 
   @@index([tgId])
   @@index([accountId, kind])
@@ -368,6 +371,7 @@ model SoulAsset {
   previewImages         String[] @map("preview_images")
   readme                String?
   memoryEntries         SoulMemoryEntry[]
+  bookmarks             Bookmark[]
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -527,4 +531,36 @@ model SoulPreparedPurchase {
   @@index([executionTxDigest])
   @@unique([agentMemberId, txBytesHash])
   @@map("soul_prepared_purchases")
+}
+
+// ============================================================
+// Social Models
+// ============================================================
+
+model Follow {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  follower    Member   @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   Member   @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model Bookmark {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  soulId    String   @map("soul_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  soul      SoulAsset @relation(fields: [soulId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, soulId])
+  @@index([soulId])
+  @@map("bookmarks")
 }

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { useGrant } from '@/lib/hooks/use-grant'
 import type { MySoulEntry } from '@/lib/soulidity/types'
 
@@ -53,6 +54,7 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
 
   const hasActiveGrant = soul.activeGrantCount > 0 && soul.activeGrantDetails.length > 0
   const activeGrant = hasActiveGrant ? soul.activeGrantDetails[0] : null
+  const { showToast } = useToast()
 
   async function handleAuthorize() {
     const addr = agentAddress.trim()
@@ -66,6 +68,7 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
           await issueGrant(addr)
         } catch (issueError) {
           setReassignmentNotice('Current grant was revoked. Issue a new grant to complete reassignment.')
+          showToast('Grant reassignment failed — previous grant revoked', 'danger')
           throw issueError
         }
       } else {
@@ -73,6 +76,7 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
       }
       setAgentAddress('')
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+      showToast('Agent authorized successfully', 'success')
       onClose()
     } catch {
       // error state handled by useGrant
@@ -84,6 +88,7 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
     try {
       await revokeGrant(activeGrant.granteeAddress)
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+      showToast('Grant revoked', 'default')
       onClose()
     } catch {
       // error state handled by useGrant

@@ -6,6 +6,8 @@ import { useQuery } from '@tanstack/react-query'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tag } from '@/components/ui/tag'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import { useAuth } from '@/components/providers/auth-provider'
+import { useFollowStatus, useToggleFollow } from '@/lib/hooks/use-social'
 
 type CommunityProfile = {
   id: string
@@ -48,6 +50,44 @@ type CommunityProfile = {
 
 type Tab = 'Souls' | 'Posts' | 'About'
 
+// ── Follow Button ──
+function FollowButton({ targetMemberId }: { targetMemberId: string }) {
+  const { user } = useAuth()
+  const { data, isLoading } = useFollowStatus(targetMemberId)
+  const toggleFollow = useToggleFollow()
+
+  // Optimistic local state: undefined means "use server state"
+  const [optimistic, setOptimistic] = useState<boolean | undefined>(undefined)
+
+  const isFollowing = optimistic !== undefined ? optimistic : (data?.isFollowing ?? false)
+
+  if (!user || isLoading) return null
+
+  function handleClick() {
+    const next = !isFollowing
+    setOptimistic(next)
+    toggleFollow.mutate(targetMemberId, {
+      onError: () => setOptimistic(!next),
+      onSuccess: () => setOptimistic(undefined),
+    })
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={toggleFollow.isPending}
+      style={{ borderRadius: '20px' }}
+      className={`font-semibold text-sm px-5 py-2 border-2 transition ${
+        isFollowing
+          ? 'bg-purple border-purple text-white hover:opacity-90'
+          : 'bg-transparent border-purple text-purple hover:bg-purple hover:text-white'
+      }`}
+    >
+      {isFollowing ? 'Following' : 'Follow'}
+    </button>
+  )
+}
+
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
   return `${value.slice(0, 6)}…${value.slice(-4)}`
@@ -69,7 +109,9 @@ function buildHeroStyle(imageUrl: string | null | undefined) {
 
 export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId: string }> }) {
   const { spaceId } = use(params)
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('Souls')
+  const { data: followData } = useFollowStatus(spaceId)
   const { data: profile, isLoading, error } = useQuery<CommunityProfile>({
     queryKey: ['community-profile', spaceId],
     queryFn: async () => {
@@ -121,9 +163,7 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
             <button className="bg-card border border-border text-foreground font-semibold text-sm px-4 py-2 rounded-lg hover:border-purple transition">
               Share
             </button>
-            <button className="bg-purple text-white font-semibold text-sm px-5 py-2 rounded-lg hover:opacity-90 transition">
-              Follow
-            </button>
+            {profile.id !== user?.id && <FollowButton targetMemberId={profile.id} />}
           </div>
         </div>
 
@@ -151,6 +191,14 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
           <div className="text-center">
             <div className="font-bold text-base">{profile.posts.length}</div>
             <div className="text-[11px] text-muted">Posts</div>
+          </div>
+          <div className="text-center">
+            <div className="font-bold text-base">{followData?.followerCount ?? 0}</div>
+            <div className="text-[11px] text-muted">Followers</div>
+          </div>
+          <div className="text-center">
+            <div className="font-bold text-base">{followData?.followingCount ?? 0}</div>
+            <div className="text-[11px] text-muted">Following</div>
           </div>
           <div className="text-center">
             <div className="font-bold text-base">{profile.achievements.length}</div>

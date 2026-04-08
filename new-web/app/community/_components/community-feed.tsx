@@ -252,7 +252,9 @@ export default function CommunityFeed({ activeChannel }: { activeChannel?: strin
           <section className="card px-4 py-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="text-sm font-bold text-foreground">Top Contributors</div>
-              <Tag color="muted">Activity</Tag>
+              <Link href="/community/leaderboard" className="text-[11px] font-semibold text-purple hover:text-purple/80 transition">
+                View all →
+              </Link>
             </div>
             {leaderboardData && leaderboardData.length > 0 ? (
               <div className="space-y-1.5">

@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Tag } from '@/components/ui/tag'
 import { Button, buttonStyles } from '@/components/ui/button'
 import { SkillsPanel } from '@/components/souls/skills-panel'
+import { MemoryPanel } from '@/components/souls/memory-panel'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
@@ -290,27 +291,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
 
           <SkillsPanel soul={soul} />
 
-          <div className="bg-card2 border border-border rounded-xl p-4">
-            <div className="page-kicker text-muted mb-3">Recent Memory</div>
-            {soul.memoryEntries.length === 0 ? (
-              <p className="text-sm text-muted">No memory entries have been mirrored yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {soul.memoryEntries.map((entry) => (
-                  <div key={entry.id} className="rounded-lg border border-border/80 bg-white/[0.03] px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-                      <span>{entry.timestampKey}</span>
-                      <span>{entry.writerKind}</span>
-                      <span>{formatDate(entry.createdAt)}</span>
-                    </div>
-                    <div className="mt-2 text-sm">
-                      Blob {formatAddress(entry.blobObjectId)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <MemoryPanel soul={soul} />
         </div>
       </div>
 

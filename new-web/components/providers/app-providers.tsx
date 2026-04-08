@@ -7,6 +7,7 @@ import { ThemeProvider } from './theme-provider'
 import { PrivyProvider } from './privy-provider'
 import { QueryProvider } from './query-provider'
 import { AuthProvider } from './auth-provider'
+import { ToastProvider } from '@/components/ui/toast'
 import { syncSoulidityDeploymentSession } from '@/lib/soulidity/client-session'
 
 // SuiJsonRpcClientOptions requires both `url` and `network` in dapp-kit v1 / @mysten/sui v2
@@ -34,7 +35,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <QueryProvider>
           <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
             <AuthProvider>
-              {children}
+              <ToastProvider>
+                {children}
+              </ToastProvider>
             </AuthProvider>
           </SuiClientProvider>
         </QueryProvider>

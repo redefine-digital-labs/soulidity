@@ -8,6 +8,7 @@ import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 import { useAuth } from '@/components/providers/auth-provider'
 import {
@@ -180,6 +181,7 @@ export default function PreviewPage() {
       })
     : null
   const { status, error, txDigest, syncData, progress, publish, suiWallet, resetRecovery } = useCollectionPublish(draftSignature)
+  const { showToast } = useToast()
 
   const floor = ctx.floorPrice || '0'
   const royaltyDisplay = formatRoyalty(ctx.extraRoyaltyBps)
@@ -198,9 +200,16 @@ export default function PreviewPage() {
         tradeable: ctx.tradeable,
         soulNames: ctx.batchSouls.map((s) => s.name),
       })
+      showToast('Collection launched successfully!', 'success')
       router.push('/collections/create/success')
     }
-  }, [status, syncData, ctx, router])
+  }, [status, syncData, ctx, router, showToast])
+
+  useEffect(() => {
+    if (status === 'error' && error) {
+      showToast(`Collection launch failed: ${error}`, 'danger')
+    }
+  }, [status, error, showToast])
 
   useEffect(() => {
     if (!ctx.isHydrated) return

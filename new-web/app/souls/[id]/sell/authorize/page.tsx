@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
+import { useToast } from '@/components/ui/toast'
 import { useListSoul } from '@/lib/hooks/use-list-soul'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
@@ -21,6 +22,7 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
   const { user, getAuthHeaders } = useAuth()
   const { data: soul, isLoading, error: loadError } = useSoulDetail(id, getAuthHeaders, user?.id)
   const { status, error, listSoul } = useListSoul(soul ?? null)
+  const { showToast } = useToast()
 
   const rawPrice = searchParams.get('price')?.trim() ?? ''
   let priceAtomic: bigint | null = null
@@ -42,9 +44,16 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
 
   useEffect(() => {
     if (status === 'done' && soul) {
+      showToast('Soul listed on marketplace', 'success')
       router.push(`/souls/${encodeURIComponent(soul.onChainId)}/sell/success?price=${encodeURIComponent(rawPrice)}`)
     }
-  }, [rawPrice, router, soul, status])
+  }, [rawPrice, router, soul, showToast, status])
+
+  useEffect(() => {
+    if (error) {
+      showToast(`Listing failed: ${error}`, 'danger')
+    }
+  }, [error, showToast])
 
   if (isLoading) {
     return (

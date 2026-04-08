@@ -110,14 +110,22 @@ export async function POST(
       soulCount,
     }
 
-    await storeSoulidityTxSync({
-      routeKey: 'collection:add-soul',
-      txDigest,
-      actorKey: auth.identity.memberId,
-      resourceKey: collection.onChainId,
-      statusCode: 200,
-      responseBody,
-    })
+    // Best-effort cache — a failure here should not mask a successful mirror sync.
+    try {
+      await storeSoulidityTxSync({
+        routeKey: 'collection:add-soul',
+        txDigest,
+        actorKey: auth.identity.memberId,
+        resourceKey: collection.onChainId,
+        statusCode: 200,
+        responseBody,
+      })
+    } catch (syncErr) {
+      console.warn('[collection-add-soul] storeSoulidityTxSync failed (non-fatal)', {
+        txDigest,
+        error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+      })
+    }
 
     return NextResponse.json(responseBody)
   } catch (error) {

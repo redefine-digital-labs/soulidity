@@ -54,19 +54,36 @@ function base64ToBytes(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(padBase64(value), 'base64'))
 }
 
+// Matches SealEnvelopeSidecar from web/lib/services/seal-crypto.ts
 interface SealSidecar {
+  version: 1
+  mode: 'seal-envelope'
   documentId: string
   encryptedDek: string
   iv: string
+  cipher: 'AES-GCM-256'
+  mimeType: string
+  fileName: string
   contentHash: string
 }
 
 function parseSidecar(value: unknown): SealSidecar {
   const v = value as Record<string, unknown>
+  if (v.version !== 1 || v.mode !== 'seal-envelope') {
+    throw new Error(`Unexpected sidecar version/mode: version=${v.version} mode=${v.mode}`)
+  }
+  if (!v.documentId || !v.encryptedDek || !v.iv || !v.contentHash) {
+    throw new Error('Seal sidecar is missing required fields')
+  }
   return {
+    version: 1,
+    mode: 'seal-envelope',
     documentId: v.documentId as string,
     encryptedDek: v.encryptedDek as string,
     iv: v.iv as string,
+    cipher: (v.cipher as string) as 'AES-GCM-256',
+    mimeType: (v.mimeType as string) ?? '',
+    fileName: (v.fileName as string) ?? '',
     contentHash: (v.contentHash as string).toLowerCase(),
   }
 }
@@ -205,7 +222,7 @@ async function main() {
   const keyMaterial = new Uint8Array(
     await sealClient.decrypt({
       data: base64ToBytes(sidecar.encryptedDek),
-      sessionKey: sessionKey as never,
+      sessionKey,
       txBytes,
     }),
   )

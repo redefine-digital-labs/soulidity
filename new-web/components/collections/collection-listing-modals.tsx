@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { useCollectionListing } from '@/lib/hooks/use-collections'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 import type { SoulCollectionAssetSummary } from '@/lib/soulidity/types'
@@ -23,6 +24,7 @@ export function ListCollectionModal({ collection, open, onClose }: ListCollectio
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { status, error: hookError, list } = useCollectionListing(collection)
+  const { showToast } = useToast()
 
   let priceAtomic: bigint | null = null
   let priceError: string | null = null
@@ -42,10 +44,13 @@ export function ListCollectionModal({ collection, open, onClose }: ListCollectio
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
       void queryClient.invalidateQueries({ queryKey: ['collection'] })
       void queryClient.invalidateQueries({ queryKey: ['collections'] })
+      showToast('Collection listed on marketplace', 'success')
       setPrice('')
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Listing failed')
+      const msg = e instanceof Error ? e.message : 'Listing failed'
+      setError(msg)
+      showToast(`Listing failed: ${msg}`, 'danger')
     }
   }
 
@@ -113,6 +118,7 @@ export function EditCollectionPriceModal({ collection, open, onClose }: EditColl
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { status, error: hookError, updatePrice } = useCollectionListing(collection)
+  const { showToast } = useToast()
 
   let priceAtomic: bigint | null = null
   let priceError: string | null = null
@@ -139,10 +145,13 @@ export function EditCollectionPriceModal({ collection, open, onClose }: EditColl
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
       void queryClient.invalidateQueries({ queryKey: ['collection'] })
       void queryClient.invalidateQueries({ queryKey: ['collections'] })
+      showToast('Collection listing price updated', 'success')
       setPrice('')
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Price update failed')
+      const msg = e instanceof Error ? e.message : 'Price update failed'
+      setError(msg)
+      showToast(`Price update failed: ${msg}`, 'danger')
     }
   }
 
@@ -217,6 +226,7 @@ export function DelistCollectionModal({ collection, open, onClose }: DelistColle
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { status, error: hookError, delist } = useCollectionListing(collection)
+  const { showToast } = useToast()
 
   const currentPrice = collection.listedPriceAtomic
     ? formatAtomicAmountForDisplay(collection.listedPriceAtomic)
@@ -229,9 +239,12 @@ export function DelistCollectionModal({ collection, open, onClose }: DelistColle
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
       void queryClient.invalidateQueries({ queryKey: ['collection'] })
       void queryClient.invalidateQueries({ queryKey: ['collections'] })
+      showToast('Collection delisted successfully', 'success')
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Delist failed')
+      const msg = e instanceof Error ? e.message : 'Delist failed'
+      setError(msg)
+      showToast(`Delist failed: ${msg}`, 'danger')
     }
   }
 

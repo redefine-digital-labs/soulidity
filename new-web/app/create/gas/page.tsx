@@ -8,6 +8,7 @@ import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { usePublish, type PublishParams } from '@/lib/hooks/use-publish'
 import { useAuth } from '@/components/providers/auth-provider'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
@@ -111,6 +112,7 @@ export default function CreateGasPage() {
   const ctx = useCreateSoul()
   const { status, error, txDigest, publishData, publish, suiWallet } = usePublish()
   const { getAuthHeaders, user } = useAuth()
+  const { showToast } = useToast()
   const { signAndExecute } = usePrivySuiSign()
   const publishRef = useRef(publish)
   const getAuthHeadersRef = useRef(getAuthHeaders)
@@ -150,9 +152,17 @@ export default function CreateGasPage() {
   useEffect(() => {
     if (status === 'done' && publishData) {
       ctx.setPublishResult(publishData)
+      showToast('Soul minted successfully!', 'success')
       router.replace('/create/success')
     }
-  }, [status, publishData, ctx, router])
+  }, [status, publishData, ctx, router, showToast])
+
+  // Toast on mint error
+  useEffect(() => {
+    if (status === 'error' && error) {
+      showToast(`Mint failed: ${error}`, 'danger')
+    }
+  }, [status, error, showToast])
 
   // Expose publish + authenticated upload + list for E2E testing
   useEffect(() => {
@@ -228,6 +238,7 @@ export default function CreateGasPage() {
     return () => {
       delete w.__e2ePublish; delete w.__e2eUpload; delete w.__e2eListSoul
       delete w.__e2eGetAuthHeaders; delete w.__e2eIssueGrant; delete w.__e2eRevokeGrant
+      delete w.__e2eLastRawEnvelope
     }
   }, [])
 
@@ -283,6 +294,16 @@ export default function CreateGasPage() {
       // Store upload results in context for retry support
       ctx.setUploadResults(results)
       setUploadPhase('done')
+
+      // Expose raw DEK envelopes for E2E byte-level content verification (dev only)
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(window as any).__e2eLastRawEnvelope = {
+          char: results.charFile?.sealDekEnvelope ?? null,
+          memory: results.memorySeed?.sealDekEnvelope ?? null,
+          skills: results.skillsFile?.sealDekEnvelope ?? null,
+        }
+      }
 
       // Narrow types — all required uploads must be present at this point
       if (!results.coverImage || !results.charFile || !results.memorySeed) {

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePrivy } from '@privy-io/react-auth'
 import { useMySouls } from '@/lib/hooks/use-souls'
 import { useAuth } from '@/components/providers/auth-provider'
+import { useBookmarks } from '@/lib/hooks/use-social'
 import { Tag } from '@/components/ui/tag'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageContainer } from '@/components/layout/page-container'
@@ -14,13 +15,14 @@ import { buttonStyles } from '@/components/ui/button'
 import { GrantModal } from '@/components/souls/grant-modal'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
 import { CollectionSection } from '@/components/collections/collection-section'
-import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord } from '@/lib/soulidity/types'
+import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulAssetSummary } from '@/lib/soulidity/types'
 
 const tabs = [
   { id: 'owned', label: 'Owned' },
   { id: 'collections', label: 'Collections' },
   { id: 'listings', label: 'Listings' },
   { id: 'activity', label: 'Activity' },
+  { id: 'bookmarks', label: 'Bookmarks' },
 ] as const
 
 type TabId = typeof tabs[number]['id']
@@ -267,6 +269,7 @@ export default function MySoulsPage() {
   const { user, loading, getAuthHeaders } = useAuth()
   const { login, ready } = usePrivy()
   const { data: myData, isLoading } = useMySouls(user?.id ?? null, getAuthHeaders)
+  const { data: bookmarksData, isLoading: bookmarksLoading } = useBookmarks()
 
   const ownedCount = myData?.owned.length ?? 0
   const listingsCount = (myData?.owned.filter((s) => s.listingStatus === 'listed' || s.listingStatus === 'floor-violation').length ?? 0)
@@ -303,6 +306,7 @@ export default function MySoulsPage() {
   const listedCollections = myData?.collections.filter((c) => c.listingStatus === 'listed') ?? []
 
   const collectionsCount = myData?.collections.length ?? 0
+  const bookmarksCount = bookmarksData?.bookmarks.length ?? 0
 
   const tabsWithCounts = tabs.map((tab) => {
     const count = tab.id === 'owned'
@@ -311,7 +315,9 @@ export default function MySoulsPage() {
         ? collectionsCount
         : tab.id === 'listings'
           ? listingsCount
-          : null
+          : tab.id === 'bookmarks'
+            ? bookmarksCount
+            : null
     return { id: tab.id, label: count != null ? `${tab.label} (${count})` : tab.label }
   })
 
@@ -408,6 +414,62 @@ export default function MySoulsPage() {
           </div>
         ) : (
           <EmptyState icon={'\uD83D\uDD10'} label="No activity yet" sublabel="Grant records and activity will appear here." />
+        )
+      )}
+
+      {activeTab === 'bookmarks' && (
+        bookmarksLoading ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-[200px] rounded-xl bg-card animate-pulse" />
+            ))}
+          </div>
+        ) : !bookmarksData || bookmarksData.bookmarks.length === 0 ? (
+          <EmptyState
+            icon={'\uD83D\uDD16'}
+            label="No bookmarks yet"
+            sublabel="Bookmark Souls from the marketplace to save them here."
+          />
+        ) : (
+          <>
+            <p className="text-[11px] font-bold text-muted uppercase tracking-[0.08em] mb-3">
+              Bookmarked Souls
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {bookmarksData.bookmarks.map((soul: SoulAssetSummary) => (
+                <Link
+                  key={soul.id}
+                  href={`/souls/${encodeURIComponent(soul.onChainId)}`}
+                  className="overflow-hidden rounded-xl border border-border bg-card hover:border-purple hover:-translate-y-0.5 transition block"
+                >
+                  <div
+                    className="flex h-[100px] items-center justify-center"
+                    style={
+                      soul.imageUrl
+                        ? {
+                            backgroundImage: `linear-gradient(135deg, rgba(15,17,26,0.18), rgba(44,20,98,0.58)), url(${soul.imageUrl})`,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                          }
+                        : { background: 'linear-gradient(135deg, var(--card2) 0%, var(--purple-deep) 100%)' }
+                    }
+                  >
+                    {!soul.imageUrl && <span className="text-3xl">🤖</span>}
+                  </div>
+                  <div className="p-3 space-y-1.5">
+                    <div className="text-sm font-bold text-foreground truncate">{soul.name}</div>
+                    <div className="text-xs text-muted line-clamp-2 leading-relaxed">{soul.description}</div>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] uppercase text-muted tracking-wide">{soul.category}</span>
+                      <span className="text-xs font-bold text-gold">
+                        {soul.listedPriceAtomic ? formatAtomicAmountForDisplay(soul.listedPriceAtomic) : 'Held'}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
         )
       )}
 

@@ -1,10 +1,12 @@
 'use client'
 
-import { use } from 'react'
+import { use, useEffect } from 'react'
 import Link from 'next/link'
 import { usePrivy } from '@privy-io/react-auth'
 import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
+import { TxPending } from '@/components/ui/tx-pending'
+import { useToast } from '@/components/ui/toast'
 import { usePurchase } from '@/lib/hooks/use-purchase'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
@@ -20,8 +22,21 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
   const { login, ready } = usePrivy()
   const { data: soul, isLoading, error: loadError } = useSoulDetail(id, getAuthHeaders, user?.id)
   const { status, error, purchase, txDigest } = usePurchase(soul ?? null)
+  const { showToast } = useToast()
 
   const signing = status === 'building' || status === 'signing' || status === 'syncing'
+
+  useEffect(() => {
+    if (status === 'done') {
+      showToast('Soul purchased successfully!', 'success')
+    }
+  }, [status, showToast])
+
+  useEffect(() => {
+    if (error) {
+      showToast(`Transaction failed: ${error}`, 'danger')
+    }
+  }, [error, showToast])
   const signingLabel: Record<string, string> = {
     building: '⟳ Building TX…',
     signing: '⟳ Signing…',
@@ -135,6 +150,11 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
 
   return (
     <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
+      <TxPending visible={signing} message={
+        status === 'building' ? 'Building transaction…' :
+        status === 'syncing' ? 'Syncing on-chain state…' :
+        'Waiting for wallet signature…'
+      } />
       <div className="bg-card2 border-b border-border px-4 sm:px-8 py-2.5 flex items-center gap-0 rounded-t-xl mb-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
         <div className="flex items-center gap-2 text-xs">
           <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-success">✓</div>

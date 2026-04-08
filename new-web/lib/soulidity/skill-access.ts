@@ -168,6 +168,7 @@ async function buildSkillApprovalTxBytes(params: {
   })
 
   const tx = new Transaction()
+  tx.setSender(params.access.viewerAddress)
   tx.moveCall({
     target: `${params.access.accessPolicy.packageId}::skills::${params.access.accessPolicy.functionName}`,
     arguments:

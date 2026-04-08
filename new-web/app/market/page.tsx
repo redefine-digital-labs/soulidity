@@ -1,18 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useCollectionsList } from '@/lib/hooks/use-collections'
-import { useSoulsList } from '@/lib/hooks/use-souls'
+import { useSoulsList, type SoulsSortOption } from '@/lib/hooks/use-souls'
+import { useAuth } from '@/components/providers/auth-provider'
+import { useBookmarkStatus, useToggleBookmark } from '@/lib/hooks/use-social'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { FilterTabs } from '@/components/nav/filter-tabs'
-import { Input } from '@/components/ui/input'
+import { Input, Select } from '@/components/ui/input'
 import { Tag, type TagColor } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
-import type { SoulCollectionAssetSummary } from '@/lib/soulidity/types'
+import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
+import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@/lib/soulidity/types'
 
 const filterTabs = [
   { id: 'all', label: 'All' },
@@ -60,6 +62,49 @@ function buildHeroStyle(imageUrl: string | null | undefined) {
   }
 }
 
+// ── Bookmark Button ──
+function BookmarkButton({ soul }: { soul: SoulAssetSummary }) {
+  const { user } = useAuth()
+  const { data } = useBookmarkStatus(soul.id)
+  const toggleBookmark = useToggleBookmark()
+  const [optimistic, setOptimistic] = useState<boolean | undefined>(undefined)
+
+  if (!user) return null
+
+  const isBookmarked = optimistic !== undefined ? optimistic : (data?.bookmarked ?? false)
+
+  function handleClick(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const next = !isBookmarked
+    setOptimistic(next)
+    toggleBookmark.mutate(soul.id, {
+      onError: () => setOptimistic(!next),
+      onSuccess: () => setOptimistic(undefined),
+    })
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={toggleBookmark.isPending}
+      aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this Soul'}
+      className="flex items-center justify-center w-7 h-7 rounded-lg text-base transition hover:scale-110"
+      title={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
+    >
+      {isBookmarked ? (
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gold">
+          <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4 text-muted hover:text-gold">
+          <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary }) {
   return (
     <Link
@@ -97,20 +142,67 @@ function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary
   )
 }
 
+const USDC_DECIMALS = 6
+
+function humanPriceToAtomic(value: string): string {
+  if (!value.trim()) return ''
+  try {
+    return parseDisplayAmountToAtomic(value, { decimals: USDC_DECIMALS }).toString()
+  } catch {
+    return ''
+  }
+}
+
 export default function MarketPage() {
   const [activeFilter, setActiveFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [marketView, setMarketView] = useState<'souls' | 'collections'>('souls')
   const [collectionTab, setCollectionTab] = useState<'for-sale' | 'all'>('all')
+  const [sort, setSort] = useState<SoulsSortOption>('newest')
+  const [minPrice, setMinPrice] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
+  const [creator, setCreator] = useState('')
+  const [debouncedCreator, setDebouncedCreator] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounce search query 300ms
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setDebouncedQuery(searchQuery)
+    }, 300)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [searchQuery])
+
+  // Debounce creator filter 300ms
+  const creatorDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (creatorDebounceRef.current) clearTimeout(creatorDebounceRef.current)
+    creatorDebounceRef.current = setTimeout(() => {
+      setDebouncedCreator(creator)
+    }, 300)
+    return () => {
+      if (creatorDebounceRef.current) clearTimeout(creatorDebounceRef.current)
+    }
+  }, [creator])
 
   const categoryMap: Record<string, string> = {
     all: '', trading: 'trading', research: 'research', social: 'social',
     defi: 'defi', nft: 'nft', infra: 'infrastructure',
   }
+
   const { data: soulsData, isLoading: soulsLoading } = useSoulsList({
     page: 1,
     category: categoryMap[activeFilter] || '',
-    q: searchQuery,
+    q: debouncedQuery,
+    sort,
+    minPrice: humanPriceToAtomic(minPrice),
+    maxPrice: humanPriceToAtomic(maxPrice),
+    creator: debouncedCreator,
   })
   const { data: collectionsData, isLoading: collectionsLoading } = useCollectionsList({
     page: 1,
@@ -136,19 +228,114 @@ export default function MarketPage() {
       />
 
       <div className="space-y-4">
-        <div className="relative max-w-[320px]">
-          <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" strokeLinecap="round" />
-          </svg>
-          <Input
-            type="text"
-            placeholder="Search souls..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9"
-          />
+        {/* Search + Advanced toggle row */}
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <div className="relative flex-1 max-w-[360px]">
+            <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" strokeLinecap="round" />
+            </svg>
+            <Input
+              type="text"
+              placeholder="Search souls..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9"
+            />
+          </div>
+
+          {/* Sort dropdown */}
+          <div className="relative w-full sm:w-[200px]">
+            <Select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SoulsSortOption)}
+              className="w-full text-xs"
+            >
+              <option value="newest">Newest</option>
+              <option value="price_asc">Price: Low to High</option>
+              <option value="price_desc">Price: High to Low</option>
+              <option value="popular">Most Popular</option>
+            </Select>
+            <svg className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+
+          {/* Advanced filters toggle */}
+          <button
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-[20px] border border-border bg-transparent px-3.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-purple hover:text-purple cursor-pointer select-none"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path d="M3 6h18M7 12h10M11 18h2" strokeLinecap="round" />
+            </svg>
+            Filters
+            {(minPrice || maxPrice || creator) && (
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-purple text-[9px] font-bold text-white">
+                {[minPrice, maxPrice, creator].filter(Boolean).length}
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Advanced filters panel */}
+        {showAdvanced && (
+          <div className="rounded-xl border border-border bg-card2 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+              {/* Price range */}
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Price Range (USDC)</span>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Min"
+                      value={minPrice}
+                      onChange={(e) => setMinPrice(e.target.value)}
+                      className="w-[100px] py-2 text-xs"
+                    />
+                  </div>
+                  <span className="text-xs text-muted">—</span>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Max"
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(e.target.value)}
+                      className="w-[100px] py-2 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Creator filter */}
+              <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Creator</span>
+                <Input
+                  type="text"
+                  placeholder="Address or name..."
+                  value={creator}
+                  onChange={(e) => setCreator(e.target.value)}
+                  className="py-2 text-xs"
+                />
+              </div>
+
+              {/* Clear button */}
+              {(minPrice || maxPrice || creator) && (
+                <button
+                  onClick={() => { setMinPrice(''); setMaxPrice(''); setCreator('') }}
+                  className="inline-flex items-center gap-1.5 self-end rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-muted transition-colors hover:border-purple hover:text-purple cursor-pointer"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <FilterTabs
           tabs={[
@@ -177,37 +364,45 @@ export default function MarketPage() {
               icon="🔍"
               label={searchQuery ? `No listed Souls for "${searchQuery}"` : 'No live Soul listings'}
               sublabel="Listed Soulidity assets will appear here once a kiosk listing is mirrored."
-              actionLabel="Clear search"
+              actionLabel="Clear filters"
               onAction={() => {
                 setSearchQuery('')
                 setActiveFilter('all')
+                setMinPrice('')
+                setMaxPrice('')
+                setCreator('')
+                setSort('newest')
               }}
             />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {visibleSouls.map((soul) => (
-                <Link
-                  key={soul.id}
-                  href={`/souls/${encodeURIComponent(soul.onChainId)}`}
-                  className="card card-hover group overflow-hidden cursor-pointer"
-                >
-                  <div className="flex h-[140px] items-center justify-center" style={buildHeroStyle(soul.imageUrl)}>
-                    {!soul.imageUrl && <span className="text-4xl">🤖</span>}
-                  </div>
-                  <div className="space-y-2.5 p-3.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      <Tag color={resolveTagColor(soul.category)}>{soul.category}</Tag>
-                      <Tag color="muted">Soul</Tag>
+                <div key={soul.id} className="card card-hover group overflow-hidden relative">
+                  <Link
+                    href={`/souls/${encodeURIComponent(soul.onChainId)}`}
+                    className="block cursor-pointer"
+                  >
+                    <div className="flex h-[140px] items-center justify-center" style={buildHeroStyle(soul.imageUrl)}>
+                      {!soul.imageUrl && <span className="text-4xl">🤖</span>}
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-foreground">{soul.name}</h3>
-                      <p className="mt-1 line-clamp-2 text-xs leading-[1.5] text-muted">{soul.description}</p>
+                    <div className="space-y-2.5 p-3.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Tag color={resolveTagColor(soul.category)}>{soul.category}</Tag>
+                        <Tag color="muted">Soul</Tag>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground">{soul.name}</h3>
+                        <p className="mt-1 line-clamp-2 text-xs leading-[1.5] text-muted">{soul.description}</p>
+                      </div>
+                      {soul.listedPriceAtomic && (
+                        <p className="text-sm font-bold text-gold">{formatAtomicAmountForDisplay(soul.listedPriceAtomic)}</p>
+                      )}
                     </div>
-                    {soul.listedPriceAtomic && (
-                      <p className="text-sm font-bold text-gold">{formatAtomicAmountForDisplay(soul.listedPriceAtomic)}</p>
-                    )}
+                  </Link>
+                  <div className="absolute top-2 right-2">
+                    <BookmarkButton soul={soul} />
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           )}

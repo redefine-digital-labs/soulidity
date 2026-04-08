@@ -16,6 +16,7 @@ interface NavbarProps {
   userEmoji?: string | null
   userName?: string | null
   walletAddress?: string | null
+  isAdmin?: boolean
 }
 
 const navLinks = [
@@ -59,7 +60,7 @@ function navLinkClass(isActive: boolean) {
   )
 }
 
-export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName, walletAddress }: NavbarProps) {
+export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName, walletAddress, isAdmin }: NavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -82,6 +83,14 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
             })}
             <NavCreateMenu />
             <NavResourcesMenu />
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className={navLinkClass(pathname === '/admin' || pathname.startsWith('/admin/'))}
+              >
+                Admin
+              </Link>
+            )}
           </nav>
         </div>
 
@@ -176,6 +185,24 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
                   </Link>
                   )
                 })}
+
+                {isAdmin && (
+                  <>
+                    <div className="surface-divider my-1" />
+                    <Link
+                      href="/admin"
+                      onClick={() => setMobileOpen(false)}
+                      className={cn(
+                        'rounded-xl px-3.5 py-2.5 text-sm font-medium transition',
+                        pathname.startsWith('/admin')
+                          ? 'bg-purple/12 text-white'
+                          : 'text-muted hover:bg-white/[0.05] hover:text-foreground',
+                      )}
+                    >
+                      Admin
+                    </Link>
+                  </>
+                )}
 
                 {!connected && (
                   <>
