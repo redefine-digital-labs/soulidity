@@ -136,8 +136,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added desktop auth flow control in `desktop/src/lib/auth.ts` + `auth-runtime.ts`, wired the `auth` route to start device binding, consume `soulidity://auth/device` callbacks, and persist `auth_session.json` through new Tauri commands; verified with `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-auth-contract.test.ts`, `npm --prefix desktop run typecheck`, and `cargo check --manifest-path desktop/src-tauri/Cargo.toml`."
     },
     {
       "id": "US-010",

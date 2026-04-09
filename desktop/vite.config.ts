@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const host = process.env.TAURI_DEV_HOST
+const desktopWebProxyTarget = process.env.DESKTOP_WEB_PROXY_TARGET || 'http://localhost:3100'
 
 export default defineConfig({
   plugins: [react()],
@@ -19,6 +20,12 @@ export default defineConfig({
       : undefined,
     watch: {
       ignored: ['**/src-tauri/**'],
+    },
+    proxy: {
+      '/api': {
+        target: desktopWebProxyTarget,
+        changeOrigin: true,
+      },
     },
   },
 })
