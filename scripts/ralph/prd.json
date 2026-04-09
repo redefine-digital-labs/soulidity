@@ -30,8 +30,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added `web/lib/types/desktop.ts` plus `web/lib/desktop/repository.ts` to unify starter + curated soul catalog rows behind one desktop catalog contract, and verified with `npm test -- tests/new-web/desktop-schema-bootstrap.test.ts tests/new-web/desktop-catalog-repository.test.ts` and `npm run typecheck`."
     },
     {
       "id": "US-003",
