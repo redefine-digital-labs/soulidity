@@ -22,6 +22,15 @@ describe('Soulidity projection migrations', () => {
     expect(sql).toContain('ADD CONSTRAINT "posts_article_id_fkey"')
   })
 
+  it('contains a migration that upgrades community post tags to text arrays with a gin index', () => {
+    const sql = loadMigrationSql()
+
+    expect(sql).toContain('ALTER TABLE "posts"')
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS "tags_v2" TEXT[]')
+    expect(sql).toContain('RENAME COLUMN "tags_v2" TO "tags"')
+    expect(sql).toContain('USING GIN ("tags")')
+  })
+
   it('contains a migration that upgrades soul_memory_entries to timestamp_key addressing', () => {
     const sql = loadMigrationSql()
 

@@ -1,6 +1,6 @@
 # Manual Index Registry
 
-> Last updated: 2026-03-29
+> Last updated: 2026-04-09
 
 ## `soul_assets_listing_object_on_chain_id_key`
 

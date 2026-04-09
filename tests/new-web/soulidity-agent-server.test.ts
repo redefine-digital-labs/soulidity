@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const mockedResolveAgentByApiKey = vi.hoisted(() => vi.fn())
 const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
+const mockedGetRequestIp = vi.hoisted(() => vi.fn())
+const mockedGetAnonymousRateLimitFingerprint = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/resolve-agent', () => ({
   resolveAgentByApiKey: mockedResolveAgentByApiKey,
@@ -12,7 +14,8 @@ vi.mock('@web/lib/auth/sui-wallet', () => ({
 }))
 vi.mock('@web/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
-  getRequestIp: () => '127.0.0.1',
+  getRequestIp: mockedGetRequestIp,
+  getAnonymousRateLimitFingerprint: mockedGetAnonymousRateLimitFingerprint,
 }))
 
 import { requireAgentWalletIdentity } from '../../new-web/lib/soulidity/agent-server'
@@ -27,6 +30,8 @@ describe('requireAgentWalletIdentity', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false })
+    mockedGetRequestIp.mockReturnValue('127.0.0.1')
+    mockedGetAnonymousRateLimitFingerprint.mockReturnValue('anon-fingerprint')
   })
 
   it('returns 401 when no Authorization header', async () => {
@@ -105,5 +110,31 @@ describe('requireAgentWalletIdentity', () => {
     if ('error' in result) {
       expect(result.error.status).toBe(429)
     }
+  })
+
+  it('falls back to anonymous fingerprint buckets when trusted ip is unavailable', async () => {
+    mockedGetRequestIp.mockReturnValue(null)
+    mockedGetAnonymousRateLimitFingerprint.mockReturnValue('anon-bucket')
+    mockedResolveAgentByApiKey.mockResolvedValue(null)
+
+    await requireAgentWalletIdentity(makeRequest('Bearer sk-bad'))
+
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'agent-auth-failed:anon:anon-bucket',
+      expect.any(Object),
+    )
+  })
+
+  it('falls back to a fixed unknown bucket when both ip and fingerprint are missing', async () => {
+    mockedGetRequestIp.mockReturnValue(null)
+    mockedGetAnonymousRateLimitFingerprint.mockReturnValue(null)
+    mockedResolveAgentByApiKey.mockResolvedValue(null)
+
+    await requireAgentWalletIdentity(makeRequest('Bearer sk-bad'))
+
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      'agent-auth-failed:unknown',
+      expect.any(Object),
+    )
   })
 })
