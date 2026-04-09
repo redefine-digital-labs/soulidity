@@ -182,6 +182,30 @@ function toSoulPersonaManifest(
   }
 }
 
+async function findDesktopPersonaManifestForEntry(
+  entry: DesktopCatalogEntryManifestRow,
+): Promise<DesktopPersonaManifest | null> {
+  if (entry.sourceType === 'starter') {
+    const starter = await prisma.starterPersonaAsset.findUnique({
+      where: { slug: entry.sourceRef },
+      select: starterCatalogSelect,
+    })
+
+    return starter ? toStarterPersonaManifest(entry, starter) : null
+  }
+
+  if (entry.sourceType === 'soul') {
+    const soul = await prisma.soulAsset.findUnique({
+      where: { onChainId: entry.sourceRef },
+      select: soulCatalogSelect,
+    })
+
+    return soul ? toSoulPersonaManifest(entry, soul) : null
+  }
+
+  return null
+}
+
 export async function listDesktopCatalogItems(params: {
   page: number
   pageSize: number
@@ -274,23 +298,26 @@ export async function findDesktopPersonaManifestById(id: string): Promise<Deskto
     return null
   }
 
-  if (entry.sourceType === 'starter') {
-    const starter = await prisma.starterPersonaAsset.findUnique({
-      where: { slug: entry.sourceRef },
-      select: starterCatalogSelect,
-    })
+  return findDesktopPersonaManifestForEntry(entry)
+}
 
-    return starter ? toStarterPersonaManifest(entry, starter) : null
+export async function findDesktopPersonaManifestBySource(params: {
+  sourceType: DesktopCatalogSourceType
+  sourceRef: string
+}): Promise<DesktopPersonaManifest | null> {
+  const entry = await prisma.desktopCatalogEntry.findUnique({
+    where: {
+      sourceType_sourceRef: {
+        sourceType: params.sourceType,
+        sourceRef: params.sourceRef,
+      },
+    },
+    select: desktopCatalogEntryManifestSelect,
+  })
+
+  if (!entry) {
+    return null
   }
 
-  if (entry.sourceType === 'soul') {
-    const soul = await prisma.soulAsset.findUnique({
-      where: { onChainId: entry.sourceRef },
-      select: soulCatalogSelect,
-    })
-
-    return soul ? toSoulPersonaManifest(entry, soul) : null
-  }
-
-  return null
+  return findDesktopPersonaManifestForEntry(entry)
 }

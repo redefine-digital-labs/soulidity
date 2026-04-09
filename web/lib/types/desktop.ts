@@ -73,3 +73,8 @@ export interface DesktopProfile {
   lastSyncedAt: string | null
   updatedAt: string
 }
+
+export interface DesktopMeResponse {
+  profile: DesktopProfile
+  activePersona: DesktopPersonaManifest | null
+}
