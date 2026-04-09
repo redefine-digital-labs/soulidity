@@ -54,6 +54,17 @@ export type DesktopDevicePollResponse =
       pollInterval: number
     }
 
+export interface DesktopDeviceCompleteResponse {
+  status: 'confirmed'
+  accountId: string
+  deviceCode: string
+  userCode: string
+  deepLink: string
+  expiresAt: string
+  confirmedAt: string
+  pollInterval: number
+}
+
 export interface DesktopProfile {
   accountId: string
   activeSourceType: DesktopCatalogSourceType | null
