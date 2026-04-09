@@ -151,8 +151,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added `desktop/src-tauri/src/persona_install.rs` plus new Tauri commands for `install_persona`, `load_installed_personas`, `load_active_persona`, and `set_active_persona`, with temp-dir downloads, checksum verification, failed-install cleanup, and persisted `active_persona` recovery; verified with `cargo test --manifest-path desktop/src-tauri/Cargo.toml`, `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-auth-contract.test.ts tests/desktop/desktop-install-contract.test.ts`, and `npm --prefix desktop run typecheck`."
     },
     {
       "id": "US-011",

@@ -1,6 +1,13 @@
+mod persona_install;
+
 use std::fs;
 use std::path::PathBuf;
 
+use persona_install::{
+    install_persona_at_path, load_active_persona_at_path, load_installed_personas_at_path,
+    set_active_persona_at_path, ActivePersonaRecord, DesktopPersonaManifest,
+    InstalledPersonaRecord,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::{path::BaseDirectory, AppHandle, Manager};
@@ -97,7 +104,9 @@ async fn parse_error_response(response: reqwest::Response) -> String {
 }
 
 #[tauri::command]
-async fn start_device_authorization(web_base_url: String) -> Result<DesktopDeviceStartResponse, String> {
+async fn start_device_authorization(
+    web_base_url: String,
+) -> Result<DesktopDeviceStartResponse, String> {
     let normalized_base_url = normalize_web_base_url(&web_base_url)?;
     let url = format!("{normalized_base_url}/api/desktop/device/start");
     let response = Client::new()
@@ -153,6 +162,18 @@ fn auth_session_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("Failed to resolve desktop auth session path: {error}"))
 }
 
+fn desktop_app_data_root(app: &AppHandle) -> Result<PathBuf, String> {
+    let state_dir = app
+        .path()
+        .resolve("state", BaseDirectory::AppData)
+        .map_err(|error| format!("Failed to resolve desktop state directory: {error}"))?;
+
+    state_dir
+        .parent()
+        .map(PathBuf::from)
+        .ok_or_else(|| "Failed to resolve desktop app data root".to_string())
+}
+
 #[tauri::command]
 fn load_auth_session(app: AppHandle) -> Result<Option<AuthSessionRecord>, String> {
     let path = auth_session_path(&app)?;
@@ -195,6 +216,33 @@ fn clear_auth_session(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn install_persona(
+    app: AppHandle,
+    manifest: DesktopPersonaManifest,
+) -> Result<InstalledPersonaRecord, String> {
+    let app_data_root = desktop_app_data_root(&app)?;
+    install_persona_at_path(&app_data_root, manifest, &Client::new()).await
+}
+
+#[tauri::command]
+fn load_installed_personas(app: AppHandle) -> Result<Vec<InstalledPersonaRecord>, String> {
+    let app_data_root = desktop_app_data_root(&app)?;
+    load_installed_personas_at_path(&app_data_root)
+}
+
+#[tauri::command]
+fn load_active_persona(app: AppHandle) -> Result<Option<ActivePersonaRecord>, String> {
+    let app_data_root = desktop_app_data_root(&app)?;
+    load_active_persona_at_path(&app_data_root)
+}
+
+#[tauri::command]
+fn set_active_persona(app: AppHandle, persona_id: String) -> Result<ActivePersonaRecord, String> {
+    let app_data_root = desktop_app_data_root(&app)?;
+    set_active_persona_at_path(&app_data_root, &persona_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -212,7 +260,11 @@ pub fn run() {
             poll_device_authorization,
             load_auth_session,
             save_auth_session,
-            clear_auth_session
+            clear_auth_session,
+            install_persona,
+            load_installed_personas,
+            load_active_persona,
+            set_active_persona
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
