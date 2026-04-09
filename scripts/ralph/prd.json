@@ -121,8 +121,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added `desktop/src/lib/persistence.ts` and `desktop/src/lib/manifest.ts` to define persisted desktop state records, app-data directory layout, and strict `DesktopPersonaManifest` parsing/validation aligned with the web contract; verified with `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts` and `npm --prefix desktop run typecheck`."
     },
     {
       "id": "US-009",

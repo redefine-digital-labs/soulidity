@@ -10,6 +10,7 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Account-scoped desktop profile APIs should resolve the current persona via `DesktopCatalogEntry.sourceType + sourceRef`, while `DesktopProfile` itself only stores the source pointer, `lastSyncedAt`, and preferences.
 - Desktop shell stories can lock the navigation contract early with a plain `desktop/src/app/routes.ts` module plus a focused Vitest contract under `tests/desktop/`, instead of waiting for browser-only assertions.
 - Tauri 2 `generate_context!()` still expects the default icon assets under `desktop/src-tauri/icons/`, so scaffold or copy the icon set before treating a new desktop shell as compile-ready.
+- Frontend-facing desktop contract modules under `desktop/src/` should stay browser-safe; model app-data layout with separator-aware string helpers and leave actual filesystem access to later Tauri/Rust commands.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -94,4 +95,16 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: keep route shape, nav links, and hash helpers centralized in `desktop/src/app/routes.ts` so later download/auth/library stories can extend one stable contract.
   - Gotchas: even with bundling disabled, Tauri's generated context still reads `src-tauri/icons/*`; a missing icon set blocks `cargo check`.
   - Useful context: the current shell already distinguishes browser preview from Tauri runtime, so later stories can attach real auth/download state without rewriting the surrounding layout.
+---
+## 2026-04-10 02:08:00 CST - US-008
+- Implemented the phase-one desktop persistence contract: added `desktop/src/lib/persistence.ts` for `installed_personas` / `active_persona` / `catalog_cache` / `auth_session` / `download_jobs` record shapes plus app-data directory layout, and `desktop/src/lib/manifest.ts` for strict desktop manifest parsing and validation aligned with the web `DesktopPersonaManifest` contract.
+- Files changed: `desktop/src/lib/persistence.ts`, `desktop/src/lib/manifest.ts`, `tests/desktop/desktop-persistence-contract.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/desktop/desktop-persistence-contract.test.ts` PASS
+  - `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts` PASS
+  - `npm --prefix desktop run typecheck` PASS
+- Learnings for future iterations:
+  - Reusable patterns: keep desktop persistence and manifest contracts in small `desktop/src/lib/*` modules so auth, download, and library stories can import one stable source of truth.
+  - Gotchas: `desktop/src/` is browser-facing code even in a Tauri app, so Node builtins like `node:path` should stay out of these modules unless the logic moves to Rust or a server-side tool.
+  - Useful context: the current persistence module intentionally stops at record/layout contracts; later stories can layer real Tauri file IO or commands on top without changing the JSON/state shapes.
 ---
