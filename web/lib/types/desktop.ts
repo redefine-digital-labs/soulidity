@@ -1,4 +1,5 @@
 export type DesktopCatalogSourceType = 'starter' | 'soul'
+export const DESKTOP_DEVICE_CODE_HEADER = 'x-soulidity-device-code'
 
 export interface DesktopCatalogItem {
   id: string

@@ -19,6 +19,8 @@ struct DesktopShellStatus {
     routes: usize,
 }
 
+const DESKTOP_DEVICE_CODE_HEADER: &str = "x-soulidity-device-code";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthSessionRecord {
@@ -36,6 +38,24 @@ struct DesktopDeviceStartResponse {
     user_code: String,
     expires_at: String,
     poll_interval: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopProfilePayload {
+    account_id: String,
+    active_source_type: Option<String>,
+    active_source_ref: Option<String>,
+    preferences: Option<serde_json::Value>,
+    last_synced_at: Option<String>,
+    updated_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopMeResponse {
+    profile: DesktopProfilePayload,
+    active_persona: Option<DesktopPersonaManifest>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,6 +108,15 @@ fn normalize_web_base_url(web_base_url: &str) -> Result<String, String> {
     }
 
     Ok(trimmed.trim_end_matches('/').to_string())
+}
+
+fn normalize_device_code(device_code: &str) -> Result<String, String> {
+    let trimmed = device_code.trim();
+    if trimmed.is_empty() {
+        return Err("deviceCode is required".to_string());
+    }
+
+    Ok(trimmed.to_string())
 }
 
 async fn parse_error_response(response: reqwest::Response) -> String {
@@ -154,6 +183,66 @@ async fn poll_device_authorization(
         .json::<DesktopDevicePollResponse>()
         .await
         .map_err(|error| format!("Failed to decode desktop device poll response: {error}"))
+}
+
+#[tauri::command]
+async fn fetch_desktop_me(
+    web_base_url: String,
+    device_code: String,
+) -> Result<DesktopMeResponse, String> {
+    let normalized_base_url = normalize_web_base_url(&web_base_url)?;
+    let normalized_device_code = normalize_device_code(&device_code)?;
+    let url = format!("{normalized_base_url}/api/desktop/me");
+    let response = Client::new()
+        .get(url)
+        .header(DESKTOP_DEVICE_CODE_HEADER, normalized_device_code)
+        .send()
+        .await
+        .map_err(|error| format!("Failed to call desktop profile API: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(parse_error_response(response).await);
+    }
+
+    response
+        .json::<DesktopMeResponse>()
+        .await
+        .map_err(|error| format!("Failed to decode desktop profile response: {error}"))
+}
+
+#[tauri::command]
+async fn sync_desktop_active_persona(
+    web_base_url: String,
+    device_code: String,
+    source_type: Option<String>,
+    source_ref: Option<String>,
+) -> Result<DesktopMeResponse, String> {
+    if source_type.is_some() != source_ref.is_some() {
+        return Err("sourceType and sourceRef must both be provided".to_string());
+    }
+
+    let normalized_base_url = normalize_web_base_url(&web_base_url)?;
+    let normalized_device_code = normalize_device_code(&device_code)?;
+    let url = format!("{normalized_base_url}/api/desktop/me/active-persona");
+    let response = Client::new()
+        .put(url)
+        .header(DESKTOP_DEVICE_CODE_HEADER, normalized_device_code)
+        .json(&serde_json::json!({
+            "sourceType": source_type,
+            "sourceRef": source_ref,
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("Failed to call desktop active persona sync API: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(parse_error_response(response).await);
+    }
+
+    response
+        .json::<DesktopMeResponse>()
+        .await
+        .map_err(|error| format!("Failed to decode desktop active persona sync response: {error}"))
 }
 
 fn auth_session_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -258,6 +347,8 @@ pub fn run() {
             desktop_shell_status,
             start_device_authorization,
             poll_device_authorization,
+            fetch_desktop_me,
+            sync_desktop_active_persona,
             load_auth_session,
             save_auth_session,
             clear_auth_session,

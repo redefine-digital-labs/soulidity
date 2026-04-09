@@ -40,6 +40,12 @@ const deviceSessionPollResultSelect = {
   pollIntervalSeconds: true,
 } as const
 
+const deviceSessionAccountAuthSelect = {
+  accountId: true,
+  expiresAt: true,
+  status: true,
+} as const
+
 const deviceSessionCompleteSelect = {
   id: true,
   accountId: true,
@@ -242,6 +248,28 @@ export async function pollDesktopDeviceSession(
   })
 
   return toPollResponse(updatedSession)
+}
+
+export async function resolveDesktopDeviceAccount(
+  deviceCode: string,
+  options: { now?: Date } = {},
+): Promise<string | null> {
+  const normalizedDeviceCode = deviceCode.trim()
+  if (!normalizedDeviceCode) {
+    return null
+  }
+
+  const session = await prisma.desktopDeviceSession.findUnique({
+    where: { deviceCode: normalizedDeviceCode },
+    select: deviceSessionAccountAuthSelect,
+  })
+
+  if (!session || session.status !== 'confirmed' || !session.accountId) {
+    return null
+  }
+
+  const now = options.now ?? new Date()
+  return now < session.expiresAt ? session.accountId : null
 }
 
 export async function completeDesktopDeviceSession(

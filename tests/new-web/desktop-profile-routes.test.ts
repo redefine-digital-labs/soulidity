@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedRequireDesktopAccountAccess = vi.hoisted(() => vi.fn())
 const mockedGetDesktopMe = vi.hoisted(() => vi.fn())
 const mockedSetDesktopActivePersona = vi.hoisted(() => vi.fn())
 
-vi.mock('@web/lib/auth/identity', () => ({
-  requireIdentity: mockedRequireIdentity,
+vi.mock('@/lib/desktop/request-auth', () => ({
+  requireDesktopAccountAccess: mockedRequireDesktopAccountAccess,
 }))
 
 vi.mock('@/lib/desktop/profile', () => {
@@ -27,13 +27,10 @@ describe('desktop me routes', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
-    mockedRequireIdentity.mockResolvedValue({
+    mockedRequireDesktopAccountAccess.mockResolvedValue({
+      accountId: 'account-123',
       error: null,
-      identity: {
-        accountId: 'account-123',
-        memberId: 'member-123',
-        kind: 'human',
-      },
+      transport: 'web',
     })
   })
 
@@ -93,9 +90,10 @@ describe('desktop me routes', () => {
   })
 
   it('rejects anonymous desktop profile reads', async () => {
-    mockedRequireIdentity.mockResolvedValueOnce({
+    mockedRequireDesktopAccountAccess.mockResolvedValueOnce({
+      accountId: null,
       error: new Response(JSON.stringify({ error: '请先登录' }), { status: 401 }),
-      identity: null,
+      transport: 'web',
     })
 
     const { GET } = await import('../../web/app/api/desktop/me/route.ts')
@@ -149,14 +147,14 @@ describe('desktop me routes', () => {
     })
   })
 
-  it('rejects non-human active persona updates', async () => {
-    mockedRequireIdentity.mockResolvedValueOnce({
-      error: null,
-      identity: {
-        accountId: 'account-123',
-        memberId: 'member-123',
-        kind: 'agent',
-      },
+  it('passes through desktop auth access errors for active persona updates', async () => {
+    mockedRequireDesktopAccountAccess.mockResolvedValueOnce({
+      accountId: null,
+      error: new Response(
+        JSON.stringify({ error: 'Only human accounts can access desktop profile routes' }),
+        { status: 403 },
+      ),
+      transport: 'web',
     })
 
     const { PUT } = await import('../../web/app/api/desktop/me/active-persona/route.ts')
@@ -174,7 +172,7 @@ describe('desktop me routes', () => {
     expect(response.status).toBe(403)
     expect(mockedSetDesktopActivePersona).not.toHaveBeenCalled()
     await expect(response.json()).resolves.toEqual({
-      error: 'Only human accounts can sync a desktop active persona',
+      error: 'Only human accounts can access desktop profile routes',
     })
   })
 

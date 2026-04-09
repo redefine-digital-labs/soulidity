@@ -1,20 +1,16 @@
 import { NextResponse } from 'next/server'
 
-import { requireIdentity } from '@web/lib/auth/identity'
 import { getDesktopMe } from '@/lib/desktop/profile'
+import { requireDesktopAccountAccess } from '@/lib/desktop/request-auth'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_request: Request) {
-  const { error, identity } = await requireIdentity()
+export async function GET(request: Request) {
+  const { accountId, error } = await requireDesktopAccountAccess(request)
   if (error) {
     return error
   }
 
-  if (identity.kind !== 'human') {
-    return NextResponse.json({ error: 'Only human accounts can read a desktop profile' }, { status: 403 })
-  }
-
-  const response = await getDesktopMe(identity.accountId)
+  const response = await getDesktopMe(accountId)
   return NextResponse.json(response)
 }
