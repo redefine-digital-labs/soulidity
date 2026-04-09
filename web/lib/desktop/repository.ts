@@ -1,6 +1,12 @@
 import type { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
-import type { DesktopCatalogItem, DesktopCatalogSourceType } from '@/lib/types/desktop'
+import { getBlobUrl, materializeWalrusBlobUrls } from '@web/lib/services/walrus'
+import type {
+  DesktopCatalogItem,
+  DesktopCatalogSourceType,
+  DesktopPersonaManifest,
+  DesktopPersonaManifestFile,
+} from '@/lib/types/desktop'
 
 function asIso(value: Date) {
   return value.toISOString()
@@ -42,6 +48,9 @@ const starterCatalogSelect = {
   description: true,
   coverImage: true,
   thumbnail: true,
+  version: true,
+  checksum: true,
+  files: true,
   updatedAt: true,
 } as const
 
@@ -51,12 +60,52 @@ const soulCatalogSelect = {
   description: true,
   imageUrl: true,
   previewImages: true,
+  contentBlobId: true,
   updatedAt: true,
 } as const
 
 type DesktopCatalogEntryRow = Prisma.DesktopCatalogEntryGetPayload<{ select: typeof desktopCatalogEntryListSelect }>
 type StarterCatalogRow = Prisma.StarterPersonaAssetGetPayload<{ select: typeof starterCatalogSelect }>
 type SoulCatalogRow = Prisma.SoulAssetGetPayload<{ select: typeof soulCatalogSelect }>
+
+const desktopCatalogEntryManifestSelect = {
+  id: true,
+  sourceType: true,
+  sourceRef: true,
+} as const
+
+type DesktopCatalogEntryManifestRow = Prisma.DesktopCatalogEntryGetPayload<{ select: typeof desktopCatalogEntryManifestSelect }>
+
+function materializeDesktopImage(value: string) {
+  return materializeWalrusBlobUrls([value])[0] ?? value
+}
+
+function resolveDesktopThumbnail(previewImages: string[], fallbackImage: string) {
+  const materializedPreview = materializeWalrusBlobUrls(previewImages)[0]
+  return materializedPreview ?? previewImages[0] ?? fallbackImage
+}
+
+function normalizeManifestFiles(value: unknown): DesktopPersonaManifestFile[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return []
+    }
+
+    const path = 'path' in entry && typeof entry.path === 'string' ? entry.path : null
+    const url = 'url' in entry && typeof entry.url === 'string' ? entry.url : null
+    const checksum = 'checksum' in entry && typeof entry.checksum === 'string' ? entry.checksum : null
+
+    if (!path || !url || !checksum) {
+      return []
+    }
+
+    return [{ path, url, checksum }]
+  })
+}
 
 function toStarterCatalogItem(entry: DesktopCatalogEntryRow, starter: StarterCatalogRow): DesktopCatalogItem {
   return {
@@ -71,15 +120,64 @@ function toStarterCatalogItem(entry: DesktopCatalogEntryRow, starter: StarterCat
   }
 }
 
+function toStarterPersonaManifest(
+  entry: DesktopCatalogEntryManifestRow,
+  starter: StarterCatalogRow,
+): DesktopPersonaManifest {
+  return {
+    id: entry.id,
+    sourceType: 'starter',
+    sourceRef: entry.sourceRef,
+    title: starter.title,
+    description: starter.description,
+    coverImage: starter.coverImage,
+    thumbnail: starter.thumbnail,
+    version: starter.version,
+    checksum: starter.checksum,
+    files: normalizeManifestFiles(starter.files),
+    updatedAt: asIso(starter.updatedAt),
+  }
+}
+
 function toSoulCatalogItem(entry: DesktopCatalogEntryRow, soul: SoulCatalogRow): DesktopCatalogItem {
+  const coverImage = materializeDesktopImage(soul.imageUrl)
+
   return {
     id: entry.id,
     sourceType: 'soul',
     sourceRef: entry.sourceRef,
     title: soul.name,
     description: soul.description,
-    coverImage: soul.imageUrl,
-    thumbnail: soul.previewImages[0] ?? soul.imageUrl,
+    coverImage,
+    thumbnail: resolveDesktopThumbnail(soul.previewImages, coverImage),
+    updatedAt: asIso(soul.updatedAt),
+  }
+}
+
+function toSoulPersonaManifest(
+  entry: DesktopCatalogEntryManifestRow,
+  soul: SoulCatalogRow,
+): DesktopPersonaManifest {
+  const checksum = `walrus:${soul.contentBlobId}`
+  const coverImage = materializeDesktopImage(soul.imageUrl)
+
+  return {
+    id: entry.id,
+    sourceType: 'soul',
+    sourceRef: entry.sourceRef,
+    title: soul.name,
+    description: soul.description,
+    coverImage,
+    thumbnail: resolveDesktopThumbnail(soul.previewImages, coverImage),
+    version: asIso(soul.updatedAt),
+    checksum,
+    files: [
+      {
+        path: 'soul.bundle',
+        url: getBlobUrl(soul.contentBlobId),
+        checksum,
+      },
+    ],
     updatedAt: asIso(soul.updatedAt),
   }
 }
@@ -164,4 +262,35 @@ export async function listDesktopCatalogItems(params: {
   }
 
   return { items, total }
+}
+
+export async function findDesktopPersonaManifestById(id: string): Promise<DesktopPersonaManifest | null> {
+  const entry = await prisma.desktopCatalogEntry.findUnique({
+    where: { id },
+    select: desktopCatalogEntryManifestSelect,
+  })
+
+  if (!entry) {
+    return null
+  }
+
+  if (entry.sourceType === 'starter') {
+    const starter = await prisma.starterPersonaAsset.findUnique({
+      where: { slug: entry.sourceRef },
+      select: starterCatalogSelect,
+    })
+
+    return starter ? toStarterPersonaManifest(entry, starter) : null
+  }
+
+  if (entry.sourceType === 'soul') {
+    const soul = await prisma.soulAsset.findUnique({
+      where: { onChainId: entry.sourceRef },
+      select: soulCatalogSelect,
+    })
+
+    return soul ? toSoulPersonaManifest(entry, soul) : null
+  }
+
+  return null
 }
