@@ -8,6 +8,8 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Desktop device auth stories should keep route handlers thin and centralize lifecycle rules in `web/lib/desktop/device-session.ts`; `invalid_code` is a synthetic poll-only response, while persisted session states stay on `pending` / `confirmed` / `expired`.
 - Browser-side desktop auth pages should carry only `userCode` in the URL, keep `deviceCode` server-side, and mint the final `soulidity://auth/device?...` deep link from `web/lib/desktop/device-session.ts` after confirmation.
 - Account-scoped desktop profile APIs should resolve the current persona via `DesktopCatalogEntry.sourceType + sourceRef`, while `DesktopProfile` itself only stores the source pointer, `lastSyncedAt`, and preferences.
+- Desktop shell stories can lock the navigation contract early with a plain `desktop/src/app/routes.ts` module plus a focused Vitest contract under `tests/desktop/`, instead of waiting for browser-only assertions.
+- Tauri 2 `generate_context!()` still expects the default icon assets under `desktop/src-tauri/icons/`, so scaffold or copy the icon set before treating a new desktop shell as compile-ready.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -79,4 +81,17 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: desktop profile reads can safely upsert an empty `DesktopProfile` row on first access, then reuse the same response envelope for both `GET /api/desktop/me` and active-persona writes.
   - Gotchas: `DesktopProfile` keeps a source pointer, not a copied manifest, so active persona validation should go through the catalog entry lookup instead of duplicating starter/soul selection logic inside the route.
   - Useful context: hidden or unpublished catalog items can still remain resolvable for an account-level active persona because `findDesktopPersonaManifestBySource` bypasses public list filters and looks up the unique catalog entry directly.
+---
+## 2026-04-10 01:57:57 CST - US-007
+- Implemented the new `desktop/` Tauri subproject: added React + Vite frontend scaffolding, a data-driven hash-route shell for `home`, `explore`, `search`, `persona/:id`, `library`, `settings`, and `auth`, plus a minimal Rust command bridge for future desktop-runtime handshakes.
+- Files changed: `desktop/package.json`, `desktop/package-lock.json`, `desktop/index.html`, `desktop/tsconfig*.json`, `desktop/vite.config.ts`, `desktop/src/**`, `desktop/src-tauri/**`, `tests/desktop/desktop-shell-contract.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/desktop/desktop-shell-contract.test.ts` PASS
+  - `npm --prefix desktop run typecheck` PASS
+  - `cargo check --manifest-path desktop/src-tauri/Cargo.toml` PASS
+  - Browser verification on `http://127.0.0.1:1420/#/` PASS across `home`, `explore`, `search`, `persona/aurora-starter`, `library`, `settings`, and `auth`; screenshots saved to `/tmp/clawnews-browser/us007-home.png` and `/tmp/clawnews-browser/us007-persona.png`
+- Learnings for future iterations:
+  - Reusable patterns: keep route shape, nav links, and hash helpers centralized in `desktop/src/app/routes.ts` so later download/auth/library stories can extend one stable contract.
+  - Gotchas: even with bundling disabled, Tauri's generated context still reads `src-tauri/icons/*`; a missing icon set blocks `cargo check`.
+  - Useful context: the current shell already distinguishes browser preview from Tauri runtime, so later stories can attach real auth/download state without rewriting the surrounding layout.
 ---
