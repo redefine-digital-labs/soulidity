@@ -76,6 +76,34 @@ describe('agents route hardening', () => {
     expect(mockedPrisma.member.findUnique).not.toHaveBeenCalled()
   })
 
+  it('requires explicit header auth for mutating handlers', async () => {
+    const { POST, DELETE, PATCH } = await import('../../web/app/api/agents/route.ts')
+
+    await POST(
+      new Request('http://localhost/api/agents', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'Scout' }),
+      }) as any,
+    )
+    await DELETE(
+      {
+        nextUrl: new URL('http://localhost/api/agents?id=550e8400-e29b-41d4-a716-446655440000'),
+      } as any,
+    )
+    await PATCH(
+      new Request('http://localhost/api/agents', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: '550e8400-e29b-41d4-a716-446655440000' }),
+      }) as any,
+    )
+
+    expect(mockedResolveIdentity).toHaveBeenNthCalledWith(1, { allowCookieFallback: false })
+    expect(mockedResolveIdentity).toHaveBeenNthCalledWith(2, { allowCookieFallback: false })
+    expect(mockedResolveIdentity).toHaveBeenNthCalledWith(3, { allowCookieFallback: false })
+  })
+
   it('blocks agent identities from regenerating keys for sibling agents', async () => {
     mockedResolveIdentity.mockResolvedValue({
       accountId: 'account-1',

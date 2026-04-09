@@ -27,6 +27,9 @@ const mockedReadTransactionSender = vi.hoisted(() => vi.fn())
 const mockedExtractSoulPurchasedEvent = vi.hoisted(() => vi.fn())
 const mockedSyncSoulProjectionFromChain = vi.hoisted(() => vi.fn())
 const mockedEndActiveSoulGrantProjectionsFromChain = vi.hoisted(() => vi.fn())
+const mockedTransactionDataBuilder = vi.hoisted(() => ({
+  getDigestFromBytes: vi.fn(),
+}))
 const mockedPrisma = vi.hoisted(() => ({
   soulPreparedPurchase: {
     findUnique: vi.fn(),
@@ -61,6 +64,10 @@ vi.mock('@/lib/soulidity/env', () => ({
 
 vi.mock('@/lib/soulidity/events', () => ({
   extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
+}))
+
+vi.mock('@mysten/sui/transactions', () => ({
+  TransactionDataBuilder: mockedTransactionDataBuilder,
 }))
 
 vi.mock('@/lib/soulidity/mirror/sync-helpers', () => ({
@@ -137,6 +144,7 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
     })
     mockedEndActiveSoulGrantProjectionsFromChain.mockResolvedValue(undefined)
     mockedStoreSoulidityTxSync.mockResolvedValue(undefined)
+    mockedTransactionDataBuilder.getDigestFromBytes.mockReturnValue('0xderived')
   })
 
   async function callRoute() {
@@ -159,8 +167,40 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
     })
   })
 
-  it('does not downgrade a successful purchase when only post-sync bookkeeping fails', async () => {
+  it('returns a recoverable partial result when grant invalidation sync fails after ownership sync', async () => {
     mockedEndActiveSoulGrantProjectionsFromChain.mockRejectedValueOnce(new Error('grant projection failed'))
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(207)
+    await expect(response.json()).resolves.toEqual({
+      digest: '0xtx',
+      soulOnChainId: SOUL_ID,
+      onChainSuccess: true,
+      dbSynced: false,
+      error: 'Transaction succeeded on chain, but local grant invalidation sync failed.',
+    })
+  })
+
+  it('returns the cached tx-sync response when an executed purchase is missing persisted resultBody', async () => {
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      agentMemberId: 'agent-member-1',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      txBytesBase64: TX_BYTES_BASE64,
+      txBytesHash: TX_BYTES_HASH,
+      resultBody: null,
+      resultStatusCode: null,
+    })
+    mockedGetStoredSoulidityTxSync.mockResolvedValueOnce({
+      statusCode: 200,
+      responseBody: {
+        digest: '0xtx',
+        soulOnChainId: SOUL_ID,
+        currentOwnerAddress: AGENT_ADDRESS,
+      },
+    })
 
     const response = await callRoute()
 
@@ -169,9 +209,71 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
       digest: '0xtx',
       soulOnChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
+    })
+    expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
+  })
+
+  it('re-attempts sync when the prepared purchase only has a recoverable 207 result', async () => {
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      agentMemberId: 'agent-member-1',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      txBytesBase64: TX_BYTES_BASE64,
+      txBytesHash: TX_BYTES_HASH,
+      executionTxDigest: '0xpartial',
+      resultStatusCode: 207,
+      resultBody: {
+        digest: '0xpartial',
+        soulOnChainId: SOUL_ID,
+        onChainSuccess: true,
+        dbSynced: false,
+        error: 'Transaction succeeded on chain, but local Soul sync failed.',
+      },
+    })
+    mockedGetSuccessfulTransactionBlock.mockResolvedValueOnce({ digest: '0xpartial' })
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      digest: '0xpartial',
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
       currentKioskId: KIOSK_ID,
       currentKioskCapOnChainId: KIOSK_CAP_ID,
       listingStatus: 'held',
     })
+    expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
+    expect(mockedSyncSoulProjectionFromChain).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers an executed purchase without persisted result state by deriving the tx digest from tx bytes', async () => {
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      agentMemberId: 'agent-member-1',
+      executedAt: new Date('2099-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      txBytesBase64: TX_BYTES_BASE64,
+      txBytesHash: TX_BYTES_HASH,
+      executionTxDigest: null,
+      resultStatusCode: null,
+      resultBody: null,
+    })
+    mockedGetSuccessfulTransactionBlock.mockResolvedValueOnce({ digest: '0xderived' })
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      digest: '0xderived',
+      soulOnChainId: SOUL_ID,
+      currentOwnerAddress: AGENT_ADDRESS,
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      listingStatus: 'held',
+    })
+    expect(mockedTransactionDataBuilder.getDigestFromBytes).toHaveBeenCalledOnce()
+    expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled()
   })
 })
