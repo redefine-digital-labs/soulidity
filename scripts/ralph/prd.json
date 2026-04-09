@@ -76,8 +76,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added `POST /api/desktop/device/complete`, browser confirmation UI at `web/app/desktop/device/page.tsx`, and deep-link response payloads using `soulidity://auth/device`; verified with `npm test -- tests/new-web/desktop-device-session.test.ts tests/new-web/desktop-device-routes.test.ts tests/new-web/desktop-device-complete-route.test.ts tests/new-web/desktop-device-confirm-page.test.ts`, `npm run typecheck:root`, `npm --prefix web exec -- tsc -p tsconfig.json --noEmit`, and browser screenshots at `/tmp/clawnews-browser/us005-desktop.png` + `/tmp/clawnews-browser/us005-desktop-stable.png`."
     },
     {
       "id": "US-006",

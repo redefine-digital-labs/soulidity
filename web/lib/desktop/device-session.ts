@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { prisma } from '@web/lib/prisma'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 import type {
+  DesktopDeviceCompleteResponse,
   DesktopDevicePollResponse,
   DesktopDeviceStartResponse,
 } from '@/lib/types/desktop'
@@ -39,6 +40,27 @@ const deviceSessionPollResultSelect = {
   pollIntervalSeconds: true,
 } as const
 
+const deviceSessionCompleteSelect = {
+  id: true,
+  accountId: true,
+  deviceCode: true,
+  userCode: true,
+  expiresAt: true,
+  confirmedAt: true,
+  pollIntervalSeconds: true,
+  status: true,
+} as const
+
+const deviceSessionCompleteResultSelect = {
+  accountId: true,
+  deviceCode: true,
+  userCode: true,
+  expiresAt: true,
+  confirmedAt: true,
+  pollIntervalSeconds: true,
+  status: true,
+} as const
+
 function asIso(value: Date) {
   return value.toISOString()
 }
@@ -55,6 +77,13 @@ function createUserCode() {
     characters.slice(0, USER_CODE_SEGMENT_LENGTH).join(''),
     characters.slice(USER_CODE_SEGMENT_LENGTH).join(''),
   ].join('-')
+}
+
+function buildDesktopDeviceDeepLink(deviceCode: string) {
+  const deepLink = new URL('soulidity://auth/device')
+  deepLink.searchParams.set('deviceCode', deviceCode)
+  deepLink.searchParams.set('status', 'confirmed')
+  return deepLink.toString()
 }
 
 function toStartResponse(session: {
@@ -101,6 +130,50 @@ function toPollResponse(session: {
   return {
     status: 'pending',
     ...shared,
+  }
+}
+
+function toCompleteConfirmedResponse(session: {
+  status: string
+  accountId: string | null
+  deviceCode: string
+  userCode: string
+  expiresAt: Date
+  confirmedAt: Date | null
+  pollIntervalSeconds: number
+}): DesktopDeviceCompleteResponse {
+  if (session.status !== 'confirmed' || !session.accountId || !session.confirmedAt) {
+    throw new Error('Desktop device session is not confirmed')
+  }
+
+  return {
+    status: 'confirmed',
+    accountId: session.accountId,
+    deviceCode: session.deviceCode,
+    userCode: session.userCode,
+    deepLink: buildDesktopDeviceDeepLink(session.deviceCode),
+    expiresAt: asIso(session.expiresAt),
+    confirmedAt: asIso(session.confirmedAt),
+    pollInterval: session.pollIntervalSeconds,
+  }
+}
+
+function toStatusResponse(session: {
+  status: string
+  expiresAt: Date
+  pollIntervalSeconds: number
+}) {
+  return {
+    status: 'expired' as const,
+    expiresAt: asIso(session.expiresAt),
+    pollInterval: session.pollIntervalSeconds,
+  }
+}
+
+export class DesktopDeviceSessionConflictError extends Error {
+  constructor(message = 'This desktop device was already confirmed by another account') {
+    super(message)
+    this.name = 'DesktopDeviceSessionConflictError'
   }
 }
 
@@ -169,4 +242,76 @@ export async function pollDesktopDeviceSession(
   })
 
   return toPollResponse(updatedSession)
+}
+
+export async function completeDesktopDeviceSession(
+  userCode: string,
+  accountId: string,
+  options: { now?: Date } = {},
+): Promise<
+  DesktopDeviceCompleteResponse
+  | {
+      status: 'expired'
+      expiresAt: string
+      pollInterval: number
+    }
+  | {
+      status: 'invalid_code'
+      expiresAt: null
+      pollInterval: number
+    }
+> {
+  const session = await prisma.desktopDeviceSession.findUnique({
+    where: { userCode },
+    select: deviceSessionCompleteSelect,
+  })
+
+  if (!session) {
+    return {
+      status: 'invalid_code',
+      expiresAt: null,
+      pollInterval: DESKTOP_DEVICE_POLL_INTERVAL_SECONDS,
+    }
+  }
+
+  const now = options.now ?? new Date()
+  const shouldExpire = session.status !== 'confirmed' && now >= session.expiresAt
+
+  if (session.status === 'expired' || shouldExpire) {
+    const expiredSession = session.status === 'expired'
+      ? session
+      : await prisma.desktopDeviceSession.update({
+          where: { id: session.id },
+          data: {
+            status: 'expired',
+          },
+          select: deviceSessionCompleteResultSelect,
+        })
+
+    return toStatusResponse(expiredSession)
+  }
+
+  if (session.status === 'confirmed') {
+    if (session.accountId && session.accountId !== accountId) {
+      throw new DesktopDeviceSessionConflictError()
+    }
+
+    return toCompleteConfirmedResponse({
+      ...session,
+      accountId,
+      confirmedAt: session.confirmedAt ?? now,
+    })
+  }
+
+  const confirmedSession = await prisma.desktopDeviceSession.update({
+    where: { id: session.id },
+    data: {
+      accountId,
+      status: 'confirmed',
+      confirmedAt: now,
+    },
+    select: deviceSessionCompleteResultSelect,
+  })
+
+  return toCompleteConfirmedResponse(confirmedSession)
 }

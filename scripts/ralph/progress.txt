@@ -6,6 +6,7 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Desktop catalog reads should start from `DesktopCatalogEntry` and then hydrate source records by `sourceRef`, because that is the repo's curated/public visibility gate for both starter and soul sources.
 - Until Soul gains dedicated desktop manifest fields, the desktop detail API should synthesize soul manifests from `SoulAsset.contentBlobId` and expose the main blob as a single downloadable bundle file.
 - Desktop device auth stories should keep route handlers thin and centralize lifecycle rules in `web/lib/desktop/device-session.ts`; `invalid_code` is a synthetic poll-only response, while persisted session states stay on `pending` / `confirmed` / `expired`.
+- Browser-side desktop auth pages should carry only `userCode` in the URL, keep `deviceCode` server-side, and mint the final `soulidity://auth/device?...` deep link from `web/lib/desktop/device-session.ts` after confirmation.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -51,4 +52,17 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: device auth routes here should stay as thin JSON adapters over `web/lib/desktop/device-session.ts`, so later browser confirm and desktop deep-link work can extend one shared state machine.
   - Gotchas: `DesktopDeviceSession.status` only needs persisted lifecycle states; `invalid_code` should stay a synthetic API response instead of a stored row value.
   - Useful context: expiry only applies to unconfirmed sessions, while repeated polling stays idempotent by updating `lastPolledAt` and re-emitting the latest persisted state.
+---
+## 2026-04-10 01:31:04 CST - US-005
+- Implemented browser-side desktop confirmation: added `POST /api/desktop/device/complete`, extended the device-session helper to confirm or expire sessions and mint the final `soulidity://auth/device` deep link, and added `web/app/desktop/device/page.tsx` to show the `userCode` context plus signed-in confirmation CTA.
+- Files changed: `web/lib/types/desktop.ts`, `web/lib/desktop/device-session.ts`, `web/app/api/desktop/device/complete/route.ts`, `web/app/desktop/device/page.tsx`, `tests/new-web/desktop-device-session.test.ts`, `tests/new-web/desktop-device-complete-route.test.ts`, `tests/new-web/desktop-device-confirm-page.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/new-web/desktop-device-session.test.ts tests/new-web/desktop-device-routes.test.ts tests/new-web/desktop-device-complete-route.test.ts tests/new-web/desktop-device-confirm-page.test.ts` PASS
+  - `npm run typecheck:root` PASS
+  - `npm --prefix web exec -- tsc -p tsconfig.json --noEmit` PASS
+  - Browser verification on `http://localhost:3100/desktop/device?userCode=ABCD-EFGH` PASS via screenshots `/tmp/clawnews-browser/us005-desktop.png` and `/tmp/clawnews-browser/us005-desktop-stable.png`
+- Learnings for future iterations:
+  - Reusable patterns: browser confirmation should reveal only the short `userCode`; the route can resolve and confirm the backing session without leaking `deviceCode` into browser URLs.
+  - Gotchas: `next typegen` mutates `web/next-env.d.ts` in this repo, so for focused iterations it is safer to verify final web typing with plain `tsc` after route types already exist.
+  - Useful context: the anonymous confirmation-page state takes a couple of seconds to settle from auth loading to the final Sign In CTA in dev, so browser screenshots should wait for `Sign In To Continue` before capture.
 ---

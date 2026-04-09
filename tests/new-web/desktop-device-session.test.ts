@@ -15,6 +15,7 @@ vi.mock('@web/lib/prisma', () => ({
 }))
 
 import {
+  completeDesktopDeviceSession,
   pollDesktopDeviceSession,
   startDesktopDeviceSession,
 } from '../../web/lib/desktop/device-session'
@@ -199,6 +200,117 @@ describe('pollDesktopDeviceSession', () => {
       accountId: 'account-123',
       deepLink: null,
       expiresAt: '2026-04-10T04:05:00.000Z',
+      pollInterval: 5,
+    })
+  })
+})
+
+describe('completeDesktopDeviceSession', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('confirms a live pending session for the current account and returns a desktop deep link', async () => {
+    const expiresAt = new Date('2026-04-10T04:05:00.000Z')
+    const confirmedAt = new Date('2026-04-10T04:01:00.000Z')
+
+    mockPrisma.desktopDeviceSession.findUnique.mockResolvedValue({
+      id: 'session-4',
+      accountId: null,
+      deviceCode: 'device-code-123',
+      userCode: 'ABCD-EFGH',
+      expiresAt,
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'pending',
+    })
+    mockPrisma.desktopDeviceSession.update.mockResolvedValue({
+      accountId: 'account-123',
+      deviceCode: 'device-code-123',
+      userCode: 'ABCD-EFGH',
+      expiresAt,
+      confirmedAt,
+      pollIntervalSeconds: 5,
+      status: 'confirmed',
+    })
+
+    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', {
+      now: confirmedAt,
+    })
+
+    expect(mockPrisma.desktopDeviceSession.update).toHaveBeenCalledWith({
+      where: { id: 'session-4' },
+      data: {
+        accountId: 'account-123',
+        status: 'confirmed',
+        confirmedAt,
+      },
+      select: {
+        accountId: true,
+        deviceCode: true,
+        userCode: true,
+        expiresAt: true,
+        confirmedAt: true,
+        pollIntervalSeconds: true,
+        status: true,
+      },
+    })
+    expect(result).toEqual({
+      status: 'confirmed',
+      accountId: 'account-123',
+      deviceCode: 'device-code-123',
+      userCode: 'ABCD-EFGH',
+      deepLink: 'soulidity://auth/device?deviceCode=device-code-123&status=confirmed',
+      expiresAt: '2026-04-10T04:05:00.000Z',
+      confirmedAt: '2026-04-10T04:01:00.000Z',
+      pollInterval: 5,
+    })
+  })
+
+  it('marks the session expired when the user code is stale', async () => {
+    const expiresAt = new Date('2026-04-10T03:55:00.000Z')
+    const now = new Date('2026-04-10T04:00:00.000Z')
+
+    mockPrisma.desktopDeviceSession.findUnique.mockResolvedValue({
+      id: 'session-5',
+      accountId: null,
+      deviceCode: 'device-code-expired',
+      userCode: 'WXYZ-1234',
+      expiresAt,
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'pending',
+    })
+    mockPrisma.desktopDeviceSession.update.mockResolvedValue({
+      accountId: null,
+      deviceCode: 'device-code-expired',
+      userCode: 'WXYZ-1234',
+      expiresAt,
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'expired',
+    })
+
+    const result = await completeDesktopDeviceSession('WXYZ-1234', 'account-123', { now })
+
+    expect(mockPrisma.desktopDeviceSession.update).toHaveBeenCalledWith({
+      where: { id: 'session-5' },
+      data: {
+        status: 'expired',
+      },
+      select: {
+        accountId: true,
+        deviceCode: true,
+        userCode: true,
+        expiresAt: true,
+        confirmedAt: true,
+        pollIntervalSeconds: true,
+        status: true,
+      },
+    })
+    expect(result).toEqual({
+      status: 'expired',
+      expiresAt: '2026-04-10T03:55:00.000Z',
       pollInterval: 5,
     })
   })
