@@ -1,0 +1,189 @@
+{
+  "project": "clawnews",
+  "branchName": "ralph/soulidity-tauri-desktop-integration",
+  "description": "Soulidity Tauri 桌面端一期接入：新增桌面应用骨架、统一公开目录、设备绑定登录、本地安装与主形象切换链路，并继续复用现有 web BFF 与 SoulAsset 真相源。",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "扩展桌面端服务端数据模型",
+      "description": "作为后端开发者，我需要补齐桌面端一期的数据表，这样目录编排、设备绑定和账号级桌面资料才能有稳定存储。",
+      "acceptanceCriteria": [
+        "在 `prisma/schema.prisma` 新增 `StarterPersonaAsset`、`DesktopCatalogEntry`、`DesktopDeviceSession`、`DesktopProfile` 四个模型",
+        "生成 migration，覆盖目录排序、`sourceType + sourceRef`、`deviceCode`、`userCode`、账号 profile 查询所需索引或唯一键",
+        "提供本地开发可用的 fixture 或 seed 路径，至少能产出 1 条 starter 资产和 1 条精选 soul 目录项",
+        "`npm run prisma:generate` 成功",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Added desktop bootstrap models + migration `20260410005000_add_desktop_bootstrap_tables`, exposed `npm run seed:desktop`, and verified with `npm test -- tests/new-web/desktop-schema-bootstrap.test.ts`, `npm run prisma:generate`, and `npm run typecheck`."
+    },
+    {
+      "id": "US-002",
+      "title": "补齐 web 侧桌面域类型与目录查询层",
+      "description": "作为桌面端接口开发者，我需要统一的桌面域类型和目录查询封装，这样 starter 与 soul 才能共用同一套目录契约。",
+      "acceptanceCriteria": [
+        "在 `web/lib` 下新增或补齐 `DesktopCatalogItem`、`DesktopPersonaManifest`、`DesktopDeviceStartResponse`、`DesktopDevicePollResponse`、`DesktopProfile` 类型",
+        "新增查询或 repository helpers，把 starter 资产与精选 soul 资产统一映射成同一套 `DesktopCatalogEntry` 响应结构",
+        "匿名目录查询默认过滤隐藏项、未发布项或未精选 soul",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "新增匿名桌面目录 API",
+      "description": "作为匿名桌面端用户，我想拉取公开目录和单个形象详情，这样我可以先浏览再决定是否下载。",
+      "acceptanceCriteria": [
+        "实现 `GET /api/desktop/catalog`，支持分页返回 starter + soul 混合目录",
+        "实现 `GET /api/desktop/catalog/[id]`，返回单个目录项详情和下载 manifest",
+        "详情响应包含 `id`、`sourceType`、`sourceRef`、`title`、`coverImage`、`thumbnail`、`version`、`files`、`checksum`、`updatedAt` 这些 manifest 最小字段",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "实现设备绑定会话与 start/poll API",
+      "description": "作为桌面端客户端，我需要标准化的设备码会话接口，这样浏览器登录和桌面轮询可以稳定对接。",
+      "acceptanceCriteria": [
+        "实现 `POST /api/desktop/device/start`，返回 `deviceCode`、`userCode`、`expiresAt`、`pollInterval`",
+        "实现 `POST /api/desktop/device/poll`，能区分 pending、confirmed、expired、invalid code 等状态",
+        "设备绑定状态持久化到 `DesktopDeviceSession`，并正确处理过期、重复轮询和非法 code",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "补齐浏览器确认页与设备绑定完成接口",
+      "description": "作为已登录网页用户，我想在浏览器中确认当前设备绑定，这样桌面端能接回账号会话而不需要内嵌登录。",
+      "acceptanceCriteria": [
+        "实现 `POST /api/desktop/device/complete`，要求网页侧已登录，并把待确认设备会话绑定到当前账号",
+        "在 `web/app` 下新增设备绑定确认页，能展示 `userCode` 上下文并让已登录用户完成确认",
+        "完成绑定后产出的响应或跳转信息符合 `soulidity://auth/device` 深链接约定，供桌面端消费",
+        "Tests pass",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "新增账号级桌面 profile API",
+      "description": "作为已登录桌面端用户，我想同步账号级当前主形象和桌面偏好，这样多端状态可以保持一致。",
+      "acceptanceCriteria": [
+        "实现 `GET /api/desktop/me`，返回当前账号桌面资料和当前主形象",
+        "实现 `PUT /api/desktop/me/active-persona`，只同步账号级当前主形象，不保存本地安装细节",
+        "`DesktopProfile` 只保存当前主形象、最近同步时间和桌面偏好，不扩展到本地安装明细",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "搭建 desktop Tauri 工程与路由骨架",
+      "description": "作为桌面端开发者，我需要独立的 Tauri 工程和首期路由骨架，这样后续下载、登录和本地库能力可以逐步接入。",
+      "acceptanceCriteria": [
+        "在 `desktop/` 新建 Tauri 子项目，并接好 React + Vite 前端与 Rust 后端",
+        "首期路由包含 `home`、`explore`、`search`、`persona/:id`、`library`、`settings`、`auth`",
+        "本地 web 预览或 Tauri dev 下，所有首期路由都能渲染占位页和基础导航",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "实现桌面端本地持久化与 manifest 契约",
+      "description": "作为桌面端运行时，我需要把安装状态、缓存和下载任务持久化到本地，这样离线和重启场景才能稳定工作。",
+      "acceptanceCriteria": [
+        "在桌面端本地持久化层补齐 `installed_personas`、`active_persona`、`catalog_cache`、`auth_session`、`download_jobs` 对应的数据结构",
+        "定义应用数据目录布局，区分资源包、解压后的运行时素材和临时下载文件",
+        "桌面端新增 manifest 解析与校验逻辑，并与 web 侧 `DesktopPersonaManifest` 契约保持一致",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "接入桌面端浏览器登录、深链回跳与会话恢复",
+      "description": "作为桌面端用户，我想从桌面端拉起浏览器登录并自动回跳，这样无需内嵌登录也能完成设备绑定。",
+      "acceptanceCriteria": [
+        "`auth` 页面可以从桌面端发起设备绑定流程，并打开浏览器确认页",
+        "桌面端注册并处理 `soulidity://auth/device` 深链接回调，成功后把账号会话落到本地",
+        "重启桌面端后仍能从本地恢复最后一个有效登录会话",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "实现桌面端下载、校验与主形象切换命令层",
+      "description": "作为桌面端用户，我想下载形象、校验资源并切换当前主形象，这样桌面端才能完成一期核心价值。",
+      "acceptanceCriteria": [
+        "Tauri Rust 命令层可以按 manifest 下载资源文件、校验 checksum，并通过临时文件完成原子落盘",
+        "校验失败时会清理临时文件，且不会把该形象记为已安装",
+        "切换主形象会更新本地 `active_persona` 状态，并在应用重启后保持",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "完成匿名目录浏览与 Starter 下载 UI",
+      "description": "作为匿名桌面端用户，我想浏览公开目录并下载 starter 形象，这样在不登录的情况下也能体验桌面端核心流程。",
+      "acceptanceCriteria": [
+        "`explore`、`search`、`persona/:id` 页面接入 `/api/desktop/catalog*`，并展示 starter 与 curated soul 的统一目录卡片",
+        "匿名用户可以从目录 UI 发起 starter 形象下载并看到安装结果反馈",
+        "目录页支持联网刷新，并在离线时优先回退到本地缓存的最近一次目录数据",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "完成 library/settings/auth UI 与一期 smoke 覆盖",
+      "description": "作为已登录桌面端用户，我想在 library 和 settings 中查看安装状态、账号状态和当前主形象，这样一期交付能形成完整闭环。",
+      "acceptanceCriteria": [
+        "`library` 和 `settings` 页面展示已安装形象、当前主形象和当前登录账号状态",
+        "浏览器确认绑定完成后，桌面端 UI 会切到已登录状态，并能通过 `/api/desktop/me*` 同步账号级当前主形象",
+        "至少补齐 1 条 starter 和 1 条 soul 资产的 smoke 覆盖，并记录 macOS smoke 路径与 Windows 构建/测试保底策略",
+        "Tests pass",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+# Ralph Progress Log
+Started: Fri Apr 10 00:00:00 CST 2026
+## Codebase Patterns
+- Prisma table/bootstrap stories in this repo fit well with a small Vitest contract under `tests/new-web/` plus a hand-written SQL migration under `prisma/migrations/`.
+- Local bootstrap data is usually exposed as an explicit root `npm` script that runs a `tsx scripts/*.ts` file, not through Prisma's global seed hook.
+
+## 2026-04-10 00:48:07 CST - US-001
+- Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
+- Files changed: `package.json`, `prisma/schema.prisma`, `prisma/migrations/20260410005000_add_desktop_bootstrap_tables/migration.sql`, `scripts/seed-desktop.ts`, `tests/new-web/desktop-schema-bootstrap.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/new-web/desktop-schema-bootstrap.test.ts` PASS
+  - `npm run prisma:generate` PASS
+  - `npm run typecheck` PASS
+- Learnings for future iterations:
+  - Reusable patterns: use `sourceType + sourceRef` as the cross-source catalog key; starter fixtures can seed against `slug`, while curated souls can seed against `onChainId`.
+  - Gotchas: the generated Prisma client is already checked into repo conventions, but schema-only changes here did not require manual edits beyond `prisma generate`.
+  - Useful context: `DesktopProfile` is account-scoped only, and the seed script now guarantees one starter asset plus one curated soul catalog entry for local desktop API work.
+---
