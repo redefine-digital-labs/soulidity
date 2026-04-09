@@ -1,0 +1,265 @@
+:root {
+  color-scheme: dark;
+  font-family: 'Avenir Next', 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #f6f3ec;
+  background:
+    radial-gradient(circle at top left, rgba(243, 181, 98, 0.22), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(101, 211, 194, 0.16), transparent 28%),
+    #0b1015;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.desktop-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 272px 1fr;
+}
+
+.desktop-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border-right: 1px solid rgba(246, 243, 236, 0.08);
+  background: rgba(6, 10, 14, 0.72);
+  backdrop-filter: blur(18px);
+}
+
+.desktop-brand {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.desktop-brand__badge,
+.desktop-runtime span,
+.desktop-card header span,
+.desktop-route-meta span,
+.desktop-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  color: #f3b562;
+}
+
+.desktop-brand h1,
+.desktop-hero h2 {
+  margin: 0;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.desktop-brand h1 {
+  font-size: 2rem;
+}
+
+.desktop-brand p,
+.desktop-summary,
+.desktop-link-card p,
+.desktop-nav__item span {
+  margin: 0;
+  color: rgba(246, 243, 236, 0.72);
+}
+
+.desktop-nav {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.desktop-nav__item {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(246, 243, 236, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.02);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.desktop-nav__item strong {
+  font-size: 1rem;
+}
+
+.desktop-nav__item:hover,
+.desktop-nav__item:focus-visible {
+  transform: translateX(4px);
+  border-color: rgba(101, 211, 194, 0.4);
+  background: rgba(101, 211, 194, 0.08);
+}
+
+.desktop-nav__item.is-active {
+  border-color: rgba(243, 181, 98, 0.52);
+  background: linear-gradient(135deg, rgba(243, 181, 98, 0.16), rgba(101, 211, 194, 0.08));
+}
+
+.desktop-runtime {
+  margin-top: auto;
+  display: grid;
+  gap: 0.3rem;
+  padding: 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(246, 243, 236, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.desktop-runtime strong {
+  font-size: 0.98rem;
+}
+
+.desktop-main {
+  padding: 1.6rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.desktop-hero {
+  display: grid;
+  gap: 1.2rem;
+  padding: 1.4rem;
+  border-radius: 28px;
+  border: 1px solid rgba(246, 243, 236, 0.1);
+  background:
+    linear-gradient(145deg, rgba(18, 25, 32, 0.92), rgba(10, 14, 19, 0.9)),
+    rgba(0, 0, 0, 0.12);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+}
+
+.desktop-hero h2 {
+  font-size: clamp(2.4rem, 4vw, 4rem);
+}
+
+.desktop-summary {
+  max-width: 60ch;
+  font-size: 1.05rem;
+}
+
+.desktop-route-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.desktop-route-meta > div,
+.desktop-card,
+.desktop-link-card {
+  border: 1px solid rgba(246, 243, 236, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.desktop-route-meta > div {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+}
+
+.desktop-route-meta strong {
+  font-size: 1rem;
+}
+
+.desktop-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 1rem;
+}
+
+.desktop-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border-radius: 24px;
+}
+
+.desktop-card header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.desktop-card header strong {
+  font-size: 1.2rem;
+}
+
+.desktop-card ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.75rem;
+  color: rgba(246, 243, 236, 0.8);
+}
+
+.desktop-link-grid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.desktop-link-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.desktop-link-card:hover,
+.desktop-link-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(243, 181, 98, 0.4);
+  background: rgba(243, 181, 98, 0.08);
+}
+
+.desktop-link-card strong {
+  font-size: 1rem;
+}
+
+@media (max-width: 980px) {
+  .desktop-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .desktop-rail {
+    border-right: 0;
+    border-bottom: 1px solid rgba(246, 243, 236, 0.08);
+  }
+
+  .desktop-route-meta,
+  .desktop-grid {
+    grid-template-columns: 1fr;
+  }
+}

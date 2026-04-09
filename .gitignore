@@ -25,6 +25,9 @@ queue/failed/
 queue/inflight/
 move/*/build/
 *.key
+*.tsbuildinfo
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
 
 # Review-memory MCP (lives in its own repo)
 .mcp.json
