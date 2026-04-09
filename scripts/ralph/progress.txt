@@ -14,6 +14,7 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Desktop auth work here should keep browser/deep-link state logic pure in `desktop/src/lib/auth.ts`, move runtime-specific I/O into `desktop/src/lib/auth-runtime.ts`, and let Tauri Rust commands own `auth_session.json` plus BFF calls to avoid desktop-web CORS issues.
 - Desktop filesystem stories should keep `desktop/src-tauri/src/lib.rs` as a thin Tauri adapter and move testable path-rooted install logic into focused Rust modules, so `cargo test` can cover download and persistence behavior without booting a Tauri app.
 - Version local bundle/runtime directories by `personaId/version` and promote a staged temp bundle directory with `fs::rename`, so failed installs never partially overwrite an existing persona payload.
+- Desktop catalog UI can treat `/api/desktop/catalog*` as the only browse contract, cache the latest successful payload in browser storage for offline fallback, and keep anonymous starter installs browser-safe by mirroring `InstalledPersonaRecord` locally while Tauri runtime still routes real installs through Rust commands.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -135,4 +136,16 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: keep install state in root-path Rust helpers that accept a manifest and app-data root, then expose only thin Tauri commands from `lib.rs`.
   - Gotchas: current desktop manifests mix real checksum schemes (`sha256:` / `walrus:`) with opaque starter placeholders, so the install layer can cryptographically verify real hashes now while treating non-empty opaque tokens as transport-verified until the upstream manifest source tightens.
   - Useful context: `bundlePath` now points at the versioned bundle directory, `runtimeAssetsPath` points at the parallel versioned runtime directory, and `set_active_persona` only allows persona IDs already present in `installed_personas.json`.
+---
+## 2026-04-10 02:58:58 CST - US-011
+- Implemented anonymous desktop catalog browsing UI across `explore`, `search`, and `persona/:id`: the shell now hydrates `/api/desktop/catalog*`, filters the shared starter + curated soul feed on the search route, loads live persona manifests on the detail route, and shows install/result state in-place.
+- Files changed: `desktop/src/App.tsx`, `desktop/src/styles.css`, `desktop/src/lib/catalog.ts`, `desktop/src/lib/persona-runtime.ts`, `tests/desktop/desktop-catalog-contract.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-auth-contract.test.ts tests/desktop/desktop-install-contract.test.ts tests/desktop/desktop-catalog-contract.test.ts` PASS
+  - `npm --prefix desktop run typecheck` PASS
+  - Browser verification PASS on `http://localhost:1420/#/explore`, `#/search`, and `#/persona/starter-aurora`, including starter install feedback and offline refresh fallback; screenshots saved to `/tmp/clawnews-browser/us011-explore-offline-fallback.png` and `/tmp/clawnews-browser/us011-persona-installed.png`
+- Learnings for future iterations:
+  - Reusable patterns: keep catalog fetch/cache logic in a browser-safe `desktop/src/lib/catalog.ts` module so explore/search/detail routes can share one offline-aware source of truth.
+  - Gotchas: the current dev DB is missing pre-desktop schema tables, so browser verification for this story used a temporary local mock BFF target while still exercising the `/api/desktop/catalog*` contract through Vite proxying.
+  - Useful context: browser preview starter installs now persist as `InstalledPersonaRecord` rows in local storage, which lets later library/settings UI reuse the same installed-state shape before Tauri-only views add richer filesystem metadata.
 ---

@@ -166,8 +166,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added desktop catalog/cache/install runtime modules plus real explore/search/persona UI in `desktop/src/App.tsx`, with local offline fallback and browser-preview starter installs; verified with `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-auth-contract.test.ts tests/desktop/desktop-install-contract.test.ts tests/desktop/desktop-catalog-contract.test.ts`, `npm --prefix desktop run typecheck`, and browser verification on `http://localhost:1420/#/explore`, `#/search`, and `#/persona/starter-aurora` with screenshots `/tmp/clawnews-browser/us011-explore-offline-fallback.png` and `/tmp/clawnews-browser/us011-persona-installed.png`."
     },
     {
       "id": "US-012",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import {
   desktopPrimaryNavItems,
@@ -25,7 +25,18 @@ import {
   savePersistedAuthSession,
   startDesktopDeviceSessionTransport,
 } from './lib/auth-runtime'
-import type { AuthSessionRecord } from './lib/persistence'
+import {
+  fetchDesktopCatalogPageFromApi,
+  fetchDesktopPersonaManifestFromApi,
+  filterDesktopCatalogItems,
+  loadDesktopCatalogCacheFromStorage,
+  loadDesktopPersonaManifest,
+  refreshDesktopCatalog,
+  saveDesktopCatalogCacheToStorage,
+} from './lib/catalog'
+import { installDesktopPersona, loadDesktopInstalledPersonas } from './lib/persona-runtime'
+import type { AuthSessionRecord, InstalledPersonaRecord } from './lib/persistence'
+import type { DesktopCatalogItem, DesktopPersonaManifest } from '../../web/lib/types/desktop.ts'
 import './styles.css'
 
 interface DesktopShellStatus {
@@ -200,6 +211,37 @@ function ensureInitialHash() {
   }
 }
 
+const DESKTOP_CATALOG_PAGE_SIZE = 24
+
+function mergeCatalogItem(
+  existingItems: DesktopCatalogItem[],
+  manifest: DesktopPersonaManifest,
+) {
+  const nextItem: DesktopCatalogItem = {
+    id: manifest.id,
+    sourceType: manifest.sourceType,
+    sourceRef: manifest.sourceRef,
+    title: manifest.title,
+    description: manifest.description,
+    coverImage: manifest.coverImage,
+    thumbnail: manifest.thumbnail,
+    updatedAt: manifest.updatedAt,
+  }
+
+  return existingItems.some((item) => item.id === nextItem.id)
+    ? existingItems.map((item) => (item.id === nextItem.id ? nextItem : item))
+    : [...existingItems, nextItem]
+}
+
+function formatDesktopTimestamp(value: string | null) {
+  if (!value) {
+    return 'Not synced yet'
+  }
+
+  const date = new Date(value)
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString()
+}
+
 export default function App() {
   const [currentPath, setCurrentPath] = useState(readCurrentPath)
   const [shellStatus, setShellStatus] = useState<DesktopShellStatus | null>(null)
@@ -208,7 +250,23 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const [authNotice, setAuthNotice] = useState<string | null>(null)
+  const [catalogItems, setCatalogItems] = useState<DesktopCatalogItem[]>([])
+  const [catalogSource, setCatalogSource] = useState<'network' | 'cache' | null>(null)
+  const [catalogBusy, setCatalogBusy] = useState(false)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null)
+  const [catalogSyncedAt, setCatalogSyncedAt] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [personaManifest, setPersonaManifest] = useState<DesktopPersonaManifest | null>(null)
+  const [personaBusy, setPersonaBusy] = useState(false)
+  const [personaError, setPersonaError] = useState<string | null>(null)
+  const [personaNotice, setPersonaNotice] = useState<string | null>(null)
+  const [installedPersonas, setInstalledPersonas] = useState<InstalledPersonaRecord[]>([])
+  const [installBusyId, setInstallBusyId] = useState<string | null>(null)
+  const [installError, setInstallError] = useState<string | null>(null)
+  const [installNotice, setInstallNotice] = useState<string | null>(null)
   const authPendingSessionRef = useRef<PendingDesktopAuthSession | null>(null)
+  const deferredSearchQuery = useDeferredValue(searchQuery)
 
   useEffect(() => {
     authPendingSessionRef.current = authPendingSession
@@ -353,29 +411,205 @@ export default function App() {
   const route = useMemo(() => resolveDesktopRoute(currentPath), [currentPath])
   const isPersonaRoute = route.definition.id === 'persona'
   const isAuthRoute = route.definition.id === 'auth'
+  const isSearchRoute = route.definition.id === 'search'
+  const isCatalogRoute = route.definition.id === 'explore' || route.definition.id === 'search' || isPersonaRoute
+  const resolvedPersonaItem = useMemo(
+    () => (
+      isPersonaRoute
+        ? catalogItems.find((item) => item.id === route.params.id || item.sourceRef === route.params.id) ?? null
+        : null
+    ),
+    [catalogItems, isPersonaRoute, route.params.id],
+  )
+  const visibleCatalogItems = useMemo(
+    () => (isSearchRoute ? filterDesktopCatalogItems(catalogItems, deferredSearchQuery) : catalogItems),
+    [catalogItems, deferredSearchQuery, isSearchRoute],
+  )
+  const installedPersonasById = useMemo(
+    () => new Map(installedPersonas.map((record) => [record.personaId, record])),
+    [installedPersonas],
+  )
   const panel: RoutePanel = isPersonaRoute
     ? {
-        eyebrow: 'Persona Drill-In',
-        summary: `Persona detail is ready to host manifest, download state, and install actions for "${route.params.id}".`,
+        eyebrow: personaManifest?.sourceType === 'soul' ? 'Curated Soul Detail' : 'Starter Persona Detail',
+        summary: personaManifest
+          ? `Inspect the live manifest for "${personaManifest.title}", review bundle metadata, and install starter assets without leaving the desktop flow.`
+          : `Resolve manifest detail and install readiness for "${resolvedPersonaItem?.title ?? route.params.id}" from the shared desktop catalog contract.`,
         checklist: [
-          'Keep the detail route stable so catalog and library can deep-link into it.',
-          'Reserve the action rail for download, checksum, and activate behaviors.',
-          'Leave local file state empty until the persistence story lands.',
+          'Use the same detail API for starter and curated soul manifests.',
+          'Only surface anonymous install actions for starter personas.',
+          'Keep cached manifest detail available when the catalog goes offline.',
         ],
         links: [
           {
             label: 'Back To Explore',
             to: '/explore',
-            caption: 'Return to the public catalog surface.',
+            caption: 'Return to the mixed starter + curated soul feed.',
           },
           {
-            label: 'Open Library',
-            to: '/library',
-            caption: 'Move into the installed-persona workspace placeholder.',
+            label: 'Open Search',
+            to: '/search',
+            caption: 'Filter the same catalog from the dedicated search workspace.',
           },
         ],
       }
     : routePanels[route.definition.id as Exclude<DesktopRouteId, 'persona'>]
+
+  useEffect(() => {
+    let cancelled = false
+
+    void loadDesktopInstalledPersonas()
+      .then((records) => {
+        if (!cancelled) {
+          setInstalledPersonas(records)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setInstallError(error instanceof Error ? error.message : 'Failed to load installed personas')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleRefreshCatalog(reason: 'initial' | 'manual' = 'manual') {
+    try {
+      setCatalogBusy(true)
+      setCatalogError(null)
+      if (reason === 'manual') {
+        setCatalogNotice(null)
+      }
+
+      const result = await refreshDesktopCatalog({
+        now: () => new Date(),
+        page: 1,
+        pageSize: DESKTOP_CATALOG_PAGE_SIZE,
+        fetchCatalogPage: () => fetchDesktopCatalogPageFromApi(1, DESKTOP_CATALOG_PAGE_SIZE),
+        loadCache: () => loadDesktopCatalogCacheFromStorage(),
+        saveCache: (cache) => saveDesktopCatalogCacheToStorage(cache),
+      })
+
+      setCatalogItems(result.items)
+      setCatalogSource(result.source)
+      setCatalogSyncedAt(result.syncedAt)
+      setCatalogNotice(
+        result.warning
+        ?? (reason === 'manual' ? `Catalog refreshed at ${formatDesktopTimestamp(result.syncedAt)}.` : null),
+      )
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : 'Failed to refresh desktop catalog')
+    } finally {
+      setCatalogBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    void handleRefreshCatalog('initial')
+  }, [])
+
+  useEffect(() => {
+    if (!isPersonaRoute) {
+      setPersonaManifest(null)
+      setPersonaBusy(false)
+      setPersonaError(null)
+      setPersonaNotice(null)
+      return
+    }
+
+    let cancelled = false
+    const personaId = resolvedPersonaItem?.id ?? route.params.id
+
+    void loadDesktopPersonaManifest({
+      personaId,
+      fetchManifest: () => fetchDesktopPersonaManifestFromApi(personaId),
+      loadCache: () => loadDesktopCatalogCacheFromStorage(),
+      saveCache: (cache) => saveDesktopCatalogCacheToStorage(cache),
+    })
+      .then((result) => {
+        if (cancelled) {
+          return
+        }
+
+        setPersonaManifest(result.manifest)
+        setCatalogItems((currentItems) => mergeCatalogItem(currentItems, result.manifest))
+        setPersonaNotice(result.warning)
+        setPersonaError(null)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPersonaError(error instanceof Error ? error.message : 'Failed to load persona detail')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPersonaBusy(false)
+        }
+      })
+
+    setPersonaBusy(true)
+    setPersonaError(null)
+    setPersonaNotice(null)
+
+    return () => {
+      cancelled = true
+    }
+  }, [isPersonaRoute, resolvedPersonaItem?.id, route.params.id])
+
+  async function handleInstallStarterPersona(manifest: DesktopPersonaManifest) {
+    try {
+      setInstallBusyId(manifest.id)
+      setInstallError(null)
+      setInstallNotice(null)
+
+      const installedRecord = await installDesktopPersona(manifest)
+      setInstalledPersonas((currentRecords) => [
+        ...currentRecords.filter((record) => record.personaId !== installedRecord.personaId),
+        installedRecord,
+      ])
+      setInstallNotice(`${manifest.title} is now installed for this desktop session.`)
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : 'Failed to install starter persona')
+    } finally {
+      setInstallBusyId(null)
+    }
+  }
+
+  async function handleInstallFromCatalogItem(item: DesktopCatalogItem) {
+    if (item.sourceType !== 'starter') {
+      setInstallError('Anonymous install is only available for starter personas right now.')
+      return
+    }
+
+    try {
+      setInstallBusyId(item.id)
+      setInstallError(null)
+      setInstallNotice(null)
+
+      const result = await loadDesktopPersonaManifest({
+        personaId: item.id,
+        fetchManifest: () => fetchDesktopPersonaManifestFromApi(item.id),
+        loadCache: () => loadDesktopCatalogCacheFromStorage(),
+        saveCache: (cache) => saveDesktopCatalogCacheToStorage(cache),
+      })
+
+      setPersonaManifest((currentManifest) => (
+        currentManifest?.id === result.manifest.id ? result.manifest : currentManifest
+      ))
+      setCatalogItems((currentItems) => mergeCatalogItem(currentItems, result.manifest))
+      if (result.warning) {
+        setPersonaNotice(result.warning)
+      }
+
+      await handleInstallStarterPersona(result.manifest)
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : 'Failed to install starter persona')
+    } finally {
+      setInstallBusyId(null)
+    }
+  }
 
   const runtimeLabel = shellStatus ? 'Tauri shell connected' : 'Browser preview'
   const runtimeDetail = shellStatus
@@ -434,6 +668,15 @@ export default function App() {
       setAuthBusy(false)
     }
   }
+
+  const personaInstalledRecord = personaManifest ? installedPersonasById.get(personaManifest.id) ?? null : null
+  const catalogStatusLabel = catalogSource === 'cache' ? 'Offline cache' : 'Live catalog'
+  const catalogStatusDetail = catalogSyncedAt
+    ? `${catalogStatusLabel} • ${formatDesktopTimestamp(catalogSyncedAt)}`
+    : `${catalogStatusLabel} • waiting for first sync`
+  const catalogResultCountLabel = isSearchRoute
+    ? `${visibleCatalogItems.length} matching personas`
+    : `${catalogItems.length} public personas`
 
   return (
     <div className="desktop-shell">
@@ -595,6 +838,312 @@ export default function App() {
                     No confirmed desktop account session is stored locally yet. Once the deep link
                     returns, this panel becomes the restart-safe source of truth.
                   </p>
+                )}
+              </article>
+            </>
+          ) : isCatalogRoute ? (
+            <>
+              <article className="desktop-card desktop-card--catalog">
+                <header>
+                  <span>{isSearchRoute ? 'Search Catalog' : isPersonaRoute ? 'Persona Surface' : 'Explore Catalog'}</span>
+                  <strong>
+                    {isSearchRoute
+                      ? 'Starter + curated soul search'
+                      : isPersonaRoute
+                        ? 'Shared desktop manifest detail'
+                        : 'Public desktop catalog'}
+                  </strong>
+                </header>
+
+                <div className="desktop-toolbar">
+                  {isSearchRoute ? (
+                    <label className="desktop-search-field">
+                      <span>Query</span>
+                      <input
+                        onChange={(event) => {
+                          setSearchQuery(event.target.value)
+                        }}
+                        placeholder="Search starter, curated, or title..."
+                        type="search"
+                        value={searchQuery}
+                      />
+                    </label>
+                  ) : (
+                    <p className="desktop-card__body">
+                      {isPersonaRoute
+                        ? 'Detail stays on the same manifest contract as the explore and search lists.'
+                        : 'Anonymous browsing now hydrates from `/api/desktop/catalog*` and keeps the latest successful sync for offline fallback.'}
+                    </p>
+                  )}
+
+                  <button
+                    className="desktop-button desktop-button--primary"
+                    disabled={catalogBusy}
+                    onClick={() => {
+                      void handleRefreshCatalog('manual')
+                    }}
+                    type="button"
+                  >
+                    {catalogBusy ? 'Refreshing...' : 'Refresh catalog'}
+                  </button>
+                </div>
+
+                {!isPersonaRoute && catalogNotice ? (
+                  <p className="desktop-feedback desktop-feedback--notice">{catalogNotice}</p>
+                ) : null}
+
+                {!isPersonaRoute && catalogError ? (
+                  <p className="desktop-feedback desktop-feedback--error">{catalogError}</p>
+                ) : null}
+
+                {isPersonaRoute ? (
+                  personaBusy ? (
+                    <p className="desktop-card__body">
+                      Loading persona detail from the shared desktop manifest API...
+                    </p>
+                  ) : personaManifest ? (
+                    <div className="desktop-persona-layout">
+                      <div
+                        aria-label={`${personaManifest.title} artwork`}
+                        className="desktop-persona-art"
+                        style={{ backgroundImage: `url(${personaManifest.coverImage})` }}
+                      />
+                      <div className="desktop-persona-copy">
+                        <div className="desktop-catalog-card__meta">
+                          <span className={`desktop-catalog-pill desktop-catalog-pill--${personaManifest.sourceType}`}>
+                            {personaManifest.sourceType === 'starter' ? 'Starter' : 'Curated Soul'}
+                          </span>
+                          <span>{personaManifest.version}</span>
+                        </div>
+                        <h3>{personaManifest.title}</h3>
+                        <p className="desktop-card__body">
+                          {personaManifest.description ?? 'No manifest description is available for this persona yet.'}
+                        </p>
+                        <dl className="desktop-persona-stats">
+                          <div>
+                            <dt>Catalog id</dt>
+                            <dd>{personaManifest.id}</dd>
+                          </div>
+                          <div>
+                            <dt>Updated</dt>
+                            <dd>{formatDesktopTimestamp(personaManifest.updatedAt)}</dd>
+                          </div>
+                          <div>
+                            <dt>Source ref</dt>
+                            <dd>{personaManifest.sourceRef}</dd>
+                          </div>
+                          <div>
+                            <dt>Files</dt>
+                            <dd>{personaManifest.files.length}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="desktop-card__body">
+                      No cached or live manifest was found for this persona route yet.
+                    </p>
+                  )
+                ) : visibleCatalogItems.length > 0 ? (
+                  <div className="desktop-catalog-grid">
+                    {visibleCatalogItems.map((item) => {
+                      const installedRecord = installedPersonasById.get(item.id)
+                      const isInstallBusy = installBusyId === item.id
+
+                      return (
+                        <article
+                          className="desktop-catalog-card"
+                          key={item.id}
+                        >
+                          <a
+                            aria-label={`Open ${item.title}`}
+                            className="desktop-catalog-card__media"
+                            href={toDesktopHref(`/persona/${item.id}`)}
+                            style={{ backgroundImage: `url(${item.thumbnail})` }}
+                          />
+                          <div className="desktop-catalog-card__body">
+                            <div className="desktop-catalog-card__meta">
+                              <span className={`desktop-catalog-pill desktop-catalog-pill--${item.sourceType}`}>
+                                {item.sourceType === 'starter' ? 'Starter' : 'Curated Soul'}
+                              </span>
+                              <span>{formatDesktopTimestamp(item.updatedAt)}</span>
+                            </div>
+                            <h3>{item.title}</h3>
+                            <p className="desktop-card__body">
+                              {item.description ?? 'Preview this persona from the shared desktop catalog.'}
+                            </p>
+                            <div className="desktop-catalog-card__actions">
+                              <a
+                                className="desktop-button"
+                                href={toDesktopHref(`/persona/${item.id}`)}
+                              >
+                                View detail
+                              </a>
+                              {item.sourceType === 'starter' ? (
+                                <button
+                                  className="desktop-button desktop-button--primary"
+                                  disabled={Boolean(installedRecord) || isInstallBusy}
+                                  onClick={() => {
+                                    void handleInstallFromCatalogItem(item)
+                                  }}
+                                  type="button"
+                                >
+                                  {installedRecord ? 'Installed' : isInstallBusy ? 'Installing...' : 'Install starter'}
+                                </button>
+                              ) : (
+                                <button
+                                  className="desktop-button"
+                                  disabled
+                                  type="button"
+                                >
+                                  Curated soul preview
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="desktop-empty-state">
+                    <strong>No personas match this view yet.</strong>
+                    <p>
+                      {isSearchRoute
+                        ? 'Try a broader search term or refresh the catalog.'
+                        : 'Refresh the catalog to pull the latest starter and curated soul entries.'}
+                    </p>
+                  </div>
+                )}
+
+                {personaNotice ? (
+                  <p className="desktop-feedback desktop-feedback--notice">{personaNotice}</p>
+                ) : null}
+
+                {personaError ? (
+                  <p className="desktop-feedback desktop-feedback--error">{personaError}</p>
+                ) : null}
+              </article>
+
+              <article className="desktop-card">
+                <header>
+                  <span>{isPersonaRoute ? 'Install Status' : 'Catalog Status'}</span>
+                  <strong>
+                    {isPersonaRoute
+                      ? 'Starter download and manifest metadata'
+                      : 'Live sync, offline fallback, and local install results'}
+                  </strong>
+                </header>
+
+                {isPersonaRoute && personaManifest ? (
+                  <>
+                    <p className="desktop-card__body">
+                      {personaManifest.sourceType === 'starter'
+                        ? 'Starter personas can be installed anonymously from the detail view or directly from catalog cards.'
+                        : 'Curated souls stay browse-only for anonymous users in phase one.'}
+                    </p>
+                    <div className="desktop-auth-actions">
+                      <button
+                        className="desktop-button desktop-button--primary"
+                        disabled={
+                          personaManifest.sourceType !== 'starter'
+                          || Boolean(personaInstalledRecord)
+                          || installBusyId === personaManifest.id
+                        }
+                        onClick={() => {
+                          void handleInstallStarterPersona(personaManifest)
+                        }}
+                        type="button"
+                      >
+                        {personaInstalledRecord
+                          ? 'Starter installed'
+                          : installBusyId === personaManifest.id
+                            ? 'Installing...'
+                            : personaManifest.sourceType === 'starter'
+                              ? 'Install starter'
+                              : 'Curated soul preview'}
+                      </button>
+                      <button
+                        className="desktop-button"
+                        disabled={catalogBusy}
+                        onClick={() => {
+                          void handleRefreshCatalog('manual')
+                        }}
+                        type="button"
+                      >
+                        {catalogBusy ? 'Refreshing...' : 'Refresh catalog'}
+                      </button>
+                    </div>
+
+                    <dl className="desktop-session-grid">
+                      <div>
+                        <dt>Checksum</dt>
+                        <dd>{personaManifest.checksum}</dd>
+                      </div>
+                      <div>
+                        <dt>Files</dt>
+                        <dd>{personaManifest.files.map((file) => file.path).join(', ')}</dd>
+                      </div>
+                      <div>
+                        <dt>Installed</dt>
+                        <dd>{personaInstalledRecord ? formatDesktopTimestamp(personaInstalledRecord.installedAt) : 'Not yet'}</dd>
+                      </div>
+                      <div>
+                        <dt>Bundle path</dt>
+                        <dd>{personaInstalledRecord?.bundlePath ?? 'Created after install'}</dd>
+                      </div>
+                    </dl>
+
+                    {installNotice ? (
+                      <p className="desktop-feedback desktop-feedback--notice">{installNotice}</p>
+                    ) : null}
+
+                    {installError ? (
+                      <p className="desktop-feedback desktop-feedback--error">{installError}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <dl className="desktop-session-grid">
+                      <div>
+                        <dt>Catalog</dt>
+                        <dd>{catalogStatusDetail}</dd>
+                      </div>
+                      <div>
+                        <dt>Results</dt>
+                        <dd>{catalogResultCountLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>Installed starters</dt>
+                        <dd>{installedPersonas.length}</dd>
+                      </div>
+                      <div>
+                        <dt>Offline ready</dt>
+                        <dd>{catalogSource === 'cache' ? 'Using cache now' : 'Cache warmed on each successful refresh'}</dd>
+                      </div>
+                    </dl>
+
+                    {installNotice ? (
+                      <p className="desktop-feedback desktop-feedback--notice">{installNotice}</p>
+                    ) : null}
+
+                    {installError ? (
+                      <p className="desktop-feedback desktop-feedback--error">{installError}</p>
+                    ) : null}
+
+                    <div className="desktop-link-grid">
+                      {panel.links.map((link: RoutePanelLink) => (
+                        <a
+                          key={link.label}
+                          className="desktop-link-card"
+                          href={toDesktopHref(link.to)}
+                        >
+                          <strong>{link.label}</strong>
+                          <p>{link.caption}</p>
+                        </a>
+                      ))}
+                    </div>
+                  </>
                 )}
               </article>
             </>
