@@ -691,6 +691,33 @@ describe('resolveIdentity', () => {
     consoleWarn.mockRestore()
   })
 
+  it('falls back to the privy-token cookie when the authorization header is absent', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({
+      cookie: 'privy-session=t; privy-token=privy-cookie-token; theme=dark',
+    }))
+    mockedPrisma.account.findUnique.mockResolvedValue({
+      id: 'account-1',
+      privyDid: 'did:privy:123',
+      tgName: 'openclaw',
+      email: 'user@example.com',
+      members: [{ id: 'member-1', kind: 'human' }],
+    })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      id: 'binding-1',
+      address: NORMALIZED_ABC,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    const identity = await resolveIdentity()
+
+    expect(identity).toEqual({
+      accountId: 'account-1',
+      memberId: 'member-1',
+      kind: 'human',
+    })
+    expect(mockedPrivy.verifyAuthToken).toHaveBeenCalledWith('privy-cookie-token')
+  })
+
   it('fails closed when resolvePrivyIdentity receives an invalid token directly', async () => {
     mockedPrivy.verifyAuthToken.mockRejectedValue(new Error('invalid token'))
 
