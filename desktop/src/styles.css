@@ -213,12 +213,108 @@ select {
   font-size: 1.2rem;
 }
 
+.desktop-card__body,
+.desktop-feedback,
+.desktop-auth-status p,
+.desktop-session-grid dd {
+  margin: 0;
+  color: rgba(246, 243, 236, 0.78);
+}
+
 .desktop-card ul {
   margin: 0;
   padding-left: 1.2rem;
   display: grid;
   gap: 0.75rem;
   color: rgba(246, 243, 236, 0.8);
+}
+
+.desktop-auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.desktop-button {
+  border: 1px solid rgba(246, 243, 236, 0.12);
+  border-radius: 999px;
+  padding: 0.8rem 1.05rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f6f3ec;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.desktop-button:hover,
+.desktop-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(101, 211, 194, 0.42);
+  background: rgba(101, 211, 194, 0.12);
+}
+
+.desktop-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.desktop-button--primary {
+  border-color: rgba(243, 181, 98, 0.4);
+  background: linear-gradient(135deg, rgba(243, 181, 98, 0.2), rgba(101, 211, 194, 0.08));
+}
+
+.desktop-auth-status {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(243, 181, 98, 0.18);
+  background: rgba(243, 181, 98, 0.08);
+}
+
+.desktop-auth-status strong {
+  font-size: 1.1rem;
+}
+
+.desktop-feedback {
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+}
+
+.desktop-feedback--notice {
+  border: 1px solid rgba(101, 211, 194, 0.22);
+  background: rgba(101, 211, 194, 0.08);
+}
+
+.desktop-feedback--error {
+  border: 1px solid rgba(244, 117, 117, 0.24);
+  background: rgba(244, 117, 117, 0.08);
+}
+
+.desktop-session-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.desktop-session-grid div {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(246, 243, 236, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.desktop-session-grid dt {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f3b562;
 }
 
 .desktop-link-grid {
@@ -260,6 +356,10 @@ select {
 
   .desktop-route-meta,
   .desktop-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .desktop-session-grid {
     grid-template-columns: 1fr;
   }
 }

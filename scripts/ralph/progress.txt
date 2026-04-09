@@ -11,6 +11,7 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Desktop shell stories can lock the navigation contract early with a plain `desktop/src/app/routes.ts` module plus a focused Vitest contract under `tests/desktop/`, instead of waiting for browser-only assertions.
 - Tauri 2 `generate_context!()` still expects the default icon assets under `desktop/src-tauri/icons/`, so scaffold or copy the icon set before treating a new desktop shell as compile-ready.
 - Frontend-facing desktop contract modules under `desktop/src/` should stay browser-safe; model app-data layout with separator-aware string helpers and leave actual filesystem access to later Tauri/Rust commands.
+- Desktop auth work here should keep browser/deep-link state logic pure in `desktop/src/lib/auth.ts`, move runtime-specific I/O into `desktop/src/lib/auth-runtime.ts`, and let Tauri Rust commands own `auth_session.json` plus BFF calls to avoid desktop-web CORS issues.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -107,4 +108,16 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: keep desktop persistence and manifest contracts in small `desktop/src/lib/*` modules so auth, download, and library stories can import one stable source of truth.
   - Gotchas: `desktop/src/` is browser-facing code even in a Tauri app, so Node builtins like `node:path` should stay out of these modules unless the logic moves to Rust or a server-side tool.
   - Useful context: the current persistence module intentionally stops at record/layout contracts; later stories can layer real Tauri file IO or commands on top without changing the JSON/state shapes.
+---
+## 2026-04-10 02:26:44 CST - US-009
+- Implemented the desktop auth handoff: added a pure auth controller plus runtime bridge, replaced the `auth` route placeholder with real browser sign-in / deep-link / local-session UI, and wired Tauri plugins + Rust commands for BFF device auth calls and `auth_session.json` persistence.
+- Files changed: `desktop/package.json`, `desktop/package-lock.json`, `desktop/vite.config.ts`, `desktop/src/lib/auth.ts`, `desktop/src/lib/auth-runtime.ts`, `desktop/src/App.tsx`, `desktop/src/styles.css`, `desktop/src-tauri/Cargo.toml`, `desktop/src-tauri/Cargo.lock`, `desktop/src-tauri/capabilities/default.json`, `desktop/src-tauri/tauri.conf.json`, `desktop/src-tauri/src/lib.rs`, `tests/desktop/desktop-auth-contract.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-auth-contract.test.ts` PASS
+  - `npm --prefix desktop run typecheck` PASS
+  - `cargo check --manifest-path desktop/src-tauri/Cargo.toml` PASS
+- Learnings for future iterations:
+  - Reusable patterns: keep deep-link/device-flow branching in TS but route desktop runtime side effects through `auth-runtime.ts`, so later library/settings sync can reuse one local-session source of truth.
+  - Gotchas: Windows/Linux deep-link callbacks need `tauri-plugin-single-instance` registered before the deep-link plugin, otherwise a second app instance wins and the running shell never receives `onOpenUrl`.
+  - Useful context: browser preview auth now relies on the Vite `/api` proxy to hit the local Next app on port `3100`, while Tauri runtime uses Rust `reqwest` commands to avoid cross-origin failures.
 ---

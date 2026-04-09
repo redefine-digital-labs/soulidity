@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import {
   desktopPrimaryNavItems,
@@ -7,6 +7,25 @@ import {
   resolveDesktopRoute,
   toDesktopHref,
 } from './app/routes'
+import {
+  completeDesktopDeviceAuthorizationFromDeepLink,
+  restoreDesktopAuthSession,
+  startDesktopDeviceAuthorization,
+  type PendingDesktopAuthSession,
+} from './lib/auth'
+import {
+  clearPersistedAuthSession,
+  getDesktopWebBaseUrl,
+  getCurrentDeepLinks,
+  isTauriRuntime,
+  loadPersistedAuthSession,
+  onDeepLinkOpen,
+  openExternalUrl,
+  pollDesktopDeviceSessionTransport,
+  savePersistedAuthSession,
+  startDesktopDeviceSessionTransport,
+} from './lib/auth-runtime'
+import type { AuthSessionRecord } from './lib/persistence'
 import './styles.css'
 
 interface DesktopShellStatus {
@@ -142,11 +161,11 @@ const routePanels: Record<Exclude<DesktopRouteId, 'persona'>, RoutePanel> = {
   auth: {
     eyebrow: 'Browser Login Handoff',
     summary:
-      'Auth is reserved for browser-triggered device binding, deep-link return, and session recovery. This story only lays down the route and shell.',
+      'Auth now launches browser-based device binding, listens for the Soulidity deep-link callback, and restores the last confirmed desktop account session on restart.',
     checklist: [
-      'Keep the browser handoff copy explicit and desktop-focused.',
-      'Leave room for device code polling state.',
-      'Preserve a neutral shell until the deep-link/session stories arrive.',
+      'Launch the existing web confirmation page from the desktop shell.',
+      'Resolve the returning deep link back into a confirmed account session.',
+      'Persist the confirmed desktop session locally for restart recovery.',
     ],
     links: [
       {
@@ -161,14 +180,6 @@ const routePanels: Record<Exclude<DesktopRouteId, 'persona'>, RoutePanel> = {
       },
     ],
   },
-}
-
-function isTauriRuntime() {
-  if (typeof window === 'undefined') {
-    return false
-  }
-
-  return '__TAURI_INTERNALS__' in (window as Window & { __TAURI_INTERNALS__?: unknown })
 }
 
 function readCurrentPath() {
@@ -192,6 +203,16 @@ function ensureInitialHash() {
 export default function App() {
   const [currentPath, setCurrentPath] = useState(readCurrentPath)
   const [shellStatus, setShellStatus] = useState<DesktopShellStatus | null>(null)
+  const [authPendingSession, setAuthPendingSession] = useState<PendingDesktopAuthSession | null>(null)
+  const [authSession, setAuthSession] = useState<AuthSessionRecord | null>(null)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [authNotice, setAuthNotice] = useState<string | null>(null)
+  const authPendingSessionRef = useRef<PendingDesktopAuthSession | null>(null)
+
+  useEffect(() => {
+    authPendingSessionRef.current = authPendingSession
+  }, [authPendingSession])
 
   useEffect(() => {
     ensureInitialHash()
@@ -233,8 +254,105 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+
+    void loadPersistedAuthSession()
+      .then((storedSession) => {
+        if (cancelled) {
+          return
+        }
+
+        const restoredSession = restoreDesktopAuthSession(storedSession)
+        if (!restoredSession && storedSession) {
+          void clearPersistedAuthSession()
+        }
+
+        setAuthSession(restoredSession)
+        if (restoredSession) {
+          setAuthNotice(`Restored local desktop session for ${restoredSession.accountId}.`)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAuthError(error instanceof Error ? error.message : 'Failed to load desktop auth session')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    const handleDeepLinkUrls = async (urls: string[]) => {
+      for (const url of urls) {
+        try {
+          setAuthBusy(true)
+          setAuthError(null)
+
+          const session = await completeDesktopDeviceAuthorizationFromDeepLink(url, {
+            pendingSession: authPendingSessionRef.current,
+            pollSession: pollDesktopDeviceSessionTransport,
+            saveSession: savePersistedAuthSession,
+          })
+
+          if (cancelled) {
+            return
+          }
+
+          if (authPendingSessionRef.current?.deviceCode === session.deviceCode) {
+            setAuthPendingSession(null)
+          }
+
+          setAuthSession(session)
+          setAuthNotice(`Connected desktop session for ${session.accountId}.`)
+        } catch (error) {
+          if (!cancelled) {
+            setAuthError(error instanceof Error ? error.message : 'Failed to complete desktop auth session')
+          }
+        } finally {
+          if (!cancelled) {
+            setAuthBusy(false)
+          }
+        }
+      }
+    }
+
+    void getCurrentDeepLinks()
+      .then((urls) => {
+        if (!cancelled && urls.length > 0) {
+          void handleDeepLinkUrls(urls)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAuthError(error instanceof Error ? error.message : 'Failed to read desktop deep links')
+        }
+      })
+
+    void onDeepLinkOpen((urls) => {
+      void handleDeepLinkUrls(urls)
+    }).then((stopListening) => {
+      unlisten = stopListening
+    }).catch((error) => {
+      if (!cancelled) {
+        setAuthError(error instanceof Error ? error.message : 'Failed to subscribe to deep links')
+      }
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [])
+
   const route = useMemo(() => resolveDesktopRoute(currentPath), [currentPath])
   const isPersonaRoute = route.definition.id === 'persona'
+  const isAuthRoute = route.definition.id === 'auth'
   const panel: RoutePanel = isPersonaRoute
     ? {
         eyebrow: 'Persona Drill-In',
@@ -263,6 +381,59 @@ export default function App() {
   const runtimeDetail = shellStatus
     ? `${shellStatus.phase} • ${shellStatus.routes} routes wired`
     : 'Vite-only preview for route verification'
+
+  async function handleStartDesktopAuth() {
+    try {
+      setAuthBusy(true)
+      setAuthError(null)
+      setAuthNotice(null)
+
+      const pendingSession = await startDesktopDeviceAuthorization({
+        openBrowser: openExternalUrl,
+        startSession: startDesktopDeviceSessionTransport,
+        webBaseUrl: getDesktopWebBaseUrl(),
+      })
+
+      setAuthPendingSession(pendingSession)
+      setAuthNotice(`Browser handoff opened for ${pendingSession.userCode}.`)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Failed to start desktop auth flow')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function handleReopenConfirmation() {
+    if (!authPendingSession) {
+      return
+    }
+
+    try {
+      setAuthBusy(true)
+      setAuthError(null)
+      await openExternalUrl(authPendingSession.confirmationUrl)
+      setAuthNotice(`Re-opened browser confirmation for ${authPendingSession.userCode}.`)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Failed to re-open browser confirmation')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function handleClearDesktopAuth() {
+    try {
+      setAuthBusy(true)
+      setAuthError(null)
+      await clearPersistedAuthSession()
+      setAuthPendingSession(null)
+      setAuthSession(null)
+      setAuthNotice('Cleared the local desktop auth session.')
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Failed to clear desktop auth session')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
 
   return (
     <div className="desktop-shell">
@@ -323,36 +494,144 @@ export default function App() {
         </section>
 
         <section className="desktop-grid">
-          <article className="desktop-card">
-            <header>
-              <span>Checklist</span>
-              <strong>What this placeholder locks in</strong>
-            </header>
-            <ul>
-              {panel.checklist.map((item: string) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </article>
+          {isAuthRoute ? (
+            <>
+              <article className="desktop-card">
+                <header>
+                  <span>Device Sign-In</span>
+                  <strong>Start browser sign-in</strong>
+                </header>
+                <p className="desktop-card__body">
+                  Launch the existing web confirmation page, wait for the `soulidity://auth/device`
+                  callback, then keep the confirmed desktop account session on local storage for the
+                  next restart.
+                </p>
 
-          <article className="desktop-card">
-            <header>
-              <span>Quick links</span>
-              <strong>Route transitions to verify now</strong>
-            </header>
-            <div className="desktop-link-grid">
-              {panel.links.map((link: RoutePanelLink) => (
-                <a
-                  key={link.label}
-                  className="desktop-link-card"
-                  href={toDesktopHref(link.to)}
-                >
-                  <strong>{link.label}</strong>
-                  <p>{link.caption}</p>
-                </a>
-              ))}
-            </div>
-          </article>
+                <div className="desktop-auth-actions">
+                  <button
+                    className="desktop-button desktop-button--primary"
+                    disabled={authBusy}
+                    onClick={() => {
+                      void handleStartDesktopAuth()
+                    }}
+                    type="button"
+                  >
+                    {authBusy ? 'Working...' : 'Start browser sign-in'}
+                  </button>
+
+                  <button
+                    className="desktop-button"
+                    disabled={!authPendingSession || authBusy}
+                    onClick={() => {
+                      void handleReopenConfirmation()
+                    }}
+                    type="button"
+                  >
+                    Re-open confirmation
+                  </button>
+
+                  <button
+                    className="desktop-button"
+                    disabled={(!authSession && !authPendingSession) || authBusy}
+                    onClick={() => {
+                      void handleClearDesktopAuth()
+                    }}
+                    type="button"
+                  >
+                    Clear local session
+                  </button>
+                </div>
+
+                {authPendingSession ? (
+                  <div className="desktop-auth-status">
+                    <span>Pending Browser Session</span>
+                    <strong>{authPendingSession.userCode}</strong>
+                    <p>
+                      Waiting for browser confirmation until {authPendingSession.expiresAt}.
+                    </p>
+                  </div>
+                ) : null}
+
+                {authNotice ? (
+                  <p className="desktop-feedback desktop-feedback--notice">{authNotice}</p>
+                ) : null}
+
+                {authError ? (
+                  <p className="desktop-feedback desktop-feedback--error">{authError}</p>
+                ) : null}
+              </article>
+
+              <article className="desktop-card">
+                <header>
+                  <span>Local Session</span>
+                  <strong>What the desktop will restore</strong>
+                </header>
+
+                {authSession ? (
+                  <dl className="desktop-session-grid">
+                    <div>
+                      <dt>Account</dt>
+                      <dd>{authSession.accountId}</dd>
+                    </div>
+                    <div>
+                      <dt>Device code</dt>
+                      <dd>{authSession.deviceCode}</dd>
+                    </div>
+                    <div>
+                      <dt>User code</dt>
+                      <dd>{authSession.userCode ?? 'Not retained'}</dd>
+                    </div>
+                    <div>
+                      <dt>Confirmed at</dt>
+                      <dd>{authSession.confirmedAt}</dd>
+                    </div>
+                    <div>
+                      <dt>Expires at</dt>
+                      <dd>{authSession.expiresAt ?? 'No expiry provided'}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="desktop-card__body">
+                    No confirmed desktop account session is stored locally yet. Once the deep link
+                    returns, this panel becomes the restart-safe source of truth.
+                  </p>
+                )}
+              </article>
+            </>
+          ) : (
+            <>
+              <article className="desktop-card">
+                <header>
+                  <span>Checklist</span>
+                  <strong>What this placeholder locks in</strong>
+                </header>
+                <ul>
+                  {panel.checklist.map((item: string) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+
+              <article className="desktop-card">
+                <header>
+                  <span>Quick links</span>
+                  <strong>Route transitions to verify now</strong>
+                </header>
+                <div className="desktop-link-grid">
+                  {panel.links.map((link: RoutePanelLink) => (
+                    <a
+                      key={link.label}
+                      className="desktop-link-card"
+                      href={toDesktopHref(link.to)}
+                    >
+                      <strong>{link.label}</strong>
+                      <p>{link.caption}</p>
+                    </a>
+                  ))}
+                </div>
+              </article>
+            </>
+          )}
         </section>
       </main>
     </div>

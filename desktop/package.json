@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-deep-link": "^2.4.8",
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
