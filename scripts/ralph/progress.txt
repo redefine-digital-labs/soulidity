@@ -12,6 +12,8 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Tauri 2 `generate_context!()` still expects the default icon assets under `desktop/src-tauri/icons/`, so scaffold or copy the icon set before treating a new desktop shell as compile-ready.
 - Frontend-facing desktop contract modules under `desktop/src/` should stay browser-safe; model app-data layout with separator-aware string helpers and leave actual filesystem access to later Tauri/Rust commands.
 - Desktop auth work here should keep browser/deep-link state logic pure in `desktop/src/lib/auth.ts`, move runtime-specific I/O into `desktop/src/lib/auth-runtime.ts`, and let Tauri Rust commands own `auth_session.json` plus BFF calls to avoid desktop-web CORS issues.
+- Desktop filesystem stories should keep `desktop/src-tauri/src/lib.rs` as a thin Tauri adapter and move testable path-rooted install logic into focused Rust modules, so `cargo test` can cover download and persistence behavior without booting a Tauri app.
+- Version local bundle/runtime directories by `personaId/version` and promote a staged temp bundle directory with `fs::rename`, so failed installs never partially overwrite an existing persona payload.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -120,4 +122,17 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: keep deep-link/device-flow branching in TS but route desktop runtime side effects through `auth-runtime.ts`, so later library/settings sync can reuse one local-session source of truth.
   - Gotchas: Windows/Linux deep-link callbacks need `tauri-plugin-single-instance` registered before the deep-link plugin, otherwise a second app instance wins and the running shell never receives `onOpenUrl`.
   - Useful context: browser preview auth now relies on the Vite `/api` proxy to hit the local Next app on port `3100`, while Tauri runtime uses Rust `reqwest` commands to avoid cross-origin failures.
+---
+## 2026-04-10 02:40:39 CST - US-010
+- Implemented the desktop install command layer in Rust: added `desktop/src-tauri/src/persona_install.rs`, wired Tauri commands for install/load/set-active flows, download jobs now stage manifest files under `downloads/temp`, verify checksums before promotion, rename the staged bundle directory atomically into versioned app-data storage, and persist `installed_personas` plus `active_persona` state for restart recovery.
+- Files changed: `desktop/src-tauri/Cargo.toml`, `desktop/src-tauri/Cargo.lock`, `desktop/src-tauri/src/lib.rs`, `desktop/src-tauri/src/persona_install.rs`, `tests/desktop/desktop-install-contract.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/desktop/desktop-install-contract.test.ts` PASS
+  - `cargo test --manifest-path desktop/src-tauri/Cargo.toml` PASS
+  - `npm test -- tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-auth-contract.test.ts tests/desktop/desktop-install-contract.test.ts` PASS
+  - `npm --prefix desktop run typecheck` PASS
+- Learnings for future iterations:
+  - Reusable patterns: keep install state in root-path Rust helpers that accept a manifest and app-data root, then expose only thin Tauri commands from `lib.rs`.
+  - Gotchas: current desktop manifests mix real checksum schemes (`sha256:` / `walrus:`) with opaque starter placeholders, so the install layer can cryptographically verify real hashes now while treating non-empty opaque tokens as transport-verified until the upstream manifest source tightens.
+  - Useful context: `bundlePath` now points at the versioned bundle directory, `runtimeAssetsPath` points at the parallel versioned runtime directory, and `set_active_persona` only allows persona IDs already present in `installed_personas.json`.
 ---
