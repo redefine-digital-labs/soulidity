@@ -77,7 +77,7 @@ describe('sanitizeWrapRecoveryState', () => {
 
 describe('wrap publish recovery regressions', () => {
   it('persists pending sync recovery before retrying the wrap mirror', () => {
-    const source = readSource('new-web/lib/hooks/use-wrap-publish.ts')
+    const source = readSource('web/lib/hooks/use-wrap-publish.ts')
 
     expect(source).toContain("const WRAP_MINT_RECOVERY_KEY = 'soul-wrap-personal-recovery'")
     expect(source).toContain('const syncBody = recoveryRef.current?.txDigest === digest ? recoveryRef.current.syncBody : null')
@@ -85,7 +85,7 @@ describe('wrap publish recovery regressions', () => {
   })
 
   it('keeps the preview page in recovery mode when the draft was lost but a pending digest exists', () => {
-    const source = readSource('new-web/app/wrap-link/personal/preview/page.tsx')
+    const source = readSource('web/app/wrap-link/personal/preview/page.tsx')
 
     expect(source).toContain('const isRecoveryMode = hasPendingRecovery && (missingStep1 || missingStep2)')
     expect(source).toContain("if ((missingStep1 || missingStep2) && !hasPendingRecovery) return null")

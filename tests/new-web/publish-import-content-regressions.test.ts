@@ -8,10 +8,10 @@ function readSource(relativePath: string) {
 
 describe('memory encryption regressions', () => {
   it('keeps create and import gas flows on encrypted founding memory with memory sidecars', () => {
-    const createGasSource = readSource('new-web/app/create/gas/page.tsx')
-    const importGasSource = readSource('new-web/app/import/gas/page.tsx')
-    const publishHookSource = readSource('new-web/lib/hooks/use-publish.ts')
-    const importHookSource = readSource('new-web/lib/hooks/use-import.ts')
+    const createGasSource = readSource('web/app/create/gas/page.tsx')
+    const importGasSource = readSource('web/app/import/gas/page.tsx')
+    const publishHookSource = readSource('web/lib/hooks/use-publish.ts')
+    const importHookSource = readSource('web/lib/hooks/use-import.ts')
 
     expect(createGasSource).toContain("'uploading-memory'")
     expect(createGasSource).toContain('Encrypting & uploading memory')
@@ -31,8 +31,8 @@ describe('memory encryption regressions', () => {
   })
 
   it('keeps personal-join and collection mint flows on encrypted founding memory with mirrored recovery payloads', () => {
-    const wrapHookSource = readSource('new-web/lib/hooks/use-wrap-publish.ts')
-    const collectionHookSource = readSource('new-web/lib/hooks/use-collection-publish.ts')
+    const wrapHookSource = readSource('web/lib/hooks/use-wrap-publish.ts')
+    const collectionHookSource = readSource('web/lib/hooks/use-collection-publish.ts')
 
     expect(wrapHookSource).toContain('memorySealSidecar: string | null')
     expect(wrapHookSource).toContain("const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletAddress)")
@@ -44,8 +44,8 @@ describe('memory encryption regressions', () => {
   })
 
   it('keeps provider upload state typed as encrypted for founding memory', () => {
-    const createProviderSource = readSource('new-web/components/providers/create-soul-provider.tsx')
-    const importProviderSource = readSource('new-web/components/providers/import-soul-provider.tsx')
+    const createProviderSource = readSource('web/components/providers/create-soul-provider.tsx')
+    const importProviderSource = readSource('web/components/providers/import-soul-provider.tsx')
 
     expect(createProviderSource).toContain('memorySeed?: EncryptedUploadResult')
     expect(importProviderSource).toContain('memorySeed?: EncryptedUploadResult')
@@ -54,9 +54,9 @@ describe('memory encryption regressions', () => {
 
 describe('content format regressions', () => {
   it('routes create/import/wrap skills uploads through the zip-only contract', () => {
-    const createContentSource = readSource('new-web/app/create/content/page.tsx')
-    const importMapSource = readSource('new-web/app/import/map/page.tsx')
-    const wrapConfigureSource = readSource('new-web/app/wrap-link/personal/configure/page.tsx')
+    const createContentSource = readSource('web/app/create/content/page.tsx')
+    const importMapSource = readSource('web/app/import/map/page.tsx')
+    const wrapConfigureSource = readSource('web/app/wrap-link/personal/configure/page.tsx')
 
     expect(createContentSource).toContain("from '@/lib/soulidity/content-templates'")
     expect(createContentSource).toContain('subtitle=".zip only • encrypted via Seal"')
@@ -71,8 +71,8 @@ describe('content format regressions', () => {
 
   it('exposes the content format spec in docs and resources', () => {
     const specSource = readSource('docs/specs/soul-content-format.md')
-    const resourcesSource = readSource('new-web/app/resources/page.tsx')
-    const contentFormatSource = readSource('new-web/app/resources/content-format/page.tsx')
+    const resourcesSource = readSource('web/app/resources/page.tsx')
+    const contentFormatSource = readSource('web/app/resources/content-format/page.tsx')
 
     expect(specSource).toContain('fresh deploy')
     expect(specSource).toContain('Table<u64, ID>')

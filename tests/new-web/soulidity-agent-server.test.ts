@@ -18,7 +18,7 @@ vi.mock('@web/lib/rate-limit', () => ({
   getAnonymousRateLimitFingerprint: mockedGetAnonymousRateLimitFingerprint,
 }))
 
-import { requireAgentWalletIdentity } from '../../new-web/lib/soulidity/agent-server'
+import { requireAgentWalletIdentity } from '../../web/lib/soulidity/agent-server'
 
 function makeRequest(authHeader?: string) {
   const headers = new Headers()

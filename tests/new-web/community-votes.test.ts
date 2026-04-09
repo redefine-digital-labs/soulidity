@@ -56,7 +56,7 @@ describe('POST /api/community/posts/[id]/vote', () => {
   })
 
   async function callVote(body: Record<string, unknown>) {
-    const { POST } = await import('../../new-web/app/api/community/posts/[id]/vote/route.ts')
+    const { POST } = await import('../../web/app/api/community/posts/[id]/vote/route.ts')
     return POST(makeRequest(body) as any, { params: Promise.resolve({ id: POST_ID }) })
   }
 

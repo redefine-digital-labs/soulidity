@@ -1,354 +1,210 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireIdentity } from '@web/lib/auth/identity'
-import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
+import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import {
-  getVerifiedSoulState,
-  getTrustedPackageIds,
-  OnChainVerificationError,
-  sameSuiValue,
-  extractSoulPublishEvent,
-} from '@web/lib/souls/on-chain-verification'
-import { dbUpsertSoulAsset } from '@web/lib/souls/post-tx-db'
-import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
-import { readTransactionSender } from '@web/lib/souls/transaction-metadata'
-import { getSuccessfulTransactionBlock } from '@web/lib/souls/transaction'
-import { getStoredSoulTxSync, storeSoulTxSync } from '@web/lib/souls/tx-sync'
-import { parseOptionalObjectId, parseRequiredObjectId, parseRequiredTxDigest } from '@web/lib/souls/request-validation'
-import { assertWalrusBlobId, normalizeWalrusBlobId } from '@web/lib/services/walrus'
-import { createSealClient, getSealRuntimeConfig } from '@web/lib/services/seal'
-import { createSealEnvelopeSidecar, type SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
-import { unsealDekEnvelope } from '@web/lib/services/dek-envelope'
-import { MAX_PREVIEW_IMAGES, MAX_TAGS } from '@web/lib/souls/tx-builder'
+  tryExtractMemoryEntryAppendedEvent,
+  tryExtractSkillVersionAppendedEvent,
+  extractSoulMintedToKioskEvent,
+} from '@/lib/soulidity/events'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
+import { upsertMemoryEntryProjection } from '@/lib/soulidity/mirror/upsert-memory'
+import { upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
+import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
+import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
+import { parseRequiredTxDigest } from '@/lib/soulidity/request'
+import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
+import type { SoulWriterKind } from '@/lib/soulidity/types'
+
+export const dynamic = 'force-dynamic'
 
 const SOUL_PUBLISH_RATE_LIMIT = {
   max: 10,
   windowMs: 5 * 60 * 1000,
 } as const
 
-const MAX_README_BYTES = 65_536
-
-function parseStringArray(value: unknown): string[] | null {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
-    return null
-  }
-
-  const normalized = value
+function parseStringArray(value: unknown, maxItems: number) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-
-  return normalized.every((item) => item.length > 0) ? normalized : null
+    .filter(Boolean)
+    .slice(0, maxItems)
 }
 
-function parseOptionalString(value: unknown): string | null {
-  if (value == null) return null
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
+function writerKindToString(kind: number): SoulWriterKind {
+  if (kind === 0) return 'founder'
+  if (kind === 2) return 'granted-agent'
+  return 'owner'
 }
 
-export async function POST(request: NextRequest) {
-  const { identity, error } = await requireIdentity()
-  if (error) {
-    return error
+export async function POST(request: Request) {
+  const auth = await requireHumanWalletIdentity()
+  if ('error' in auth) {
+    return auth.error
   }
 
-  const rateLimit = await takeRateLimitToken(`soul-publish:${identity.memberId}`, SOUL_PUBLISH_RATE_LIMIT)
+  const rateLimit = await takeRateLimitToken(`soul-publish:${auth.identity.memberId}`, SOUL_PUBLISH_RATE_LIMIT)
   if (rateLimit.limited) {
     return NextResponse.json(
-      { error: 'Too many publish sync requests, try again later' },
+      { error: 'Too many Soulidity publish sync requests, try again later' },
       { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
     )
   }
 
-  const body = await request.json().catch(() => null)
-  if (!body || typeof body !== 'object') {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
-  const requestBody = body as Record<string, unknown>
-
-  const txDigest = parseRequiredTxDigest(requestBody.txDigest)
-  const soulOnChainId = parseRequiredObjectId(requestBody.soulOnChainId)
-  const hasContentBlobObjectId = Object.hasOwn(requestBody, 'contentBlobObjectId')
-  const contentBlobObjectId = parseOptionalObjectId(requestBody.contentBlobObjectId)
-  const hasContentBlobId = Object.hasOwn(requestBody, 'contentBlobId')
-  const contentBlobId = normalizeWalrusBlobId(requestBody.contentBlobId)
-  const hasCategory = Object.hasOwn(requestBody, 'category')
-  const category = parseOptionalString(requestBody.category)
-  const hasTags = Object.hasOwn(requestBody, 'tags')
-  const tags = parseStringArray(requestBody.tags)
-  const hasPreviewImages = Object.hasOwn(requestBody, 'previewImages')
-  const previewImages = parseStringArray(requestBody.previewImages)
-  const readme = parseOptionalString(requestBody.readme)
-  const hasSealDekEnvelope = Object.hasOwn(requestBody, 'sealDekEnvelope')
-  const sealDekEnvelope = parseOptionalString(requestBody.sealDekEnvelope)
-
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null
+  const txDigest = parseRequiredTxDigest(body?.txDigest)
   if (!txDigest) {
-    return NextResponse.json({ error: 'txDigest must be a valid transaction digest' }, { status: 400 })
-  }
-  if (!soulOnChainId) {
-    return NextResponse.json({ error: 'soulOnChainId must be a valid object id' }, { status: 400 })
-  }
-  if (hasContentBlobObjectId && !contentBlobObjectId) {
-    return NextResponse.json({ error: 'contentBlobObjectId must be a valid object id' }, { status: 400 })
-  }
-  if (hasContentBlobId && !contentBlobId) {
-    return NextResponse.json({ error: 'contentBlobId must be a valid Walrus blob id' }, { status: 400 })
-  }
-  if (hasCategory && !category) {
-    return NextResponse.json({ error: 'category is required' }, { status: 400 })
-  }
-  if (hasTags && !tags) {
-    return NextResponse.json({ error: 'tags must be a string array' }, { status: 400 })
-  }
-  if (tags && tags.length > MAX_TAGS) {
-    return NextResponse.json({ error: `tags must contain at most ${MAX_TAGS} items` }, { status: 400 })
-  }
-  if (hasPreviewImages && (!previewImages || !previewImages.every((value) => normalizeWalrusBlobId(value)))) {
-    return NextResponse.json({ error: 'previewImages must be Walrus blob ids' }, { status: 400 })
-  }
-  if (previewImages && previewImages.length > MAX_PREVIEW_IMAGES) {
-    return NextResponse.json({ error: `previewImages must contain at most ${MAX_PREVIEW_IMAGES} items` }, { status: 400 })
-  }
-  if (hasSealDekEnvelope && !sealDekEnvelope) {
-    return NextResponse.json({ error: 'sealDekEnvelope is required' }, { status: 400 })
-  }
-  if (readme && Buffer.byteLength(readme, 'utf8') > MAX_README_BYTES) {
-    return NextResponse.json({ error: `readme must be ${MAX_README_BYTES} bytes or less` }, { status: 400 })
+    return NextResponse.json({ error: 'txDigest must be a valid Sui transaction digest' }, { status: 400 })
   }
 
-  const storedSync = await getStoredSoulTxSync({
-    txDigest,
+  const stored = await getStoredSoulidityTxSync({
     routeKey: 'publish',
-    actorKey: identity.memberId,
-    resourceKey: soulOnChainId,
+    txDigest,
+    actorKey: auth.identity.memberId,
   })
-  if (storedSync) {
-    return NextResponse.json(storedSync.body, { status: storedSync.statusCode })
-  }
-
-  const existingSoul = await prisma.soulAsset.findUnique({
-    where: { onChainId: soulOnChainId },
-    select: {
-      creatorMemberId: true,
-      creatorAddress: true,
-      category: true,
-      tags: true,
-      previewImages: true,
-      readme: true,
-      sealSidecar: true,
-    },
-  })
-  const isInitialSync = !existingSoul
-
-  if (isInitialSync && identity.kind !== 'human') {
-    return NextResponse.json({ error: 'Only human accounts can mirror the initial Soul publish' }, { status: 403 })
-  }
-
-  if (isInitialSync && !contentBlobObjectId) {
-    return NextResponse.json({ error: 'contentBlobObjectId is required' }, { status: 400 })
-  }
-  if (isInitialSync && !contentBlobId) {
-    return NextResponse.json({ error: 'contentBlobId is required' }, { status: 400 })
-  }
-  if (isInitialSync && !category) {
-    return NextResponse.json({ error: 'category is required' }, { status: 400 })
-  }
-  if (isInitialSync && !tags) {
-    return NextResponse.json({ error: 'tags must be a string array' }, { status: 400 })
-  }
-  if (isInitialSync && !previewImages) {
-    return NextResponse.json({ error: 'previewImages must be Walrus blob ids' }, { status: 400 })
-  }
-  if (isInitialSync && !sealDekEnvelope) {
-    return NextResponse.json({ error: 'sealDekEnvelope is required' }, { status: 400 })
-  }
-
-  let soulPackageId: string
-  try {
-    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-  } catch (configError) {
-    return NextResponse.json({ error: configError instanceof Error ? configError.message : 'Missing Soul config' }, { status: 503 })
+  if (stored) {
+    return NextResponse.json(stored.responseBody, { status: stored.statusCode })
   }
 
   try {
-    const walletAddresses = await getMemberSuiWalletAddresses(identity.memberId)
-    if (walletAddresses.length === 0) {
-      return NextResponse.json({ error: 'Bind a Sui wallet before publishing' }, { status: 403 })
+    await waitForTransactionBestEffort(txDigest)
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const transaction = await getSuccessfulTransactionBlock(txDigest)
+    const senderError = assertTransactionSender(readTransactionSender(transaction), auth.walletAddresses)
+    if (senderError) {
+      return senderError
     }
 
-    const [transaction, soulState] = await Promise.all([
-      getSuccessfulTransactionBlock(txDigest),
-      getVerifiedSoulState(soulOnChainId, soulPackageId),
-    ])
-    const txSender = readTransactionSender(transaction)
-    if (!txSender || !walletAddresses.some((address) => sameSuiValue(address, txSender))) {
-      return NextResponse.json({ error: 'Transaction sender does not match the authenticated wallet' }, { status: 422 })
-    }
-    const publishEvent = extractSoulPublishEvent(
-      transaction,
-      soulPackageId,
-      getTrustedPackageIds(soulPackageId, soulState.packageId),
-    )
-    const eventSoulObjectId = publishEvent.event.soulObjectId
-    const eventKioskId = publishEvent.event.kioskId
-    const eventKioskCapOnChainId = publishEvent.event.kioskCapOnChainId
-    const eventOwnerAddress = publishEvent.kind === 'listed'
-      ? publishEvent.event.sellerAddress
-      : publishEvent.event.ownerAddress
+    const minted = extractSoulMintedToKioskEvent(transaction, packageId)
+    const foundingMemory = tryExtractMemoryEntryAppendedEvent(transaction, packageId)
+    const initialSkill = tryExtractSkillVersionAppendedEvent(transaction, packageId)
 
-    if (publishEvent.kind === 'listed' && publishEvent.event.priceAtomic <= 0n) {
-      return NextResponse.json({ error: 'Soul listing price must be greater than zero' }, { status: 422 })
-    }
-    if (!sameSuiValue(eventSoulObjectId, soulOnChainId)) {
-      return NextResponse.json({ error: 'Transaction did not publish the submitted Soul' }, { status: 422 })
-    }
-    if (!walletAddresses.some((address) => sameSuiValue(address, eventOwnerAddress))) {
-      return NextResponse.json({ error: 'Soul publisher does not match the authenticated wallet' }, { status: 422 })
-    }
+    // Unseal DEK envelopes into proper SealEnvelopeSidecars for downstream access
+    const rawSoulEnvelope = typeof body?.sealSidecar === 'string' ? body.sealSidecar : null
+    const rawMemoryEnvelope = typeof body?.memorySealSidecar === 'string' ? body.memorySealSidecar : null
+    const rawSkillsEnvelope = typeof body?.skillsSealSidecar === 'string' ? body.skillsSealSidecar : null
 
-    const soulKioskId = soulState.kioskParentId ?? soulState.ownerObjectId
-    if (soulState.ownerKind !== 'object' || !soulKioskId || !sameSuiValue(soulKioskId, eventKioskId)) {
-      return NextResponse.json(
-        { error: 'Soul ownership has changed since this publish transaction' },
-        { status: 409 },
-      )
-    }
-    if (existingSoul && !sameSuiValue(existingSoul.creatorAddress, soulState.creatorAddress)) {
-      return NextResponse.json({ error: 'Stored Soul creator does not match the on-chain Soul creator' }, { status: 422 })
-    }
-    if (contentBlobObjectId && !sameSuiValue(soulState.contentBlobObjectId, contentBlobObjectId)) {
-      return NextResponse.json({ error: 'Submitted content blob object id does not match the on-chain Soul' }, { status: 422 })
-    }
-    if (!soulState.contentBlobId) {
-      return NextResponse.json({ error: 'On-chain Soul content blob id is missing' }, { status: 422 })
-    }
-
-    const verifiedContentBlobId = assertWalrusBlobId(soulState.contentBlobId, 'on-chain Soul content blob id')
-    if (contentBlobId && verifiedContentBlobId !== contentBlobId) {
-      return NextResponse.json({ error: 'Submitted content blob id does not match the on-chain Soul' }, { status: 422 })
-    }
-
-    const isCreatorWallet = walletAddresses.some((address) => sameSuiValue(address, soulState.creatorAddress))
-    if (!existingSoul && !isCreatorWallet) {
-      return NextResponse.json({ error: 'Only the Soul creator can mirror the initial publish' }, { status: 422 })
-    }
-    const creatorMemberId = existingSoul?.creatorMemberId ?? (isCreatorWallet ? identity.memberId : null)
-
-    let sidecar: SealEnvelopeSidecar | null
-    let syncedCategory: string
-    let syncedTags: string[]
-    let syncedPreviewImages: string[]
-    let syncedReadme: string | null
-
-    if (existingSoul) {
-      sidecar = (existingSoul.sealSidecar ?? null) as SealEnvelopeSidecar | null
-      if (!sidecar) {
-        return NextResponse.json({ error: 'Stored Soul seal sidecar is missing' }, { status: 409 })
+    let soulSidecar = null
+    let memorySidecar = null
+    let skillsSidecar = null
+    try {
+      const builtSidecars = await buildSyncSealSidecars({
+        packageId,
+        soulObjectId: minted.soulId,
+        stateObjectId: minted.stateId,
+        rawSoulEnvelope,
+        rawMemoryEnvelope,
+        memoryBinding: foundingMemory ? {
+          memoryObjectId: foundingMemory.memoryId,
+          timestampKey: foundingMemory.timestampKey,
+        } : null,
+        rawSkillsEnvelope,
+        skillBinding: initialSkill ? {
+          skillsObjectId: initialSkill.skillsId,
+          skillName: initialSkill.skillName,
+          versionIndex: initialSkill.versionIndex,
+        } : null,
+      })
+      soulSidecar = builtSidecars.soulSidecar
+      memorySidecar = builtSidecars.memorySidecar
+      skillsSidecar = builtSidecars.skillsSidecar
+    } catch (error) {
+      if (error instanceof SealSidecarSyncConfigError) {
+        return NextResponse.json({ error: error.message }, { status: 503 })
       }
-      syncedCategory = existingSoul.category
-      syncedTags = existingSoul.tags
-      syncedPreviewImages = existingSoul.previewImages.map((value) => assertWalrusBlobId(value, 'stored preview image'))
-      syncedReadme = existingSoul.readme ?? null
-    } else {
-      const runtimeConfig = getSealRuntimeConfig()
-      if (runtimeConfig.threshold <= 0 || runtimeConfig.serverConfigs.length === 0) {
-        return NextResponse.json({ error: 'Seal is not configured for Soul publishing' }, { status: 503 })
-      }
-      const sealPackageId = soulState.packageId ?? soulPackageId
-
-      const unsealedEnvelope = unsealDekEnvelope(sealDekEnvelope!)
-      try {
-        // Seal requires the Soul's original package id, not a later published-at upgrade id.
-        sidecar = await createSealEnvelopeSidecar({
-          sealClient: createSealClient(),
-          packageId: sealPackageId,
-          soulObjectId: soulOnChainId,
-          threshold: runtimeConfig.threshold,
-          dek: unsealedEnvelope.dek,
-          iv: unsealedEnvelope.iv,
-          contentHash: unsealedEnvelope.contentHash,
-          mimeType: unsealedEnvelope.mimeType,
-          fileName: unsealedEnvelope.fileName,
-        })
-      } finally {
-        unsealedEnvelope.dek.fill(0)
-      }
-      syncedCategory = category!
-      syncedTags = tags!
-      syncedPreviewImages = previewImages!.map((value) => assertWalrusBlobId(value, 'preview image'))
-      syncedReadme = readme
+      throw error
     }
 
-    const isListed = publishEvent.kind === 'listed'
-    await dbUpsertSoulAsset({
-      soulOnChainId,
-      creatorAddress: soulState.creatorAddress,
-      creatorMemberId,
-      creatorRoyaltyBps: soulState.creatorRoyaltyBps,
-      currentOwnerAddress: eventOwnerAddress,
-      currentOwnerMemberId: identity.memberId,
-      currentKioskId: eventKioskId,
-      currentKioskCapOnChainId: eventKioskCapOnChainId,
-      listingObjectOnChainId: isListed ? publishEvent.event.listingObjectId : null,
-      listedPriceAtomic: isListed ? publishEvent.event.priceAtomic : null,
-      listingStatus: isListed ? 'listed' : 'held',
-      name: soulState.name,
-      description: soulState.description,
-      imageUrl: soulState.imageUrl,
-      metadataRef: soulState.metadataRef,
-      contentBlobId: verifiedContentBlobId,
-      contentBlobObjectId: soulState.contentBlobObjectId,
-      sealSidecar: sidecar,
-      category: syncedCategory,
-      tags: syncedTags,
-      previewImages: syncedPreviewImages,
-      readme: syncedReadme,
-      allowlistVersion: soulState.allowlistVersion,
-      allowlistAddress: soulState.allowlistAddress,
-      allowlistCapOnChainId: null,
+    const mirrored = await syncSoulProjectionFromChain({
+      packageId,
+      soulObjectId: minted.soulId,
+      stateObjectId: minted.stateId,
+      memoryObjectId: minted.memoryId,
+      category: typeof body?.category === 'string' ? body.category.trim() || 'uncategorized' : 'uncategorized',
+      tags: parseStringArray(body?.tags, 12),
+      previewImages: parseStringArray(body?.previewImages, 8),
+      readme: typeof body?.readme === 'string' ? body.readme : null,
+      sealSidecar: soulSidecar,
+      creatorMemberId: auth.identity.memberId,
+      currentOwnerMemberId: auth.identity.memberId,
     })
+    // Patch: if event found skills but chain query missed it (RPC indexing lag)
+    if (initialSkill?.skillsId && !mirrored.skillsOnChainId) {
+      await prisma.soulAsset.update({
+        where: { onChainId: mirrored.onChainId },
+        data: { skillsOnChainId: initialSkill.skillsId },
+      })
+      mirrored.skillsOnChainId = initialSkill.skillsId
+    }
+
+    if (foundingMemory) {
+      const memoryBlobId = await resolveWalrusBlobId(foundingMemory.blobObjectId)
+      await upsertMemoryEntryProjection({
+        entry: {
+          packageId,
+          memoryId: foundingMemory.memoryId,
+          soulId: foundingMemory.soulId,
+          timestampKey: foundingMemory.timestampKey,
+          writerAddress: foundingMemory.writerAddress,
+          writerKind: writerKindToString(foundingMemory.writerKind),
+          createdAtMs: foundingMemory.createdAtMs,
+          blobObjectId: foundingMemory.blobObjectId,
+          blobId: memoryBlobId,
+        },
+        sealSidecar: memorySidecar,
+      })
+    }
+    if (initialSkill) {
+      const skillBlobId = await resolveWalrusBlobId(initialSkill.blobObjectId)
+      await upsertSkillVersionProjection({
+        version: {
+          packageId,
+          soulId: initialSkill.soulId,
+          skillsId: initialSkill.skillsId,
+          skillName: initialSkill.skillName,
+          versionIndex: initialSkill.versionIndex,
+          visibility: initialSkill.visibility,
+          deleted: false,
+          createdAtMs: initialSkill.createdAtMs,
+          blobObjectId: initialSkill.blobObjectId,
+          blobId: skillBlobId,
+        },
+        soulOnChainId: initialSkill.soulId,
+        skillsOnChainId: initialSkill.skillsId,
+        sealSidecar: skillsSidecar,
+      })
+    }
 
     const responseBody = {
-      soulOnChainId,
-      currentKioskId: eventKioskId,
-      currentKioskCapOnChainId: eventKioskCapOnChainId,
-      listingObjectOnChainId: isListed ? publishEvent.event.listingObjectId : null,
-      listedPriceAtomic: isListed ? publishEvent.event.priceAtomic.toString() : null,
-      listingStatus: isListed ? 'listed' as const : 'held' as const,
+      txDigest,
+      soulOnChainId: mirrored.onChainId,
+      stateOnChainId: mirrored.stateOnChainId,
+      memoryOnChainId: mirrored.memoryOnChainId,
+      foundingMemoryTimestampKey: foundingMemory?.timestampKey ?? null,
+      skillsOnChainId: initialSkill?.skillsId ?? null,
+      initialSkillName: initialSkill?.skillName ?? null,
+      initialSkillVersionIndex: initialSkill?.versionIndex ?? null,
+      listingStatus: mirrored.listingStatus,
     }
 
-    await storeSoulTxSync({
-      txDigest,
+    await storeSoulidityTxSync({
       routeKey: 'publish',
-      actorKey: identity.memberId,
-      resourceKey: soulOnChainId,
+      txDigest,
+      actorKey: auth.identity.memberId,
+      resourceKey: mirrored.onChainId,
       statusCode: 200,
-      body: responseBody,
+      responseBody,
     })
 
     return NextResponse.json(responseBody)
-  } catch (publishError) {
-    if (isMultipleSuiWalletBindingsError(publishError)) {
-      return NextResponse.json({ error: publishError.message }, { status: 409 })
-    }
-    if (publishError instanceof OnChainVerificationError) {
-      return NextResponse.json(
-        { error: getClientSafeOnChainVerificationErrorMessage(publishError) },
-        { status: publishError.status },
-      )
-    }
-
-    console.error('[soul-publish-mirror] Sync failed', {
-      memberId: identity.memberId,
+  } catch (error) {
+    console.error('[soul-publish] Failed to mirror Soulidity mint', {
+      memberId: auth.identity.memberId,
       txDigest,
-      soulOnChainId,
-      error: toSafeErrorDetails(publishError),
+      error,
     })
-
-    return NextResponse.json({ error: 'Failed to mirror published Soul' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to mirror Soulidity publish transaction' }, { status: 500 })
   }
 }

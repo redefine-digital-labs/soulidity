@@ -148,7 +148,7 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
   })
 
   async function callRoute() {
-    const { POST } = await import('../../new-web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const { POST } = await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
     return POST(makeRequest() as any, { params: Promise.resolve({ id: SOUL_ID }) })
   }
 

@@ -12,6 +12,13 @@ export async function POST(
   if (error) return error
 
   const { id } = await params
+
+  // Verify post exists and is published before allowing comments
+  const post = await prisma.post.findFirst({ where: { id, status: 'published' }, select: { id: true } })
+  if (!post) {
+    return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+  }
+
   const body = await request.json()
 
   if (!body.content || typeof body.content !== 'string') {

@@ -49,7 +49,7 @@ import {
   buildBuyerKioskArgs,
   MAX_CREATOR_ROYALTY_BPS,
   MAX_COLLECTION_ROYALTY_BPS,
-} from '../../new-web/lib/soulidity/tx/shared'
+} from '../../web/lib/soulidity/tx/shared'
 
 describe('shared.ts — validateSoulPublishArgs', () => {
   it('passes with valid arguments', () => {
@@ -218,7 +218,7 @@ describe('shared.ts — buildBuyerKioskArgs', () => {
 // =========================================================================
 // publish.ts — buildPublishSoulTx
 // =========================================================================
-import { buildPublishSoulTx } from '../../new-web/lib/soulidity/tx/publish'
+import { buildPublishSoulTx } from '../../web/lib/soulidity/tx/publish'
 
 describe('publish.ts — buildPublishSoulTx', () => {
   const VALID_PARAMS = {
@@ -265,7 +265,7 @@ describe('publish.ts — buildPublishSoulTx', () => {
 // =========================================================================
 // buy.ts — buildBuySoulTx, buildBuyCollectionTx
 // =========================================================================
-import { buildBuySoulTx, buildBuyCollectionTx } from '../../new-web/lib/soulidity/tx/buy'
+import { buildBuySoulTx, buildBuyCollectionTx } from '../../web/lib/soulidity/tx/buy'
 
 describe('buy.ts — buildBuySoulTx', () => {
   const VALID_PARAMS = {
@@ -363,7 +363,7 @@ describe('buy.ts — buildBuyCollectionTx', () => {
 // =========================================================================
 // list.ts — buildListSoulTx, buildListCollectionTx
 // =========================================================================
-import { buildListSoulTx, buildListCollectionTx } from '../../new-web/lib/soulidity/tx/list'
+import { buildListSoulTx, buildListCollectionTx } from '../../web/lib/soulidity/tx/list'
 
 describe('list.ts — buildListSoulTx', () => {
   const VALID_PARAMS = {
@@ -421,8 +421,8 @@ describe('list.ts — buildListCollectionTx', () => {
 // =========================================================================
 // delist.ts — buildDelistSoulTx, buildDelistCollectionTx
 // =========================================================================
-import { buildDelistSoulTx, buildDelistCollectionTx } from '../../new-web/lib/soulidity/tx/delist'
-import { buildUpdateListingPriceTx } from '../../new-web/lib/soulidity/tx/update-price'
+import { buildDelistSoulTx, buildDelistCollectionTx } from '../../web/lib/soulidity/tx/delist'
+import { buildUpdateListingPriceTx } from '../../web/lib/soulidity/tx/update-price'
 
 describe('delist.ts — buildDelistSoulTx', () => {
   const VALID_PARAMS = {
@@ -486,7 +486,7 @@ import {
   buildIssueGrantTx,
   buildRevokeGrantTx,
   buildRevokeGrantScopeTx,
-} from '../../new-web/lib/soulidity/tx/grant'
+} from '../../web/lib/soulidity/tx/grant'
 
 describe('grant.ts — buildIssueGrantTx', () => {
   const VALID_PARAMS = {
@@ -582,7 +582,7 @@ describe('grant.ts — buildRevokeGrantScopeTx', () => {
 // =========================================================================
 // collection.ts — buildCreateCollectionTx
 // =========================================================================
-import { buildCreateCollectionTx } from '../../new-web/lib/soulidity/tx/collection'
+import { buildCreateCollectionTx } from '../../web/lib/soulidity/tx/collection'
 
 describe('collection.ts — buildCreateCollectionTx', () => {
   const VALID_PARAMS = {
@@ -631,7 +631,7 @@ describe('collection.ts — buildCreateCollectionTx', () => {
 import {
   buildAppendMemoryAsOwnerTx,
   buildAppendMemoryAsGrantedAgentTx,
-} from '../../new-web/lib/soulidity/tx/memory'
+} from '../../web/lib/soulidity/tx/memory'
 
 describe('memory.ts — buildAppendMemoryAsOwnerTx', () => {
   it('returns a Transaction with valid params', () => {
@@ -662,7 +662,7 @@ describe('memory.ts — buildAppendMemoryAsGrantedAgentTx', () => {
 import {
   buildAppendSkillVersionTx,
   buildDeleteSkillVersionTx,
-} from '../../new-web/lib/soulidity/tx/skills'
+} from '../../web/lib/soulidity/tx/skills'
 
 describe('skills.ts — buildAppendSkillVersionTx', () => {
   const VALID_PARAMS = {
@@ -720,7 +720,7 @@ describe('skills.ts — buildDeleteSkillVersionTx', () => {
 // =========================================================================
 // import.ts — buildImportSoulTx
 // =========================================================================
-import { buildImportSoulTx } from '../../new-web/lib/soulidity/tx/import'
+import { buildImportSoulTx } from '../../web/lib/soulidity/tx/import'
 
 describe('import.ts — buildImportSoulTx', () => {
   const VALID_PARAMS = {
@@ -775,7 +775,7 @@ describe('import.ts — buildImportSoulTx', () => {
 // =========================================================================
 // personal-join.ts — buildPersonalJoinSoulTx
 // =========================================================================
-import { buildPersonalJoinSoulTx } from '../../new-web/lib/soulidity/tx/personal-join'
+import { buildPersonalJoinSoulTx } from '../../web/lib/soulidity/tx/personal-join'
 
 describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
   const VALID_PARAMS = {

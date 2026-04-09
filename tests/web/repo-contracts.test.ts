@@ -3,7 +3,7 @@ import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const repoRoot = join(import.meta.dirname, '..', '..')
-const newWebRoot = join(repoRoot, 'new-web')
+const webRoot = join(repoRoot, 'web')
 
 const SOURCE_FILE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
 const IGNORED_PATH_SEGMENTS = new Set([
@@ -45,9 +45,9 @@ function readSourceFilesUnder(directory: string) {
 
 function collectMatches(pattern: RegExp) {
   const files = [
-    ...readSourceFilesUnder(join(newWebRoot, 'app')),
-    ...readSourceFilesUnder(join(newWebRoot, 'components')),
-    ...readSourceFilesUnder(join(newWebRoot, 'lib')),
+    ...readSourceFilesUnder(join(webRoot, 'app')),
+    ...readSourceFilesUnder(join(webRoot, 'components')),
+    ...readSourceFilesUnder(join(webRoot, 'lib')),
   ]
 
   return files
@@ -56,9 +56,9 @@ function collectMatches(pattern: RegExp) {
 }
 
 describe('repository contract guards', () => {
-  it('documents the Soulidity env contract and repo-level new-web verification', () => {
+  it('documents the Soulidity env contract and repo-level web verification', () => {
     const envExample = readFileSync(join(repoRoot, '.env.example'), 'utf8')
-    const deploymentManifest = JSON.parse(readFileSync(join(newWebRoot, 'lib', 'soulidity', 'deployment-manifest.json'), 'utf8')) as {
+    const deploymentManifest = JSON.parse(readFileSync(join(webRoot, 'lib', 'soulidity', 'deployment-manifest.json'), 'utf8')) as {
       testnet?: Record<string, string>
     }
     const rootPackage = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
@@ -84,33 +84,33 @@ describe('repository contract guards', () => {
     expect(deploymentManifest.testnet?.collectionTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
     expect(deploymentManifest.testnet?.paymentCoinType).toContain('::')
 
-    expect(rootPackage.scripts?.['typecheck:new-web']).toBe('npm --prefix new-web run typecheck')
-    expect(rootPackage.scripts?.typecheck).toContain('npm run typecheck:new-web')
+    expect(rootPackage.scripts?.['typecheck:web']).toBe('npm --prefix web run typecheck')
+    expect(rootPackage.scripts?.typecheck).toContain('npm run typecheck:web')
     expect(rootPackage.scripts?.['publish:soulidity']).toBe('tsx scripts/publish-soulidity-and-sync.ts')
   })
 
-  it('keeps new-web soul business code isolated from the legacy web/lib/souls runtime', () => {
+  it('keeps web soul business code isolated from the legacy web/lib/souls runtime', () => {
     const offenders = collectMatches(/@web\/lib\/souls\/|['"]\.\.\/web\/lib\/souls\//)
     expect(offenders).toEqual([])
   })
 
-  it('removes allowlist, simulated tx, mock fallback, and dead create-collection entrypoints from active new-web code', () => {
+  it('removes allowlist, simulated tx, mock fallback, and dead create-collection entrypoints from active web code', () => {
     const pattern = /\ballowlist\b|0x_simulated_|mockSouls|mockCollections|\/create-collection\/|simulated upload|simulate the upload/i
     const offenders = collectMatches(pattern)
     expect(offenders).toEqual([])
   })
 
   it('keeps the hard-cut Soulidity route surface and removes the legacy allowlist route', () => {
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'souls', '[id]', 'allowlist', 'route.ts'))).toBe(false)
-    expect(existsSync(join(newWebRoot, 'app', 'collections', '[id]', 'buy', 'page.tsx'))).toBe(false)
+    expect(existsSync(join(webRoot, 'app', 'api', 'souls', '[id]', 'allowlist', 'route.ts'))).toBe(false)
+    expect(existsSync(join(webRoot, 'app', 'collections', '[id]', 'buy', 'page.tsx'))).toBe(false)
 
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'souls', '[id]', 'grant', 'route.ts'))).toBe(true)
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'collections', 'route.ts'))).toBe(true)
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'collections', '[id]', 'route.ts'))).toBe(true)
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'collections', '[id]', 'purchase', 'route.ts'))).toBe(true)
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'collections', '[id]', 'list', 'route.ts'))).toBe(true)
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'import', 'route.ts'))).toBe(true)
-    expect(existsSync(join(newWebRoot, 'app', 'api', 'wrap-link', 'personal', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'souls', '[id]', 'grant', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'purchase', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'list', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'import', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'wrap-link', 'personal', 'route.ts'))).toBe(true)
   })
 
   it('keeps collection purchase entrypoints collapsed into the collection detail page', () => {
@@ -118,8 +118,8 @@ describe('repository contract guards', () => {
     expect(offenders).toEqual([])
   })
 
-  it('defines the Soulidity tx-sync route key contract in the new mirror runtime', () => {
-    const txSyncPath = join(newWebRoot, 'lib', 'soulidity', 'mirror', 'tx-sync.ts')
+  it('defines the Soulidity tx-sync route key contract in the web mirror runtime', () => {
+    const txSyncPath = join(webRoot, 'lib', 'soulidity', 'mirror', 'tx-sync.ts')
     expect(existsSync(txSyncPath)).toBe(true)
 
     const txSyncSource = readFileSync(txSyncPath, 'utf8')

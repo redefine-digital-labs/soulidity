@@ -1,450 +1,306 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { use, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { AccessDownloadButton } from '@web/components/souls/access-download-button'
-import { PurchaseButton } from '@web/components/souls/purchase-button'
-import { ReadmePanel } from '@web/components/souls/readme-panel'
-import { PriceBreakdown } from '@web/components/souls/price-breakdown'
-import { StickyPurchaseBar } from '@web/components/souls/sticky-purchase-bar'
-import { useAuth } from '@web/components/auth-provider'
-import { useSoulDetail } from '@web/lib/souls/queries'
-import { toSafeBackgroundImage } from '@web/lib/souls/soul-detail-utils'
-import { buildListHeldSoulTx, buildCancelListingTx } from '@web/lib/souls/tx-builder'
-import { parseSoulPaymentAmountToAtomic } from '@web/lib/souls/pricing-input'
-import { mirrorRouteRequest, formatMirrorSyncError } from '@web/lib/souls/mirror-sync'
-import { usePrivySuiSign } from '@web/lib/souls/use-privy-sui'
-import { formatAtomicSoulPaymentForDisplay } from '@web/lib/souls/price-format'
+import { useRouter } from 'next/navigation'
+import { useSoulDetail } from '@/lib/hooks/use-souls'
+import { useAuth } from '@/components/providers/auth-provider'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Tag } from '@/components/ui/tag'
+import { Button, buttonStyles } from '@/components/ui/button'
+import { SkillsPanel } from '@/components/souls/skills-panel'
+import { MemoryPanel } from '@/components/souls/memory-panel'
+import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
+import { useRequireAuth } from '@/lib/hooks/use-require-auth'
+import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import type { SoulAssetDetail } from '@/lib/soulidity/types'
 
-function requireCurrentKioskCapOnChainId(currentKioskCapOnChainId: string | null) {
-  if (!currentKioskCapOnChainId) {
-    throw new Error('Soul kiosk permissions are still syncing')
-  }
-  return currentKioskCapOnChainId
+function formatAddress(value: string | null | undefined) {
+  if (!value) return '—'
+  return `${value.slice(0, 6)}…${value.slice(-4)}`
 }
 
-export default function SoulDetailPage() {
-  const params = useParams()
-  const soulId = params.id as string
-  const { user, getAuthHeaders } = useAuth()
-  const { signAndExecute } = usePrivySuiSign()
-  const { data: soul, isLoading, error, refetch } = useSoulDetail(soulId, getAuthHeaders, user?.id)
+function formatDate(value: string | null | undefined) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString()
+}
 
-  const [listPrice, setListPrice] = useState('')
-  const [listSubmitting, setListSubmitting] = useState(false)
-  const [listError, setListError] = useState<string | null>(null)
-
-  const [cancelSubmitting, setCancelSubmitting] = useState(false)
-  const [cancelError, setCancelError] = useState<string | null>(null)
-
-  const [ownerSectionOpen, setOwnerSectionOpen] = useState(false)
-  const [purchaseSuccess, setPurchaseSuccess] = useState(false)
-
-  useEffect(() => {
-    if (soul?.isOwner && soul.listingStatus === 'held') {
-      setOwnerSectionOpen(true)
-    }
-  }, [soul?.isOwner, soul?.listingStatus])
-
-  const previewImage = useMemo(() => soul?.previewImages[0] ?? soul?.imageUrl ?? null, [soul])
-  const previewBackgroundImage = useMemo(() => toSafeBackgroundImage(previewImage), [previewImage])
-
-  async function handleListForSale() {
-    if (listSubmitting) return
-    if (!soul || !user?.primarySuiAddress) return
-    const priceAtomic = parseSoulPaymentAmountToAtomic(listPrice)
-    if (!priceAtomic) {
-      setListError('Enter a valid USDC price')
-      return
-    }
-    setListSubmitting(true)
-    setListError(null)
-    try {
-      const tx = buildListHeldSoulTx({
-        currentKioskId: soul.currentKioskId,
-        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
-        soulObjectId: soul.onChainId,
-        priceAtomic,
-      })
-      const result = await signAndExecute(tx)
-      const headers = await getAuthHeaders()
-      await mirrorRouteRequest({
-        input: '/api/souls/publish',
-        init: {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers },
-          body: JSON.stringify({
-            txDigest: result.digest,
-            soulOnChainId: soul.onChainId,
-          }),
-        },
-      })
-      setListPrice('')
-      await refetch()
-    } catch (listSyncError) {
-      setListError(formatMirrorSyncError(listSyncError))
-    } finally {
-      setListSubmitting(false)
+function buildHeroStyle(imageUrl: string | null | undefined) {
+  if (!imageUrl) {
+    return {
+      background: 'linear-gradient(135deg, var(--card2) 0%, var(--purple-deep) 100%)',
     }
   }
 
-  async function handleCancelListing() {
-    if (cancelSubmitting) return
-    if (!soul || !soul.listingObjectOnChainId) return
-    setCancelSubmitting(true)
-    setCancelError(null)
-    try {
-      const tx = buildCancelListingTx({
-        currentKioskId: soul.currentKioskId,
-        currentKioskCapOnChainId: requireCurrentKioskCapOnChainId(soul.currentKioskCapOnChainId),
-        listingObjectId: soul.listingObjectOnChainId,
-      })
-      const result = await signAndExecute(tx)
-      const headers = await getAuthHeaders()
-      await mirrorRouteRequest({
-        input: `/api/souls/${encodeURIComponent(soul.onChainId)}/delist`,
-        init: {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers },
-          body: JSON.stringify({ txDigest: result.digest }),
-        },
-      })
-      await refetch()
-    } catch (cancelSyncError) {
-      setCancelError(formatMirrorSyncError(cancelSyncError))
-    } finally {
-      setCancelSubmitting(false)
+  return {
+    backgroundImage: `linear-gradient(135deg, rgba(15, 17, 26, 0.2), rgba(44, 20, 98, 0.75)), url(${imageUrl})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+  }
+}
+
+function ListingCta({
+  soul,
+  priceLabel,
+  onUpdatePrice,
+  onDelist,
+}: {
+  soul: SoulAssetDetail
+  priceLabel: string
+  onUpdatePrice: () => void
+  onDelist: () => void
+}) {
+  const router = useRouter()
+  const { requireAuth } = useRequireAuth()
+  const listed = soul.listingStatus === 'listed'
+
+  if (soul.isOwner) {
+    if (listed) {
+      return (
+        <>
+          <Button variant="gold" onClick={onUpdatePrice}>Update Price</Button>
+          <Button variant="outline" onClick={onDelist}>Delist</Button>
+        </>
+      )
     }
+    return (
+      <Link href={`/souls/${encodeURIComponent(soul.onChainId)}/sell`} className={buttonStyles({ variant: 'gold' })}>
+        List Soul
+      </Link>
+    )
   }
 
-  async function handlePurchaseSuccess() {
-    setPurchaseSuccess(true)
-    setTimeout(() => {
-      setPurchaseSuccess(false)
-      void refetch()
-    }, 1500)
+  if (!listed) {
+    return null
   }
-
-  const showStickyBar =
-    !!soul
-    && soul.listingStatus === 'listed'
-    && !soul.isOwner
-    && !!soul.listingObjectOnChainId
-    && !!soul.listedPriceAtomic
 
   return (
-    <div className="min-h-screen pb-20 md:pb-0">
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
-        {/* Back navigation */}
-        <Link
-          href="/souls"
-          className="inline-flex items-center gap-1.5 text-sm mb-6"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Back to Souls
-        </Link>
+    <button
+      type="button"
+      onClick={() => {
+        requireAuth(() => {
+          router.push(`/souls/${encodeURIComponent(soul.onChainId)}/buy`)
+        })
+      }}
+      className={buttonStyles({ variant: 'gold' })}
+    >
+      Buy for {priceLabel}
+    </button>
+  )
+}
 
-        {isLoading ? (
-          <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
-        ) : error || !soul ? (
-          <div style={{ color: 'var(--accent-rose)' }}>Failed to load Soul.</div>
-        ) : (
-          <>
-            {/* Desktop: 2-column grid. Mobile: single column */}
-            <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
-              {/* LEFT COLUMN */}
-              <div className="flex flex-col gap-6">
-                {/* Preview image */}
-                <div className="relative">
-                  {previewBackgroundImage ? (
-                    <img
-                      src={previewImage ?? ''}
-                      alt={soul.name}
-                      className="w-full object-cover"
-                      style={{ aspectRatio: '4/3', borderRadius: 'var(--radius)' }}
-                    />
-                  ) : (
-                    <div
-                      className="glass-panel w-full flex items-center justify-center"
-                      style={{ aspectRatio: '4/3', minHeight: '200px' }}
-                    >
-                      <span className="text-sm" style={{ color: 'var(--text-muted)' }}>No preview</span>
-                    </div>
-                  )}
-                  {/* Status badge overlay */}
-                  <span
-                    className={`status-badge ${soul.listingStatus === 'listed' ? 'status-badge-listed' : 'status-badge-held'}`}
-                  >
-                    {soul.listingStatus === 'listed' ? 'Listed' : 'Held'}
-                  </span>
-                </div>
+export default function SoulDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const { user, getAuthHeaders } = useAuth()
+  const { data: soul, isLoading, error } = useSoulDetail(id, getAuthHeaders, user?.id)
+  const [showUpdatePrice, setShowUpdatePrice] = useState(false)
+  const [showDelist, setShowDelist] = useState(false)
 
-                {/* README panel — desktop only in left column */}
-                {soul.readme ? (
-                  <div className="hidden lg:block">
-                    <ReadmePanel readme={soul.readme} />
-                  </div>
-                ) : null}
+  if (isLoading) {
+    return (
+      <div className="max-w-[760px] w-full mx-auto px-4 sm:px-6 py-8">
+        <div className="h-4 w-32 bg-card2 rounded animate-pulse mb-6" />
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="h-[220px] bg-card2 animate-pulse" />
+          <div className="p-6 space-y-3">
+            <div className="h-6 w-56 bg-card2 rounded animate-pulse" />
+            <div className="h-4 w-40 bg-card2 rounded animate-pulse" />
+            <div className="h-16 w-full bg-card2 rounded animate-pulse" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !soul) {
+    return (
+      <div className="max-w-[760px] mx-auto px-4 sm:px-6 py-12">
+        <EmptyState
+          icon="🫥"
+          label="Soul not found"
+          sublabel="The Soulidity projection does not have this asset yet, or the route ID is invalid."
+          actionLabel="Back to Market"
+          onAction={() => {
+            window.location.href = '/market'
+          }}
+        />
+      </div>
+    )
+  }
+
+  const priceLabel = soul.quote?.totalAtomic
+    ? formatAtomicAmountForDisplay(soul.quote.totalAtomic)
+    : soul.listedPriceAtomic
+      ? formatAtomicAmountForDisplay(soul.listedPriceAtomic)
+      : 'Not listed'
+
+  return (
+    <div className="max-w-[760px] w-full mx-auto px-4 sm:px-6 py-8 relative z-10 space-y-6">
+      <Link href="/market" className="text-muted text-xs hover:text-foreground transition block">
+        ← Back to Market
+      </Link>
+
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="w-full h-[200px] sm:h-[240px] flex items-end p-6" style={buildHeroStyle(soul.imageUrl)}>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
+            <span>{soul.provenanceKind === 'personal-join' ? 'Personal Join' : soul.provenanceKind === 'imported' ? 'Imported' : 'Native'}</span>
+            <span className="text-white/50">·</span>
+            <span>{soul.listingStatus === 'listed' ? 'Listed' : 'Held'}</span>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                <Tag color="purple">{soul.category}</Tag>
+                {soul.tags.map((tag) => (
+                  <Tag key={tag} color="muted">{tag}</Tag>
+                ))}
+                {soul.collection && <Tag color="teal">{soul.collection.name}</Tag>}
               </div>
 
-              {/* RIGHT COLUMN — sticky on desktop */}
-              <aside className="flex flex-col gap-5 lg:sticky lg:top-24 lg:self-start">
-                {/* Identity block */}
-                <div className="flex flex-col gap-3">
-                  <p
-                    className="text-[11px] uppercase tracking-[0.16em] font-medium"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    {soul.category}
-                  </p>
-                  <h1
-                    className="font-bold leading-tight"
-                    style={{ fontSize: '28px', fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}
-                  >
-                    {soul.name}
-                  </h1>
-                  {soul.description ? (
-                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                      {soul.description}
-                    </p>
-                  ) : null}
-                  {soul.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {soul.tags.map((tag) => (
-                        <span key={tag} className="badge badge-muted">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+              <div>
+                <h1 className="font-display text-2xl sm:text-3xl font-bold">{soul.name}</h1>
+                <p className="mt-2 text-sm text-muted">
+                  Creator {formatAddress(soul.creatorAddress)}
+                  <span className="mx-2 text-border">·</span>
+                  Owner {formatAddress(soul.currentOwnerAddress)}
+                </p>
+              </div>
 
-                <hr className="divider" />
-
-                {/* Access / Price block */}
-                {(soul.isOwner || soul.isAllowlisted) ? (
-                  <div className="flex flex-col gap-3">
-                    <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                      Access content
-                    </h2>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      Download and decrypt the sealed Soul bundle in your browser.
-                    </p>
-                    <AccessDownloadButton soulObjectId={soul.onChainId} />
-                  </div>
-                ) : soul.listingStatus === 'listed'
-                  && !soul.isOwner
-                  && soul.listingObjectOnChainId
-                  && soul.listedPriceAtomic
-                  && soul.purchasePlatformFeeAtomic
-                  && soul.purchaseCreatorRoyaltyAtomic ? (
-                  <div className="relative flex flex-col gap-4">
-                    <PriceBreakdown
-                      listedPriceAtomic={soul.listedPriceAtomic}
-                      purchasePlatformFeeAtomic={soul.purchasePlatformFeeAtomic}
-                      purchaseCreatorRoyaltyAtomic={soul.purchaseCreatorRoyaltyAtomic}
-                      purchaseTotalAtomic={soul.purchaseTotalAtomic ?? null}
-                    />
-                    <PurchaseButton
-                      soulObjectId={soul.onChainId}
-                      listingObjectId={soul.listingObjectOnChainId}
-                      sellerKioskId={soul.currentKioskId}
-                      listedPriceAtomic={soul.listedPriceAtomic}
-                      purchasePlatformFeeAtomic={soul.purchasePlatformFeeAtomic}
-                      purchaseCreatorRoyaltyAtomic={soul.purchaseCreatorRoyaltyAtomic}
-                      purchaseTotalAtomic={soul.purchaseTotalAtomic}
-                      quotedPriceAtomic={soul.quotedPriceAtomic}
-                      onPurchased={handlePurchaseSuccess}
-                    />
-                    {/* Purchase success overlay */}
-                    {purchaseSuccess ? (
-                      <div
-                        className="absolute inset-0 flex items-center justify-center rounded-[var(--radius)] animate-scale-in"
-                        style={{ background: 'rgba(5, 150, 105, 0.12)', border: '1px solid rgba(5, 150, 105, 0.25)' }}
-                      >
-                        <p
-                          className="text-sm font-semibold"
-                          style={{ color: 'var(--accent-emerald)' }}
-                        >
-                          Soul is yours
-                        </p>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : !soul.isOwner ? (
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Not for sale</p>
-                ) : null}
-
-                <hr className="divider" />
-
-                {/* Sealed content panel */}
-                <div className="sealed-panel flex flex-col gap-2">
-                  <div className="sealed-panel-title">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                      <rect x="3" y="11" width="18" height="11" rx="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    Sealed Content
-                  </div>
-                  <div className="sealed-panel-row">
-                    <span className="sealed-panel-key">Bundle</span>
-                    <span className="sealed-panel-val">Encrypted</span>
-                  </div>
-                  <div className="sealed-panel-row">
-                    <span className="sealed-panel-key">Storage</span>
-                    <span className="sealed-panel-val">Walrus</span>
-                  </div>
-                  <div className="sealed-panel-row">
-                    <span className="sealed-panel-key">Access</span>
-                    <span className="sealed-panel-val">
-                      {soul.isOwner ? 'Owner' : soul.isAllowlisted ? 'Allowlisted' : 'Owner or Allowlisted'}
-                    </span>
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    {soul.isOwner || soul.isAllowlisted
-                      ? 'You have access. Content downloads directly to your browser.'
-                      : 'Purchase unlocks Seal decryption. Content downloads directly to your browser.'}
-                  </p>
-                </div>
-
-                {/* Owner management — listed state */}
-                {soul.isOwner && soul.listingStatus === 'listed' ? (
-                  <>
-                    <hr className="divider" />
-                    <div className="flex flex-col gap-3">
-                      <div>
-                        <h2
-                          className="text-base font-semibold"
-                          style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}
-                        >
-                          Listing active
-                        </h2>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          Cancel the listing to manage allowlist access or change the price.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleCancelListing}
-                        aria-label="Cancel Soul listing"
-                        disabled={cancelSubmitting}
-                        className="btn btn-danger w-full"
-                      >
-                        {cancelSubmitting ? 'Cancelling…' : 'Cancel listing'}
-                      </button>
-                      {cancelError ? (
-                        <p className="text-xs" style={{ color: 'var(--accent-rose)' }}>{cancelError}</p>
-                      ) : null}
-                    </div>
-                  </>
-                ) : null}
-
-                {/* Owner management — held state (collapsible) */}
-                {soul.isOwner && soul.listingStatus === 'held' ? (
-                  <>
-                    <hr className="divider" />
-                    <div className="glass-panel overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setOwnerSectionOpen((prev) => !prev)}
-                        className="w-full flex items-center justify-between p-4 text-left"
-                        style={{ color: 'var(--text-primary)' }}
-                        aria-expanded={ownerSectionOpen}
-                      >
-                        <div>
-                          <h2
-                            className="text-base font-semibold"
-                            style={{ fontFamily: 'var(--font-display)' }}
-                          >
-                            Owner management
-                          </h2>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            List for sale
-                          </p>
-                        </div>
-                        <svg
-                          className="shrink-0 transition-transform duration-200"
-                          style={{
-                            transform: ownerSectionOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                            color: 'var(--text-muted)',
-                          }}
-                          width="20" height="20" viewBox="0 0 20 20" fill="none"
-                          aria-hidden="true"
-                        >
-                          <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-
-                      {ownerSectionOpen ? (
-                        <div className="px-4 pb-4 flex flex-col gap-6">
-                          {/* List for sale */}
-                          <div className="flex flex-col gap-3">
-                            <div>
-                              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                List for sale
-                              </h3>
-                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                Set a USDC price and list this Soul NFT for sale.
-                              </p>
-                            </div>
-                            <input
-                              value={listPrice}
-                              onChange={(event) => setListPrice(event.target.value)}
-                              aria-label="Price in USDC for listing"
-                              placeholder="Price in USDC (e.g. 1.5)"
-                              inputMode="decimal"
-                              className="input-dark"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleListForSale}
-                              aria-label="List this Soul for sale"
-                              disabled={listSubmitting || listPrice.trim().length === 0}
-                              className="btn btn-primary w-full"
-                            >
-                              {listSubmitting ? 'Listing…' : 'List for sale'}
-                            </button>
-                            {listError ? (
-                              <p className="text-xs" style={{ color: 'var(--accent-rose)' }}>{listError}</p>
-                            ) : null}
-                          </div>
-
-                        </div>
-                      ) : null}
-                    </div>
-                  </>
-                ) : null}
-              </aside>
+              <p className="text-sm text-muted leading-7">{soul.description}</p>
             </div>
 
-            {/* README panel — mobile (below right column) */}
-            {soul.readme ? (
-              <div className="lg:hidden mt-6">
-                <ReadmePanel readme={soul.readme} />
+            <div className="min-w-[240px] rounded-xl border border-gold bg-card2 p-4">
+              <div className="text-xs text-muted">Current checkout total</div>
+              <div className="mt-1 font-display text-2xl font-bold text-gold">{priceLabel}</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <ListingCta
+                  soul={soul}
+                  priceLabel={priceLabel}
+                  onUpdatePrice={() => setShowUpdatePrice(true)}
+                  onDelist={() => setShowDelist(true)}
+                />
               </div>
-            ) : null}
-          </>
-        )}
-      </main>
+            </div>
+          </div>
 
-      {/* Sticky purchase bar — mobile only */}
-      {showStickyBar && soul?.listedPriceAtomic ? (
-        <StickyPurchaseBar
-          price={formatAtomicSoulPaymentForDisplay(soul.listedPriceAtomic)}
-          onPurchase={() => {
-            // Trigger is handled by PurchaseButton in the right column.
-            // The sticky bar is informational on mobile; the real action button
-            // is in the scrollable content above.
-          }}
-          purchasing={false}
-          disabled={true}
-        />
-      ) : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="bg-card2 border border-border rounded-xl p-4 space-y-3">
+              <div className="page-kicker text-muted">Protocol State</div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Soul object</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.onChainId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">State object</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.stateOnChainId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Memory object</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.memoryOnChainId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Content blob</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.contentBlobObjectId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Skills root</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.skillsOnChainId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Created</span>
+                <span>{formatDate(soul.createdAt)}</span>
+              </div>
+            </div>
 
+            <div className="bg-card2 border border-border rounded-xl p-4 space-y-3">
+              <div className="page-kicker text-muted">Access</div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Owner access</span>
+                <span className="text-success">Active</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Grant capacity</span>
+                <span>{soul.activeGrantCount} / {soul.grantCapacity}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Skills versions</span>
+                <span>{soul.skillVersionCount}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Creator royalty</span>
+                <span>{(soul.creatorRoyaltyBps / 100).toFixed(2)}%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Collection royalty</span>
+                <span>{soul.collection ? `${(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%` : 'None'}</span>
+              </div>
+            </div>
+          </div>
+
+          {soul.collection && (
+            <div className="bg-card2 border border-border rounded-xl p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="page-kicker text-muted mb-2">Collection</div>
+                  <div className="font-semibold">{soul.collection.name}</div>
+                  <div className="text-sm text-muted mt-1">{soul.collection.description}</div>
+                </div>
+                <Link href={`/collections/${encodeURIComponent(soul.collection.onChainId)}`} className={buttonStyles({ variant: 'outline' })}>
+                  View Collection
+                </Link>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-card2 border border-border rounded-xl p-4">
+            <div className="page-kicker text-muted mb-3">Active Grants</div>
+            {soul.activeGrants.length > 0 ? (
+              <div className="space-y-3">
+                {soul.activeGrants.map((grant) => (
+                  <div key={grant.id} className="rounded-lg border border-border/80 bg-white/[0.03] px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Tag color="success">{grant.status}</Tag>
+                      {grant.scopes.map((scope) => (
+                        <Tag key={`${grant.id}:${scope}`} color="teal">{scope}</Tag>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted">Grantee</span>
+                        <span>{formatAddress(grant.granteeAddress)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted">Issued by</span>
+                        <span>{formatAddress(grant.issuedByAddress)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted">Expires</span>
+                        <span>{formatDate(grant.expiresAt)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted">No active SoulGrant is attached to this Soul.</p>
+            )}
+          </div>
+
+          <SkillsPanel soul={soul} />
+
+          <MemoryPanel soul={soul} />
+        </div>
+      </div>
+
+      {soul.isOwner && soul.listingStatus === 'listed' && (
+        <>
+          <UpdatePriceModal soul={soul} open={showUpdatePrice} onClose={() => setShowUpdatePrice(false)} />
+          <DelistModal soul={soul} open={showDelist} onClose={() => setShowDelist(false)} />
+        </>
+      )}
     </div>
   )
 }

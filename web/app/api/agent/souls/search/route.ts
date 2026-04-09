@@ -1,44 +1,38 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
-import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@web/lib/souls/repository'
+import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@/lib/soulidity/repository'
+import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
-const MAX_SOUL_QUERY_PARAM_LENGTH = 200
+export const dynamic = 'force-dynamic'
 
-function readOptionalBoundedQuery(value: string | null, name: string): { value?: string; error?: string } {
-  if (value == null) return {}
+const AGENT_SEARCH_RATE_LIMIT = { max: 60, windowMs: 60 * 1000 } as const
+const MAX_LIMIT = 50
+const DEFAULT_LIMIT = 20
 
-  const normalized = value.trim()
-  if (!normalized) return {}
-  if (normalized.length > MAX_SOUL_QUERY_PARAM_LENGTH) {
-    return { error: `${name} must be at most ${MAX_SOUL_QUERY_PARAM_LENGTH} characters` }
+export async function GET(request: NextRequest) {
+  const auth = await requireAgentWalletIdentity(request)
+  if ('error' in auth) return auth.error
+
+  const rateLimit = await takeRateLimitToken(
+    `agent-search:${auth.agent.agentMemberId}`,
+    AGENT_SEARCH_RATE_LIMIT,
+  )
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      { error: 'Too many agent search requests' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    )
   }
 
-  return { value: normalized }
-}
-
-export async function GET(req: NextRequest) {
-  const { agent: _agent, response } = await requireAgentApiKey(req)
-  if (!_agent) return response
-
-  const url = req.nextUrl
-  const qParam = readOptionalBoundedQuery(url.searchParams.get('q'), 'q')
-  if (qParam.error) {
-    return NextResponse.json({ error: qParam.error }, { status: 400 })
-  }
-  const categoryParam = readOptionalBoundedQuery(url.searchParams.get('category'), 'category')
-  if (categoryParam.error) {
-    return NextResponse.json({ error: categoryParam.error }, { status: 400 })
-  }
-  const q = qParam.value || ''
-  const category = categoryParam.value
-  const rawLimit = Number(url.searchParams.get('limit') || '20')
-  const rawOffset = Number(url.searchParams.get('offset') || '0')
-  const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, Math.trunc(rawLimit))) : 20
-  const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : 0
+  const url = new URL(request.url)
+  const q = url.searchParams.get('q')?.trim().slice(0, 200) || ''
+  const category = url.searchParams.get('category')?.trim().slice(0, 200) || ''
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || DEFAULT_LIMIT, 1), MAX_LIMIT)
+  const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0)
 
   const where: Record<string, unknown> = { listingStatus: 'listed' }
-  if (category) where.category = category
+  if (category) where.category = { equals: category, mode: 'insensitive' }
   if (q) {
     where.OR = [
       { name: { contains: q, mode: 'insensitive' } },
@@ -51,8 +45,8 @@ export async function GET(req: NextRequest) {
     where,
     select: soulAssetSummarySelect,
     orderBy: { createdAt: 'desc' },
-    skip: offset,
     take: limit,
+    skip: offset,
   })
 
   return NextResponse.json({

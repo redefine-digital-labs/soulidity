@@ -33,7 +33,7 @@ vi.mock('@web/lib/rate-limit', () => ({
   getAnonymousRateLimitFingerprint: () => 'anon-fallback',
 }))
 
-describe('new-web community posts route', () => {
+describe('web community posts route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
@@ -53,7 +53,7 @@ describe('new-web community posts route', () => {
   })
 
   it('uses array membership filtering for tag queries', async () => {
-    const { GET } = await import('../../new-web/app/api/community/posts/route.ts')
+    const { GET } = await import('../../web/app/api/community/posts/route.ts')
 
     const response = await GET(
       {
@@ -77,7 +77,7 @@ describe('new-web community posts route', () => {
       identity: { memberId: 'member-1' },
     })
 
-    const { POST } = await import('../../new-web/app/api/community/posts/route.ts')
+    const { POST } = await import('../../web/app/api/community/posts/route.ts')
     const response = await POST(new Request('http://localhost/api/community/posts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

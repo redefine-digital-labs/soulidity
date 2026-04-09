@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { paginateSoulSkillVersions } from '../../new-web/lib/soulidity/skill-version-pagination'
+import { paginateSoulSkillVersions } from '../../web/lib/soulidity/skill-version-pagination'
 
 describe('paginateSoulSkillVersions', () => {
   it('returns a stable nextCursor when truncating a version list', () => {

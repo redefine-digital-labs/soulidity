@@ -38,7 +38,7 @@ describe('PATCH /api/profile', () => {
   })
 
   async function callPatch(body: Record<string, unknown>) {
-    const { PATCH } = await import('../../new-web/app/api/profile/route.ts')
+    const { PATCH } = await import('../../web/app/api/profile/route.ts')
     return PATCH(makeRequest(body) as any)
   }
 

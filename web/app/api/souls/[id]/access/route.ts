@@ -1,17 +1,10 @@
 import { NextResponse } from 'next/server'
-import { requireIdentity } from '@web/lib/auth/identity'
-import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
+import { hasCredentialedSealServerConfigs, hasSealSessionConfig } from '@web/lib/services/seal'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { getOptionalPublicEnv, getRequiredPublicEnv } from '@web/lib/souls/config'
-import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
-import { resolveSoulAccessPayload, SoulAccessDeniedError } from '@web/lib/souls/access'
-import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
-import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
-import {
-  hasCredentialedSealServerConfigs,
-  hasSealSessionConfig,
-} from '@web/lib/services/seal'
+import { resolveSoulAccessPayload, SoulAccessDeniedError } from '@/lib/soulidity/access'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
+import { requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,18 +17,15 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { error, identity } = await requireIdentity()
-  if (error) {
-    return error
-  }
-  if (identity.kind !== 'human') {
-    return NextResponse.json({ error: 'This access route only supports human sessions' }, { status: 403 })
+  const auth = await requireHumanWalletIdentity()
+  if ('error' in auth) {
+    return auth.error
   }
 
-  const rateLimit = await takeRateLimitToken(`human-access:${identity.memberId}`, HUMAN_ACCESS_RATE_LIMIT)
+  const rateLimit = await takeRateLimitToken(`human-access:${auth.identity.memberId}`, HUMAN_ACCESS_RATE_LIMIT)
   if (rateLimit.limited) {
     return NextResponse.json(
-      { error: 'Too many access requests, try again later' },
+      { error: 'Too many Soulidity access requests, try again later' },
       { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
     )
   }
@@ -53,48 +43,29 @@ export async function GET(
   const { id } = await params
   const soul = await findSoulAssetDetailByRouteId(id)
   if (!soul) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  let soulPackageId: string
   try {
-    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-  } catch {
-    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
-  }
-  const allowlistRegistryObjectId = getOptionalPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
-
-  try {
-    const viewerAddresses = await getMemberSuiWalletAddresses(identity.memberId)
-    if (viewerAddresses.length === 0) {
-      return NextResponse.json({ error: 'Bind a Sui wallet before accessing Soul content' }, { status: 403 })
-    }
-
-    return NextResponse.json(await resolveSoulAccessPayload({
-      soul,
-      viewerAddresses,
-      soulPackageId,
-      allowlistRegistryObjectId,
-    }))
-  } catch (accessError) {
-    if (isMultipleSuiWalletBindingsError(accessError)) {
-      return NextResponse.json({ error: accessError.message }, { status: 409 })
-    }
-    if (accessError instanceof SoulAccessDeniedError) {
-      return NextResponse.json({ error: accessError.message }, { status: accessError.status })
-    }
-    if (accessError instanceof OnChainVerificationError) {
-      return NextResponse.json(
-        { error: getClientSafeOnChainVerificationErrorMessage(accessError) },
-        { status: accessError.status },
-      )
-    }
-
-    console.error('[human-access] Failed to resolve Soul access', {
-      memberId: identity.memberId,
-      soulOnChainId: soul.onChainId,
-      error: toSafeErrorDetails(accessError),
+    const payload = await resolveSoulAccessPayload({
+      soul: toSoulAssetDetail(soul, {
+        viewerMemberId: auth.identity.memberId,
+        viewerAddresses: auth.walletAddresses,
+        quote: null,
+      }),
+      viewerAddresses: auth.walletAddresses,
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
     })
-    return NextResponse.json({ error: 'Unable to verify Soul access right now' }, { status: 503 })
+    return NextResponse.json(payload)
+  } catch (error) {
+    if (error instanceof SoulAccessDeniedError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    console.error('[soul-access] Failed to resolve Soulidity access payload', {
+      memberId: auth.identity.memberId,
+      soulId: soul.onChainId,
+      error,
+    })
+    return NextResponse.json({ error: 'Failed to prepare Soulidity access payload' }, { status: 500 })
   }
 }

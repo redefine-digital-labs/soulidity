@@ -8,7 +8,7 @@ function readSource(relativePath: string) {
 
 describe('success effect loop regression guards', () => {
   it('guards create gas success writes against provider rerenders', () => {
-    const source = readSource('new-web/app/create/gas/page.tsx')
+    const source = readSource('web/app/create/gas/page.tsx')
 
     expect(source).toContain('const completedDigestRef = useRef<string | null>(null)')
     expect(source).toContain('if (completedDigestRef.current === publishData.txDigest) return')
@@ -17,7 +17,7 @@ describe('success effect loop regression guards', () => {
   })
 
   it('guards import gas success writes against provider rerenders', () => {
-    const source = readSource('new-web/app/import/gas/page.tsx')
+    const source = readSource('web/app/import/gas/page.tsx')
 
     expect(source).toContain('const completedDigestRef = useRef<string | null>(null)')
     expect(source).toContain('if (completedDigestRef.current === importData.txDigest) return')
@@ -26,7 +26,7 @@ describe('success effect loop regression guards', () => {
   })
 
   it('guards wrap preview success writes against provider rerenders', () => {
-    const source = readSource('new-web/app/wrap-link/personal/preview/page.tsx')
+    const source = readSource('web/app/wrap-link/personal/preview/page.tsx')
 
     expect(source).toContain('const completedDigestRef = useRef<string | null>(null)')
     expect(source).toContain('if (completedDigestRef.current === result.txDigest) return')

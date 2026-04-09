@@ -8,13 +8,13 @@ function readSource(relativePath: string) {
 
 describe('soul success navigation regression guards', () => {
   it('redirects create publish success to the Soul Born page', () => {
-    const source = readSource('new-web/app/create/gas/page.tsx')
+    const source = readSource('web/app/create/gas/page.tsx')
 
     expect(source).toContain("router.replace('/create/success')")
   })
 
   it('redirects import publish success to the Soul Born page', () => {
-    const source = readSource('new-web/app/import/gas/page.tsx')
+    const source = readSource('web/app/import/gas/page.tsx')
 
     expect(source).toContain("router.replace('/import/success')")
   })

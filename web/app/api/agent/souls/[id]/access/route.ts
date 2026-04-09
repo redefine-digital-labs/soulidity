@@ -1,36 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
-import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
-import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
+import { NextResponse } from 'next/server'
+import { hasSealSessionConfig } from '@web/lib/services/seal'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { getOptionalPublicEnv, getRequiredPublicEnv } from '@web/lib/souls/config'
-import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
-import { resolveSoulAccessPayload, SoulAccessDeniedError } from '@web/lib/souls/access'
-import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
-import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
-import {
-  hasCredentialedSealServerConfigs,
-  hasSealSessionConfig,
-} from '@web/lib/services/seal'
+import { resolveSoulAccessPayload, SoulAccessDeniedError } from '@/lib/soulidity/access'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
+import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
 export const dynamic = 'force-dynamic'
 
-const AGENT_ACCESS_RATE_LIMIT = {
-  max: 60,
-  windowMs: 60 * 1000,
-} as const
+const AGENT_ACCESS_RATE_LIMIT = { max: 60, windowMs: 60 * 1000 } as const
 
 export async function GET(
-  req: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { agent, response } = await requireAgentApiKey(req)
-  if (!agent) return response
+  const auth = await requireAgentWalletIdentity(request)
+  if ('error' in auth) return auth.error
 
-  const rateLimit = await takeRateLimitToken(`agent-access:${agent.agentMemberId}`, AGENT_ACCESS_RATE_LIMIT)
+  const rateLimit = await takeRateLimitToken(
+    `agent-access:${auth.agent.agentMemberId}`,
+    AGENT_ACCESS_RATE_LIMIT,
+  )
   if (rateLimit.limited) {
     return NextResponse.json(
-      { error: 'Too many access requests, try again later' },
+      { error: 'Too many agent access requests' },
       { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
     )
   }
@@ -38,63 +31,33 @@ export async function GET(
   if (!hasSealSessionConfig()) {
     return NextResponse.json({ error: 'Seal session is not configured' }, { status: 503 })
   }
-  if (hasCredentialedSealServerConfigs()) {
-    return NextResponse.json(
-      { error: 'Credentialed Seal key servers are not supported for direct agent access' },
-      { status: 503 },
-    )
-  }
 
   const { id } = await params
   const soul = await findSoulAssetDetailByRouteId(id)
   if (!soul) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-
-  let soulPackageId: string
-  try {
-    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
-  } catch {
-    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
-  }
-  const allowlistRegistryObjectId = getOptionalPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
-
-  let agentAddress: string | null
-  try {
-    agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
-  } catch (walletError) {
-    if (isMultipleSuiWalletBindingsError(walletError)) {
-      return NextResponse.json({ error: walletError.message }, { status: 409 })
-    }
-    throw walletError
-  }
-  if (!agentAddress) {
-    return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 403 })
+    return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
   try {
-    return NextResponse.json(await resolveSoulAccessPayload({
-      soul,
-      viewerAddresses: [agentAddress],
-      soulPackageId,
-      allowlistRegistryObjectId,
-    }))
-  } catch (accessError) {
-    if (accessError instanceof SoulAccessDeniedError) {
-      return NextResponse.json({ error: accessError.message }, { status: accessError.status })
-    }
-    if (accessError instanceof OnChainVerificationError) {
-      return NextResponse.json(
-        { error: getClientSafeOnChainVerificationErrorMessage(accessError) },
-        { status: accessError.status },
-      )
-    }
-
-    console.error('[agent-access] Failed to resolve Soul access', {
-      agentMemberId: agent.agentMemberId,
-      soulOnChainId: soul.onChainId,
-      error: toSafeErrorDetails(accessError),
+    const payload = await resolveSoulAccessPayload({
+      soul: toSoulAssetDetail(soul, {
+        viewerMemberId: auth.agent.agentMemberId,
+        viewerAddresses: auth.walletAddresses,
+        quote: null,
+      }),
+      viewerAddresses: auth.walletAddresses,
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
     })
-    return NextResponse.json({ error: 'Unable to verify Soul access right now' }, { status: 503 })
+    return NextResponse.json(payload)
+  } catch (error) {
+    if (error instanceof SoulAccessDeniedError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    console.error('[agent-soul-access] Failed', {
+      agentMemberId: auth.agent.agentMemberId,
+      soulId: id,
+      error,
+    })
+    return NextResponse.json({ error: 'Failed to resolve agent access' }, { status: 500 })
   }
 }

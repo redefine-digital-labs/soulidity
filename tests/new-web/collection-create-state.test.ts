@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getCreateCollectionFormState,
   getCreateCollectionRedirectHref,
-} from '../../new-web/lib/collections/create-form-state'
+} from '../../web/lib/collections/create-form-state'
 
 describe('create collection form state', () => {
   it('marks required fields incomplete before submit', () => {

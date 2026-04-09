@@ -39,7 +39,7 @@ describe('Soulidity queries', () => {
       },
     })
 
-    const { getSoulSkillsObject } = await import('../../new-web/lib/soulidity/queries')
+    const { getSoulSkillsObject } = await import('../../web/lib/soulidity/queries')
     await expect(getSoulSkillsObject('0x5', '0x42')).resolves.toEqual({
       objectId: '0x5',
       packageId: '0x0000000000000000000000000000000000000000000000000000000000000042',
@@ -96,7 +96,7 @@ describe('Soulidity queries', () => {
         nextCursor: null,
       })
 
-    const { listOwnedPersonalKioskCaps } = await import('../../new-web/lib/soulidity/queries')
+    const { listOwnedPersonalKioskCaps } = await import('../../web/lib/soulidity/queries')
 
     await expect(listOwnedPersonalKioskCaps('0xabc')).resolves.toEqual([
       {

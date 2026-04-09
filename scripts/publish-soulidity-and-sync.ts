@@ -43,7 +43,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const moveRoot = join(repoRoot, 'move')
 const sourcePackageDir = join(repoRoot, 'move', 'soulidity')
 const sourcePublishedTomlPath = join(sourcePackageDir, 'Published.toml')
-const manifestPath = join(repoRoot, 'new-web', 'lib', 'soulidity', 'deployment-manifest.json')
+const manifestPath = join(repoRoot, 'web', 'lib', 'soulidity', 'deployment-manifest.json')
 
 function readJsonFile<T>(path: string): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T

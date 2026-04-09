@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { requireAdmin } from '@web/lib/auth/admin'
-import { buildApprovedTweetUpdate, parseTweetMeta } from '@web/lib/admin-tweet-review'
+import { requireAdmin } from '@/lib/auth/require-admin'
+import { buildApprovedTweetUpdate, parseTweetMeta } from '@/lib/admin-tweet-review'
 import OpenAI from 'openai'
 
 const SYSTEM_PROMPT = `你是一名专业的 AI×Web3 新闻编辑。
@@ -39,7 +39,7 @@ export async function POST(
   const { id } = await params
   const body = await req.json().catch(() => ({}))
   const tags: string[] = Array.isArray(body.tags)
-    ? body.tags.map((t: any) => typeof t === 'string' ? t.trim() : '').filter(Boolean)
+    ? body.tags.map((t: unknown) => typeof t === 'string' ? t.trim() : '').filter(Boolean)
     : []
 
   try {
@@ -53,11 +53,28 @@ export async function POST(
       return NextResponse.json({ error: `Invalid status: ${item.status}` }, { status: 400 })
     }
 
-    const meta = parseTweetMeta(item.rawData) ?? {}
+    // Atomically claim the item to prevent concurrent approve/reject races.
+    // The non-atomic precheck above is kept for fast UX feedback; the real
+    // guard is this CAS update which succeeds only once.
+    const claimed = await prisma.rawItem.updateMany({
+      where: { id, status: 'pending_review' },
+      data: { status: 'reviewing' },
+    })
+    if (claimed.count === 0) {
+      return NextResponse.json({ error: 'Item already claimed by another action' }, { status: 409 })
+    }
 
-    // LLM expand
     const apiKey = process.env.ZAI_API_KEY
-    if (!apiKey) return NextResponse.json({ error: 'LLM API key not configured' }, { status: 500 })
+    if (!apiKey) {
+      // Rollback the CAS claim — no LLM key means we can't proceed
+      await prisma.rawItem.updateMany({
+        where: { id, status: 'reviewing' },
+        data: { status: 'pending_review' },
+      }).catch(() => {})
+      return NextResponse.json({ error: 'LLM API key not configured' }, { status: 500 })
+    }
+
+    const meta = parseTweetMeta(item.rawData) ?? {}
 
     const client = new OpenAI({
       baseURL: 'https://open.bigmodel.cn/api/paas/v4',
@@ -74,16 +91,26 @@ export async function POST(
     })
 
     const text = response.choices[0]?.message?.content
-    if (!text) return NextResponse.json({ error: 'Empty LLM response' }, { status: 500 })
+    if (!text) {
+      await prisma.rawItem.updateMany({
+        where: { id, status: 'reviewing' },
+        data: { status: 'pending_review' },
+      }).catch(() => {})
+      return NextResponse.json({ error: 'Empty LLM response' }, { status: 500 })
+    }
 
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const result = JSON.parse(cleaned)
 
     if (!result.title || !result.summary) {
+      await prisma.rawItem.updateMany({
+        where: { id, status: 'reviewing' },
+        data: { status: 'pending_review' },
+      }).catch(() => {})
       return NextResponse.json({ error: 'LLM determined content too thin to expand' }, { status: 422 })
     }
 
-    // Update RawItem and create Article in a transaction
+    // Finalize the RawItem and create Article atomically
     const [, article] = await prisma.$transaction([
       prisma.rawItem.update({
         where: { id },
@@ -101,15 +128,20 @@ export async function POST(
           summaryZh: result.summary,
           summaryEn: item.content ?? '',
           tags: tags.length > 0 ? JSON.stringify(tags) : null,
-          status: 'published',
+          status: 'draft',
           pipelineStatus: 'completed',
         },
       }),
     ])
 
     return NextResponse.json({ success: true, title: result.title, summary: result.summary, articleId: article.id })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Approve error:', err)
+    // Revert the CAS claim so the item can be retried
+    await prisma.rawItem.updateMany({
+      where: { id, status: 'reviewing' },
+      data: { status: 'pending_review' },
+    }).catch(() => {})
     return NextResponse.json({ error: '审核通过失败，请稍后重试' }, { status: 500 })
   }
 }

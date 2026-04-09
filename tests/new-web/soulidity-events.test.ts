@@ -55,7 +55,7 @@ import {
   tryExtractSkillVersionAppendedEvent,
   extractSkillVersionDeletedEvent,
   isGrantActive,
-} from '../../new-web/lib/soulidity/events'
+} from '../../web/lib/soulidity/events'
 
 // ── Test constants ──────────────────────────────────────────────────────
 const PKG = '0x' + 'aa'.repeat(32) // 0xaaaa…aa (64 hex chars)

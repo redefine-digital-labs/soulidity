@@ -33,17 +33,17 @@ import {
   toSoulAssetSummaryList,
   toSoulCollectionSummaryList,
   toSoulCollectionDetail,
-} from '../../new-web/lib/soulidity/repository'
+} from '../../web/lib/soulidity/repository'
 
 import {
   serializeSoulPreviewImages,
   serializeSoulPreviewImageList,
-} from '../../new-web/lib/soulidity/serialization'
+} from '../../web/lib/soulidity/serialization'
 
 import {
   formatAtomicAmountForDisplay,
   parseDisplayAmountToAtomic,
-} from '../../new-web/lib/soulidity/format'
+} from '../../web/lib/soulidity/format'
 
 // ── Test data factories ──────────────────────────────────────────────────────
 

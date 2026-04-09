@@ -216,7 +216,7 @@ describe('POST /api/wrap-link/personal', () => {
   })
 
   async function callRoute(body: Record<string, unknown>) {
-    const { POST } = await import('../../new-web/app/api/wrap-link/personal/route.ts')
+    const { POST } = await import('../../web/app/api/wrap-link/personal/route.ts')
     return POST(makeRequest(body) as any)
   }
 

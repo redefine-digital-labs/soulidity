@@ -1,28 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
-import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
+import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@web/lib/souls/repository'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
+import { quoteSoulPurchase } from '@/lib/soulidity/queries'
+import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
+import { getCachedMarketConfig } from '@/lib/soulidity/market-config-cache'
 
 export const dynamic = 'force-dynamic'
 
-const AGENT_SOUL_DETAIL_RATE_LIMIT = {
-  max: 60,
-  windowMs: 60 * 1000,
-} as const
+const AGENT_DETAIL_RATE_LIMIT = { max: 60, windowMs: 60 * 1000 } as const
 
 export async function GET(
-  req: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { agent, response } = await requireAgentApiKey(req)
-  if (!agent) return response
+  const auth = await requireAgentWalletIdentity(request)
+  if ('error' in auth) return auth.error
 
-  const rateLimit = await takeRateLimitToken(`agent-detail:${agent.agentMemberId}`, AGENT_SOUL_DETAIL_RATE_LIMIT)
+  const rateLimit = await takeRateLimitToken(
+    `agent-detail:${auth.agent.agentMemberId}`,
+    AGENT_DETAIL_RATE_LIMIT,
+  )
   if (rateLimit.limited) {
     return NextResponse.json(
-      { error: 'Too many soul detail requests, try again later' },
+      { error: 'Too many agent detail requests' },
       { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
     )
   }
@@ -30,21 +31,30 @@ export async function GET(
   const { id } = await params
   const soul = await findSoulAssetDetailByRouteId(id)
   if (!soul) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  let viewerWalletAddresses: string[] = []
-  try {
-    viewerWalletAddresses = await getMemberSuiWalletAddresses(agent.agentMemberId)
-  } catch (walletError) {
-    if (isMultipleSuiWalletBindingsError(walletError)) {
-      return NextResponse.json({ error: walletError.message }, { status: 409 })
+  let quote = null
+  if (soul.listingStatus === 'listed' && soul.listedPriceAtomic) {
+    try {
+      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      const configId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+      const config = await getCachedMarketConfig(configId, packageId)
+      quote = quoteSoulPurchase(config, {
+        priceAtomic: BigInt(soul.listedPriceAtomic.toString()),
+        creatorRoyaltyBps: soul.creatorRoyaltyBps,
+        collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+      })
+    } catch {
+      // quote is optional
     }
-    throw walletError
   }
 
-  return NextResponse.json(toSoulAssetDetail(soul, {
-    viewerMemberId: agent.agentMemberId,
-    viewerWalletAddresses,
-  }))
+  const detail = toSoulAssetDetail(soul, {
+    viewerMemberId: auth.agent.agentMemberId,
+    viewerAddresses: auth.walletAddresses,
+    quote,
+  })
+
+  return NextResponse.json(detail)
 }

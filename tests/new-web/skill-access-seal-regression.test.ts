@@ -8,17 +8,17 @@ function readSource(relativePath: string) {
 
 describe('skill access Seal regression guards', () => {
   it('builds approval tx bytes as TransactionKind for Seal decrypt', () => {
-    const source = readSource('new-web/lib/soulidity/skill-access.ts')
+    const source = readSource('web/lib/soulidity/skill-access.ts')
 
     expect(source).toContain('onlyTransactionKind: true')
   })
 
   it('uses seal_approve-prefixed skills approval targets end to end', () => {
     const moveSource = readSource('move/soulidity/sources/skills.move')
-    const routeSource = readSource('new-web/app/api/souls/[id]/skills/[skillName]/versions/[versionIndex]/access/route.ts')
-    const agentRouteSource = readSource('new-web/app/api/agent/souls/[id]/skills/[skillName]/versions/[versionIndex]/access/route.ts')
-    const typesSource = readSource('new-web/lib/soulidity/types.ts')
-    const clientSource = readSource('new-web/lib/soulidity/skill-access.ts')
+    const routeSource = readSource('web/app/api/souls/[id]/skills/[skillName]/versions/[versionIndex]/access/route.ts')
+    const agentRouteSource = readSource('web/app/api/agent/souls/[id]/skills/[skillName]/versions/[versionIndex]/access/route.ts')
+    const typesSource = readSource('web/lib/soulidity/types.ts')
+    const clientSource = readSource('web/lib/soulidity/skill-access.ts')
 
     expect(moveSource).toContain('entry fun seal_approve_private_read_owner(')
     expect(moveSource).toContain('entry fun seal_approve_private_read_granted_agent(')

@@ -8,7 +8,7 @@ function readSource(relativePath: string) {
 
 describe('sell flow regression guards', () => {
   it('redirects to sell success from a stable route id after listing completes', () => {
-    const source = readSource('new-web/app/souls/[id]/sell/authorize/page.tsx')
+    const source = readSource('web/app/souls/[id]/sell/authorize/page.tsx')
 
     expect(source).toContain("if (status !== 'done') return")
     expect(source).toContain("router.replace(`/souls/${encodeURIComponent(id)}/sell/success?price=${encodeURIComponent(rawPrice)}`)")

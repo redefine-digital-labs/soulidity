@@ -53,8 +53,8 @@ vi.mock('@web/lib/services/seal', () => ({
 }))
 
 // ── Imports (after mocks) ───────────────────────────────────────────────
-import { resolveSoulAccessPayload, SoulAccessDeniedError } from '../../new-web/lib/soulidity/access'
-import type { SoulAssetDetail } from '../../new-web/lib/soulidity/types'
+import { resolveSoulAccessPayload, SoulAccessDeniedError } from '../../web/lib/soulidity/access'
+import type { SoulAssetDetail } from '../../web/lib/soulidity/types'
 
 // ── Test constants ──────────────────────────────────────────────────────
 const PKG = '0x' + 'aa'.repeat(32)
@@ -570,7 +570,7 @@ vi.mock('@mysten/sui/transactions', () => ({
 }))
 
 // skill-access.ts uses dynamic function construction, import after mocks
-const { readSkillAccessError } = await import('../../new-web/lib/soulidity/skill-access')
+const { readSkillAccessError } = await import('../../web/lib/soulidity/skill-access')
 
 describe('readSkillAccessError', () => {
   it('extracts error string from { error: string } payload', () => {

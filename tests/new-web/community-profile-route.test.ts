@@ -28,7 +28,7 @@ vi.mock('@/lib/soulidity/serialization', () => ({
   serializeSoulPreviewImageList: (value: unknown) => value,
 }))
 
-describe('new-web community profile route', () => {
+describe('web community profile route', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
@@ -38,7 +38,7 @@ describe('new-web community profile route', () => {
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
   })
 
-  it('serializes post tags as arrays for the new-web profile contract', async () => {
+  it('serializes post tags as arrays for the web profile contract', async () => {
     mockedPrisma.member.findUnique.mockResolvedValueOnce({
       id: 'member-1',
       tgName: 'claw',
@@ -74,7 +74,7 @@ describe('new-web community profile route', () => {
       authoredSoulAssets: [],
     })
 
-    const { GET } = await import('../../new-web/app/api/community/profile/[id]/route.ts')
+    const { GET } = await import('../../web/app/api/community/profile/[id]/route.ts')
     const response = await GET(new Request('http://localhost/api/community/profile/member-1'), {
       params: Promise.resolve({ id: 'member-1' }),
     })

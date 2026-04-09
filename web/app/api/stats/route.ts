@@ -1,30 +1,83 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { cached } from '@web/lib/cache'
-import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
 
-const RATE_LIMIT_OPTS = { max: 60, windowMs: 60_000 }
+export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
-  const ip = getRequestIp(request.headers) ?? getAnonymousRateLimitFingerprint(request.headers)
-  if (ip) {
-    const { limited } = await takeRateLimitToken(`stats:${ip}`, RATE_LIMIT_OPTS)
-    if (limited) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+export interface ProtocolStats {
+  totalSouls: number
+  totalVolumeAtomic: string
+  activeSoulGrants: number
+  soulsSold30d: number
+  creatorCount: number
+  avgSoulPriceAtomic: string
+  collectionsLaunched: number
+}
+
+export async function GET() {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
+  // Prisma does not support cross-column comparisons in `where` clauses, so we
+  // use $queryRaw for queries that need `current_owner_address != creator_address`.
+  const [
+    totalSouls,
+    volumeRows,
+    activeSoulGrants,
+    sold30dRows,
+    creatorCountAgg,
+    avgPriceAgg,
+    collectionsLaunched,
+  ] = await Promise.all([
+    // Total Souls minted (all statuses)
+    prisma.soulAsset.count(),
+
+    // Estimated trade volume: sum of current listed prices for traded Souls.
+    // This is a mirror-based proxy, not actual settlement amounts.
+    prisma.$queryRaw<[{ total: bigint | null }]>`
+      SELECT SUM(listed_price_atomic) AS total
+      FROM soul_assets
+      WHERE current_owner_address != creator_address
+        AND listed_price_atomic IS NOT NULL
+    `,
+
+    // Active SoulGrants
+    prisma.soulGrantRecord.count({ where: { status: 'active' } }),
+
+    // Estimated traded Souls in last 30 days: owner != creator with recent update.
+    // May include relists or mirror refreshes — not actual sale events.
+    prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(*) AS count
+      FROM soul_assets
+      WHERE current_owner_address != creator_address
+        AND updated_at >= ${thirtyDaysAgo}
+    `,
+
+    // Distinct creator count via groupBy
+    prisma.soulAsset.groupBy({
+      by: ['creatorAddress'],
+      _count: true,
+    }),
+
+    // Average listing price for currently listed Souls (not executed sale prices)
+    prisma.soulAsset.aggregate({
+      _avg: { listedPriceAtomic: true },
+      where: { listingStatus: 'listed' },
+    }),
+
+    // Collections launched
+    prisma.soulCollectionAsset.count(),
+  ])
+
+  const stats: ProtocolStats = {
+    totalSouls,
+    totalVolumeAtomic: (volumeRows[0]?.total ?? 0n).toString(),
+    activeSoulGrants,
+    soulsSold30d: Number(sold30dRows[0]?.count ?? 0n),
+    creatorCount: creatorCountAgg.length,
+    avgSoulPriceAtomic: avgPriceAgg._avg.listedPriceAtomic != null
+      ? avgPriceAgg._avg.listedPriceAtomic.toString()
+      : '0',
+    collectionsLaunched,
   }
-  const stats = await cached('stats', 60_000, async () => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    const [raw_new, articles_draft, articles_rejected, published_today, companies_total] = await Promise.all([
-      prisma.rawItem.count({ where: { status: 'new' } }),
-      prisma.article.count({ where: { status: 'draft' } }),
-      prisma.article.count({ where: { status: 'rejected' } }),
-      prisma.publication.count({ where: { publishedAt: { gte: today } } }),
-      prisma.company.count(),
-    ])
-
-    return { raw_new, articles_draft, articles_rejected, published_today, companies_total }
-  })
 
   return NextResponse.json(stats)
 }

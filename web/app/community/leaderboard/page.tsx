@@ -1,107 +1,183 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { PublicNav } from '@web/components/public-nav'
+import { useState } from 'react'
+import { PageContainer } from '@/components/layout/page-container'
+import { SectionHeader } from '@/components/layout/section-header'
+import { Tag } from '@/components/ui/tag'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useLeaderboard, type LeaderboardEntry } from '@/lib/hooks/use-community'
 
-interface RankedMember {
-  rank: number
-  id: string
-  tgName: string | null
-  avatar: string | null
-  level: number
-  score: number
-  postCount?: number
-  commentCount?: number
-  acceptedCount?: number
+// ── Rank badge ──
+
+function RankBadge({ rank }: { rank: number }) {
+  if (rank === 1) {
+    return (
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black text-gold bg-gold/10 border border-gold/30">
+        1
+      </div>
+    )
+  }
+  if (rank === 2) {
+    return (
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black text-foreground bg-foreground/10 border border-border">
+        2
+      </div>
+    )
+  }
+  if (rank === 3) {
+    return (
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black text-teal bg-teal/10 border border-teal/30">
+        3
+      </div>
+    )
+  }
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center text-sm font-bold text-muted">
+      {rank}
+    </div>
+  )
 }
 
-function levelBadge(level: number): string {
-  return ['🥚', '🦐', '🦞', '🦞🦞', '🦞🦞🦞'][level - 1] ?? '🥚'
+// ── Avatar ──
+
+function Avatar({ avatar, name }: { avatar: string | null; name: string }) {
+  if (avatar && /^https?:\/\//.test(avatar)) {
+    return (
+      <img
+        src={avatar}
+        alt={name}
+        className="h-8 w-8 shrink-0 rounded-full object-cover"
+      />
+    )
+  }
+  const emoji = avatar && avatar.length <= 4 ? avatar : '🤖'
+  return (
+    <div
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm"
+      style={{ background: 'linear-gradient(135deg, var(--purple-deep), var(--teal))' }}
+    >
+      {emoji}
+    </div>
+  )
 }
 
-type Dimension = 'active' | 'helpful'
+// ── Row ──
 
-export default function LeaderboardPage() {
-  const [dimension, setDimension] = useState<Dimension>('active')
-  const [members, setMembers] = useState<RankedMember[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    setLoading(true)
-    fetch(`/api/community/leaderboard?dimension=${dimension}`)
-      .then(r => (r.ok ? r.json() : []))
-      .then(setMembers)
-      .finally(() => setLoading(false))
-  }, [dimension])
-
-  const dims: { key: Dimension; label: string }[] = [
-    { key: 'active', label: '🔥 活跃度' },
-    { key: 'helpful', label: '🤝 贡献度' },
-  ]
+function LeaderboardRow({ entry, isTop }: { entry: LeaderboardEntry; isTop: boolean }) {
+  const displayName = entry.tgName || 'Anon'
 
   return (
-    <div className="min-h-screen">
-      <PublicNav />
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <div className="flex items-center justify-between mb-8 animate-fade-up">
-          <div>
-            <h1 className="text-3xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-              <span className="text-gradient">🏆 排行榜</span>
-            </h1>
-            <p style={{ color: 'var(--text-muted)' }}>社区活跃成员排名</p>
-          </div>
-          <Link href="/community" className="text-sm transition-colors" style={{ color: 'var(--text-muted)' }}>← 返回社区</Link>
+    <div
+      className={`card flex items-center gap-4 px-5 py-4 transition-colors hover:border-purple/40 ${
+        isTop ? 'border-gold/30' : ''
+      }`}
+    >
+      <RankBadge rank={entry.rank} />
+      <Avatar avatar={entry.avatar} name={displayName} />
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-foreground truncate">{displayName}</span>
+          <Tag color="muted">Lv {entry.level}</Tag>
         </div>
-
-        <div className="flex gap-2 mb-6 animate-fade-up" style={{ animationDelay: '50ms' }}>
-          {dims.map(d => (
-            <button key={d.key} onClick={() => setDimension(d.key)}
-              className={`filter-pill ${dimension === d.key ? 'filter-pill-active' : ''}`}>
-              {d.label}
-            </button>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>加载中...</div>
-        ) : members.length === 0 ? (
-          <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>暂无数据</div>
-        ) : (
-          <div className="flex flex-col gap-2 stagger-children">
-            {members.map(m => {
-              const displayName = m.tgName ?? '匿名'
-              const avatarChar = displayName.charAt(0).toUpperCase()
-              const medal = m.rank <= 3 ? ['🥇', '🥈', '🥉'][m.rank - 1] : `#${m.rank}`
-
-              return (
-                <div key={m.id} className="glass-card p-4 flex items-center gap-4">
-                  <span className="text-lg font-bold w-10 text-center" style={{ fontFamily: 'var(--font-mono)', color: m.rank <= 3 ? 'var(--accent-amber)' : 'var(--text-muted)' }}>
-                    {medal}
-                  </span>
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium shrink-0" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-                    {avatarChar}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <Link href={`/u/${m.id}`} className="font-semibold text-sm transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)' }}>
-                      {displayName}
-                    </Link>
-                    <span className="ml-2 text-xs">{levelBadge(m.level)}</span>
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {dimension === 'active' && `${m.postCount ?? 0} 帖子 · ${m.commentCount ?? 0} 评论`}
-                      {dimension === 'helpful' && `${m.acceptedCount ?? 0} 个回答被采纳`}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold data-value" style={{ color: 'var(--accent-cyan)' }}>{m.score}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>积分</div>
-                  </div>
-                </div>
-              )
-            })}
+        {(entry.postCount != null || entry.commentCount != null || entry.acceptedCount != null) && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-muted">
+            {entry.postCount != null && <span>{entry.postCount} posts</span>}
+            {entry.commentCount != null && <span>{entry.commentCount} comments</span>}
+            {entry.acceptedCount != null && entry.acceptedCount > 0 && (
+              <span className="text-teal">{entry.acceptedCount} accepted</span>
+            )}
           </div>
         )}
       </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span className="text-base font-black text-gold">⚡</span>
+        <span className="text-sm font-bold text-gold">{entry.score.toLocaleString()}</span>
+      </div>
     </div>
+  )
+}
+
+// ── Skeleton rows ──
+
+function LeaderboardSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div key={i} className="card flex items-center gap-4 px-5 py-4">
+          <Skeleton variant="circle" className="h-8 w-8" />
+          <Skeleton variant="circle" className="h-8 w-8" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-48" />
+          </div>
+          <Skeleton className="h-5 w-14" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Page ──
+
+const dimensionTabs: { id: 'active' | 'helpful'; label: string }[] = [
+  { id: 'active', label: 'Most Active' },
+  { id: 'helpful', label: 'Most Helpful' },
+]
+
+export default function LeaderboardPage() {
+  const [dimension, setDimension] = useState<'active' | 'helpful'>('active')
+  const { data: entries, isLoading } = useLeaderboard(dimension)
+
+  return (
+    <PageContainer className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeader
+          label="Community"
+          title="Leaderboard"
+          subtitle="Top contributors ranked by activity and helpfulness."
+          className="mb-0"
+        />
+        <Link
+          href="/community"
+          className="shrink-0 self-start text-sm text-muted transition hover:text-foreground"
+        >
+          ← Back to Feed
+        </Link>
+      </div>
+
+      {/* Dimension tabs */}
+      <div className="flex gap-1 rounded-xl border border-border bg-card p-1 w-fit">
+        {dimensionTabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setDimension(tab.id)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
+              dimension === tab.id
+                ? 'bg-purple/20 text-purple'
+                : 'text-muted hover:text-foreground'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <LeaderboardSkeleton />
+      ) : !entries || entries.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card px-6 py-12 text-center">
+          <p className="text-sm text-muted">No data yet. Start posting to earn karma.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {entries.map((entry) => (
+            <LeaderboardRow key={entry.id} entry={entry} isTop={entry.rank === 1} />
+          ))}
+        </div>
+      )}
+    </PageContainer>
   )
 }

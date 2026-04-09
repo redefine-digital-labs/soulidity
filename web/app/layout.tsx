@@ -1,25 +1,28 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import { PrivyProvider } from "@web/components/privy-provider";
-import { AuthProvider } from "@web/components/auth-provider";
+import type { Metadata } from 'next'
+import { AppProviders } from '@/components/providers/app-providers'
+import { AppShell } from '@/components/layout/app-shell'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: "CryptoOpenClaw",
-  description: "AI 驱动的加密货币新闻与 OpenClaw 生态",
-};
+  title: 'Soulidity — On-chain Soul Ownership',
+  description:
+    'On-chain ownership infrastructure for digital entities — original characters, AI agents, and everything in between.',
+}
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="zh-CN">
-      <body className="antialiased">
-        <PrivyProvider>
-          <AuthProvider>{children}</AuthProvider>
-        </PrivyProvider>
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <body className="overflow-x-hidden">
+        <AppProviders>
+          <AppShell>
+            {children}
+          </AppShell>
+        </AppProviders>
       </body>
     </html>
-  );
+  )
 }

@@ -12,27 +12,27 @@ describe('mirror sync regression guards', () => {
   // -------------------------------------------------------------------------
   describe('publish route: skillsOnChainId fallback from event data', () => {
     it('patches skillsOnChainId when chain query returns null but event has skillsId', () => {
-      const source = readSource('new-web/app/api/souls/publish/route.ts')
+      const source = readSource('web/app/api/souls/publish/route.ts')
 
       // Guard the conditional that detects the RPC lag scenario
       expect(source).toContain('if (initialSkill?.skillsId && !mirrored.skillsOnChainId)')
     })
 
     it('writes the event-extracted skillsId to the DB via prisma.soulAsset.update', () => {
-      const source = readSource('new-web/app/api/souls/publish/route.ts')
+      const source = readSource('web/app/api/souls/publish/route.ts')
 
       expect(source).toContain('await prisma.soulAsset.update(')
       expect(source).toContain('data: { skillsOnChainId: initialSkill.skillsId }')
     })
 
     it('mutates mirrored.skillsOnChainId so the response reflects the patched value', () => {
-      const source = readSource('new-web/app/api/souls/publish/route.ts')
+      const source = readSource('web/app/api/souls/publish/route.ts')
 
       expect(source).toContain('mirrored.skillsOnChainId = initialSkill.skillsId')
     })
 
     it('patch is placed after syncSoulProjectionFromChain and before memory/skill projections', () => {
-      const source = readSource('new-web/app/api/souls/publish/route.ts')
+      const source = readSource('web/app/api/souls/publish/route.ts')
 
       const syncPos = source.indexOf('await syncSoulProjectionFromChain(')
       const patchPos = source.indexOf('if (initialSkill?.skillsId && !mirrored.skillsOnChainId)')
@@ -77,7 +77,7 @@ describe('mirror sync regression guards', () => {
   // -------------------------------------------------------------------------
   describe('collection add-soul route: granular error diagnostics', () => {
     it('catches errors and logs memberId, txDigest, collectionId, errorType, and errorMsg', () => {
-      const source = readSource('new-web/app/api/collections/[id]/add-soul/route.ts')
+      const source = readSource('web/app/api/collections/[id]/add-soul/route.ts')
 
       expect(source).toContain("console.error('[collection-add-soul] Mirror failed'")
       expect(source).toContain('memberId: auth.identity.memberId')
@@ -88,7 +88,7 @@ describe('mirror sync regression guards', () => {
     })
 
     it('distinguishes OnChainVerificationError from unknown errors in the response', () => {
-      const source = readSource('new-web/app/api/collections/[id]/add-soul/route.ts')
+      const source = readSource('web/app/api/collections/[id]/add-soul/route.ts')
 
       expect(source).toContain('error instanceof OnChainVerificationError')
       expect(source).toContain("isVerification ? 'verification' : 'unknown'")
@@ -96,19 +96,19 @@ describe('mirror sync regression guards', () => {
     })
 
     it('returns descriptive error message prefixed with the error detail for verification failures', () => {
-      const source = readSource('new-web/app/api/collections/[id]/add-soul/route.ts')
+      const source = readSource('web/app/api/collections/[id]/add-soul/route.ts')
 
       expect(source).toContain('`Event verification failed: ${errorMsg}`')
     })
 
     it('returns generic error message for non-verification failures to avoid leaking internals', () => {
-      const source = readSource('new-web/app/api/collections/[id]/add-soul/route.ts')
+      const source = readSource('web/app/api/collections/[id]/add-soul/route.ts')
 
       expect(source).toContain("'Failed to mirror add-soul transaction'")
     })
 
     it('normalizes collectionId comparison with toLowerCase to prevent case-mismatch false positives', () => {
-      const source = readSource('new-web/app/api/collections/[id]/add-soul/route.ts')
+      const source = readSource('web/app/api/collections/[id]/add-soul/route.ts')
 
       expect(source).toContain('.toLowerCase()')
       expect(source).toContain("'Transaction targeted a different collection'")

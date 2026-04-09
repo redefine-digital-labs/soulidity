@@ -8,7 +8,7 @@ function readSource(relativePath: string) {
 
 describe('follow status regression guards', () => {
   it('loads follow status with auth headers when available', () => {
-    const source = readSource('new-web/lib/hooks/use-social.ts')
+    const source = readSource('web/lib/hooks/use-social.ts')
     const useFollowStatusBlock = source.match(/export function useFollowStatus[\s\S]*?\n}\n/)?.[0]
 
     expect(useFollowStatusBlock).toBeTruthy()
@@ -20,7 +20,7 @@ describe('follow status regression guards', () => {
   })
 
   it('updates the viewer-scoped follow cache after toggling', () => {
-    const source = readSource('new-web/lib/hooks/use-social.ts')
+    const source = readSource('web/lib/hooks/use-social.ts')
     const useToggleFollowBlock = source.match(/export function useToggleFollow[\s\S]*?\n}\n\n\/\/ ── Bookmark hooks ──/)?.[0]
 
     expect(useToggleFollowBlock).toBeTruthy()

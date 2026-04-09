@@ -13,7 +13,7 @@ function requireExistingAliasTarget(relativePath: string) {
 export default defineConfig({
   resolve: {
     alias: [
-      { find: /^@\//, replacement: `${fileURLToPath(new URL('./new-web/', import.meta.url))}/` },
+      { find: /^@\//, replacement: `${fileURLToPath(new URL('./web/', import.meta.url))}/` },
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
       { find: '@bot', replacement: fileURLToPath(new URL('./src/bot', import.meta.url)) },
       { find: '@shared', replacement: fileURLToPath(new URL('./src/shared', import.meta.url)) },

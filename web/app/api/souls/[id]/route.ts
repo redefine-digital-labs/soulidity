@@ -3,10 +3,13 @@ import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-error
 import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
 import { resolveIdentity } from '@web/lib/auth/identity'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
-import { OnChainVerificationError } from '@web/lib/souls/on-chain-verification'
-import { getSoulPurchaseQuote } from '@web/lib/souls/purchase-quote'
-import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@web/lib/souls/repository'
-import { toSafeErrorDetails } from '@web/lib/souls/route-safety'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import {
+  OnChainVerificationError,
+  quoteSoulPurchase,
+} from '@/lib/soulidity/queries'
+import { getCachedMarketConfig } from '@/lib/soulidity/market-config-cache'
+import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 
 const SOUL_DETAIL_RATE_LIMIT = {
   max: 60,
@@ -16,52 +19,8 @@ const SOUL_DETAIL_NO_IP_RATE_LIMIT = {
   max: 120,
   windowMs: 60 * 1000,
 } as const
-const SOUL_DETAIL_QUOTE_CACHE_TTL_MS = 30_000
 let warnedMissingSoulDetailIp = false
-const soulDetailQuoteCache = new Map<string, {
-  expiresAt: number
-  promise: ReturnType<typeof getSoulPurchaseQuote>
-}>()
-
-const QUOTE_CACHE_MAX_SIZE = 500
-let lastQuoteCachePrune = 0
-const QUOTE_CACHE_PRUNE_INTERVAL_MS = 60_000
-
-function pruneQuoteCacheIfNeeded() {
-  const now = Date.now()
-  if (now - lastQuoteCachePrune < QUOTE_CACHE_PRUNE_INTERVAL_MS && soulDetailQuoteCache.size < QUOTE_CACHE_MAX_SIZE) return
-  lastQuoteCachePrune = now
-  for (const [key, entry] of soulDetailQuoteCache) {
-    if (entry.expiresAt <= now) soulDetailQuoteCache.delete(key)
-  }
-}
-
-function getCachedSoulPurchaseQuote(listingObjectId: string) {
-  const now = Date.now()
-  pruneQuoteCacheIfNeeded()
-
-  const cachedQuote = soulDetailQuoteCache.get(listingObjectId)
-  if (cachedQuote && cachedQuote.expiresAt > now) {
-    return cachedQuote.promise
-  }
-
-  soulDetailQuoteCache.delete(listingObjectId)
-
-  let quotePromise: ReturnType<typeof getSoulPurchaseQuote>
-  quotePromise = getSoulPurchaseQuote({ listingObjectId }).catch((error) => {
-    if (soulDetailQuoteCache.get(listingObjectId)?.promise === quotePromise) {
-      soulDetailQuoteCache.delete(listingObjectId)
-    }
-    throw error
-  })
-
-  soulDetailQuoteCache.set(listingObjectId, {
-    expiresAt: now + SOUL_DETAIL_QUOTE_CACHE_TTL_MS,
-    promise: quotePromise,
-  })
-
-  return quotePromise
-}
+export const dynamic = 'force-dynamic'
 
 function resolveSoulDetailRateLimit(headers: Headers, memberId: string | null) {
   const requestIp = getRequestIp(headers)
@@ -136,30 +95,42 @@ export async function GET(
   const viewerWalletAddresses = walletLookup.addresses
   if (walletLookup.error) {
     if (isMultipleSuiWalletBindingsError(walletLookup.error)) {
-      console.warn('[soul-detail] Viewer wallet lookup is ambiguous; continuing without wallet-scoped fields', toSafeErrorDetails(walletLookup.error))
+      console.warn('[soul-detail] Viewer wallet lookup is ambiguous; continuing without wallet-scoped fields', {
+        error: walletLookup.error.message,
+      })
     } else {
-      console.warn('[soul-detail] Failed to resolve viewer wallets', toSafeErrorDetails(walletLookup.error))
+      console.warn('[soul-detail] Failed to resolve viewer wallets', {
+        error: walletLookup.error,
+      })
+    }
+  }
+
+  let quote = null
+  let platformFeeBps: number | null = null
+  try {
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+    const config = await getCachedMarketConfig(marketConfigId, packageId)
+    platformFeeBps = config.platformFeeBps
+    if (soul.listingStatus === 'listed' && soul.listedPriceAtomic != null) {
+      quote = quoteSoulPurchase(config, {
+        priceAtomic: BigInt(soul.listedPriceAtomic.toString()),
+        creatorRoyaltyBps: soul.creatorRoyaltyBps,
+        collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+      })
+    }
+  } catch (detailError) {
+    if (!(detailError instanceof OnChainVerificationError)) {
+      console.warn('[soul-detail] Failed to fetch MarketConfig or compute Soulidity quote', detailError)
     }
   }
 
   const detail = toSoulAssetDetail(soul, {
     viewerMemberId: identity?.memberId ?? null,
-    viewerWalletAddresses,
+    viewerAddresses: viewerWalletAddresses,
+    quote,
+    platformFeeBps,
   })
-
-  if (soul.listingStatus === 'listed' && soul.listedPriceAtomic != null && soul.listingObjectOnChainId) {
-    try {
-      const quote = await getCachedSoulPurchaseQuote(soul.listingObjectOnChainId)
-      detail.purchasePlatformFeeAtomic = quote.platformFeeAtomic.toString()
-      detail.purchaseCreatorRoyaltyAtomic = quote.creatorRoyaltyAtomic.toString()
-      detail.purchaseTotalAtomic = quote.totalAtomic.toString()
-      detail.quotedPriceAtomic = quote.priceAtomic.toString()
-    } catch (detailError) {
-      if (!(detailError instanceof OnChainVerificationError)) {
-        console.warn('[soul-detail] Failed to compute purchase fee', detailError)
-      }
-    }
-  }
 
   return NextResponse.json(detail)
 }

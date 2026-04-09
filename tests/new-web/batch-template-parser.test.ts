@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeBatchTemplateRows } from '../../new-web/lib/collections/batch-template'
+import { normalizeBatchTemplateRows } from '../../web/lib/collections/batch-template'
 
 describe('normalizeBatchTemplateRows', () => {
   it('parses valid rows and normalizes tags/royalty', () => {

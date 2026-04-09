@@ -162,7 +162,7 @@ describe('upsertSoulProjection', () => {
   it('calls prisma.soulAsset.upsert with correct where/create/update', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     await upsertSoulProjection({
       soul: makeSoulObject(),
@@ -188,7 +188,7 @@ describe('upsertSoulProjection', () => {
   it('uses params.currentKioskCapOnChainId (NOT state.currentKioskId) — kiosk cap bug fix', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     await upsertSoulProjection({
       soul: makeSoulObject(),
@@ -214,7 +214,7 @@ describe('upsertSoulProjection', () => {
   it('converts listedPriceAtomic bigint to string', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     await upsertSoulProjection({
       soul: makeSoulObject(),
@@ -239,7 +239,7 @@ describe('upsertSoulProjection', () => {
   it('listedPriceAtomic defaults to null when not provided', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     await upsertSoulProjection({
       soul: makeSoulObject(),
@@ -260,7 +260,7 @@ describe('upsertSoulProjection', () => {
   it('contentBlobId falls back to protectedBlobObjectId when protectedBlobId is null', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     await upsertSoulProjection({
       soul: makeSoulObject({ protectedBlobId: null, protectedBlobObjectId: '0xfallback_blob' }),
@@ -281,7 +281,7 @@ describe('upsertSoulProjection', () => {
   it('contentBlobId uses protectedBlobId when present', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     await upsertSoulProjection({
       soul: makeSoulObject({ protectedBlobId: 'real-blob-id', protectedBlobObjectId: '0xblobobj' }),
@@ -301,7 +301,7 @@ describe('upsertSoulProjection', () => {
   it('maps all soul, state, and memory fields to the correct Prisma columns', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     const soul = makeSoulObject()
     const state = makeSoulStateObject({ collectionId: '0xcol', skillsId: '0xskills' })
@@ -355,7 +355,7 @@ describe('upsertSoulProjection', () => {
   it('nullable optional fields default to null', async () => {
     mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
 
-    const { upsertSoulProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-soul')
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
 
     await upsertSoulProjection({
       soul: makeSoulObject(),
@@ -386,7 +386,7 @@ describe('upsertGrantProjection', () => {
   it('calls prisma.soulGrantRecord.upsert with correct where and field mapping', async () => {
     mockedPrisma.soulGrantRecord.upsert.mockResolvedValue({ onChainId: '0xgrant1' })
 
-    const { upsertGrantProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { upsertGrantProjection } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     await upsertGrantProjection({
       grant: makeGrantObject(),
@@ -412,7 +412,7 @@ describe('upsertGrantProjection', () => {
   it('maps expiresAtMs to a Date when present', async () => {
     mockedPrisma.soulGrantRecord.upsert.mockResolvedValue({ onChainId: '0xgrant1' })
 
-    const { upsertGrantProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { upsertGrantProjection } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     const expiresMs = 1720000000000
     await upsertGrantProjection({
@@ -428,7 +428,7 @@ describe('upsertGrantProjection', () => {
   it('expiresAt is null when expiresAtMs is null', async () => {
     mockedPrisma.soulGrantRecord.upsert.mockResolvedValue({ onChainId: '0xgrant1' })
 
-    const { upsertGrantProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { upsertGrantProjection } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     await upsertGrantProjection({
       grant: makeGrantObject({ expiresAtMs: null }),
@@ -443,7 +443,7 @@ describe('upsertGrantProjection', () => {
   it('respects explicit status and replacedByGrantOnChainId', async () => {
     mockedPrisma.soulGrantRecord.upsert.mockResolvedValue({ onChainId: '0xgrant1' })
 
-    const { upsertGrantProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { upsertGrantProjection } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     const endedAt = new Date('2026-01-01')
     await upsertGrantProjection({
@@ -473,7 +473,7 @@ describe('endSoulGrantProjection', () => {
   it('calls prisma.soulGrantRecord.updateMany with status and endedAt', async () => {
     mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 1 })
 
-    const { endSoulGrantProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { endSoulGrantProjection } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     const endedAt = new Date('2026-02-15')
     await endSoulGrantProjection({
@@ -492,7 +492,7 @@ describe('endSoulGrantProjection', () => {
   it('defaults endedAt to current time when not provided', async () => {
     mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 1 })
 
-    const { endSoulGrantProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { endSoulGrantProjection } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     const before = new Date()
     await endSoulGrantProjection({
@@ -510,7 +510,7 @@ describe('endSoulGrantProjection', () => {
   it('passes replacedByGrantOnChainId when provided', async () => {
     mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 1 })
 
-    const { endSoulGrantProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { endSoulGrantProjection } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     await endSoulGrantProjection({
       grantOnChainId: '0xgrant1',
@@ -532,7 +532,7 @@ describe('endActiveSoulGrantProjections', () => {
   it('targets active grants for a specific soul', async () => {
     mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 2 })
 
-    const { endActiveSoulGrantProjections } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { endActiveSoulGrantProjections } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     await endActiveSoulGrantProjections({
       soulOnChainId: '0xsoul123',
@@ -551,7 +551,7 @@ describe('endActiveSoulGrantProjections', () => {
   it('defaults endedAt to current time when not provided', async () => {
     mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 1 })
 
-    const { endActiveSoulGrantProjections } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { endActiveSoulGrantProjections } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     const before = new Date()
     await endActiveSoulGrantProjections({
@@ -569,7 +569,7 @@ describe('endActiveSoulGrantProjections', () => {
   it('uses explicit endedAt when provided', async () => {
     mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 1 })
 
-    const { endActiveSoulGrantProjections } = await import('../../new-web/lib/soulidity/mirror/upsert-grant')
+    const { endActiveSoulGrantProjections } = await import('../../web/lib/soulidity/mirror/upsert-grant')
 
     const endedAt = new Date('2026-03-01')
     await endActiveSoulGrantProjections({
@@ -593,7 +593,7 @@ describe('upsertCollectionProjection', () => {
     mockedPrisma.soulAsset.count.mockResolvedValue(5)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
-    const { upsertCollectionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-collection')
+    const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
 
     await upsertCollectionProjection({
       collection: makeCollectionObject(),
@@ -613,7 +613,7 @@ describe('upsertCollectionProjection', () => {
     mockedPrisma.soulAsset.count.mockResolvedValue(0)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
-    const { upsertCollectionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-collection')
+    const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
 
     const right = makeCollectionRightObject({
       name: 'Right Name',
@@ -640,7 +640,7 @@ describe('upsertCollectionProjection', () => {
     mockedPrisma.soulAsset.count.mockResolvedValue(42)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
-    const { upsertCollectionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-collection')
+    const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
 
     await upsertCollectionProjection({
       collection: makeCollectionObject(),
@@ -660,7 +660,7 @@ describe('upsertCollectionProjection', () => {
     mockedPrisma.soulAsset.count.mockResolvedValue(0)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
-    const { upsertCollectionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-collection')
+    const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
 
     await upsertCollectionProjection({
       collection: makeCollectionObject(),
@@ -681,7 +681,7 @@ describe('upsertCollectionProjection', () => {
     mockedPrisma.soulAsset.count.mockResolvedValue(0)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
-    const { upsertCollectionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-collection')
+    const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
 
     await upsertCollectionProjection({
       collection: makeCollectionObject({ extraRoyaltyBps: 300, tradeable: false }),
@@ -709,7 +709,7 @@ describe('upsertMemoryEntryProjection', () => {
   it('calls prisma.soulMemoryEntry.upsert with memoryOnChainId + timestampKey composite key', async () => {
     mockedPrisma.soulMemoryEntry.upsert.mockResolvedValue({ id: 'memory-entry-1' })
 
-    const { upsertMemoryEntryProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-memory')
+    const { upsertMemoryEntryProjection } = await import('../../web/lib/soulidity/mirror/upsert-memory')
 
     await upsertMemoryEntryProjection({
       entry: makeMemoryEntryObject(),
@@ -730,7 +730,7 @@ describe('upsertMemoryEntryProjection', () => {
   it('maps timestampKey, writer fields, blob fields, and sealSidecar', async () => {
     mockedPrisma.soulMemoryEntry.upsert.mockResolvedValue({ id: 'memory-entry-1' })
 
-    const { upsertMemoryEntryProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-memory')
+    const { upsertMemoryEntryProjection } = await import('../../web/lib/soulidity/mirror/upsert-memory')
 
     await upsertMemoryEntryProjection({
       entry: makeMemoryEntryObject({
@@ -770,7 +770,7 @@ describe('upsertSkillVersionProjection', () => {
   it('calls prisma.soulSkillVersionRecord.upsert with skillsOnChainId + skillName + versionIndex composite key', async () => {
     mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
-    const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
+    const { upsertSkillVersionProjection } = await import('../../web/lib/soulidity/mirror/upsert-skill')
 
     await upsertSkillVersionProjection({
       version: makeSkillVersionObject(),
@@ -793,7 +793,7 @@ describe('upsertSkillVersionProjection', () => {
   it('maps skillName, versionIndex, visibility, and sidecar fields correctly', async () => {
     mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
-    const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
+    const { upsertSkillVersionProjection } = await import('../../web/lib/soulidity/mirror/upsert-skill')
 
     const version = makeSkillVersionObject({
       skillName: 'planner',
@@ -828,7 +828,7 @@ describe('upsertSkillVersionProjection', () => {
   it('handles deletedAt undefined vs null correctly', async () => {
     mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
-    const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
+    const { upsertSkillVersionProjection } = await import('../../web/lib/soulidity/mirror/upsert-skill')
 
     // When deletedAt is not provided (undefined), update should pass undefined (skip field)
     await upsertSkillVersionProjection({
@@ -862,7 +862,7 @@ describe('upsertSkillVersionProjection', () => {
   it('passes an explicit deletedAt date', async () => {
     mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
-    const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
+    const { upsertSkillVersionProjection } = await import('../../web/lib/soulidity/mirror/upsert-skill')
 
     const deletedAt = new Date('2026-04-01')
     await upsertSkillVersionProjection({
@@ -880,7 +880,7 @@ describe('upsertSkillVersionProjection', () => {
   it('sealSidecar defaults to undefined when not provided', async () => {
     mockedPrisma.soulSkillVersionRecord.upsert.mockResolvedValue({ id: 'skill-version-1' })
 
-    const { upsertSkillVersionProjection } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
+    const { upsertSkillVersionProjection } = await import('../../web/lib/soulidity/mirror/upsert-skill')
 
     await upsertSkillVersionProjection({
       version: makeSkillVersionObject(),
@@ -903,7 +903,7 @@ describe('markSkillVersionDeleted', () => {
   it('calls prisma.soulSkillVersionRecord.updateMany with composite key and deletedAt', async () => {
     mockedPrisma.soulSkillVersionRecord.updateMany.mockResolvedValue({ count: 1 })
 
-    const { markSkillVersionDeleted } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
+    const { markSkillVersionDeleted } = await import('../../web/lib/soulidity/mirror/upsert-skill')
 
     const deletedAt = new Date('2026-04-02')
     await markSkillVersionDeleted({
@@ -926,7 +926,7 @@ describe('markSkillVersionDeleted', () => {
   it('defaults deletedAt to current time when not provided', async () => {
     mockedPrisma.soulSkillVersionRecord.updateMany.mockResolvedValue({ count: 1 })
 
-    const { markSkillVersionDeleted } = await import('../../new-web/lib/soulidity/mirror/upsert-skill')
+    const { markSkillVersionDeleted } = await import('../../web/lib/soulidity/mirror/upsert-skill')
 
     const before = new Date()
     await markSkillVersionDeleted({

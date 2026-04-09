@@ -6,9 +6,9 @@ function readSource(relativePath: string) {
   return readFileSync(resolve(process.cwd(), relativePath), 'utf8')
 }
 
-describe('new-web create basic info regression guards', () => {
+describe('web create basic info regression guards', () => {
   it('keeps the step aligned to the screenshot field set instead of the old price/listing layout', () => {
-    const source = readSource('new-web/app/create/page.tsx')
+    const source = readSource('web/app/create/page.tsx')
 
     expect(source).not.toContain("import { FlowBar } from '@/components/nav/flow-bar'")
     expect(source).toContain('FieldLabel label="Category" required')
@@ -22,7 +22,7 @@ describe('new-web create basic info regression guards', () => {
   })
 
   it('keeps the preview image control wired to UploadZone with context-driven preview state', () => {
-    const source = readSource('new-web/app/create/page.tsx')
+    const source = readSource('web/app/create/page.tsx')
 
     expect(source).toContain("import { UploadZone } from '@/components/ui/upload-zone'")
     expect(source).toContain('ctx.coverImageFile')
@@ -33,7 +33,7 @@ describe('new-web create basic info regression guards', () => {
   })
 
   it('keeps royalty options limited to the 4-card screenshot layout with a recommended standard tier', () => {
-    const source = readSource('new-web/app/create/page.tsx')
+    const source = readSource('web/app/create/page.tsx')
 
     expect(source).toContain("desc: '2.5%'")
     expect(source).toContain("desc: '5%', recommended: true")

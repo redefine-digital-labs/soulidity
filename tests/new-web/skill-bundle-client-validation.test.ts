@@ -98,12 +98,12 @@ describe('client skill bundle validation', () => {
   })
 
   it('keeps immediate skill bundle validation wired into every skills upload entrypoint', () => {
-    const createSource = readSource('new-web/app/create/content/page.tsx')
-    const importSource = readSource('new-web/app/import/map/page.tsx')
-    const wrapSource = readSource('new-web/app/wrap-link/personal/configure/page.tsx')
-    const skillsPanelSource = readSource('new-web/components/souls/skills-panel.tsx')
-    const hintSource = readSource('new-web/components/souls/skill-bundle-format-hint.tsx')
-    const validationSource = readSource('new-web/lib/soulidity/upload-validation.ts')
+    const createSource = readSource('web/app/create/content/page.tsx')
+    const importSource = readSource('web/app/import/map/page.tsx')
+    const wrapSource = readSource('web/app/wrap-link/personal/configure/page.tsx')
+    const skillsPanelSource = readSource('web/components/souls/skills-panel.tsx')
+    const hintSource = readSource('web/components/souls/skill-bundle-format-hint.tsx')
+    const validationSource = readSource('web/lib/soulidity/upload-validation.ts')
 
     expect(createSource).toContain('validateSelectedSkillBundle')
     expect(createSource).toContain('<SkillBundleFormatHint')

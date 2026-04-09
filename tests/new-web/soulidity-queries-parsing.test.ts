@@ -31,8 +31,8 @@ import {
   quoteSoulPurchase,
   quoteCollectionPurchase,
   OnChainVerificationError,
-} from '../../new-web/lib/soulidity/queries'
-import type { SoulGrantScope } from '../../new-web/lib/soulidity/types'
+} from '../../web/lib/soulidity/queries'
+import type { SoulGrantScope } from '../../web/lib/soulidity/types'
 
 // Fully padded zero address (64 hex digits after 0x)
 const ZERO_66 = '0x' + '0'.repeat(64)

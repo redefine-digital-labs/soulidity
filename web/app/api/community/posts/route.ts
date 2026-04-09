@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { requireIdentity } from '@web/lib/auth/identity'
+import { requireIdentity, resolveIdentity } from '@web/lib/auth/identity'
 import { evaluateAchievements } from '@web/lib/community/achievements'
 import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
-import { cached } from '@web/lib/cache'
 import { normalizeCommunityTags, parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
@@ -30,46 +29,61 @@ export async function GET(request: NextRequest) {
   const channel = request.nextUrl.searchParams.get('channel')
   const timeRange = request.nextUrl.searchParams.get('timeRange')
 
-  const cacheKey = `posts:${sort}:${type ?? ''}:${tag ?? ''}:${channel ?? ''}:${timeRange ?? ''}`
+  const where: any = { status: 'published' }
+  if (type) {
+    where.type = type
+  }
+  if (channel) {
+    where.channel = channel
+  }
+  if (tag) {
+    where.tags = { has: tag }
+  }
+  if (timeRange) {
+    const cutoffMs: Record<string, number> = {
+      past_hour: 3_600_000,
+      today: 86_400_000,
+      this_week: 7 * 86_400_000,
+      this_month: 30 * 86_400_000,
+    }
+    if (cutoffMs[timeRange]) {
+      where.createdAt = { gte: new Date(Date.now() - cutoffMs[timeRange]) }
+    }
+  }
 
-  const posts = await cached(cacheKey, 30_000, async () => {
-    const where: any = { status: 'published' }
-    if (type) {
-      where.type = type
-    }
-    if (channel) {
-      where.channel = channel
-    }
-    if (tag) {
-      where.tags = { has: tag }
-    }
-    if (timeRange) {
-      const cutoffMs: Record<string, number> = {
-        past_hour: 3_600_000,
-        today: 86_400_000,
-        this_week: 7 * 86_400_000,
-        this_month: 30 * 86_400_000,
-      }
-      if (cutoffMs[timeRange]) {
-        where.createdAt = { gte: new Date(Date.now() - cutoffMs[timeRange]) }
-      }
-    }
+  const orderBy: any = sort === 'popular' ? { likeCount: 'desc' }
+    : sort === 'discussed' ? { commentCount: 'desc' }
+    : { createdAt: 'desc' }
 
-    const orderBy: any = sort === 'popular' ? { likeCount: 'desc' }
-      : sort === 'discussed' ? { commentCount: 'desc' }
-      : { createdAt: 'desc' }
-
-    return prisma.post.findMany({
-      where,
-      orderBy,
-      take: 30,
-      include: {
-        member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
-      },
-    })
+  const posts = await prisma.post.findMany({
+    where,
+    orderBy,
+    take: 30,
+    include: {
+      member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
+    },
   })
 
-  return NextResponse.json(posts.map(toCommunityPostResponse))
+  // Attach per-user vote direction if authenticated
+  const identity = await resolveIdentity()
+  if (identity && posts.length > 0) {
+    const postIds = posts.map((post) => post.id)
+    const votes = await prisma.postVote.findMany({
+      where: { postId: { in: postIds }, memberId: identity.memberId },
+      select: { postId: true, direction: true },
+    })
+    const voteMap = new Map(votes.map((v) => [v.postId, v.direction]))
+    const enriched = posts.map((post) => ({
+      ...toCommunityPostResponse(post),
+      userVote: voteMap.get(post.id) ?? null,
+    }))
+    return NextResponse.json(enriched)
+  }
+
+  return NextResponse.json(posts.map((post) => ({
+    ...toCommunityPostResponse(post),
+    userVote: null,
+  })))
 }
 
 export async function POST(request: NextRequest) {

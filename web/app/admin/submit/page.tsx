@@ -1,16 +1,36 @@
 'use client'
+
 import { useState } from 'react'
 import Link from 'next/link'
+import { PageContainer } from '@/components/layout/page-container'
+import { SectionHeader } from '@/components/layout/section-header'
+import { Button } from '@/components/ui/button'
+import { Input, Textarea } from '@/components/ui/input'
+import { TabStrip } from '@/components/nav/tab-strip'
+import { useToast } from '@/components/ui/toast'
+import { useAdminFetch } from '../_hooks/use-admin-fetch'
 
 type Tab = 'url' | 'markdown'
 
-export default function SubmitPage() {
+const TABS = [
+  { id: 'url', label: '粘贴链接' },
+  { id: 'markdown', label: '上传 Markdown' },
+]
+
+export default function AdminSubmitPage() {
+  const adminFetch = useAdminFetch()
+  const { showToast } = useToast()
   const [tab, setTab] = useState<Tab>('url')
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ success: boolean; articleId?: string; title?: string; error?: string } | null>(null)
+  const [result, setResult] = useState<{
+    success: boolean
+    articleId?: string
+    title?: string
+    error?: string
+  } | null>(null)
 
   async function handleSubmit() {
     if (!url.trim()) return
@@ -20,11 +40,12 @@ export default function SubmitPage() {
     setResult(null)
 
     try {
-      const body = tab === 'url'
-        ? { url: url.trim() }
-        : { url: url.trim(), title: title.trim(), content: content.trim() }
+      const body =
+        tab === 'url'
+          ? { url: url.trim() }
+          : { url: url.trim(), title: title.trim(), content: content.trim() }
 
-      const res = await fetch('/api/submit', {
+      const res = await adminFetch('/api/admin/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -33,114 +54,101 @@ export default function SubmitPage() {
 
       if (res.ok) {
         setResult({ success: true, articleId: data.articleId, title: data.title })
+        showToast('文章已创建', 'success')
         setUrl('')
         setTitle('')
         setContent('')
       } else {
         setResult({ success: false, error: data.error })
+        showToast(data.error || '提交失败', 'danger')
       }
     } catch {
       setResult({ success: false, error: '网络错误，请重试' })
+      showToast('网络错误，请重试', 'danger')
     } finally {
       setLoading(false)
     }
   }
 
+  const canSubmit =
+    !loading &&
+    url.trim().length > 0 &&
+    (tab === 'url' || (title.trim().length > 0 && content.trim().length > 0))
+
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10">
-      <div className="mb-8 animate-fade-up">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-          <span className="text-gradient">投稿</span>
-        </h1>
-      </div>
+    <PageContainer size="md">
+      <SectionHeader label="Admin" title="投稿" />
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-8 animate-fade-up" style={{ animationDelay: '50ms' }}>
-        <button
-          onClick={() => setTab('url')}
-          className={`filter-pill ${tab === 'url' ? 'filter-pill-active' : ''}`}
-        >
-          粘贴链接
-        </button>
-        <button
-          onClick={() => setTab('markdown')}
-          className={`filter-pill ${tab === 'markdown' ? 'filter-pill-active' : ''}`}
-        >
-          上传 Markdown
-        </button>
-      </div>
+      <TabStrip
+        tabs={TABS}
+        activeId={tab}
+        onChange={(id) => setTab(id as Tab)}
+        className="mb-6"
+      />
 
-      {/* Form */}
-      <div className="glass-panel p-6 animate-fade-up" style={{ animationDelay: '100ms' }}>
-        <div className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>文章链接</label>
-            <input
-              type="url"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="https://example.com/article"
-              className="input-dark"
-            />
-          </div>
-
-          {tab === 'markdown' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>标题</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="文章标题"
-                  className="input-dark"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>内容（Markdown）</label>
-                <textarea
-                  value={content}
-                  onChange={e => setContent(e.target.value)}
-                  placeholder="粘贴 Markdown 内容..."
-                  rows={12}
-                  className="input-dark"
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem' }}
-                />
-              </div>
-            </>
-          )}
-
-          <button
-            onClick={handleSubmit}
-            disabled={loading || !url.trim() || (tab === 'markdown' && (!title.trim() || !content.trim()))}
-            className="btn btn-primary"
-          >
-            {loading ? '处理中...' : '提交'}
-          </button>
+      <div className="rounded-xl border border-border bg-card p-6 space-y-5">
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-muted">文章链接</label>
+          <Input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com/article"
+          />
         </div>
+
+        {tab === 'markdown' && (
+          <>
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-muted">标题</label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="文章标题"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-muted">
+                内容（Markdown）
+              </label>
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="粘贴 Markdown 内容..."
+                className="min-h-[240px] font-mono text-[13px]"
+              />
+            </div>
+          </>
+        )}
+
+        <Button onClick={handleSubmit} disabled={!canSubmit}>
+          {loading ? '处理中...' : '提交'}
+        </Button>
       </div>
 
-      {/* Result */}
       {result && (
         <div
-          className="mt-6 glass-panel p-4 animate-fade-up"
-          style={{
-            borderColor: result.success ? 'rgba(5, 150, 105, 0.3)' : 'rgba(225, 29, 72, 0.3)',
-            background: result.success ? 'var(--accent-emerald-dim)' : 'var(--accent-rose-dim)',
-          }}
+          className={`mt-6 rounded-xl border p-4 ${
+            result.success
+              ? 'border-success/30 bg-success/10'
+              : 'border-danger/30 bg-danger/10'
+          }`}
         >
           {result.success ? (
-            <p style={{ color: 'var(--accent-emerald)' }}>
+            <p className="text-sm text-success">
               文章已创建:{' '}
-              <Link href={`/admin/articles/${result.articleId}`} className="font-medium underline">
+              <Link
+                href={`/admin/articles/${result.articleId}`}
+                className="font-medium underline"
+              >
                 {result.title}
               </Link>
             </p>
           ) : (
-            <p style={{ color: 'var(--accent-rose)' }}>{result.error}</p>
+            <p className="text-sm text-danger">{result.error}</p>
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

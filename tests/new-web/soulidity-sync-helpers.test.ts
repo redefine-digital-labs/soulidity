@@ -90,7 +90,7 @@ describe('syncSoulProjectionFromChain', () => {
   })
 
   it('upserts only the soul projection and stops mirroring a synthetic latest skill version pointer', async () => {
-    const { syncSoulProjectionFromChain } = await import('../../new-web/lib/soulidity/mirror/sync-helpers')
+    const { syncSoulProjectionFromChain } = await import('../../web/lib/soulidity/mirror/sync-helpers')
 
     await syncSoulProjectionFromChain({
       packageId: '0xpackage',

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import deploymentManifest from '../../new-web/lib/soulidity/deployment-manifest.json'
+import deploymentManifest from '../../web/lib/soulidity/deployment-manifest.json'
 import {
   MissingSoulidityDeploymentError,
   getConfiguredSoulidityNetwork,

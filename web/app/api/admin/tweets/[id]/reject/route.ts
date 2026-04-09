@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
-import { requireAdmin } from '@web/lib/auth/admin'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export async function POST(
   _req: NextRequest,
@@ -17,10 +17,14 @@ export async function POST(
     return NextResponse.json({ error: `Invalid status: ${item.status}` }, { status: 400 })
   }
 
-  await prisma.rawItem.update({
-    where: { id },
+  // Atomically reject only if still pending — prevents approve/reject races
+  const claimed = await prisma.rawItem.updateMany({
+    where: { id, status: 'pending_review' },
     data: { status: 'rejected' },
   })
+  if (claimed.count === 0) {
+    return NextResponse.json({ error: 'Item already claimed by another action' }, { status: 409 })
+  }
 
   return NextResponse.json({ success: true })
 }

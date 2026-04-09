@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
-import { serializeSoulPreviewImageList } from '@web/lib/souls/serialization'
+import { serializeSoulPreviewImageList } from '@/lib/soulidity/serialization'
 import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'

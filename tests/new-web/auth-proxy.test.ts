@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { proxy } from '../../new-web/proxy.ts'
+import { proxy } from '../../web/proxy.ts'
 
 const gatedClientRoutes = [
   '/create',
@@ -16,7 +16,7 @@ const gatedClientRoutes = [
   '/souls/soul-1/sell/authorize',
 ]
 
-describe('new-web proxy auth behavior', () => {
+describe('web proxy auth behavior', () => {
   it('does not redirect unauthenticated client-gated pages back to the homepage', () => {
     for (const pathname of gatedClientRoutes) {
       const response = proxy({
