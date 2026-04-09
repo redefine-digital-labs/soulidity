@@ -91,10 +91,10 @@ export default function PostDetailPage({ params }: { params: Promise<{ id: strin
         <h1 className="mb-3 text-lg font-bold text-foreground">{post.title}</h1>
         <p className="text-sm leading-7 text-foreground whitespace-pre-wrap">{post.content}</p>
 
-        {post.tags && (
+        {post.tags.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-1.5">
-            {post.tags.split(',').map((t) => (
-              <Tag key={t.trim()} color="muted">{t.trim()}</Tag>
+            {post.tags.map((tag) => (
+              <Tag key={tag} color="muted">{tag}</Tag>
             ))}
           </div>
         )}

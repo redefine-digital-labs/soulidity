@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import { useQueryClient } from '@tanstack/react-query'
-import type { SoulAssetDetail, SoulSkillVersionRecord } from '@/lib/soulidity/types'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import type { SoulAssetDetail, SoulSkillVersionRecord, SoulSkillVersionsPageResponse } from '@/lib/soulidity/types'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { fetchSkillAccess, loadDecryptedPrivateSkillVersion } from '@/lib/soulidity/skill-access'
 import { buildAppendSkillVersionTx, buildDeleteSkillVersionTx } from '@/lib/soulidity/tx/skills'
@@ -47,6 +47,29 @@ export function useSkills(soul: SoulAssetDetail | null) {
   const queryClient = useQueryClient()
   const { suiWallet, signAndExecute, signPersonalMessage, suiClient } = usePrivySuiSign()
   const { getAuthHeaders } = useAuth()
+  const skillVersionsQuery = useInfiniteQuery<SoulSkillVersionsPageResponse>({
+    queryKey: ['soul-skill-versions', soul?.onChainId ?? null],
+    enabled: Boolean(soul?.onChainId),
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      if (!soul?.onChainId) {
+        throw new Error('Soul is required to fetch skill versions')
+      }
+      const searchParams = new URLSearchParams({ limit: '50' })
+      if (typeof pageParam === 'string' && pageParam.length > 0) {
+        searchParams.set('cursor', pageParam)
+      }
+      const response = await fetch(
+        `/api/souls/${encodeURIComponent(soul.onChainId)}/skills?${searchParams.toString()}`,
+        { cache: 'no-store' },
+      )
+      if (!response.ok) {
+        throw new Error('Failed to fetch skill versions')
+      }
+      return response.json()
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
 
   const skillGrant = useMemo(() => {
     if (!soul || !suiWallet) return null
@@ -58,6 +81,13 @@ export function useSkills(soul: SoulAssetDetail | null) {
   }, [soul, suiWallet])
 
   const canManageSkills = Boolean(soul?.skillsOnChainId) && (soul?.isOwner || skillGrant != null)
+  const skillVersions = useMemo(() => {
+    if (skillVersionsQuery.data?.pages.length) {
+      return skillVersionsQuery.data.pages.flatMap((page) => page.items)
+    }
+    return soul?.skillVersions ?? []
+  }, [skillVersionsQuery.data?.pages, soul?.skillVersions])
+  const skillVersionCount = skillVersionsQuery.data?.pages[0]?.total ?? soul?.skillVersionCount ?? skillVersions.length
 
   async function uploadSkillFile(file: File, visibility: 'public' | 'private') {
     const authHeaders = await getAuthHeaders()
@@ -142,6 +172,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
       }
 
       await queryClient.invalidateQueries({ queryKey: ['soul', soul.onChainId] })
+      await queryClient.invalidateQueries({ queryKey: ['soul-skill-versions', soul.onChainId] })
       return payload
     } catch (nextError) {
       const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to append skill version'
@@ -198,6 +229,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
       }
 
       await queryClient.invalidateQueries({ queryKey: ['soul', soul.onChainId] })
+      await queryClient.invalidateQueries({ queryKey: ['soul-skill-versions', soul.onChainId] })
       return payload
     } catch (nextError) {
       const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to delete skill version'
@@ -264,6 +296,12 @@ export function useSkills(soul: SoulAssetDetail | null) {
     error,
     canManageSkills,
     skillGrant,
+    skillVersions,
+    skillVersionCount,
+    skillsLoading: skillVersionsQuery.isLoading,
+    hasMoreSkillVersions: Boolean(skillVersionsQuery.hasNextPage),
+    loadingMoreSkillVersions: skillVersionsQuery.isFetchingNextPage,
+    loadMoreSkillVersions: () => skillVersionsQuery.fetchNextPage(),
     appendSkillVersion,
     deleteSkillVersion,
     openSkillVersion,

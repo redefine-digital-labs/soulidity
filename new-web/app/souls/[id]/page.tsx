@@ -227,7 +227,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Skills versions</span>
-                <span>{soul.skillVersions.length}</span>
+                <span>{soul.skillVersionCount}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Creator royalty</span>

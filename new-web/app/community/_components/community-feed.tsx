@@ -129,8 +129,8 @@ function PostCard({ post }: { post: CommunityPost }) {
               原文 ↗
             </a>
           )}
-          {post.tags && post.tags.split(',').filter(Boolean).slice(0, 3).map((t) => (
-            <Tag key={t.trim()} color="muted">{t.trim()}</Tag>
+          {post.tags.slice(0, 3).map((tag) => (
+            <Tag key={tag} color="muted">{tag}</Tag>
           ))}
         </div>
       </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { cached } from '@web/lib/cache'
 import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
+import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,15 +16,16 @@ export async function GET(request: NextRequest) {
   }
   const tags = await cached('community:tags', 300_000, async () => {
     const rows = await prisma.post.findMany({
-      where: { status: 'published', tags: { not: null } },
+      where: {
+        status: 'published',
+        NOT: { tags: { isEmpty: true } },
+      },
       select: { tags: true },
-      distinct: ['tags'],
     })
 
     return Array.from(
       new Set(
-        rows.flatMap(r => (r.tags ? r.tags.split(',').map(t => t.trim()) : []))
-          .filter(Boolean)
+        rows.flatMap((row) => parseCommunityTags(row.tags))
       )
     )
   })

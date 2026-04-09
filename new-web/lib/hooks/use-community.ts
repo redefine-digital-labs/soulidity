@@ -27,7 +27,7 @@ export interface CommunityPost {
   id: string
   title: string
   content: string
-  tags: string | null
+  tags: string[]
   type: string
   channel: string
   sourceUrl: string | null
@@ -137,7 +137,7 @@ export function useCreatePost() {
   const [error, setError] = useState<string | null>(null)
 
   const mutation = useMutation({
-    mutationFn: async (payload: { title: string; content: string; type?: string; tags?: string; channel?: string }) => {
+    mutationFn: async (payload: { title: string; content: string; type?: string; tags?: string[]; channel?: string }) => {
       const headers = await getAuthHeaders()
       const res = await fetch('/api/community/posts', {
         method: 'POST',

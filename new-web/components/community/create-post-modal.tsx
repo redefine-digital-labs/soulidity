@@ -31,7 +31,9 @@ export function CreatePostModal({ open, onClose, channel }: CreatePostModalProps
         title: title.trim(),
         content: content.trim(),
         type,
-        tags: tags.trim() || undefined,
+        tags: tags.trim()
+          ? tags.split(',').map((value) => value.trim()).filter(Boolean)
+          : undefined,
         ...(channel && channel !== 'news' ? { channel } : {}),
       })
       setTitle('')

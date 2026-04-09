@@ -37,7 +37,7 @@ interface MemberProfile {
     likeCount: number
     commentCount: number
     createdAt: string
-    tags: string | null
+    tags: string[]
   }>
   achievements: Array<{
     memberId: string
@@ -310,7 +310,7 @@ export default function UserProfilePage() {
                     <div key={post.id} className="p-4 rounded-lg transition-all" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
                       <div className="flex items-start gap-2 mb-1.5">
                         <Link href={`/community/${post.id}`} className="flex-1 font-medium leading-snug transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)' }}>{post.title}</Link>
-                        {post.tags && post.tags.split(',').map(t => t.trim()).filter(Boolean).map(tag => <span key={tag} className="shrink-0 badge badge-muted mt-0.5">#{tag}</span>)}
+                        {post.tags.map(tag => <span key={tag} className="shrink-0 badge badge-muted mt-0.5">#{tag}</span>)}
                       </div>
                       <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
                         <span>👍 {post.likeCount}</span>

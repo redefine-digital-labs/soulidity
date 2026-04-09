@@ -3,6 +3,7 @@ import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
 import { serializeSoulPreviewImageList } from '@/lib/soulidity/serialization'
+import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,11 +16,6 @@ const COMMUNITY_PROFILE_NO_IP_RATE_LIMIT = {
   windowMs: 60 * 1000,
 } as const
 let warnedMissingCommunityProfileIp = false
-
-function parsePostTags(tags: string | null): string[] {
-  if (!tags) return []
-  return tags.split(',').map((tag) => tag.trim()).filter(Boolean)
-}
 
 function resolveCommunityProfileRateLimit(headers: Headers, memberId: string | null) {
   const requestIp = getRequestIp(headers)
@@ -150,7 +146,7 @@ export async function GET(
     ...rest,
     posts: rest.posts.map((post) => ({
       ...post,
-      tags: parsePostTags(post.tags),
+      tags: parseCommunityTags(post.tags),
     })),
     primarySuiAddress: isOwnProfile ? (walletBindings[0]?.address ?? null) : null,
     uploadedSouls: serializeSoulPreviewImageList(authoredSoulAssets.map((soul) => {

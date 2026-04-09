@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
-import { getMarketConfig, quoteSoulPurchase } from '@/lib/soulidity/queries'
+import { quoteSoulPurchase } from '@/lib/soulidity/queries'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
+import { getCachedMarketConfig } from '@/lib/soulidity/market-config-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,7 @@ export async function GET(
     try {
       const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
       const configId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
-      const config = await getMarketConfig(configId, packageId)
+      const config = await getCachedMarketConfig(configId, packageId)
       quote = quoteSoulPurchase(config, {
         priceAtomic: BigInt(soul.listedPriceAtomic.toString()),
         creatorRoyaltyBps: soul.creatorRoyaltyBps,

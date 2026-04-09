@@ -7,9 +7,10 @@ import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
-import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
+import { findSoulAssetDetailByRouteId, findSoulSkillVersionsPageByRouteId } from '@/lib/soulidity/repository'
 import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
+import { clampSkillVersionPageSize } from '@/lib/soulidity/skill-version-pagination'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,23 +20,21 @@ const SOUL_SKILLS_RATE_LIMIT = {
 } as const
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const soul = await findSoulAssetDetailByRouteId(id)
-  if (!soul) {
+  const url = new URL(request.url)
+  const page = await findSoulSkillVersionsPageByRouteId({
+    id,
+    limit: clampSkillVersionPageSize(url.searchParams.get('limit')),
+    cursor: url.searchParams.get('cursor'),
+  })
+  if (!page) {
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  return NextResponse.json({
-    soulOnChainId: soul.onChainId,
-    skillsOnChainId: soul.skillsOnChainId,
-    items: soul.skillVersions.map((version) => ({
-      ...version,
-      soulOnChainId: version.soulOnChainId,
-    })),
-  })
+  return NextResponse.json(page)
 }
 
 export async function POST(

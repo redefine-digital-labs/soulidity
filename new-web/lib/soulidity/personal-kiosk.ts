@@ -2,12 +2,12 @@ import { ResolvePersonalKioskResult, ResolvedPersonalKiosk } from '@/lib/soulidi
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   filterExistingPersonalKiosks,
-  getMarketConfig,
   getRegisteredPersonalKiosk,
   listOwnedPersonalKioskCaps,
   normalizeSuiValue,
   sameSuiValue,
 } from '@/lib/soulidity/queries'
+import { getCachedMarketConfig } from '@/lib/soulidity/market-config-cache'
 
 export type SoulidityPersonalKioskInvariantKind = 'conflict' | 'service'
 
@@ -67,7 +67,7 @@ export async function resolveOwnedPersonalKiosk(params: {
 
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
   const marketPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  await getMarketConfig(marketConfigId, marketPackageId)
+  await getCachedMarketConfig(marketConfigId, marketPackageId)
 
   for (const ownerAddress of ownerAddresses) {
     const registered = await getRegisteredPersonalKiosk({

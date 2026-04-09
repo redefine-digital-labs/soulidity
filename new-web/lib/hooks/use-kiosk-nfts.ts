@@ -19,12 +19,20 @@ function isSoulidityObject(objectType: string): boolean {
   return objectType.startsWith(SOULIDITY_PACKAGE + '::')
 }
 
-function extractDisplay(obj: { data?: { objectId?: string; display?: { data?: Record<string, string> | null } | null } | null }): { name: string; imageUrl: string | null; description: string | null } {
+function getDisplayString(
+  display: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const value = display?.[key]
+  return typeof value === 'string' ? value : null
+}
+
+function extractDisplay(obj: { data?: { objectId?: string; display?: { data?: Record<string, unknown> | null } | null } | null }): { name: string; imageUrl: string | null; description: string | null } {
   const display = obj.data?.display?.data
   return {
-    name: display?.name ?? display?.title ?? `Object ${obj.data?.objectId?.slice(0, 8)}…`,
-    imageUrl: display?.image_url ?? display?.img_url ?? null,
-    description: display?.description ?? null,
+    name: getDisplayString(display, 'name') ?? getDisplayString(display, 'title') ?? `Object ${obj.data?.objectId?.slice(0, 8)}…`,
+    imageUrl: getDisplayString(display, 'image_url') ?? getDisplayString(display, 'img_url'),
+    description: getDisplayString(display, 'description'),
   }
 }
 

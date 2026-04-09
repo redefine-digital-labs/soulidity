@@ -205,7 +205,7 @@ model Post {
   member       Member     @relation(fields: [memberId], references: [id])
   title        String
   content      String
-  tags         String?
+  tags         String[]   @default([])
   likeCount    Int        @default(0) @map("like_count")
   commentCount Int        @default(0) @map("comment_count")
   status       String     @default("published")
@@ -223,6 +223,7 @@ model Post {
   @@index([createdAt])
   @@index([type])
   @@index([channel])
+  @@index([tags], type: Gin, map: "posts_tags_gin_idx")
   @@map("posts")
 }
 

@@ -298,11 +298,20 @@ export interface SoulAssetDetail extends SoulAssetSummary {
   activeGrants: SoulGrantRecord[]
   memoryEntries: SoulMemoryEntryRecord[]
   skillVersions: SoulSkillVersionRecord[]
+  skillVersionCount: number
   isOwner: boolean
   isCreator: boolean
   isGrantedAgent: boolean
   quote: SoulQuoteBreakdown | null
   platformFeeBps: number | null
+}
+
+export interface SoulSkillVersionsPageResponse {
+  soulOnChainId: string
+  skillsOnChainId: string | null
+  items: SoulSkillVersionRecord[]
+  nextCursor: string | null
+  total: number
 }
 
 export interface SoulsListResponse {

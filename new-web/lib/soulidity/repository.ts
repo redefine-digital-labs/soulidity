@@ -2,6 +2,7 @@ import type { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 import { isUuid } from '@web/lib/is-uuid'
 import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
+import { encodeSkillVersionCursor, parseSkillVersionCursor } from '@/lib/soulidity/skill-version-pagination'
 import type {
   SoulAssetDetail,
   SoulAssetSummary,
@@ -13,6 +14,8 @@ import type {
   SoulSkillVersionRecord,
   SoulQuoteBreakdown,
 } from '@/lib/soulidity/types'
+
+const SOUL_SKILL_VERSION_PREVIEW_LIMIT = 24
 
 function asIso(value: Date) {
   return value.toISOString()
@@ -199,6 +202,12 @@ export const soulAssetDetailSelect = {
       { skillName: 'asc' as const },
       { versionIndex: 'desc' as const },
     ] as Prisma.SoulSkillVersionRecordOrderByWithRelationInput[],
+    take: SOUL_SKILL_VERSION_PREVIEW_LIMIT,
+  },
+  _count: {
+    select: {
+      skillVersions: true,
+    },
   },
 } as const
 
@@ -380,6 +389,7 @@ export function toSoulAssetDetail(
     activeGrants,
     memoryEntries: record.memoryEntries.map(toSoulMemoryEntryRecord),
     skillVersions: record.skillVersions.map(toSoulSkillVersionRecord),
+    skillVersionCount: record._count.skillVersions,
     isOwner,
     isCreator,
     isGrantedAgent,
@@ -413,4 +423,69 @@ export async function findSoulCollectionDetailByRouteId(id: string) {
     where,
     select: soulCollectionDetailSelect,
   })
+}
+
+export async function findSoulSkillVersionsPageByRouteId(params: {
+  id: string
+  limit: number
+  cursor: string | null
+}) {
+  const where = buildSoulRouteWhere(params.id)
+  if (!where) return null
+
+  const soul = await prisma.soulAsset.findFirst({
+    where,
+    select: {
+      onChainId: true,
+      skillsOnChainId: true,
+      _count: {
+        select: {
+          skillVersions: true,
+        },
+      },
+    },
+  })
+
+  if (!soul) {
+    return null
+  }
+
+  const cursor = parseSkillVersionCursor(params.cursor)
+  const rows = await prisma.soulSkillVersionRecord.findMany({
+    where: {
+      soulOnChainId: soul.onChainId,
+      ...(cursor
+        ? {
+            OR: [
+              { skillName: { gt: cursor.skillName } },
+              {
+                AND: [
+                  { skillName: cursor.skillName },
+                  { versionIndex: { lt: cursor.versionIndex } },
+                ],
+              },
+            ],
+          }
+        : {}),
+    },
+    select: soulSkillVersionSelect,
+    orderBy: [
+      { skillName: 'asc' },
+      { versionIndex: 'desc' },
+    ],
+    take: params.limit + 1,
+  })
+
+  const pageRows = rows.slice(0, params.limit)
+  const nextCursor = rows.length > params.limit
+    ? encodeSkillVersionCursor(rows[params.limit - 1]!)
+    : null
+
+  return {
+    soulOnChainId: soul.onChainId,
+    skillsOnChainId: soul.skillsOnChainId,
+    items: pageRows.map(toSoulSkillVersionRecord),
+    nextCursor,
+    total: soul._count.skillVersions,
+  }
 }

@@ -1,49 +1,136 @@
 import type { BatchSoulEntry, SoulFolderFiles, SoulFolderMap } from '@/components/providers/create-collection-provider'
+import {
+  BATCH_TEMPLATE_EXAMPLE_ROW,
+  BATCH_TEMPLATE_HEADERS,
+  normalizeBatchTemplateRows,
+} from '@/lib/collections/batch-template'
 
-// Column headers — metadata only (files come from numbered subfolders)
-const HEADERS = [
-  'Soul Name',
-  'Description',
-  'Category',
-  'Tags',
-  'Creator Royalty (%)',
-] as const
-
-const VALID_CATEGORIES = ['Trading', 'Research', 'Assistant', 'Creator'] as const
-
-const EXAMPLE_ROW = [
-  'AlphaScout',
-  'A DeFi alpha-hunting agent specializing in emerging DEX pools on Sui',
-  'Trading',
-  'ai, trading, defi',
-  5,
+const TEMPLATE_COLUMNS = [
+  { width: 20 },
+  { width: 48 },
+  { width: 14 },
+  { width: 24 },
+  { width: 18 },
 ]
 
-export async function downloadTemplate(format: 'xlsx' | 'csv') {
-  const XLSX = await import('xlsx')
-
-  const ws = XLSX.utils.aoa_to_sheet([[...HEADERS], EXAMPLE_ROW])
-
-  ws['!cols'] = [
-    { wch: 20 },  // Soul Name
-    { wch: 48 },  // Description
-    { wch: 14 },  // Category
-    { wch: 24 },  // Tags
-    { wch: 18 },  // Creator Royalty
-  ]
-
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Souls')
-
-  const filename = format === 'xlsx'
-    ? 'soul-collection-template.xlsx'
-    : 'soul-collection-template.csv'
-
-  XLSX.writeFile(wb, filename, format === 'csv' ? { bookType: 'csv' } : undefined)
+function extOf(name: string) {
+  const dot = name.lastIndexOf('.')
+  return dot >= 0 ? name.slice(dot).toLowerCase() : ''
 }
 
-function str(raw: unknown): string {
-  return String(raw ?? '').trim()
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  try {
+    anchor.click()
+  } finally {
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+}
+
+function escapeCsvCell(value: string | number) {
+  const stringValue = String(value)
+  if (!/[",\r\n]/.test(stringValue)) {
+    return stringValue
+  }
+  return `"${stringValue.replaceAll('"', '""')}"`
+}
+
+function buildCsvTemplate() {
+  return [
+    BATCH_TEMPLATE_HEADERS.map(escapeCsvCell).join(','),
+    BATCH_TEMPLATE_EXAMPLE_ROW.map(escapeCsvCell).join(','),
+  ].join('\r\n')
+}
+
+function parseCsvRows(text: string) {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let inQuotes = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[index + 1] === '"') {
+          cell += '"'
+          index += 1
+        } else {
+          inQuotes = false
+        }
+      } else {
+        cell += char
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = true
+    } else if (char === ',') {
+      row.push(cell)
+      cell = ''
+    } else if (char === '\n') {
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ''
+    } else if (char === '\r') {
+      continue
+    } else {
+      cell += char
+    }
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell)
+    rows.push(row)
+  }
+
+  return rows
+}
+
+function rowsToTemplateObjects(rows: unknown[][]): Record<string, unknown>[] {
+  if (rows.length === 0) {
+    return []
+  }
+
+  const [headerRow, ...dataRows] = rows
+  const headers = headerRow.map((value) => String(value ?? '').trim())
+
+  return dataRows
+    .filter((row) => row.some((value) => String(value ?? '').trim().length > 0))
+    .map((row) => {
+      const record: Record<string, unknown> = {}
+      headers.forEach((header, index) => {
+        if (!header) return
+        record[header] = row[index]
+      })
+      return record
+    })
+}
+
+export async function downloadTemplate(format: 'xlsx' | 'csv') {
+  if (format === 'csv') {
+    const csv = buildCsvTemplate()
+    triggerBrowserDownload(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }), 'soul-collection-template.csv')
+    return
+  }
+
+  const { default: writeExcelFile } = await import('write-excel-file/browser')
+  await writeExcelFile([
+    [...BATCH_TEMPLATE_HEADERS],
+    [...BATCH_TEMPLATE_EXAMPLE_ROW],
+  ], {
+    columns: TEMPLATE_COLUMNS,
+    sheet: 'Souls',
+    fileName: 'soul-collection-template.xlsx',
+  })
 }
 
 export async function parseTemplateFile(
@@ -51,75 +138,19 @@ export async function parseTemplateFile(
   defaultRoyaltyBps: number,
   supplyCap?: number,
 ): Promise<{ souls: BatchSoulEntry[]; errors: string[] }> {
-  const XLSX = await import('xlsx')
-  const data = await file.arrayBuffer()
-  const wb = XLSX.read(data)
-  const ws = wb.Sheets[wb.SheetNames[0]]
-
-  if (!ws) return { souls: [], errors: ['No worksheet found in file.'] }
-
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws)
-
-  if (rows.length === 0) return { souls: [], errors: ['No data rows found in the template.'] }
-
-  const souls: BatchSoulEntry[] = []
-  const errors: string[] = []
-
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]
-    const r = i + 2 // 1-indexed, header is row 1
-
-    // ── Required text fields ──
-    const name = str(row['Soul Name'])
-    if (!name) { errors.push(`Row ${r}: Soul Name is required`); continue }
-
-    const description = str(row['Description'])
-    if (!description) { errors.push(`Row ${r}: Description is required`); continue }
-
-    // ── Category ──
-    const categoryRaw = str(row['Category'])
-    if (!categoryRaw) { errors.push(`Row ${r}: Category is required`); continue }
-    const category = VALID_CATEGORIES.find(
-      (c) => c.toLowerCase() === categoryRaw.toLowerCase(),
-    )
-    if (!category) {
-      errors.push(`Row ${r}: Category must be one of: ${VALID_CATEGORIES.join(', ')}`)
-      continue
+  const extension = extOf(file.name)
+  if (extension === '.xls') {
+    return {
+      souls: [],
+      errors: ['Legacy .xls files are not supported. Please re-save the template as .xlsx or .csv and upload again.'],
     }
-
-    // ── Tags (optional, comma-separated) ──
-    const tagsRaw = str(row['Tags'])
-    const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : []
-
-    // ── Creator Royalty (optional, defaults to collection setting) ──
-    const royaltyRaw = row['Creator Royalty (%)']
-    let creatorRoyaltyBps = defaultRoyaltyBps
-    if (royaltyRaw !== undefined && royaltyRaw !== '') {
-      const pct = Number(royaltyRaw)
-      if (isNaN(pct) || pct < 0 || pct > 25) {
-        errors.push(`Row ${r}: Creator Royalty must be 0–25 (%)`)
-        continue
-      }
-      creatorRoyaltyBps = Math.round(pct * 100) // % → bps
-    }
-
-    souls.push({
-      name,
-      description,
-      category,
-      tags,
-      creatorRoyaltyBps,
-    })
   }
 
-  // ── Supply cap check ──
-  if (supplyCap !== undefined && souls.length > supplyCap) {
-    errors.push(`Template has ${souls.length} Souls but Supply Cap is ${supplyCap} — remove ${souls.length - supplyCap} row(s)`)
-  } else if (supplyCap !== undefined && souls.length < supplyCap) {
-    errors.push(`Template has ${souls.length} Soul(s) but Supply Cap is ${supplyCap} — add ${supplyCap - souls.length} more row(s) or adjust the Supply Cap in Step 1`)
-  }
+  const rows = extension === '.csv'
+    ? rowsToTemplateObjects(parseCsvRows(await file.text()))
+    : rowsToTemplateObjects(await (await import('read-excel-file/browser')).readSheet(file))
 
-  return { souls, errors }
+  return normalizeBatchTemplateRows(rows, defaultRoyaltyBps, supplyCap)
 }
 
 // ── Folder processing ──
@@ -136,11 +167,6 @@ const MIME_MAP: Record<string, string> = {
   '.gif': 'image/gif',
   '.zip': 'application/zip',
   '.json': 'application/json',
-}
-
-function extOf(name: string) {
-  const dot = name.lastIndexOf('.')
-  return dot >= 0 ? name.slice(dot).toLowerCase() : ''
 }
 
 /** Re-wrap a File with the correct MIME type based on extension (browsers often misdetect .md) */

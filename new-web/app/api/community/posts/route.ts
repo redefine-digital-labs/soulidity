@@ -3,10 +3,18 @@ import { prisma } from '@web/lib/prisma'
 import { requireIdentity, resolveIdentity } from '@web/lib/auth/identity'
 import { evaluateAchievements } from '@web/lib/community/achievements'
 import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
+import { normalizeCommunityTags, parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
 
 const RATE_LIMIT_OPTS = { max: 30, windowMs: 60_000 }
+
+function toCommunityPostResponse<T extends { tags: string[] | string | null }>(post: T) {
+  return {
+    ...post,
+    tags: parseCommunityTags(post.tags),
+  }
+}
 
 export async function GET(request: NextRequest) {
   const ip = getRequestIp(request.headers) ?? getAnonymousRateLimitFingerprint(request.headers)
@@ -29,12 +37,7 @@ export async function GET(request: NextRequest) {
     where.channel = channel
   }
   if (tag) {
-    where.OR = [
-      { tags: { equals: tag } },
-      { tags: { startsWith: tag + ',' } },
-      { tags: { endsWith: ',' + tag } },
-      { tags: { contains: ',' + tag + ',' } },
-    ]
+    where.tags = { has: tag }
   }
   if (timeRange) {
     const cutoffMs: Record<string, number> = {
@@ -64,20 +67,23 @@ export async function GET(request: NextRequest) {
   // Attach per-user vote direction if authenticated
   const identity = await resolveIdentity()
   if (identity && posts.length > 0) {
-    const postIds = posts.map((p: { id: string }) => p.id)
+    const postIds = posts.map((post) => post.id)
     const votes = await prisma.postVote.findMany({
       where: { postId: { in: postIds }, memberId: identity.memberId },
       select: { postId: true, direction: true },
     })
     const voteMap = new Map(votes.map((v) => [v.postId, v.direction]))
-    const enriched = posts.map((p: { id: string }) => ({
-      ...p,
-      userVote: voteMap.get(p.id) ?? null,
+    const enriched = posts.map((post) => ({
+      ...toCommunityPostResponse(post),
+      userVote: voteMap.get(post.id) ?? null,
     }))
     return NextResponse.json(enriched)
   }
 
-  return NextResponse.json(posts.map((p: object) => ({ ...p, userVote: null })))
+  return NextResponse.json(posts.map((post) => ({
+    ...toCommunityPostResponse(post),
+    userVote: null,
+  })))
 }
 
 export async function POST(request: NextRequest) {
@@ -98,19 +104,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'content must be 1-50000 characters' }, { status: 400 })
   }
 
-  let normalizedTags: string | null = null
+  let normalizedTags: string[] = []
   if (body.tags !== undefined && body.tags !== null) {
-    const tagParts = typeof body.tags === 'string'
-      ? body.tags.split(',')
+    const inputTags = typeof body.tags === 'string'
+      ? body.tags
       : Array.isArray(body.tags) && body.tags.every((tag: unknown): tag is string => typeof tag === 'string')
         ? body.tags
-        : null
+        : undefined
 
-    if (!tagParts) {
+    if (inputTags === undefined) {
       return NextResponse.json({ error: 'tags must be a string or string[]' }, { status: 400 })
     }
 
-    normalizedTags = tagParts.map((tag: string) => tag.trim()).filter(Boolean).join(',') || null
+    normalizedTags = normalizeCommunityTags(inputTags)
   }
 
   const VALID_POST_TYPES = ['log', 'question', 'knowledge']
@@ -142,5 +148,5 @@ export async function POST(request: NextRequest) {
     console.error('Achievement evaluation failed:', err)
   )
 
-  return NextResponse.json(post, { status: 201 })
+  return NextResponse.json(toCommunityPostResponse(post), { status: 201 })
 }

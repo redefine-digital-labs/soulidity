@@ -3,6 +3,7 @@ import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
 import { serializeSoulPreviewImageList } from '@web/lib/souls/serialization'
+import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
 
@@ -143,6 +144,10 @@ export async function GET(
 
   return NextResponse.json({
     ...rest,
+    posts: rest.posts.map((post) => ({
+      ...post,
+      tags: parseCommunityTags(post.tags),
+    })),
     primarySuiAddress: isOwnProfile ? (walletBindings[0]?.address ?? null) : null,
     uploadedSouls: serializeSoulPreviewImageList(authoredSoulAssets.map((soul) => {
       const serializedSoul = {

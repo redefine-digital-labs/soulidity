@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveAgentByApiKey, type AgentIdentity } from '@web/lib/auth/resolve-agent'
 import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
-import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
 
 const FAILED_AGENT_AUTH_LIMIT = { max: 60, windowMs: 60 * 1000 } as const
 
@@ -11,11 +11,16 @@ function errorResponse(body: { error: string }, status: number) {
 
 async function rateLimitFailedAuth(request: Request) {
   const ip = getRequestIp(new Headers(request.headers))
-  if (ip) {
-    const rl = await takeRateLimitToken(`agent-auth-failed:${ip}`, FAILED_AGENT_AUTH_LIMIT)
-    if (rl.limited) {
-      return errorResponse({ error: 'Too many invalid API key attempts' }, 429)
-    }
+  const fingerprint = getAnonymousRateLimitFingerprint(new Headers(request.headers))
+  const bucketKey = ip
+    ? `agent-auth-failed:${ip}`
+    : fingerprint
+      ? `agent-auth-failed:anon:${fingerprint}`
+      : 'agent-auth-failed:unknown'
+
+  const rl = await takeRateLimitToken(bucketKey, FAILED_AGENT_AUTH_LIMIT)
+  if (rl.limited) {
+    return errorResponse({ error: 'Too many invalid API key attempts' }, 429)
   }
   return errorResponse({ error: 'Unauthorized' }, 401)
 }

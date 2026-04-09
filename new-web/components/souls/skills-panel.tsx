@@ -137,8 +137,22 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null)
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [visibility, setVisibility] = useState<SoulSkillVisibility>('private')
-  const { pending, error, canManageSkills, skillGrant, appendSkillVersion, deleteSkillVersion, openSkillVersion } = useSkills(soul)
-  const groupedVersions = useMemo(() => groupVersionsBySkillName(soul.skillVersions), [soul.skillVersions])
+  const {
+    pending,
+    error,
+    canManageSkills,
+    skillGrant,
+    skillVersions,
+    skillVersionCount,
+    skillsLoading,
+    hasMoreSkillVersions,
+    loadingMoreSkillVersions,
+    loadMoreSkillVersions,
+    appendSkillVersion,
+    deleteSkillVersion,
+    openSkillVersion,
+  } = useSkills(soul)
+  const groupedVersions = useMemo(() => groupVersionsBySkillName(skillVersions), [skillVersions])
 
   const uploaderLabel = soul.isOwner
     ? 'owner'
@@ -185,6 +199,12 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
       {error ? (
         <Alert variant="warning" icon="!" className="text-sm">
           {error}
+        </Alert>
+      ) : null}
+
+      {skillsLoading ? (
+        <Alert variant="info" icon="…" className="text-sm">
+          Loading skill versions…
         </Alert>
       ) : null}
 
@@ -255,6 +275,9 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
         <p className="text-sm text-muted">No skills version has been mirrored for this Soul yet.</p>
       ) : (
         <div className="space-y-3">
+          <div className="text-xs text-muted">
+            Showing {skillVersions.length} of {skillVersionCount} version{skillVersionCount === 1 ? '' : 's'}
+          </div>
           {Array.from(groupedVersions.entries()).map(([skillName, versions]) => (
             <SkillGroup
               key={skillName}
@@ -266,6 +289,21 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
               onOpen={(version) => { void openSkillVersion(version) }}
             />
           ))}
+          {hasMoreSkillVersions ? (
+            <div className="flex justify-center pt-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={loadingMoreSkillVersions}
+                onClick={() => {
+                  void loadMoreSkillVersions()
+                }}
+              >
+                {loadingMoreSkillVersions ? 'Loading…' : 'Load More Versions'}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

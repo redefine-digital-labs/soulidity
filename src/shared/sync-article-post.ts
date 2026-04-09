@@ -1,3 +1,5 @@
+import { normalizeCommunityTags } from './community-tags'
+
 const BOT_HANDLE = 'clawnews-bot'
 
 type PrismaLike = {
@@ -46,16 +48,18 @@ export async function syncArticleToPost(
     content += '\n\n---\n\n' + article.analysisZh
   }
 
-  // Parse tags: Article stores JSON string, Post uses comma-separated
-  let tags: string | null = null
+  // Parse tags: Article stores JSON text, Post now stores text arrays.
+  let tags: string[] = []
   if (article.tags) {
     try {
       const parsed = JSON.parse(article.tags)
       if (Array.isArray(parsed)) {
-        tags = parsed.join(',')
+        tags = normalizeCommunityTags(parsed)
+      } else {
+        tags = normalizeCommunityTags(article.tags)
       }
     } catch {
-      tags = article.tags
+      tags = normalizeCommunityTags(article.tags)
     }
   }
 

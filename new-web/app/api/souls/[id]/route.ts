@@ -6,9 +6,9 @@ import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } fr
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   OnChainVerificationError,
-  getMarketConfig,
   quoteSoulPurchase,
 } from '@/lib/soulidity/queries'
+import { getCachedMarketConfig } from '@/lib/soulidity/market-config-cache'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 
 const SOUL_DETAIL_RATE_LIMIT = {
@@ -110,7 +110,7 @@ export async function GET(
   try {
     const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
     const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
-    const config = await getMarketConfig(marketConfigId, packageId)
+    const config = await getCachedMarketConfig(marketConfigId, packageId)
     platformFeeBps = config.platformFeeBps
     if (soul.listingStatus === 'listed' && soul.listedPriceAtomic != null) {
       quote = quoteSoulPurchase(config, {
@@ -134,4 +134,3 @@ export async function GET(
 
   return NextResponse.json(detail)
 }
-

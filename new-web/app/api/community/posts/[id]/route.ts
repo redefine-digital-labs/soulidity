@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { resolveIdentity } from '@web/lib/auth/identity'
+import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,7 @@ export async function GET(
 
   return NextResponse.json({
     ...post,
+    tags: parseCommunityTags(post.tags),
     userVote,
   })
 }
