@@ -43,11 +43,11 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
   }
 
   useEffect(() => {
-    if (status === 'done' && soul) {
-      showToast('Soul listed on marketplace', 'success')
-      router.push(`/souls/${encodeURIComponent(soul.onChainId)}/sell/success?price=${encodeURIComponent(rawPrice)}`)
-    }
-  }, [rawPrice, router, soul, showToast, status])
+    if (status !== 'done') return
+
+    showToast('Soul listed on marketplace', 'success')
+    router.replace(`/souls/${encodeURIComponent(id)}/sell/success?price=${encodeURIComponent(rawPrice)}`)
+  }, [id, rawPrice, router, showToast, status])
 
   useEffect(() => {
     if (error) {

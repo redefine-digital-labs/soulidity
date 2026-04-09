@@ -19,11 +19,15 @@ export interface BookmarksResponse {
 // ── Follow hooks ──
 
 export function useFollowStatus(memberId: string | null) {
+  const { user, getAuthHeaders } = useAuth()
+
   return useQuery<FollowStatus>({
-    queryKey: ['follow-status', memberId],
+    queryKey: ['follow-status', memberId, user?.id ?? null],
     queryFn: async () => {
+      const headers = await getAuthHeaders().catch(() => ({}))
       const res = await fetch(`/api/community/follow?memberId=${encodeURIComponent(memberId!)}`, {
         cache: 'no-store',
+        headers,
       })
       if (!res.ok) throw new Error('Failed to fetch follow status')
       return res.json()
@@ -34,7 +38,7 @@ export function useFollowStatus(memberId: string | null) {
 
 export function useToggleFollow() {
   const queryClient = useQueryClient()
-  const { getAuthHeaders } = useAuth()
+  const { user, getAuthHeaders } = useAuth()
 
   return useMutation({
     mutationFn: async (targetMemberId: string) => {
@@ -52,15 +56,16 @@ export function useToggleFollow() {
       return res.json() as Promise<{ following: boolean; followerCount: number }>
     },
     onSuccess: (data, targetMemberId) => {
+      const followStatusKey = ['follow-status', targetMemberId, user?.id ?? null] as const
       // Immediately patch the cached follower count with the value returned by POST,
       // so the count updates in sync with the button — no extra round-trip visible.
-      queryClient.setQueryData<FollowStatus>(['follow-status', targetMemberId], (old) =>
+      queryClient.setQueryData<FollowStatus>(followStatusKey, (old) =>
         old
           ? { ...old, isFollowing: data.following, followerCount: data.followerCount }
           : undefined
       )
       // Then invalidate to get a fully-consistent refetch (also updates followingCount).
-      queryClient.invalidateQueries({ queryKey: ['follow-status', targetMemberId] })
+      queryClient.invalidateQueries({ queryKey: followStatusKey })
     },
   })
 }

@@ -8,7 +8,7 @@ import { buildWalletBindMessage } from '../challenge/route'
 const MULTIPLE_SUI_WALLETS_ERROR = 'Multiple Sui wallets are not supported for this account'
 
 export async function POST(request: NextRequest) {
-  const identity = await resolveIdentity()
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }

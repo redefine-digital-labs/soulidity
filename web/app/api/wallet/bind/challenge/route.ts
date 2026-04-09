@@ -8,7 +8,7 @@ export function buildWalletBindMessage(memberId: string, nonce: string): string 
 }
 
 export async function POST(request: Request) {
-  const identity = await resolveIdentity()
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }

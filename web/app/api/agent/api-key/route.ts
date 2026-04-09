@@ -8,7 +8,7 @@ import { buildAgentApiKeyData, generateApiKey } from '@web/lib/auth/resolve-agen
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export async function POST(request: NextRequest) {
-  const identity = await resolveIdentity()
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity || identity.kind !== 'human') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

@@ -56,7 +56,7 @@ export async function GET() {
 
 // POST /api/agents — create agent
 export async function POST(request: NextRequest) {
-  const identity = await resolveIdentity()
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/agents?id=xxx — delete agent
 export async function DELETE(request: NextRequest) {
-  const identity = await resolveIdentity()
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
@@ -198,7 +198,7 @@ export async function DELETE(request: NextRequest) {
 
 // PATCH /api/agents — regenerate API key
 export async function PATCH(request: NextRequest) {
-  const identity = await resolveIdentity()
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
