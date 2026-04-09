@@ -3,6 +3,7 @@ Started: Fri Apr 10 00:00:00 CST 2026
 ## Codebase Patterns
 - Prisma table/bootstrap stories in this repo fit well with a small Vitest contract under `tests/new-web/` plus a hand-written SQL migration under `prisma/migrations/`.
 - Local bootstrap data is usually exposed as an explicit root `npm` script that runs a `tsx scripts/*.ts` file, not through Prisma's global seed hook.
+- Desktop catalog reads should start from `DesktopCatalogEntry` and then hydrate source records by `sourceRef`, because that is the repo's curated/public visibility gate for both starter and soul sources.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -15,4 +16,15 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: use `sourceType + sourceRef` as the cross-source catalog key; starter fixtures can seed against `slug`, while curated souls can seed against `onChainId`.
   - Gotchas: the generated Prisma client is already checked into repo conventions, but schema-only changes here did not require manual edits beyond `prisma generate`.
   - Useful context: `DesktopProfile` is account-scoped only, and the seed script now guarantees one starter asset plus one curated soul catalog entry for local desktop API work.
+---
+## 2026-04-10 00:59:35 CST - US-002
+- Implemented shared desktop domain types in `web/lib/types/desktop.ts` and added `web/lib/desktop/repository.ts` to aggregate starter + curated soul entries through a single catalog query contract with public visibility filtering by default.
+- Files changed: `web/lib/types/desktop.ts`, `web/lib/desktop/repository.ts`, `tests/new-web/desktop-catalog-repository.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/new-web/desktop-schema-bootstrap.test.ts tests/new-web/desktop-catalog-repository.test.ts` PASS
+  - `npm run typecheck` PASS
+- Learnings for future iterations:
+  - Reusable patterns: keep desktop catalog paging on `DesktopCatalogEntry`, then batch-hydrate starters by `slug` and souls by `onChainId` so curated filtering and source-specific mapping stay separate.
+  - Gotchas: `SoulAsset` currently lacks desktop-specific manifest/version fields, so this story should stop at shared catalog summary mapping and type contracts instead of inventing detail payloads early.
+  - Useful context: `DesktopCatalogItem.id` now uses the catalog entry UUID, while `sourceRef` continues to point at the backing starter slug or soul `onChainId`.
 ---
