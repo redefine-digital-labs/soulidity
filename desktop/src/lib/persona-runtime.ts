@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { DesktopPersonaManifest } from '../../../web/lib/types/desktop.ts'
 import { isTauriRuntime } from './auth-runtime'
-import type { InstalledPersonaRecord } from './persistence'
+import type { ActivePersonaRecord, InstalledPersonaRecord } from './persistence'
 import { resolveDesktopStorageLayout } from './persistence'
 
 export interface InstallDesktopPersonaOptions {
@@ -13,12 +13,22 @@ export interface InstallDesktopPersonaOptions {
   storage?: KeyValueStorage | null
 }
 
+export interface SetDesktopActivePersonaOptions {
+  loadStoredInstalledPersonas?: () => Promise<InstalledPersonaRecord[]> | InstalledPersonaRecord[]
+  now?: () => Date
+  runtime?: 'browser' | 'tauri'
+  saveStoredActivePersona?: (record: ActivePersonaRecord | null) => Promise<void> | void
+  setActiveInTauri?: (personaId: string) => Promise<ActivePersonaRecord>
+  storage?: KeyValueStorage | null
+}
+
 export interface KeyValueStorage {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
 }
 
 const BROWSER_INSTALLED_PERSONAS_STORAGE_KEY = 'soulidity.desktop.installed-personas'
+const BROWSER_ACTIVE_PERSONA_STORAGE_KEY = 'soulidity.desktop.active-persona'
 const BROWSER_PREVIEW_STORAGE_ROOT = '/browser-preview/soulidity-desktop'
 
 function sanitizeStorageSegment(value: string) {
@@ -71,6 +81,34 @@ export function saveInstalledPersonasToStorage(records: InstalledPersonaRecord[]
   resolvedStorage.setItem(BROWSER_INSTALLED_PERSONAS_STORAGE_KEY, JSON.stringify(records))
 }
 
+export function loadActivePersonaFromStorage(storage?: KeyValueStorage | null): ActivePersonaRecord | null {
+  const resolvedStorage = getDefaultStorage(storage)
+  if (!resolvedStorage) {
+    return null
+  }
+
+  const rawValue = resolvedStorage.getItem(BROWSER_ACTIVE_PERSONA_STORAGE_KEY)
+  if (!rawValue) {
+    return null
+  }
+
+  try {
+    const record = JSON.parse(rawValue) as ActivePersonaRecord
+    return record && typeof record === 'object' ? record : null
+  } catch {
+    return null
+  }
+}
+
+export function saveActivePersonaToStorage(record: ActivePersonaRecord | null, storage?: KeyValueStorage | null) {
+  const resolvedStorage = getDefaultStorage(storage)
+  if (!resolvedStorage) {
+    return
+  }
+
+  resolvedStorage.setItem(BROWSER_ACTIVE_PERSONA_STORAGE_KEY, JSON.stringify(record))
+}
+
 function buildPreviewInstalledPersonaRecord(
   manifest: DesktopPersonaManifest,
   now: Date,
@@ -102,6 +140,18 @@ export async function loadDesktopInstalledPersonas(
   }
 
   return loadInstalledPersonasFromStorage(options.storage)
+}
+
+export async function loadDesktopActivePersona(
+  options: { runtime?: 'browser' | 'tauri', storage?: KeyValueStorage | null } = {},
+) {
+  const runtime = options.runtime ?? (isTauriRuntime() ? 'tauri' : 'browser')
+
+  if (runtime === 'tauri') {
+    return invoke<ActivePersonaRecord | null>('load_active_persona')
+  }
+
+  return loadActivePersonaFromStorage(options.storage)
 }
 
 export async function installDesktopPersona(
@@ -136,4 +186,45 @@ export async function installDesktopPersona(
 
   await saveStoredInstalledPersonas(nextRecords)
   return nextRecord
+}
+
+export async function setDesktopActivePersona(
+  personaId: string,
+  options: SetDesktopActivePersonaOptions = {},
+): Promise<ActivePersonaRecord> {
+  const normalizedPersonaId = personaId.trim()
+  if (!normalizedPersonaId) {
+    throw new Error('personaId is required')
+  }
+
+  const runtime = options.runtime ?? (isTauriRuntime() ? 'tauri' : 'browser')
+
+  if (runtime === 'tauri') {
+    const setActiveInTauri = options.setActiveInTauri
+      ?? ((nextPersonaId: string) => invoke<ActivePersonaRecord>('set_active_persona', { personaId: nextPersonaId }))
+
+    return setActiveInTauri(normalizedPersonaId)
+  }
+
+  const now = options.now ?? (() => new Date())
+  const loadStoredInstalledPersonas = options.loadStoredInstalledPersonas
+    ?? (() => loadInstalledPersonasFromStorage(options.storage))
+  const saveStoredActivePersona = options.saveStoredActivePersona
+    ?? ((record: ActivePersonaRecord | null) => saveActivePersonaToStorage(record, options.storage))
+  const installedPersonas = await loadStoredInstalledPersonas()
+  const installedPersona = installedPersonas.find((record) => record.personaId === normalizedPersonaId)
+
+  if (!installedPersona) {
+    throw new Error('Cannot set an active persona that is not installed locally')
+  }
+
+  const activePersona: ActivePersonaRecord = {
+    personaId: installedPersona.personaId,
+    sourceType: installedPersona.sourceType,
+    sourceRef: installedPersona.sourceRef,
+    activatedAt: now().toISOString(),
+  }
+
+  await saveStoredActivePersona(activePersona)
+  return activePersona
 }

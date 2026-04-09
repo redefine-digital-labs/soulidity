@@ -34,9 +34,19 @@ import {
   refreshDesktopCatalog,
   saveDesktopCatalogCacheToStorage,
 } from './lib/catalog'
-import { installDesktopPersona, loadDesktopInstalledPersonas } from './lib/persona-runtime'
-import type { AuthSessionRecord, InstalledPersonaRecord } from './lib/persistence'
-import type { DesktopCatalogItem, DesktopPersonaManifest } from '../../web/lib/types/desktop.ts'
+import { fetchDesktopMe, syncDesktopActivePersona } from './lib/profile'
+import {
+  installDesktopPersona,
+  loadDesktopActivePersona,
+  loadDesktopInstalledPersonas,
+  setDesktopActivePersona,
+} from './lib/persona-runtime'
+import type { ActivePersonaRecord, AuthSessionRecord, InstalledPersonaRecord } from './lib/persistence'
+import type {
+  DesktopCatalogItem,
+  DesktopMeResponse,
+  DesktopPersonaManifest,
+} from '../../web/lib/types/desktop.ts'
 import './styles.css'
 
 interface DesktopShellStatus {
@@ -128,55 +138,55 @@ const routePanels: Record<Exclude<DesktopRouteId, 'persona'>, RoutePanel> = {
   library: {
     eyebrow: 'Local Library',
     summary:
-      'Library is where installed personas and active local state will appear after the persistence layer and download jobs land.',
+      'Library now shows installed starter payloads, the current local active persona, and whether the linked desktop account is aligned with this device.',
     checklist: [
-      'Reserve a clear installed-state list area.',
-      'Keep room for current active persona and disk usage summaries.',
-      'Avoid faking install state before the local persistence contract exists.',
+      'Surface every locally installed persona with version, install time, and active-state actions.',
+      'Keep the local active persona visible alongside account sync status.',
+      'Route persona switching through the persisted desktop active-persona store.',
     ],
     links: [
       {
         label: 'Open Settings',
         to: '/settings',
-        caption: 'Inspect the preferences and sync placeholder.',
+        caption: 'Inspect account sync and active-persona controls.',
       },
       {
         label: 'Open Auth',
         to: '/auth',
-        caption: 'Review the device-login shell from the desktop side.',
+        caption: 'Review desktop account link state and device-session recovery.',
       },
     ],
   },
   settings: {
     eyebrow: 'Preferences + Sync',
     summary:
-      'Settings will eventually host account sync, desktop preferences, and the active persona controls without leaking local install detail into the web API.',
+      'Settings keeps account-level desktop profile sync separate from local install bookkeeping, while still letting the current device persona become the synced account active persona.',
     checklist: [
-      'Keep account sync separate from install bookkeeping.',
-      'Reserve a stable slot for desktop preference toggles.',
-      'Leave the account status placeholder visible until auth wiring lands.',
+      'Read account sync state through `/api/desktop/me` with the confirmed desktop device session.',
+      'Sync the current local active persona through `/api/desktop/me/active-persona` without sending install-path details.',
+      'Keep local-active and account-active status easy to compare before switching personas.',
     ],
     links: [
       {
         label: 'Open Auth',
         to: '/auth',
-        caption: 'Validate the login handoff route placeholder.',
+        caption: 'Validate the browser handoff and account connection status.',
       },
       {
         label: 'Back To Library',
         to: '/library',
-        caption: 'Return to the future installed-persona view.',
+        caption: 'Return to the installed-persona view and local active state.',
       },
     ],
   },
   auth: {
     eyebrow: 'Browser Login Handoff',
     summary:
-      'Auth now launches browser-based device binding, listens for the Soulidity deep-link callback, and restores the last confirmed desktop account session on restart.',
+      'Auth launches browser-based device binding, restores the last confirmed desktop account session on restart, and now immediately unlocks desktop profile sync once the deep link lands.',
     checklist: [
       'Launch the existing web confirmation page from the desktop shell.',
       'Resolve the returning deep link back into a confirmed account session.',
-      'Persist the confirmed desktop session locally for restart recovery.',
+      'Persist the confirmed desktop session locally for restart recovery and profile sync.',
     ],
     links: [
       {
@@ -262,9 +272,14 @@ export default function App() {
   const [personaError, setPersonaError] = useState<string | null>(null)
   const [personaNotice, setPersonaNotice] = useState<string | null>(null)
   const [installedPersonas, setInstalledPersonas] = useState<InstalledPersonaRecord[]>([])
+  const [localActivePersona, setLocalActivePersona] = useState<ActivePersonaRecord | null>(null)
   const [installBusyId, setInstallBusyId] = useState<string | null>(null)
   const [installError, setInstallError] = useState<string | null>(null)
   const [installNotice, setInstallNotice] = useState<string | null>(null)
+  const [desktopMe, setDesktopMe] = useState<DesktopMeResponse | null>(null)
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileNotice, setProfileNotice] = useState<string | null>(null)
   const authPendingSessionRef = useRef<PendingDesktopAuthSession | null>(null)
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
@@ -411,7 +426,9 @@ export default function App() {
   const route = useMemo(() => resolveDesktopRoute(currentPath), [currentPath])
   const isPersonaRoute = route.definition.id === 'persona'
   const isAuthRoute = route.definition.id === 'auth'
+  const isLibraryRoute = route.definition.id === 'library'
   const isSearchRoute = route.definition.id === 'search'
+  const isSettingsRoute = route.definition.id === 'settings'
   const isCatalogRoute = route.definition.id === 'explore' || route.definition.id === 'search' || isPersonaRoute
   const resolvedPersonaItem = useMemo(
     () => (
@@ -475,6 +492,26 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+
+    void loadDesktopActivePersona()
+      .then((record) => {
+        if (!cancelled) {
+          setLocalActivePersona(record)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setInstallError(error instanceof Error ? error.message : 'Failed to load the current active persona')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   async function handleRefreshCatalog(reason: 'initial' | 'manual' = 'manual') {
     try {
       setCatalogBusy(true)
@@ -509,6 +546,48 @@ export default function App() {
   useEffect(() => {
     void handleRefreshCatalog('initial')
   }, [])
+
+  useEffect(() => {
+    if (!authSession) {
+      setDesktopMe(null)
+      setProfileBusy(false)
+      setProfileError(null)
+      setProfileNotice(null)
+      return
+    }
+
+    let cancelled = false
+
+    void fetchDesktopMe({
+      deviceCode: authSession.deviceCode,
+    })
+      .then((response) => {
+        if (cancelled) {
+          return
+        }
+
+        setDesktopMe(response)
+        setProfileError(null)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setProfileError(error instanceof Error ? error.message : 'Failed to load desktop account sync state')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setProfileBusy(false)
+        }
+      })
+
+    setProfileBusy(true)
+    setProfileError(null)
+    setProfileNotice(null)
+
+    return () => {
+      cancelled = true
+    }
+  }, [authSession?.deviceCode])
 
   useEffect(() => {
     if (!isPersonaRoute) {
@@ -669,7 +748,102 @@ export default function App() {
     }
   }
 
+  async function handleSetLocalActivePersona(personaId: string) {
+    try {
+      setInstallBusyId(personaId)
+      setInstallError(null)
+      setInstallNotice(null)
+
+      const activePersona = await setDesktopActivePersona(personaId)
+      setLocalActivePersona(activePersona)
+
+      const matchingInstalledPersona = installedPersonas.find((record) => record.personaId === activePersona.personaId)
+      setInstallNotice(
+        matchingInstalledPersona
+          ? `${matchingInstalledPersona.manifest.title} is now the current local active persona.`
+          : 'Updated the current local active persona.',
+      )
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : 'Failed to set the current local active persona')
+    } finally {
+      setInstallBusyId(null)
+    }
+  }
+
+  async function handleRefreshDesktopProfile(reason: 'manual' | 'post-sync' = 'manual') {
+    if (!authSession) {
+      setProfileError('Connect a desktop account before refreshing account sync state')
+      return
+    }
+
+    try {
+      setProfileBusy(true)
+      setProfileError(null)
+      if (reason === 'manual') {
+        setProfileNotice(null)
+      }
+
+      const response = await fetchDesktopMe({
+        deviceCode: authSession.deviceCode,
+      })
+
+      setDesktopMe(response)
+      setProfileNotice(
+        reason === 'manual'
+          ? `Account sync refreshed at ${formatDesktopTimestamp(response.profile.lastSyncedAt ?? response.profile.updatedAt)}.`
+          : 'Desktop account sync updated.',
+      )
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Failed to refresh desktop account sync state')
+    } finally {
+      setProfileBusy(false)
+    }
+  }
+
+  async function handleSyncCurrentDevicePersonaToAccount() {
+    if (!authSession) {
+      setProfileError('Connect a desktop account before syncing the current device persona')
+      return
+    }
+
+    if (!localActivePersona) {
+      setProfileError('Set a current local active persona before syncing to the account')
+      return
+    }
+
+    try {
+      setProfileBusy(true)
+      setProfileError(null)
+      setProfileNotice(null)
+
+      const response = await syncDesktopActivePersona(
+        {
+          sourceType: localActivePersona.sourceType,
+          sourceRef: localActivePersona.sourceRef,
+        },
+        {
+          deviceCode: authSession.deviceCode,
+        },
+      )
+
+      setDesktopMe(response)
+      const syncedTitle = response.activePersona?.title
+        ?? installedPersonas.find((record) => record.personaId === localActivePersona.personaId)?.manifest.title
+        ?? localActivePersona.personaId
+      setProfileNotice(`Synced ${syncedTitle} to desktop account ${response.profile.accountId}.`)
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Failed to sync the current device persona')
+    } finally {
+      setProfileBusy(false)
+    }
+  }
+
   const personaInstalledRecord = personaManifest ? installedPersonasById.get(personaManifest.id) ?? null : null
+  const localActiveInstalledPersona = localActivePersona
+    ? installedPersonasById.get(localActivePersona.personaId) ?? null
+    : null
+  const accountProfile = desktopMe?.profile ?? null
+  const accountActivePersona = desktopMe?.activePersona ?? null
   const catalogStatusLabel = catalogSource === 'cache' ? 'Offline cache' : 'Live catalog'
   const catalogStatusDetail = catalogSyncedAt
     ? `${catalogStatusLabel} • ${formatDesktopTimestamp(catalogSyncedAt)}`
@@ -677,6 +851,10 @@ export default function App() {
   const catalogResultCountLabel = isSearchRoute
     ? `${visibleCatalogItems.length} matching personas`
     : `${catalogItems.length} public personas`
+  const installedPersonasForLibrary = useMemo(
+    () => [...installedPersonas].sort((left, right) => right.installedAt.localeCompare(left.installedAt)),
+    [installedPersonas],
+  )
 
   return (
     <div className="desktop-shell">
@@ -1145,6 +1323,215 @@ export default function App() {
                     </div>
                   </>
                 )}
+              </article>
+            </>
+          ) : isLibraryRoute || isSettingsRoute ? (
+            <>
+              <article className="desktop-card">
+                <header>
+                  <span>{isLibraryRoute ? 'Installed Library' : 'Account sync status'}</span>
+                  <strong>
+                    {isLibraryRoute ? 'Current local active persona' : 'Sync current device persona to account'}
+                  </strong>
+                </header>
+
+                {isLibraryRoute ? (
+                  installedPersonasForLibrary.length > 0 ? (
+                    <div className="desktop-catalog-grid">
+                      {installedPersonasForLibrary.map((record) => {
+                        const isLocalActive = localActivePersona?.personaId === record.personaId
+                        const isAccountActive = accountProfile?.activeSourceType === record.sourceType
+                          && accountProfile.activeSourceRef === record.sourceRef
+                        const isPersonaBusy = installBusyId === record.personaId
+
+                        return (
+                          <article
+                            className="desktop-catalog-card"
+                            key={record.personaId}
+                          >
+                            <a
+                              aria-label={`Open ${record.manifest.title}`}
+                              className="desktop-catalog-card__media"
+                              href={toDesktopHref(`/persona/${record.personaId}`)}
+                              style={{ backgroundImage: `url(${record.manifest.thumbnail})` }}
+                            />
+                            <div className="desktop-catalog-card__body">
+                              <div className="desktop-catalog-card__meta">
+                                <span className={`desktop-catalog-pill desktop-catalog-pill--${record.sourceType}`}>
+                                  {record.sourceType === 'starter' ? 'Starter' : 'Curated Soul'}
+                                </span>
+                                <span>{record.version}</span>
+                                {isLocalActive ? <span>Current device persona</span> : null}
+                                {isAccountActive ? <span>Account active</span> : null}
+                              </div>
+                              <h3>{record.manifest.title}</h3>
+                              <p className="desktop-card__body">
+                                Installed {formatDesktopTimestamp(record.installedAt)}.
+                              </p>
+                              <div className="desktop-catalog-card__actions">
+                                <a
+                                  className="desktop-button"
+                                  href={toDesktopHref(`/persona/${record.personaId}`)}
+                                >
+                                  View detail
+                                </a>
+                                <button
+                                  className="desktop-button desktop-button--primary"
+                                  disabled={isLocalActive || isPersonaBusy}
+                                  onClick={() => {
+                                    void handleSetLocalActivePersona(record.personaId)
+                                  }}
+                                  type="button"
+                                >
+                                  {isLocalActive
+                                    ? 'Current device persona'
+                                    : isPersonaBusy
+                                      ? 'Applying...'
+                                      : 'Set as active on this device'}
+                                </button>
+                              </div>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="desktop-empty-state">
+                      <strong>No local installs are ready yet.</strong>
+                      <p>Install a starter persona from Explore or Persona Detail before choosing a current device persona.</p>
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <dl className="desktop-session-grid">
+                      <div>
+                        <dt>Current local active persona</dt>
+                        <dd>{localActiveInstalledPersona?.manifest.title ?? 'Not set yet'}</dd>
+                      </div>
+                      <div>
+                        <dt>Linked desktop account</dt>
+                        <dd>{authSession?.accountId ?? 'Not connected'}</dd>
+                      </div>
+                      <div>
+                        <dt>Account active persona</dt>
+                        <dd>{accountActivePersona?.title ?? 'Nothing synced yet'}</dd>
+                      </div>
+                      <div>
+                        <dt>Last account sync</dt>
+                        <dd>{formatDesktopTimestamp(accountProfile?.lastSyncedAt ?? accountProfile?.updatedAt ?? null)}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="desktop-auth-actions">
+                      <button
+                        className="desktop-button"
+                        disabled={!authSession || profileBusy}
+                        onClick={() => {
+                          void handleRefreshDesktopProfile('manual')
+                        }}
+                        type="button"
+                      >
+                        {profileBusy ? 'Refreshing...' : 'Refresh account sync'}
+                      </button>
+
+                      <button
+                        className="desktop-button desktop-button--primary"
+                        disabled={!authSession || !localActivePersona || profileBusy}
+                        onClick={() => {
+                          void handleSyncCurrentDevicePersonaToAccount()
+                        }}
+                        type="button"
+                      >
+                        {profileBusy ? 'Syncing...' : 'Sync current device persona to account'}
+                      </button>
+                    </div>
+
+                    {profileNotice ? (
+                      <p className="desktop-feedback desktop-feedback--notice">{profileNotice}</p>
+                    ) : null}
+
+                    {profileError ? (
+                      <p className="desktop-feedback desktop-feedback--error">{profileError}</p>
+                    ) : null}
+                  </>
+                )}
+
+                {installNotice && isLibraryRoute ? (
+                  <p className="desktop-feedback desktop-feedback--notice">{installNotice}</p>
+                ) : null}
+
+                {installError && isLibraryRoute ? (
+                  <p className="desktop-feedback desktop-feedback--error">{installError}</p>
+                ) : null}
+              </article>
+
+              <article className="desktop-card">
+                <header>
+                  <span>{isLibraryRoute ? 'Account sync status' : 'Library summary'}</span>
+                  <strong>
+                    {isLibraryRoute
+                      ? 'Device + linked-account overview'
+                      : 'Installed personas and current local active persona'}
+                  </strong>
+                </header>
+
+                <dl className="desktop-session-grid">
+                  <div>
+                    <dt>Installed personas</dt>
+                    <dd>{installedPersonas.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Current local active persona</dt>
+                    <dd>{localActiveInstalledPersona?.manifest.title ?? 'Not set yet'}</dd>
+                  </div>
+                  <div>
+                    <dt>Linked desktop account</dt>
+                    <dd>{authSession?.accountId ?? 'Not connected'}</dd>
+                  </div>
+                  <div>
+                    <dt>Account active persona</dt>
+                    <dd>{accountActivePersona?.title ?? 'Nothing synced yet'}</dd>
+                  </div>
+                </dl>
+
+                {profileNotice && isLibraryRoute ? (
+                  <p className="desktop-feedback desktop-feedback--notice">{profileNotice}</p>
+                ) : null}
+
+                {profileError && isLibraryRoute ? (
+                  <p className="desktop-feedback desktop-feedback--error">{profileError}</p>
+                ) : null}
+
+                {installNotice && isSettingsRoute ? (
+                  <p className="desktop-feedback desktop-feedback--notice">{installNotice}</p>
+                ) : null}
+
+                {installError && isSettingsRoute ? (
+                  <p className="desktop-feedback desktop-feedback--error">{installError}</p>
+                ) : null}
+
+                <div className="desktop-link-grid">
+                  {panel.links.map((link: RoutePanelLink) => (
+                    <a
+                      key={link.label}
+                      className="desktop-link-card"
+                      href={toDesktopHref(link.to)}
+                    >
+                      <strong>{link.label}</strong>
+                      <p>{link.caption}</p>
+                    </a>
+                  ))}
+
+                  {localActiveInstalledPersona ? (
+                    <a
+                      className="desktop-link-card"
+                      href={toDesktopHref(`/persona/${localActiveInstalledPersona.personaId}`)}
+                    >
+                      <strong>Inspect Current Local Active Persona</strong>
+                      <p>Open the current device persona detail and review its manifest metadata.</p>
+                    </a>
+                  ) : null}
+                </div>
               </article>
             </>
           ) : (

@@ -182,8 +182,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added desktop device-code profile auth on `/api/desktop/me*`, local active-persona state + account sync UI in `desktop/src/App.tsx`, and `docs/desktop-phase-one-smoke.md`; verified with `npm test -- tests/new-web/desktop-request-auth.test.ts tests/new-web/desktop-profile-routes.test.ts tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-auth-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-install-contract.test.ts tests/desktop/desktop-catalog-contract.test.ts tests/desktop/desktop-profile-sync-contract.test.ts`, `npm run typecheck:root`, `npm --prefix web exec -- tsc -p tsconfig.json --noEmit`, `npm --prefix desktop run typecheck`, `cargo check --manifest-path desktop/src-tauri/Cargo.toml`, and browser verification with screenshots `/tmp/clawnews-browser/us012-library-active.png`, `/tmp/clawnews-browser/us012-auth-connected.png`, `/tmp/clawnews-browser/us012-settings-synced.png`."
     }
   ]
 }

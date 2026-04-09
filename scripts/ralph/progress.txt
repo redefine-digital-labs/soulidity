@@ -15,6 +15,8 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Desktop filesystem stories should keep `desktop/src-tauri/src/lib.rs` as a thin Tauri adapter and move testable path-rooted install logic into focused Rust modules, so `cargo test` can cover download and persistence behavior without booting a Tauri app.
 - Version local bundle/runtime directories by `personaId/version` and promote a staged temp bundle directory with `fs::rename`, so failed installs never partially overwrite an existing persona payload.
 - Desktop catalog UI can treat `/api/desktop/catalog*` as the only browse contract, cache the latest successful payload in browser storage for offline fallback, and keep anonymous starter installs browser-safe by mirroring `InstalledPersonaRecord` locally while Tauri runtime still routes real installs through Rust commands.
+- Account-scoped desktop `/api/desktop/me*` routes should authenticate through a shared helper: browser requests keep `requireIdentity`, while desktop runtime calls reuse the confirmed device binding via `x-soulidity-device-code`.
+- Keep local active persona state separate from account sync: desktop persistence owns `active_persona`, while account sync only sends `sourceType + sourceRef` through the profile API and never leaks install paths.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -148,4 +150,19 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: keep catalog fetch/cache logic in a browser-safe `desktop/src/lib/catalog.ts` module so explore/search/detail routes can share one offline-aware source of truth.
   - Gotchas: the current dev DB is missing pre-desktop schema tables, so browser verification for this story used a temporary local mock BFF target while still exercising the `/api/desktop/catalog*` contract through Vite proxying.
   - Useful context: browser preview starter installs now persist as `InstalledPersonaRecord` rows in local storage, which lets later library/settings UI reuse the same installed-state shape before Tauri-only views add richer filesystem metadata.
+---
+## 2026-04-10 03:18:15 CST - US-012
+- Implemented the phase-one library/settings/auth close-out: added shared desktop request auth for `/api/desktop/me*`, a browser/Tauri desktop profile transport, local active-persona persistence helpers, and real library/settings UI that shows installed personas, current local active persona, linked account state, and sync controls.
+- Files changed: `desktop/src/App.tsx`, `desktop/src/lib/persona-runtime.ts`, `desktop/src/lib/profile.ts`, `desktop/src-tauri/src/lib.rs`, `web/lib/types/desktop.ts`, `web/lib/desktop/device-session.ts`, `web/lib/desktop/request-auth.ts`, `web/app/api/desktop/me/route.ts`, `web/app/api/desktop/me/active-persona/route.ts`, `tests/new-web/desktop-request-auth.test.ts`, `tests/new-web/desktop-profile-routes.test.ts`, `tests/desktop/desktop-profile-sync-contract.test.ts`, `docs/desktop-phase-one-smoke.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/new-web/desktop-request-auth.test.ts tests/new-web/desktop-profile-routes.test.ts tests/desktop/desktop-shell-contract.test.ts tests/desktop/desktop-auth-contract.test.ts tests/desktop/desktop-persistence-contract.test.ts tests/desktop/desktop-install-contract.test.ts tests/desktop/desktop-catalog-contract.test.ts tests/desktop/desktop-profile-sync-contract.test.ts` PASS
+  - `npm run typecheck:root` PASS
+  - `npm --prefix web exec -- tsc -p tsconfig.json --noEmit` PASS
+  - `npm --prefix desktop run typecheck` PASS
+  - `cargo check --manifest-path desktop/src-tauri/Cargo.toml` PASS
+  - Browser verification PASS against a temporary mock desktop web target via `with_server.py`; screenshots saved to `/tmp/clawnews-browser/us012-library-active.png`, `/tmp/clawnews-browser/us012-auth-connected.png`, and `/tmp/clawnews-browser/us012-settings-synced.png`
+- Learnings for future iterations:
+  - Reusable patterns: route all desktop profile reads/writes through `desktop/src/lib/profile.ts` so browser preview and Tauri runtime share one transport contract while Rust owns the cross-origin HTTP fallback.
+  - Gotchas: browser preview cannot receive the real `soulidity://auth/device` callback, so smoke runs need a seeded local desktop auth session or full Tauri runtime when verifying post-bind UI.
+  - Useful context: this story records the phase-one smoke path in `docs/desktop-phase-one-smoke.md`, including starter install/local activation plus a separate curated soul sync checkpoint for account-level state.
 ---

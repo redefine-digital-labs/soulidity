@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 
-import { requireIdentity } from '@web/lib/auth/identity'
 import {
   DesktopActivePersonaNotFoundError,
   setDesktopActivePersona,
 } from '@/lib/desktop/profile'
+import { requireDesktopAccountAccess } from '@/lib/desktop/request-auth'
 import type { DesktopCatalogSourceType } from '@/lib/types/desktop'
 
 export const dynamic = 'force-dynamic'
@@ -31,13 +31,9 @@ function normalizeSourceRef(value: unknown): string | null | 'invalid' {
 }
 
 export async function PUT(request: Request) {
-  const { error, identity } = await requireIdentity()
+  const { accountId, error } = await requireDesktopAccountAccess(request)
   if (error) {
     return error
-  }
-
-  if (identity.kind !== 'human') {
-    return NextResponse.json({ error: 'Only human accounts can sync a desktop active persona' }, { status: 403 })
   }
 
   let body: unknown
@@ -68,7 +64,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const response = await setDesktopActivePersona(identity.accountId, {
+    const response = await setDesktopActivePersona(accountId, {
       sourceType,
       sourceRef,
     })
