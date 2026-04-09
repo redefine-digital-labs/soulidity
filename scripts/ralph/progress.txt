@@ -4,6 +4,7 @@ Started: Fri Apr 10 00:00:00 CST 2026
 - Prisma table/bootstrap stories in this repo fit well with a small Vitest contract under `tests/new-web/` plus a hand-written SQL migration under `prisma/migrations/`.
 - Local bootstrap data is usually exposed as an explicit root `npm` script that runs a `tsx scripts/*.ts` file, not through Prisma's global seed hook.
 - Desktop catalog reads should start from `DesktopCatalogEntry` and then hydrate source records by `sourceRef`, because that is the repo's curated/public visibility gate for both starter and soul sources.
+- Until Soul gains dedicated desktop manifest fields, the desktop detail API should synthesize soul manifests from `SoulAsset.contentBlobId` and expose the main blob as a single downloadable bundle file.
 
 ## 2026-04-10 00:48:07 CST - US-001
 - Implemented the desktop bootstrap persistence layer: added `StarterPersonaAsset`, `DesktopCatalogEntry`, `DesktopDeviceSession`, and `DesktopProfile` to `prisma/schema.prisma`, plus the matching SQL migration.
@@ -27,4 +28,15 @@ Started: Fri Apr 10 00:00:00 CST 2026
   - Reusable patterns: keep desktop catalog paging on `DesktopCatalogEntry`, then batch-hydrate starters by `slug` and souls by `onChainId` so curated filtering and source-specific mapping stay separate.
   - Gotchas: `SoulAsset` currently lacks desktop-specific manifest/version fields, so this story should stop at shared catalog summary mapping and type contracts instead of inventing detail payloads early.
   - Useful context: `DesktopCatalogItem.id` now uses the catalog entry UUID, while `sourceRef` continues to point at the backing starter slug or soul `onChainId`.
+---
+## 2026-04-10 01:08:35 CST - US-003
+- Implemented anonymous desktop catalog APIs at `GET /api/desktop/catalog` and `GET /api/desktop/catalog/[id]`, plus repository helpers that return starter manifests directly and synthesize soul manifests from the current `SoulAsset` blob source.
+- Files changed: `web/lib/desktop/repository.ts`, `web/app/api/desktop/catalog/route.ts`, `web/app/api/desktop/catalog/[id]/route.ts`, `tests/new-web/desktop-catalog-repository.test.ts`, `tests/new-web/desktop-catalog-routes.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- Checks run and results:
+  - `npm test -- tests/new-web/desktop-catalog-repository.test.ts tests/new-web/desktop-catalog-routes.test.ts` PASS
+  - `npm run typecheck` PASS
+- Learnings for future iterations:
+  - Reusable patterns: keep the public list route thin and push starter/soul source branching down into `web/lib/desktop/repository.ts`, so later device/profile routes can reuse the same desktop contracts.
+  - Gotchas: `SoulAsset.previewImages` may be stored as Walrus blob ids or full URLs, so desktop-facing image fields should materialize blob ids before falling back to the original string.
+  - Useful context: the soul detail manifest currently exposes one synthetic `soul.bundle` file whose URL is derived from `contentBlobId`, while `version` uses `updatedAt` as the only stable source-level revision signal currently available.
 ---

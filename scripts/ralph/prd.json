@@ -45,8 +45,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added `GET /api/desktop/catalog` and `GET /api/desktop/catalog/[id]` on top of desktop repository helpers, including starter manifests plus synthetic soul manifests backed by `contentBlobId`; verified with `npm test -- tests/new-web/desktop-catalog-repository.test.ts tests/new-web/desktop-catalog-routes.test.ts` and `npm run typecheck`."
     },
     {
       "id": "US-004",
