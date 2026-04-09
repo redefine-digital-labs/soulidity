@@ -9,12 +9,14 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import pg from 'pg'
 import { SealClient } from '@mysten/seal'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { getConfiguredSoulidityNetwork } from '../lib/soulidity/deployment'
+import { getRequiredSoulidityEnv } from '../lib/soulidity/env'
 
 /* ---- inline env ---- */
 
 const SOUL_ON_CHAIN_ID = process.env.SOUL_ON_CHAIN_ID!
-const PACKAGE_ID = process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID!
-const SUI_NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet') as 'testnet' | 'mainnet'
+const PACKAGE_ID = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+const SUI_NETWORK = getConfiguredSoulidityNetwork() as 'testnet' | 'mainnet'
 const DATABASE_URL = process.env.DATABASE_URL!
 
 /* ---- inline Sui client ---- */

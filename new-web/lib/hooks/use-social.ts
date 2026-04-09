@@ -39,6 +39,7 @@ export function useToggleFollow() {
   return useMutation({
     mutationFn: async (targetMemberId: string) => {
       const headers = await getAuthHeaders()
+      if (!headers.Authorization) throw new Error('请先登录')
       const res = await fetch('/api/community/follow', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -79,6 +80,7 @@ export function useToggleBookmark() {
   return useMutation({
     mutationFn: async (soulId: string) => {
       const headers = await getAuthHeaders()
+      if (!headers.Authorization) throw new Error('请先登录')
       const res = await fetch('/api/souls/bookmark', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -91,8 +93,10 @@ export function useToggleBookmark() {
       return res.json() as Promise<{ bookmarked: boolean }>
     },
     onSuccess: (_data, _soulId) => {
-      // Invalidate the shared bookmark list — useBookmarkStatus derives from it
-      queryClient.invalidateQueries({ queryKey: ['bookmarks'] })
+      // Refetch immediately so the new bookmark count is visible on any mounted page.
+      // invalidateQueries alone is not sufficient when the query is considered fresh
+      // (staleTime 30s) at mount time on a page navigated to right after toggling.
+      queryClient.refetchQueries({ queryKey: ['bookmarks'] })
     },
   })
 }
@@ -109,5 +113,6 @@ export function useBookmarks() {
       return res.json()
     },
     enabled: !!user,
+    staleTime: 0,
   })
 }

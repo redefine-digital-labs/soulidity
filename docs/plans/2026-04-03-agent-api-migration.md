@@ -886,7 +886,7 @@ export async function GET(
       accessPolicy: {
         packageId, stateObjectId: soul.stateOnChainId, skillsObjectId: soul.skillsOnChainId,
         versionObjectId: version.versionOnChainId, moduleName: 'skills',
-        functionName: 'approve_private_read_owner', soulGrantObjectId: null,
+        functionName: 'seal_approve_private_read_owner', soulGrantObjectId: null,
         documentIdHex: buildSkillDocumentId(version.versionOnChainId),
       },
       seal: getSealRuntimeConfig(), sealSidecar: version.sealSidecar,
@@ -911,7 +911,7 @@ export async function GET(
     accessPolicy: {
       packageId, stateObjectId: soul.stateOnChainId, skillsObjectId: soul.skillsOnChainId,
       versionObjectId: version.versionOnChainId, moduleName: 'skills',
-      functionName: 'approve_private_read_granted_agent', soulGrantObjectId: grant.objectId,
+      functionName: 'seal_approve_private_read_granted_agent', soulGrantObjectId: grant.objectId,
       documentIdHex: buildSkillDocumentId(version.versionOnChainId),
     },
     seal: getSealRuntimeConfig(), sealSidecar: version.sealSidecar,

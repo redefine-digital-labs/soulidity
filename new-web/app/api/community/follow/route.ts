@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 // GET /api/community/follow?memberId=xxx
 // Returns follow status + counts for a given member
 export async function GET(request: NextRequest) {
+  try {
   const memberId = request.nextUrl.searchParams.get('memberId')
   if (!memberId) {
     return NextResponse.json({ error: 'memberId required' }, { status: 400 })
@@ -33,12 +34,17 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ isFollowing, followerCount, followingCount })
+  } catch (e: any) {
+    console.error('[GET /api/community/follow] Unhandled error:', e)
+    return NextResponse.json({ error: e.message ?? 'Internal server error' }, { status: 500 })
+  }
 }
 
 // POST /api/community/follow
 // Body: { targetMemberId: string }
 // Toggles follow state. Returns { following: boolean, followerCount: number }
 export async function POST(request: NextRequest) {
+  try {
   const { error, identity } = await requireIdentity()
   if (error) return error
 
@@ -95,4 +101,8 @@ export async function POST(request: NextRequest) {
   const followerCount = await prisma.follow.count({ where: { followingId: targetMemberId } })
 
   return NextResponse.json({ following, followerCount })
+  } catch (e: any) {
+    console.error('[POST /api/community/follow] Unhandled error:', e)
+    return NextResponse.json({ error: e.message ?? 'Internal server error' }, { status: 500 })
+  }
 }

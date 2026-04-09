@@ -11,6 +11,7 @@
     "typecheck:root": "npm run prisma:generate && tsc -p tsconfig.json --noEmit",
     "typecheck:new-web": "npm --prefix new-web run typecheck",
     "typecheck": "npm run typecheck:root && npm --prefix web run typecheck && npm run typecheck:new-web",
+    "publish:soulidity": "tsx scripts/publish-soulidity-and-sync.ts",
     "collect": "tsx src/collector/run.ts",
     "collect:x": "tsx src/collector/run.ts x",
     "produce": "tsx src/producer/run.ts",

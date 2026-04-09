@@ -40,30 +40,51 @@ export async function syncSoulProjectionFromChain(params: {
     getSoulMemoryObject(params.memoryObjectId, params.packageId),
   ])
 
-  // Resolve kiosk cap ID: caller-provided → registry lookup → owned-object scan
+  // Resolve kiosk cap ID: caller-provided → registry lookup → owned-object scan (with retry)
   let kioskCapOnChainId = params.currentKioskCapOnChainId ?? null
   if (!kioskCapOnChainId) {
-    const registered = await getRegisteredPersonalKiosk({
-      marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
-      marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
-      ownerAddress: state.currentOwnerAddress,
-    })
-    if (registered) {
-      kioskCapOnChainId = registered.kioskCapOnChainId
-    } else {
+    const MAX_CAP_RESOLVE_ATTEMPTS = 4
+    const CAP_RESOLVE_DELAY_MS = 1500
+
+    for (let attempt = 1; attempt <= MAX_CAP_RESOLVE_ATTEMPTS; attempt++) {
+      const registered = await getRegisteredPersonalKiosk({
+        marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
+        marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+        ownerAddress: state.currentOwnerAddress,
+      })
+      if (registered) {
+        kioskCapOnChainId = registered.kioskCapOnChainId
+        break
+      }
+
       // Registry lookup missed (e.g. RPC indexing lag) — scan owned PersonalKioskCap
       // objects and match by kiosk ID to avoid storing a Kiosk object ID as a cap ID
       const ownedCaps = await listOwnedPersonalKioskCaps(state.currentOwnerAddress)
       const matched = ownedCaps.find(cap => cap.currentKioskId === state.currentKioskId)
       if (matched) {
         kioskCapOnChainId = matched.currentKioskCapOnChainId
+        break
+      }
+
+      if (attempt < MAX_CAP_RESOLVE_ATTEMPTS) {
+        console.warn(
+          `[syncSoulProjection] PersonalKioskCap not yet indexed for kiosk ${state.currentKioskId} ` +
+          `(owner ${state.currentOwnerAddress}, attempt ${attempt}/${MAX_CAP_RESOLVE_ATTEMPTS}). Retrying...`
+        )
+        await new Promise(resolve => setTimeout(resolve, CAP_RESOLVE_DELAY_MS))
       } else {
         throw new Error(
           `[syncSoulProjection] Could not resolve PersonalKioskCap for kiosk ${state.currentKioskId} owned by ${state.currentOwnerAddress}. ` +
-          `Registry lookup and owned-object scan (${ownedCaps.length} caps found) both missed. ` +
+          `Registry lookup and owned-object scan (${ownedCaps.length} caps found) both missed after ${MAX_CAP_RESOLVE_ATTEMPTS} attempts. ` +
           `Sync cannot proceed — retry after RPC indexing catches up.`
         )
       }
+    }
+
+    if (!kioskCapOnChainId) {
+      throw new Error(
+        `[syncSoulProjection] Could not resolve PersonalKioskCap for kiosk ${state.currentKioskId} owned by ${state.currentOwnerAddress} after ${MAX_CAP_RESOLVE_ATTEMPTS} attempts.`
+      )
     }
   }
 

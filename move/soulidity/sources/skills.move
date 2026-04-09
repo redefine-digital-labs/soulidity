@@ -200,7 +200,7 @@ public fun delete_version_as_granted_agent(
     });
 }
 
-entry fun approve_private_read_owner(
+entry fun seal_approve_private_read_owner(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
@@ -215,7 +215,7 @@ entry fun approve_private_read_owner(
     assert!(!slot.deleted, ESkillVersionDeleted);
 }
 
-entry fun approve_private_read_granted_agent(
+entry fun seal_approve_private_read_granted_agent(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
@@ -360,7 +360,7 @@ public(package) fun share_skills(skills: SoulSkills) {
 }
 
 #[test_only]
-public(package) fun approve_private_read_as_owner_for_testing(
+public(package) fun seal_approve_private_read_as_owner_for_testing(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
@@ -368,11 +368,11 @@ public(package) fun approve_private_read_as_owner_for_testing(
     version_index: u64,
     ctx: &TxContext,
 ) {
-    approve_private_read_owner(id, state, skills, skill_name, version_index, ctx)
+    seal_approve_private_read_owner(id, state, skills, skill_name, version_index, ctx)
 }
 
 #[test_only]
-public(package) fun approve_private_read_as_granted_agent_for_testing(
+public(package) fun seal_approve_private_read_as_granted_agent_for_testing(
     id: vector<u8>,
     state: &SoulState,
     skills: &SoulSkills,
@@ -382,7 +382,7 @@ public(package) fun approve_private_read_as_granted_agent_for_testing(
     clock: &Clock,
     ctx: &TxContext,
 ) {
-    approve_private_read_granted_agent(id, state, skills, skill_name, version_index, soul_grant, clock, ctx)
+    seal_approve_private_read_granted_agent(id, state, skills, skill_name, version_index, soul_grant, clock, ctx)
 }
 
 #[test_only]

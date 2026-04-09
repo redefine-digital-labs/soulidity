@@ -58,6 +58,9 @@ function collectMatches(pattern: RegExp) {
 describe('repository contract guards', () => {
   it('documents the Soulidity env contract and repo-level new-web verification', () => {
     const envExample = readFileSync(join(repoRoot, '.env.example'), 'utf8')
+    const deploymentManifest = JSON.parse(readFileSync(join(newWebRoot, 'lib', 'soulidity', 'deployment-manifest.json'), 'utf8')) as {
+      testnet?: Record<string, string>
+    }
     const rootPackage = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
       scripts?: Record<string, string>
     }
@@ -65,18 +68,25 @@ describe('repository contract guards', () => {
     expect(envExample).toContain('AUTH_SECRET=')
     expect(envExample).toContain('DIRECT_URL=')
     expect(envExample).toContain('SHADOW_DATABASE_URL=')
-    expect(envExample).toContain('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID=')
-    expect(envExample).toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID=')
-    expect(envExample).toContain('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID=')
-    expect(envExample).toContain('NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID=')
-    expect(envExample).toContain('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE=')
+    expect(envExample).not.toContain('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID=')
+    expect(envExample).not.toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID=')
+    expect(envExample).not.toContain('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID=')
+    expect(envExample).not.toContain('NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID=')
+    expect(envExample).not.toContain('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE=')
     expect(envExample).not.toContain('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID=')
     expect(envExample).not.toContain('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID=')
     expect(envExample).not.toContain('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID=')
     expect(envExample).not.toContain('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID=')
 
+    expect(deploymentManifest.testnet?.packageId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.testnet?.marketConfigId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.testnet?.soulTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.testnet?.collectionTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.testnet?.paymentCoinType).toContain('::')
+
     expect(rootPackage.scripts?.['typecheck:new-web']).toBe('npm --prefix new-web run typecheck')
     expect(rootPackage.scripts?.typecheck).toContain('npm run typecheck:new-web')
+    expect(rootPackage.scripts?.['publish:soulidity']).toBe('tsx scripts/publish-soulidity-and-sync.ts')
   })
 
   it('keeps new-web soul business code isolated from the legacy web/lib/souls runtime', () => {

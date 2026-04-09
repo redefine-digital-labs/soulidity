@@ -3711,7 +3711,7 @@ fun skills_private_read_and_delete_use_skill_name_and_version_index() {
         let skills_id = *soul::skills_id(&state).borrow();
         let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
 
-        skills::approve_private_read_as_owner_for_testing(
+        skills::seal_approve_private_read_as_owner_for_testing(
             skill_document_id(skills_id, default_skill_name(), 0),
             &state,
             &skills_book,

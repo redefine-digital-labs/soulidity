@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { CreateCollectionSyncResult } from '@/lib/collections/create-form-state'
 import type { CollectionDetailResponse, CollectionsListResponse, SoulCollectionAssetDetail } from '@/lib/soulidity/types'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildBuyCollectionTx } from '@/lib/soulidity/tx/buy'
 import { buildCreateCollectionTx } from '@/lib/soulidity/tx/collection'
@@ -84,7 +85,7 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
     try {
       const authHeaders = await getAuthHeaders()
       const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
-      const coinType = process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE ?? '0x0::usdc::USDC'
+      const coinType = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
       const requiredAtomic = BigInt(collection.quote.totalAtomic)
       const selectedCoinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
         owner: suiWallet.address,

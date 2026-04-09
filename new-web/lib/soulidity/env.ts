@@ -1,3 +1,5 @@
+import { getSoulidityDeployment } from '@/lib/soulidity/deployment'
+
 export type SoulidityPublicEnvName =
   | 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'
@@ -13,17 +15,18 @@ export class MissingSoulidityEnvError extends Error {
 }
 
 function readPublicEnv(name: SoulidityPublicEnvName): string | undefined {
+  const deployment = getSoulidityDeployment()
   switch (name) {
     case 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID':
-      return process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID
+      return deployment.packageId
     case 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID':
-      return process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID
+      return deployment.marketConfigId
     case 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID':
-      return process.env.NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID
+      return deployment.soulTransferPolicyId
     case 'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID':
-      return process.env.NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID
+      return deployment.collectionTransferPolicyId
     case 'NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE':
-      return process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE
+      return deployment.paymentCoinType
   }
 }
 
@@ -40,4 +43,3 @@ export function getRequiredSoulidityEnv(name: SoulidityPublicEnvName): string {
 
   return value
 }
-

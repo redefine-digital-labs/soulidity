@@ -110,6 +110,7 @@ export default function ImportGasPage() {
   const router = useRouter()
   const suiClient = useSuiClient()
   const ctx = useImportSoul()
+  const { setImportResult } = ctx
   const { status, error, txDigest, importData, importSoul, suiWallet } = useImport()
   const { getAuthHeaders, user } = useAuth()
   const importSoulRef = useRef(importSoul)
@@ -120,6 +121,7 @@ export default function ImportGasPage() {
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
   const [deployError, setDeployError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const completedDigestRef = useRef<string | null>(null)
 
   const balances = useWalletBalances(suiWallet?.address ?? null)
   const suiInsufficient = balances.sui !== null && balances.sui < MIN_SUI_BALANCE
@@ -143,10 +145,12 @@ export default function ImportGasPage() {
 
   useEffect(() => {
     if (status === 'done' && importData) {
-      ctx.setImportResult(importData)
+      if (completedDigestRef.current === importData.txDigest) return
+      completedDigestRef.current = importData.txDigest
+      setImportResult(importData)
       router.replace('/import/success')
     }
-  }, [status, importData, ctx, router])
+  }, [status, importData, setImportResult, router])
 
   async function handleDeploy() {
     if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile || !suiWallet) return

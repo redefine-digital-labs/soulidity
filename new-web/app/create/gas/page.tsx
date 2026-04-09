@@ -110,6 +110,7 @@ export default function CreateGasPage() {
   const router = useRouter()
   const suiClient = useSuiClient()
   const ctx = useCreateSoul()
+  const { setPublishResult } = ctx
   const { status, error, txDigest, publishData, publish, suiWallet } = usePublish()
   const { getAuthHeaders, user } = useAuth()
   const { showToast } = useToast()
@@ -124,6 +125,7 @@ export default function CreateGasPage() {
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
   const [deployError, setDeployError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const completedDigestRef = useRef<string | null>(null)
 
   // ── Balance checking ──
   const balances = useWalletBalances(suiWallet?.address ?? null)
@@ -151,11 +153,13 @@ export default function CreateGasPage() {
   // Store publish result in context when done
   useEffect(() => {
     if (status === 'done' && publishData) {
-      ctx.setPublishResult(publishData)
+      if (completedDigestRef.current === publishData.txDigest) return
+      completedDigestRef.current = publishData.txDigest
+      setPublishResult(publishData)
       showToast('Soul minted successfully!', 'success')
       router.replace('/create/success')
     }
-  }, [status, publishData, ctx, router, showToast])
+  }, [status, publishData, setPublishResult, router, showToast])
 
   // Toast on mint error
   useEffect(() => {

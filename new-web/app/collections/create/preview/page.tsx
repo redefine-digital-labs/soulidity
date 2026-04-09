@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -159,7 +159,9 @@ const statusLabels: Record<string, string> = {
 export default function PreviewPage() {
   const router = useRouter()
   const ctx = useCreateCollection()
+  const { name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, setPublishResult } = ctx
   const { user } = useAuth()
+  const completedDigestRef = useRef<string | null>(null)
   // When recovery state has a committed collection TX, bypass File-dependent guards
   // (File objects cannot survive page refresh, but recovery has all uploaded asset refs)
   const missingStep1 = !ctx.hasRecoveryTx && (!ctx.name.trim() || !ctx.description.trim() || !ctx.coverImageFile)
@@ -183,27 +185,30 @@ export default function PreviewPage() {
   const { status, error, txDigest, syncData, progress, publish, suiWallet, resetRecovery } = useCollectionPublish(draftSignature)
   const { showToast } = useToast()
 
-  const floor = ctx.floorPrice || '0'
-  const royaltyDisplay = formatRoyalty(ctx.extraRoyaltyBps)
+  const floor = floorPrice || '0'
+  const royaltyDisplay = formatRoyalty(extraRoyaltyBps)
   const displayName = user?.displayName || user?.tgName || 'you'
-  const soulNames = ctx.batchSouls.map((s) => s.name).join(', ')
+  const soulNames = batchSouls.map((s) => s.name).join(', ')
 
   const isBusy = status !== 'idle' && status !== 'done' && status !== 'error'
 
   // Store publish result in context and navigate to success when done
   useEffect(() => {
     if (status === 'done' && syncData) {
-      ctx.setPublishResult(syncData, {
-        name: ctx.name,
-        floorPrice: ctx.floorPrice || '0',
-        extraRoyaltyBps: ctx.extraRoyaltyBps,
-        tradeable: ctx.tradeable,
-        soulNames: ctx.batchSouls.map((s) => s.name),
+      if (completedDigestRef.current === syncData.txDigest) return
+      completedDigestRef.current = syncData.txDigest
+
+      setPublishResult(syncData, {
+        name,
+        floorPrice: floorPrice || '0',
+        extraRoyaltyBps,
+        tradeable,
+        soulNames: batchSouls.map((s) => s.name),
       })
       showToast('Collection launched successfully!', 'success')
       router.push('/collections/create/success')
     }
-  }, [status, syncData, ctx, router, showToast])
+  }, [status, syncData, setPublishResult, name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, router, showToast])
 
   useEffect(() => {
     if (status === 'error' && error) {

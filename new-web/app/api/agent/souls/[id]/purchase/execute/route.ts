@@ -11,7 +11,7 @@ import {
 } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
-import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, readTransactionSender, sameSuiValue, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
 export const dynamic = 'force-dynamic'
@@ -111,7 +111,7 @@ export async function POST(
     }
 
     const purchased = extractSoulPurchasedEvent(transaction, packageId)
-    if (purchased.soulId !== soul.onChainId) {
+    if (!sameSuiValue(purchased.soulId, soul.onChainId)) {
       return NextResponse.json({ error: 'Transaction purchased a different Soul' }, { status: 422 })
     }
 

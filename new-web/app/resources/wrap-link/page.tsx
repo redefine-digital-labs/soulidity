@@ -76,7 +76,7 @@ export default function WrapLinkPage() {
 })`}</code>
         </pre>
         <p className="text-xs text-muted mt-1">
-          The function validates that <code>originRef</code> and <code>sourceObjectType</code> are non-empty before building. All env vars (<code>NEXT_PUBLIC_SOULIDITY_PACKAGE_ID</code>, <code>NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID</code>, <code>NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID</code>) must be set.
+          The function validates that <code>originRef</code> and <code>sourceObjectType</code> are non-empty before building. Soulidity deployment IDs are loaded from <code>lib/soulidity/deployment-manifest.json</code>.
         </p>
       </div>
 

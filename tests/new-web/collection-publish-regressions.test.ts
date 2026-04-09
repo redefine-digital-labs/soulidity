@@ -45,6 +45,15 @@ describe('collection publish regression guards', () => {
     expect(appProvidersSource).toContain('window.location.reload()')
   })
 
+  it('avoids collection preview success effect loops when the provider re-renders', () => {
+    const source = readSource('new-web/app/collections/create/preview/page.tsx')
+
+    expect(source).toContain('const completedDigestRef = useRef<string | null>(null)')
+    expect(source).toContain('if (completedDigestRef.current === syncData.txDigest) return')
+    expect(source).not.toContain('[status, syncData, ctx, router, showToast]')
+    expect(source).toContain('[status, syncData, setPublishResult, name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, router, showToast]')
+  })
+
   it('keeps collection create API errors generic for clients', () => {
     const source = readSource('new-web/app/api/collections/create/route.ts')
 

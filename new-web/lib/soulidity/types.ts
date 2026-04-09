@@ -397,7 +397,7 @@ export type SkillAccessResponse =
         skillName: string
         versionIndex: number
         moduleName: 'skills'
-        functionName: 'approve_private_read_owner' | 'approve_private_read_granted_agent'
+        functionName: 'seal_approve_private_read_owner' | 'seal_approve_private_read_granted_agent'
         soulGrantObjectId: string | null
         documentIdHex: string
       }

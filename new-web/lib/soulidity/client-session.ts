@@ -1,5 +1,7 @@
 'use client'
 
+import { getConfiguredSoulidityNetwork, getSoulidityDeployment } from '@/lib/soulidity/deployment'
+
 export const SOULIDITY_DEPLOYMENT_SIGNATURE_KEY = 'soulidity-deployment-signature'
 
 export const SOULIDITY_SESSION_KEYS = [
@@ -17,12 +19,13 @@ export interface SoulidityDeploymentScopedState {
 }
 
 export function getSoulidityDeploymentSignature() {
+  const deployment = getSoulidityDeployment()
   return [
-    process.env.NEXT_PUBLIC_SUI_NETWORK?.trim().toLowerCase() || 'unknown-network',
-    process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID?.trim().toLowerCase() || 'missing-package',
-    process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID?.trim().toLowerCase() || 'missing-market',
-    process.env.NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID?.trim().toLowerCase() || 'missing-soul-policy',
-    process.env.NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID?.trim().toLowerCase() || 'missing-collection-policy',
+    getConfiguredSoulidityNetwork(),
+    deployment.packageId.trim().toLowerCase(),
+    deployment.marketConfigId.trim().toLowerCase(),
+    deployment.soulTransferPolicyId.trim().toLowerCase(),
+    deployment.collectionTransferPolicyId.trim().toLowerCase(),
   ].join('|')
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -21,8 +21,10 @@ const statusLabels: Record<string, string> = {
 export default function PreviewSignPage() {
   const router = useRouter()
   const ctx = useWrap()
+  const { setPublishResult } = ctx
   const { status, error, txDigest, result, publish, suiWallet } = useWrapPublish()
   const { data: nfts } = useKioskNfts(suiWallet?.address)
+  const completedDigestRef = useRef<string | null>(null)
 
   const hasPendingRecovery = Boolean(txDigest)
   const selectedNftAvailable = !!ctx.selectedNft && (!nfts || nfts.some((nft) => nft.objectId === ctx.selectedNft?.objectId))
@@ -45,10 +47,12 @@ export default function PreviewSignPage() {
 
   useEffect(() => {
     if (status === 'done' && result) {
-      ctx.setPublishResult(result)
+      if (completedDigestRef.current === result.txDigest) return
+      completedDigestRef.current = result.txDigest
+      setPublishResult(result)
       router.push('/wrap-link/personal/success')
     }
-  }, [status, result, ctx, router])
+  }, [status, result, setPublishResult, router])
 
   if ((missingStep1 || missingStep2) && !hasPendingRecovery) return null
 

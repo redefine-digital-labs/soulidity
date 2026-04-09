@@ -1,17 +1,39 @@
-# new-web E2E 自动测试计划 — Soulidity Marketplace
+# new-web E2E 全自动测试计划 — Soulidity Marketplace
 
 ## Context
 
 v6 kiosk rewrite 完成后，new-web (`/new-web/`, Next.js 16 + React 19, port 3100) 替代 legacy `web/` 成为 Soulidity 主前端。需要全流程 E2E 验证新 UI 的 Soul 生命周期：创建 → 上架 → 购买 → Grant 授权 → 访问 → Skills → Memory → 解密，以及 Collection 创建和 Import 流程。
 
-**主执行方式：** 浏览器交互一律使用 Chrome DevTools MCP；终端仅用于 `curl` / SQL / `npx tsx` 校验
+**全自动执行：** 本计划设计为 AI agent 独立可执行，零人工判断。自动化覆盖：
+- **浏览器交互** — Chrome DevTools MCP（snapshot → uid → click/fill/upload）
+- **链上状态发现 + USDC mint** — `sui client` CLI（balance / objects / call）
+- **API + DB 验证** — `curl` / SQL / `npx tsx` 脚本
+- **TX 签名** — Privy embedded wallet 自动签名（所有链上交易）
+
+**唯一人工介入：** 2 次 Privy 邮箱 OTP（执行者仅需输入 6 位验证码，其余全部自动化）
 **测试 Fixture：** `/Users/admin/Documents/example`（单 Soul）+ `/Users/admin/Documents/example-collection`（Collection）
-**手动介入：** 仅 2 次 Privy 邮箱 OTP
 **总计：74 个测试项（72 项主流程 + 1 项外部依赖验证 + 1 项白盒附加验证），11 个 Phase**
 
 ---
 
-## 执行约束（Chrome DevTools MCP）
+## 执行约束（全自动 + Chrome DevTools MCP）
+
+### 全自动执行原则
+
+本计划的设计目标是**零人工判断执行**。除 Privy OTP 外，所有步骤均可由 AI agent 独立完成：
+
+| 操作类型 | 自动化方式 | 人工介入 |
+|----------|-----------|---------|
+| 浏览器交互 | Chrome DevTools MCP（snapshot → uid → click/fill/upload） | 无 |
+| 链上状态发现 | `sui client balance` / `sui client objects` / `sui client gas` | 无 |
+| 测试 USDC 补给 | `sui client call --module usdc --function mint`（testnet 发布包） | 无 |
+| SUI Gas 补给 | `sui client faucet`（testnet） | 无 |
+| TX 签名 | Privy embedded wallet 自动签名 | 无 |
+| Agent API 调用 | `curl` + `npx tsx` 脚本 | 无 |
+| DB 验证 | SQL 查询 | 无 |
+| Privy 登录 OTP | `wait_for` 暂停 120s | **用户输入 6 位验证码** |
+
+**失败自动处理：** 每步有明确 pass/fail 判据；失败时自动 `take_screenshot` 存档后继续或中止。
 
 ### 浏览器步骤必须落到 MCP 原语
 
@@ -145,12 +167,48 @@ Step 2: POST /api/agent/souls/{id}/purchase/execute
 
 ## 测试账号
 
-| 角色 | 邮箱 | Wallet |
-|------|------|--------|
-| Seller | `$E2E_SELLER_EMAIL` | `0x858d...eb82` |
-| Buyer | `$E2E_BUYER_EMAIL` | `0xb9ed...614c` |
-| Agent Alpha | API key `$E2E_AGENT_ALPHA_API_KEY` | `0x3b82...8610` |
-| Agent Beta | API key `$E2E_AGENT_BETA_API_KEY` | `0x7ef4...8790` |
+### 角色定义（地址通过 Sui CLI 动态发现，不硬编码）
+
+| 角色 | 认证方式 | 钱包发现方式 |
+|------|---------|------------|
+| Seller | Privy 邮箱 `$E2E_SELLER_EMAIL` | DB `wallet_bindings` → `sui client balance` 验证 |
+| Buyer | Privy 邮箱 `$E2E_BUYER_EMAIL` | DB `wallet_bindings` → `sui client balance` 验证 |
+| Agent Alpha | API key `$E2E_AGENT_ALPHA_API_KEY` | DB `wallet_bindings` → `sui client balance` 验证 |
+| Agent Beta | API key `$E2E_AGENT_BETA_API_KEY` | DB `wallet_bindings` → `sui client balance` 验证 |
+
+### Sui CLI 速查（地址发现 + 余额检查 + USDC mint）
+
+> 前提：`sui client active-env` = testnet，`sui --version` >= 1.69.0
+
+| 命令 | 用途 |
+|------|------|
+| `sui client active-address` | 当前活跃地址（USDC mint 需为 Treasury Cap owner） |
+| `sui client balance <addr>` | 全币种余额 |
+| `sui client balance --coin-type "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC" <addr>` | USDC 余额 |
+| `sui client gas <addr>` | SUI gas coin 列表 |
+| `sui client objects <addr>` | 所有拥有的对象（含 kiosk、Soul 等） |
+| `sui client faucet --address <addr>` | 为地址申请 testnet SUI gas |
+
+### USDC 测试网包（自动 mint 用）
+
+| 属性 | 值 |
+|------|---|
+| Package | `0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325` |
+| Module | `usdc` |
+| Coin Type | `0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC` |
+| Treasury Cap | `0x56033240326fa75ab7986654d87aa3f2c8168212492edc7d7ee4755f30189184` |
+| Treasury Owner | `0x76fd52cac79bda80806be6b5ab7f3b1f099a966203cce809254919a7ab755728` |
+| Decimals | 6（1 USDC = 1,000,000 atomic units） |
+
+**Mint 命令模板：**
+```bash
+sui client call \
+  --package 0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325 \
+  --module usdc --function mint \
+  --args 0x56033240326fa75ab7986654d87aa3f2c8168212492edc7d7ee4755f30189184 \
+         <AMOUNT_ATOMIC> <RECIPIENT_ADDR> \
+  --gas-budget 10000000
+```
 
 **敏感变量（仅本地 shell / direnv 注入，不写入仓库）：**
 - `E2E_SELLER_EMAIL`
@@ -160,7 +218,11 @@ Step 2: POST /api/agent/souls/{id}/purchase/execute
 - `E2E_AGENT_ALPHA_MNEMONIC`
 - `SOUL_UPLOAD_SECRET`（Phase 7.7 Seal 内容比对用）
 
-**运行时变量：** `SOUL_A_ID`（Soul A on-chain ID），`SOUL_A_STATE_OBJ`（Soul A state object ID），`SOUL_B_ID`（Soul B on-chain ID），`COLLECTION_ID`（Collection on-chain ID），`SELLER_MEMBER_ID`（Phase 10.6 Follow 用），`CAPTURED_RAW_ENVELOPE`（Phase 7.7 可选白盒比对用，当前默认无）
+**运行时变量（Phase -1 动态发现 + 测试流程中捕获）：**
+- `SELLER_ADDR` / `BUYER_ADDR` / `AGENT_ALPHA_ADDR` / `AGENT_BETA_ADDR` — Phase -1.2 DB 查询 + Sui CLI 验证
+- `SELLER_MEMBER_ID` — Phase -1.2 记录（Phase 10.6 Follow 用）
+- `SOUL_A_ID` / `SOUL_A_STATE_OBJ` / `SOUL_B_ID` / `COLLECTION_ID` — 测试流程中捕获
+- `CAPTURED_RAW_ENVELOPE` — Phase 7.7 可选白盒比对（当前默认无）
 
 ---
 
@@ -181,14 +243,85 @@ DELETE FROM "bookmarks";
 ```
 不清 members / wallet_bindings / agents。
 
-### -1.2 验证测试账号存在
-查 DB 确认 Seller/Buyer member + wallet_binding 存在，Agent Alpha/Beta 有 API key。
+### -1.2 动态发现测试账号地址（Sui CLI 全自动）
+
+**Step 1 — DB 查询发现钱包地址：**
+```sql
+-- 人类账号（Seller + Buyer）
+SELECT m.id, m.kind, m.email, wb.address
+FROM members m
+JOIN wallet_bindings wb ON wb.member_id = m.id
+WHERE m.email IN ($E2E_SELLER_EMAIL, $E2E_BUYER_EMAIL)
+  AND wb.chain = 'sui';
+
+-- Agent 账号
+SELECT m.id, m.kind, m.agent_status, wb.address
+FROM members m
+JOIN wallet_bindings wb ON wb.member_id = m.id
+WHERE m.kind = 'agent' AND m.agent_status = 'active'
+  AND m.api_key_hash IS NOT NULL AND wb.chain = 'sui';
+```
+记录 4 个运行时变量：**SELLER_ADDR**、**BUYER_ADDR**、**AGENT_ALPHA_ADDR**、**AGENT_BETA_ADDR**
 记录 Seller 的 `member.id` 作为 **SELLER_MEMBER_ID**（Phase 10.6 Follow 测试用）。
 
-### -1.3 验证钱包余额
-- Seller: ≥0.1 SUI gas
-- Buyer: ≥0.1 SUI gas + ≥5 test USDC
-- Agent Alpha: ≥0.1 SUI gas + ≥5 test USDC
+> 若 DB 中无 agent 记录，需先运行 `npx tsx scripts/e2e-setup-agents.ts` 创建。
+
+**Step 2 — Sui CLI 链上验证地址存在：**
+```bash
+sui client balance $SELLER_ADDR
+sui client balance $BUYER_ADDR
+sui client balance $AGENT_ALPHA_ADDR
+sui client balance $AGENT_BETA_ADDR
+```
+4 个地址均应返回余额信息（即使为 0 也说明地址在链上存在）。
+
+### -1.3 验证 + 自动补给钱包余额（Sui CLI 全自动）
+
+**最低余额要求：**
+
+| 角色 | SUI Gas | Test USDC | 用途 |
+|------|---------|-----------|------|
+| Seller | ≥0.1 SUI | — | Create/List/Grant TX gas |
+| Buyer | ≥0.1 SUI | ≥5 USDC | 购买 Soul A ($1) + gas |
+| Agent Alpha | ≥0.1 SUI | ≥5 USDC | Agent 购买 Soul B ($2) + gas |
+| Agent Beta | ≥0.1 SUI | — | 仅 403 验证，无购买 |
+
+**USDC 余额不足时 — 自动 mint（全自动，无需人工）：**
+
+> 前提：`sui client active-address` 必须为 Treasury Cap owner。
+> 若不是：`sui client switch --address 0x76fd52cac79bda80806be6b5ab7f3b1f099a966203cce809254919a7ab755728`
+
+```bash
+# 为 Buyer mint 10 USDC（10,000,000 atomic units）
+sui client call \
+  --package 0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325 \
+  --module usdc --function mint \
+  --args 0x56033240326fa75ab7986654d87aa3f2c8168212492edc7d7ee4755f30189184 \
+         10000000 $BUYER_ADDR \
+  --gas-budget 10000000
+
+# 为 Agent Alpha mint 10 USDC
+sui client call \
+  --package 0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325 \
+  --module usdc --function mint \
+  --args 0x56033240326fa75ab7986654d87aa3f2c8168212492edc7d7ee4755f30189184 \
+         10000000 $AGENT_ALPHA_ADDR \
+  --gas-budget 10000000
+```
+
+**SUI Gas 不足时 — testnet faucet（全自动）：**
+```bash
+sui client faucet --address $SELLER_ADDR
+sui client faucet --address $BUYER_ADDR
+sui client faucet --address $AGENT_ALPHA_ADDR
+sui client faucet --address $AGENT_BETA_ADDR
+```
+
+**Mint 后验证：**
+```bash
+sui client balance --coin-type "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC" $BUYER_ADDR
+sui client balance --coin-type "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC" $AGENT_ALPHA_ADDR
+```
 
 ### -1.4 验证测试 Fixture
 
@@ -609,13 +742,13 @@ evaluate_script(`
 4. GrantModal 弹出 — `wait_for` text "SoulGrant Management"
 5. `evaluate_script` 验证 scope 显示："Skills & Docs · read + update" 和 "Memory · read + append"
 6. `evaluate_script` 验证 Current Grant 显示 "No agent authorized"
-7. `fill` agent address input（`input[placeholder="0x_agent_address_or_ocl_id"]`）: Agent Alpha 完整地址
+7. `fill` agent address input（`input[placeholder="0x_agent_address_or_ocl_id"]`）: `$AGENT_ALPHA_ADDR`（Phase -1.2 动态发现的完整地址）
 8. `click` "Authorize Agent →"（`button:has-text("Authorize Agent")`）
 9. Privy 自动签名 `issue_grant` TX
 10. `wait_for` modal 关闭（Toast "Agent authorized successfully" 出现）
 11. 刷新 Soul A 详情页验证:
     - Active Grants 区域显示 1 条 grant
-    - Grant row 含 Agent Alpha 地址前缀 `0x3b82`
+    - Grant row 含 Agent Alpha 地址前缀（`$AGENT_ALPHA_ADDR` 前 6 字符）
     - Grant scopes 含 scope tags
 12. `take_screenshot` → `e2e/phase5-grant-issued.png`
 
@@ -650,7 +783,7 @@ curl -s -w "\n%{http_code}" \
 2. 在 Soul A 的 SoulCard 上点击 `"🔐 Manage Grant"` 按钮（`button:has-text("Manage Grant")`）
 3. GrantModal 弹出
 4. `wait_for` "Agent Authorized" 文本（active grant 状态指示器，绿色圆点）
-5. `evaluate_script` 验证 grantee 地址前缀 `0x3b82` 显示
+5. `evaluate_script` 验证 grantee 地址前缀（`$AGENT_ALPHA_ADDR` 前 6 字符）显示
 6. `click` "Revoke" 按钮（`button:has-text("Revoke")`，danger variant）
 7. Privy 自动签名
 8. `wait_for` modal 关闭（Toast "Grant revoked"）
@@ -999,12 +1132,21 @@ curl -s -o /dev/null -w "%{http_code}" \
 
 ---
 
-## 手动介入点（仅 2 次）
+## 手动介入点（仅 2 次 OTP，其余全自动）
 
-1. **Test 1.1** — Seller OTP（`$E2E_SELLER_EMAIL`）
-2. **Test 4.2** — Buyer OTP（`$E2E_BUYER_EMAIL`）
+> **全自动声明：** 本计划除以下 2 次 OTP 输入外，所有操作均由 AI agent 独立完成，无需人工判断或干预。
 
-Privy embedded wallet 签名全自动。GrantModal TX 签名同样自动（Privy embedded wallet）。
+1. **Test 1.1** — Seller Privy OTP（`$E2E_SELLER_EMAIL`）→ 用户输入 6 位验证码
+2. **Test 4.2** — Buyer Privy OTP（`$E2E_BUYER_EMAIL`）→ 用户输入 6 位验证码
+
+**以下操作全部自动化，无需人工介入：**
+- Privy embedded wallet TX 签名（所有 Phase 的链上交易）
+- `sui client` 链上状态查询与 USDC mint（Phase -1）
+- Chrome DevTools MCP 浏览器操作（Phase 0-8, 10-11）
+- Agent API `curl` 调用（Phase 7, 9）
+- DB SQL 验证（Phase -1, 11）
+- `npx tsx` E2E 脚本（Phase 7.3, 7.6, 7.7）
+- 截图存档（全 Phase）
 
 ---
 
@@ -1250,6 +1392,9 @@ Gas 页（`new-web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全
 13. **Follow 测试依赖**: Phase 10.6 需要在 Phase -1.2 记录 `SELLER_MEMBER_ID`。
 14. **Bookmark 时序**: Phase 4.3a-4.3c 必须在 Buyer 登录后、购买前执行（两个 Soul 均 listed 时 market 才有 bookmark 按钮）。
 15. **Admin 面板未覆盖**: 7 个 admin 页面 + 11 个 admin API 路由不在本轮测试范围（无 admin 测试账号）。
+16. **Sui CLI 可用性**: 依赖本地 `sui` >= 1.69.0 + testnet RPC。RPC 超时可重试；若 CLI 未安装则 Phase -1 立即阻塞。验证：`which sui && sui --version`。
+17. **USDC Treasury Cap 归属**: `sui client call` mint USDC 要求 `active-address` 为 treasury owner（`0x76fd52cac79bda80806be6b5ab7f3b1f099a966203cce809254919a7ab755728`）。若当前不是，需先 `sui client switch --address`。
+18. **Agent 地址动态发现前提**: DB 必须已有 agent 的 `wallet_bindings` 记录。若无，需先运行 `npx tsx scripts/e2e-setup-agents.ts`。
 
 ---
 

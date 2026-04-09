@@ -1,0 +1,11 @@
+{
+  "testnet": {
+    "packageId": "0x3b2429c1fe94e40d768be50ae6dbad442efe36ec52cd062ea2b59828c22a7baf",
+    "marketConfigId": "0xbcbbc798d49019d8c51af45b3a238a75f716e70802b856ef36d8e2b5550c27b7",
+    "soulTransferPolicyId": "0x615e645b10b6d8dd0ea44874994aa02ddfe2efff94baff2de20290100b3c6332",
+    "collectionTransferPolicyId": "0x0337a0651733184f377c7cf952999af89796ceb43027a606bc50bad16a16b0ca",
+    "paymentCoinType": "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC",
+    "publishTxDigest": "6XqMK1KoLFXTP4gg4rVraN4vqzTJ28kQp7iPR7wkhdLd",
+    "upgradeCapId": "0xde091a97cc589c5124ab552aa0ab23ca2f5458626ae11627e6113c03a23a9753"
+  }
+}

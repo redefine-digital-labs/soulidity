@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildBuySoulTx } from '@/lib/soulidity/tx/buy'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
@@ -51,7 +52,7 @@ export function usePurchase(soul: SoulAssetDetail | null) {
       setError(null)
       const authHeaders = await getAuthHeaders()
       const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
-      const coinType = process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE ?? '0x0::usdc::USDC'
+      const coinType = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
       const coins = await suiClient.getCoins({ owner: suiWallet.address, coinType })
       const requiredAtomic = BigInt(soul.quote.totalAtomic)
       const selectedCoinIds: string[] = []

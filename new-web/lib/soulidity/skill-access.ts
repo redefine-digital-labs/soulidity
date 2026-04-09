@@ -124,8 +124,8 @@ function parseSkillAccessResponse(payload: unknown): SkillAccessResponse {
     && typeof payload.accessPolicy.versionIndex === 'number'
     && payload.accessPolicy.moduleName === 'skills'
     && (
-      payload.accessPolicy.functionName === 'approve_private_read_owner'
-      || payload.accessPolicy.functionName === 'approve_private_read_granted_agent'
+      payload.accessPolicy.functionName === 'seal_approve_private_read_owner'
+      || payload.accessPolicy.functionName === 'seal_approve_private_read_granted_agent'
     )
     && isNullableString(payload.accessPolicy.soulGrantObjectId)
     && typeof payload.accessPolicy.documentIdHex === 'string'
@@ -172,7 +172,7 @@ async function buildSkillApprovalTxBytes(params: {
   tx.moveCall({
     target: `${params.access.accessPolicy.packageId}::skills::${params.access.accessPolicy.functionName}`,
     arguments:
-      params.access.accessPolicy.functionName === 'approve_private_read_granted_agent'
+      params.access.accessPolicy.functionName === 'seal_approve_private_read_granted_agent'
         ? [
             tx.pure.vector('u8', Array.from(hexToBytes(params.access.accessPolicy.documentIdHex))),
             tx.object(params.access.accessPolicy.stateObjectId),
@@ -191,7 +191,8 @@ async function buildSkillApprovalTxBytes(params: {
           ],
   })
 
-  return tx.build({ client: params.suiClient as never })
+  // Seal key servers expect BCS-encoded TransactionKind bytes for approval PTBs.
+  return tx.build({ client: params.suiClient as never, onlyTransactionKind: true })
 }
 
 export async function fetchSkillAccess(params: {
