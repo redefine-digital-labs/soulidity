@@ -1,21 +1,17 @@
-/**
- * Transaction builders for soul_market Move contract calls.
- * Each function returns a Transaction ready for signing.
- */
-
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
+import { getVendoredKioskPackageAddress } from '@web/lib/souls/kiosk-package'
 
-const CLOCK = '0x6'
 const MAX_NAME_BYTES = 256
 const MAX_DESCRIPTION_BYTES = 4096
 const MAX_CATEGORY_BYTES = 64
-const MAX_TAGS = 10
+export const MAX_TAGS = 10
 const MAX_TAG_BYTES = 64
-const MAX_PREVIEW_IMAGES = 10
+export const MAX_PREVIEW_IMAGES = 10
 const MAX_PREVIEW_IMAGE_BYTES = 512
+export const MAX_CREATOR_ROYALTY_BPS = 2_500
 
-function getUtf8ByteLength(value: string): number {
+function getUtf8ByteLength(value: string) {
   return new TextEncoder().encode(value).length
 }
 
@@ -25,7 +21,7 @@ function assertMaxUtf8Bytes(value: string, maxBytes: number, label: string) {
   }
 }
 
-function validateCreateSeriesParams(params: {
+function validateSoulMetadata(params: {
   name: string
   description: string
   category: string
@@ -58,250 +54,373 @@ function validateCreateSeriesParams(params: {
   })
 }
 
-// ─── Series ────────────────────────────────────────────────────
+function validateCreatorRoyaltyBps(creatorRoyaltyBps: number) {
+  if (
+    !Number.isInteger(creatorRoyaltyBps)
+    || creatorRoyaltyBps < 0
+    || creatorRoyaltyBps > MAX_CREATOR_ROYALTY_BPS
+  ) {
+    throw new Error(`creatorRoyaltyBps must be between 0 and ${MAX_CREATOR_ROYALTY_BPS}`)
+  }
+}
 
-export function buildCreateSeriesTx(params: {
+export function buildMintAndListSoulTx(params: {
   name: string
   description: string
+  imageUrl: string
+  metadataRef?: string | null
+  contentBlobObjectId: string
+  currentKioskId?: string | null
+  currentKioskCapOnChainId?: string | null
   category: string
   tags: string[]
   previewImages: string[]
+  readme?: string | null
+  priceAtomic: bigint
+  creatorRoyaltyBps: number
 }): Transaction {
-  validateCreateSeriesParams(params)
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  validateSoulMetadata(params)
+  if (params.priceAtomic <= 0n) {
+    throw new Error('priceAtomic must be positive')
+  }
+  validateCreatorRoyaltyBps(params.creatorRoyaltyBps)
+
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
   const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::series::create_series_entry`,
-    arguments: [
-      tx.pure.string(params.name),
-      tx.pure.string(params.description),
-      tx.pure.string(params.category),
-      tx.pure.vector('string', params.tags),
-      tx.pure.vector('string', params.previewImages),
-    ],
-  })
+  const currentKioskId = params.currentKioskId?.trim()
+  const currentKioskCapOnChainId = params.currentKioskCapOnChainId?.trim()
+
+  if ((currentKioskId && !currentKioskCapOnChainId) || (!currentKioskId && currentKioskCapOnChainId)) {
+    throw new Error('currentKioskId and currentKioskCapOnChainId must be provided together')
+  }
+
+  if (currentKioskId && currentKioskCapOnChainId) {
+    tx.moveCall({
+      target: `${packageId}::market::ensure_personal_kiosk_registered`,
+      arguments: [
+        tx.object(marketConfigId),
+        tx.object(currentKioskCapOnChainId),
+      ],
+    })
+    tx.moveCall({
+      target: `${packageId}::market::mint_and_list_fixed_price_in_personal_kiosk`,
+      arguments: [
+        tx.object(marketConfigId),
+        tx.object(currentKioskId),
+        tx.object(currentKioskCapOnChainId),
+        tx.pure.string(params.name),
+        tx.pure.string(params.description),
+        tx.pure.string(params.imageUrl),
+        tx.pure.option('string', params.metadataRef ?? null),
+        tx.object(params.contentBlobObjectId),
+        tx.pure.u64(params.priceAtomic),
+        tx.pure.u16(params.creatorRoyaltyBps),
+      ],
+    })
+  } else {
+    tx.moveCall({
+      target: `${packageId}::market::mint_and_list_fixed_price`,
+      arguments: [
+        tx.object(marketConfigId),
+        tx.pure.string(params.name),
+        tx.pure.string(params.description),
+        tx.pure.string(params.imageUrl),
+        tx.pure.option('string', params.metadataRef ?? null),
+        tx.object(params.contentBlobObjectId),
+        tx.pure.u64(params.priceAtomic),
+        tx.pure.u16(params.creatorRoyaltyBps),
+      ],
+    })
+  }
+
   return tx
 }
 
-export function buildPublishReleaseTx(params: {
-  authorCapId: string
-  seriesId: string
-  version: string
-  encryptedBlobId: string
-  publicMetadataId: string
-  contentHash: Uint8Array
+export function buildMintOnlySoulTx(params: {
+  name: string
+  description: string
+  imageUrl: string
+  metadataRef?: string | null
+  contentBlobObjectId: string
+  currentKioskId?: string | null
+  currentKioskCapOnChainId?: string | null
+  category: string
+  tags: string[]
+  previewImages: string[]
+  readme?: string | null
+  creatorRoyaltyBps: number
 }): Transaction {
-  if (params.contentHash.length !== 32) {
-    throw new Error('contentHash must be 32 bytes')
-  }
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  validateSoulMetadata(params)
+  validateCreatorRoyaltyBps(params.creatorRoyaltyBps)
+
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
   const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::series::publish_release`,
-    arguments: [
-      tx.object(params.authorCapId),
-      tx.object(params.seriesId),
-      tx.pure.string(params.version),
-      tx.pure.string(params.encryptedBlobId),
-      tx.pure.string(params.publicMetadataId),
-      tx.pure.vector('u8', Array.from(params.contentHash)),
-      tx.object(CLOCK),
-    ],
-  })
+  const currentKioskId = params.currentKioskId?.trim()
+  const currentKioskCapOnChainId = params.currentKioskCapOnChainId?.trim()
+
+  if ((currentKioskId && !currentKioskCapOnChainId) || (!currentKioskId && currentKioskCapOnChainId)) {
+    throw new Error('currentKioskId and currentKioskCapOnChainId must be provided together')
+  }
+
+  if (currentKioskId && currentKioskCapOnChainId) {
+    tx.moveCall({
+      target: `${packageId}::market::ensure_personal_kiosk_registered`,
+      arguments: [
+        tx.object(marketConfigId),
+        tx.object(currentKioskCapOnChainId),
+      ],
+    })
+    tx.moveCall({
+      target: `${packageId}::market::mint_in_personal_kiosk`,
+      arguments: [
+        tx.object(marketConfigId),
+        tx.object(currentKioskId),
+        tx.object(currentKioskCapOnChainId),
+        tx.pure.string(params.name),
+        tx.pure.string(params.description),
+        tx.pure.string(params.imageUrl),
+        tx.pure.option('string', params.metadataRef ?? null),
+        tx.object(params.contentBlobObjectId),
+        tx.pure.u16(params.creatorRoyaltyBps),
+      ],
+    })
+  } else {
+    tx.moveCall({
+      target: `${packageId}::market::mint_to_kiosk`,
+      arguments: [
+        tx.object(marketConfigId),
+        tx.pure.string(params.name),
+        tx.pure.string(params.description),
+        tx.pure.string(params.imageUrl),
+        tx.pure.option('string', params.metadataRef ?? null),
+        tx.object(params.contentBlobObjectId),
+        tx.pure.u16(params.creatorRoyaltyBps),
+      ],
+    })
+  }
+
   return tx
 }
 
-// ─── Pricing ───────────────────────────────────────────────────
-
-export function buildCreatePricingPlanTx(params: {
-  authorCapId: string
-  seriesId: string
-  planType: 0 | 1 // 0 = onetime, 1 = subscription
-  priceUsdc: bigint // atomic units (6 decimals)
-  periodMs: bigint // 0 for onetime
+export function buildBuySoulTx(params: {
+  listingObjectId: string
+  sellerKioskId: string
+  buyerKioskId?: string | null
+  buyerKioskCapOnChainId?: string | null
+  totalAtomic: bigint
+  paymentCoinObjectIds: string[]
 }): Transaction {
-  if (params.priceUsdc < 0n) {
-    throw new Error('priceUsdc must be non-negative')
+  if (params.totalAtomic <= 0n) {
+    throw new Error('totalAtomic must be positive')
   }
-  if (params.periodMs < 0n) {
-    throw new Error('periodMs must be non-negative')
+  if (params.paymentCoinObjectIds.length === 0) {
+    throw new Error('paymentCoinObjectIds must contain at least one coin object id')
   }
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
+  const transferPolicyId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_TRANSFER_POLICY_ID')
+  const allowlistRegistryId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
+  const kioskPackageId = getVendoredKioskPackageAddress()
   const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::purchase::create_pricing_plan`,
-    arguments: [
-      tx.object(params.authorCapId),
-      tx.object(params.seriesId),
-      tx.pure.u8(params.planType),
-      tx.pure.u64(params.priceUsdc),
-      tx.pure.u64(params.periodMs),
-    ],
-  })
-  return tx
-}
-
-// ─── Purchase ──────────────────────────────────────────────────
-
-export function buildBuyPerpetualTx(params: {
-  platformConfigId: string
-  planId: string
-  seriesId: string
-  releaseId: string
-  paymentCoinIds: string[]
-  amount: bigint // exact USDC atomic units to pay
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  if (params.paymentCoinIds.length === 0) {
-    throw new Error('paymentCoinIds is required')
+  const buyerKioskId = params.buyerKioskId?.trim()
+  const buyerKioskCapOnChainId = params.buyerKioskCapOnChainId?.trim()
+  if ((buyerKioskId && !buyerKioskCapOnChainId) || (!buyerKioskId && buyerKioskCapOnChainId)) {
+    throw new Error('buyerKioskId and buyerKioskCapOnChainId must be provided together')
   }
 
-  const primaryCoin = tx.object(params.paymentCoinIds[0]!)
-  const extraCoins = params.paymentCoinIds.slice(1).map((coinId) => tx.object(coinId))
-  if (extraCoins.length > 0) {
-    tx.mergeCoins(primaryCoin, extraCoins)
+  let buyerKioskArg
+  let buyerKioskCapArg
+  if (buyerKioskId && buyerKioskCapOnChainId) {
+    buyerKioskArg = tx.object(buyerKioskId)
+    buyerKioskCapArg = tx.object(buyerKioskCapOnChainId)
+    tx.moveCall({
+      target: `${packageId}::market::ensure_personal_kiosk_registered`,
+      arguments: [
+        tx.object(marketConfigId),
+        buyerKioskCapArg,
+      ],
+    })
+  } else {
+    const [buyerKiosk, kioskOwnerCap] = tx.moveCall({
+      target: '0x2::kiosk::new',
+      arguments: [],
+    })
+    const [buyerPersonalKioskCap] = tx.moveCall({
+      target: `${kioskPackageId}::personal_kiosk::new`,
+      arguments: [buyerKiosk, kioskOwnerCap],
+    })
+    tx.moveCall({
+      target: `${packageId}::market::register_existing_personal_kiosk`,
+      arguments: [
+        tx.object(marketConfigId),
+        buyerPersonalKioskCap,
+      ],
+    })
+    buyerKioskArg = buyerKiosk
+    buyerKioskCapArg = buyerPersonalKioskCap
   }
 
-  // Split exact payment amount from the merged coin set.
-  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.amount)])
+  const [primaryCoinId, ...remainingCoinIds] = params.paymentCoinObjectIds
+  const primaryCoin = tx.object(primaryCoinId!)
+  if (remainingCoinIds.length > 0) {
+    tx.mergeCoins(primaryCoin, remainingCoinIds.map((coinId) => tx.object(coinId)))
+  }
+  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.totalAtomic)])
+
   tx.moveCall({
-    target: `${packageId}::purchase::buy_perpetual`,
+    target: `${packageId}::market::buy_fixed_price`,
     arguments: [
-      tx.object(params.platformConfigId),
-      tx.object(params.planId),
-      tx.object(params.seriesId),
-      tx.object(params.releaseId),
+      tx.object(marketConfigId),
+      tx.object(transferPolicyId),
+      tx.object(allowlistRegistryId),
+      tx.object(params.sellerKioskId),
+      buyerKioskArg,
+      buyerKioskCapArg,
+      tx.object(params.listingObjectId),
       paymentCoin,
     ],
   })
+
+  if (!buyerKioskId || !buyerKioskCapOnChainId) {
+    tx.moveCall({
+      target: '0x2::transfer::public_share_object',
+      typeArguments: ['0x2::kiosk::Kiosk'],
+      arguments: [buyerKioskArg],
+    })
+    tx.moveCall({
+      target: `${kioskPackageId}::personal_kiosk::transfer_to_sender`,
+      arguments: [buyerKioskCapArg],
+    })
+  }
   return tx
 }
 
-export function buildBuySubscriptionTx(params: {
-  platformConfigId: string
-  planId: string
-  seriesId: string
-  paymentCoinIds: string[]
-  amount: bigint
+export function buildInitSoulPersonalKioskTx(params?: {
+  currentKioskCapOnChainId?: string | null
 }): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
   const tx = new Transaction()
-  if (params.paymentCoinIds.length === 0) {
-    throw new Error('paymentCoinIds is required')
+  const currentKioskCapOnChainId = params?.currentKioskCapOnChainId?.trim()
+
+  if (currentKioskCapOnChainId) {
+    tx.moveCall({
+      target: `${packageId}::market::ensure_personal_kiosk_registered`,
+      arguments: [tx.object(marketConfigId), tx.object(currentKioskCapOnChainId)],
+    })
+    tx.moveCall({
+      target: `${packageId}::market::reuse_personal_kiosk`,
+      arguments: [tx.object(marketConfigId), tx.object(currentKioskCapOnChainId)],
+    })
+  } else {
+    tx.moveCall({
+      target: `${packageId}::market::init_personal_kiosk`,
+      arguments: [tx.object(marketConfigId)],
+    })
   }
 
-  const primaryCoin = tx.object(params.paymentCoinIds[0]!)
-  const extraCoins = params.paymentCoinIds.slice(1).map((coinId) => tx.object(coinId))
-  if (extraCoins.length > 0) {
-    tx.mergeCoins(primaryCoin, extraCoins)
+  return tx
+}
+
+export function buildListHeldSoulTx(params: {
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  soulObjectId: string
+  priceAtomic: bigint
+}): Transaction {
+  if (params.priceAtomic <= 0n) {
+    throw new Error('priceAtomic must be positive')
   }
 
-  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.amount)])
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const marketConfigId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_MARKET_CONFIG_ID')
+  const allowlistRegistryId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
+  const tx = new Transaction()
+
   tx.moveCall({
-    target: `${packageId}::purchase::buy_subscription`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered`,
     arguments: [
-      tx.object(params.platformConfigId),
-      tx.object(params.planId),
-      tx.object(params.seriesId),
-      paymentCoin,
-      tx.object(CLOCK),
+      tx.object(marketConfigId),
+      tx.object(params.currentKioskCapOnChainId),
     ],
   })
-  return tx
-}
-
-// ─── Renew ─────────────────────────────────────────────────────
-
-export function buildRenewSubscriptionTx(params: {
-  platformConfigId: string
-  planId: string
-  seriesId: string
-  passId: string
-  paymentCoinIds: string[]
-  amount: bigint
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  if (params.paymentCoinIds.length === 0) {
-    throw new Error('paymentCoinIds is required')
-  }
-
-  const primaryCoin = tx.object(params.paymentCoinIds[0]!)
-  const extraCoins = params.paymentCoinIds.slice(1).map((coinId) => tx.object(coinId))
-  if (extraCoins.length > 0) {
-    tx.mergeCoins(primaryCoin, extraCoins)
-  }
-
-  const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(params.amount)])
   tx.moveCall({
-    target: `${packageId}::purchase::renew_subscription`,
+    target: `${packageId}::market::list_fixed_price`,
     arguments: [
-      tx.object(params.platformConfigId),
-      tx.object(params.planId),
-      tx.object(params.seriesId),
-      tx.object(params.passId),
-      paymentCoin,
-      tx.object(CLOCK),
+      tx.object(marketConfigId),
+      tx.object(allowlistRegistryId),
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.pure.id(params.soulObjectId),
+      tx.pure.u64(params.priceAtomic),
     ],
   })
+
   return tx
 }
 
-// ─── Agent Grant ───────────────────────────────────────────────
-
-export function buildSetAgentGrantPerpetualTx(params: {
-  passId: string
-  agentAddress: string
+export function buildCancelListingTx(params: {
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  listingObjectId: string
 }): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
   const tx = new Transaction()
+
   tx.moveCall({
-    target: `${packageId}::grant::set_agent_grant_perpetual`,
+    target: `${packageId}::market::cancel_listing`,
     arguments: [
-      tx.object(params.passId),
-      tx.pure.address(params.agentAddress),
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.object(params.listingObjectId),
     ],
   })
+
   return tx
 }
 
-export function buildRevokeAgentGrantPerpetualTx(params: {
-  passId: string
+export function buildSetAllowlistAddressTx(params: {
+  soulObjectId: string
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  allowlistAddress: string
 }): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const allowlistRegistryId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
   const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::grant::revoke_agent_grant_perpetual`,
-    arguments: [tx.object(params.passId)],
-  })
-  return tx
-}
-
-export function buildSetAgentGrantSubscriptionTx(params: {
-  passId: string
-  agentAddress: string
-}): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  const tx = new Transaction()
-  tx.moveCall({
-    target: `${packageId}::grant::set_agent_grant_subscription`,
+  const [accessCap] = tx.moveCall({
+    target: `${packageId}::allowlist::set_allowlist_address_via_personal_kiosk`,
     arguments: [
-      tx.object(params.passId),
-      tx.pure.address(params.agentAddress),
+      tx.object(allowlistRegistryId),
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.pure.id(params.soulObjectId),
+      tx.pure.address(params.allowlistAddress),
     ],
   })
+  tx.transferObjects([accessCap], tx.pure.address(params.allowlistAddress))
   return tx
 }
 
-export function buildRevokeAgentGrantSubscriptionTx(params: {
-  passId: string
+export function buildClearAllowlistAddressTx(params: {
+  soulObjectId: string
+  currentKioskId: string
+  currentKioskCapOnChainId: string
 }): Transaction {
-  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
+  const packageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  const allowlistRegistryId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_ALLOWLIST_REGISTRY_ID')
   const tx = new Transaction()
   tx.moveCall({
-    target: `${packageId}::grant::revoke_agent_grant_subscription`,
-    arguments: [tx.object(params.passId)],
+    target: `${packageId}::allowlist::clear_allowlist_address_via_personal_kiosk`,
+    arguments: [
+      tx.object(allowlistRegistryId),
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.pure.id(params.soulObjectId),
+    ],
   })
   return tx
 }

@@ -866,7 +866,7 @@ git commit -m "feat: 新增排行榜页面（活跃度/贡献度维度）"
 ## Task 10: PRD 更新
 
 **Files:**
-- Modify: `docs/ai-web3-content-community-plan.md:113-129`
+- Modify: `docs/legacy/ai-web3-content-community-plan.md:113-129`
 
 **Step 1: 更新模块三状态**
 
@@ -895,7 +895,7 @@ git commit -m "feat: 新增排行榜页面（活跃度/贡献度维度）"
 **Step 3: Commit**
 
 ```bash
-git add docs/ai-web3-content-community-plan.md
+git add docs/legacy/ai-web3-content-community-plan.md
 git commit -m "docs: 更新 PRD 模块三状态为全部完成"
 ```
 

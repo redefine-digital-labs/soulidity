@@ -1,43 +1,56 @@
-# Souls Latest Release And Atomic Price Spec
+# Soul Content Storage Hard-Cut Spec
 
 ## Goal
 
-一次性收口 Souls 最新 release 与价格语义，消除基于镜像插入顺序猜“最新版本”的逻辑，以及基于 `Int cents` / `BigInt` 的不完整 `u64` 存储。
+按 `/Users/admin/.claude/plans/harmonic-puzzling-puzzle.md` 一次性把 `move/soulidity + new-web + prisma` 的 Soul 内容存储链路切到新架构：Memory 改为 `Table<u64, ID>`、Skills 改为 `Table<String, vector<SkillSlot>>`，Soul/Memory/Skills 全部具备 Seal sidecar 和 access API，默认走加密上传，并同步清理旧 `MemoryEntry` / `SkillVersion` / `latestSkillVersionOnChainId` / 旧路由形状等兼容尾巴。
 
 ## Scope
 
-- Souls 公共详情、列表、我的 Souls、社区资料、agent detail 的 release/price 返回结构
-- Souls 前端页面与卡片的 latest release 与价格展示/购买逻辑
-- Souls 价格镜像写入、prepared purchase 金额持久化、Prisma schema 与迁移
-- 相关测试与仓库契约
+- `move/soulidity/**`
+- `prisma/schema.prisma`
+- `prisma/migrations/**`
+- `new-web/lib/soulidity/**`
+- `new-web/lib/hooks/**`
+- `new-web/app/api/souls/**`
+- `new-web/app/api/agent/souls/**`
+- `new-web/app/create/**`
+- `new-web/app/import/**`
+- `new-web/app/wrap-link/**`
+- `new-web/app/resources/**`
+- `new-web/app/souls/[id]/page.tsx`
+- `new-web/components/souls/**`
+- `docs/specs/soul-content-format.md`
+- `tests/new-web/**`
 
 ## Non-Goals
 
-- 不做历史数据迁移兼容
-- 不保留旧 API price number/cents 语义兼容层
-- 不保留通过 `releases[0]` 推断最新 release 的旧逻辑
+- 不兼容旧链上 `move/soulidity` 数据，不做迁移
+- 不保留旧 object ID、旧 route 参数形状、旧 projection 唯一键
+- 不处理 `timestamp_ms` 同毫秒碰撞
+- 不扩展新权限模型；继续以 owner / granted-agent / public 为边界
 
 ## Constraints
 
-- Souls 和用户都是开发数据，可直接替换数据模型
-- 数据库层需要完整承载 `u64`，不能使用 `BIGINT`
-- API 边界不能直接暴露 `bigint` / Prisma Decimal，统一输出字符串
+- 以 fresh deploy 为前提，开发环境允许直接重建 package/shared object/DB schema
+- 新方案确认替代旧方案后，旧字段、旧路由、旧查询逻辑、旧 UI 文案、旧测试断言必须同轮清理
+- Memory 默认 encrypted upload，不再保留 public blob 作为默认产品路径
+- Skills 上传入口限制 `.zip`，`skillName` 以 ZIP 内 `SKILL.md` frontmatter `name` 为准
+- `new-web` 细节页、skills panel、access API 不能再依赖 `entryIndex` / `versionOnChainId` / `latestSkillVersionOnChainId`
+- 所有完成声明前必须有新鲜验证证据
 
 ## Acceptance
 
-1. 所有 Souls 购买与展示逻辑只从 canonical `latestRelease` 读取最新 release，不再依赖 `releases[0]`。
-2. `oneTimePriceUsdc`、`subPriceUsdc`、`amountUsdc` 在数据库中可完整承载 `u64`，且服务端内部计算保持精确。
-3. Souls 相关 API 对外统一返回 atomic USDC 字符串，不再返回 cents number。
-4. 前端展示与购买逻辑基于 atomic 字符串工作，不再依赖页面临时链上价格 fallback。
-5. 相关旧注释、旧类型、旧契约测试同步清理。
-6. 手动发布 release 页面上传加密 bundle 后，`sealDekEnvelope` 必须随 mirror 请求传到后端并持久化为 release `sealSidecar`，agent access 不能再因为该链路丢字段而返回 `sealSidecar: null`。
-7. Agent Souls access 在扫描多个 candidate pass 时，只要出现任一瞬时链上校验失败且最终没有任何 pass 被确认为有效，就必须返回可重试错误，不得因为后续非瞬时失败把结果误降级为 403。
-8. USDC coin selection 不能因为固定页数上限把“余额足够但分页很深”的钱包误判为资金不足；只有在真正扫完整个分页后仍不够，才允许返回 insufficient funds。
-9. Agent purchase/renew execute 路由必须在链上广播前校验 prepared record 的语义边界：purchase execute 只能接受非 renewal 的 prepared 记录，renew execute 只能接受带 `passOnChainId` 的 renewal prepared 记录；错误路由不得执行交易并不得把 prepared 记录终结到不可恢复状态。
-10. Agent purchase/renew execute 在链上交易已成功且 `passOnChainId` 已可确定时，若后置链上校验或读链暂时失败，必须把 prepared 结果持久化为可恢复状态，并允许后续同一个 `preparedPurchaseId` 重新跑 verify + DB sync，不得把 5xx 暂时错误写成永久终态。
-11. `takeRateLimitToken` 在 Upstash 调用异常时必须自动降级到现有 in-memory limiter，不能把 Redis/网络抖动直接放大成认证、购买、发布等主路径的 500。
-12. `publish` / `release` mirror 路由在 release 依赖 `sealSidecar` 时，只有在 sidecar 成功持久化后才能写入成功 tx-sync；若 Seal sidecar 生成失败，接口必须返回可重试错误，且同一个 `txDigest` 后续可重新补 sidecar，不得缓存 201 成功结果。
-13. Agent purchase/renew execute 对已存储的 retryable 结果做补 sync 时，必须重新执行与主执行路径相同的 pass invariants 校验；若 series/owner/release/pass type/renew pass context 不匹配，必须把 prepared 结果终结为 422，而不是继续写入本地 pass mirror。
-14. Pass mirror 写入前必须把链上 owner 地址规范化后再用于 wallet binding 查找和 `soulPassSnapshot.ownerAddress` 落库，避免等价 Sui 地址因为格式差异丢失 `ownerMemberId` 或导致 owner-scoped 查询漏匹配。
-15. Subscription renew mirror 在成功校验链上续费后，必须同时刷新 `ownerAddress` / `ownerMemberId`，不能只更新到期时间；否则转移后续费会把 snapshot ownership 留在旧 owner。
-16. `buildCreateSeriesTx` 必须在客户端拒绝空白 description，避免用户进入签名/上链后才因为 `series::validate_metadata` 的空描述约束失败。
+1. `move/soulidity` 完成新对象模型：`SoulState.memory_id`、`SoulMemory.entries: Table<u64, ID>`、`SoulSkills.skills: Table<String, vector<SkillSlot>>`，并移除 `MemoryEntry` / `SkillVersion` 链路依赖。
+2. `move/soulidity` event 与 approval 契约切到新复合键：memory 使用 `timestamp_key`，skills 使用 `skill_name + version_index`。
+3. Prisma schema 与 projection 改成 `(memoryOnChainId, timestampKey)` 和 `(skillsOnChainId, skillName, versionIndex)` 唯一键，不再保留 `latestSkillVersionOnChainId`、`entryIndex`、`versionOnChainId`、`previousVersionOnChainId`。
+4. `new-web/lib/soulidity` 的 types / queries / events / repository / mirror / access / tx builder 全部收口到新契约。
+5. create / import / personal-join / memory append 默认走 encrypted upload，并能构建 founding/append memory sidecar。
+6. human / agent memory access route 按 `/memory/[entryKey]/access` 工作；human / agent skills access/delete route 按 `/skills/[skillName]/versions/[versionIndex]/*` 工作。
+7. skills append/list/delete/open 支持多 skill，默认 private；显式 public 路径仍可工作。
+8. create/import/wrap-link 页面、Soul detail 页和 skills panel 使用新模板、新字段和新资源页入口，不再暴露旧格式或旧 key。
+9. `docs/specs/soul-content-format.md` 更新为新方案已实现规范。
+10. 验证至少覆盖：
+   - `sui move test --path move/soulidity`
+   - `npm test -- tests/new-web/**` 或等价覆盖 relevant new-web suite
+   - `npm --prefix new-web run typecheck`
+   - `npm --prefix new-web run build`

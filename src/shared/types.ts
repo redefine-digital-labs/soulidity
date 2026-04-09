@@ -82,7 +82,7 @@ export interface Post {
   member_id: string
   title: string
   content: string
-  tags: string | null
+  tags: string[]
   like_count: number
   comment_count: number
   status: string

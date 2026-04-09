@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  CoinPaginationExhaustedError,
   selectCoinObjectIdsForAmount,
   selectCoinObjectIdsForAmountAcrossPages,
 } from '../../web/lib/souls/coin-selection.ts'
@@ -94,7 +95,7 @@ describe('selectCoinObjectIdsForAmountAcrossPages', () => {
     })).resolves.toBeNull()
   })
 
-  it('keeps paginating past the tenth page before reporting insufficient funds', async () => {
+  it('throws a distinct error once pagination exceeds the configured page budget', async () => {
     const client = {
       getCoins: vi.fn(),
     }
@@ -107,30 +108,13 @@ describe('selectCoinObjectIdsForAmountAcrossPages', () => {
       })
     }
 
-    client.getCoins.mockResolvedValueOnce({
-      data: [{ coinObjectId: 'coin-10', balance: '10' }],
-      hasNextPage: false,
-      nextCursor: null,
-    })
-
     await expect(selectCoinObjectIdsForAmountAcrossPages(client, {
       owner: '0x1',
       coinType: '0x2::coin::Coin<0x2::sui::SUI>',
       requiredAmount: 20n,
-    })).resolves.toEqual([
-      'coin-0',
-      'coin-1',
-      'coin-2',
-      'coin-3',
-      'coin-4',
-      'coin-5',
-      'coin-6',
-      'coin-7',
-      'coin-8',
-      'coin-9',
-      'coin-10',
-    ])
-    expect(client.getCoins).toHaveBeenCalledTimes(11)
+      maxPages: 10,
+    })).rejects.toBeInstanceOf(CoinPaginationExhaustedError)
+    expect(client.getCoins).toHaveBeenCalledTimes(10)
   })
 
   it('fails distinctly when pagination claims more pages without a usable nextCursor', async () => {

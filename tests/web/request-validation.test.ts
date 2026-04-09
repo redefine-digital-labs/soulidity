@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  parseRequiredAddress,
   parseOptionalObjectId,
   parseOptionalTxDigest,
   parseRequiredObjectId,
@@ -17,6 +18,10 @@ describe('soul request validation', () => {
 
   it('rejects non-hex object ids before they reach Sui RPC', () => {
     expect(parseRequiredObjectId('not-an-object-id')).toBeNull()
+  })
+
+  it('accepts canonical Sui addresses via the address-specific alias', () => {
+    expect(parseRequiredAddress(VALID_OBJECT_ID)).toBe(VALID_OBJECT_ID)
   })
 
   it('accepts base58 transaction digests', () => {

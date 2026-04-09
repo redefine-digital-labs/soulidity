@@ -7,7 +7,7 @@ import { PublicNav } from '@web/components/public-nav'
 import { useAuth } from '@web/components/auth-provider'
 import { AgentJoinGuide } from '@web/components/agent-join-guide'
 import { SoulCard } from '@web/components/souls/soul-card'
-import type { SoulSeriesListItem } from '@web/lib/souls/types'
+import type { SoulAssetSummary } from '@web/lib/souls/types'
 import { formatSuiAddressDisplay } from '@web/lib/auth/sui-address-display'
 import { loadCommunityProfile } from '@web/lib/community/profile-client'
 
@@ -37,7 +37,7 @@ interface MemberProfile {
     likeCount: number
     commentCount: number
     createdAt: string
-    tags: string | null
+    tags: string[]
   }>
   achievements: Array<{
     memberId: string
@@ -46,7 +46,7 @@ interface MemberProfile {
     achievement: { id: string; name: string; nameZh: string; description: string | null; icon: string; condition: string | null }
   }>
   primarySuiAddress: string | null
-  uploadedSouls: SoulSeriesListItem[]
+  uploadedSouls: SoulAssetSummary[]
 }
 
 const LEVELS: Record<number, { emoji: string; label: string }> = {
@@ -310,7 +310,7 @@ export default function UserProfilePage() {
                     <div key={post.id} className="p-4 rounded-lg transition-all" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
                       <div className="flex items-start gap-2 mb-1.5">
                         <Link href={`/community/${post.id}`} className="flex-1 font-medium leading-snug transition-colors hover:text-[var(--accent-cyan)]" style={{ color: 'var(--text-primary)' }}>{post.title}</Link>
-                        {post.tags && post.tags.split(',').map(t => t.trim()).filter(Boolean).map(tag => <span key={tag} className="shrink-0 badge badge-muted mt-0.5">#{tag}</span>)}
+                        {post.tags.map(tag => <span key={tag} className="shrink-0 badge badge-muted mt-0.5">#{tag}</span>)}
                       </div>
                       <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
                         <span>👍 {post.likeCount}</span>

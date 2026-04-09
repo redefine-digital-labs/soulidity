@@ -74,6 +74,24 @@ describe('POST /api/agent/api-key', () => {
     })
   })
 
+  it('requires explicit header auth instead of cookie fallback', async () => {
+    const { POST } = await import('../../web/app/api/agent/api-key/route.ts')
+
+    await POST(
+      new Request('http://localhost/api/agent/api-key', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          agentMemberId: validAgentMemberId,
+        }),
+      }) as any,
+    )
+
+    expect(mockedResolveIdentity).toHaveBeenCalledWith({ allowCookieFallback: false })
+  })
+
   it('returns 400 for an invalid agentMemberId', async () => {
     const { POST } = await import('../../web/app/api/agent/api-key/route.ts')
     const response = await POST(

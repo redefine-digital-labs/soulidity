@@ -7,9 +7,11 @@ const UNSAFE_ON_CHAIN_VERIFICATION_MESSAGE_PATTERNS = [
   / is not a valid integer on chain$/,
   / is not a Move object$/,
   /^Referenced object is not /,
-  /^Pass agent_grant nesting exceeds /,
+  /^Soul allowlist_address nesting exceeds /,
   /^Unable to determine transaction sender for verification$/,
   /^Pricing plan type is invalid on chain$/,
+  / is out of valid range on chain$/,
+  /^Personal kiosk cap /,
 ]
 
 export function toSafeErrorDetails(error: unknown): { name: string; message: string } {

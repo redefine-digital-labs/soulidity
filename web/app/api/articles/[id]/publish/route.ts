@@ -3,6 +3,7 @@ import { prisma } from '@web/lib/prisma'
 import { Bot } from 'grammy'
 import { formatArticle } from '@web/lib/formatter'
 import { requireAdmin } from '@web/lib/auth/admin'
+import { syncArticleToPost } from '@shared/sync-article-post'
 
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { error } = await requireAdmin()
@@ -71,5 +72,14 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     )
   }
 
-  return NextResponse.json({ success: true, publication_id: pub.id, message_id: messageId })
+  // Sync to community news post (awaited to avoid orphaned promises)
+  let newsPostSynced = false
+  try {
+    const syncResult = await syncArticleToPost(prisma, id)
+    newsPostSynced = syncResult.synced
+  } catch (err) {
+    console.error(`Failed to sync article ${id} to community post:`, err)
+  }
+
+  return NextResponse.json({ success: true, publication_id: pub.id, message_id: messageId, news_post_synced: newsPostSynced })
 }

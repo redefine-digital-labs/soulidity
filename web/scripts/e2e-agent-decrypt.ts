@@ -4,9 +4,10 @@
  * 1. Call GET /api/agent/souls/{id}/access → blob URL, accessPolicy, seal config
  * 2. Download encrypted blob from Walrus
  * 3. Create SealClient + SessionKey (agent Ed25519 keypair)
- * 4. Parse encrypted blob → extract document ID
- * 5. Build seal_approve TX → SealClient.decrypt
- * 6. SHA-256 compare decrypted content with contentHash
+ * 4. Read document ID + encrypted DEK from sealSidecar
+ * 5. Build seal_approve TX
+ * 6. Run envelope decrypt (Seal decrypts the DEK, AES-GCM decrypts the Walrus blob)
+ * 7. SHA-256 compare decrypted content with sealSidecar.contentHash
  *
  * Usage:
  *   AGENT_MNEMONIC="..." AGENT_API_KEY="sk-..." SOUL_ID="..." \
@@ -15,9 +16,12 @@
 
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
-import { SealClient, SessionKey, EncryptedObject } from '@mysten/seal'
-import { Transaction } from '@mysten/sui/transactions'
-import { fromHex, toHex } from '@mysten/sui/utils'
+import { SealClient, SessionKey } from '@mysten/seal'
+import {
+  buildSealApprovalTxBytes,
+  decryptBundle,
+  parseSealEnvelopeSidecar,
+} from '@web/lib/services/seal-crypto'
 import { createHash } from 'node:crypto'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
@@ -52,9 +56,9 @@ async function main() {
   }
 
   const access = await accessRes.json()
-  console.log(`Pass type: ${access.passType}`)
+  const sealSidecar = parseSealEnvelopeSidecar(access.sealSidecar)
   console.log(`Blob URL: ${access.artifact.walrusBlobUrl}`)
-  console.log(`Content hash: ${access.artifact.contentHash}`)
+  console.log(`Content hash: ${sealSidecar.contentHash}`)
   console.log(`Policy: ${access.accessPolicy.functionName}`)
 
   // Step 2: Download encrypted blob
@@ -87,61 +91,52 @@ async function main() {
   await sessionKey.setPersonalMessageSignature(personalMsgSig)
   console.log('Session key created and signed')
 
-  // Step 4: Parse encrypted blob to extract document ID
-  console.log('\n--- Step 4: Parse encrypted object ---')
-  let parsedEncrypted: ReturnType<typeof EncryptedObject.parse>
-  try {
-    parsedEncrypted = EncryptedObject.parse(encryptedBytes)
-  } catch {
-    console.error('Failed to parse as Seal encrypted object — blob is not Seal-encrypted.')
-    console.log('To test, publish a new Soul through the updated publish page with Seal encryption.')
-    process.exit(1)
-  }
-  // EncryptedObject.parse().id is already a hex string (BCS transform applies toHex)
-  const documentId = typeof parsedEncrypted.id === 'string'
-    ? parsedEncrypted.id
-    : toHex(new Uint8Array(parsedEncrypted.id))
-  console.log(`Document ID: ${documentId.slice(0, 40)}...`)
-  console.log(`Threshold: ${parsedEncrypted.threshold}`)
+  // Step 4: Read envelope metadata from sidecar
+  console.log('\n--- Step 4: Read envelope sidecar ---')
+  console.log(`Document ID: ${sealSidecar.documentId.slice(0, 40)}...`)
+  console.log(`Encrypted DEK size: ${Buffer.from(sealSidecar.encryptedDek, 'base64').length} bytes`)
 
-  // Step 5: Build approval TX and decrypt
+  // Step 5: Build approval TX
   console.log('\n--- Step 5: Build approval TX ---')
-  const { functionName, seriesObjectId, passObjectId, releaseObjectId, clockObjectId } = access.accessPolicy
+  const {
+    functionName,
+    soulObjectId,
+    currentKioskId,
+    currentKioskCapOnChainId,
+    allowlistRegistryObjectId,
+    soulAllowlistCapObjectId,
+  } = access.accessPolicy
 
-  const tx = new Transaction()
-  if (functionName === 'seal_approve_perpetual') {
-    tx.moveCall({
-      target: `${packageId}::seal_policy::${functionName}`,
-      arguments: [
-        tx.pure.vector('u8', Array.from(fromHex(documentId))),
-        tx.object(passObjectId),
-        tx.object(releaseObjectId),
-        tx.object(seriesObjectId),
-      ],
-    })
+  if (functionName === 'seal_approve_owner_in_personal_kiosk') {
+    if (!currentKioskId || !currentKioskCapOnChainId) {
+      throw new Error('owner Seal approval requires currentKioskId and currentKioskCapOnChainId')
+    }
   } else {
-    // seal_approve_subscription
-    tx.moveCall({
-      target: `${packageId}::seal_policy::${functionName}`,
-      arguments: [
-        tx.pure.vector('u8', Array.from(fromHex(documentId))),
-        tx.object(passObjectId),
-        tx.object(seriesObjectId),
-        tx.object(clockObjectId ?? '0x6'),
-      ],
-    })
+    if (functionName !== 'seal_approve_allowlisted') {
+      throw new Error(`Unexpected Seal approval function: ${functionName}`)
+    }
+    if (!allowlistRegistryObjectId || !soulAllowlistCapObjectId) {
+      throw new Error('allowlisted Seal approval requires allowlistRegistryObjectId and soulAllowlistCapObjectId')
+    }
   }
 
-  const txBytes = await tx.build({ client: suiClient, onlyTransactionKind: true })
+  const txBytes = await buildSealApprovalTxBytes({
+    accessPolicy: access.accessPolicy,
+    documentId: sealSidecar.documentId,
+    soulAllowlistCapObjectId,
+  })
   console.log(`TX bytes: ${txBytes.length} bytes`)
 
-  // Step 6: Decrypt
-  console.log('\n--- Step 6: Decrypt ---')
+  // Step 6: Envelope decrypt
+  console.log('\n--- Step 6: Envelope decrypt ---')
   try {
-    const decryptedData = await sealClient.decrypt({
-      data: encryptedBytes,
-      sessionKey,
+    const decryptedData = await decryptBundle({
+      sealClient,
+      sessionKey: sessionKey as never,
       txBytes,
+      encryptedData: encryptedBytes,
+      sidecar: sealSidecar,
+      expectedSoulObjectId: soulObjectId,
     })
 
     console.log(`Decrypted ${decryptedData.length} bytes`)
@@ -149,7 +144,7 @@ async function main() {
     // Step 7: Verify content hash
     console.log('\n--- Step 7: Verify content hash ---')
     const hash = createHash('sha256').update(decryptedData).digest('hex')
-    const expectedHash = access.artifact.contentHash.replace(/^0x/, '')
+    const expectedHash = sealSidecar.contentHash.replace(/^0x/, '')
     console.log(`Computed: ${hash}`)
     console.log(`Expected: ${expectedHash}`)
 
@@ -161,8 +156,7 @@ async function main() {
     }
   } catch (err) {
     console.error('\n❌ Decryption failed:', err instanceof Error ? err.message : err)
-    console.log('\nThis is expected if the blob was NOT encrypted with SealClient.encrypt().')
-    console.log('To test, publish a new Soul through the updated publish page (with Seal encryption).')
+    console.log('\nExpected runtime contract: Walrus stores AES-GCM ciphertext, while Seal only encrypts the DEK inside sealSidecar.encryptedDek.')
     process.exit(1)
   }
 }

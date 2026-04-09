@@ -5,6 +5,7 @@ import { useAuth } from '@web/components/auth-provider'
 
 export interface WalrusUploadResult {
   blobId: string
+  blobObjectId: string | null
   contentHash: string
   sealDekEnvelope?: string
 }
@@ -59,20 +60,49 @@ export function UploadWalrus({ type, label, accept, onUpload }: UploadWalrusProp
   return (
     <div>
       <label
-        className="glass-card p-4 block text-center cursor-pointer transition-all"
+        className="relative overflow-hidden flex flex-col items-center justify-center gap-3 rounded-xl cursor-pointer select-none"
         style={{
-          borderStyle: 'dashed',
-          color: uploaded ? 'var(--accent-emerald)' : 'var(--text-muted)',
+          minHeight: '200px',
+          border: `2px dashed ${uploaded ? 'var(--accent-emerald)' : 'var(--border-default)'}`,
+          background: 'var(--bg-surface)',
+          transition: 'border-color 0.2s ease',
+          padding: '24px 16px',
+          cursor: uploading ? 'default' : 'pointer',
         }}
       >
         <input
           type="file"
           accept={accept}
           onChange={handleChange}
-          className="hidden"
+          className="sr-only"
           disabled={uploading}
         />
-        {uploading ? 'Uploading...' : uploaded ? 'Uploaded!' : label}
+        {uploading ? (
+          <>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: 0.4, color: 'var(--text-muted)' }}>
+              <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M3 16l5-5 4 4 3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+              <path d="M15 7v4M13 9h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Uploading…</span>
+          </>
+        ) : uploaded ? (
+          <>
+            <span className="text-sm font-medium" style={{ color: 'var(--accent-emerald)' }}>Uploaded!</span>
+          </>
+        ) : (
+          <>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: 0.4, color: 'var(--text-muted)' }}>
+              <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M3 16l5-5 4 4 3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+              <path d="M15 7v4M13 9h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{label}</span>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>JPEG, PNG, WebP, GIF</span>
+          </>
+        )}
       </label>
       {error && (
         <p className="text-xs mt-1" style={{ color: 'var(--accent-rose)' }}>

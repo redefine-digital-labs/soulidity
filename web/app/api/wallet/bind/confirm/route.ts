@@ -8,7 +8,7 @@ import { buildWalletBindMessage } from '../challenge/route'
 const MULTIPLE_SUI_WALLETS_ERROR = 'Multiple Sui wallets are not supported for this account'
 
 export async function POST(request: NextRequest) {
-  const identity = await resolveIdentity()
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 })
   }
@@ -106,16 +106,14 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Repair any SoulPassSnapshots minted before this wallet was bound
-    await tx.soulPassSnapshot.updateMany({
-      where: { ownerAddress: signerAddress, ownerMemberId: null },
-      data: { ownerMemberId: identity.memberId },
+    await tx.soulAsset.updateMany({
+      where: { currentOwnerAddress: signerAddress, currentOwnerMemberId: null },
+      data: { currentOwnerMemberId: identity.memberId },
     })
 
-    // Repair any SoulSeries authored before this wallet was bound
-    await tx.soulSeries.updateMany({
-      where: { authorAddress: signerAddress, authorMemberId: null },
-      data: { authorMemberId: identity.memberId },
+    await tx.soulAsset.updateMany({
+      where: { creatorAddress: signerAddress, creatorMemberId: null },
+      data: { creatorMemberId: identity.memberId },
     })
 
     return binding

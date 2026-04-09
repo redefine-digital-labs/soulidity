@@ -1,6 +1,6 @@
 # Privy Auth + Dual-Layer User Model Implementation Plan
 
-> **Note (2026-03-22):** Auth 方案已实施且仍有效。文中 `/api/market/*` 路由引用已过时（已替换为 `/api/souls/*`），仅保留 Auth 架构参考。
+> **Note (2026-03-22):** Auth 方案已实施且仍有效。文中的旧市场字段与 `/api/market/*` 等市场语义已过时（已替换为 Soul 模型 + `/api/souls/*`），仅保留 Auth 架构参考。
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -81,6 +81,7 @@ Modify `Member` model:
 - Make `tgId` nullable (keep for now, will be removed later)
 - Remove `inviteCode` field
 - Remove `loginChallenges` relation
+> Note: This snippet is historical auth-planning context only. The live schema has since removed `PurchaseIntent`, `Order`, and `Entitlement`; use `prisma/schema.prisma` for the current model set.
 
 ```prisma
 model Member {
@@ -103,7 +104,7 @@ model Member {
   comments        Comment[]
   achievements    MemberAchievement[]
   walletBindings  WalletBinding[]
-  soldBundles     AgentBundle[]
+  soulAssets      SoulAsset[]
   purchaseIntents PurchaseIntent[]
   orders          Order[]       @relation("BuyerOrders")
   entitlements    Entitlement[]

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
+import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,7 @@ export async function GET(
       member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
       comments: {
         orderBy: { createdAt: 'asc' },
+        take: 200,
         include: {
           member: { select: { id: true, tgName: true, displayName: true, kind: true, avatar: true, level: true } },
         },
@@ -26,5 +28,8 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  return NextResponse.json(post)
+  return NextResponse.json({
+    ...post,
+    tags: parseCommunityTags(post.tags),
+  })
 }

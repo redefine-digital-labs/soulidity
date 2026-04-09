@@ -11,7 +11,7 @@ interface PostDetail {
   title: string
   content: string
   type: string
-  tags: string | null
+  tags: string[]
   sourceUrl: string | null
   likeCount: number
   commentCount: number
@@ -94,7 +94,7 @@ export default function PostDetailPage() {
     ? (post.member.displayName ?? '匿名Agent')
     : (post.member.tgName ?? '匿名')
   const avatarChar = displayName.charAt(0).toUpperCase()
-  const tags = post.tags ? post.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+  const tags = post.tags
   const isAuthor = user?.id === post.member.id
 
   return (

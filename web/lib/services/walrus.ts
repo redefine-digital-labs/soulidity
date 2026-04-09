@@ -3,6 +3,8 @@
  * Handles network-aware blob uploads and safe blob URL materialization.
  */
 
+import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
+
 const WALRUS_BLOB_PREFIX = '/v1/blobs/'
 const WALRUS_BLOB_ID_MAX_LENGTH = 512
 const WALRUS_UPLOAD_TIMEOUT_MS = 60_000
@@ -38,6 +40,15 @@ interface WalrusStoreResponse {
   alreadyCertified?: {
     blobId: string
   }
+}
+
+export interface WalrusStoredBlob {
+  blobId: string
+  blobObjectId: string | null
+}
+
+export interface WalrusUploadOptions {
+  sendObjectTo?: string | null
 }
 
 class WalrusUploadError extends Error {
@@ -117,11 +128,31 @@ function extractBlobIdFromWalrusUrl(value: string): string | null {
   }
 }
 
+function tryDecimalU256ToBase64Url(value: string): string | null {
+  if (!/^\d+$/.test(value) || value.length < 10 || value.length > 78) return null
+  try {
+    let n = BigInt(value)
+    const bytes = new Uint8Array(32)
+    for (let i = 0; i < 32; i++) {
+      bytes[i] = Number(n & 0xffn)
+      n >>= 8n
+    }
+    if (n !== 0n) return null
+    const base64 = Buffer.from(bytes).toString('base64')
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  } catch {
+    return null
+  }
+}
+
 export function normalizeWalrusBlobId(value: unknown): string | null {
   if (typeof value !== 'string') return null
 
   const trimmed = value.trim()
   if (!trimmed) return null
+
+  const fromDecimal = tryDecimalU256ToBase64Url(trimmed)
+  if (fromDecimal) return fromDecimal
 
   const blobId = extractBlobIdFromWalrusUrl(trimmed) ?? trimmed
   if (
@@ -193,12 +224,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function putWalrusBlob(buffer: Buffer): Promise<WalrusStoreResponse> {
+function normalizeWalrusSendObjectTo(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  try {
+    const normalized = normalizeSuiAddress(value.trim())
+    return isValidSuiAddress(normalized) ? normalized.toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+async function putWalrusBlob(buffer: Buffer, options?: WalrusUploadOptions): Promise<WalrusStoreResponse> {
   const { publisherUrls } = getWalrusRuntimeConfig()
   if (publisherUrls.length === 0) {
     throw new Error('Walrus publisher is not configured')
   }
 
+  const sendObjectTo = normalizeWalrusSendObjectTo(options?.sendObjectTo)
   const attemptPublisherUrls = getUploadAttemptPublisherUrls(publisherUrls)
   let lastError: Error | null = null
   const startedAt = Date.now()
@@ -218,7 +263,12 @@ async function putWalrusBlob(buffer: Buffer): Promise<WalrusStoreResponse> {
     )
 
     try {
-      const res = await fetch(`${publisherUrl}/v1/blobs`, {
+      const requestUrl = new URL(`${publisherUrl}/v1/blobs`)
+      if (sendObjectTo) {
+        requestUrl.searchParams.set('send_object_to', sendObjectTo)
+      }
+
+      const res = await fetch(requestUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: buffer as unknown as BodyInit,
@@ -276,21 +326,24 @@ async function putWalrusBlob(buffer: Buffer): Promise<WalrusStoreResponse> {
  * Upload an encrypted bundle to Walrus (for Seal-protected access).
  * The buffer should already be encrypted client-side.
  */
-export async function uploadEncrypted(buffer: Buffer): Promise<string> {
-  const data = await putWalrusBlob(buffer)
+export async function uploadEncrypted(buffer: Buffer, options?: WalrusUploadOptions): Promise<WalrusStoredBlob> {
+  const data = await putWalrusBlob(buffer, options)
   const blobId = assertWalrusBlobId(
     data.newlyCreated?.blobObject.blobId ?? data.alreadyCertified?.blobId,
     'Walrus blob ID',
   )
 
-  return blobId
+  return {
+    blobId,
+    blobObjectId: data.newlyCreated?.blobObject.id ?? null,
+  }
 }
 
 /**
  * Upload public metadata (preview images or sidecars) to Walrus.
  */
-export async function uploadPublic(buffer: Buffer): Promise<string> {
-  return uploadEncrypted(buffer)
+export async function uploadPublic(buffer: Buffer, options?: WalrusUploadOptions): Promise<WalrusStoredBlob> {
+  return uploadEncrypted(buffer, options)
 }
 
 /**

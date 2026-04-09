@@ -13,7 +13,18 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
-const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC ?? 'razor world ship bulb joke worry expire adapt whisper card glow have'
+
+function getRequiredEnv(name: string) {
+  const value = process.env[name]
+  if (!value) {
+    console.error(`Fatal: ${name} env var is required`)
+    process.exit(1)
+  }
+
+  return value
+}
+
+const AGENT_MNEMONIC = getRequiredEnv('AGENT_MNEMONIC')
 const AGENT_NAME = process.env.AGENT_NAME ?? 'Agent Alpha (E2E)'
 
 async function main() {

@@ -1,7 +1,7 @@
 /**
  * E2E Test: Agent Self-Purchase Flow
  *
- * 1. Mint TestUSDC to agent wallet (via CLI admin key)
+ * 1. Ensure the agent wallet has enough test USDC for payment and enough SUI for gas
  * 2. POST /api/agent/souls/{id}/purchase → TX bytes
  * 3. Sign TX locally with agent Ed25519 keypair
  * 4. POST /api/agent/souls/{id}/purchase/execute → submit
@@ -15,86 +15,112 @@
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { getRequiredE2EPaymentCoinType } from '@web/lib/souls/e2e-agent-purchase-config'
+import { getRequiredSoulPurchaseFunding, getRequiredSoulPurchaseTopUpAmount } from '@web/lib/souls/e2e-agent-purchase'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
 const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC!
 const AGENT_API_KEY = process.env.AGENT_API_KEY!
 const SOUL_ID = process.env.SOUL_ID! // DB UUID or onChainId
-const PLAN_TYPE = process.env.PLAN_TYPE ?? 'onetime'
-
-// TestUSDC config
-const USDC_PACKAGE = process.env.USDC_PACKAGE ?? '0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325'
-const USDC_TREASURY_CAP = process.env.USDC_TREASURY_CAP ?? '0x56033240326fa75ab7986654d87aa3f2c8168212492edc7d7ee4755f30189184'
-const MINT_AMOUNT = process.env.MINT_AMOUNT ?? '2000000' // 2 USDC in atomic units
+const PAYMENT_COIN_TYPE = getRequiredE2EPaymentCoinType()
 
 const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' })
 
-async function mintTestUsdc(recipientAddress: string, amount: string) {
-  console.log(`\n--- Minting ${amount} TestUSDC to ${recipientAddress} ---`)
-
-  // Use the active CLI keypair (admin) to mint
-  const { execSync } = await import('node:child_process')
-  const cmd = `sui client call \
-    --package ${USDC_PACKAGE} \
-    --module usdc \
-    --function mint \
-    --args ${USDC_TREASURY_CAP} ${amount} ${recipientAddress} \
-    --gas-budget 50000000 \
-    --json 2>&1`
-
-  try {
-    const output = execSync(cmd, { encoding: 'utf-8' })
-    const json = JSON.parse(output)
-    console.log(`Mint TX: ${json.digest}`)
-    // Wait for confirmation
-    await suiClient.waitForTransaction({ digest: json.digest })
-    console.log('Mint confirmed')
-  } catch (err: any) {
-    console.error('Mint failed:', err.stdout || err.message)
-    throw new Error('Failed to mint TestUSDC')
-  }
+function getPaymentCoinSymbol(coinType: string) {
+  const parts = coinType.split('::')
+  return parts.at(-1) ?? 'payment coin'
 }
 
-async function transferGas(recipientAddress: string) {
-  console.log(`\n--- Transferring SUI gas to ${recipientAddress} ---`)
+async function getRequiredPurchaseBalance() {
+  const detailRes = await fetch(`${BASE_URL}/api/souls/${encodeURIComponent(SOUL_ID)}`)
+  const detailBody = await detailRes.json().catch(() => null)
 
-  const { execSync } = await import('node:child_process')
-  // Check if agent already has SUI
+  if (!detailRes.ok) {
+    throw new Error(`Unable to load Soul detail for funding quote (${detailRes.status})`)
+  }
+  if (detailBody === null) {
+    throw new Error('Soul detail response was not valid JSON')
+  }
+
+  return getRequiredSoulPurchaseFunding(detailBody)
+}
+
+function readChildProcessFailure(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return 'Unknown child process failure'
+  }
+
+  const details = [
+    'stderr' in error ? error.stderr : null,
+    'stdout' in error ? error.stdout : null,
+    'message' in error ? error.message : null,
+  ].filter((value): value is string | Buffer => typeof value === 'string' || value instanceof Buffer)
+
+  return details.map((value) => value.toString()).find((value) => value.trim().length > 0) ?? 'Unknown child process failure'
+}
+
+async function transferGas(recipientAddress: string, requiredGasBalanceMist: bigint) {
+  console.log(`\n--- Funding agent wallet ${recipientAddress} ---`)
+
+  const { execFileSync } = await import('node:child_process')
   const balance = await suiClient.getBalance({ owner: recipientAddress })
-  if (BigInt(balance.totalBalance) > 50_000_000n) {
-    console.log(`Agent already has ${balance.totalBalance} MIST, skipping gas transfer`)
+  const currentBalanceMist = BigInt(balance.totalBalance)
+  const topUpAmountMist = getRequiredSoulPurchaseTopUpAmount({
+    requiredGasBalanceMist,
+    currentBalanceMist,
+  })
+
+  if (topUpAmountMist === 0n) {
+    console.log(`Agent already has ${balance.totalBalance} MIST, required ${requiredGasBalanceMist} MIST; skipping gas transfer`)
     return
   }
 
-  const cmd = `sui client transfer-sui \
-    --to ${recipientAddress} \
-    --sui-coin-object-id gas \
-    --amount 100000000 \
-    --gas-budget 10000000 \
-    --json 2>&1`
+  console.log(`Agent balance ${balance.totalBalance} MIST, topping up ${topUpAmountMist} MIST to reach ${requiredGasBalanceMist} MIST`)
 
   try {
-    const output = execSync(cmd, { encoding: 'utf-8' })
+    const output = execFileSync('sui', [
+      'client',
+      'transfer-sui',
+      '--to', recipientAddress,
+      '--sui-coin-object-id', 'gas',
+      '--amount', topUpAmountMist.toString(),
+      '--gas-budget', '10000000',
+      '--json',
+    ], { encoding: 'utf-8' })
     const json = JSON.parse(output)
     console.log(`Gas TX: ${json.digest}`)
     await suiClient.waitForTransaction({ digest: json.digest })
     console.log('Gas transfer confirmed')
-  } catch (err: any) {
+  } catch {
     // May fail if no gas object, try pay-sui instead
     console.log('Direct transfer failed, trying pay-sui...')
-    const cmd2 = `sui client pay-sui \
-      --recipients ${recipientAddress} \
-      --amounts 100000000 \
-      --gas-budget 10000000 \
-      --json 2>&1`
     try {
-      const output2 = execSync(cmd2, { encoding: 'utf-8' })
+      const output2 = execFileSync('sui', [
+        'client',
+        'pay-sui',
+        '--recipients', recipientAddress,
+        '--amounts', topUpAmountMist.toString(),
+        '--gas-budget', '10000000',
+        '--json',
+      ], { encoding: 'utf-8' })
       const json2 = JSON.parse(output2)
       console.log(`Gas TX: ${json2.digest}`)
       await suiClient.waitForTransaction({ digest: json2.digest })
-    } catch (err2: any) {
-      console.warn('Gas transfer failed:', err2.stdout || err2.message)
+    } catch (err2) {
+      throw new Error(`Unable to fund agent wallet with SUI gas: ${readChildProcessFailure(err2)}`)
     }
+  }
+}
+
+async function assertPaymentCoinBalance(recipientAddress: string, paymentTotalAtomic: bigint) {
+  const paymentCoinSymbol = getPaymentCoinSymbol(PAYMENT_COIN_TYPE)
+  const balance = await suiClient.getBalance({ owner: recipientAddress, coinType: PAYMENT_COIN_TYPE })
+  const currentBalance = BigInt(balance.totalBalance)
+
+  if (currentBalance < paymentTotalAtomic) {
+    throw new Error(
+      `Insufficient ${paymentCoinSymbol} balance. Required ${paymentTotalAtomic} atomic units, available ${balance.totalBalance}.`,
+    )
   }
 }
 
@@ -109,9 +135,15 @@ async function main() {
   const agentAddress = normalizeSuiAddress(keypair.toSuiAddress())
   console.log(`Agent address: ${agentAddress}`)
 
-  // Step 1: Fund agent wallet
-  await transferGas(agentAddress)
-  await mintTestUsdc(agentAddress, MINT_AMOUNT)
+  // Step 1: Quote required funding and top up the agent wallet
+  const funding = await getRequiredPurchaseBalance()
+  console.log(
+    `Required payment: ${funding.paymentTotalAtomic} ${getPaymentCoinSymbol(PAYMENT_COIN_TYPE)} atomic units `
+    + `(price ${funding.priceAtomic} + platform ${funding.platformFeeAtomic} + creator ${funding.creatorRoyaltyAtomic})`,
+  )
+  console.log(`Required SUI gas reserve: ${funding.requiredGasBalanceMist} MIST`)
+  await assertPaymentCoinBalance(agentAddress, funding.paymentTotalAtomic)
+  await transferGas(agentAddress, funding.requiredGasBalanceMist)
 
   // Step 2: Prepare purchase TX
   console.log(`\n--- Step 2: Prepare purchase TX ---`)
@@ -122,7 +154,7 @@ async function main() {
       'Authorization': `Bearer ${AGENT_API_KEY}`,
       'x-forwarded-for': '127.0.0.1',
     },
-    body: JSON.stringify({ planType: PLAN_TYPE }),
+    body: JSON.stringify({}),
   })
 
   const prepBody = await prepRes.json()
@@ -181,8 +213,8 @@ async function main() {
     if (accessRes.ok) {
       const accessBody = await accessRes.json()
       console.log(`\n✅ Agent access verified (attempt ${attempt})!`)
-      console.log(`  Pass type: ${accessBody.passType}`)
-      console.log(`  Pass ID: ${accessBody.passOnChainId}`)
+      console.log(`  Policy: ${accessBody.accessPolicy?.functionName}`)
+      console.log(`  Cap: ${accessBody.accessPolicy?.soulAllowlistCapObjectId ?? 'owner-direct'}`)
       console.log(`  Blob URL: ${accessBody.artifact?.walrusBlobUrl}`)
       return
     }

@@ -26,8 +26,13 @@ export default function TweetsReviewPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [tweetTags, setTweetTags] = useState<Record<string, string>>({})
   const [kbModal, setKbModal] = useState<{ id: string; content: string } | null>(null)
+  const [feedbackModal, setFeedbackModal] = useState<{ title: string; message: string } | null>(null)
   const [kbForm, setKbForm] = useState({ category: CATEGORIES[0], contentType: CONTENT_TYPES[0], title: '' })
   const [authError, setAuthError] = useState(false)
+
+  function openFeedbackModal(title: string, message: string) {
+    setFeedbackModal({ title, message })
+  }
 
   async function fetchItems() {
     setLoading(true)
@@ -43,7 +48,7 @@ export default function TweetsReviewPage() {
     const rawTags = tweetTags[id] ?? ''
     const tags = parseTags(rawTags)
     if (tags.length === 0) {
-      alert('请至少填写一个标签')
+      openFeedbackModal('标签不能为空', '请至少填写一个标签')
       return
     }
 
@@ -55,7 +60,10 @@ export default function TweetsReviewPage() {
     })
     if (res.ok) {
       setItems(prev => prev.filter(i => i.id !== id))
-    } else { const err = await res.json(); alert(err.error || '审核通过失败') }
+    } else {
+      const err = await res.json()
+      openFeedbackModal('审核通过失败', err.error || '审核通过失败')
+    }
     setActionLoading(null)
   }
 
@@ -75,7 +83,13 @@ export default function TweetsReviewPage() {
     if (!kbModal) return
     setActionLoading(kbModal.id)
     const res = await fetch('/api/admin/knowledge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawItemId: kbModal.id, category: kbForm.category, contentType: kbForm.contentType, title: kbForm.title }) })
-    if (res.ok) { setItems(prev => prev.filter(i => i.id !== kbModal.id)); setKbModal(null) } else { const err = await res.json(); alert(err.error || '保存失败') }
+    if (res.ok) {
+      setItems(prev => prev.filter(i => i.id !== kbModal.id))
+      setKbModal(null)
+    } else {
+      const err = await res.json()
+      openFeedbackModal('保存失败', err.error || '保存失败')
+    }
     setActionLoading(null)
   }
 
@@ -155,6 +169,18 @@ export default function TweetsReviewPage() {
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setKbModal(null)} className="btn btn-surface">取消</button>
               <button onClick={handleSaveKb} disabled={!kbForm.title || actionLoading === kbModal.id} className="btn btn-primary">{actionLoading === kbModal.id ? '保存中...' : '保存'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {feedbackModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-[60]" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="glass-panel p-6 w-full max-w-sm animate-fade-up">
+            <h2 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{feedbackModal.title}</h2>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{feedbackModal.message}</p>
+            <div className="flex justify-end mt-4">
+              <button onClick={() => setFeedbackModal(null)} className="btn btn-primary">知道了</button>
             </div>
           </div>
         </div>

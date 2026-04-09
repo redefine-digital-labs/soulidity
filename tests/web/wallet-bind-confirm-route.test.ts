@@ -89,4 +89,18 @@ describe('wallet bind confirm route', () => {
     expect(mockedPrisma.walletBinding.create).not.toHaveBeenCalled()
     expect(mockedPrisma.walletBinding.updateMany).not.toHaveBeenCalled()
   })
+
+  it('requires explicit header auth instead of cookie fallback', async () => {
+    const { POST } = await import('../../web/app/api/wallet/bind/confirm/route.ts')
+    const request = {
+      json: async () => ({ nonce: 'nonce-1', signature: 'sig-1' }),
+      cookies: {
+        get: (name: string) => (name === 'wallet-bind-nonce' ? { value: 'nonce-1' } : undefined),
+      },
+    }
+
+    await POST(request as any)
+
+    expect(mockedResolveIdentity).toHaveBeenCalledWith({ allowCookieFallback: false })
+  })
 })

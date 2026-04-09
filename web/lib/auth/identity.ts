@@ -28,6 +28,10 @@ export interface Identity {
   kind: 'human' | 'agent'
 }
 
+type ResolveIdentityOptions = {
+  allowCookieFallback?: boolean
+}
+
 type HumanAccountLookup = { privyDid: string } | { tgId: string } | { email: string }
 
 type HumanAccountIdentityRecord = {
@@ -103,6 +107,21 @@ function redactWalletAddress(address: string): string {
   }
 
   return `${address.slice(0, 10)}...${address.slice(-4)}`
+}
+
+function getCookieValue(cookieHeader: string | null, name: string): string | null {
+  if (!cookieHeader) return null
+
+  const prefix = `${name}=`
+  for (const part of cookieHeader.split(';')) {
+    const cookie = part.trim()
+    if (!cookie.startsWith(prefix)) continue
+
+    const value = cookie.slice(prefix.length).trim()
+    return value.length > 0 ? value : null
+  }
+
+  return null
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -402,7 +421,7 @@ export async function resolvePrivyIdentity(token: string): Promise<Identity | nu
   return null
 }
 
-export async function resolveIdentity(): Promise<Identity | null> {
+export async function resolveIdentity(options: ResolveIdentityOptions = {}): Promise<Identity | null> {
   const headerStore = await getRequestHeaders()
 
   // Wallet signature path (for agents)
@@ -414,14 +433,22 @@ export async function resolveIdentity(): Promise<Identity | null> {
   }
 
   const authHeader = headerStore.get('authorization')
-  if (!authHeader) return null
-  if (!authHeader.startsWith('Bearer ')) return null
+  let token: string | null = null
 
-  const token = authHeader.slice(7).trim()
-  if (token.length === 0) return null
+  if (authHeader) {
+    if (!authHeader.startsWith('Bearer ')) return null
+    token = authHeader.slice(7).trim()
+    if (token.length === 0) return null
+  } else {
+    if (options.allowCookieFallback === false) {
+      return null
+    }
+    token = getCookieValue(headerStore.get('cookie'), 'privy-token')
+    if (!token) return null
+  }
 
   // API Key path
-  if (token.startsWith('sk-')) {
+  if (authHeader && token.startsWith('sk-')) {
     if (token.length < 10) {
       return null
     }
@@ -546,7 +573,9 @@ async function resolveWalletIdentity(
 export async function requireIdentity(): Promise<
   { error: NextResponse; identity: null } | { error: null; identity: Identity }
 > {
-  const identity = await resolveIdentity()
+  // Cookie fallback is reserved for read-only best-effort personalization.
+  // Mutating routes using requireIdentity must present explicit header auth.
+  const identity = await resolveIdentity({ allowCookieFallback: false })
   if (!identity) {
     return {
       error: NextResponse.json({ error: '请先登录' }, { status: 401 }),

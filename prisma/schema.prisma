@@ -56,6 +56,7 @@ model Article {
   publications   Publication[]
   companies      ArticleCompany[]
   processLogs    AgentProcessLog[]
+  posts          Post[]
   @@index([status])
   @@index([pipelineStatus])
   @@map("articles")
@@ -157,6 +158,9 @@ model Member {
   exp         Int      @default(0)
   kind        String   @default("human")
   displayName String?  @map("display_name")
+  handle      String?  @unique @map("handle")
+  twitterUrl  String?  @map("twitter_url")
+  websiteUrl  String?  @map("website_url")
   apiKey      String?  @unique @map("api_key")
   apiKeyHash  String?  @unique @map("api_key_hash")
   agentStatus String?  @default("active") @map("agent_status")
@@ -164,11 +168,19 @@ model Member {
 
   posts        Post[]
   comments     Comment[]
+  postVotes    PostVote[]
   achievements MemberAchievement[]
-  walletBindings  WalletBinding[]
-  authoredSoulSeries SoulSeries[] @relation("SoulSeriesAuthor")
-  ownedSoulPassSnapshots SoulPassSnapshot[] @relation("SoulPassSnapshotOwner")
+  walletBindings        WalletBinding[]
+  authoredSoulAssets    SoulAsset[]           @relation("SoulAssetCreator")
+  ownedSoulAssets       SoulAsset[]           @relation("SoulAssetOwner")
+  createdSoulCollections SoulCollectionAsset[] @relation("SoulCollectionCreator")
+  heldSoulCollections    SoulCollectionAsset[] @relation("SoulCollectionCurrentHolder")
+  issuedSoulGrants       SoulGrantRecord[]     @relation("SoulGrantIssuer")
+  receivedSoulGrants     SoulGrantRecord[]     @relation("SoulGrantGrantee")
   preparedSoulPurchases SoulPreparedPurchase[] @relation("SoulPreparedPurchaseAgentMember")
+  following    Follow[] @relation("follower")
+  followers    Follow[] @relation("following")
+  bookmarks    Bookmark[]
 
   @@index([tgId])
   @@index([accountId, kind])
@@ -193,19 +205,25 @@ model Post {
   member       Member     @relation(fields: [memberId], references: [id])
   title        String
   content      String
-  tags         String?
+  tags         String[]   @default([])
   likeCount    Int        @default(0) @map("like_count")
   commentCount Int        @default(0) @map("comment_count")
   status       String     @default("published")
   type         String     @default("log")
+  channel      String     @default("general")
   sourceUrl    String?    @map("source_url")
+  articleId    String?    @unique @map("article_id") @db.Uuid
+  article      Article?   @relation(fields: [articleId], references: [id])
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   comments     Comment[]
+  votes        PostVote[]
 
   @@index([memberId])
   @@index([createdAt])
   @@index([type])
+  @@index([channel])
+  @@index([tags], type: Gin, map: "posts_tags_gin_idx")
   @@map("posts")
 }
 
@@ -220,7 +238,23 @@ model Comment {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([postId])
+  @@index([memberId])
+  @@index([memberId, isAccepted])
   @@map("comments")
+}
+
+model PostVote {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  memberId  String   @map("member_id") @db.Uuid
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  direction Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([postId, memberId])
+  @@index([postId])
+  @@map("post_votes")
 }
 
 model Achievement {
@@ -277,15 +311,15 @@ model WalletChallenge {
 }
 
 model WalletBinding {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId    String   @map("member_id") @db.Uuid
-  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  chain       String   @default("sui")
-  address     String
-  isPrimary   Boolean  @default(true) @map("is_primary")
-  verifiedAt  DateTime @default(now()) @map("verified_at") @db.Timestamptz
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId       String   @map("member_id") @db.Uuid
+  member         Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  chain          String   @default("sui")
+  address        String
+  isPrimary      Boolean  @default(true) @map("is_primary")
+  verifiedAt     DateTime @default(now()) @map("verified_at") @db.Timestamptz
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([chain, address])
   @@unique([memberId, chain])
@@ -296,88 +330,163 @@ model WalletBinding {
 // Soul Market Models
 // ============================================================
 
-model SoulSeries {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  onChainId          String   @unique @map("on_chain_id")
-  authorMemberId     String?  @map("author_member_id") @db.Uuid
-  authorMember       Member?  @relation("SoulSeriesAuthor", fields: [authorMemberId], references: [id], onDelete: SetNull)
-  authorAddress      String   @map("author_address")
-  name               String
-  description        String
-  category           String
-  tags               String[]
-  previewImages      String[] @map("preview_images")
-  readme             String?
-  latestReleaseId    String?  @map("latest_release_id") @db.Uuid
-  latestRelease      SoulRelease? @relation("SoulSeriesLatestRelease", fields: [latestReleaseId], references: [id], onDelete: SetNull)
-  /// Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.
-  /// DB CHECKs in `20260322223000_review_batch_constraints` require one-time plan id and price to appear together.
-  oneTimePriceUsdc      Decimal? @map("one_time_price_usdc") @db.Decimal(20, 0)
-  oneTimePlanOnChainId  String?  @map("one_time_plan_on_chain_id")
-  /// Stored in atomic 6-decimal USDC units so Souls can mirror the full on-chain u64 range losslessly.
-  /// DB CHECKs in `20260322223000_review_batch_constraints` require subscription price, period, and plan id to stay coupled.
-  subPriceUsdc          Decimal? @map("sub_price_usdc") @db.Decimal(20, 0)
-  subPlanOnChainId      String?  @map("sub_plan_on_chain_id")
-  subPeriodDays         Int?     @map("sub_period_days")
-  /// `20260323143000_add_soul_series_status_check` restricts status to the allowed enum-like values at the SQL layer.
-  status             String   @default("active")
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model SoulAsset {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId             String   @unique @map("on_chain_id")
+  stateOnChainId        String   @unique @map("state_on_chain_id")
+  memoryOnChainId       String   @unique @map("memory_on_chain_id")
+  creatorMemberId       String?  @map("creator_member_id") @db.Uuid
+  creatorMember         Member?  @relation("SoulAssetCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
+  creatorAddress        String   @map("creator_address")
+  creatorRoyaltyBps     Int      @default(0) @map("creator_royalty_bps")
+  currentOwnerMemberId  String?  @map("current_owner_member_id") @db.Uuid
+  currentOwnerMember    Member?  @relation("SoulAssetOwner", fields: [currentOwnerMemberId], references: [id], onDelete: SetNull)
+  currentOwnerAddress   String   @map("current_owner_address")
+  currentKioskId        String   @map("current_kiosk_id")
+  currentKioskCapOnChainId String @map("current_kiosk_cap_on_chain_id")
+  /// Hand-managed partial unique index lives in
+  /// `prisma/migrations/20260329120000_hard_cut_soul_market_to_stablecoin_listing_objects/migration.sql`
+  /// and is tracked in `prisma/MANUAL_INDEXES.md`.
+  /// Keep the SQL index in place because Prisma cannot represent the `WHERE ... IS NOT NULL` predicate here.
+  listingObjectOnChainId String? @map("listing_object_on_chain_id")
+  listedPriceAtomic     Decimal? @map("listed_price_atomic") @db.Decimal(20, 0)
+  listingStatus         String   @default("held") @map("listing_status")
+  name                  String
+  description           String
+  imageUrl              String   @map("image_url")
+  metadataRef           String?  @map("metadata_ref")
+  contentBlobId         String   @map("content_blob_id")
+  contentBlobObjectId   String   @map("content_blob_object_id")
+  provenanceKind        String   @default("native") @map("provenance_kind")
+  originRef             String?  @map("origin_ref")
+  collectionOnChainId   String?  @map("collection_on_chain_id")
+  collection            SoulCollectionAsset? @relation("CollectionSouls", fields: [collectionOnChainId], references: [onChainId], onDelete: SetNull)
+  grantCapacity         Int      @default(1) @map("grant_capacity")
+  activeGrantCount      Int      @default(0) @map("active_grant_count")
+  skillsOnChainId       String?  @unique @map("skills_on_chain_id")
+  grantRecords          SoulGrantRecord[] @relation("SoulAssetGrantRecords")
+  skillVersions         SoulSkillVersionRecord[] @relation("SoulAssetSkillVersions")
+  sealSidecar           Json?    @map("seal_sidecar")
+  category              String
+  tags                  String[]
+  previewImages         String[] @map("preview_images")
+  readme                String?
+  memoryEntries         SoulMemoryEntry[]
+  bookmarks             Bookmark[]
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  releases       SoulRelease[]
-  passSnapshots  SoulPassSnapshot[]
-
-  @@index([authorMemberId, status])
-  @@index([authorAddress])
+  @@index([creatorMemberId, listingStatus])
+  @@index([creatorAddress])
+  @@index([currentOwnerMemberId, listingStatus])
+  @@index([currentOwnerAddress, listingStatus])
+  @@index([collectionOnChainId, listingStatus])
+  @@index([skillsOnChainId])
+  @@index([listingStatus, createdAt(sort: Desc)])
+  @@index([currentKioskId, currentKioskCapOnChainId])
   @@index([category])
   @@index([createdAt(sort: Desc)])
-  @@map("soul_series")
+  @@map("soul_assets")
 }
 
-model SoulRelease {
-  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  onChainId     String     @unique @map("on_chain_id")
-  seriesId      String     @map("series_id") @db.Uuid
-  series        SoulSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
-  latestForSeries SoulSeries[] @relation("SoulSeriesLatestRelease")
-  version       String
-  walrusBlobRef    String     @map("walrus_blob_ref")
-  publicMetadataRef String?   @map("public_metadata_ref")
-  contentHash      String     @map("content_hash")
-  changelog        String?
-  sealSidecar      Json?      @map("seal_sidecar")
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+model SoulCollectionAsset {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId            String   @unique @map("on_chain_id")
+  rightOnChainId       String   @unique @map("right_on_chain_id")
+  creatorMemberId      String?  @map("creator_member_id") @db.Uuid
+  creatorMember        Member?  @relation("SoulCollectionCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
+  creatorAddress       String   @map("creator_address")
+  currentHolderMemberId String? @map("current_holder_member_id") @db.Uuid
+  currentHolderMember  Member?  @relation("SoulCollectionCurrentHolder", fields: [currentHolderMemberId], references: [id], onDelete: SetNull)
+  currentHolderAddress String   @map("current_holder_address")
+  currentHolderKioskId String   @map("current_holder_kiosk_id")
+  name                 String
+  description          String
+  imageUrl             String   @map("image_url")
+  extraRoyaltyBps      Int      @default(0) @map("extra_royalty_bps")
+  floorPriceAtomic     Decimal? @map("floor_price_atomic") @db.Decimal(20, 0)
+  tradeable            Boolean  @default(true)
+  listingObjectOnChainId String? @map("listing_object_on_chain_id")
+  listedPriceAtomic    Decimal? @map("listed_price_atomic") @db.Decimal(20, 0)
+  listingStatus        String   @default("held") @map("listing_status")
+  soulCount            Int      @default(0) @map("soul_count")
+  souls                SoulAsset[] @relation("CollectionSouls")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@index([seriesId, createdAt(sort: Desc)])
-  @@unique([seriesId, version])
-  @@map("soul_releases")
+  @@index([creatorMemberId, listingStatus])
+  @@index([currentHolderMemberId, listingStatus])
+  @@index([currentHolderAddress, listingStatus])
+  @@index([listingStatus, createdAt(sort: Desc)])
+  @@map("soul_collection_assets")
 }
 
-model SoulPassSnapshot {
-  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  onChainId       String     @unique @map("on_chain_id")
-  seriesId        String     @map("series_id") @db.Uuid
-  series          SoulSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
-  ownerAddress    String     @map("owner_address")
-  ownerMemberId   String?    @map("owner_member_id") @db.Uuid
-  ownerMember     Member?    @relation("SoulPassSnapshotOwner", fields: [ownerMemberId], references: [id], onDelete: SetNull)
-  passType        String     @map("pass_type")
-  lockedReleaseId String?    @map("locked_release_id")
-  expiresAt       DateTime?  @map("expires_at") @db.Timestamptz
-  agentGrant      String?    @map("agent_grant")
-  status          String     @default("active")
-  mintTxDigest    String     @map("mint_tx_digest")
-  lastRenewTxDigest String?  @map("last_renew_tx_digest")
-  lastSyncedAt    DateTime   @default(now()) @map("last_synced_at") @db.Timestamptz
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model SoulGrantRecord {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId       String   @unique @map("on_chain_id")
+  soulOnChainId   String   @map("soul_on_chain_id")
+  soul            SoulAsset @relation("SoulAssetGrantRecords", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  issuedByMemberId String? @map("issued_by_member_id") @db.Uuid
+  issuedByMember  Member?  @relation("SoulGrantIssuer", fields: [issuedByMemberId], references: [id], onDelete: SetNull)
+  issuedByAddress String   @map("issued_by_address")
+  granteeMemberId String?  @map("grantee_member_id") @db.Uuid
+  granteeMember   Member?  @relation("SoulGrantGrantee", fields: [granteeMemberId], references: [id], onDelete: SetNull)
+  granteeAddress  String   @map("grantee_address")
+  scopes          String[]
+  status          String   @default("active")
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz
+  endedAt         DateTime? @map("ended_at") @db.Timestamptz
+  replacedByGrantOnChainId String? @map("replaced_by_grant_on_chain_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@index([ownerMemberId, status])
-  @@index([ownerAddress, status])
-  @@index([seriesId, status])
-  @@index([seriesId, ownerAddress, status])
-  @@index([seriesId, agentGrant, status])
-  @@map("soul_pass_snapshots")
+  @@index([soulOnChainId, status])
+  @@index([granteeAddress, status])
+  @@index([issuedByAddress, status])
+  @@index([replacedByGrantOnChainId])
+  @@map("soul_grant_records")
+}
+
+model SoulMemoryEntry {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId  String   @map("soul_on_chain_id")
+  soul           SoulAsset @relation(fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  memoryOnChainId String  @map("memory_on_chain_id")
+  timestampKey   BigInt   @map("timestamp_key")
+  writerAddress  String   @map("writer_address")
+  writerKind     String   @map("writer_kind")
+  blobObjectId   String   @map("blob_object_id")
+  blobId         String?  @map("blob_id")
+  sealSidecar    Json?    @map("seal_sidecar")
+  createdAtMs    BigInt   @map("created_at_ms")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([memoryOnChainId, timestampKey])
+  @@index([soulOnChainId, timestampKey(sort: Desc)])
+  @@map("soul_memory_entries")
+}
+
+model SoulSkillVersionRecord {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId         String   @map("soul_on_chain_id")
+  soul                  SoulAsset @relation("SoulAssetSkillVersions", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  skillsOnChainId       String   @map("skills_on_chain_id")
+  skillName             String   @map("skill_name")
+  versionIndex          Int      @map("version_index")
+  visibility            String
+  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz
+  blobObjectId          String   @map("blob_object_id")
+  blobId                String?  @map("blob_id")
+  sealSidecar           Json?    @map("seal_sidecar")
+  createdAtMs           BigInt   @map("created_at_ms")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([skillsOnChainId, skillName, versionIndex])
+  @@index([soulOnChainId, skillName, versionIndex(sort: Desc)])
+  @@index([skillsOnChainId])
+  @@map("soul_skill_version_records")
 }
 
 model SoulTxSync {
@@ -400,17 +509,14 @@ model SoulPreparedPurchase {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   agentMemberId    String   @map("agent_member_id") @db.Uuid
   agentMember      Member   @relation("SoulPreparedPurchaseAgentMember", fields: [agentMemberId], references: [id], onDelete: Cascade)
-  seriesOnChainId  String   @map("series_on_chain_id")
-  planOnChainId    String   @map("plan_on_chain_id")
-  /// `20260322233000_add_soul_enum_checks` constrains plan_type to the supported values in SQL.
-  planType         String   @map("plan_type")
-  releaseOnChainId String?  @map("release_on_chain_id")
-  passOnChainId    String?  @map("pass_on_chain_id")
+  soulOnChainId    String   @map("soul_on_chain_id")
+  listingObjectId  String   @map("listing_object_id")
+  sellerKioskId    String   @map("seller_kiosk_id")
   agentAddress     String   @map("agent_address")
-  /// Stored in atomic 6-decimal USDC units as NUMERIC(20,0) so prepared execution can verify the full on-chain u64 range losslessly.
-  /// `20260323090000_add_prepared_purchase_amount_check` enforces strictly positive prepared purchase amounts.
-  amountUsdc       Decimal  @map("amount_usdc") @db.Decimal(20, 0)
-  /// `20260322123000_add_soul_tx_sync_and_prepared_purchase` caps the stored tx bytes payload length in SQL.
+  priceAtomic      Decimal  @map("price_atomic") @db.Decimal(20, 0)
+  platformFeeAtomic Decimal @default(0) @map("platform_fee_atomic") @db.Decimal(20, 0)
+  creatorRoyaltyAtomic Decimal @default(0) @map("creator_royalty_atomic") @db.Decimal(20, 0)
+  totalAtomic      Decimal  @default(0) @map("total_atomic") @db.Decimal(20, 0)
   txBytesBase64    String   @map("tx_bytes_base64")
   txBytesHash      String   @map("tx_bytes_hash")
   expiresAt        DateTime @map("expires_at") @db.Timestamptz
@@ -422,8 +528,40 @@ model SoulPreparedPurchase {
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([agentMemberId, expiresAt])
-  @@index([seriesOnChainId, createdAt(sort: Desc)])
+  @@index([soulOnChainId, createdAt(sort: Desc)])
   @@index([executionTxDigest])
   @@unique([agentMemberId, txBytesHash])
   @@map("soul_prepared_purchases")
+}
+
+// ============================================================
+// Social Models
+// ============================================================
+
+model Follow {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  follower    Member   @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   Member   @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model Bookmark {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  soulId    String   @map("soul_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  soul      SoulAsset @relation(fields: [soulId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, soulId])
+  @@index([soulId])
+  @@map("bookmarks")
 }

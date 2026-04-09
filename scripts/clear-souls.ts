@@ -12,15 +12,11 @@ const prisma = new PrismaClient({ adapter })
 async function main() {
   const prep = await prisma.soulPreparedPurchase.deleteMany()
   const sync = await prisma.soulTxSync.deleteMany()
-  const pass = await prisma.soulPassSnapshot.deleteMany()
-  const rel = await prisma.soulRelease.deleteMany()
-  const ser = await prisma.soulSeries.deleteMany()
+  const asset = await prisma.soulAsset.deleteMany()
   console.log('Deleted:', JSON.stringify({
     soulPreparedPurchase: prep.count,
     soulTxSync: sync.count,
-    soulPassSnapshot: pass.count,
-    soulRelease: rel.count,
-    soulSeries: ser.count,
+    soulAsset: asset.count,
   }, null, 2))
 }
 

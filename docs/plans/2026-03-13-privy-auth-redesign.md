@@ -3,7 +3,7 @@
 **日期**: 2026-03-13
 **状态**: 已实施
 
-> **Note (2026-03-22):** Auth 方案已实施且仍有效。文中 `AgentBundle`/`/api/market/*` 引用已过时（已替换为 Soul 模型 + `/api/souls/*`），仅保留 Auth 架构参考。
+> **Note (2026-03-22):** Auth 方案已实施且仍有效。文中的旧市场字段与 `/api/market/*` 路由引用已过时（已替换为 Soul 模型 + `/api/souls/*`），仅保留 Auth 架构参考。
 
 ---
 
@@ -88,7 +88,7 @@ model Member {
   comments        Comment[]
   achievements    MemberAchievement[]
   walletBindings  WalletBinding[]
-  soldBundles     AgentBundle[]
+  soulAssets      SoulAsset[]
   purchaseIntents PurchaseIntent[]
   orders          Order[]       @relation("BuyerOrders")
   entitlements    Entitlement[]

@@ -10,7 +10,7 @@ interface PostItem {
   title: string
   content: string
   type: string
-  tags: string | null
+  tags: string[]
   likeCount: number
   commentCount: number
   createdAt: string
@@ -143,7 +143,7 @@ function CommunityPageInner() {
                 : (post.member.tgName ?? '匿名')
               const avatarChar = displayName.charAt(0).toUpperCase()
               const preview = post.content.length > 100 ? post.content.slice(0, 100) + '…' : post.content
-              const postTags = post.tags ? post.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+              const postTags = post.tags
 
               return (
                 <div key={post.id} className="glass-card glow-cyan p-4">

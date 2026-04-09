@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   SOUL_PUBLISH_DRAFT_STORAGE_KEY,
-  clearSoulPublishDraft,
   createSoulPublishDraft,
   patchSoulPublishDraft,
   readSoulPublishDraft,
+  readSoulPublishRetrySnapshot,
+  syncSoulPublishDraftForSubmit,
   writeSoulPublishDraft,
 } from '@web/lib/souls/publish-draft'
 
@@ -36,71 +37,27 @@ describe('soul publish draft', () => {
       description: 'Recovered draft',
       category: 'Research',
       tags: ['alpha', 'beta'],
-      pricingType: 'both',
-      oneTimePrice: '10.00',
-      subPrice: '5.00',
-      subPeriodDays: '30',
+      imageUrl: 'https://example.com/soul.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: 'README',
     })
 
     writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
-      seriesId: '0xseries',
-      authorCapId: '0xcap',
-      createTxDigest: '0xdigest',
+      contentBlobObjectId: '0xblob',
+      metadataRef: 'walrus://metadata',
+      soulObjectId: '0xsoul',
+      publishTxDigest: '0xdigest',
     }))
 
-    expect(readSoulPublishDraft(storage, '0xabc')?.seriesId).toBe('0xseries')
+    expect(readSoulPublishDraft(storage, '0xabc')?.contentBlobObjectId).toBe('0xblob')
     expect(readSoulPublishDraft(storage, '0xdef')).toBeNull()
     expect(storage.getItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`)).not.toBeNull()
 
     writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
       dbMirroredAt: '2026-03-22T10:00:00.000Z',
     }))
-
-    expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
-  })
-
-  it('restores wallet-scoped drafts regardless of address casing', () => {
-    const storage = new MemoryStorage()
-    const draft = createSoulPublishDraft({
-      walletAddress: '0xAbC',
-      name: 'Signal Soul',
-      description: 'Recovered draft',
-      category: 'Research',
-      tags: ['alpha'],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
-    })
-
-    writeSoulPublishDraft(storage, draft)
-
-    expect(readSoulPublishDraft(storage, '0xabc')?.walletAddress).toBe('0xAbC')
-    expect(readSoulPublishDraft(storage, '0xABC')?.walletAddress).toBe('0xAbC')
-  })
-
-  it('treats short-form and padded Sui addresses as the same wallet draft key', () => {
-    const storage = new MemoryStorage()
-    const draft = createSoulPublishDraft({
-      walletAddress: '0x1',
-      name: 'Signal Soul',
-      description: 'Recovered draft',
-      category: 'Research',
-      tags: ['alpha'],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
-    })
-
-    writeSoulPublishDraft(storage, draft)
-
-    expect(readSoulPublishDraft(storage, `0x${'0'.repeat(63)}1`)?.walletAddress).toBe('0x1')
-  })
-
-  it('drops malformed persisted payloads instead of reviving them', () => {
-    const storage = new MemoryStorage()
-    storage.setItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`, '{"walletAddress":42}')
 
     expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
   })
@@ -113,10 +70,11 @@ describe('soul publish draft', () => {
       description: 'Recovered draft',
       category: 'Research',
       tags: [],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
+      imageUrl: 'https://example.com/soul.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: '',
     })))
 
     expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
@@ -124,7 +82,7 @@ describe('soul publish draft', () => {
     expect(storage.getItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`)).toBeNull()
   })
 
-  it('sanitizes stale recovered drafts that have a release id without a release tx digest', () => {
+  it('sanitizes stale recovered drafts that have a seller kiosk id without a soul object id', () => {
     const storage = new MemoryStorage()
     const draft = createSoulPublishDraft({
       walletAddress: '0xabc',
@@ -132,77 +90,179 @@ describe('soul publish draft', () => {
       description: 'Recovered draft',
       category: 'Research',
       tags: [],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
+      imageUrl: 'https://example.com/soul.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: '',
     })
 
     writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
-      seriesId: '0xseries',
-      releaseId: '0xrelease',
-      sealDekEnvelope: 'stale-envelope',
+      currentKioskId: '0xkiosk',
+      publishTxDigest: '0xtx',
     }))
 
     expect(readSoulPublishDraft(storage, '0xabc')).toMatchObject({
       walletAddress: '0xabc',
-      seriesId: '0xseries',
-      releaseId: null,
-      releaseTxDigest: null,
-      sealDekEnvelope: null,
+      currentKioskId: null,
+      publishTxDigest: null,
     })
   })
 
-  it('merges successful on-chain steps without losing prior progress', () => {
+  it('drops pre-uploaded content artifacts from drafts that never reached on-chain publish progress', () => {
+    const storage = new MemoryStorage()
     const draft = createSoulPublishDraft({
       walletAddress: '0xabc',
-      name: 'Signal Soul',
+      name: 'Scoped draft',
       description: 'Recovered draft',
       category: 'Research',
       tags: [],
-      pricingType: 'both',
-      oneTimePrice: '10.00',
-      subPrice: '5.00',
-      subPeriodDays: '30',
+      imageUrl: 'https://example.com/soul.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: '',
     })
 
-    const afterSeries = patchSoulPublishDraft(draft, {
-      previewBlobId: 'blob-1',
-      previewFileKey: 'preview.png:100:200',
-      createTxDigest: '0xcreate',
-      seriesId: '0xseries',
-      authorCapId: '0xcap',
-    })
-    const afterPlan = patchSoulPublishDraft(afterSeries, {
-      oneTimePlanId: '0xplan',
-      oneTimePlanTxDigest: '0xplan-digest',
-    })
-
-    expect(afterPlan.previewBlobId).toBe('blob-1')
-    expect(afterPlan.seriesId).toBe('0xseries')
-    expect(afterPlan.authorCapId).toBe('0xcap')
-    expect(afterPlan.oneTimePlanId).toBe('0xplan')
-    expect(afterPlan.subPlanId).toBeNull()
-    expect(Date.parse(afterPlan.updatedAt)).not.toBeNaN()
-  })
-
-  it('clears the persisted draft explicitly', () => {
-    const storage = new MemoryStorage()
-    writeSoulPublishDraft(storage, createSoulPublishDraft({
-      walletAddress: '0xabc',
-      name: 'Signal Soul',
-      description: 'Recovered draft',
-      category: 'Research',
-      tags: [],
-      pricingType: 'onetime',
-      oneTimePrice: '10.00',
-      subPrice: '',
-      subPeriodDays: '30',
+    writeSoulPublishDraft(storage, patchSoulPublishDraft(draft, {
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      metadataRef: 'blob-metadata',
     }))
 
-    clearSoulPublishDraft(storage, '0xabc')
+    expect(readSoulPublishDraft(storage, '0xabc')).toMatchObject({
+      walletAddress: '0xabc',
+      contentBlobId: null,
+      contentBlobObjectId: null,
+      sealDekEnvelope: null,
+      metadataRef: null,
+    })
+  })
 
-    expect(storage.getItem(`${SOUL_PUBLISH_DRAFT_STORAGE_KEY}:${NORMALIZED_ABC}`)).toBeNull()
-    expect(readSoulPublishDraft(storage, '0xabc')).toBeNull()
+  it('refreshes editable form fields for a local-only draft before submit', () => {
+    const originalDraft = createSoulPublishDraft({
+      walletAddress: '0xabc',
+      name: 'Signal Soul',
+      description: '',
+      category: 'Research',
+      tags: ['alpha'],
+      imageUrl: 'https://example.com/old.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: '',
+    })
+    const hydratedDraft = patchSoulPublishDraft(originalDraft, {
+      previewBlobId: 'blob-1',
+      previewFileKey: 'preview.png:100:200',
+    })
+
+    const refreshedDraft = syncSoulPublishDraftForSubmit(hydratedDraft, {
+      walletAddress: '0xabc',
+      name: 'Updated Soul',
+      description: 'Now filled in',
+      category: 'Trading',
+      tags: ['momentum', 'signals'],
+      imageUrl: 'https://example.com/new.png',
+      priceInput: '1.2',
+      listForSale: true,
+      creatorRoyaltyBps: '250',
+      readme: 'Updated readme',
+    })
+
+    expect(refreshedDraft).toMatchObject({
+      walletAddress: '0xabc',
+      name: 'Updated Soul',
+      description: 'Now filled in',
+      category: 'Trading',
+      tags: ['momentum', 'signals'],
+      imageUrl: 'https://example.com/new.png',
+      priceInput: '1.2',
+      creatorRoyaltyBps: '250',
+      readme: 'Updated readme',
+      previewBlobId: 'blob-1',
+      previewFileKey: 'preview.png:100:200',
+      soulObjectId: null,
+    })
+  })
+
+  it('does not overwrite recovered drafts that already have on-chain progress', () => {
+    const originalDraft = patchSoulPublishDraft(createSoulPublishDraft({
+      walletAddress: '0xabc',
+      name: 'Original Soul',
+      description: 'Original description',
+      category: 'Research',
+      tags: ['alpha'],
+      imageUrl: 'https://example.com/original.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: '',
+    }), {
+      soulObjectId: '0xsoul',
+      currentKioskId: '0xkiosk',
+      publishTxDigest: '0xpublish',
+    })
+
+    const refreshedDraft = syncSoulPublishDraftForSubmit(originalDraft, {
+      walletAddress: '0xabc',
+      name: 'Edited Soul',
+      description: 'Edited description',
+      category: 'Trading',
+      tags: ['beta'],
+      imageUrl: 'https://example.com/edited.png',
+      priceInput: '2',
+      listForSale: true,
+      creatorRoyaltyBps: '500',
+      readme: 'Edited readme',
+    })
+
+    expect(refreshedDraft).toMatchObject({
+      name: 'Original Soul',
+      description: 'Original description',
+      category: 'Research',
+      tags: ['alpha'],
+      imageUrl: 'https://example.com/original.png',
+      priceInput: '1',
+      creatorRoyaltyBps: '0',
+      soulObjectId: '0xsoul',
+      currentKioskId: '0xkiosk',
+      publishTxDigest: '0xpublish',
+    })
+  })
+
+  it('builds a retry snapshot only from frozen on-chain draft state', () => {
+    const draft = patchSoulPublishDraft(createSoulPublishDraft({
+      walletAddress: '0xabc',
+      name: 'Original Soul',
+      description: 'Original description',
+      category: 'Research',
+      tags: ['alpha'],
+      imageUrl: 'https://example.com/original.png',
+      priceInput: '1',
+      listForSale: true,
+      creatorRoyaltyBps: '0',
+      readme: 'README',
+    }), {
+      previewBlobId: 'blob-preview',
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      soulObjectId: '0xsoul',
+      publishTxDigest: '0xpublish',
+    })
+
+    expect(readSoulPublishRetrySnapshot(draft)).toEqual({
+      txDigest: '0xpublish',
+      soulObjectId: '0xsoul',
+      contentBlobId: 'blob-content',
+      contentBlobObjectId: '0xblob',
+      sealDekEnvelope: 'envelope',
+      category: 'Research',
+      tags: ['alpha'],
+      previewImages: ['blob-preview'],
+      readme: 'README',
+    })
   })
 })

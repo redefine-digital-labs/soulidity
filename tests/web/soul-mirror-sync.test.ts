@@ -27,13 +27,13 @@ describe('mirrorRouteRequest', () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,
       status: 422,
-      json: vi.fn().mockResolvedValue({ error: 'On-chain pass grant does not match the requested agent' }),
+      json: vi.fn().mockResolvedValue({ error: 'On-chain allowlist state does not match the requested agent' }),
     })
 
     await expect(() =>
       mirrorRouteRequest({
         fetchImpl,
-        input: '/api/souls/passes/0xpass/grant',
+        input: '/api/souls/0xsoul/allowlist',
         init: { method: 'POST' },
       }),
     ).rejects.toMatchObject<Partial<MirrorSyncError>>({
@@ -65,7 +65,7 @@ describe('mirrorRouteRequest', () => {
     await expect(() =>
       mirrorRouteRequest({
         fetchImpl,
-        input: '/api/souls/passes/0xpass/grant',
+        input: '/api/souls/0xsoul/allowlist',
         init: { method: 'POST' },
         maxAttempts: 1,
       }),

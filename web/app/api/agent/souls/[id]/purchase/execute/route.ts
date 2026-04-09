@@ -1,32 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAgentApiKey } from '@web/lib/auth/require-agent-api-key'
+import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
 import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
-import { isUuid } from '@web/lib/is-uuid'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { suiClient } from '@web/lib/sui'
 import {
   claimPreparedSoulPurchaseForExecution,
   finalizePreparedSoulPurchaseExecution,
   getPreparedSoulPurchaseForExecution,
+  getPreparedSoulPurchaseTxDigest,
   hashPreparedSoulPurchaseTxBytes,
   releasePreparedSoulPurchaseExecution,
+  storePreparedSoulPurchaseExecutionDigest,
+  ZOMBIE_CLAIM_AGE_THRESHOLD_MS,
 } from '@web/lib/souls/prepared-purchase'
-import { dbCreatePass } from '@web/lib/souls/post-tx-db'
-import { prisma } from '@web/lib/prisma'
+import {
+  dbSetSoulOwnership,
+  narrowListingStatus,
+  SoulMirrorOwnershipConflictError,
+} from '@web/lib/souls/post-tx-db'
+import {
+  buildPurchaseOwnershipConflictBody,
+  buildPurchaseOwnershipChangedBody,
+} from '@web/lib/souls/purchase-sync-state'
+import { findSoulAssetDetailByRouteId } from '@web/lib/souls/repository'
 import { getRequiredPublicEnv } from '@web/lib/souls/config'
 import {
-  assertPassChange,
-  ensureTransactionSucceeded,
-  getVerifiedPassState,
+  extractSoulPurchasedEvent,
+  getTrustedPackageIds,
+  getVerifiedPersonalKioskCapState,
+  getVerifiedSoulState,
   OnChainVerificationError,
   sameSuiValue,
 } from '@web/lib/souls/on-chain-verification'
-import {
-  getClientSafeOnChainVerificationErrorMessage,
-  toSafeErrorDetails,
-} from '@web/lib/souls/route-safety'
+import { getClientSafeOnChainVerificationErrorMessage, toSafeErrorDetails } from '@web/lib/souls/route-safety'
 import { waitForTransactionBestEffort } from '@web/lib/souls/tx-confirmation'
 import { verifyPreparedTransactionSignature } from '@web/lib/souls/tx-signature'
+import { getSuccessfulTransactionBlock } from '@web/lib/souls/transaction'
+import { isUuid } from '@web/lib/is-uuid'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,74 +46,21 @@ const AGENT_EXECUTE_RATE_LIMIT = {
   windowMs: 60 * 1000,
 } as const
 const MAX_EXECUTE_SIGNATURE_LENGTH = 1024
-const RETRYABLE_VERIFICATION_SYNC_ERROR = 'verification_retryable'
 
-type VerifiedPurchasePassState = Awaited<ReturnType<typeof getVerifiedPassState>>
-
-function getRetryableStoredSyncResult(params: {
-  resultStatusCode: number | null
-  resultBody: unknown
-}) {
-  if (!params.resultStatusCode || !params.resultBody) {
-    return null
-  }
-
-  const prevBody = params.resultBody as Record<string, unknown>
-  const digest = typeof prevBody.digest === 'string' ? prevBody.digest : null
-  const passOnChainId = typeof prevBody.passOnChainId === 'string' ? prevBody.passOnChainId : null
-  const syncError = typeof prevBody.syncError === 'string' ? prevBody.syncError : null
-
-  const retryable = params.resultStatusCode === 207 || syncError === RETRYABLE_VERIFICATION_SYNC_ERROR
-  if (!retryable || !digest || !passOnChainId) {
-    return null
-  }
-
-  return {
-    statusCode: params.resultStatusCode,
-    prevBody,
-    digest,
-    passOnChainId,
+function tryExtractSoulPurchasedEventWithCurrentPackage(
+  transaction: Parameters<typeof extractSoulPurchasedEvent>[0],
+  packageId: string,
+) {
+  try {
+    return extractSoulPurchasedEvent(transaction, packageId)
+  } catch (error) {
+    if (error instanceof OnChainVerificationError) {
+      return null
+    }
+    throw error
   }
 }
 
-function getPurchasePassValidationError(params: {
-  passState: VerifiedPurchasePassState
-  seriesOnChainId: string
-  ownerAddress: string
-  planType: string
-  releaseOnChainId: string | null
-}): string | null {
-  const { passState, seriesOnChainId, ownerAddress, planType, releaseOnChainId } = params
-
-  if (!sameSuiValue(passState.seriesId, seriesOnChainId)) {
-    return 'Created pass does not belong to the requested Soul'
-  }
-  if (!sameSuiValue(passState.ownerAddress, ownerAddress)) {
-    return 'Created pass owner does not match the agent wallet'
-  }
-  if (planType === 'onetime') {
-    if (passState.passType !== 'perpetual') {
-      return 'Prepared one-time purchase did not mint a perpetual pass'
-    }
-    if (!releaseOnChainId || !sameSuiValue(passState.lockedReleaseId, releaseOnChainId)) {
-      return 'Created pass release does not match the prepared purchase context'
-    }
-    return null
-  }
-
-  if (passState.passType !== 'subscription') {
-    return 'Prepared subscription purchase did not mint a subscription pass'
-  }
-
-  return null
-}
-
-/**
- * POST /api/agent/souls/[id]/purchase/execute — Submit a signed purchase TX.
- *
- * Request: { preparedPurchaseId: uuid, signature: base64 }
- * Response: { digest, status, passOnChainId?, onChainSuccess, dbSynced }
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -135,132 +93,375 @@ export async function POST(
   }
 
   const { id } = await params
-  let soulPackageId: string
-  try {
-    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_PACKAGE_ID')
-  } catch {
-    return NextResponse.json(
-      { error: 'Service temporarily unavailable' },
-      { status: 503 },
-    )
-  }
-
-  const series = await prisma.soulSeries.findFirst({
-    where: isUuid(id) ? { id } : { onChainId: id },
-    select: { onChainId: true },
-  })
-  if (!series) {
+  const soul = await findSoulAssetDetailByRouteId(id)
+  if (!soul) {
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  let ownerAddress: string | null
+  let soulPackageId: string
   try {
-    ownerAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
-  } catch (error) {
-    if (error instanceof Error && error.name === 'MultipleSuiWalletBindingsError') {
-      return NextResponse.json({ error: error.message }, { status: 409 })
-    }
-    throw error
+    soulPackageId = getRequiredPublicEnv('NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID')
+  } catch {
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
   }
-  if (!ownerAddress) {
+
+  let agentAddress: string | null
+  try {
+    agentAddress = await getMemberPrimarySuiWalletAddress(agent.agentMemberId)
+  } catch (walletError) {
+    if (isMultipleSuiWalletBindingsError(walletError)) {
+      return NextResponse.json({ error: walletError.message }, { status: 409 })
+    }
+    throw walletError
+  }
+  if (!agentAddress) {
     return NextResponse.json({ error: 'Agent has no Sui wallet binding' }, { status: 400 })
   }
 
   const preparedPurchase = await getPreparedSoulPurchaseForExecution({
     preparedPurchaseId,
     agentMemberId: agent.agentMemberId,
-    seriesOnChainId: series.onChainId,
+    soulOnChainId: soul.onChainId,
   })
   if (!preparedPurchase) {
     return NextResponse.json({ error: 'Prepared purchase not found, expired, or no longer matches this Soul' }, { status: 404 })
   }
-  if (!sameSuiValue(preparedPurchase.agentAddress, ownerAddress)) {
+  if (!sameSuiValue(preparedPurchase.agentAddress, agentAddress)) {
     return NextResponse.json({ error: 'Prepared purchase owner does not match the agent wallet' }, { status: 422 })
   }
-  if (preparedPurchase.passOnChainId) {
-    return NextResponse.json(
-      { error: 'Prepared renewal must be executed via the renew endpoint' },
-      { status: 422 },
-    )
-  }
-  const retryableStoredSyncResult = getRetryableStoredSyncResult({
-    resultStatusCode: preparedPurchase.resultStatusCode,
-    resultBody: preparedPurchase.resultBody,
-  })
-  if (retryableStoredSyncResult) {
+  if (preparedPurchase.resultStatusCode && preparedPurchase.resultBody) {
+    const cachedBody = preparedPurchase.resultBody as Record<string, unknown>
+    const isRecoverableDbSyncFailure =
+      cachedBody.onChainSuccess === true
+      && cachedBody.dbSynced === false
+      && typeof cachedBody.digest === 'string'
+      && (preparedPurchase.resultStatusCode === 207 || preparedPurchase.resultStatusCode === 422 || preparedPurchase.resultStatusCode >= 500)
+
+    if (!isRecoverableDbSyncFailure) {
+      return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
+    }
+
+    let currentKioskId = typeof cachedBody.currentKioskId === 'string' ? cachedBody.currentKioskId : null
+    let currentKioskCapOnChainId = typeof cachedBody.currentKioskCapOnChainId === 'string' ? cachedBody.currentKioskCapOnChainId : null
+    if (!currentKioskId || !currentKioskCapOnChainId) {
+      try {
+        const recoveredTx = await getSuccessfulTransactionBlock(cachedBody.digest as string)
+        const recoveredDirectPurchaseEvent = tryExtractSoulPurchasedEventWithCurrentPackage(recoveredTx, soulPackageId)
+        const recoveredSoulState = await getVerifiedSoulState(
+          soul.onChainId,
+          soulPackageId,
+          recoveredDirectPurchaseEvent ? { expectedKioskId: recoveredDirectPurchaseEvent.buyerKioskId } : undefined,
+        )
+        const purchaseEvent = recoveredDirectPurchaseEvent ?? extractSoulPurchasedEvent(
+          recoveredTx,
+          soulPackageId,
+          getTrustedPackageIds(soulPackageId, recoveredSoulState.packageId),
+        )
+        if (!sameSuiValue(purchaseEvent.buyerAddress, agentAddress)) {
+          const mismatchBody = {
+            digest: cachedBody.digest,
+            soulOnChainId: soul.onChainId,
+            onChainSuccess: true,
+            dbSynced: false,
+            error: 'Purchased Soul owner does not match the agent wallet',
+          }
+          await finalizePreparedSoulPurchaseExecution({
+            preparedPurchaseId,
+            txDigest: cachedBody.digest as string,
+            resultStatusCode: 422,
+            resultBody: mismatchBody,
+          })
+          return NextResponse.json(mismatchBody, { status: 422 })
+        }
+        currentKioskId = purchaseEvent.buyerKioskId
+        currentKioskCapOnChainId = purchaseEvent.buyerKioskCapOnChainId
+      } catch (kioskRecoveryError) {
+        console.warn('[agent-purchase-execute] Skipping cached partial-result re-sync because kiosk ids are missing and on-chain recovery failed', {
+          preparedPurchaseId,
+          error: toSafeErrorDetails(kioskRecoveryError),
+        })
+        return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
+      }
+    }
+
     try {
-      const passState = await getVerifiedPassState(retryableStoredSyncResult.passOnChainId, soulPackageId)
-      const validationError = getPurchasePassValidationError({
-        passState,
-        seriesOnChainId: series.onChainId,
-        ownerAddress,
-        planType: preparedPurchase.planType,
-        releaseOnChainId: preparedPurchase.releaseOnChainId,
+      const soulState = await getVerifiedSoulState(soul.onChainId, soulPackageId, {
+        expectedKioskId: currentKioskId,
       })
-      if (validationError) {
-        const resultBody = { error: validationError }
+      const soulKioskIdRecovery = soulState.kioskParentId ?? soulState.ownerObjectId
+      if (
+        preparedPurchase.resultStatusCode === 207
+        && (
+          soulState.ownerKind !== 'object'
+          || !soulKioskIdRecovery
+          || !sameSuiValue(soulKioskIdRecovery, currentKioskId)
+        )
+      ) {
+        const ownershipChangedBody = buildPurchaseOwnershipChangedBody({
+          digest: cachedBody.digest as string,
+          soulOnChainId: soul.onChainId,
+        })
         await finalizePreparedSoulPurchaseExecution({
           preparedPurchaseId,
-          txDigest: retryableStoredSyncResult.digest,
-          resultStatusCode: 422,
-          resultBody,
+          txDigest: cachedBody.digest as string,
+          resultStatusCode: 410,
+          resultBody: ownershipChangedBody,
         })
-        return NextResponse.json(resultBody, { status: 422 })
+        return NextResponse.json(ownershipChangedBody, { status: 410 })
       }
+      if (
+        soulState.ownerKind === 'object'
+        && soulKioskIdRecovery && sameSuiValue(
+          soulKioskIdRecovery,
+          currentKioskId,
+        )
+      ) {
+        const kioskCapState = await getVerifiedPersonalKioskCapState(currentKioskCapOnChainId)
+        if (
+          !sameSuiValue(kioskCapState.kioskId, currentKioskId)
+          || !sameSuiValue(kioskCapState.ownerAddress, agentAddress)
+        ) {
+          console.warn('[agent-purchase-execute] Recovered kiosk cap does not match the agent wallet', {
+            preparedPurchaseId,
+            expectedAgentAddress: agentAddress,
+            recoveredKioskId: kioskCapState.kioskId,
+            cachedKioskId: currentKioskId,
+            recoveredKioskCapOwner: kioskCapState.ownerAddress,
+          })
+          const mismatchBody = {
+            digest: cachedBody.digest,
+            soulOnChainId: soul.onChainId,
+            currentOwnerAddress: agentAddress,
+            currentKioskId,
+            currentKioskCapOnChainId,
+            onChainSuccess: true,
+            dbSynced: false,
+            error: 'Purchase ownership verification failed',
+          }
+          await finalizePreparedSoulPurchaseExecution({
+            preparedPurchaseId,
+            txDigest: cachedBody.digest as string,
+            resultStatusCode: 422,
+            resultBody: mismatchBody,
+          })
+          return NextResponse.json(mismatchBody, { status: 422 })
+        }
+        try {
+          await dbSetSoulOwnership({
+            soulOnChainId: soul.onChainId,
+            currentOwnerAddress: agentAddress,
+            currentOwnerMemberId: agent.agentMemberId,
+            currentKioskId,
+            currentKioskCapOnChainId,
+            listingObjectOnChainId: null,
+            listingStatus: 'held',
+            listedPriceAtomic: null,
+            allowlistVersion: soulState.allowlistVersion,
+            expectedCurrentOwnerAddress: soul.currentOwnerAddress,
+            expectedCurrentKioskId: soul.currentKioskId,
+            expectedListingStatus: narrowListingStatus(soul.listingStatus),
+          })
+        } catch (syncError) {
+          if (syncError instanceof SoulMirrorOwnershipConflictError) {
+            const conflictBody = buildPurchaseOwnershipConflictBody({
+              digest: cachedBody.digest as string,
+              soulOnChainId: soul.onChainId,
+              currentOwnerAddress: agentAddress,
+              currentKioskId,
+              currentKioskCapOnChainId,
+              ownerLabel: 'agent',
+            })
+            await finalizePreparedSoulPurchaseExecution({
+              preparedPurchaseId,
+              txDigest: cachedBody.digest as string,
+              resultStatusCode: 409,
+              resultBody: conflictBody,
+            })
+            return NextResponse.json(conflictBody, { status: 409 })
+          }
+          throw syncError
+        }
+        const syncedBody = {
+          digest: cachedBody.digest,
+          soulOnChainId: soul.onChainId,
+          currentOwnerAddress: agentAddress,
+          currentKioskId,
+          currentKioskCapOnChainId,
+          onChainSuccess: true,
+          dbSynced: true,
+        }
+        await finalizePreparedSoulPurchaseExecution({
+          preparedPurchaseId,
+          txDigest: cachedBody.digest as string,
+          resultStatusCode: 200,
+          resultBody: syncedBody,
+        })
+        return NextResponse.json(syncedBody, { status: 200 })
+      }
+    } catch (resyncError) {
+      console.warn('[agent-purchase-execute] Re-sync attempt failed for cached partial result', {
+        preparedPurchaseId,
+        error: toSafeErrorDetails(resyncError),
+      })
+    }
 
-      const syncedResponseBody = {
-        digest: retryableStoredSyncResult.digest,
-        status: 'success',
-        passOnChainId: retryableStoredSyncResult.passOnChainId,
+    return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
+  }
+  const finalizePreparedResult = async (
+    txDigest: string,
+    statusCode: number,
+    body: Record<string, unknown>,
+  ): Promise<NextResponse> => {
+    await finalizePreparedSoulPurchaseExecution({
+      preparedPurchaseId,
+      txDigest,
+      resultStatusCode: statusCode,
+      resultBody: body,
+    })
+    return NextResponse.json(body, { status: statusCode })
+  }
+
+  const finalizeSubmittedPurchase = async (
+    submittedTransaction: Parameters<typeof extractSoulPurchasedEvent>[0] & { digest: string },
+    expectedSellerKioskId: string,
+  ) => {
+    const directPurchaseEvent = tryExtractSoulPurchasedEventWithCurrentPackage(submittedTransaction, soulPackageId)
+    const soulState = await getVerifiedSoulState(
+      soul.onChainId,
+      soulPackageId,
+      directPurchaseEvent ? { expectedKioskId: directPurchaseEvent.buyerKioskId } : undefined,
+    )
+    const purchaseEvent = directPurchaseEvent ?? extractSoulPurchasedEvent(
+      submittedTransaction,
+      soulPackageId,
+      getTrustedPackageIds(soulPackageId, soulState.packageId),
+    )
+    if (!sameSuiValue(purchaseEvent.soulObjectId, soul.onChainId)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, { error: 'Transaction did not purchase the requested Soul' })
+    }
+    if (!sameSuiValue(purchaseEvent.sellerKioskId, expectedSellerKioskId)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Transaction seller kiosk does not match the prepared purchase',
+      })
+    }
+    if (!sameSuiValue(purchaseEvent.buyerAddress, agentAddress)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul owner does not match the agent wallet',
+      })
+    }
+
+    const soulKioskIdAgent = soulState.kioskParentId ?? soulState.ownerObjectId
+    if (soulState.ownerKind !== 'object' || !soulKioskIdAgent || !sameSuiValue(soulKioskIdAgent, purchaseEvent.buyerKioskId)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul was not moved into the agent kiosk',
+      })
+    }
+
+    const buyerKioskCapState = await getVerifiedPersonalKioskCapState(purchaseEvent.buyerKioskCapOnChainId)
+    if (!sameSuiValue(buyerKioskCapState.kioskId, purchaseEvent.buyerKioskId)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul kiosk cap does not match the buyer kiosk',
+      })
+    }
+    if (!sameSuiValue(buyerKioskCapState.ownerAddress, agentAddress)) {
+      return await finalizePreparedResult(submittedTransaction.digest, 422, {
+        error: 'Purchased Soul kiosk cap does not belong to the agent wallet',
+      })
+    }
+
+    let statusCode = 200
+    let resultBody: Record<string, unknown>
+    try {
+      await dbSetSoulOwnership({
+        soulOnChainId: soul.onChainId,
+        currentOwnerAddress: agentAddress,
+        currentOwnerMemberId: agent.agentMemberId,
+        currentKioskId: purchaseEvent.buyerKioskId,
+        currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+        listingObjectOnChainId: null,
+        listingStatus: 'held',
+        listedPriceAtomic: null,
+        allowlistVersion: soulState.allowlistVersion,
+        expectedCurrentOwnerAddress: soul.currentOwnerAddress,
+        expectedCurrentKioskId: soul.currentKioskId,
+        expectedListingStatus: narrowListingStatus(soul.listingStatus),
+      })
+      resultBody = {
+        digest: submittedTransaction.digest,
+        soulOnChainId: soul.onChainId,
+        currentOwnerAddress: agentAddress,
+        currentKioskId: purchaseEvent.buyerKioskId,
+        currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+        listingStatus: 'held' as const,
         onChainSuccess: true,
         dbSynced: true,
       }
-      await prisma.$transaction(async (tx) => {
-        await dbCreatePass({
-          db: tx,
-          passOnChainId: passState.objectId,
-          seriesOnChainId: series.onChainId,
-          ownerAddress: passState.ownerAddress,
-          passType: passState.passType,
-          lockedReleaseId: passState.lockedReleaseId,
-          mintTxDigest: retryableStoredSyncResult.digest,
-          ...(passState.expiresAt ? { expiresAt: passState.expiresAt } : {}),
+    } catch (syncError) {
+      if (syncError instanceof SoulMirrorOwnershipConflictError) {
+        statusCode = 409
+        resultBody = buildPurchaseOwnershipConflictBody({
+          digest: submittedTransaction.digest,
+          soulOnChainId: soul.onChainId,
+          currentOwnerAddress: agentAddress,
+          currentKioskId: purchaseEvent.buyerKioskId,
+          currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+          ownerLabel: 'agent',
         })
-        await finalizePreparedSoulPurchaseExecution({
-          db: tx,
-          preparedPurchaseId,
-          txDigest: retryableStoredSyncResult.digest,
-          resultStatusCode: 200,
-          resultBody: syncedResponseBody,
-        })
-      })
-      return NextResponse.json(syncedResponseBody, { status: 200 })
-    } catch (err) {
-      console.error('[agent-purchase-execute] Retryable sync retry failed', toSafeErrorDetails(err))
-      return NextResponse.json(
-        retryableStoredSyncResult.prevBody,
-        { status: retryableStoredSyncResult.statusCode },
-      )
+      } else {
+        statusCode = 207
+        console.error('[agent-purchase-execute] Local soul sync failed', toSafeErrorDetails(syncError))
+        resultBody = {
+          digest: submittedTransaction.digest,
+          soulOnChainId: soul.onChainId,
+          currentOwnerAddress: agentAddress,
+          currentKioskId: purchaseEvent.buyerKioskId,
+          currentKioskCapOnChainId: purchaseEvent.buyerKioskCapOnChainId,
+          listingStatus: 'held' as const,
+          onChainSuccess: true,
+          dbSynced: false,
+          error: 'Transaction succeeded on chain, but local Soul sync failed.',
+        }
+      }
     }
+
+    return await finalizePreparedResult(submittedTransaction.digest, statusCode, resultBody)
   }
 
-  if (preparedPurchase.resultStatusCode && preparedPurchase.resultBody) {
-    return NextResponse.json(preparedPurchase.resultBody, { status: preparedPurchase.resultStatusCode })
-  }
   if (preparedPurchase.executedAt) {
-    return NextResponse.json({ error: 'Prepared purchase is already being executed' }, { status: 409 })
+    const isZombie =
+      preparedPurchase.executionTxDigest == null
+      && preparedPurchase.resultStatusCode == null
+      && (Date.now() - preparedPurchase.executedAt.getTime()) > ZOMBIE_CLAIM_AGE_THRESHOLD_MS
+
+    if (isZombie) {
+      console.warn('[agent-purchase-execute] Reclaiming zombie prepared purchase', { preparedPurchaseId })
+      await releasePreparedSoulPurchaseExecution({ preparedPurchaseId })
+    } else {
+      try {
+        const recoveredTransaction = await getSuccessfulTransactionBlock(
+          preparedPurchase.executionTxDigest ?? getPreparedSoulPurchaseTxDigest(preparedPurchase.txBytesBase64),
+        )
+        return await finalizeSubmittedPurchase(recoveredTransaction, preparedPurchase.sellerKioskId)
+      } catch (recoveryError) {
+        console.warn('[agent-purchase-execute] Prepared purchase recovery is still pending', {
+          preparedPurchaseId,
+          error: toSafeErrorDetails(recoveryError),
+        })
+        return NextResponse.json({ error: 'Prepared purchase is already being executed' }, { status: 409 })
+      }
+    }
   }
 
   const claimedPreparedPurchase = await claimPreparedSoulPurchaseForExecution({
     preparedPurchaseId,
     agentMemberId: agent.agentMemberId,
-    seriesOnChainId: series.onChainId,
+    soulOnChainId: soul.onChainId,
   })
   if (!claimedPreparedPurchase) {
     const latestPreparedPurchase = await getPreparedSoulPurchaseForExecution({
       preparedPurchaseId,
       agentMemberId: agent.agentMemberId,
-      seriesOnChainId: series.onChainId,
+      soulOnChainId: soul.onChainId,
     })
     if (latestPreparedPurchase?.resultStatusCode && latestPreparedPurchase.resultBody) {
       return NextResponse.json(
@@ -274,21 +475,15 @@ export async function POST(
   const releaseExecutionClaim = async () => {
     try {
       await releasePreparedSoulPurchaseExecution({ preparedPurchaseId })
-    } catch (error) {
+    } catch (releaseError) {
       console.error('[agent-purchase-execute] Failed to release prepared purchase claim', {
         preparedPurchaseId,
-        error: toSafeErrorDetails(error),
+        error: toSafeErrorDetails(releaseError),
       })
     }
   }
 
-  if (
-    hashPreparedSoulPurchaseTxBytes(claimedPreparedPurchase.txBytesBase64)
-      !== claimedPreparedPurchase.txBytesHash
-  ) {
-    console.error('[agent-purchase-execute] Prepared purchase tx bytes hash mismatch', {
-      preparedPurchaseId,
-    })
+  if (hashPreparedSoulPurchaseTxBytes(claimedPreparedPurchase.txBytesBase64) !== claimedPreparedPurchase.txBytesHash) {
     await releaseExecutionClaim()
     return NextResponse.json({ error: 'Prepared purchase is invalid' }, { status: 500 })
   }
@@ -312,173 +507,55 @@ export async function POST(
     result = await suiClient.executeTransactionBlock({
       transactionBlock: claimedPreparedPurchase.txBytesBase64,
       signature,
-      options: { showEffects: true, showInput: true, showObjectChanges: true },
+      options: { showEffects: true, showInput: true, showObjectChanges: true, showEvents: true },
     })
-  } catch (err) {
+  } catch (executionError) {
     await releaseExecutionClaim()
-    console.error('[agent-purchase-execute] Transaction execution failed', toSafeErrorDetails(err))
+    console.error('[agent-purchase-execute] Transaction execution failed', toSafeErrorDetails(executionError))
     return NextResponse.json({ error: 'Transaction execution failed' }, { status: 400 })
   }
 
+  if (result.effects?.status?.status !== 'success') {
+    await releaseExecutionClaim()
+    console.error('[agent-purchase-execute] Transaction effects indicate failure', {
+      preparedPurchaseId,
+      error: result.effects?.status?.error ?? 'Transaction effects indicate failure',
+    })
+    return NextResponse.json({ error: 'Transaction effects indicate failure' }, { status: 400 })
+  }
+
   await waitForTransactionBestEffort(suiClient, result.digest)
-
-  const status = result.effects?.status?.status ?? 'unknown'
-  let passOnChainId: string | undefined
-  const finalizePreparedResult = async (
-    statusCode: number,
-    body: Record<string, unknown>,
-  ): Promise<NextResponse> => {
-    try {
-      await finalizePreparedSoulPurchaseExecution({
-        preparedPurchaseId,
-        txDigest: result.digest,
-        resultStatusCode: statusCode,
-        resultBody: body,
-      })
-    } catch (error) {
-      console.error('[agent-purchase-execute] Failed to finalize prepared purchase execution', {
-        preparedPurchaseId,
-        txDigest: result.digest,
-        statusCode,
-        error: toSafeErrorDetails(error),
-      })
-      await releaseExecutionClaim()
-      return NextResponse.json(
-        {
-          error: 'Transaction submitted, but local execution finalization failed',
-          digest: result.digest,
-          onChainSuccess: result.effects?.status?.status === 'success',
-          dbSynced: false,
-        },
-        { status: 500 },
-      )
-    }
-
-    return NextResponse.json(body, { status: statusCode })
+  try {
+    await storePreparedSoulPurchaseExecutionDigest({
+      preparedPurchaseId,
+      txDigest: result.digest,
+    })
+  } catch (digestStoreError) {
+    console.error('[agent-purchase-execute] Failed to persist prepared purchase tx digest', {
+      preparedPurchaseId,
+      digest: result.digest,
+      error: toSafeErrorDetails(digestStoreError),
+    })
   }
 
   try {
-    ensureTransactionSucceeded(result)
-
-    const passObj = result.objectChanges?.find((change) => {
-      if (!change || typeof change !== 'object') return false
-      const candidate = change as { type?: string; objectType?: string; objectId?: string }
-      return candidate.type === 'created'
-        && !!candidate.objectId
-        && (
-          candidate.objectType?.includes('::pass::PerpetualPass')
-          || candidate.objectType?.includes('::pass::SubscriptionPass')
-        )
-    }) as { objectId?: string } | undefined
-
-    let dbSynced = true
-    let syncError: string | null = null
-
-    if (!passObj?.objectId) {
-      return finalizePreparedResult(422, {
-        error: 'Transaction succeeded on chain, but no Soul pass object was created',
+    return await finalizeSubmittedPurchase(result, claimedPreparedPurchase.sellerKioskId)
+  } catch (verificationError) {
+    if (verificationError instanceof OnChainVerificationError) {
+      return await finalizePreparedResult(result.digest, verificationError.status, {
+        error: getClientSafeOnChainVerificationErrorMessage(verificationError),
         digest: result.digest,
-        status,
         onChainSuccess: true,
         dbSynced: false,
       })
     }
 
-    passOnChainId = passObj.objectId
-    assertPassChange(result, {
-      passOnChainId,
-      changeTypes: ['created'],
-      errorMessage: 'Transaction did not create a Soul pass',
-      expectedSender: ownerAddress,
-      expectedPackageId: soulPackageId,
-    })
-
-    const passState = await getVerifiedPassState(passOnChainId, soulPackageId)
-    const validationError = getPurchasePassValidationError({
-      passState,
-      seriesOnChainId: series.onChainId,
-      ownerAddress,
-      planType: claimedPreparedPurchase.planType,
-      releaseOnChainId: claimedPreparedPurchase.releaseOnChainId,
-    })
-    if (validationError) {
-      return finalizePreparedResult(422, { error: validationError })
-    }
-
-    const syncedResponseBody = {
-      digest: result.digest,
-      status,
-      passOnChainId,
-      onChainSuccess: true,
-      dbSynced: true,
-    }
-
-    try {
-      await prisma.$transaction(async (tx) => {
-        await dbCreatePass({
-          db: tx,
-          passOnChainId: passState.objectId,
-          seriesOnChainId: series.onChainId,
-          ownerAddress: passState.ownerAddress,
-          // Let dbCreatePass resolve ownerMemberId from on-chain owner address
-          // instead of hardcoding caller — handles post-mint transfer edge case
-          passType: passState.passType,
-          lockedReleaseId: passState.lockedReleaseId,
-          mintTxDigest: result.digest,
-          ...(passState.expiresAt ? { expiresAt: passState.expiresAt } : {}),
-        })
-        await finalizePreparedSoulPurchaseExecution({
-          db: tx,
-          preparedPurchaseId,
-          txDigest: result.digest,
-          resultStatusCode: 200,
-          resultBody: syncedResponseBody,
-        })
-      })
-
-      return NextResponse.json(syncedResponseBody, { status: 200 })
-    } catch (err) {
-      dbSynced = false
-      syncError = 'db_sync_failed'
-      console.error('[agent-purchase-execute] Local sync transaction failed', toSafeErrorDetails(err))
-    }
-
-    const responseBody = {
-      digest: result.digest,
-      status,
-      passOnChainId: passOnChainId ?? null,
-      onChainSuccess: true,
-      dbSynced,
-      ...(dbSynced ? {} : {
-        error: 'Transaction succeeded on chain, but local pass sync failed. Retry sync before granting access.',
-        syncError,
-      }),
-    }
-
-    return finalizePreparedResult(dbSynced ? 200 : 207, responseBody)
-  } catch (err) {
-    const onChainSuccess = result.effects?.status?.status === 'success'
-    const retryablePassSyncContext = onChainSuccess && !!passOnChainId
-
-    if (err instanceof OnChainVerificationError) {
-      return finalizePreparedResult(err.status, {
-        error: getClientSafeOnChainVerificationErrorMessage(err),
-        digest: result.digest,
-        ...(retryablePassSyncContext ? { passOnChainId } : {}),
-        onChainSuccess,
-        dbSynced: false,
-        ...(retryablePassSyncContext && err.status >= 500 ? { syncError: RETRYABLE_VERIFICATION_SYNC_ERROR } : {}),
-      })
-    }
-
-    console.error('[agent-purchase-execute] Post-submit verification failed', toSafeErrorDetails(err))
-    return finalizePreparedResult(500, {
+    console.error('[agent-purchase-execute] Post-submit verification failed', toSafeErrorDetails(verificationError))
+    return await finalizePreparedResult(result.digest, 500, {
       error: 'Transaction submitted, but post-submit verification failed',
       digest: result.digest,
-      ...(retryablePassSyncContext ? { passOnChainId } : {}),
-      onChainSuccess,
+      onChainSuccess: true,
       dbSynced: false,
-      ...(retryablePassSyncContext ? { syncError: RETRYABLE_VERIFICATION_SYNC_ERROR } : {}),
     })
   }
 }

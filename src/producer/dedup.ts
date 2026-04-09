@@ -55,8 +55,12 @@ export async function runDedup(prisma: PrismaClient, limit = 200): Promise<{ tot
 
   // Batch update statuses
   await Promise.all([
-    ...keep.map(id => updateRawItemStatus(prisma, id, 'deduped')),
-    ...duplicate.map(id => updateRawItemStatus(prisma, id, 'duplicate')),
+    keep.length > 0
+      ? prisma.rawItem.updateMany({ where: { id: { in: keep } }, data: { status: 'deduped' } })
+      : Promise.resolve(),
+    duplicate.length > 0
+      ? prisma.rawItem.updateMany({ where: { id: { in: duplicate } }, data: { status: 'duplicate' } })
+      : Promise.resolve(),
   ])
 
   console.log(`Dedup: ${items.length} items → ${keep.length} kept, ${duplicate.length} duplicates`)

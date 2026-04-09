@@ -1,21 +1,28 @@
-/**
- * Post-TX DB write functions.
- *
- * Each function mirrors a former indexer event handler but accepts data
- * directly from the TX result instead of decoded on-chain events.
- * All writes use upsert/updateMany for idempotency.
- */
-
 import { Prisma } from '../../../generated/prisma/client'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { prisma } from '@web/lib/prisma'
+import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
 
-const MS_PER_DAY = 86_400_000
-const MAX_SAFE_PERIOD_MS = BigInt(Number.MAX_SAFE_INTEGER)
 type SoulDbClient = typeof prisma | Prisma.TransactionClient
 
-function isPrismaUniqueConstraintError(error: unknown): error is { code: string } {
-  return typeof error === 'object' && error != null && 'code' in error && typeof error.code === 'string'
+type SoulListingStatus = 'listed' | 'held'
+
+type ExpectedSoulMirrorOwnership = {
+  expectedCurrentOwnerAddress?: string | null
+  expectedCurrentKioskId?: string | null
+  expectedListingStatus?: SoulListingStatus
+}
+
+export function narrowListingStatus(value: string | null | undefined): SoulListingStatus | undefined {
+  if (value === 'listed' || value === 'held') return value
+  return undefined
+}
+
+export class SoulMirrorOwnershipConflictError extends Error {
+  constructor(soulOnChainId: string) {
+    super(`Soul ${soulOnChainId} ownership changed before the local mirror could be updated`)
+    this.name = 'SoulMirrorOwnershipConflictError'
+  }
 }
 
 function sameSuiAddress(left: string, right: string): boolean {
@@ -39,68 +46,142 @@ function normalizeStoredSuiAddress(address: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Wallet → Member resolution (shared helper)
-// ---------------------------------------------------------------------------
+function toNullableDecimal(value: bigint | null) {
+  return value != null ? new Prisma.Decimal(value.toString()) : null
+}
 
-async function resolveOwnerMemberId(db: SoulDbClient, address: string): Promise<string | null> {
+function buildSoulMirrorWhere(params: { soulOnChainId: string } & ExpectedSoulMirrorOwnership) {
+  const where: Record<string, unknown> = {
+    onChainId: params.soulOnChainId,
+  }
+  if (typeof params.expectedCurrentOwnerAddress === 'string' && params.expectedCurrentOwnerAddress.trim().length > 0) {
+    where.currentOwnerAddress = normalizeStoredSuiAddress(params.expectedCurrentOwnerAddress)
+  }
+  if (typeof params.expectedCurrentKioskId === 'string' && params.expectedCurrentKioskId.trim().length > 0) {
+    where.currentKioskId = normalizeStoredSuiAddress(params.expectedCurrentKioskId)
+  }
+  if (params.expectedListingStatus) {
+    where.listingStatus = params.expectedListingStatus
+  }
+  return where
+}
+
+function hasSoulMirrorOwnershipGuard(params: ExpectedSoulMirrorOwnership) {
+  return Boolean(
+    (typeof params.expectedCurrentOwnerAddress === 'string' && params.expectedCurrentOwnerAddress.trim().length > 0)
+    || (typeof params.expectedCurrentKioskId === 'string' && params.expectedCurrentKioskId.trim().length > 0)
+    || params.expectedListingStatus,
+  )
+}
+
+async function resolveMemberIdBySuiAddress(db: SoulDbClient, address: string): Promise<string | null> {
   const binding = await db.walletBinding.findFirst({
     where: { address: normalizeStoredSuiAddress(address), chain: 'sui' },
   })
   return binding?.memberId ?? null
 }
 
-// ---------------------------------------------------------------------------
-// Series
-// ---------------------------------------------------------------------------
-
-export async function dbCreateSeries(params: {
-  seriesOnChainId: string
-  authorAddress: string
-  authorMemberId: string
+export async function dbUpsertSoulAsset(params: {
+  soulOnChainId: string
+  creatorAddress: string
+  creatorMemberId: string | null
+  creatorRoyaltyBps: number
+  currentOwnerAddress: string
+  currentOwnerMemberId?: string | null
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  listingObjectOnChainId: string | null
+  listedPriceAtomic: bigint | null
+  listingStatus: 'listed' | 'held'
   name: string
   description: string
+  imageUrl: string
+  metadataRef?: string | null
+  contentBlobId: string
+  contentBlobObjectId: string
+  sealSidecar?: SealEnvelopeSidecar | null
   category: string
   tags: string[]
   previewImages: string[]
-  readme?: string
+  readme?: string | null
+  allowlistVersion: bigint
+  allowlistAddress?: string | null
+  allowlistCapOnChainId?: string | null
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
-  const existingSeries = await db.soulSeries.findUnique({
-    where: { onChainId: params.seriesOnChainId },
+  const creatorAddress = normalizeStoredSuiAddress(params.creatorAddress)
+  const currentOwnerAddress = normalizeStoredSuiAddress(params.currentOwnerAddress)
+  const creatorMemberId = params.creatorMemberId ?? await resolveMemberIdBySuiAddress(db, creatorAddress)
+  const currentOwnerMemberId = params.currentOwnerMemberId ?? await resolveMemberIdBySuiAddress(db, currentOwnerAddress)
+  const existingSoul = await db.soulAsset.findUnique({
+    where: { onChainId: params.soulOnChainId },
     select: {
-      authorMemberId: true,
-      authorAddress: true,
+      creatorMemberId: true,
+      creatorAddress: true,
     },
   })
   if (
-    existingSeries
-    && (
-      existingSeries.authorMemberId !== params.authorMemberId
-      || !sameSuiAddress(existingSeries.authorAddress, params.authorAddress)
-    )
+    existingSoul
+    && !sameSuiAddress(existingSoul.creatorAddress, creatorAddress)
   ) {
-    throw new Error('existing Soul series author does not match the submitted on-chain author')
+    throw new Error('existing Soul creator does not match the submitted on-chain creator')
+  }
+  if (
+    existingSoul
+    && existingSoul.creatorMemberId != null
+    && creatorMemberId != null
+    && existingSoul.creatorMemberId !== creatorMemberId
+  ) {
+    throw new Error('existing Soul creator does not match the submitted on-chain creator')
   }
 
-  return db.soulSeries.upsert({
-    where: { onChainId: params.seriesOnChainId },
+  return db.soulAsset.upsert({
+    where: { onChainId: params.soulOnChainId },
     create: {
-      onChainId: params.seriesOnChainId,
-      authorMemberId: params.authorMemberId,
-      authorAddress: params.authorAddress,
+      onChainId: params.soulOnChainId,
+      // Legacy web runtime is retired; preserve compilability with a self-keyed fallback.
+      stateOnChainId: params.soulOnChainId,
+      memoryOnChainId: params.soulOnChainId,
+      creatorAddress,
+      creatorMemberId,
+      creatorRoyaltyBps: params.creatorRoyaltyBps,
+      currentOwnerAddress,
+      currentOwnerMemberId,
+      currentKioskId: params.currentKioskId,
+      currentKioskCapOnChainId: params.currentKioskCapOnChainId,
+      listingObjectOnChainId: params.listingObjectOnChainId,
+      listedPriceAtomic: toNullableDecimal(params.listedPriceAtomic),
+      listingStatus: params.listingStatus,
       name: params.name,
       description: params.description,
+      imageUrl: params.imageUrl,
+      metadataRef: params.metadataRef ?? null,
+      contentBlobId: params.contentBlobId,
+      contentBlobObjectId: params.contentBlobObjectId,
+      sealSidecar: (params.sealSidecar ?? null) as unknown as Prisma.InputJsonValue,
       category: params.category,
       tags: params.tags,
       previewImages: params.previewImages,
       readme: params.readme ?? null,
     },
     update: {
-      authorAddress: params.authorAddress,
+      creatorAddress,
+      creatorRoyaltyBps: params.creatorRoyaltyBps,
+      currentOwnerAddress,
+      currentOwnerMemberId,
+      currentKioskId: params.currentKioskId,
+      currentKioskCapOnChainId: params.currentKioskCapOnChainId,
+      listingObjectOnChainId: params.listingObjectOnChainId,
+      listedPriceAtomic: toNullableDecimal(params.listedPriceAtomic),
+      listingStatus: params.listingStatus,
       name: params.name,
       description: params.description,
+      imageUrl: params.imageUrl,
+      metadataRef: params.metadataRef ?? null,
+      contentBlobId: params.contentBlobId,
+      contentBlobObjectId: params.contentBlobObjectId,
+      sealSidecar: (params.sealSidecar ?? null) as unknown as Prisma.InputJsonValue,
       category: params.category,
       tags: params.tags,
       previewImages: params.previewImages,
@@ -109,241 +190,93 @@ export async function dbCreateSeries(params: {
   })
 }
 
-// ---------------------------------------------------------------------------
-// Release
-// ---------------------------------------------------------------------------
+export async function dbSetSoulAllowlist(params: {
+  soulOnChainId: string
+  allowlistAddress: string
+  allowlistCapOnChainId: string
+  allowlistVersion: bigint
+  expectedCurrentOwnerAddress?: string | null
+  expectedCurrentKioskId?: string | null
+  expectedListingStatus?: 'listed' | 'held'
+  db?: SoulDbClient
+}) {
+  void params
+  throw new Error('Legacy Soul allowlist mirror has been retired. Use Soulidity grants instead.')
+}
 
-export async function dbCreateRelease(params: {
-  releaseOnChainId: string
-  seriesDbId: string
-  seriesLatestReleaseOnChainId: string | null
-  version: string
-  walrusBlobRef: string
-  publicMetadataRef?: string | null
-  contentHash: string
-  changelog?: string | null
+export async function dbClearSoulAllowlist(params: {
+  soulOnChainId: string
+  allowlistVersion: bigint
+  expectedCurrentOwnerAddress?: string | null
+  expectedCurrentKioskId?: string | null
+  expectedListingStatus?: 'listed' | 'held'
+  db?: SoulDbClient
+}) {
+  void params
+  throw new Error('Legacy Soul allowlist mirror has been retired. Use Soulidity grants instead.')
+}
+
+export async function dbSetSoulOwnership(params: {
+  soulOnChainId: string
+  currentOwnerAddress: string
+  currentOwnerMemberId?: string | null
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  listingObjectOnChainId: string | null
+  listingStatus: 'listed' | 'held'
+  listedPriceAtomic: bigint | null
+  allowlistVersion: bigint
+  preserveExistingAllowlistMirror?: boolean
+  expectedCurrentOwnerAddress?: string | null
+  expectedCurrentKioskId?: string | null
+  expectedListingStatus?: 'listed' | 'held'
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
-  let release
-  try {
-    release = await db.soulRelease.upsert({
-      where: { onChainId: params.releaseOnChainId },
-      create: {
-        onChainId: params.releaseOnChainId,
-        seriesId: params.seriesDbId,
-        version: params.version,
-        walrusBlobRef: params.walrusBlobRef,
-        publicMetadataRef: params.publicMetadataRef ?? null,
-        contentHash: params.contentHash,
-        changelog: params.changelog ?? null,
-      },
-      update: {
-        seriesId: params.seriesDbId,
-        version: params.version,
-        walrusBlobRef: params.walrusBlobRef,
-        publicMetadataRef: params.publicMetadataRef ?? null,
-        contentHash: params.contentHash,
-        changelog: params.changelog ?? null,
-      },
-    })
-  } catch (error) {
-    if (!isPrismaUniqueConstraintError(error) || error.code !== 'P2002') {
-      throw error
-    }
-
-    release = await db.soulRelease.update({
-      where: {
-        seriesId_version: {
-          seriesId: params.seriesDbId,
-          version: params.version,
-        },
-      },
-      data: {
-        onChainId: params.releaseOnChainId,
-        walrusBlobRef: params.walrusBlobRef,
-        publicMetadataRef: params.publicMetadataRef ?? null,
-        contentHash: params.contentHash,
-        changelog: params.changelog ?? null,
-      },
-    })
-  }
-
-  if (
-    params.seriesLatestReleaseOnChainId
-    && sameSuiAddress(params.seriesLatestReleaseOnChainId, params.releaseOnChainId)
-  ) {
-    await db.soulSeries.update({
-      where: { id: params.seriesDbId },
-      data: { latestReleaseId: release.id },
-    })
-  }
-
-  return release
-}
-
-// ---------------------------------------------------------------------------
-// Pricing Plan
-// ---------------------------------------------------------------------------
-
-export async function dbUpdatePricingPlan(params: {
-  seriesOnChainId: string
-  planType: 'onetime' | 'subscription'
-  planOnChainId: string
-  priceUsdc: bigint // atomic USDC (6 decimals)
-  periodMs?: bigint
-  db?: SoulDbClient
-}) {
-  const db = params.db ?? prisma
-  const priceAtomic = new Prisma.Decimal(params.priceUsdc.toString())
-
-  if (params.planType === 'onetime') {
-    await db.soulSeries.updateMany({
-      where: { onChainId: params.seriesOnChainId },
-      data: {
-        oneTimePriceUsdc: priceAtomic,
-        oneTimePlanOnChainId: params.planOnChainId,
-      },
-    })
-  } else {
-    if (params.periodMs == null || params.periodMs <= 0n) {
-      throw new Error('subscription pricing plans require a positive periodMs')
-    }
-    if (params.periodMs > MAX_SAFE_PERIOD_MS) {
-      throw new Error('subscription periodMs exceeds supported range')
-    }
-    const periodDays = Math.ceil(Number(params.periodMs) / MS_PER_DAY)
-    await db.soulSeries.updateMany({
-      where: { onChainId: params.seriesOnChainId },
-      data: {
-        subPriceUsdc: priceAtomic,
-        subPlanOnChainId: params.planOnChainId,
-        subPeriodDays: periodDays,
-      },
-    })
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Pass
-// ---------------------------------------------------------------------------
-
-export async function dbCreatePass(params: {
-  passOnChainId: string
-  seriesOnChainId: string
-  ownerAddress: string
-  ownerMemberId?: string | null
-  passType: 'perpetual' | 'subscription'
-  lockedReleaseId?: string | null
-  expiresAt?: Date | null
-  mintTxDigest: string
-  db?: SoulDbClient
-}) {
-  const db = params.db ?? prisma
-  const ownerAddress = normalizeStoredSuiAddress(params.ownerAddress)
-  if (params.passType === 'perpetual' && !params.lockedReleaseId) {
-    throw new Error('perpetual passes require a lockedReleaseId')
-  }
-  if (params.passType === 'subscription' && params.lockedReleaseId != null) {
-    throw new Error('subscription passes cannot set lockedReleaseId')
-  }
-
-  // Resolve ownerMemberId if not provided
-  const ownerMemberId = params.ownerMemberId ?? (await resolveOwnerMemberId(db, ownerAddress))
-
-  // Look up series DB id
-  const series = await db.soulSeries.findUnique({
-    where: { onChainId: params.seriesOnChainId },
-  })
-  if (!series) {
-    throw new Error(`Series ${params.seriesOnChainId} not found in DB`)
-  }
-
-  return db.soulPassSnapshot.upsert({
-    where: { onChainId: params.passOnChainId },
-    create: {
-      onChainId: params.passOnChainId,
-      seriesId: series.id,
-      ownerAddress,
-      ownerMemberId,
-      passType: params.passType,
-      lockedReleaseId: params.lockedReleaseId ?? null,
-      expiresAt: params.expiresAt ?? null,
-      mintTxDigest: params.mintTxDigest,
-    },
-    update: {
-      seriesId: series.id,
-      ownerAddress,
-      ownerMemberId,
-      passType: params.passType,
-      lockedReleaseId: params.lockedReleaseId ?? null,
-      expiresAt: params.expiresAt ?? null,
-      mintTxDigest: params.mintTxDigest,
-    },
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Renew
-// ---------------------------------------------------------------------------
-
-export async function dbRenewPass(params: {
-  passOnChainId: string
-  ownerAddress: string
-  newExpiresAt: Date
-  renewTxDigest: string
-  db?: SoulDbClient
-}): Promise<void> {
-  const db = params.db ?? prisma
-  const ownerAddress = normalizeStoredSuiAddress(params.ownerAddress)
-  const ownerMemberId = await resolveOwnerMemberId(db, ownerAddress)
-  const result = await db.soulPassSnapshot.updateMany({
-    where: {
-      onChainId: params.passOnChainId,
-      passType: 'subscription',
-    },
+  const currentOwnerAddress = normalizeStoredSuiAddress(params.currentOwnerAddress)
+  const currentKioskId = normalizeStoredSuiAddress(params.currentKioskId)
+  const currentKioskCapOnChainId = normalizeStoredSuiAddress(params.currentKioskCapOnChainId)
+  const currentOwnerMemberId = params.currentOwnerMemberId ?? await resolveMemberIdBySuiAddress(db, currentOwnerAddress)
+  const result = await db.soulAsset.updateMany({
+    where: buildSoulMirrorWhere(params),
     data: {
-      ownerAddress,
-      ownerMemberId,
-      expiresAt: params.newExpiresAt,
-      lastRenewTxDigest: params.renewTxDigest,
-      lastSyncedAt: new Date(),
+      currentOwnerAddress,
+      currentOwnerMemberId,
+      currentKioskId,
+      currentKioskCapOnChainId,
+      listingObjectOnChainId: params.listingObjectOnChainId,
+      listingStatus: params.listingStatus,
+      listedPriceAtomic: toNullableDecimal(params.listedPriceAtomic),
     },
   })
   if (result.count === 0) {
-    throw new Error(`Subscription pass ${params.passOnChainId} not found`)
+    if (hasSoulMirrorOwnershipGuard(params)) {
+      throw new SoulMirrorOwnershipConflictError(params.soulOnChainId)
+    }
+    throw new Error(`Soul ${params.soulOnChainId} not found`)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Agent Grant
-// ---------------------------------------------------------------------------
-
-export async function dbSetAgentGrant(params: {
-  passOnChainId: string
-  agentAddress: string
+export async function dbCancelSoulListing(params: {
+  soulOnChainId: string
+  expectedCurrentOwnerAddress?: string | null
+  expectedCurrentKioskId?: string | null
+  expectedListingStatus?: 'listed' | 'held'
   db?: SoulDbClient
 }) {
   const db = params.db ?? prisma
-  const result = await db.soulPassSnapshot.updateMany({
-    where: { onChainId: params.passOnChainId },
-    data: { agentGrant: params.agentAddress },
+  const result = await db.soulAsset.updateMany({
+    where: buildSoulMirrorWhere(params),
+    data: {
+      listingObjectOnChainId: null,
+      listingStatus: 'held',
+      listedPriceAtomic: null,
+    },
   })
   if (result.count === 0) {
-    throw new Error(`Pass ${params.passOnChainId} not found`)
-  }
-}
-
-export async function dbRevokeAgentGrant(params: {
-  passOnChainId: string
-  db?: SoulDbClient
-}) {
-  const db = params.db ?? prisma
-  const result = await db.soulPassSnapshot.updateMany({
-    where: { onChainId: params.passOnChainId },
-    data: { agentGrant: null },
-  })
-  if (result.count === 0) {
-    throw new Error(`Pass ${params.passOnChainId} not found`)
+    if (hasSoulMirrorOwnershipGuard(params)) {
+      throw new SoulMirrorOwnershipConflictError(params.soulOnChainId)
+    }
+    throw new Error(`Soul ${params.soulOnChainId} not found`)
   }
 }

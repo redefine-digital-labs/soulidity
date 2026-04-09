@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
-const mockedUploadEncrypted = vi.hoisted(() => vi.fn())
 const mockedUploadPublic = vi.hoisted(() => vi.fn())
 const mockedSealDekEnvelope = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
+}))
+
+vi.mock('@web/lib/auth/sui-wallet', () => ({
+  getMemberPrimarySuiWalletAddress: mockedGetMemberPrimarySuiWalletAddress,
 }))
 
 vi.mock('@web/lib/rate-limit', async () => {
@@ -19,7 +23,6 @@ vi.mock('@web/lib/rate-limit', async () => {
 })
 
 vi.mock('@web/lib/services/walrus', () => ({
-  uploadEncrypted: mockedUploadEncrypted,
   uploadPublic: mockedUploadPublic,
 }))
 
@@ -36,13 +39,16 @@ describe('soul upload route', () => {
       error: null,
       identity: { memberId: 'member-1', kind: 'human' },
     })
+    mockedGetMemberPrimarySuiWalletAddress.mockResolvedValue(`0x${'1'.repeat(64)}`)
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
-    mockedUploadEncrypted.mockResolvedValue('blob-encrypted')
-    mockedUploadPublic.mockResolvedValue('blob-public')
+    mockedUploadPublic.mockResolvedValue({
+      blobId: 'blob-public',
+      blobObjectId: '0xblob-object',
+    })
     mockedSealDekEnvelope.mockReturnValue('mock-envelope-token')
   })
 
-  it('accepts encrypted uploads and returns blobId with contentHash', async () => {
+  it('uploads encrypted blobs to Walrus with the publisher wallet as the blob owner', async () => {
     const { POST } = await import('../../web/app/api/souls/upload/route.ts')
     const form = new FormData()
     form.append('file', new File([Buffer.alloc(64, 7)], 'bundle.bin', { type: 'application/octet-stream' }))
@@ -57,8 +63,14 @@ describe('soul upload route', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.blobId).toBe('blob-public')
+    expect(body.blobObjectId).toBe('0xblob-object')
     expect(body.contentHash).toBeDefined()
     expect(body.sealDekEnvelope).toBe('mock-envelope-token')
+    expect(mockedUploadPublic).toHaveBeenCalledTimes(1)
+    expect(mockedUploadPublic).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      { sendObjectTo: `0x${'1'.repeat(64)}` },
+    )
     expect(mockedSealDekEnvelope).toHaveBeenCalledWith(
       expect.objectContaining({
         dek: expect.any(Buffer),
@@ -66,6 +78,27 @@ describe('soul upload route', () => {
         contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
       }),
     )
+  })
+
+  it('rejects encrypted uploads when the authenticated human has no primary Sui wallet', async () => {
+    mockedGetMemberPrimarySuiWalletAddress.mockResolvedValueOnce(null)
+
+    const { POST } = await import('../../web/app/api/souls/upload/route.ts')
+    const form = new FormData()
+    form.append('file', new File([Buffer.alloc(64, 7)], 'bundle.bin', { type: 'application/octet-stream' }))
+    form.append('type', 'encrypted')
+
+    const response = await POST(new Request('http://localhost/api/souls/upload', {
+      method: 'POST',
+      headers: { 'content-length': '256' },
+      body: form,
+    }) as any)
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Bind a Sui wallet before uploading encrypted Soul content',
+    })
+    expect(mockedUploadPublic).not.toHaveBeenCalled()
   })
 
   it('rejects non-file FormData values instead of crashing on arrayBuffer()', async () => {

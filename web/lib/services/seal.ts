@@ -1,9 +1,3 @@
-/**
- * Seal access control integration for Soul releases.
- * Defines the access policy contract, runtime key server config, and helpers
- * to instantiate the Seal client / session keys.
- */
-
 import 'server-only'
 
 import {
@@ -16,8 +10,6 @@ import {
 import type { Signer } from '@mysten/sui/cryptography'
 import { suiClient } from '@web/lib/sui'
 
-// Keep the built-in fallback to a key server we can verify on current testnet.
-// Operators can supply a larger set via NEXT_PUBLIC_SEAL_SERVER_CONFIGS / SEAL_SERVER_CONFIGS.
 const DEFAULT_TESTNET_SEAL_SERVER_CONFIGS: KeyServerConfig[] = [
   {
     objectId: '0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75',
@@ -29,13 +21,16 @@ const DEFAULT_SESSION_TTL_MIN = 10
 
 export interface AccessPolicyDescriptor {
   packageId: string
-  seriesObjectId: string
+  soulObjectId: string
   moduleName: 'seal_policy'
-  functionName: 'seal_approve_perpetual' | 'seal_approve_subscription'
+  functionName: 'seal_approve_owner_in_personal_kiosk' | 'seal_approve_allowlisted'
+  currentKioskId: string | null
+  currentKioskCapOnChainId: string | null
+  allowlistRegistryObjectId: string | null
+  soulAllowlistCapObjectId: string | null
 }
 
 export type SealSessionParams = AccessPolicyDescriptor
-
 export type PublicKeyServerConfig = Pick<KeyServerConfig, 'objectId' | 'weight' | 'aggregatorUrl'>
 
 export interface SealRuntimeConfig {
@@ -55,18 +50,10 @@ function getSealNetwork(): 'testnet' | 'mainnet' {
 
 function parsePositiveInteger(value: string | undefined): number | null {
   if (!value) return null
-
   const trimmed = value.trim()
-  if (!/^\d+$/.test(trimmed)) {
-    return null
-  }
-
+  if (!/^\d+$/.test(trimmed)) return null
   const parsed = Number.parseInt(trimmed, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null
-  }
-
-  return parsed
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
 function normalizeKeyServerConfig(
@@ -74,7 +61,6 @@ function normalizeKeyServerConfig(
   options: { allowCredentials: boolean },
 ): KeyServerConfig | null {
   if (!value || typeof value !== 'object') return null
-
   const candidate = value as Record<string, unknown>
   if (typeof candidate.objectId !== 'string' || candidate.objectId.trim().length === 0) {
     return null
@@ -115,16 +101,10 @@ function parseConfiguredKeyServers(
   rawConfig: string | undefined,
   options: { allowCredentials: boolean; envName: string },
 ): KeyServerConfig[] | null {
-  if (!rawConfig) {
-    return null
-  }
-
+  if (!rawConfig) return null
   try {
     const parsed = JSON.parse(rawConfig)
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-
+    if (!Array.isArray(parsed)) return []
     return parsed
       .map((value) => normalizeKeyServerConfig(value, options))
       .filter((config): config is KeyServerConfig => config != null)
@@ -134,12 +114,8 @@ function parseConfiguredKeyServers(
   }
 }
 
-function mergeKeyServerConfigs(
-  baseConfigs: KeyServerConfig[],
-  overrideConfigs: KeyServerConfig[],
-): KeyServerConfig[] {
+function mergeKeyServerConfigs(baseConfigs: KeyServerConfig[], overrideConfigs: KeyServerConfig[]) {
   const merged = new Map(baseConfigs.map((config) => [config.objectId, { ...config }]))
-
   for (const config of overrideConfigs) {
     const existing = merged.get(config.objectId)
     merged.set(config.objectId, {
@@ -147,11 +123,10 @@ function mergeKeyServerConfigs(
       ...config,
     })
   }
-
   return Array.from(merged.values())
 }
 
-function getConfiguredKeyServers(network: 'testnet' | 'mainnet'): KeyServerConfig[] {
+function getConfiguredKeyServers(network: 'testnet' | 'mainnet') {
   const publicConfigs = parseConfiguredKeyServers(
     process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS,
     { allowCredentials: false, envName: 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' },
@@ -172,16 +147,11 @@ function getConfiguredKeyServers(network: 'testnet' | 'mainnet'): KeyServerConfi
     console.warn('Seal key server config is empty on mainnet')
   }
 
-  if (serverConfigs.length === 0) {
-    return baseConfigs
-  }
-
-  return mergeKeyServerConfigs(baseConfigs, serverConfigs)
+  return serverConfigs.length === 0 ? baseConfigs : mergeKeyServerConfigs(baseConfigs, serverConfigs)
 }
 
-function getThreshold(serverConfigs: KeyServerConfig[], network: 'testnet' | 'mainnet'): number {
+function getThreshold(serverConfigs: KeyServerConfig[], network: 'testnet' | 'mainnet') {
   if (serverConfigs.length === 0) return 0
-
   const configured = parsePositiveInteger(process.env.NEXT_PUBLIC_SEAL_THRESHOLD)
   const threshold = configured == null
     ? Math.min(2, serverConfigs.length)
@@ -194,16 +164,12 @@ function getThreshold(serverConfigs: KeyServerConfig[], network: 'testnet' | 'ma
   return threshold
 }
 
-function getVerifyKeyServers(): boolean {
+function getVerifyKeyServers() {
   return process.env.NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS !== 'false'
 }
 
-function getSoulPackageId(): string {
-  return process.env.NEXT_PUBLIC_SOUL_PACKAGE_ID?.trim() || ''
-}
-
-function getSealCompatibleClient(client?: SealCompatibleClient): SealCompatibleClient {
-  return client ?? suiClient
+function getSoulObjectPackageId() {
+  return process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID?.trim() || ''
 }
 
 function sanitizeKeyServerConfig(config: KeyServerConfig): PublicKeyServerConfig {
@@ -217,7 +183,6 @@ function sanitizeKeyServerConfig(config: KeyServerConfig): PublicKeyServerConfig
 function getCredentialedSealRuntimeConfig(): CredentialedSealRuntimeConfig {
   const network = getSealNetwork()
   const serverConfigs = getConfiguredKeyServers(network)
-
   return {
     network,
     threshold: getThreshold(serverConfigs, network),
@@ -226,9 +191,12 @@ function getCredentialedSealRuntimeConfig(): CredentialedSealRuntimeConfig {
   }
 }
 
+function getSealCompatibleClient(client?: SealCompatibleClient): SealCompatibleClient {
+  return client ?? suiClient
+}
+
 export function getSealRuntimeConfig(): SealRuntimeConfig {
   const runtimeConfig = getCredentialedSealRuntimeConfig()
-
   return {
     network: runtimeConfig.network,
     threshold: runtimeConfig.threshold,
@@ -244,30 +212,61 @@ export function hasCredentialedSealServerConfigs(): boolean {
 }
 
 export function hasSealSessionConfig(): boolean {
-  const packageId = getSoulPackageId()
-  if (!packageId) return false
-
-  return getCredentialedSealRuntimeConfig().serverConfigs.length > 0
+  return Boolean(getSoulObjectPackageId()) && getCredentialedSealRuntimeConfig().serverConfigs.length > 0
 }
 
 function getAccessPolicyDescriptor(
-  seriesObjectId: string,
+  soulObjectId: string,
   functionName: AccessPolicyDescriptor['functionName'],
+  params?: {
+    packageId?: string | null
+    currentKioskId?: string | null
+    currentKioskCapOnChainId?: string | null
+    allowlistRegistryObjectId?: string | null
+  },
 ): AccessPolicyDescriptor {
   return {
-    packageId: getSoulPackageId(),
-    seriesObjectId,
+    packageId: params?.packageId?.trim() || getSoulObjectPackageId(),
+    soulObjectId,
     moduleName: 'seal_policy',
     functionName,
+    currentKioskId: params?.currentKioskId ?? null,
+    currentKioskCapOnChainId: params?.currentKioskCapOnChainId ?? null,
+    allowlistRegistryObjectId: params?.allowlistRegistryObjectId ?? null,
+    soulAllowlistCapObjectId: null,
   }
 }
 
-export function getSealSessionPerpetual(seriesOnChainId: string): SealSessionParams {
-  return getAccessPolicyDescriptor(seriesOnChainId, 'seal_approve_perpetual')
+export function getOwnerSealSession(params: {
+  packageId?: string | null
+  soulObjectId: string
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+}): SealSessionParams {
+  return getAccessPolicyDescriptor(
+    params.soulObjectId,
+    'seal_approve_owner_in_personal_kiosk',
+    {
+      packageId: params.packageId,
+      currentKioskId: params.currentKioskId,
+      currentKioskCapOnChainId: params.currentKioskCapOnChainId,
+    },
+  )
 }
 
-export function getSealSessionSubscription(seriesOnChainId: string): SealSessionParams {
-  return getAccessPolicyDescriptor(seriesOnChainId, 'seal_approve_subscription')
+export function getAllowlistedSealSession(params: {
+  packageId?: string | null
+  soulObjectId: string
+  allowlistRegistryObjectId: string
+}): SealSessionParams {
+  return getAccessPolicyDescriptor(
+    params.soulObjectId,
+    'seal_approve_allowlisted',
+    {
+      packageId: params.packageId,
+      allowlistRegistryObjectId: params.allowlistRegistryObjectId,
+    },
+  )
 }
 
 export function getSealSessionTtlMinutes(): number {
@@ -287,34 +286,27 @@ export function createSealClient(client?: SealCompatibleClient): SealClient {
   })
 }
 
-export async function createSessionKey(params: {
-  address: string
-  signer?: Signer
-  ttlMin?: number
-  packageId?: string
-  client?: SealCompatibleClient
-}): Promise<SessionKey> {
-  const packageId = params.packageId ?? getSoulPackageId()
-  if (!packageId) {
-    throw new Error('NEXT_PUBLIC_SOUL_PACKAGE_ID is required to create a Seal session key')
-  }
-
+export async function createSealSessionKey(
+  signer: Signer,
+  client?: SealCompatibleClient,
+): Promise<SessionKey> {
   return SessionKey.create({
-    address: params.address,
-    packageId,
-    ttlMin: params.ttlMin ?? getSealSessionTtlMinutes(),
-    signer: params.signer,
-    suiClient: getSealCompatibleClient(params.client),
+    address: signer.toSuiAddress(),
+    packageId: getSoulObjectPackageId(),
+    signer,
+    ttlMin: getSealSessionTtlMinutes(),
+    suiClient: getSealCompatibleClient(client),
   })
 }
 
-export function importSessionKey(
-  exported: ExportedSessionKey,
-  params?: { signer?: Signer; client?: SealCompatibleClient },
-): SessionKey {
-  return SessionKey.import(
-    exported,
-    getSealCompatibleClient(params?.client),
-    params?.signer,
-  )
+export async function exportSealSessionKey(
+  signer: Signer,
+  client?: SealCompatibleClient,
+): Promise<ExportedSessionKey> {
+  const sessionKey = await createSealSessionKey(signer, client)
+  return sessionKey.export()
+}
+
+export function importSealSessionKey(exported: ExportedSessionKey): SessionKey {
+  return SessionKey.import(exported, getSealCompatibleClient())
 }
