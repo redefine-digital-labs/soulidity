@@ -60,8 +60,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added `web/lib/desktop/device-session.ts` plus `POST /api/desktop/device/start` and `POST /api/desktop/device/poll`, covering pending/confirmed/expired/invalid code polling semantics; verified with `npm test -- tests/new-web/desktop-device-session.test.ts tests/new-web/desktop-device-routes.test.ts` and `npm run typecheck`."
     },
     {
       "id": "US-005",
