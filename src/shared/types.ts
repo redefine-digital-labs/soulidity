@@ -53,7 +53,6 @@ export interface Member {
   tg_name: string | null
   wallet: string | null
   level: number
-  invite_code: string | null
   avatar: string | null
   bio: string | null
   exp: number

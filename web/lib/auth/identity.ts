@@ -418,7 +418,72 @@ export async function resolvePrivyIdentity(token: string): Promise<Identity | nu
     return identity
   }
 
-  return null
+  // --- Auto-create: open registration ---
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // Check for pending human member to link (TG pre-bound, accountId null)
+      let pendingMember: { id: string } | null = null
+      if (tgId) {
+        pendingMember = await tx.member.findFirst({
+          where: { tgId, kind: 'human', accountId: null },
+          select: { id: true },
+        })
+      }
+
+      const accountData: {
+        privyDid: string
+        email?: string
+        tgId?: string
+        tgName?: string
+      } = { privyDid: claims.userId }
+      if (email) accountData.email = email
+      if (tgId) accountData.tgId = tgId
+      if (tgName) accountData.tgName = tgName
+
+      const account = await tx.account.create({ data: accountData })
+
+      let memberId: string
+      if (pendingMember) {
+        await tx.member.update({
+          where: { id: pendingMember.id },
+          data: { accountId: account.id },
+        })
+        memberId = pendingMember.id
+      } else {
+        const newMember = await tx.member.create({
+          data: { accountId: account.id, kind: 'human' },
+        })
+        memberId = newMember.id
+      }
+
+      return { accountId: account.id, memberId }
+    })
+
+    void ensureSuiWallet(claims.userId, result.memberId, privyUser).catch((error) => {
+      console.error('Failed to schedule Privy Sui wallet sync', {
+        privyUserId: claims.userId,
+        memberId: result.memberId,
+        error,
+      })
+    })
+
+    return {
+      accountId: result.accountId,
+      memberId: result.memberId,
+      kind: 'human',
+    }
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      // Race condition: another request created the account concurrently.
+      // Retry lookup by privyDid — it should exist now.
+      const retryAccount = await findHumanAccount({ privyDid: claims.userId })
+      if (retryAccount) {
+        return toHumanIdentity(retryAccount)
+      }
+    }
+    console.error('Failed to auto-create account', { privyUserId: claims.userId, error })
+    return null
+  }
 }
 
 export async function resolveIdentity(options: ResolveIdentityOptions = {}): Promise<Identity | null> {

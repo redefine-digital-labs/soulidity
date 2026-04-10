@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { handleJoin, handleMark, handleStart, registerHandlers } from '../../src/bot/handlers.js'
 import { createMockPrisma } from '../helpers/mock-prisma.js'
 
@@ -7,6 +7,10 @@ function createMockCtx(overrides: any = {}) {
     from: { id: 123456789 },
     chat: { type: 'private' },
     reply: vi.fn(),
+    api: {
+      createChatInviteLink: vi.fn().mockResolvedValue({ invite_link: 'https://t.me/+test123' }),
+      ...overrides.api,
+    },
     ...overrides,
   }
 }
@@ -14,26 +18,21 @@ function createMockCtx(overrides: any = {}) {
 describe('handleJoin', () => {
   let prisma: ReturnType<typeof createMockPrisma>['prisma']
   let store: ReturnType<typeof createMockPrisma>['store']
+  const originalGroupId = process.env.TG_GROUP_ID
 
   beforeEach(() => {
     const mock = createMockPrisma()
     prisma = mock.prisma
     store = mock.store
+    process.env.TG_GROUP_ID = '-100123'
   })
 
-  it('generates invite code and includes it in prompt', async () => {
-    const ctx = createMockCtx()
-    await handleJoin(ctx as any, prisma)
-    expect(ctx.reply).toHaveBeenCalledTimes(1)
-    const msg = ctx.reply.mock.calls[0][0] as string
-    expect(msg).toContain('123456789')
-    expect(msg).toContain('join-skill.md')
-    expect(msg).toContain('invite_code:')
-    expect(store.inviteCodes).toHaveLength(1)
-    expect(store.inviteCodes[0].code).toHaveLength(16)
-    expect(store.members).toHaveLength(1)
-    expect(store.members[0].tgId).toBe('123456789')
-    expect(store.members[0].inviteCode).toBe(store.inviteCodes[0].code)
+  afterEach(() => {
+    if (originalGroupId === undefined) {
+      delete process.env.TG_GROUP_ID
+    } else {
+      process.env.TG_GROUP_ID = originalGroupId
+    }
   })
 
   it('ignores non-private chats', async () => {
@@ -42,20 +41,13 @@ describe('handleJoin', () => {
     expect(ctx.reply).not.toHaveBeenCalled()
   })
 
-  it('reuses an existing unexpired pending invite code', async () => {
+  it('replies with group invite link for registered user (accountId set)', async () => {
     store.members.push({
       id: 'member-1',
       tgId: '123456789',
-      inviteCode: 'PENDING01',
-      accountId: null,
+      accountId: 'account-1',
+      kind: 'human',
       level: 1,
-      createdAt: new Date(),
-    })
-    store.inviteCodes.push({
-      code: 'PENDING01',
-      active: 0,
-      usedBy: '123456789',
-      expiresAt: new Date(Date.now() + 60_000),
       createdAt: new Date(),
     })
 
@@ -64,94 +56,82 @@ describe('handleJoin', () => {
 
     expect(ctx.reply).toHaveBeenCalledTimes(1)
     const msg = ctx.reply.mock.calls[0][0] as string
-    expect(msg).toContain('PENDING01')
-    expect(store.inviteCodes).toHaveLength(1)
+    expect(msg).toContain('OpenClaw')
+    expect(msg).not.toContain('还没有完成网站注册')
   })
 
-  it('reuses the same code on repeated /join before API verification completes', async () => {
-    const firstCtx = createMockCtx()
-    await handleJoin(firstCtx as any, prisma)
-
-    expect(store.inviteCodes).toHaveLength(1)
-    const firstCode = store.inviteCodes[0].code
-
-    const secondCtx = createMockCtx()
-    await handleJoin(secondCtx as any, prisma)
-
-    expect(store.inviteCodes).toHaveLength(1)
-    expect((secondCtx.reply.mock.calls[0][0] as string)).toContain(firstCode)
-    expect(store.members).toHaveLength(1)
-    expect(store.members[0].inviteCode).toBe(firstCode)
-  })
-
-  it('rotates an expired pending invite code once and then reuses the replacement', async () => {
+  it('replies with group invite link and website hint for pre-bound user (accountId null)', async () => {
     store.members.push({
       id: 'member-1',
       tgId: '123456789',
-      inviteCode: 'EXPIRED01',
       accountId: null,
+      kind: 'human',
       level: 1,
       createdAt: new Date(),
     })
-    store.inviteCodes.push({
-      code: 'EXPIRED01',
-      active: 0,
-      usedBy: '123456789',
-      expiresAt: new Date(Date.now() - 60_000),
-      createdAt: new Date(),
-    })
 
-    const firstCtx = createMockCtx()
-    await handleJoin(firstCtx as any, prisma)
-
-    expect(store.inviteCodes).toHaveLength(2)
-    const replacementCode = store.inviteCodes[1].code
-    expect(replacementCode).toHaveLength(16)
-    expect(store.members[0].inviteCode).toBe(replacementCode)
-    expect((firstCtx.reply.mock.calls[0][0] as string)).toContain(replacementCode)
-
-    const secondCtx = createMockCtx()
-    await handleJoin(secondCtx as any, prisma)
-
-    expect(store.inviteCodes).toHaveLength(2)
-    expect((secondCtx.reply.mock.calls[0][0] as string)).toContain(replacementCode)
-  })
-
-  it('rolls back invite rotation when the pending member update fails', async () => {
-    store.members.push({
-      id: 'member-1',
-      tgId: '123456789',
-      inviteCode: 'EXPIRED01',
-      accountId: null,
-      level: 1,
-      createdAt: new Date(),
-    })
-    store.inviteCodes.push({
-      code: 'EXPIRED01',
-      active: 0,
-      usedBy: '123456789',
-      expiresAt: new Date(Date.now() - 60_000),
-      createdAt: new Date(),
-    })
-
-    prisma.member.upsert.mockRejectedValueOnce(new Error('write failed'))
     const ctx = createMockCtx()
-
     await handleJoin(ctx as any, prisma)
-    expect(store.inviteCodes).toHaveLength(1)
-    expect(store.members[0].inviteCode).toBe('EXPIRED01')
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1)
+    const msg = ctx.reply.mock.calls[0][0] as string
+    expect(msg).toContain('OpenClaw')
+    expect(msg).toContain('还没有完成网站注册')
+  })
+
+  it('rejects user with no human member', async () => {
+    const ctx = createMockCtx()
+    await handleJoin(ctx as any, prisma)
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1)
+    const msg = ctx.reply.mock.calls[0][0] as string
+    expect(msg).toContain('暂时无法领取群邀请链接')
+  })
+
+  it('ignores agent members and rejects if no human member exists', async () => {
+    store.members.push({
+      id: 'agent-1',
+      tgId: '123456789',
+      accountId: 'account-1',
+      kind: 'agent',
+      level: 1,
+      createdAt: new Date(),
+    })
+
+    const ctx = createMockCtx()
+    await handleJoin(ctx as any, prisma)
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1)
+    const msg = ctx.reply.mock.calls[0][0] as string
+    expect(msg).toContain('暂时无法领取群邀请链接')
+  })
+
+  it('replies with error when prisma is unavailable', async () => {
+    const ctx = createMockCtx()
+    await handleJoin(ctx as any, undefined)
     expect(ctx.reply).toHaveBeenCalledWith('系统暂时不可用，请稍后再试')
   })
 
-  it('replies with a friendly error when invite code creation fails', async () => {
+  it('replies with error when Telegram invite link creation fails', async () => {
+    store.members.push({
+      id: 'member-1',
+      tgId: '123456789',
+      accountId: 'account-1',
+      kind: 'human',
+      level: 1,
+      createdAt: new Date(),
+    })
+
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    prisma.$transaction.mockRejectedValueOnce(new Error('db down'))
-    const ctx = createMockCtx()
+    const ctx = createMockCtx({
+      api: { createChatInviteLink: vi.fn().mockRejectedValue(new Error('Bot API error')) },
+    })
 
     await handleJoin(ctx as any, prisma)
 
-    expect(ctx.reply).toHaveBeenCalledWith('系统暂时不可用，请稍后再试')
-    expect(consoleError).toHaveBeenCalledWith('[handleJoin] transaction failed:', expect.any(Error))
+    expect(ctx.reply).toHaveBeenCalledTimes(1)
+    const msg = ctx.reply.mock.calls[0][0] as string
+    expect(msg).toContain('系统暂时不可用')
     consoleError.mockRestore()
   })
 })
@@ -233,15 +213,22 @@ describe('handleStart', () => {
 
   it('triggers join flow when deep link payload is "join"', async () => {
     const mock = createMockPrisma()
+    mock.store.members.push({
+      id: 'member-1',
+      tgId: '123456789',
+      accountId: 'account-1',
+      kind: 'human',
+      level: 1,
+      createdAt: new Date(),
+    })
+    process.env.TG_GROUP_ID = '-100123'
     const ctx = createMockCtx({ match: 'join' })
     await handleStart(ctx as any, mock.prisma)
     expect(ctx.reply).toHaveBeenCalledTimes(1)
     const msg = ctx.reply.mock.calls[0][0] as string
-    expect(msg).toContain('join-skill.md')
-    expect(msg).toContain('123456789')
-    expect(msg).toContain('invite_code:')
+    expect(msg).toContain('OpenClaw')
+    expect(msg).not.toContain('invite_code')
   })
-
 })
 
 describe('registerHandlers', () => {

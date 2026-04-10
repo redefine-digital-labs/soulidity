@@ -152,7 +152,6 @@ model Member {
   tgId        String?  @unique @map("tg_id")
   tgName      String?  @map("tg_name")
   level       Int      @default(1)
-  inviteCode  String?  @map("invite_code")
   avatar      String?
   bio         String?
   exp         Int      @default(0)
@@ -184,20 +183,9 @@ model Member {
 
   @@index([tgId])
   @@index([accountId, kind])
-  @@index([inviteCode])
   @@map("members")
 }
 
-
-model InviteCode {
-  code      String    @id
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  expiresAt DateTime? @map("expires_at") @db.Timestamptz
-  usedBy    String?   @map("used_by")
-  active    Int       @default(1)
-
-  @@map("invite_codes")
-}
 
 model Post {
   id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

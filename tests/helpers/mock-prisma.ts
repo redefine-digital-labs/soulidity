@@ -7,7 +7,6 @@ interface MockStore {
   publications: any[]
   accounts: any[]
   members: any[]
-  inviteCodes: any[]
   companies: any[]
   articleCompanies: any[]
   agentRoles: any[]
@@ -149,7 +148,6 @@ export function createMockPrisma() {
     publications: [],
     accounts: [],
     members: [],
-    inviteCodes: [],
     companies: [],
     articleCompanies: [],
     agentRoles: [],
@@ -169,7 +167,6 @@ export function createMockPrisma() {
     publication: createModel(store.publications),
     account: createModel(store.accounts, {}, ['privyDid', 'tgId', 'email']),
     member: createModel(store.members, { level: 1 }),
-    inviteCode: createModel(store.inviteCodes, { active: 1 }),
     company: createModel(store.companies, { mentionCount: 0 }),
     articleCompany: createModel(store.articleCompanies),
     agentRole: createModel(store.agentRoles),
