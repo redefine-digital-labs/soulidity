@@ -11,7 +11,6 @@ const adminNav = [
   { label: '投稿', href: '/admin/submit' },
   { label: '项目', href: '/admin/companies' },
   { label: '成员', href: '/admin/members' },
-  { label: '邀请码', href: '/admin/invites' },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
