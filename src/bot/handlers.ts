@@ -2,40 +2,12 @@ import type { Bot, Context } from 'grammy'
 import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
 import { getAppBaseUrl } from '../shared/app-config.js'
-import { createInviteCodeRecord } from '../shared/invite-code-record.js'
 
-const JOIN_INVITE_CODE_TTL_MS = 30 * 60 * 1000
-
-function getSkillUrl(): string {
-  return `${getAppBaseUrl()}/join-skill.md`
-}
-
-function buildJoinPrompt(tgId: number, inviteCode: string): string {
-  return `🦞 欢迎加入 OpenClaw 社群！
-
-请将以下内容复制发送给你的 OpenClaw Agent：
-
----
-请执行以下 skill 帮我加入 OpenClaw 社群：
-${getSkillUrl()}
-
-我的验证信息：
-- tg_id: ${tgId}
-- invite_code: ${inviteCode}
----
-
-验证成功后，你将获得：
-1. Telegram 群组邀请链接
-2. 网站注册链接
-
-请先完成验证，再使用返回的注册链接注册网站账号
-（邀请码 30 分钟内有效）`
-}
+const TG_GROUP_ID = () => process.env.TG_GROUP_ID ?? ''
 
 export async function handleStart(ctx: Context, prisma?: PrismaClient): Promise<void> {
   if (ctx.chat?.type !== 'private') return
 
-  // Deep link: /start join → trigger join flow
   const payload = (ctx as any).match
   if (payload === 'join') {
     return handleJoin(ctx, prisma)
@@ -43,7 +15,7 @@ export async function handleStart(ctx: Context, prisma?: PrismaClient): Promise<
   await ctx.reply(
     '🦞 欢迎来到 CryptoOpenClaw！\n\n' +
     '可用命令：\n' +
-    '/join — 验证身份加入社群\n' +
+    '/join — 领取群邀请链接\n' +
     '/start — 显示本帮助'
   )
 }
@@ -58,42 +30,49 @@ export async function handleJoin(ctx: Context, prisma?: PrismaClient): Promise<v
     return
   }
 
-  const existingMember = await prisma.member.findUnique({
-    where: { tgId: String(tgId) },
-    select: { id: true, accountId: true, inviteCode: true },
+  const humanMember = await prisma.member.findFirst({
+    where: { tgId: String(tgId), kind: 'human' },
+    select: { id: true, accountId: true },
   })
-  if (existingMember?.accountId) {
-    await ctx.reply(`你已注册网站账号，请直接登录 ${getAppBaseUrl()}/login`)
+
+  if (!humanMember) {
+    await ctx.reply(
+      '暂时无法领取群邀请链接。\n' +
+      `请先完成网站注册（${getAppBaseUrl()}），或先完成 TG 预绑定流程后再试。`
+    )
     return
   }
 
-  const pendingMember = existingMember?.accountId === null ? existingMember : null
-  if (pendingMember?.inviteCode) {
-    const pendingInvite = await prisma.inviteCode.findUnique({
-      where: { code: pendingMember.inviteCode },
-      select: { expiresAt: true },
-    })
-    if (pendingInvite && (!pendingInvite.expiresAt || pendingInvite.expiresAt >= new Date())) {
-      await ctx.reply(buildJoinPrompt(tgId, pendingMember.inviteCode))
-      return
-    }
+  const groupId = TG_GROUP_ID()
+  if (!groupId) {
+    console.error('[handleJoin] TG_GROUP_ID not configured')
+    await ctx.reply('系统暂时不可用，请稍后再试')
+    return
   }
 
-  const expiresAt = new Date(Date.now() + JOIN_INVITE_CODE_TTL_MS)
+  let inviteLink: string
   try {
-    const code = await prisma.$transaction(async (tx) => {
-      const nextCode = await createInviteCodeRecord(tx, { expiresAt })
-      await tx.member.upsert({
-        where: { tgId: String(tgId) },
-        create: { tgId: String(tgId), accountId: null, inviteCode: nextCode },
-        update: { inviteCode: nextCode },
-      })
-      return nextCode
+    const result = await ctx.api.createChatInviteLink(groupId, {
+      member_limit: 1,
     })
-    await ctx.reply(buildJoinPrompt(tgId, code))
+    inviteLink = result.invite_link
   } catch (error) {
-    console.error('[handleJoin] transaction failed:', error)
+    console.error('[handleJoin] failed to create invite link:', error)
     await ctx.reply('系统暂时不可用，请稍后再试')
+    return
+  }
+
+  if (humanMember.accountId) {
+    await ctx.reply(
+      `🦞 欢迎加入 OpenClaw！\n` +
+      `点击链接加入 Telegram 群：${inviteLink}`
+    )
+  } else {
+    await ctx.reply(
+      `🦞 欢迎加入 OpenClaw！\n` +
+      `点击链接加入 Telegram 群：${inviteLink}\n\n` +
+      `你还没有完成网站注册，可稍后访问：${getAppBaseUrl()}`
+    )
   }
 }
 
@@ -102,7 +81,6 @@ export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<vo
   const fromId = ctx.from?.id
   if (!chatId || !fromId) return
 
-  // Check admin status first to avoid leaking command behavior to non-admins
   const member = await ctx.api.getChatMember(chatId, fromId)
   if (member.status !== 'administrator' && member.status !== 'creator') {
     return
@@ -140,7 +118,6 @@ export function registerHandlers(bot: Bot, prisma: PrismaClient): void {
   })
   bot.command('mark', (ctx) => handleMark(ctx, prisma))
 
-  // Welcome new members joining the group
   bot.on('chat_member', async (ctx) => {
     const { old_chat_member, new_chat_member } = ctx.chatMember
     const wasOut = old_chat_member.status === 'left' || old_chat_member.status === 'kicked'
