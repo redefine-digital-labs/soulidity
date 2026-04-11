@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const OWNER_ADDRESS = `0x${'1'.repeat(64)}`
 const MARKET_CONFIG_ID = `0x${'2'.repeat(64)}`
 const MARKET_PACKAGE_ID = `0x${'3'.repeat(64)}`
+const KIOSK_REGISTRY_ID = `0x${'a'.repeat(64)}`
 const ACTIVE_KIOSK_ID = `0x${'4'.repeat(64)}`
 const ACTIVE_CAP_ID = `0x${'5'.repeat(64)}`
 const STALE_KIOSK_ID = `0x${'6'.repeat(64)}`
@@ -41,6 +42,7 @@ vi.mock('@/lib/soulidity/env', () => ({
   getRequiredSoulidityEnv: vi.fn((key: string) => {
     if (key === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID') return MARKET_CONFIG_ID
     if (key === 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID') return MARKET_PACKAGE_ID
+    if (key === 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID') return KIOSK_REGISTRY_ID
     throw new Error(`Unexpected env key: ${key}`)
   }),
 }))
