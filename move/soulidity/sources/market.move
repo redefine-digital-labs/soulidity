@@ -5,7 +5,9 @@ use kiosk::kiosk_lock_rule;
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
 use kiosk::witness_rule;
+use soulidity::assets;
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
+use soulidity::content_access;
 use soulidity::grant;
 use soulidity::memory;
 use soulidity::skills;
@@ -338,6 +340,12 @@ public fun mint_native_in_personal_kiosk(
     skills_blob: Option<Blob>,
     initial_skill_name: std::string::String,
     skills_public: bool,
+    asset_blob: Option<Blob>,
+    initial_asset_name: std::string::String,
+    asset_public: bool,
+    asset_type: u8,
+    content_access_price_atomic: u64,
+    content_access_default_scope_mask: u64,
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -356,6 +364,12 @@ public fun mint_native_in_personal_kiosk(
         skills_blob,
         initial_skill_name,
         skills_public,
+        asset_blob,
+        initial_asset_name,
+        asset_public,
+        asset_type,
+        content_access_price_atomic,
+        content_access_default_scope_mask,
         creator_royalty_bps,
         soul::provenance_native(),
         option::none(),
@@ -378,6 +392,12 @@ public fun mint_imported_in_personal_kiosk(
     skills_blob: Option<Blob>,
     initial_skill_name: std::string::String,
     skills_public: bool,
+    asset_blob: Option<Blob>,
+    initial_asset_name: std::string::String,
+    asset_public: bool,
+    asset_type: u8,
+    content_access_price_atomic: u64,
+    content_access_default_scope_mask: u64,
     origin_ref: std::string::String,
     creator_royalty_bps: u16,
     clock: &Clock,
@@ -397,6 +417,12 @@ public fun mint_imported_in_personal_kiosk(
         skills_blob,
         initial_skill_name,
         skills_public,
+        asset_blob,
+        initial_asset_name,
+        asset_public,
+        asset_type,
+        content_access_price_atomic,
+        content_access_default_scope_mask,
         creator_royalty_bps,
         soul::provenance_imported(),
         option::some(origin_ref),
@@ -420,6 +446,12 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     skills_blob: Option<Blob>,
     initial_skill_name: std::string::String,
     skills_public: bool,
+    asset_blob: Option<Blob>,
+    initial_asset_name: std::string::String,
+    asset_public: bool,
+    asset_type: u8,
+    content_access_price_atomic: u64,
+    content_access_default_scope_mask: u64,
     origin_ref: std::string::String,
     creator_royalty_bps: u16,
     clock: &Clock,
@@ -440,6 +472,12 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
         skills_blob,
         initial_skill_name,
         skills_public,
+        asset_blob,
+        initial_asset_name,
+        asset_public,
+        asset_type,
+        content_access_price_atomic,
+        content_access_default_scope_mask,
         creator_royalty_bps,
         soul::provenance_personal_join(),
         option::some(origin_ref),
@@ -818,6 +856,12 @@ fun mint_soul_in_personal_kiosk_impl(
     skills_blob: Option<Blob>,
     initial_skill_name: std::string::String,
     skills_public: bool,
+    asset_blob: Option<Blob>,
+    initial_asset_name: std::string::String,
+    asset_public: bool,
+    asset_type: u8,
+    content_access_price_atomic: u64,
+    content_access_default_scope_mask: u64,
     creator_royalty_bps: u16,
     provenance_kind: u8,
     origin_ref: Option<std::string::String>,
@@ -879,6 +923,35 @@ fun mint_soul_in_personal_kiosk_impl(
         skills::share_skills(skills_book);
     };
     skills_blob.destroy_none();
+
+    // Create SoulAssets if asset_blob provided
+    let mut asset_blob = asset_blob;
+    if (asset_blob.is_some()) {
+        let ab = option::extract(&mut asset_blob);
+        let mut assets_book = assets::create(soul_id, ctx);
+        let _ = assets::append_initial_version(
+            &mut assets_book,
+            initial_asset_name,
+            asset_public,
+            asset_type,
+            ab,
+            clock,
+            ctx,
+        );
+        soul::set_assets_id(&mut state, object::id(&assets_book));
+        assets::share_assets(assets_book);
+    };
+    asset_blob.destroy_none();
+
+    // Create ContentAccessList
+    let access_list = content_access::create(
+        soul_id,
+        ctx.sender(),
+        content_access_price_atomic,
+        content_access_default_scope_mask,
+        ctx,
+    );
+    content_access::share_access_list(access_list);
 
     kiosk::lock<Soul>(
         kiosk_obj,

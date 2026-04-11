@@ -21,6 +21,7 @@ const EGrantInvalidScopeMask: u64 = 13;
 const SCOPE_SEAL: u64 = 1;
 const SCOPE_MEMORY: u64 = 2;
 const SCOPE_SKILLS: u64 = 4;
+const SCOPE_ASSETS: u64 = 8;
 
 public struct SoulGrant has key, store {
     id: UID,
@@ -100,6 +101,10 @@ public fun scope_memory(): u64 {
 
 public fun scope_skills(): u64 {
     SCOPE_SKILLS
+}
+
+public fun scope_assets(): u64 {
+    SCOPE_ASSETS
 }
 
 public fun has_scope(self: &SoulGrant, required_scope_mask: u64): bool {
@@ -311,7 +316,7 @@ fun assert_valid_scope_mask(scope_mask: u64) {
 }
 
 fun all_scopes(): u64 {
-    SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS
+    SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS | SCOPE_ASSETS
 }
 
 fun has_required_scope(scope_mask: u64, required_scope_mask: u64): bool {
