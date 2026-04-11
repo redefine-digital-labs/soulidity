@@ -11,5 +11,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     orderBy: { grantedAtMs: 'desc' },
   })
 
-  return NextResponse.json({ accessList: records })
+  const serialized = records.map((r) => ({
+    ...r,
+    pricePaidAtomic: r.pricePaidAtomic.toString(),
+    grantedAtMs: r.grantedAtMs.toString(),
+    expiresAtMs: r.expiresAtMs?.toString() ?? null,
+  }))
+
+  return NextResponse.json({ accessList: serialized })
 }

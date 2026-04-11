@@ -1,11 +1,11 @@
 {
   "testnet": {
-    "packageId": "0x3b2429c1fe94e40d768be50ae6dbad442efe36ec52cd062ea2b59828c22a7baf",
-    "marketConfigId": "0xbcbbc798d49019d8c51af45b3a238a75f716e70802b856ef36d8e2b5550c27b7",
-    "soulTransferPolicyId": "0x615e645b10b6d8dd0ea44874994aa02ddfe2efff94baff2de20290100b3c6332",
-    "collectionTransferPolicyId": "0x0337a0651733184f377c7cf952999af89796ceb43027a606bc50bad16a16b0ca",
+    "packageId": "0x99a384be437277a6d7fb5e14b0897fb3c47976ad12ae73fba199bcaac842b678",
+    "marketConfigId": "0x54394417f55d25e590536bd0a1defbcbc802eb1c1c9ba2d833cf5f32fdb61c98",
+    "soulTransferPolicyId": "0xaaaa809ff6733f8bc052b90e0867dfb687ca2339a1c4cca18d7f61fd755fb246",
+    "collectionTransferPolicyId": "0x6aee7fe52358d5ce2ebfea2a1a43395ef886c5f74b7c01a882f4ef343e6baeb2",
     "paymentCoinType": "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC",
-    "publishTxDigest": "6XqMK1KoLFXTP4gg4rVraN4vqzTJ28kQp7iPR7wkhdLd",
-    "upgradeCapId": "0xde091a97cc589c5124ab552aa0ab23ca2f5458626ae11627e6113c03a23a9753"
+    "publishTxDigest": "",
+    "upgradeCapId": "0x207eed79c7478e2e86da2e5250cbfda73a28d90046cd4188ac8c4a8d902f830e"
   }
 }
