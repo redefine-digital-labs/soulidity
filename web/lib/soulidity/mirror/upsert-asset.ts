@@ -11,7 +11,7 @@ export async function upsertAssetVersionProjection(params: {
 }) {
   return prisma.soulAssetVersionRecord.upsert({
     where: {
-      soul_asset_version_unique: {
+      assetsOnChainId_assetName_versionIndex: {
         assetsOnChainId: params.assetsOnChainId,
         assetName: params.version.assetName,
         versionIndex: params.version.versionIndex,

@@ -12,7 +12,7 @@ export async function upsertContentAccessProjection(params: {
 }) {
   return prisma.contentAccessRecord.upsert({
     where: {
-      content_access_unique: {
+      accessListOnChainId_granteeAddress: {
         accessListOnChainId: params.accessListOnChainId,
         granteeAddress: params.granteeAddress,
       },
@@ -42,7 +42,7 @@ export async function markContentAccessRevoked(params: {
 }) {
   return prisma.contentAccessRecord.update({
     where: {
-      content_access_unique: {
+      accessListOnChainId_granteeAddress: {
         accessListOnChainId: params.accessListOnChainId,
         granteeAddress: params.granteeAddress,
       },

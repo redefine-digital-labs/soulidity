@@ -17,6 +17,8 @@ const MEMORY_DOCUMENT_ID_DOMAIN = 'soul-memory:'
 const MEMORY_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x4d)
 const SKILL_DOCUMENT_ID_DOMAIN = 'soul-skill:'
 const SKILL_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
+const ASSET_DOCUMENT_ID_DOMAIN = 'soul-asset:'
+const ASSET_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
 const MAX_ENCRYPTED_DEK_BASE64_LENGTH = 16 * 1024
 
 export interface SealEnvelopeSidecar {
@@ -383,6 +385,29 @@ export function generateMemoryDocumentId(memoryObjectId: string, timestampKey: n
     ...memoryBytes,
     ...timestampBytes,
     ...MEMORY_DOCUMENT_ID_NONCE,
+  ]))
+}
+
+export function generateAssetDocumentIdForVersion(
+  assetsObjectId: string,
+  assetName: string,
+  versionIndex: number,
+): string {
+  if (!assetName.trim()) {
+    throw new Error('assetName is required')
+  }
+
+  const assetsBytes = hexToBytes(assetsObjectId)
+  const assetNameBytes = new TextEncoder().encode(assetName.trim())
+  const versionBytes = u64ToBytes(versionIndex)
+  return bytesToHex(new Uint8Array([
+    ...new TextEncoder().encode(ASSET_DOCUMENT_ID_DOMAIN),
+    DOCUMENT_ID_VERSION,
+    ...assetsBytes,
+    ...assetNameBytes,
+    0x00,
+    ...versionBytes,
+    ...ASSET_DOCUMENT_ID_NONCE,
   ]))
 }
 
