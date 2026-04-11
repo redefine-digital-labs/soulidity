@@ -54,6 +54,7 @@ export interface SoulStateObject {
   memoryId?: string | null
   skillsId: string | null
   assetsId: string | null
+  accessListId: string | null
   collectionId: string | null
 }
 

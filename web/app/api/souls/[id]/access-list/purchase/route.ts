@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { prisma } from '@web/lib/prisma'
-import { extractContentAccessGrantedEvent } from '@/lib/soulidity/events'
+import { extractMatchedContentAccessGrantedEvent, extractContentAccessPurchasedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
@@ -67,30 +67,40 @@ export async function POST(
       return senderError
     }
 
-    const event = extractContentAccessGrantedEvent(transaction, packageId)
-    if (event.soulId !== soul.onChainId) {
-      return NextResponse.json({ error: 'Transaction granted access to a different Soul' }, { status: 422 })
+    // Require market::ContentAccessPurchased as proof of paid purchase (not just content_access::ContentAccessGranted which manual add_access also emits)
+    const purchaseEvent = extractContentAccessPurchasedEvent(transaction, packageId)
+    if (purchaseEvent.soulId !== soul.onChainId) {
+      return NextResponse.json({ error: 'Transaction purchased access to a different Soul' }, { status: 422 })
     }
+
+    // Cross-check the paired ContentAccessGranted event for scope details
+    // Match by access_list_id + grantee to avoid picking up unrelated grant events in multi-call PTBs
+    const grantEvent = extractMatchedContentAccessGrantedEvent(
+      transaction,
+      packageId,
+      purchaseEvent.accessListId,
+      purchaseEvent.buyer,
+    )
 
     await prisma.contentAccessRecord.upsert({
       where: {
         accessListOnChainId_granteeAddress: {
           accessListOnChainId: soul.accessListOnChainId,
-          granteeAddress: event.grantee,
+          granteeAddress: purchaseEvent.buyer,
         },
       },
       update: {
-        scopeMask: event.scopeMask,
-        pricePaidAtomic: BigInt(event.pricePaidAtomic),
+        scopeMask: grantEvent.scopeMask,
+        pricePaidAtomic: purchaseEvent.priceAtomic,
         grantedAtMs: BigInt(Date.now()),
         revokedAt: null,
       },
       create: {
         soulOnChainId: soul.onChainId,
         accessListOnChainId: soul.accessListOnChainId,
-        granteeAddress: event.grantee,
-        scopeMask: event.scopeMask,
-        pricePaidAtomic: BigInt(event.pricePaidAtomic),
+        granteeAddress: purchaseEvent.buyer,
+        scopeMask: grantEvent.scopeMask,
+        pricePaidAtomic: purchaseEvent.priceAtomic,
         grantedAtMs: BigInt(Date.now()),
       },
     })
@@ -98,9 +108,9 @@ export async function POST(
     const responseBody = {
       txDigest,
       soulOnChainId: soul.onChainId,
-      grantee: event.grantee,
-      scopeMask: event.scopeMask,
-      pricePaidAtomic: event.pricePaidAtomic.toString(),
+      grantee: purchaseEvent.buyer,
+      scopeMask: grantEvent.scopeMask,
+      pricePaidAtomic: purchaseEvent.priceAtomic.toString(),
     }
 
     await storeSoulidityTxSync({

@@ -79,6 +79,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const kioskPackageId = process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID?.trim() || '0x2'
   const buyerKioskId = params.buyerKioskId?.trim()
   const buyerKioskCapOnChainId = params.buyerKioskCapOnChainId?.trim()
@@ -92,6 +93,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
       target: `${packageId}::market::ensure_personal_kiosk_registered`,
       arguments: [
         tx.object(marketConfigId),
+        tx.object(kioskRegistryId),
         tx.object(buyerKioskCapOnChainId),
       ],
     })
@@ -117,6 +119,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
     target: `${packageId}::market::register_existing_personal_kiosk`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
       buyerPersonalKioskCap,
     ],
   })

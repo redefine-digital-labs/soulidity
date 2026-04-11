@@ -53,6 +53,7 @@ export async function syncSoulProjectionFromChain(params: {
         marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
         marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
         ownerAddress: state.currentOwnerAddress,
+        kioskRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'),
       })
       if (registered) {
         kioskCapOnChainId = registered.kioskCapOnChainId

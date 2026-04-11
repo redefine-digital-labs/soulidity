@@ -66,6 +66,7 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const personalKiosk = buildBuyerKioskArgs(tx, {
@@ -76,6 +77,7 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
     target: `${packageId}::market::mint_imported_in_personal_kiosk`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
       tx.object(transferPolicyId),
       personalKiosk.buyerKiosk,
       personalKiosk.buyerKioskCap,

@@ -5,7 +5,7 @@ use std::string;
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
 use soulidity::grant::{Self as grant, SoulGrant};
-use soulidity::market::{Self as market, CollectionListing, MarketConfig, SoulListing};
+use soulidity::market::{Self as market, CollectionListing, KioskRegistry, MarketConfig, SoulListing};
 use soulidity::memory::{Self as memory, SoulMemory};
 use soulidity::skills::{Self as skills, SoulSkills};
 use soulidity::seal_policy;
@@ -204,9 +204,11 @@ fun init_personal_kiosk_for_sender(scenario: &mut ts::Scenario, sender: address)
     let kiosk_id: ID;
     ts::next_tx(scenario, sender);
     {
-        let mut config: MarketConfig = ts::take_shared(scenario);
-        kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(scenario));
+        let config: MarketConfig = ts::take_shared(scenario);
+        let mut registry: KioskRegistry = ts::take_shared(scenario);
+        kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
     kiosk_id
 }
@@ -227,6 +229,7 @@ fun mint_usdc_to_recipient(
 
 fun mint_native_in_personal_kiosk_no_skills(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -242,6 +245,7 @@ fun mint_native_in_personal_kiosk_no_skills(
     let clock_obj: Clock = ts::take_shared(scenario);
     let soul_id = market::mint_native_in_personal_kiosk(
         config,
+        registry,
         soul_policy,
         kiosk_obj,
         personal_kiosk_cap,
@@ -270,6 +274,7 @@ fun mint_native_in_personal_kiosk_no_skills(
 
 fun mint_imported_in_personal_kiosk_no_skills(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -286,6 +291,7 @@ fun mint_imported_in_personal_kiosk_no_skills(
     let clock_obj: Clock = ts::take_shared(scenario);
     let soul_id = market::mint_imported_in_personal_kiosk(
         config,
+        registry,
         soul_policy,
         kiosk_obj,
         personal_kiosk_cap,
@@ -315,6 +321,7 @@ fun mint_imported_in_personal_kiosk_no_skills(
 
 fun mint_joined_in_personal_kiosk_no_skills<T: key + store>(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -332,6 +339,7 @@ fun mint_joined_in_personal_kiosk_no_skills<T: key + store>(
     let clock_obj: Clock = ts::take_shared(scenario);
     let soul_id = market::mint_joined_in_personal_kiosk<T>(
         config,
+        registry,
         soul_policy,
         kiosk_obj,
         personal_kiosk_cap,
@@ -427,9 +435,11 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        creator_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        creator_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::next_tx(&mut scenario, admin);
@@ -446,6 +456,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -453,6 +464,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -467,6 +479,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -506,19 +519,23 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
 
     ts::next_tx(&mut scenario, buyer);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        buyer_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        buyer_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
         let _listing_id = market::list_soul_fixed_price(
             &config,
+            &registry,
             &mut creator_kiosk,
             &personal_cap,
             &state,
@@ -528,6 +545,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(state);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -548,6 +566,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
     ts::next_tx(&mut scenario, buyer);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
         let mut listing: SoulListing = ts::take_shared(&scenario);
@@ -558,6 +577,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
 
         market::buy_soul_fixed_price(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &mut buyer_kiosk,
@@ -575,6 +595,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
         assert!(!has_active_grantee(&state, agent), 4);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(state);
         ts::return_shared(listing);
@@ -618,9 +639,11 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        creator_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        creator_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::next_tx(&mut scenario, admin);
@@ -631,6 +654,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -638,6 +662,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -652,6 +677,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -660,11 +686,13 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
         let _collection_id = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -677,6 +705,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -693,20 +722,24 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
     ts::next_tx(&mut scenario, holder);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        holder_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        holder_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_obj: SoulCollection = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
         let right_id = collection::right_id(&collection_obj);
         let _listing_id = market::list_collection_right_fixed_price(
             &config,
+            &registry,
             &collection_obj,
             &mut creator_kiosk,
             &personal_cap,
@@ -716,6 +749,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_obj);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -731,6 +765,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
     ts::next_tx(&mut scenario, holder);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut listing: CollectionListing = ts::take_shared(&scenario);
@@ -741,6 +776,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
         market::buy_collection_right_fixed_price(
             &config,
+            &registry,
             &collection_policy,
             &mut collection_obj,
             &mut creator_kiosk,
@@ -754,6 +790,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
         assert!(collection::current_holder(&collection_obj) == holder, 0);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(collection_obj);
         ts::return_shared(listing);
@@ -764,20 +801,24 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
     ts::next_tx(&mut scenario, buyer);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        buyer_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        buyer_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_obj: SoulCollection = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
         let _listing_id = market::list_soul_fixed_price_with_collection(
             &config,
+            &registry,
             &collection_obj,
             &mut creator_kiosk,
             &personal_cap,
@@ -788,6 +829,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_obj);
         ts::return_shared(state);
         ts::return_shared(creator_kiosk);
@@ -811,6 +853,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
     ts::next_tx(&mut scenario, buyer);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
@@ -822,6 +865,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
         market::buy_soul_fixed_price_with_collection(
             &config,
+            &registry,
             &soul_policy,
             &mut collection_obj,
             &mut creator_kiosk,
@@ -834,6 +878,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(collection_obj);
         ts::return_shared(state);
@@ -876,6 +921,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -883,6 +929,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -897,6 +944,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -905,12 +953,14 @@ fun creator_cannot_bind_collection_after_soul_sale() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::list_soul_fixed_price(
             &config,
+            &registry,
             &mut creator_kiosk,
             &personal_cap,
             &state,
@@ -920,6 +970,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(state);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -935,6 +986,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
     ts::next_tx(&mut scenario, buyer);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
         let mut listing: SoulListing = ts::take_shared(&scenario);
@@ -945,6 +997,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
 
         market::buy_soul_fixed_price(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &mut buyer_kiosk,
@@ -956,6 +1009,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(state);
         ts::return_shared(listing);
@@ -973,12 +1027,14 @@ fun creator_cannot_bind_collection_after_soul_sale() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -991,6 +1047,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1028,6 +1085,7 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1035,6 +1093,7 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1049,6 +1108,7 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1057,12 +1117,14 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1075,6 +1137,7 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1092,6 +1155,7 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_obj: SoulCollection = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
@@ -1099,6 +1163,7 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
 
         let _ = market::list_soul_fixed_price_with_collection(
             &config,
+            &registry,
             &collection_obj,
             &mut creator_kiosk,
             &personal_cap,
@@ -1125,9 +1190,11 @@ fun import_and_personal_join_set_expected_provenance() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        creator_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        creator_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::next_tx(&mut scenario, admin);
@@ -1144,6 +1211,7 @@ fun import_and_personal_join_set_expected_provenance() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1158,6 +1226,7 @@ fun import_and_personal_join_set_expected_provenance() {
 
         imported_id = mint_imported_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1173,6 +1242,7 @@ fun import_and_personal_join_set_expected_provenance() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1191,6 +1261,7 @@ fun import_and_personal_join_set_expected_provenance() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1198,6 +1269,7 @@ fun import_and_personal_join_set_expected_provenance() {
 
         let joined_id = mint_joined_in_personal_kiosk_no_skills<SourceNft>(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1223,6 +1295,7 @@ fun import_and_personal_join_set_expected_provenance() {
         assert!(kiosk::has_item_with_type<SourceNft>(&creator_kiosk, source_id), 6);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1256,6 +1329,7 @@ fun native_soul_mint_creates_state_memory_and_founding_entry() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1264,6 +1338,7 @@ fun native_soul_mint_creates_state_memory_and_founding_entry() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1281,6 +1356,7 @@ fun native_soul_mint_creates_state_memory_and_founding_entry() {
         assert!(soul::provenance_kind(soul_ref) == soul::provenance_native_for_testing(), 0);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1328,6 +1404,7 @@ fun collection_creation_and_binding_track_current_holder_and_state() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1335,6 +1412,7 @@ fun collection_creation_and_binding_track_current_holder_and_state() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1349,6 +1427,7 @@ fun collection_creation_and_binding_track_current_holder_and_state() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1357,12 +1436,14 @@ fun collection_creation_and_binding_track_current_holder_and_state() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         collection_id = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1375,6 +1456,7 @@ fun collection_creation_and_binding_track_current_holder_and_state() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1413,12 +1495,14 @@ fun non_tradeable_collection_cannot_be_listed() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1431,6 +1515,7 @@ fun non_tradeable_collection_cannot_be_listed() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1439,6 +1524,7 @@ fun non_tradeable_collection_cannot_be_listed() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_obj: SoulCollection = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1446,6 +1532,7 @@ fun non_tradeable_collection_cannot_be_listed() {
 
         market::list_collection_right_fixed_price(
             &config,
+            &registry,
             &collection_obj,
             &mut creator_kiosk,
             &personal_cap,
@@ -1478,6 +1565,7 @@ fun grant_issue_sets_active_grantee_and_metadata() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1485,6 +1573,7 @@ fun grant_issue_sets_active_grantee_and_metadata() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1499,6 +1588,7 @@ fun grant_issue_sets_active_grantee_and_metadata() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1552,6 +1642,7 @@ fun reissued_grant_for_same_grantee_invalidates_old_grant() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1559,6 +1650,7 @@ fun reissued_grant_for_same_grantee_invalidates_old_grant() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1573,6 +1665,7 @@ fun reissued_grant_for_same_grantee_invalidates_old_grant() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1638,6 +1731,7 @@ fun revoked_grant_cannot_be_used_for_seal() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1645,6 +1739,7 @@ fun revoked_grant_cannot_be_used_for_seal() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1659,6 +1754,7 @@ fun revoked_grant_cannot_be_used_for_seal() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1726,6 +1822,7 @@ fun expired_grant_cannot_append_memory() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1733,6 +1830,7 @@ fun expired_grant_cannot_append_memory() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1747,6 +1845,7 @@ fun expired_grant_cannot_append_memory() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1808,6 +1907,7 @@ fun listing_keeps_grant_active_before_and_after_cancel() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1815,6 +1915,7 @@ fun listing_keeps_grant_active_before_and_after_cancel() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1829,6 +1930,7 @@ fun listing_keeps_grant_active_before_and_after_cancel() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1845,11 +1947,13 @@ fun listing_keeps_grant_active_before_and_after_cancel() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
         let _listing_id = market::list_soul_fixed_price(
             &config,
+            &registry,
             &mut creator_kiosk,
             &personal_cap,
             &state,
@@ -1863,6 +1967,7 @@ fun listing_keeps_grant_active_before_and_after_cancel() {
         assert!(has_active_grantee(&state, agent), 22);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(state);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -1957,6 +2062,7 @@ fun memory_append_by_owner_and_granted_agent_is_monotonic() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1964,6 +2070,7 @@ fun memory_append_by_owner_and_granted_agent_is_monotonic() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -1978,6 +2085,7 @@ fun memory_append_by_owner_and_granted_agent_is_monotonic() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2084,6 +2192,7 @@ fun unauthorized_memory_append_as_owner_fails() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2091,6 +2200,7 @@ fun unauthorized_memory_append_as_owner_fails() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2105,6 +2215,7 @@ fun unauthorized_memory_append_as_owner_fails() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2149,6 +2260,7 @@ fun owner_seal_approval_rejects_invalid_document_id() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2156,6 +2268,7 @@ fun owner_seal_approval_rejects_invalid_document_id() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2170,6 +2283,7 @@ fun owner_seal_approval_rejects_invalid_document_id() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2220,6 +2334,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2227,6 +2342,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2241,6 +2357,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2249,6 +2366,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2268,6 +2386,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
 
         let _ = market::list_soul_fixed_price(
             &config,
+            &registry,
             &mut creator_kiosk,
             &personal_cap,
             &state,
@@ -2277,6 +2396,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(state);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2287,6 +2407,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
     ts::next_tx(&mut scenario, buyer);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
         let mut listing: SoulListing = ts::take_shared(&scenario);
@@ -2297,6 +2418,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
 
         market::buy_soul_fixed_price(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &mut buyer_kiosk,
@@ -2311,6 +2433,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
         assert!(soul::current_kiosk_id(&state) == buyer_kiosk_id, 36);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(state);
         ts::return_shared(listing);
@@ -2355,6 +2478,7 @@ fun secondary_sale_pays_creator_royalty() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2362,6 +2486,7 @@ fun secondary_sale_pays_creator_royalty() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2376,6 +2501,7 @@ fun secondary_sale_pays_creator_royalty() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2384,12 +2510,14 @@ fun secondary_sale_pays_creator_royalty() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::list_soul_fixed_price(
             &config,
+            &registry,
             &mut creator_kiosk,
             &personal_cap,
             &state,
@@ -2399,6 +2527,7 @@ fun secondary_sale_pays_creator_royalty() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(state);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2414,6 +2543,7 @@ fun secondary_sale_pays_creator_royalty() {
     ts::next_tx(&mut scenario, seller);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
         let mut listing: SoulListing = ts::take_shared(&scenario);
@@ -2424,6 +2554,7 @@ fun secondary_sale_pays_creator_royalty() {
 
         market::buy_soul_fixed_price(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &mut seller_kiosk,
@@ -2438,6 +2569,7 @@ fun secondary_sale_pays_creator_royalty() {
         assert!(soul::current_kiosk_id(&state) == seller_kiosk_id, 31);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(state);
         ts::return_shared(listing);
@@ -2455,12 +2587,14 @@ fun secondary_sale_pays_creator_royalty() {
     ts::next_tx(&mut scenario, seller);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, seller_kiosk_id);
 
         let _ = market::list_soul_fixed_price(
             &config,
+            &registry,
             &mut seller_kiosk,
             &personal_cap,
             &state,
@@ -2472,6 +2606,7 @@ fun secondary_sale_pays_creator_royalty() {
         assert!(soul::current_owner(&state) == seller, 32);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(state);
         ts::return_shared(seller_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2487,6 +2622,7 @@ fun secondary_sale_pays_creator_royalty() {
     ts::next_tx(&mut scenario, buyer);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
         let mut listing: SoulListing = ts::take_shared(&scenario);
@@ -2497,6 +2633,7 @@ fun secondary_sale_pays_creator_royalty() {
 
         market::buy_soul_fixed_price(
             &config,
+            &registry,
             &soul_policy,
             &mut seller_kiosk,
             &mut buyer_kiosk,
@@ -2511,6 +2648,7 @@ fun secondary_sale_pays_creator_royalty() {
         assert!(soul::current_kiosk_id(&state) == buyer_kiosk_id, 34);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(state);
         ts::return_shared(listing);
@@ -2564,6 +2702,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2571,6 +2710,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2585,6 +2725,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2593,12 +2734,14 @@ fun collection_holder_cannot_append_memory_as_owner() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2611,6 +2754,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2628,12 +2772,14 @@ fun collection_holder_cannot_append_memory_as_owner() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_obj: SoulCollection = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::list_collection_right_fixed_price(
             &config,
+            &registry,
             &collection_obj,
             &mut creator_kiosk,
             &personal_cap,
@@ -2643,6 +2789,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_obj);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2653,6 +2800,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
     ts::next_tx(&mut scenario, holder);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let state: SoulState = ts::take_shared(&scenario);
@@ -2664,6 +2812,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
 
         market::buy_collection_right_fixed_price(
             &config,
+            &registry,
             &collection_policy,
             &mut collection_obj,
             &mut creator_kiosk,
@@ -2678,6 +2827,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
         assert!(soul::current_owner(&state) == creator, 38);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(collection_obj);
         ts::return_shared(state);
@@ -2729,6 +2879,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2736,6 +2887,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
 
         soul_id = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2750,6 +2902,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2758,12 +2911,14 @@ fun collection_holder_cannot_approve_seal_as_owner() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2776,6 +2931,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2793,12 +2949,14 @@ fun collection_holder_cannot_approve_seal_as_owner() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_obj: SoulCollection = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::list_collection_right_fixed_price(
             &config,
+            &registry,
             &collection_obj,
             &mut creator_kiosk,
             &personal_cap,
@@ -2808,6 +2966,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_obj);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2818,6 +2977,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
     ts::next_tx(&mut scenario, holder);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut listing: CollectionListing = ts::take_shared(&scenario);
@@ -2828,6 +2988,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
 
         market::buy_collection_right_fixed_price(
             &config,
+            &registry,
             &collection_policy,
             &mut collection_obj,
             &mut creator_kiosk,
@@ -2841,6 +3002,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
         assert!(collection::current_holder(&collection_obj) == holder, 39);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(collection_obj);
         ts::return_shared(listing);
@@ -2883,6 +3045,7 @@ fun non_creator_cannot_add_soul_to_collection() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -2890,6 +3053,7 @@ fun non_creator_cannot_add_soul_to_collection() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2904,6 +3068,7 @@ fun non_creator_cannot_add_soul_to_collection() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2912,12 +3077,14 @@ fun non_creator_cannot_add_soul_to_collection() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         let _ = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2930,6 +3097,7 @@ fun non_creator_cannot_add_soul_to_collection() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2967,12 +3135,14 @@ fun collection_creator_cannot_add_soul_from_other_creator() {
     ts::next_tx(&mut scenario, collection_creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, collection_creator_kiosk_id);
 
         let _ = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -2985,6 +3155,7 @@ fun collection_creator_cannot_add_soul_from_other_creator() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -2993,6 +3164,7 @@ fun collection_creator_cannot_add_soul_from_other_creator() {
     ts::next_tx(&mut scenario, soul_creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, soul_creator_kiosk_id);
@@ -3000,6 +3172,7 @@ fun collection_creator_cannot_add_soul_from_other_creator() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3014,6 +3187,7 @@ fun collection_creator_cannot_add_soul_from_other_creator() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -3050,6 +3224,7 @@ fun soul_cannot_bind_collection_twice() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -3057,6 +3232,7 @@ fun soul_cannot_bind_collection_twice() {
 
         let _ = mint_native_in_personal_kiosk_no_skills(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3071,6 +3247,7 @@ fun soul_cannot_bind_collection_twice() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -3079,12 +3256,14 @@ fun soul_cannot_bind_collection_twice() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         first_collection_id = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3097,6 +3276,7 @@ fun soul_cannot_bind_collection_twice() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -3105,12 +3285,14 @@ fun soul_cannot_bind_collection_twice() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         second_collection_id = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3123,6 +3305,7 @@ fun soul_cannot_bind_collection_twice() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -3168,6 +3351,7 @@ fun multiple_active_grants_respect_capacity() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -3176,6 +3360,7 @@ fun multiple_active_grants_respect_capacity() {
 
         let _ = market::mint_native_in_personal_kiosk(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3200,6 +3385,7 @@ fun multiple_active_grants_respect_capacity() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         ts::return_shared(clock_obj);
@@ -3262,6 +3448,7 @@ fun grant_issue_rejects_unknown_scope_bits() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -3270,6 +3457,7 @@ fun grant_issue_rejects_unknown_scope_bits() {
 
         let _ = market::mint_native_in_personal_kiosk(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3294,6 +3482,7 @@ fun grant_issue_rejects_unknown_scope_bits() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         ts::return_shared(clock_obj);
@@ -3335,12 +3524,14 @@ fun collection_listing_rejects_mismatched_right_id() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         first_collection_id = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3353,6 +3544,7 @@ fun collection_listing_rejects_mismatched_right_id() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -3361,12 +3553,14 @@ fun collection_listing_rejects_mismatched_right_id() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
 
         second_collection_id = market::create_collection_in_personal_kiosk(
             &config,
+            &registry,
             &collection_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3379,6 +3573,7 @@ fun collection_listing_rejects_mismatched_right_id() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(collection_policy);
         ts::return_shared(creator_kiosk);
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
@@ -3387,6 +3582,7 @@ fun collection_listing_rejects_mismatched_right_id() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let first_collection: SoulCollection = ts::take_shared_by_id(&scenario, first_collection_id);
         let second_collection: SoulCollection = ts::take_shared_by_id(&scenario, second_collection_id);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
@@ -3394,6 +3590,7 @@ fun collection_listing_rejects_mismatched_right_id() {
 
         let _ = market::list_collection_right_fixed_price(
             &config,
+            &registry,
             &first_collection,
             &mut creator_kiosk,
             &personal_cap,
@@ -3435,6 +3632,7 @@ fun founding_memory_uses_real_clock_timestamp_and_optional_skills_init() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -3445,6 +3643,7 @@ fun founding_memory_uses_real_clock_timestamp_and_optional_skills_init() {
 
         let _ = market::mint_native_in_personal_kiosk(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3469,6 +3668,7 @@ fun founding_memory_uses_real_clock_timestamp_and_optional_skills_init() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         ts::return_shared(clock_obj);
@@ -3523,6 +3723,7 @@ fun skills_versions_are_indexed_by_skill_name_and_version_index() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -3532,6 +3733,7 @@ fun skills_versions_are_indexed_by_skill_name_and_version_index() {
 
         let _ = market::mint_native_in_personal_kiosk(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3556,6 +3758,7 @@ fun skills_versions_are_indexed_by_skill_name_and_version_index() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         ts::return_shared(clock_obj);
@@ -3635,6 +3838,7 @@ fun owner_memory_seal_approval_uses_memory_id_and_timestamp_key() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -3644,6 +3848,7 @@ fun owner_memory_seal_approval_uses_memory_id_and_timestamp_key() {
 
         let _ = market::mint_native_in_personal_kiosk(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3668,6 +3873,7 @@ fun owner_memory_seal_approval_uses_memory_id_and_timestamp_key() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         ts::return_shared(clock_obj);
@@ -3720,6 +3926,7 @@ fun skills_private_read_and_delete_use_skill_name_and_version_index() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -3729,6 +3936,7 @@ fun skills_private_read_and_delete_use_skill_name_and_version_index() {
 
         let _ = market::mint_native_in_personal_kiosk(
             &config,
+            &registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -3753,6 +3961,7 @@ fun skills_private_read_and_delete_use_skill_name_and_version_index() {
         );
 
         ts::return_shared(config);
+        ts::return_shared(registry);
         ts::return_shared(soul_policy);
         ts::return_shared(creator_kiosk);
         ts::return_shared(clock_obj);
@@ -3814,9 +4023,11 @@ fun stale_personal_kiosk_registration_can_be_rebound_to_current_cap() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        original_kiosk_id = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        original_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::next_tx(&mut scenario, creator);
@@ -3836,17 +4047,19 @@ fun stale_personal_kiosk_registration_can_be_rebound_to_current_cap() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
         let replacement_personal_cap: PersonalKioskCap =
             ts::take_from_sender_by_id(&scenario, replacement_cap_id);
 
         market::ensure_personal_kiosk_registered(
-            &mut config,
+            &config,
+            &mut registry,
             &replacement_personal_cap,
             ts::ctx(&mut scenario),
         );
         let rebound_kiosk_id = market::reuse_personal_kiosk(
-            &config,
+            &registry,
             replacement_personal_cap,
             ts::ctx(&mut scenario),
         );
@@ -3855,6 +4068,7 @@ fun stale_personal_kiosk_registration_can_be_rebound_to_current_cap() {
         assert!(rebound_kiosk_id != original_kiosk_id, 107);
 
         ts::return_shared(config);
+        ts::return_shared(registry);
     };
 
     ts::end(scenario);
@@ -3880,8 +4094,9 @@ fun paused_market_blocks_kiosk_registration() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        let _ = market::init_personal_kiosk(&mut config, ts::ctx(&mut scenario));
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
+        let _ = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
 
         abort 105
     }

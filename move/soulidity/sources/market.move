@@ -44,6 +44,7 @@ const EPersonalKioskMismatch: u64 = 14;
 const ECollectionMismatch: u64 = 15;
 const ECollectionRightMismatch: u64 = 16;
 const EStateMismatch: u64 = 18;
+const EAccessListStateMismatch: u64 = 19;
 
 public struct MARKET has drop {}
 
@@ -56,6 +57,10 @@ public struct MarketConfig has key {
     fee_recipient: address,
     platform_fee_bps: u16,
     paused: bool,
+}
+
+public struct KioskRegistry has key {
+    id: UID,
 }
 
 public struct SoulListing has key, store {
@@ -98,6 +103,7 @@ public struct CollectionMarketProof has drop {}
 
 public struct MarketInitialized has copy, drop {
     config_id: ID,
+    registry_id: ID,
     soul_policy_id: ID,
     collection_policy_id: ID,
     admin: address,
@@ -188,6 +194,15 @@ public struct CollectionPurchased has copy, drop {
     platform_fee: u64,
 }
 
+public struct ContentAccessPurchased has copy, drop {
+    soul_id: ID,
+    access_list_id: ID,
+    buyer: address,
+    price: u64,
+    platform_fee: u64,
+    payment_recipient: address,
+}
+
 fun init(otw: MARKET, ctx: &mut TxContext) {
     init_impl(package::claim(otw, ctx), ctx.sender(), ctx)
 }
@@ -238,6 +253,16 @@ public fun quote_collection_purchase(
     (platform_fee, price, total as u64)
 }
 
+public fun quote_content_access_purchase(
+    config: &MarketConfig,
+    price: u64,
+): (u64, u64, u64) {
+    let platform_fee = bps_amount(price, config.platform_fee_bps);
+    let total = (price as u128) + (platform_fee as u128);
+    assert!(total <= MAX_U64_AS_U128, EQuoteOverflow);
+    (platform_fee, price, total as u64)
+}
+
 public fun update_fee_recipient(
     config: &mut MarketConfig,
     _: &MarketAdminCap,
@@ -267,7 +292,11 @@ public fun update_paused(
     event::emit(MarketPauseUpdated { paused });
 }
 
-public fun init_personal_kiosk(config: &mut MarketConfig, ctx: &mut TxContext): ID {
+public fun init_personal_kiosk(
+    config: &MarketConfig,
+    registry: &mut KioskRegistry,
+    ctx: &mut TxContext,
+): ID {
     assert!(!config.paused, EMarketPaused);
     let (mut kiosk_obj, kiosk_owner_cap) = kiosk::new(ctx);
     let kiosk_id = object::id(&kiosk_obj);
@@ -275,7 +304,7 @@ public fun init_personal_kiosk(config: &mut MarketConfig, ctx: &mut TxContext): 
     let kiosk_cap_id = object::id(&personal_kiosk_cap);
     let owner = ctx.sender();
 
-    register_personal_kiosk(config, owner, kiosk_id, kiosk_cap_id);
+    register_personal_kiosk(registry, owner, kiosk_id, kiosk_cap_id);
     transfer::public_share_object(kiosk_obj);
     personal_kiosk::transfer_to_sender(personal_kiosk_cap, ctx);
     event::emit(PersonalKioskInitialized {
@@ -288,18 +317,20 @@ public fun init_personal_kiosk(config: &mut MarketConfig, ctx: &mut TxContext): 
 }
 
 public fun register_existing_personal_kiosk(
-    config: &mut MarketConfig,
+    config: &MarketConfig,
+    registry: &mut KioskRegistry,
     personal_kiosk_cap: &PersonalKioskCap,
     ctx: &TxContext,
 ) {
     assert!(!config.paused, EMarketPaused);
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
     let kiosk_cap_id = object::id(personal_kiosk_cap);
-    upsert_personal_kiosk_registration(config, ctx.sender(), kiosk_id, kiosk_cap_id);
+    upsert_personal_kiosk_registration(registry, ctx.sender(), kiosk_id, kiosk_cap_id);
 }
 
 public fun ensure_personal_kiosk_registered(
-    config: &mut MarketConfig,
+    config: &MarketConfig,
+    registry: &mut KioskRegistry,
     personal_kiosk_cap: &PersonalKioskCap,
     ctx: &TxContext,
 ) {
@@ -307,17 +338,17 @@ public fun ensure_personal_kiosk_registered(
     let owner = ctx.sender();
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
     let kiosk_cap_id = object::id(personal_kiosk_cap);
-    upsert_personal_kiosk_registration(config, owner, kiosk_id, kiosk_cap_id);
+    upsert_personal_kiosk_registration(registry, owner, kiosk_id, kiosk_cap_id);
 }
 
 public fun reuse_personal_kiosk(
-    config: &MarketConfig,
+    registry: &KioskRegistry,
     personal_kiosk_cap: PersonalKioskCap,
     ctx: &mut TxContext,
 ): ID {
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(&personal_kiosk_cap));
     assert_registered_personal_kiosk(
-        config,
+        registry,
         ctx.sender(),
         kiosk_id,
         object::id(&personal_kiosk_cap),
@@ -328,6 +359,7 @@ public fun reuse_personal_kiosk(
 
 public fun mint_native_in_personal_kiosk(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -352,6 +384,7 @@ public fun mint_native_in_personal_kiosk(
 ): ID {
     mint_soul_in_personal_kiosk_impl(
         config,
+        registry,
         soul_policy,
         kiosk_obj,
         personal_kiosk_cap,
@@ -380,6 +413,7 @@ public fun mint_native_in_personal_kiosk(
 
 public fun mint_imported_in_personal_kiosk(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -405,6 +439,7 @@ public fun mint_imported_in_personal_kiosk(
 ): ID {
     mint_soul_in_personal_kiosk_impl(
         config,
+        registry,
         soul_policy,
         kiosk_obj,
         personal_kiosk_cap,
@@ -433,6 +468,7 @@ public fun mint_imported_in_personal_kiosk(
 
 public fun mint_joined_in_personal_kiosk<T: key + store>(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -460,6 +496,7 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     assert!(kiosk::has_item_with_type<T>(kiosk_obj, source_object_id), ECollectionMismatch);
     mint_soul_in_personal_kiosk_impl(
         config,
+        registry,
         soul_policy,
         kiosk_obj,
         personal_kiosk_cap,
@@ -488,6 +525,7 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
 
 public fun create_collection_in_personal_kiosk(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     collection_policy: &TransferPolicy<SoulCollectionRight>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -503,7 +541,7 @@ public fun create_collection_in_personal_kiosk(
 
     let owner = kiosk_obj.owner();
     let kiosk_id = object::id(kiosk_obj);
-    assert_registered_personal_kiosk(config, owner, kiosk_id, object::id(personal_kiosk_cap));
+    assert_registered_personal_kiosk(registry, owner, kiosk_id, object::id(personal_kiosk_cap));
 
     let (collection_obj, right_obj) = collection::create(
         name,
@@ -539,6 +577,7 @@ public fun create_collection_in_personal_kiosk(
 #[allow(lint(share_owned))]
 public fun list_soul_fixed_price(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
     state: &SoulState,
@@ -556,7 +595,7 @@ public fun list_soul_fixed_price(
 
     let seller = kiosk_obj.owner();
     let kiosk_id = object::id(kiosk_obj);
-    assert_registered_personal_kiosk(config, seller, kiosk_id, object::id(personal_kiosk_cap));
+    assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
 
     let listing = create_soul_listing(
         config,
@@ -586,6 +625,7 @@ public fun list_soul_fixed_price(
 #[allow(lint(share_owned))]
 public fun list_soul_fixed_price_with_collection(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     collection_obj: &SoulCollection,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -605,7 +645,7 @@ public fun list_soul_fixed_price_with_collection(
 
     let seller = kiosk_obj.owner();
     let kiosk_id = object::id(kiosk_obj);
-    assert_registered_personal_kiosk(config, seller, kiosk_id, object::id(personal_kiosk_cap));
+    assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
 
     let listing = create_soul_listing(
         config,
@@ -655,6 +695,7 @@ public fun cancel_soul_listing(
 
 public fun buy_soul_fixed_price(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     seller_kiosk: &mut Kiosk,
     buyer_kiosk: &mut Kiosk,
@@ -669,6 +710,7 @@ public fun buy_soul_fixed_price(
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
     buy_soul_impl(
         config,
+        registry,
         soul_policy,
         seller_kiosk,
         buyer_kiosk,
@@ -684,6 +726,7 @@ public fun buy_soul_fixed_price(
 
 public fun buy_soul_fixed_price_with_collection(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     collection_obj: &mut SoulCollection,
     seller_kiosk: &mut Kiosk,
@@ -699,6 +742,7 @@ public fun buy_soul_fixed_price_with_collection(
     assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
     buy_soul_impl(
         config,
+        registry,
         soul_policy,
         seller_kiosk,
         buyer_kiosk,
@@ -715,6 +759,7 @@ public fun buy_soul_fixed_price_with_collection(
 #[allow(lint(share_owned))]
 public fun list_collection_right_fixed_price(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     collection_obj: &SoulCollection,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -732,7 +777,7 @@ public fun list_collection_right_fixed_price(
 
     let seller = kiosk_obj.owner();
     let kiosk_id = object::id(kiosk_obj);
-    assert_registered_personal_kiosk(config, seller, kiosk_id, object::id(personal_kiosk_cap));
+    assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
 
     let listing = create_collection_listing(kiosk_obj, personal_kiosk_cap, collection_obj, right_id, price, ctx);
     let listing_id = object::id(&listing);
@@ -773,6 +818,7 @@ public fun cancel_collection_listing(
 
 public fun buy_collection_right_fixed_price(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     collection_policy: &TransferPolicy<SoulCollectionRight>,
     collection_obj: &mut SoulCollection,
     seller_kiosk: &mut Kiosk,
@@ -794,7 +840,7 @@ public fun buy_collection_right_fixed_price(
 
     let buyer_kiosk_id = object::id(buyer_kiosk);
     assert_registered_personal_kiosk(
-        config,
+        registry,
         ctx.sender(),
         buyer_kiosk_id,
         object::id(buyer_personal_kiosk_cap),
@@ -842,8 +888,47 @@ public fun buy_collection_right_fixed_price(
     });
 }
 
+// ── Content access purchase (H-1 fix: pays current owner, I-2: platform fee) ──
+
+public entry fun purchase_content_access(
+    config: &MarketConfig,
+    access_list: &mut content_access::ContentAccessList,
+    state: &SoulState,
+    payment: Coin<USDC>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    assert!(!config.paused, EMarketPaused);
+    assert!(content_access::soul_id(access_list) == soul::soul_id(state), EAccessListStateMismatch);
+
+    let price = content_access::price_atomic(access_list);
+    let (platform_fee, _, total) = quote_content_access_purchase(config, price);
+    assert!(payment.value() == total, EIncorrectPaymentAmount);
+
+    let payment_recipient = soul::current_owner(state);
+    let mut owner_payment = payment;
+    if (platform_fee > 0) {
+        let fee = coin::split(&mut owner_payment, platform_fee, ctx);
+        transfer::public_transfer(fee, config.fee_recipient);
+    };
+    transfer::public_transfer(owner_payment, payment_recipient);
+
+    let buyer = ctx.sender();
+    content_access::record_purchase(access_list, buyer, price, clock);
+
+    event::emit(ContentAccessPurchased {
+        soul_id: soul::soul_id(state),
+        access_list_id: object::id(access_list),
+        buyer,
+        price,
+        platform_fee,
+        payment_recipient,
+    });
+}
+
 fun mint_soul_in_personal_kiosk_impl(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -873,7 +958,7 @@ fun mint_soul_in_personal_kiosk_impl(
 
     let owner = kiosk_obj.owner();
     let kiosk_id = object::id(kiosk_obj);
-    assert_registered_personal_kiosk(config, owner, kiosk_id, object::id(personal_kiosk_cap));
+    assert_registered_personal_kiosk(registry, owner, kiosk_id, object::id(personal_kiosk_cap));
 
     let soul_obj = soul::mint(
         name,
@@ -943,7 +1028,7 @@ fun mint_soul_in_personal_kiosk_impl(
     };
     asset_blob.destroy_none();
 
-    // Create ContentAccessList
+    // Create ContentAccessList and bind to state (M-1 fix)
     let access_list = content_access::create(
         soul_id,
         ctx.sender(),
@@ -951,6 +1036,7 @@ fun mint_soul_in_personal_kiosk_impl(
         content_access_default_scope_mask,
         ctx,
     );
+    soul::set_access_list_id(&mut state, object::id(&access_list));
     content_access::share_access_list(access_list);
 
     kiosk::lock<Soul>(
@@ -1050,6 +1136,7 @@ fun create_collection_listing(
 
 fun buy_soul_impl(
     config: &MarketConfig,
+    registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     seller_kiosk: &mut Kiosk,
     buyer_kiosk: &mut Kiosk,
@@ -1072,7 +1159,7 @@ fun buy_soul_impl(
 
     let buyer_kiosk_id = object::id(buyer_kiosk);
     assert_registered_personal_kiosk(
-        config,
+        registry,
         ctx.sender(),
         buyer_kiosk_id,
         object::id(buyer_personal_kiosk_cap),
@@ -1152,15 +1239,15 @@ fun bps_amount(price: u64, bps: u16): u64 {
 }
 
 fun register_personal_kiosk(
-    config: &mut MarketConfig,
+    registry: &mut KioskRegistry,
     owner: address,
     kiosk_id: ID,
     kiosk_cap_id: ID,
 ) {
     let key = PersonalKioskOwnerKey { owner };
-    assert!(!df::exists_(&config.id, key), EPersonalKioskAlreadyInitialized);
+    assert!(!df::exists_(&registry.id, key), EPersonalKioskAlreadyInitialized);
     df::add(
-        &mut config.id,
+        &mut registry.id,
         key,
         PersonalKioskRegistration {
             kiosk_id,
@@ -1170,21 +1257,21 @@ fun register_personal_kiosk(
 }
 
 fun upsert_personal_kiosk_registration(
-    config: &mut MarketConfig,
+    registry: &mut KioskRegistry,
     owner: address,
     kiosk_id: ID,
     kiosk_cap_id: ID,
 ) {
-    if (df::exists_(&config.id, PersonalKioskOwnerKey { owner })) {
+    if (df::exists_(&registry.id, PersonalKioskOwnerKey { owner })) {
         let registration = df::borrow_mut<PersonalKioskOwnerKey, PersonalKioskRegistration>(
-            &mut config.id,
+            &mut registry.id,
             PersonalKioskOwnerKey { owner },
         );
         registration.kiosk_id = kiosk_id;
         registration.kiosk_cap_id = kiosk_cap_id;
     } else {
         df::add(
-            &mut config.id,
+            &mut registry.id,
             PersonalKioskOwnerKey { owner },
             PersonalKioskRegistration {
                 kiosk_id,
@@ -1195,21 +1282,21 @@ fun upsert_personal_kiosk_registration(
 }
 
 fun borrow_personal_kiosk_registration(
-    config: &MarketConfig,
+    registry: &KioskRegistry,
     owner: address,
 ): &PersonalKioskRegistration {
     let key = PersonalKioskOwnerKey { owner };
-    assert!(df::exists_(&config.id, key), EPersonalKioskNotInitialized);
-    df::borrow<PersonalKioskOwnerKey, PersonalKioskRegistration>(&config.id, key)
+    assert!(df::exists_(&registry.id, key), EPersonalKioskNotInitialized);
+    df::borrow<PersonalKioskOwnerKey, PersonalKioskRegistration>(&registry.id, key)
 }
 
 fun assert_registered_personal_kiosk(
-    config: &MarketConfig,
+    registry: &KioskRegistry,
     owner: address,
     kiosk_id: ID,
     kiosk_cap_id: ID,
 ) {
-    let registration = borrow_personal_kiosk_registration(config, owner);
+    let registration = borrow_personal_kiosk_registration(registry, owner);
     assert!(registration.kiosk_id == kiosk_id, EPersonalKioskMismatch);
     assert!(registration.kiosk_cap_id == kiosk_cap_id, EPersonalKioskMismatch);
 }
@@ -1225,7 +1312,11 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
         platform_fee_bps: 0,
         paused: false,
     };
+    let registry = KioskRegistry {
+        id: object::new(ctx),
+    };
     let config_id = object::id(&config);
+    let registry_id = object::id(&registry);
     let soul_policy_id = object::id(&soul_policy);
     let collection_policy_id = object::id(&collection_policy);
     let admin_cap = MarketAdminCap { id: object::new(ctx) };
@@ -1239,6 +1330,7 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
     witness_rule::add<SoulCollectionRight, CollectionMarketProof>(&mut collection_policy, &collection_policy_cap);
 
     transfer::share_object(config);
+    transfer::share_object(registry);
     transfer::public_share_object(soul_policy);
     transfer::public_share_object(collection_policy);
     transfer::transfer(admin_cap, admin);
@@ -1248,6 +1340,7 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
 
     event::emit(MarketInitialized {
         config_id,
+        registry_id,
         soul_policy_id,
         collection_policy_id,
         admin,

@@ -17,6 +17,10 @@ const EEmptyScopeMask: u64 = 10;
 const EGrantIdMismatch: u64 = 11;
 const EGrantScopeWouldRemoveAll: u64 = 12;
 const EGrantInvalidScopeMask: u64 = 13;
+const EGrantCapacityTooLow: u64 = 14;
+const EGrantCapacityTooHigh: u64 = 15;
+
+const MAX_GRANT_CAPACITY: u64 = 10_000;
 
 const SCOPE_SEAL: u64 = 1;
 const SCOPE_MEMORY: u64 = 2;
@@ -69,6 +73,12 @@ public struct SoulGrantInvalidated has copy, drop {
     grantee: address,
     invalidated_by: address,
     new_owner: address,
+}
+
+public struct GrantCapacityUpdated has copy, drop {
+    soul_id: ID,
+    old_capacity: u64,
+    new_capacity: u64,
 }
 
 public fun soul_id(self: &SoulGrant): ID {
@@ -244,6 +254,25 @@ public fun revoke_scope(
 
 public fun cleanup_expired(state: &mut SoulState, clock: &Clock) {
     cleanup_expired_impl(state, clock);
+}
+
+public fun set_grant_capacity(
+    state: &mut SoulState,
+    capacity: u64,
+    clock: &Clock,
+    ctx: &TxContext,
+) {
+    soul::assert_owner(state, ctx.sender());
+    cleanup_expired_impl(state, clock);
+    assert!(capacity >= soul::active_grant_count(state), EGrantCapacityTooLow);
+    assert!(capacity <= MAX_GRANT_CAPACITY, EGrantCapacityTooHigh);
+    let old_capacity = soul::grant_capacity(state);
+    soul::set_grant_capacity(state, capacity);
+    event::emit(GrantCapacityUpdated {
+        soul_id: soul::soul_id(state),
+        old_capacity,
+        new_capacity: capacity,
+    });
 }
 
 public(package) fun invalidate_all_for_owner_rotation(

@@ -1,14 +1,12 @@
 module soulidity::content_access;
 
 use sui::clock::Clock;
-use sui::coin::Coin;
 use sui::event;
 use sui::table;
 use std::string::String;
 use soulidity::assets::{Self as assets, SoulAssets};
 use soulidity::skills::{Self as skills, SoulSkills};
 use soulidity::soul::{Self as soul, SoulState};
-use usdc::usdc::USDC;
 
 const ENotCreatorOrOwner: u64 = 1;
 const EAlreadyHasAccess: u64 = 2;
@@ -123,17 +121,14 @@ public(package) fun share_access_list(list: ContentAccessList) {
     transfer::share_object(list);
 }
 
-// ── Purchase (on-chain USDC payment) ──
+// ── Record purchase (called by market module after payment split) ──
 
-public entry fun purchase_content_access(
+public(package) fun record_purchase(
     access_list: &mut ContentAccessList,
-    state: &SoulState,
-    payment: Coin<USDC>,
+    buyer: address,
+    price_paid_atomic: u64,
     clock: &Clock,
-    ctx: &mut TxContext,
 ) {
-    let buyer = ctx.sender();
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
     // Allow renewal: if buyer has an expired entry, remove it first
     if (access_list.entries.contains(buyer)) {
         let entry = &access_list.entries[buyer];
@@ -146,15 +141,11 @@ public entry fun purchase_content_access(
             abort EAlreadyHasAccess
         };
     };
-    let paid = payment.value();
-    assert!(paid == access_list.price_atomic, EIncorrectPaymentAmount);
-
-    transfer::public_transfer(payment, access_list.creator);
 
     let now_ms = clock.timestamp_ms();
     let entry = ContentAccessEntry {
         scope_mask: access_list.default_scope_mask,
-        price_paid_atomic: paid,
+        price_paid_atomic,
         granted_at_ms: now_ms,
         expires_at_ms: option::none(),
     };
@@ -166,7 +157,7 @@ public entry fun purchase_content_access(
         access_list_id: object::id(access_list),
         grantee: buyer,
         scope_mask: access_list.default_scope_mask,
-        price_paid_atomic: paid,
+        price_paid_atomic,
     });
 }
 

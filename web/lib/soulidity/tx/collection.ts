@@ -22,6 +22,7 @@ export function buildCreateCollectionTx(params: CreateCollectionTxParams) {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const collectionPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const personalKiosk = buildBuyerKioskArgs(tx, {
@@ -32,6 +33,7 @@ export function buildCreateCollectionTx(params: CreateCollectionTxParams) {
     target: `${packageId}::market::create_collection_in_personal_kiosk`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
       tx.object(collectionPolicyId),
       personalKiosk.buyerKiosk,
       personalKiosk.buyerKioskCap,

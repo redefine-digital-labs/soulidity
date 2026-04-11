@@ -31,6 +31,7 @@ export function buildBuySoulTx(params: {
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const buyerKiosk = buildBuyerKioskArgs(tx, {
@@ -46,6 +47,7 @@ export function buildBuySoulTx(params: {
     arguments: params.collectionObjectId
       ? [
           tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
           tx.object(transferPolicyId),
           tx.object(params.collectionObjectId),
           tx.object(params.sellerKioskId),
@@ -57,6 +59,7 @@ export function buildBuySoulTx(params: {
         ]
       : [
           tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
           tx.object(transferPolicyId),
           tx.object(params.sellerKioskId),
           buyerKiosk.buyerKiosk,
@@ -82,6 +85,7 @@ export function buildBuyCollectionTx(params: {
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const collectionPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const buyerKiosk = buildBuyerKioskArgs(tx, {
@@ -94,6 +98,7 @@ export function buildBuyCollectionTx(params: {
     target: `${packageId}::market::buy_collection_right_fixed_price`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
       tx.object(collectionPolicyId),
       tx.object(params.collectionObjectId),
       tx.object(params.sellerKioskId),

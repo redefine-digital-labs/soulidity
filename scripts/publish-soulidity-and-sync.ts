@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 interface SoulidityDeployment {
   packageId: string
   marketConfigId: string
+  kioskRegistryId: string
   soulTransferPolicyId: string
   collectionTransferPolicyId: string
   paymentCoinType: string
@@ -148,6 +149,7 @@ export function extractDeploymentFromPublishResult(
   const marketInitialized = result.events?.find((event) => event.type?.endsWith('::market::MarketInitialized'))
   const marketPayload = marketInitialized?.parsedJson ?? {}
   const marketConfigId = requireString(marketPayload.config_id, 'market config id')
+  const kioskRegistryId = requireString(marketPayload.registry_id, 'kiosk registry id')
   const soulTransferPolicyId = requireString(marketPayload.soul_policy_id, 'soul transfer policy id')
   const collectionTransferPolicyId = requireString(marketPayload.collection_policy_id, 'collection transfer policy id')
 
@@ -164,6 +166,7 @@ export function extractDeploymentFromPublishResult(
   return {
     packageId,
     marketConfigId,
+    kioskRegistryId,
     soulTransferPolicyId,
     collectionTransferPolicyId,
     paymentCoinType,
@@ -216,6 +219,7 @@ function main() {
       suiBin,
       packageId: deployment.packageId,
       marketConfigId: deployment.marketConfigId,
+      kioskRegistryId: deployment.kioskRegistryId,
       soulTransferPolicyId: deployment.soulTransferPolicyId,
       collectionTransferPolicyId: deployment.collectionTransferPolicyId,
       publishTxDigest: deployment.publishTxDigest,

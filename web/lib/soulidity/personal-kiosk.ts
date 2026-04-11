@@ -66,6 +66,7 @@ export async function resolveOwnedPersonalKiosk(params: {
   }
 
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const marketPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   await getCachedMarketConfig(marketConfigId, marketPackageId)
 
@@ -74,6 +75,7 @@ export async function resolveOwnedPersonalKiosk(params: {
       marketConfigId,
       marketPackageId,
       ownerAddress,
+      kioskRegistryId,
     })
     if (!registered) continue
 

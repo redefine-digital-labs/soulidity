@@ -9,10 +9,12 @@ export function buildPurchaseContentAccessTx(params: {
   paymentCoinId: string
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
   const tx = new Transaction()
   tx.moveCall({
-    target: `${packageId}::content_access::purchase_content_access`,
+    target: `${packageId}::market::purchase_content_access`,
     arguments: [
+      tx.object(marketConfigId),
       tx.object(params.accessListOnChainId),
       tx.object(params.stateOnChainId),
       tx.object(params.paymentCoinId),

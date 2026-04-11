@@ -16,6 +16,7 @@ export function buildUpdateCollectionListingPriceTx(params: {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
 
   // Step 1: Cancel current listing
@@ -33,6 +34,7 @@ export function buildUpdateCollectionListingPriceTx(params: {
     target: `${packageId}::market::ensure_personal_kiosk_registered`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
       tx.object(params.currentKioskCapOnChainId),
     ],
   })
@@ -42,6 +44,7 @@ export function buildUpdateCollectionListingPriceTx(params: {
     target: `${packageId}::market::list_collection_right_fixed_price`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
       tx.object(params.collectionObjectId),
       tx.object(params.currentKioskId),
       tx.object(params.currentKioskCapOnChainId),

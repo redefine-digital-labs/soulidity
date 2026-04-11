@@ -3,6 +3,7 @@ import deploymentManifestJson from './deployment-manifest.json'
 export interface SoulidityDeployment {
   packageId: string
   marketConfigId: string
+  kioskRegistryId: string
   soulTransferPolicyId: string
   collectionTransferPolicyId: string
   paymentCoinType: string
