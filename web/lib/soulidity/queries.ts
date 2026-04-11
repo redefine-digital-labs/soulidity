@@ -515,6 +515,7 @@ export function scopeMaskToScopes(scopeMask: number): SoulGrantScope[] {
   if ((scopeMask & 1) === 1) scopes.push('seal')
   if ((scopeMask & 2) === 2) scopes.push('memory')
   if ((scopeMask & 4) === 4) scopes.push('skills')
+  if ((scopeMask & 8) === 8) scopes.push('assets')
   return scopes
 }
 

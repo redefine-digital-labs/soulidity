@@ -132,16 +132,10 @@ export async function GET(
     })
   }
 
-  // 2. Active grant with assets scope (scopeMask bit 3 => skills=4... but for assets we check 'skills' scope in grants
-  //    since grant scopes are seal=1,memory=2,skills=4 and assets are accessed via the same mechanism)
-  //    Actually, looking at the grant scope system: grants use seal/memory/skills scopes.
-  //    Assets are a separate module; the grant system uses scope_mask bits 1=seal,2=memory,4=skills.
-  //    The content_access module uses its own scope_mask with bit 8=SCOPE_ASSETS.
-  //    For grant-based access, we look for grants that include the 'skills' scope since assets
-  //    share the same seal approval pattern. However, the Move contract seal_approve_asset_read_granted_agent
-  //    checks SCOPE_SKILLS=4 in the grant, so we check for 'skills' scope in grants.
+  // 2. Active grant with assets scope (grant scope_mask bit 8 = SCOPE_ASSETS).
+  //    Move contract seal_approve_asset_read_granted_agent checks grant::scope_assets() on chain.
   const activeAssetsSlot = state.activeGrants.find((slot) =>
-    slot.scopes.includes('skills')
+    slot.scopes.includes('assets')
       && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
   )
   if (activeAssetsSlot) {
@@ -149,7 +143,7 @@ export async function GET(
     const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
     if (viewerMatch) {
       if (grant.expiresAtMs == null || grant.expiresAtMs >= Date.now()) {
-        if (grant.scopes.includes('skills')) {
+        if (grant.scopes.includes('assets')) {
           return NextResponse.json({
             visibility: 'private',
             artifact: {

@@ -535,6 +535,59 @@ export async function createSkillVersionSealEnvelopeSidecar(params: {
   }
 }
 
+export async function createAssetVersionSealEnvelopeSidecar(params: {
+  sealClient: Pick<SealClient, 'encrypt'>
+  packageId: string
+  assetsObjectId: string
+  assetName: string
+  versionIndex: number
+  threshold: number
+  dek: Uint8Array
+  iv: Uint8Array
+  contentHash: string
+  mimeType: string
+  fileName: string
+}): Promise<SealEnvelopeSidecar> {
+  if (params.dek.length !== DEK_BYTES) {
+    throw new Error('Seal envelope DEK must be 32 bytes')
+  }
+  if (params.iv.length !== IV_BYTES) {
+    throw new Error(`Seal envelope IV must be ${IV_BYTES} bytes`)
+  }
+  if (!CONTENT_HASH_HEX_PATTERN.test(params.contentHash)) {
+    throw new Error('contentHash must be a 64-character hex string')
+  }
+
+  const keyMaterial = createSealKeyMaterial(params.dek, params.contentHash)
+  try {
+    const documentId = generateAssetDocumentIdForVersion(
+      params.assetsObjectId,
+      params.assetName,
+      params.versionIndex,
+    )
+    const { encryptedObject } = await params.sealClient.encrypt({
+      threshold: params.threshold,
+      packageId: params.packageId,
+      id: documentId,
+      data: keyMaterial,
+    })
+
+    return {
+      version: 1,
+      mode: 'seal-envelope',
+      documentId,
+      encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
+      iv: bytesToBase64(params.iv),
+      cipher: AES_GCM_CIPHER_LABEL,
+      mimeType: params.mimeType,
+      fileName: params.fileName,
+      contentHash: params.contentHash,
+    }
+  } finally {
+    keyMaterial.fill(0)
+  }
+}
+
 export async function decryptBundle(params: {
   sealClient: Pick<SealClient, 'decrypt'>
   sessionKey: SessionKey

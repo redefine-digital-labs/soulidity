@@ -388,6 +388,19 @@ fun assert_u64_segment(id: &vector<u8>, start: u64, value: u64) {
     };
 }
 
+public(package) fun assert_valid_asset_seal_request(
+    id: vector<u8>,
+    state: &SoulState,
+    assets: &SoulAssets,
+    asset_name: String,
+    version_index: u64,
+) {
+    assert_matching_document_id(id, object::id(assets), copy asset_name, version_index);
+    assert_assets_matches_state(assets, state);
+    let slot = borrow_slot(assets, asset_name, version_index);
+    assert!(!slot.deleted, EAssetVersionDeleted);
+}
+
 // ── Test helpers ──
 
 #[test_only]

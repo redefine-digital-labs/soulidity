@@ -8,6 +8,7 @@ import {
   soulGrantRecordSelect,
   toSoulAssetSummary,
   toSoulCollectionSummaryList,
+  toSoulGrantRecord,
 } from '@/lib/soulidity/repository'
 export const dynamic = 'force-dynamic'
 
@@ -71,29 +72,6 @@ export async function GET() {
       })),
     })),
     collections: toSoulCollectionSummaryList(collections),
-    grants: grants.map((grant) => ({
-      id: grant.id,
-      onChainId: grant.onChainId,
-      soulOnChainId: grant.soulOnChainId,
-      issuedByAddress: grant.issuedByAddress,
-      issuedByMemberId: grant.issuedByMemberId,
-      granteeAddress: grant.granteeAddress,
-      granteeMemberId: grant.granteeMemberId,
-      scopes: grant.scopes.map((scope) => scope === 'skills' ? 'skills' : scope === 'memory' ? 'memory' : 'seal'),
-      status: grant.status === 'revoked'
-        ? 'revoked'
-        : grant.status === 'expired'
-          ? 'expired'
-          : grant.status === 'superseded'
-            ? 'superseded'
-            : grant.status === 'invalidated'
-              ? 'invalidated'
-              : 'active',
-      expiresAt: grant.expiresAt?.toISOString() ?? null,
-      endedAt: grant.endedAt?.toISOString() ?? null,
-      replacedByGrantOnChainId: grant.replacedByGrantOnChainId,
-      createdAt: grant.createdAt.toISOString(),
-      updatedAt: grant.updatedAt.toISOString(),
-    })),
+    grants: grants.map(toSoulGrantRecord),
   })
 }

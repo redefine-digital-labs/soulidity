@@ -128,7 +128,7 @@ export async function GET(
 
   // 2. Active grant with skills scope (Move contract checks SCOPE_SKILLS=4 in grant)
   const activeAssetsSlot = state.activeGrants.find((slot) =>
-    slot.scopes.includes('skills')
+    slot.scopes.includes('assets')
       && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
   )
   if (activeAssetsSlot) {
@@ -136,7 +136,7 @@ export async function GET(
     const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
     if (viewerMatch) {
       if (grant.expiresAtMs == null || grant.expiresAtMs >= Date.now()) {
-        if (grant.scopes.includes('skills')) {
+        if (grant.scopes.includes('assets')) {
           return NextResponse.json({
             visibility: 'private',
             artifact: {

@@ -4,6 +4,9 @@ use sui::clock::Clock;
 use sui::coin::Coin;
 use sui::event;
 use sui::table;
+use std::string::String;
+use soulidity::assets::{Self as assets, SoulAssets};
+use soulidity::skills::{Self as skills, SoulSkills};
 use soulidity::soul::{Self as soul, SoulState};
 use usdc::usdc::USDC;
 
@@ -131,7 +134,18 @@ public entry fun purchase_content_access(
 ) {
     let buyer = ctx.sender();
     assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
-    assert!(!access_list.entries.contains(buyer), EAlreadyHasAccess);
+    // Allow renewal: if buyer has an expired entry, remove it first
+    if (access_list.entries.contains(buyer)) {
+        let entry = &access_list.entries[buyer];
+        if (entry.expires_at_ms.is_some()) {
+            let expires = *entry.expires_at_ms.borrow();
+            assert!(clock.timestamp_ms() >= expires, EAlreadyHasAccess);
+            access_list.entries.remove(buyer);
+            access_list.entry_count = access_list.entry_count - 1;
+        } else {
+            abort EAlreadyHasAccess
+        };
+    };
     let paid = payment.value();
     assert!(paid == access_list.price_atomic, EIncorrectPaymentAmount);
 
@@ -172,7 +186,19 @@ public entry fun add_access(
         sender == access_list.creator || sender == soul::current_owner(state),
         ENotCreatorOrOwner,
     );
-    assert!(!access_list.entries.contains(grantee), EAlreadyHasAccess);
+    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    // Allow renewal: if grantee has an expired entry, remove it first
+    if (access_list.entries.contains(grantee)) {
+        let entry = &access_list.entries[grantee];
+        if (entry.expires_at_ms.is_some()) {
+            let expires = *entry.expires_at_ms.borrow();
+            assert!(clock.timestamp_ms() >= expires, EAlreadyHasAccess);
+            access_list.entries.remove(grantee);
+            access_list.entry_count = access_list.entry_count - 1;
+        } else {
+            abort EAlreadyHasAccess
+        };
+    };
 
     let now_ms = clock.timestamp_ms();
     let entry = ContentAccessEntry {
@@ -206,6 +232,7 @@ public entry fun revoke_access(
         sender == access_list.creator || sender == soul::current_owner(state),
         ENotCreatorOrOwner,
     );
+    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
     assert!(access_list.entries.contains(grantee), ENoAccessEntry);
 
     access_list.entries.remove(grantee);
@@ -231,6 +258,7 @@ public entry fun set_content_price(
         sender == access_list.creator || sender == soul::current_owner(state),
         ENotCreatorOrOwner,
     );
+    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
     let old_price = access_list.price_atomic;
     access_list.price_atomic = new_price_atomic;
     event::emit(ContentAccessPriceUpdated {
@@ -244,13 +272,17 @@ public entry fun set_content_price(
 // ── Seal approval for allowlisted users (skills) ──
 
 public entry fun seal_approve_skill_allowlisted(
-    _id: vector<u8>,
+    id: vector<u8>,
     state: &SoulState,
     access_list: &ContentAccessList,
+    skill_store: &SoulSkills,
+    skill_name: String,
+    version_index: u64,
     clock: &Clock,
     ctx: &TxContext,
 ) {
     assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    skills::assert_valid_skill_seal_request(id, state, skill_store, skill_name, version_index);
     let sender = ctx.sender();
     assert!(has_access(access_list, sender, 4, clock), EScopeMismatch); // SCOPE_SKILLS = 4
 }
@@ -258,13 +290,17 @@ public entry fun seal_approve_skill_allowlisted(
 // ── Seal approval for allowlisted users (assets) ──
 
 public entry fun seal_approve_asset_allowlisted(
-    _id: vector<u8>,
+    id: vector<u8>,
     state: &SoulState,
     access_list: &ContentAccessList,
+    asset_store: &SoulAssets,
+    asset_name: String,
+    version_index: u64,
     clock: &Clock,
     ctx: &TxContext,
 ) {
     assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assets::assert_valid_asset_seal_request(id, state, asset_store, asset_name, version_index);
     let sender = ctx.sender();
     assert!(has_access(access_list, sender, 8, clock), EScopeMismatch); // SCOPE_ASSETS = 8
 }

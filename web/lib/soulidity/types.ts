@@ -2,7 +2,7 @@ import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
 
 export type SoulListingStatus = 'held' | 'listed' | 'floor-violation'
 export type SoulGrantStatus = 'active' | 'revoked' | 'expired' | 'superseded' | 'invalidated'
-export type SoulGrantScope = 'seal' | 'memory' | 'skills'
+export type SoulGrantScope = 'seal' | 'memory' | 'skills' | 'assets'
 export type SoulAccessKind = 'owner' | 'granted-agent'
 export type SkillAccessKind = 'owner' | 'granted-agent'
 export type SoulWriterKind = 'founder' | 'owner' | 'granted-agent'

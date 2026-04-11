@@ -88,10 +88,12 @@ export async function POST(request: Request) {
     const rawSoulEnvelope = typeof body?.sealSidecar === 'string' ? body.sealSidecar : null
     const rawMemoryEnvelope = typeof body?.memorySealSidecar === 'string' ? body.memorySealSidecar : null
     const rawSkillsEnvelope = typeof body?.skillsSealSidecar === 'string' ? body.skillsSealSidecar : null
+    const rawAssetsEnvelope = typeof body?.assetsSealSidecar === 'string' ? body.assetsSealSidecar : null
 
     let soulSidecar = null
     let memorySidecar = null
     let skillsSidecar = null
+    let assetsSidecar = null
     try {
       const builtSidecars = await buildSyncSealSidecars({
         packageId,
@@ -109,10 +111,17 @@ export async function POST(request: Request) {
           skillName: initialSkill.skillName,
           versionIndex: initialSkill.versionIndex,
         } : null,
+        rawAssetsEnvelope,
+        assetBinding: initialAsset ? {
+          assetsObjectId: initialAsset.assetsId,
+          assetName: initialAsset.assetName,
+          versionIndex: initialAsset.versionIndex,
+        } : null,
       })
       soulSidecar = builtSidecars.soulSidecar
       memorySidecar = builtSidecars.memorySidecar
       skillsSidecar = builtSidecars.skillsSidecar
+      assetsSidecar = builtSidecars.assetsSidecar
     } catch (error) {
       if (error instanceof SealSidecarSyncConfigError) {
         return NextResponse.json({ error: error.message }, { status: 503 })
@@ -201,6 +210,7 @@ export async function POST(request: Request) {
         },
         soulOnChainId: initialAsset.soulId,
         assetsOnChainId: initialAsset.assetsId,
+        sealSidecar: assetsSidecar,
       })
     }
 

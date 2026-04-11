@@ -359,6 +359,19 @@ public(package) fun share_skills(skills: SoulSkills) {
     transfer::share_object(skills);
 }
 
+public(package) fun assert_valid_skill_seal_request(
+    id: vector<u8>,
+    state: &SoulState,
+    skills: &SoulSkills,
+    skill_name: String,
+    version_index: u64,
+) {
+    assert_matching_document_id(id, object::id(skills), copy skill_name, version_index);
+    assert_skills_matches_state(skills, state);
+    let slot = borrow_slot(skills, skill_name, version_index);
+    assert!(!slot.deleted, ESkillVersionDeleted);
+}
+
 #[test_only]
 public(package) fun seal_approve_private_read_as_owner_for_testing(
     id: vector<u8>,
