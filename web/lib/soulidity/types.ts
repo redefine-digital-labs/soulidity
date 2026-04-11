@@ -53,6 +53,7 @@ export interface SoulStateObject {
   activeGrants: ActiveGrantSlotObject[]
   memoryId?: string | null
   skillsId: string | null
+  assetsId: string | null
   collectionId: string | null
 }
 
@@ -157,6 +158,22 @@ export interface SkillVersionObject {
   blobId: string | null
 }
 
+// ── Asset types ──
+
+export type AssetType = 'sprite' | 'live2d' | 'audio'
+
+export interface AssetVersionObject {
+  soulId: string
+  assetsId: string
+  assetName: string
+  versionIndex: number
+  visibility: 'public' | 'private'
+  assetType: AssetType
+  blobObjectId: string
+  blobId?: string | null
+  createdAtMs: number
+}
+
 export interface SoulQuoteBreakdown {
   platformFeeAtomic: string
   priceAtomic: string
@@ -193,6 +210,8 @@ export interface SoulAssetSummary {
   grantCapacity: number
   activeGrantCount: number
   skillsOnChainId: string | null
+  assetsOnChainId: string | null
+  accessListOnChainId: string | null
   createdAt: string
   updatedAt: string
 }

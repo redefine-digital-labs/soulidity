@@ -96,6 +96,8 @@ export const soulAssetSummarySelect = {
   grantCapacity: true,
   activeGrantCount: true,
   skillsOnChainId: true,
+  assetsOnChainId: true,
+  accessListOnChainId: true,
   createdAt: true,
   updatedAt: true,
 } as const
@@ -357,6 +359,8 @@ export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSum
     grantCapacity: record.grantCapacity,
     activeGrantCount: record.activeGrantCount,
     skillsOnChainId: record.skillsOnChainId,
+    assetsOnChainId: record.assetsOnChainId,
+    accessListOnChainId: record.accessListOnChainId,
     createdAt: asIso(record.createdAt),
     updatedAt: asIso(record.updatedAt),
   }

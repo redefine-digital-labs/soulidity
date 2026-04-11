@@ -583,6 +583,7 @@ export async function getSoulStateObject(objectId: string, packageId: string): P
     activeGrants,
     memoryId: readNestedObjectId(fields.memory_id, 'SoulState memory_id'),
     skillsId: readNestedObjectId(fields.skills_id, 'SoulState skills_id'),
+    assetsId: readNestedObjectId(fields.assets_id, 'SoulState assets_id'),
     collectionId: readOptionalString(fields.collection_id, 'SoulState collection_id'),
   }
 }

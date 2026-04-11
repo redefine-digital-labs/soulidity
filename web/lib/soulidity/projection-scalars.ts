@@ -1,6 +1,12 @@
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER)
 
-export function toProjectionBigInt(value: number, fieldName: string): bigint {
+export function toProjectionBigInt(value: number | bigint, fieldName: string): bigint {
+  if (typeof value === 'bigint') {
+    if (value < 0n) {
+      throw new Error(`${fieldName} must not be negative`)
+    }
+    return value
+  }
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${fieldName} is outside the supported integer range`)
   }
