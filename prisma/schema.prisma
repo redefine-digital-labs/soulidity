@@ -352,8 +352,12 @@ model SoulAsset {
   grantCapacity         Int      @default(1) @map("grant_capacity")
   activeGrantCount      Int      @default(0) @map("active_grant_count")
   skillsOnChainId       String?  @unique @map("skills_on_chain_id")
+  assetsOnChainId       String?  @unique @map("assets_on_chain_id")
+  accessListOnChainId   String?  @unique @map("access_list_on_chain_id")
   grantRecords          SoulGrantRecord[] @relation("SoulAssetGrantRecords")
   skillVersions         SoulSkillVersionRecord[] @relation("SoulAssetSkillVersions")
+  assetVersions         SoulAssetVersionRecord[] @relation("SoulAssetAssetVersions")
+  contentAccess         ContentAccessRecord[]    @relation("SoulContentAccess")
   sealSidecar           Json?    @map("seal_sidecar")
   category              String
   tags                  String[]
@@ -552,4 +556,46 @@ model Bookmark {
   @@unique([memberId, soulId])
   @@index([soulId])
   @@map("bookmarks")
+}
+
+model SoulAssetVersionRecord {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId   String    @map("soul_on_chain_id")
+  soul            SoulAsset @relation("SoulAssetAssetVersions", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  assetsOnChainId String    @map("assets_on_chain_id")
+  assetName       String    @map("asset_name")
+  versionIndex    Int       @map("version_index")
+  assetType       String    @map("asset_type")
+  visibility      String
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+  blobObjectId    String    @map("blob_object_id")
+  blobId          String?   @map("blob_id")
+  sealSidecar     Json?     @map("seal_sidecar")
+  createdAtMs     BigInt    @map("created_at_ms")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([assetsOnChainId, assetName, versionIndex], map: "soul_asset_version_unique")
+  @@index([soulOnChainId, assetName, versionIndex(sort: Desc)])
+  @@map("soul_asset_version_records")
+}
+
+model ContentAccessRecord {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId       String    @map("soul_on_chain_id")
+  soul                SoulAsset @relation("SoulContentAccess", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  accessListOnChainId String    @map("access_list_on_chain_id")
+  granteeAddress      String    @map("grantee_address")
+  scopeMask           Int       @map("scope_mask")
+  pricePaidAtomic     BigInt    @map("price_paid_atomic")
+  grantedAtMs         BigInt    @map("granted_at_ms")
+  expiresAtMs         BigInt?   @map("expires_at_ms")
+  revokedAt           DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([accessListOnChainId, granteeAddress], map: "content_access_unique")
+  @@index([soulOnChainId])
+  @@index([granteeAddress])
+  @@map("content_access_records")
 }
