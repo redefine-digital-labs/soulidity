@@ -215,22 +215,19 @@ export async function listDesktopCatalogItems(params: {
 }) {
   const where = buildDesktopCatalogWhere(params)
 
-  const [entries, total] = await Promise.all([
-    prisma.desktopCatalogEntry.findMany({
-      where,
-      select: desktopCatalogEntryListSelect,
-      orderBy: [
-        { sortOrder: 'asc' },
-        { updatedAt: 'desc' },
-      ],
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
-    }),
-    prisma.desktopCatalogEntry.count({ where }),
-  ])
+  // Fetch all matching entries first, then paginate after resolving sources.
+  // This avoids under-filled pages when a catalog entry points to a deleted source.
+  const entries = await prisma.desktopCatalogEntry.findMany({
+    where,
+    select: desktopCatalogEntryListSelect,
+    orderBy: [
+      { sortOrder: 'asc' },
+      { updatedAt: 'desc' },
+    ],
+  })
 
   if (entries.length === 0) {
-    return { items: [], total }
+    return { items: [], total: 0 }
   }
 
   const starterRefs = entries
@@ -285,7 +282,8 @@ export async function listDesktopCatalogItems(params: {
     }
   }
 
-  return { items, total }
+  const start = (params.page - 1) * params.pageSize
+  return { items: items.slice(start, start + params.pageSize), total: items.length }
 }
 
 export async function findDesktopPersonaManifestById(id: string): Promise<DesktopPersonaManifest | null> {

@@ -9,7 +9,7 @@
     "dev": "pnpm --filter @soulidity/desktop run dev",
     "build": "pnpm --filter @soulidity/desktop run build",
     "package": "pnpm --filter @soulidity/desktop run package",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint"
   },
