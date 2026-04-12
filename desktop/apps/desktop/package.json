@@ -12,7 +12,7 @@
     "package:win": "pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --win",
     "build:backend": "pnpm --filter @soulidity/backend run build",
     "build:shared": "pnpm --filter @soulidity/shared run build",
-    "build:skills": "tsc -p ../../packages/backend/src/agent/skills/tsconfig.scripts.json && node ../../scripts/build-skills.mjs",
+    "build:skills": "node ../../scripts/build-skills.mjs && tsc -p ../../packages/backend/src/agent/skills/tsconfig.scripts.json",
     "typecheck": "pnpm run build:shared && pnpm run build:backend && tsc -p ../../packages/backend/tsconfig.json --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "build": {

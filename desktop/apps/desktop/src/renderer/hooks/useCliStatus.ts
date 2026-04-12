@@ -33,9 +33,12 @@ export function useCliStatus() {
         const next = pickLatestStatus(sessions)
         setStatus(next)
 
+        // Always cancel the previous grace timeout — a stale closure would overwrite
+        // a fresh active status back to idle when it fires
+        clearTimeout(graceTimerRef.current)
+
         // If showing a terminal state, schedule a re-evaluation after the grace period
         if (next === 'completed' || next === 'error') {
-          clearTimeout(graceTimerRef.current)
           graceTimerRef.current = setTimeout(() => {
             setStatus(pickLatestStatus(sessions))
           }, TERMINAL_GRACE_MS)

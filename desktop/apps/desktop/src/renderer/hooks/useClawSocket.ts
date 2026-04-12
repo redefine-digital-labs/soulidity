@@ -137,16 +137,17 @@ export function useClawSocket(): {
           ...prev,
           { id: nextMsgId(), role: 'assistant', content: '', streaming: true, taskId: envelope.taskId }
         ])
-        // 启动 watchdog
-        activeTaskId.current = envelope.taskId
-        resetWatchdog()
+        // watchdog 不在 ack 时启动 — 排队任务的 ack 会在前序任务完成前到达，
+        // 过早计时会导致排队任务被误取消。watchdog 由首个 task.token/task.status 启动。
         break
       }
 
       case 'task.status': {
         const text = (envelope.payload.text as string) ?? ''
         setStatusText(text)
-        if (envelope.taskId === activeTaskId.current) resetWatchdog()
+        // status 意味着任务已开始执行 — 启动或重置 watchdog
+        activeTaskId.current = envelope.taskId
+        resetWatchdog()
         break
       }
 
@@ -161,8 +162,9 @@ export function useClawSocket(): {
           }
           return updated
         })
-        // 只为当前活跃任务重置 watchdog
-        if (envelope.taskId === activeTaskId.current) resetWatchdog()
+        // token 到达说明任务正在流式输出 — 启动或重置 watchdog
+        activeTaskId.current = envelope.taskId
+        resetWatchdog()
         break
       }
 

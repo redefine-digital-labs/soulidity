@@ -116,6 +116,11 @@ function processCodexEvent(input, dir) {
   session.status = mapEventToStatus(eventType)
   session.lastUpdated = now
 
+  // New turn in same session: clear previous endedAt so useCliStatus shows it as active
+  if (eventType === 'agent-turn-start') {
+    delete session.endedAt
+  }
+
   // Terminal events: mark session as ended so useCliStatus filters it out
   if (eventType === 'agent-turn-complete' || eventType === 'agent-error') {
     session.endedAt = now

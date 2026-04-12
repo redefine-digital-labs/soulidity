@@ -16,13 +16,17 @@ import {
 /** 内存会话记录 — setupWebSocket 时从当日 JSON 恢复（须在 initDataDir 之后） */
 let conversation: ChatMessageData[] = []
 const clients = new Set<WebSocket>()
+/** Pending user turns not yet in conversation (taskId → content). Cleared on task success/error/cancel. */
+const pendingUserTurns = new Map<string, string>()
 
 /** 任务协调器：FIFO 串行队列 */
 const coordinator = new TaskCoordinator(
-  // getHistory：返回不含最后一条 user 消息的历史（agentLoop 内部会自己追加 prompt）
-  () => conversation.slice(0, -1),
+  // getHistory：返回当前已完成的会话历史（user 消息由 pushMessages 在任务成功后追加）
+  () => [...conversation],
   // pushMessages：任务完成后追加本轮所有消息（tool_calls + tool_result + final assistant）
   (messages, userContent) => {
+    // 用户消息在任务成功后才追加到会话（非入队时），避免排队任务打乱顺序
+    if (userContent) conversation.push({ role: 'user', content: userContent })
     conversation.push(...messages)
     // Persist user message to disk only on success (deferred from enqueue-time)
     if (userContent) memoryService.appendMessage({ role: 'user', content: userContent })
@@ -93,6 +97,17 @@ export async function setupWebSocket(
       payload: { messages: conversation }
     })
 
+    // 重放尚在排队 / 执行中的用户消息，避免重连客户端丢失未完成的 turn
+    for (const [taskId, content] of pendingUserTurns) {
+      sendTo(socket, {
+        id: genMsgId(),
+        type: 'task.ack',
+        taskId,
+        ts: new Date().toISOString(),
+        payload: { content }
+      })
+    }
+
     socket.on('message', (raw: Buffer) => {
       try {
         const data = JSON.parse(raw.toString())
@@ -123,11 +138,8 @@ function handleClientMessage(
     case 'task.create': {
       const content = (msg.payload?.content as string) ?? ''
 
-      // 先将用户消息追加到内存会话，确保 enqueue → drain → getHistory()
-      // 能看到完整历史（slice(0,-1) 正确去掉本条 user 消息而非上轮 assistant 回复）
-      // 保持对 userMsg 的引用，以便 onError/onCancelled 能按引用精确回滚
-      const userMsg: ChatMessageData = { role: 'user', content }
-      conversation.push(userMsg)
+      // 用户消息不在入队时追加到 conversation — 由 pushMessages 在任务成功后原子追加，
+      // 避免排队任务的 user 消息插入到前序任务的 assistant 回复之前导致历史错序
 
       // 入队 Task Coordinator（串行执行）
       let streamNotified = false
@@ -155,6 +167,7 @@ function handleClientMessage(
           })
         },
         onDone(fullContent) {
+          pendingUserTurns.delete(msg.taskId)
           emotionService.notifyTaskCompleted()
           broadcast({
             id: genMsgId(),
@@ -165,10 +178,7 @@ function handleClientMessage(
           })
         },
         onError(code, message) {
-          // Rollback in-memory user message — disk was never written (deferred to onDone)
-          // 按引用定位，避免多任务排队时 pop() 误删其他任务的消息
-          const idx = conversation.indexOf(userMsg)
-          if (idx !== -1) conversation.splice(idx, 1)
+          pendingUserTurns.delete(msg.taskId)
           emotionService.notifyStreamEnd()
           broadcast({
             id: genMsgId(),
@@ -179,9 +189,7 @@ function handleClientMessage(
           })
         },
         onCancelled() {
-          // Rollback in-memory user message — disk was never written (deferred to onDone)
-          const idx = conversation.indexOf(userMsg)
-          if (idx !== -1) conversation.splice(idx, 1)
+          pendingUserTurns.delete(msg.taskId)
           emotionService.notifyStreamEnd()
           broadcast({
             id: genMsgId(),
@@ -194,9 +202,7 @@ function handleClientMessage(
       })
 
       if (!accepted) {
-        // 入队失败，回滚内存中的消息
-        const idx = conversation.indexOf(userMsg)
-        if (idx !== -1) conversation.splice(idx, 1)
+        // 入队失败 — 用户消息未写入 conversation，无需回滚
         broadcast({
           id: genMsgId(),
           type: 'task.error',
@@ -208,6 +214,7 @@ function handleClientMessage(
       }
 
       // 入队成功 — 磁盘写入已推迟到 onDone（pushMessages 回调）
+      pendingUserTurns.set(msg.taskId, content)
       emotionService.notifyUserMessage()
 
       // 广播 ack（附带 content 以便其他窗口同步用户消息）
