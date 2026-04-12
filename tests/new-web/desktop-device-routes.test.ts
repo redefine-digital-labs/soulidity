@@ -31,7 +31,7 @@ describe('POST /api/desktop/device/start', () => {
     mockedStartDesktopDeviceSession.mockResolvedValue(sessionData)
 
     const { POST } = await import('../../web/app/api/desktop/device/start/route')
-    const response = await POST()
+    const response = await POST(new Request('http://localhost', { method: 'POST' }) as any)
     const body = await response.json()
 
     expect(body).toEqual(sessionData)

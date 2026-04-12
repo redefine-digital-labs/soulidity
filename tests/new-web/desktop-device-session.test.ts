@@ -126,6 +126,11 @@ describe('pollDesktopDeviceSession', () => {
     })
 
     expect(result.status).toBe('expired')
+    expect(mockedPrisma.desktopDeviceSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'expired' }),
+      }),
+    )
   })
 })
 
@@ -224,5 +229,28 @@ describe('completeDesktopDeviceSession', () => {
     })
 
     expect(result.status).toBe('confirmed')
+  })
+
+  it('returns expired when concurrent poll expires session during complete', async () => {
+    const session = {
+      id: 'session-1',
+      accountId: null,
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: new Date('2026-04-12T10:10:00Z'),
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'pending',
+    }
+    mockedPrisma.desktopDeviceSession.findUnique
+      .mockResolvedValueOnce(session) // outer lookup sees pending
+      .mockResolvedValueOnce({ status: 'expired', accountId: null }) // tx re-check: concurrent poll expired it
+
+    const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', {
+      now: new Date('2026-04-12T10:05:00Z'),
+    })
+
+    expect(result.status).toBe('expired')
   })
 })

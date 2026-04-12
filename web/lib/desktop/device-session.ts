@@ -227,7 +227,7 @@ export async function pollDesktopDeviceSession(
   }
 
   const now = options.now ?? new Date()
-  const shouldExpire = session.status === 'pending' && now >= session.expiresAt
+  const shouldExpire = session.status !== 'expired' && now >= session.expiresAt
   const updatedSession = await prisma.desktopDeviceSession.update({
     where: { id: session.id },
     data: shouldExpire
@@ -275,7 +275,7 @@ export async function completeDesktopDeviceSession(
   }
 
   const now = options.now ?? new Date()
-  const shouldExpire = session.status === 'pending' && now >= session.expiresAt
+  const shouldExpire = session.status !== 'expired' && now >= session.expiresAt
 
   if (session.status === 'expired' || shouldExpire) {
     const expiredSession = session.status === 'expired'
@@ -313,6 +313,9 @@ export async function completeDesktopDeviceSession(
       if (current?.accountId && current.accountId !== accountId) {
         throw new DesktopDeviceSessionConflictError()
       }
+      if (!current || current.status === 'expired') {
+        return null
+      }
       return tx.desktopDeviceSession.findUnique({
         where: { id: session.id },
         select: deviceSessionCompleteResultSelect,
@@ -330,5 +333,9 @@ export async function completeDesktopDeviceSession(
     })
   })
 
-  return toCompleteConfirmedResponse(confirmedSession!)
+  if (!confirmedSession || confirmedSession.status === 'expired') {
+    return toStatusResponse(session)
+  }
+
+  return toCompleteConfirmedResponse(confirmedSession)
 }
