@@ -514,7 +514,7 @@ export function FloatingBall(): React.JSX.Element {
           onContextMenu={handleContextMenu}
           title="Claw 🐾"
         >
-          <SpriteRenderer config={spriteConfig} animation={spriteAnimation} width={56} height={56} />
+          <SpriteRenderer config={spriteConfig} animation={spriteAnimation} width={120} height={120} />
         </div>
         {expanded && direction === 'right' && (
           <div className="qi-area">

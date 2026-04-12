@@ -30,6 +30,10 @@ export function SpriteRenderer({ config, animation, width, height }: SpriteRende
   const lastTimeRef = useRef(0)
   const currentAnimRef = useRef(animation)
 
+  const displayW = width ?? config.frameWidth
+  const displayH = height ?? config.frameHeight
+  const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1
+
   useEffect(() => {
     const img = new Image()
     img.src = config.src
@@ -65,13 +69,17 @@ export function SpriteRenderer({ config, animation, width, height }: SpriteRende
         const frameIndex = anim.frames[frameRef.current]
         const col = frameIndex % config.columns
         const row = Math.floor(frameIndex / config.columns)
-        ctx.clearRect(0, 0, config.frameWidth, config.frameHeight)
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, displayW, displayH)
+        ctx.imageSmoothingEnabled = true
         ctx.drawImage(
           sheetRef.current,
           col * config.frameWidth, row * config.frameHeight,
           config.frameWidth, config.frameHeight,
-          0, 0, config.frameWidth, config.frameHeight,
+          0, 0, displayW, displayH,
         )
+
         frameRef.current++
         if (frameRef.current >= anim.frames.length) {
           frameRef.current = anim.loop ? 0 : anim.frames.length - 1
@@ -81,14 +89,15 @@ export function SpriteRenderer({ config, animation, width, height }: SpriteRende
     }
     rafRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [config])
+  }, [config, displayW, displayH, dpr])
 
   return (
     <canvas
       ref={canvasRef}
-      width={config.frameWidth}
-      height={config.frameHeight}
-      style={{ width: width ?? config.frameWidth, height: height ?? config.frameHeight }}
+      width={Math.round(displayW * dpr)}
+      height={Math.round(displayH * dpr)}
+      style={{ width: displayW, height: displayH }}
+      aria-hidden="true"
     />
   )
 }

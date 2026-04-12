@@ -42,8 +42,10 @@ function resolveAllowedOrigins(): string[] {
 }
 
 /** 悬浮球窗口尺寸（含气泡区域） */
-const BALL_WIN_W = 240
-const BALL_WIN_H = 340
+const PET_SIZE = 120
+const WINDOW_PADDING = 40
+const BALL_WIN_W = PET_SIZE + WINDOW_PADDING * 2
+const BALL_WIN_H = PET_SIZE + WINDOW_PADDING * 2 + 30
 
 function createBallWindow(): void {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
@@ -102,7 +104,7 @@ function createBallWindow(): void {
   //    需要 polling 检测光标是否在球图标区域上方，临时关闭穿透以接收 drop ──
   let pollIgnoring = true // 当前 main 认为的穿透状态
   const POLL_INTERVAL = 80
-  const BALL_SIZE = 56
+  const BALL_SIZE = PET_SIZE
   const pollTimer = setInterval(() => {
     if (!ballWin || ballWin.isDestroyed()) return
     const cursor = screen.getCursorScreenPoint()

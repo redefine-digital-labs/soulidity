@@ -86,8 +86,8 @@ body,
 
 /* ── 悬浮球 ──────────────────────────────── */
 .ball {
-  width: 56px;
-  height: 56px;
+  width: 120px;
+  height: 120px;
   background: transparent;
   display: flex;
   align-items: center;
