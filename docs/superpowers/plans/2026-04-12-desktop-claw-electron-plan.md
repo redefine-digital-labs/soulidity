@@ -1,319 +1,244 @@
-# Desktop Companion — 基于 Desktop-Claw 改造计划
+# Desktop Companion — Desktop-Claw Electron Implementation Plan
 
-## Context
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-直接在 [Desktop-Claw](https://github.com/DjTaNg-404/Desktop-Claw) 代码基础上改造，而非从零搭建。Desktop-Claw 已经提供了：
-- Electron 34 + React 18 + electron-vite + pnpm monorepo 完整骨架
-- 透明悬浮窗口 + click-through + 拖拽 + 右键菜单
-- WebSocket + Fastify 后端通信
-- emotion 状态系统（idle/busy/done/night + CSS 动画）
-- SOUL.md 人格系统 + 记忆系统
-- electron-builder 打包 + GitHub Actions CI
-- 设置面板（LLM 配置）
+**Goal:** Hard-switch the desktop companion route to Electron by forking Desktop-Claw, delivering a Phase 1 companion shell first and staging Soul marketplace integration as Phase 2.
 
-一期目标：在 Desktop-Claw 基础上增加 CLI 状态监听（Claude Code + Codex hooks）、默认 sprite sheet 形象、agent Ed25519 钱包，并适配为 Soulidity Desktop。
+**Architecture:** `desktop/` becomes a Desktop-Claw-based pnpm workspace with `apps/desktop + packages/backend + packages/shared`. Phase 1 only ships the local companion shell: file-based CLI status protocol, transparent overlay sprite rendering, agent wallet, settings wiring, and Soulidity branding. Phase 2 layers Soul marketplace download, `metadata_ref` parsing, `SoulAssets` / `ContentAccessList`, and account binding onto that shell.
 
-## 复用 vs 改造 vs 新增
+**Tech Stack:** Electron, React, electron-vite, pnpm workspace, Node `fs.watch`, Canvas API, `@mysten/sui`, `keytar`
 
-| Desktop-Claw 组件 | 处理方式 | 说明 |
-|-------------------|---------|------|
-| Electron 骨架 + electron-vite | **复用** | 完整保留 |
-| 透明悬浮窗口 + FloatingBall | **改造** | 把 56px CSS 球替换为 sprite sheet 角色 |
-| emotion 系统 (idle/busy/done/night) | **改造** | 扩展到 6 状态（idle/thinking/working/needs-attention/completed/error） |
-| IPC bridge + preload | **复用** | 完整保留 |
-| 设置面板 (SettingsPanel) | **改造** | 增加 agent 钱包显示 |
-| WebSocket + Fastify 后端 | **复用** | 保留架构，后续可接入 |
-| SOUL.md 人格系统 | **复用** | 与 Soulidity 的 soul.md 五段式对齐 |
-| 记忆系统 (memory/) | **复用** | 保留，一期不扩展 |
-| AI agent loop | **复用** | 保留，一期不修改 |
-| ChatPanel / ChatBubble | **复用** | 保留聊天功能 |
-| LLM 配置 | **复用** | 已有完整配置 UI |
-| 文件技能 (read/write/edit) | **复用** | 保留 |
-| 右键菜单 + 拖拽 | **复用** | 完整保留 |
-| — | **新增** | CLI 状态文件监听 (status-watcher) |
-| — | **新增** | Claude Code hook 适配器 |
-| — | **新增** | Codex hook 适配器 |
-| — | **新增** | Sprite sheet 渲染器 |
-| — | **新增** | 默认 sprite sheet 形象资产 |
-| — | **新增** | Agent Ed25519 钱包 |
-| — | **新增** | 品牌适配（名称、图标、协议改为 soulidity） |
+**Spec:** `docs/superpowers/specs/2026-04-10-desktop-companion-design.md`
 
-## 目录结构变更
+**Supersedes:** `docs/plans/2026-04-09-soulidity-tauri-desktop-integration-plan.md`, `docs/superpowers/plans/2026-04-10-desktop-companion-plan.md`, `docs/superpowers/plans/2026-04-12-desktop-companion-phase2-plan.md`, `docs/superpowers/specs/admin-ralph-soulidity-tauri-desktop-integration-design-20260410-212706.md`
 
-在 Desktop-Claw 现有结构上的增量：
+---
 
-```
-desktop/                                # (原 Desktop-Claw 根目录)
-├── apps/desktop/
-│   ├── src/
-│   │   ├── main/
-│   │   │   ├── index.ts               # 修改：增加 status-watcher 启动
-│   │   │   ├── status-watcher.ts      # 新增：fs.watch ~/.soulidity/agent-status.json
-│   │   │   └── agent-wallet.ts        # 新增：Ed25519 keypair (tweetnacl)
-│   │   ├── preload/
-│   │   │   └── index.ts               # 修改：增加 status + wallet IPC
-│   │   └── renderer/
-│   │       ├── components/
-│   │       │   ├── FloatingBall/       # 修改：替换 CSS 球为 sprite 角色
-│   │       │   │   ├── SpriteRenderer.tsx  # 新增：Canvas sprite sheet 渲染
-│   │       │   │   └── index.tsx       # 修改：使用 SpriteRenderer
-│   │       │   ├── AgentWallet/        # 新增：agent 地址展示组件
-│   │       │   └── ...existing...
-│   │       ├── hooks/
-│   │       │   ├── useClawEmotion.ts   # 修改：扩展到 6 状态
-│   │       │   ├── useCliStatus.ts     # 新增：订阅 agent-status-changed
-│   │       │   └── ...existing...
-│   │       └── ...existing...
-│   ├── resources/
-│   │   ├── hooks/                      # 新增
-│   │   │   ├── soulidity-claude-hook.js
-│   │   │   └── soulidity-codex-hook.js
-│   │   ├── default-persona/            # 新增
-│   │   │   ├── sprite-config.json
-│   │   │   └── sheet.png
-│   │   └── persona/                    # 现有：SOUL.md 等
-│   └── electron.vite.config.ts         # 保持不变
-│
-├── packages/
-│   ├── backend/                        # 现有：保留不动
-│   ├── shared/
-│   │   └── src/types/
-│   │       ├── emotion.ts              # 修改：扩展情绪类型
-│   │       └── cli-status.ts           # 新增：CLI 状态类型定义
-│   └── ...existing...
-│
-└── package.json                        # 修改：名称、appId
+## Phase Split
+
+### Phase 1 — Companion Shell
+
+- Fork Desktop-Claw into `desktop/` and keep its Electron workspace layout.
+- Add `~/.soulidity/agent-status.json` watcher plus Claude Code / Codex hook adapters.
+- Replace the default floating CSS ball with sprite-sheet rendering.
+- Keep Desktop-Claw's existing 4-state internal emotion system, but drive it from a new 6-state CLI protocol.
+- Generate one agent Ed25519 keypair per device and expose the Sui address in settings.
+- Rename the app, icons, protocol, and default persona to Soulidity.
+
+### Phase 2 — Soul Integration
+
+- Parse `metadata_ref` persona metadata from Soul records.
+- Download sprite assets from public blobs or protected Soul asset access APIs.
+- Bind the desktop agent address to the signed-in web account.
+- Gate protected downloads through `SoulAssets` / `ContentAccessList`.
+
+Phase 1 is the active build target. Phase 2 stays in this plan only to define the next integration boundary and prevent reintroducing deleted Tauri docs.
+
+## Locked Decisions
+
+- [ ] **Step 1: Lock the desktop base**
+
+Use Desktop-Claw as the only desktop base. Do not continue any Tauri implementation branch in parallel. If `desktop/` contains stale local artifacts from prior Tauri experiments, replace them during the Desktop-Claw fork instead of adapting them.
+
+- [ ] **Step 2: Lock the status model**
+
+Create `packages/shared/src/types/cli-status.ts` with the canonical protocol:
+
+```ts
+export type CliAgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'working'
+  | 'needs-attention'
+  | 'completed'
+  | 'error'
 ```
 
-## 任务分解
+Keep Desktop-Claw's existing internal emotion enum unchanged for Phase 1. The mapping is fixed:
 
-### Task 1: Fork Desktop-Claw 到 desktop/
+```ts
+idle -> idle
+thinking -> busy
+working -> busy
+completed -> done
+needs-attention -> night
+error -> night
+```
 
-- 克隆 Desktop-Claw 到 `desktop/` 目录
-- 修改 `package.json`：名称改为 `soulidity-desktop`，appId 改为 `com.openclaw.soulidity.desktop`
-- 修改打包配置中的应用名、图标路径、deep-link 协议（`soulidity://`）
-- 验证 `pnpm install && pnpm run dev` 能正常启动
+The overlay sprite renderer may consume raw `CliAgentStatus` directly. Backend memory/emotion services stay on the 4-state model in Phase 1.
 
-### Task 2: CLI 状态类型定义
+- [ ] **Step 3: Lock watcher behavior**
 
-**新增文件：**
-- `packages/shared/src/types/cli-status.ts`
+Implement `apps/desktop/src/main/status-watcher.ts` in the Electron main process with these rules:
 
-```typescript
-export type CliAgentStatus = 'idle' | 'thinking' | 'working' | 'needs-attention' | 'completed' | 'error'
+- watch `~/.soulidity/`
+- create the directory if missing
+- read `agent-status.json` once on startup
+- debounce file events before parse
+- ignore malformed intermediate writes
+- aggregate by most recent non-ended session
+- broadcast `agent-status-changed` to every window that needs it, not just the floating window
 
-export interface AgentSession {
-  sessionId: string
-  clientType: 'claude-code' | 'codex' | 'custom'
-  status: CliAgentStatus
-  sessionTitle?: string
-  currentAction?: { tool?: string; details?: string; timestamp: number }
-  needsAttention?: string
-  startedAt: number
-  lastUpdated: number
-  endedAt?: number
-}
+- [ ] **Step 4: Lock wallet behavior**
 
-export interface AgentStatusFile {
-  version: 1
-  lastUpdated: number
-  sessions: Record<string, AgentSession>
+Implement `apps/desktop/src/main/agent-wallet.ts` in the Electron main process with these rules:
+
+- dependency placement is fixed: add `@mysten/sui` and `keytar` in `apps/desktop/package.json`
+- generate the keypair with the Sui SDK, not manual hashing helpers
+- derive the address with `keypair.toSuiAddress()` / `publicKey.toSuiAddress()` semantics
+- do not describe or implement `SHA-256(0x00 || publicKey)`; Sui address derivation follows SDK `blake2b(scheme_flag || public_key)` behavior
+- store only public metadata in app data
+- store the private key in OS keychain via `keytar`
+
+Public metadata file:
+
+```json
+{
+  "address": "0x...",
+  "publicKey": "hex...",
+  "createdAt": 1710000000000
 }
 ```
 
-**修改文件：**
-- `packages/shared/src/types/emotion.ts` — 扩展 EmotionState 加入新状态或保持映射
+- [ ] **Step 5: Lock package scope**
 
-### Task 3: CLI 状态文件监听器
+Put all desktop-only dependencies in `apps/desktop/package.json`. Do not put wallet or watcher dependencies in `packages/backend` for Phase 1.
 
-**新增文件：**
-- `apps/desktop/src/main/status-watcher.ts`
+## Phase 1 Implementation
 
-```typescript
-import { watch, readFileSync, mkdirSync, existsSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
-import type { BrowserWindow } from 'electron'
-import type { AgentStatusFile, CliAgentStatus } from '@desktop-claw/shared'
+### Task 1: Fork and rebrand Desktop-Claw
 
-const STATUS_DIR = join(homedir(), '.soulidity')
-const STATUS_FILE = join(STATUS_DIR, 'agent-status.json')
+**Files:**
+- Replace: `desktop/**` with Desktop-Claw workspace
+- Modify: `desktop/package.json`
+- Modify: `desktop/apps/desktop/package.json`
+- Modify: `desktop/apps/desktop/electron.vite.config.ts`
+- Modify: `desktop/apps/desktop/resources/**`
 
-export function setupStatusWatcher(windows: { ball?: BrowserWindow }) {
-  if (!existsSync(STATUS_DIR)) mkdirSync(STATUS_DIR, { recursive: true })
+- [ ] **Step 1: Fork Desktop-Claw into `desktop/`**
 
-  let debounceTimer: NodeJS.Timeout | null = null
+`desktop/` becomes the Desktop-Claw monorepo root. Existing Tauri-shaped leftovers in that path are not reused.
 
-  const watcher = watch(STATUS_DIR, (eventType, filename) => {
-    if (filename !== 'agent-status.json') return
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => {
-      try {
-        const content = readFileSync(STATUS_FILE, 'utf-8')
-        const status: AgentStatusFile = JSON.parse(content)
-        const aggregate = resolveAggregateStatus(status)
-        windows.ball?.webContents.send('agent-status-changed', aggregate)
-      } catch {}
-    }, 100)
-  })
+- [ ] **Step 2: Apply Soulidity branding**
 
-  return () => watcher.close()
-}
+Rename package metadata, `productName`, app ID, icons, deep-link protocol, data-directory labels, and bundled persona copy to Soulidity.
 
-function resolveAggregateStatus(file: AgentStatusFile): CliAgentStatus {
-  const sessions = Object.values(file.sessions)
-    .filter(s => !s.endedAt)
-    .sort((a, b) => b.lastUpdated - a.lastUpdated)
-  return (sessions[0]?.status as CliAgentStatus) ?? 'idle'
-}
-```
+- [ ] **Step 3: Verify the workspace starts**
 
-**修改文件：**
-- `apps/desktop/src/main/index.ts` — 在 app.whenReady 中调用 `setupStatusWatcher({ ball: ballWindow })`
-- `apps/desktop/src/preload/index.ts` — 增加 `onAgentStatusChanged` 订阅
+Run the Desktop-Claw workspace install/dev flow and confirm the overlay and settings windows boot.
 
-### Task 4: Claude Code Hook 适配器
+### Task 2: Add the shared CLI status protocol
 
-**新增文件：**
-- `apps/desktop/resources/hooks/soulidity-claude-hook.js`
+**Files:**
+- Create: `desktop/packages/shared/src/types/cli-status.ts`
+- Modify: `desktop/packages/shared/src/types/emotion.ts`
+- Modify: `desktop/apps/desktop/src/preload/index.ts`
 
-单文件 Node.js 脚本（零依赖），通过 stdin 接收 Claude Code hook JSON，原子写入 `~/.soulidity/agent-status.json`。
+- [ ] **Step 1: Add `CliAgentStatus`, `AgentSession`, and `AgentStatusFile`**
 
-处理 6 种事件：
-- `SessionStart` → idle
-- `UserPromptSubmit` → working
-- `PreToolUse` → working + currentAction 详情
-- `PostToolUse` → 清除 currentAction
-- `Stop` → completed
-- `SessionEnd` → idle
+Match the protocol defined in the canonical spec.
 
-参考 `/Applications/Confirmo.app/Contents/Resources/confirmo-hook.js` 的实现模式。
+- [ ] **Step 2: Expose preload subscription**
 
-### Task 5: Codex Hook 适配器
+Add `onAgentStatusChanged` and one-shot `getCurrentAgentStatus` preload APIs so renderer windows can subscribe without accessing Node APIs directly.
 
-**新增文件：**
-- `apps/desktop/resources/hooks/soulidity-codex-hook.js`
+### Task 3: Implement Electron main-process status watching
 
-通过命令行参数接收 JSON，处理 `agent-turn-complete` 事件，支持转发到用户原有 notify 命令。
+**Files:**
+- Create: `desktop/apps/desktop/src/main/status-watcher.ts`
+- Modify: `desktop/apps/desktop/src/main/index.ts`
 
-参考 `/Applications/Confirmo.app/Contents/Resources/confirmo-codex-hook.js`。
+- [ ] **Step 1: Implement startup read + watch loop**
 
-### Task 6: Sprite Sheet 渲染器
+Use `fs.watch` over `~/.soulidity/`, read the current file at boot, debounce updates, and recover cleanly from partial writes.
 
-**新增文件：**
-- `apps/desktop/src/renderer/components/FloatingBall/SpriteRenderer.tsx`
+- [ ] **Step 2: Register lifecycle in `main/index.ts`**
 
-Canvas API 实现，接收 `SpriteSheetConfig` + 当前状态名，用 `requestAnimationFrame` 逐帧绘制。
+Start the watcher during app boot and close it on quit.
 
-```typescript
-interface SpriteSheetConfig {
-  src: string           // sprite sheet 图片路径
-  frameWidth: number
-  frameHeight: number
-  columns: number
-  animations: Record<string, {
-    frames: number[]
-    fps: number
-    loop: boolean
-  }>
-}
-```
+- [ ] **Step 3: Broadcast to all interested windows**
 
-**修改文件：**
-- `apps/desktop/src/renderer/components/FloatingBall/index.tsx` — 条件渲染：有 sprite config 时用 SpriteRenderer，否则保留原 CSS 球
+The floating companion window and any panel/settings surface that needs current status must receive the same event.
 
-### Task 7: 默认 Sprite Sheet 资产
+### Task 4: Add hook adapters
 
-**新增文件：**
-- `apps/desktop/resources/default-persona/sprite-config.json`
-- `apps/desktop/resources/default-persona/sheet.png`
+**Files:**
+- Create: `desktop/apps/desktop/resources/hooks/soulidity-claude-hook.js`
+- Create: `desktop/apps/desktop/resources/hooks/soulidity-codex-hook.js`
 
-从公开素材制作 6 状态动画的 sprite sheet。如果无合适素材，用简笔画占位（后续替换）。
+- [ ] **Step 1: Claude Code adapter**
 
-每个状态至少 2-4 帧：idle（呼吸）、thinking（挠头）、working（打字）、needs-attention（跳动）、completed（庆祝）、error（沮丧）。
+Read hook JSON from stdin, update both aggregate and per-session files under `~/.soulidity/`, detect attention tools, and atomically write changes.
 
-### Task 8: 状态 → emotion 桥接
+- [ ] **Step 2: Codex adapter**
 
-**新增文件：**
-- `apps/desktop/src/renderer/hooks/useCliStatus.ts`
+Read notify payload from argv/stdin contract chosen by the implementation, map `agent-turn-complete` to `completed`, preserve optional forwarding to an existing user notify command.
 
-```typescript
-export function useCliStatus() {
-  const [status, setStatus] = useState<CliAgentStatus>('idle')
+### Task 5: Replace the floating ball with sprite rendering
 
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onAgentStatusChanged((newStatus) => {
-      setStatus(newStatus)
-    })
-    return unsubscribe
-  }, [])
+**Files:**
+- Create: `desktop/apps/desktop/src/renderer/components/FloatingBall/SpriteRenderer.tsx`
+- Modify: `desktop/apps/desktop/src/renderer/components/FloatingBall/index.tsx`
+- Create: `desktop/apps/desktop/src/renderer/hooks/useCliStatus.ts`
+- Modify: `desktop/apps/desktop/src/renderer/hooks/useClawEmotion.ts`
+- Create: `desktop/apps/desktop/resources/default-persona/sprite-config.json`
+- Create: `desktop/apps/desktop/resources/default-persona/sheet.png`
 
-  return status
-}
-```
+- [ ] **Step 1: Implement raw CLI status subscription**
 
-**修改文件：**
-- `apps/desktop/src/renderer/hooks/useClawEmotion.ts` — CLI status 变化时同步更新 emotion 状态
-- Desktop-Claw 的 emotion 映射：CLI `working` → emotion `busy`，CLI `completed` → emotion `done`，CLI `idle` → emotion `idle`
+`useCliStatus()` listens to preload events and returns the latest `CliAgentStatus`.
 
-### Task 9: Agent Ed25519 钱包
+- [ ] **Step 2: Implement sprite playback**
 
-**新增文件：**
-- `apps/desktop/src/main/agent-wallet.ts`
+Render sprite-sheet animations with Canvas and `requestAnimationFrame`.
 
-用 `tweetnacl` 生成 Ed25519 keypair，Sui 地址 = SHA-256(0x00 || publicKey) 前 32 字节 hex。存入 Desktop-Claw 现有的 config 系统（`data/config.json`）。
+- [ ] **Step 3: Bridge 6-state CLI status into 4-state emotion**
 
-**新增依赖：**
-- `tweetnacl` → `packages/backend/package.json` 或 `apps/desktop/package.json`
+Use the locked mapping above. Do not expand backend emotion state in Phase 1.
 
-**IPC handlers：**
-- `generate-agent-keypair` — 首次生成，后续返回已有
-- `load-agent-keypair` — 读取
+- [ ] **Step 4: Bundle a default persona**
 
-**修改文件：**
-- `apps/desktop/src/main/index.ts` — 注册 IPC handlers
-- `apps/desktop/src/preload/index.ts` — 暴露 API
+Ship a placeholder Soulidity sprite-sheet asset set with at least the 6 named states.
 
-### Task 10: Agent 钱包 UI
+### Task 6: Add the agent wallet
 
-**新增文件：**
-- `apps/desktop/src/renderer/components/AgentWallet/index.tsx`
+**Files:**
+- Create: `desktop/apps/desktop/src/main/agent-wallet.ts`
+- Modify: `desktop/apps/desktop/src/main/index.ts`
+- Modify: `desktop/apps/desktop/src/preload/index.ts`
+- Create: `desktop/apps/desktop/src/renderer/components/AgentWallet/index.tsx`
+- Modify: `desktop/apps/desktop/src/renderer/components/SettingsPanel/index.tsx`
 
-在 SettingsPanel 中新增一个 tab 或区域，显示：
-- Agent Sui 地址（可复制）
-- 公钥 hex
-- "首次启动时自动生成" 提示
+- [ ] **Step 1: Generate or load one device wallet**
 
-**修改文件：**
-- `apps/desktop/src/renderer/components/SettingsPanel/index.tsx` — 加入 AgentWallet 组件
+On first use, create the keypair, persist only public metadata to app data, and save the private key in OS keychain via `keytar`.
 
-### Task 11: 品牌适配
+- [ ] **Step 2: Expose wallet IPC**
 
-**修改文件：**
-- `apps/desktop/package.json` — name, productName, appId
-- `apps/desktop/electron.vite.config.ts` — 如需要
-- `apps/desktop/resources/icon.*` — 替换为 Soulidity 图标（可暂用占位图标）
-- `packages/backend/src/paths.ts` — 数据目录名改为 `Soulidity-Desktop`
-- `apps/desktop/resources/persona/SOUL.md` — 替换为 Soulidity 角色人格描述
+Add `generateAgentKeypair`, `loadAgentKeypair`, and `copyAgentAddress`-grade APIs as needed by the settings UI.
 
-### Task 12: 打包 + 验证
+- [ ] **Step 3: Show wallet information in settings**
 
-**修改文件：**
-- `apps/desktop/package.json` build 字段 — 更新 appId、productName、protocols
+Display the address, public key, and the “generated locally on first launch” explanation.
 
-**验证步骤：**
-1. `cd desktop && pnpm install && pnpm run dev` → 透明悬浮窗口显示 sprite 形象
-2. 手动写入 `~/.soulidity/agent-status.json` → 形象切换动画
-3. 安装 Claude Code hook → 真实 CLI 状态驱动
-4. 右键菜单 → 打开设置 → 看到 Agent 钱包地址
-5. `pnpm run build` → 打包成功
+## Phase 2 Integration Boundary
 
-## 关键依赖文件
+Phase 2 builds on the Electron shell above. It adds, without revisiting the desktop runtime choice:
 
-- Desktop-Claw `apps/desktop/src/main/index.ts` — 窗口创建和 IPC 注册入口
-- Desktop-Claw `apps/desktop/src/preload/index.ts` — contextBridge API 定义
-- Desktop-Claw `apps/desktop/src/renderer/components/FloatingBall/index.tsx` — 悬浮球渲染，需改造为 sprite
-- Desktop-Claw `packages/shared/src/types/emotion.ts` — emotion 类型定义，需扩展
-- Desktop-Claw `packages/backend/src/memory/emotion-service.ts` — emotion 状态机
-- Confirmo `confirmo-hook.js` — Claude Code hook 参考实现（`/Applications/Confirmo.app/Contents/Resources/`）
-- Confirmo `confirmo-codex-hook.js` — Codex hook 参考实现
+- `metadata_ref` parsing and persona config loading
+- marketplace/library download surfaces
+- account binding endpoint for the desktop agent address
+- protected asset access through `SoulAssets` / `ContentAccessList`
+
+No new Tauri-specific execution plan should be created for those items.
+
+## Verification
+
+- [ ] `rg -n "Tauri|desktop-companion-phase1|soulidity-tauri-desktop-integration" docs`
+Expected: only historical mentions intentionally retained in this plan/spec, not active execution docs.
+
+- [ ] Review `docs/superpowers/specs/2026-04-10-desktop-companion-design.md`
+Expected: Electron/Desktop-Claw is the canonical desktop runtime, Phase 1/Phase 2 boundaries are explicit, wallet storage no longer claims plaintext JSON private keys.
+
+- [ ] Review this plan
+Expected: no unresolved “或 / 如需要 / 保持映射 / choose one” style decisions remain.

@@ -4,18 +4,24 @@
 
 构建桌面形象管理应用，将 Soulidity Soul 生态延伸到桌面端。核心能力：根据 LLM CLI（Claude Code / Codex）的运行状态实时切换桌面形象动画，形象资产从 Soul 市场下载并通过链上访问控制保护，桌面端自带 Sui agent 地址参与 Soul 交互。
 
-## Scope — 一期
+## Scope
 
-### 做
+当前执行路线是 **Electron + Desktop-Claw**。本 spec 继续描述桌面 companion 的完整产品目标，但执行上拆成两个阶段，避免再生成并行的 Tauri 文档链。
+
+### Phase 1 — Companion Shell
 
 1. **统一状态协议** — `~/.soulidity/agent-status.json` 文件监听 + Claude Code / Codex 适配器
-2. **双窗口 Tauri 应用** — 主窗口（library / market / settings / agent 管理）+ 可"放出"的透明悬浮窗口
-3. **Sprite Sheet 渲染** — Canvas API 逐帧动画，Soul metadata 定义状态映射
-4. **Soul Meta 扩展** — `metadata_ref` 指向 JSON，声明形象格式、状态映射、资产引用
-5. **SoulAssets 内容层** — 新增 Move 模块，与 Skills 同构（`Table<String, vector<AssetSlot>>`）
-6. **ContentAccessList** — 新增 Move 模块，独立于 grant 的内容访问权售卖机制
-7. **双钱包** — 用户 Privy 钱包 + 桌面端自动生成 agent 地址，登录时绑定
-8. **LLM Key 配置接口** — 预留 settings UI，支持配置 API key 或复用本机订阅
+2. **双窗口 Electron 应用** — 主窗口（library / market / settings / agent 管理）+ 可"放出"的透明悬浮窗口
+3. **Sprite Sheet 渲染** — Canvas API 逐帧动画，先接入本地默认 persona 和 CLI 状态驱动
+4. **桌面 Agent 钱包** — 每设备一个 Ed25519 agent 地址，显示于 settings
+5. **LLM Key 配置接口** — 预留 settings UI，支持配置 API key 或复用本机订阅
+
+### Phase 2 — Soul Integration
+
+1. **Soul Meta 扩展** — `metadata_ref` 指向 JSON，声明形象格式、状态映射、资产引用
+2. **SoulAssets 内容层** — 新增 Move 模块，与 Skills 同构（`Table<String, vector<AssetSlot>>`）
+3. **ContentAccessList** — 新增 Move 模块，独立于 grant 的内容访问权售卖机制
+4. **账号与内容联动** — 用户 Privy 钱包 + 桌面 agent 地址绑定、市场下载、受保护内容访问
 
 ### 不做（预留）
 
@@ -27,10 +33,8 @@
 
 ## Reference
 
+- [Desktop-Claw](https://github.com/DjTaNg-404/Desktop-Claw) — Electron companion shell，窗口模型、workspace 分层、本地 backend
 - [Confirmo](https://confirmo.app) — Electron 桌面宠物，文件监听协议，Claude Code + Codex hooks
-- [WindowPet](https://github.com/SeakMengs/WindowPet) — Tauri + Phaser 3，透明窗口 + sprite state machine
-- [code-pet](https://github.com/Xiaooolong/code-pet) — Tauri v2，Claude Code hooks → JSON 文件 → SVG 动画
-- [BongoCat](https://github.com/ayangweb/BongoCat) — Tauri v2 + Vue + Pixi.js，Live2D 渲染 + 系统输入监听
 
 ---
 
@@ -40,7 +44,7 @@
 
 ```
 ~/.soulidity/
-├── agent-status.json          # 聚合状态（Tauri file watcher 监听）
+├── agent-status.json          # 聚合状态（Electron main-process watcher 监听）
 └── sessions/
     └── {session_id}.json      # 按 session 隔离
 ```
@@ -102,39 +106,44 @@ interface AgentSession {
 - 从 `input-messages` 提取 session title
 - 支持转发到用户原有的 notify 命令
 
-### Tauri 侧监听
+### Electron 主进程侧监听
 
-Rust 侧用 `notify` crate watch `~/.soulidity/agent-status.json`：
-- 文件变化 → 解析 JSON → 通过 `tauri::Emitter` 广播 `agent-status-changed` 事件
-- 主窗口和悬浮窗口均可订阅
-- 启动时读一次当前状态作为初始值
+Electron main process watch `~/.soulidity/agent-status.json`：
+- 启动时先读一次当前状态作为初始值
+- 文件变化后解析 JSON，并向需要状态的窗口广播 `agent-status-changed`
+- 监听器需要容忍原子写入过程中的短暂半成品文件
 
 ---
 
-## Module 2 — 双窗口 Tauri 应用
+## Module 2 — 双窗口 Electron 应用
 
 ### 窗口架构
 
 ```
-Tauri 进程（单进程）
+Desktop-Claw workspace
 │
-├─ MainWindow（现有，扩展）
-│  ├─ 现有页面：/ /explore /search /persona/:id /library /settings /auth
-│  ├─ 新增页面：/agents（agent 地址管理、grant 状态）
-│  ├─ 新增页面：/llm-settings（API key 配置）
-│  └─ 扩展页面：/library 增加"放出到桌面"操作
+├─ Electron Main Process
+│  ├─ window lifecycle
+│  ├─ status watcher
+│  ├─ wallet IPC
+│  └─ secure storage / protocol wiring
 │
-└─ PetOverlay（动态创建/销毁）
+├─ MainWindow（Desktop-Claw 主面板，扩展）
+│  ├─ library / market / settings / agent 管理
+│  ├─ settings 增加 agent wallet / LLM config
+│  └─ 后续可扩展 marketplace / auth / grants
+│
+└─ OverlayWindow（透明悬浮 companion）
    ├─ transparent: true
-   ├─ decorations: false
-   ├─ always_on_top: true
-   ├─ skip_taskbar: true
+   ├─ frameless
+   ├─ alwaysOnTop: true
+   ├─ skipTaskbar: true
    ├─ 初始尺寸：256x256（可配置）
-   ├─ 位置：记忆上次位置（AppData/state/overlay_position.json）
+   ├─ 位置：记忆上次位置（userData/state/overlay_position.json）
    └─ 内容：Canvas sprite 动画 + 状态气泡 + 右键菜单
 ```
 
-### PetOverlay 交互
+### OverlayWindow 交互
 
 | 操作 | 行为 |
 |------|------|
@@ -144,38 +153,39 @@ Tauri 进程（单进程）
 | 状态变化 | 播放过渡动画（idle → working 等） |
 | 无活跃 session | 显示 idle 动画 |
 
-### Tauri Commands（新增）
+### Electron IPC Contracts（新增）
 
-```rust
-// 悬浮窗口管理
-fn spawn_pet_overlay(position: Option<Position>) -> Result<()>
-fn close_pet_overlay() -> Result<()>
-fn set_overlay_position(x: f64, y: f64) -> Result<()>
-fn get_overlay_position() -> Result<Option<Position>>
+```ts
+// overlay lifecycle
+spawnPetOverlay(position?: Position): Promise<void>
+closePetOverlay(): Promise<void>
+setOverlayPosition(x: number, y: number): Promise<void>
+getOverlayPosition(): Promise<Position | null>
 
-// Agent 钱包
-fn generate_agent_keypair() -> Result<AgentKeypairInfo>  // 首次调用生成，后续返回已有
-fn load_agent_keypair() -> Result<Option<AgentKeypairInfo>>
-fn export_agent_address() -> Result<String>
+// agent wallet
+generateAgentKeypair(): Promise<AgentKeypairInfo>
+loadAgentKeypair(): Promise<AgentKeypairInfo | null>
+exportAgentAddress(): Promise<string>
 
-// 状态协议
-fn get_current_agent_status() -> Result<AgentStatusFile>
+// status protocol
+getCurrentAgentStatus(): Promise<AgentStatusFile | null>
+onAgentStatusChanged(listener: (status: AgentStatusFile) => void): () => void
 
-// LLM 配置
-fn save_llm_config(config: LlmConfig) -> Result<()>
-fn load_llm_config() -> Result<Option<LlmConfig>>
+// llm config
+saveLlmConfig(config: LlmConfig): Promise<void>
+loadLlmConfig(): Promise<LlmConfig | null>
 ```
 
 ### 本地存储扩展
 
 ```
-AppData/
+userData/
 ├── state/
 │   ├── installed_personas.json      # 现有
 │   ├── active_persona.json          # 现有
 │   ├── auth_session.json            # 现有
 │   ├── catalog_cache.json           # 现有
-│   ├── agent_keypair.json           # 新增：Ed25519 keypair
+│   ├── agent_keypair.json           # 新增：仅 public metadata
 │   ├── overlay_position.json        # 新增：悬浮窗口位置
 │   └── llm_config.json             # 新增：LLM key 配置
 │
@@ -325,7 +335,7 @@ interface SpriteSheetAsset {
    ├─ 用户在 ContentAccessList → 通过 access API 解密下载
    ├─ 桌面 agent 有 grant → 通过 agent access API 解密下载
    └─ 无权限 → 仅使用 publicAssets（预览/低帧版）
-5. 存入 AppData/personas/runtime/{soul-id}/
+5. 存入 userData/personas/runtime/{soul-id}/
 6. 生成本地 SpriteSheetConfig → 悬浮窗口加载
 ```
 
@@ -696,20 +706,19 @@ model ContentAccessRecord {
 
 ### Agent Keypair 生成
 
-桌面端首次启动时，Rust 侧生成 Ed25519 keypair：
+桌面端首次启动时，Electron main process 生成 Ed25519 keypair：
 
-```rust
-// src-tauri/src/agent_wallet.rs
-use ed25519_dalek::{SigningKey, VerifyingKey};
-
-struct AgentKeypairInfo {
-    address: String,          // Sui address (0x...)
-    public_key: String,       // hex-encoded
-    // private key 只存本地，不上传
+```ts
+// apps/desktop/src/main/agent-wallet.ts
+interface AgentKeypairInfo {
+  address: string     // Sui address (0x...)
+  publicKey: string   // hex-encoded
+  createdAt: number
 }
 ```
 
-- 存储：`AppData/state/agent_keypair.json`（仅 public 信息）+ 系统 keychain（private key）
+- 地址推导遵循 Sui SDK `toSuiAddress()` 语义，不手写 `SHA-256` 规则
+- 存储：`userData/state/agent_keypair.json`（仅 public 信息）+ 系统 keychain / secure storage（private key）
 - 每台设备一个 agent 地址，不跨设备复用
 
 ### 登录绑定流程
@@ -754,7 +763,7 @@ interface LlmConfig {
 ### 一期实现
 
 - Settings 页面 UI：输入框 + provider 选择 + "use local" 开关
-- 存储到 `AppData/state/llm_config.json`
+- 存储到 `userData/state/llm_config.json`
 - 不实际调用 LLM — 仅保存配置，供二期对话功能使用
 
 ---
@@ -800,7 +809,7 @@ interface LlmConfig {
 
 ## Constraints
 
-- 以现有 Tauri v2 + React 桌面工程为基础扩展，不另起新项目
+- 以 Desktop-Claw Electron workspace 为基础扩展，不保留并行 Tauri 实现路线
 - Move 合约新增模块（assets.move、content_access.move），不修改现有 Soul/SoulState 核心字段（除了新增 `assets_id: Option<ID>`）
 - SoulAssets 与 Skills 同构，复用相同的 event parsing、mirror、repository 模式
 - ContentAccessList 独立于 grant 体系，不受 ownership_epoch 影响
@@ -822,5 +831,5 @@ interface LlmConfig {
 9. LLM 配置页面可保存 provider/key 设置到本地（不实际调用）
 10. `sui move test --path move/soulidity` 通过
 11. `npm test` 相关测试通过
-12. `npm --prefix new-web run typecheck` 通过
-13. `npm --prefix new-web run build` 通过
+12. `npm --prefix web run typecheck` 通过
+13. `npm --prefix web run build` 通过
