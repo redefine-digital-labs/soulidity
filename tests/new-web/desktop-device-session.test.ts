@@ -103,7 +103,7 @@ describe('pollDesktopDeviceSession', () => {
     expect(result.status).toBe('expired')
   })
 
-  it('expires confirmed session when past expiresAt', async () => {
+  it('preserves confirmed session even when past expiresAt', async () => {
     const session = {
       id: 'session-1',
       accountId: 'account-123',
@@ -114,7 +114,7 @@ describe('pollDesktopDeviceSession', () => {
     }
     mockedPrisma.desktopDeviceSession.findUnique.mockResolvedValue(session)
     mockedPrisma.desktopDeviceSession.update.mockResolvedValue({
-      status: 'expired',
+      status: 'confirmed',
       accountId: 'account-123',
       expiresAt: session.expiresAt,
       pollIntervalSeconds: 5,
@@ -125,10 +125,10 @@ describe('pollDesktopDeviceSession', () => {
       now: new Date('2026-04-12T10:15:00Z'),
     })
 
-    expect(result.status).toBe('expired')
+    expect(result.status).toBe('confirmed')
     expect(mockedPrisma.desktopDeviceSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'expired' }),
+        data: { lastPolledAt: new Date('2026-04-12T10:15:00Z') },
       }),
     )
   })

@@ -220,7 +220,7 @@ export async function pollDesktopDeviceSession(
   }
 
   const now = options.now ?? new Date()
-  const shouldExpire = session.status !== 'expired' && now >= session.expiresAt
+  const shouldExpire = session.status === 'pending' && now >= session.expiresAt
   const updatedSession = await prisma.desktopDeviceSession.update({
     where: { id: session.id },
     data: shouldExpire
@@ -268,7 +268,7 @@ export async function completeDesktopDeviceSession(
   }
 
   const now = options.now ?? new Date()
-  const shouldExpire = session.status !== 'expired' && now >= session.expiresAt
+  const shouldExpire = session.status === 'pending' && now >= session.expiresAt
 
   if (session.status === 'expired' || shouldExpire) {
     const expiredSession = session.status === 'expired'

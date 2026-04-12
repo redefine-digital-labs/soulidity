@@ -34,7 +34,7 @@ function readStatusFile(statusDir) {
 function writeStatusFile(statusDir, data) {
   fs.mkdirSync(statusDir, { recursive: true })
   const filePath = path.join(statusDir, STATUS_FILE_NAME)
-  const tmpPath = filePath + '.tmp'
+  const tmpPath = filePath + `.${process.pid}.tmp`
   data.lastUpdated = Date.now()
   fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
   fs.renameSync(tmpPath, filePath)

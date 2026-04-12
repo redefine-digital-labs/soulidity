@@ -96,8 +96,11 @@ export async function runAgentPipeline(
       data: { status, pipelineStatus: 'completed' },
     })
 
-    // Skip side effects on retry reuse — logs and company links were already written on first insert
-    if (!isReuse) {
+    // On retry reuse, check whether side effects were already written
+    const hasLogs = isReuse
+      ? (await prisma.agentProcessLog.count({ where: { articleId } })) > 0
+      : false
+    if (!hasLogs) {
       // --- Write process logs (best-effort, after article exists) ---
       try {
         const [scoutRole, reporterRole, analystRole, editorRole] = await Promise.all([
