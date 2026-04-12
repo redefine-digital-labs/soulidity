@@ -163,6 +163,7 @@ function processHookEvent(input, dir) {
 
     case 'Stop': {
       session.status = 'completed'
+      session.endedAt = now
       session.lastUpdated = now
       delete session.currentAction
       delete session.needsAttention

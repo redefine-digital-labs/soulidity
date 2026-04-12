@@ -27,8 +27,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; assetName: string; versionIndex: string }> },
 ) {
-  const { id, assetName: rawAssetName, versionIndex } = await params
-  const assetName = decodeURIComponent(rawAssetName)
+  const { id, assetName, versionIndex } = await params
   const parsedVersionIndex = parseVersionParam(versionIndex)
   if (parsedVersionIndex == null) {
     return NextResponse.json({ error: 'versionIndex must be a non-negative integer' }, { status: 400 })

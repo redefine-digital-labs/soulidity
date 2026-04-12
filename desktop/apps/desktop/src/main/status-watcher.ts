@@ -41,7 +41,7 @@ export function startStatusWatcher() {
 
   try {
     watcher = fs.watch(SOULIDITY_DIR, (eventType, filename) => {
-      if (filename !== 'agent-status.json') return
+      if (filename && filename !== 'agent-status.json') return
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
         const parsed = readCurrent()
