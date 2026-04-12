@@ -59,7 +59,7 @@ export interface DesktopDeviceCompleteResponse {
   accountId: string
   deviceCode: string
   userCode: string
-  deepLink: string
+  deepLink: string | null
   expiresAt: string
   confirmedAt: string
   pollInterval: number

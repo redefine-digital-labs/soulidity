@@ -1,4 +1,4 @@
-import { resolve, normalize, relative, isAbsolute, sep, dirname } from 'path'
+import { resolve, normalize, relative, isAbsolute, sep, dirname, delimiter } from 'path'
 import { realpathSync, existsSync } from 'fs'
 import { homedir } from 'os'
 
@@ -116,6 +116,13 @@ export function getDefaultAllowedRoots(): string[] {
       // fallback: 脚本独立运行时无法 import paths.ts
       const fallback = resolve(process.cwd(), 'data')
       if (existsSync(fallback)) roots.push(resolve(fallback))
+    }
+  }
+
+  // 运行时追加的额外允许目录（拖入文件等场景，由 skill-manager 注入）
+  if (process.env.ADDITIONAL_ALLOWED_ROOTS) {
+    for (const r of process.env.ADDITIONAL_ALLOWED_ROOTS.split(delimiter)) {
+      if (r) roots.push(resolve(r))
     }
   }
 

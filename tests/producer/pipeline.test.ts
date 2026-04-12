@@ -2,6 +2,42 @@ import { describe, it, expect, vi } from 'vitest'
 import { runAgentPipeline } from '../../src/producer/pipeline.js'
 import { createMockPrisma } from '../helpers/mock-prisma.js'
 
+function makeClosedConnectionError(): Error & {
+  code: string
+  meta: {
+    driverAdapterError: {
+      cause: {
+        code: string
+      }
+      message: string
+    }
+  }
+} {
+  const error = new Error('Server has closed the connection.') as Error & {
+    code: string
+    meta: {
+      driverAdapterError: {
+        cause: {
+          code: string
+        }
+        message: string
+      }
+    }
+  }
+
+  error.code = 'P1017'
+  error.meta = {
+    driverAdapterError: {
+      cause: {
+        code: 'ConnectionClosed',
+      },
+      message: 'ConnectionClosed',
+    },
+  }
+
+  return error
+}
+
 function createMockLLM(responses: string[]) {
   let callCount = 0
   return {
@@ -105,6 +141,20 @@ describe('runAgentPipeline', () => {
     const result = await runAgentPipeline(prisma, llm, 'non-existent')
     expect(result.success).toBe(false)
     expect(result.error).toContain('not found')
+  })
+
+  it('treats initial raw item lookup connection closures as retryable', async () => {
+    const { prisma } = createMockPrisma()
+    const llm = createMockLLM([])
+
+    prisma.rawItem.findUnique.mockRejectedValueOnce(makeClosedConnectionError())
+
+    const result = await runAgentPipeline(prisma, llm, 'raw-1')
+
+    expect(result.success).toBe(false)
+    expect(result.retryLater).toBe(true)
+    expect(result.error).toContain('DB connection error')
+    expect(llm.generate).not.toHaveBeenCalled()
   })
 
   it('passes review hints to the reporter without replacing the original tweet text', async () => {

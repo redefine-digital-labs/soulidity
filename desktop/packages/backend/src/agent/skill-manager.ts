@@ -1,9 +1,10 @@
-import { join } from 'path'
+import { join, delimiter } from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { ToolSchema, ToolResult, ToolDefinition } from '@soulidity/shared'
 import { getDataDir } from '../paths'
+import { getAdditionalAllowedRoots } from '../security/allowed-roots-store'
 import { saveMemoryTool } from '../memory/save-memory-tool'
 import { forgetMemoryTool } from '../memory/forget-memory-tool'
 import {
@@ -421,6 +422,8 @@ export class SkillManager {
           ...process.env,
           SKILL_DIR: skill.skillDir,
           DATA_DIR: getDataDir(),
+          // 拖入文件等运行时追加的额外允许目录（path.delimiter 分隔）
+          ADDITIONAL_ALLOWED_ROOTS: getAdditionalAllowedRoots().join(delimiter),
           // 让 Electron 打包后的 process.execPath 以纯 Node.js 模式运行脚本
           ELECTRON_RUN_AS_NODE: '1'
         }

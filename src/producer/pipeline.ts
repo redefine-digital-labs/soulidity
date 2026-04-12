@@ -5,6 +5,7 @@ import { insertArticle, updateRawItemStatus, upsertCompany, linkArticleCompany }
 import { buildReporterPrompt, parseReporterResponse, REPORTER_SYSTEM_PROMPT } from './agents/reporter.js'
 import { buildAnalystPrompt, parseAnalystResponse, ANALYST_SYSTEM_PROMPT } from './agents/analyst.js'
 import { buildEditorPrompt, parseEditorResponse, EDITOR_SYSTEM_PROMPT } from './agents/editor.js'
+import { getPrismaConnectionErrorCode, isTransientPrismaConnectionError } from '../shared/prisma-errors.js'
 
 interface PipelineResult {
   success: boolean
@@ -12,8 +13,6 @@ interface PipelineResult {
   error?: string
   retryLater?: boolean
 }
-
-const TRANSIENT_DB_ERROR_CODES = new Set(['08006', '08003', '08001', '57P01'])
 
 function getReviewHint(rawData: string | null): { title?: string; summary?: string } | undefined {
   if (!rawData) return undefined
@@ -49,10 +48,10 @@ export async function runAgentPipeline(
   llm: LLMAdapter,
   rawItemId: string,
 ): Promise<PipelineResult> {
-  const item = await prisma.rawItem.findUnique({ where: { id: rawItemId } })
-  if (!item) return { success: false, articleId: null, error: 'Raw item not found' }
-
   try {
+    const item = await prisma.rawItem.findUnique({ where: { id: rawItemId } })
+    if (!item) return { success: false, articleId: null, error: 'Raw item not found' }
+
     await updateRawItemStatus(prisma, rawItemId, 'processing')
 
     // --- Reporter phase ---
@@ -152,8 +151,8 @@ export async function runAgentPipeline(
     }
 
     // Retryable: transient DB connection errors
-    const pgCode = err?.cause?.code ?? err?.code
-    if (TRANSIENT_DB_ERROR_CODES.has(pgCode)) {
+    if (isTransientPrismaConnectionError(err)) {
+      const pgCode = getPrismaConnectionErrorCode(err) ?? 'unknown'
       console.warn(`Pipeline transient DB error for ${rawItemId}, will retry:`, err.message)
       await requeueRawItem(prisma, rawItemId)
       return { success: false, articleId: null, error: `DB connection error ${pgCode}`, retryLater: true }

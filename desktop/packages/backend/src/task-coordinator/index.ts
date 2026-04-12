@@ -18,8 +18,6 @@ interface Task {
   content: string
   status: TaskStatus
   callbacks: TaskCallbacks
-  /** 入队时捕获的历史快照，避免多任务排队时 getHistory() 错位 */
-  history: ChatMessageData[]
 }
 
 /** 队列上限，防堆积 */
@@ -65,9 +63,7 @@ export class TaskCoordinator {
       return false
     }
 
-    // 入队时快照历史，确保多任务排队时每个 task 看到正确的上下文
-    const history = this.getHistory()
-    const task: Task = { taskId, content, status: 'pending', callbacks, history }
+    const task: Task = { taskId, content, status: 'pending', callbacks }
     this.queue.push(task)
     console.log(`[coordinator] enqueued task ${taskId} (queue: ${this.queue.length})`)
 
@@ -145,9 +141,13 @@ export class TaskCoordinator {
       }
     }, TASK_TIMEOUT_MS)
 
+    // 在任务实际开始时取最新历史，而非入队时快照
+    // 这样排队期间前序任务完成后追加的 assistant 消息也能被后续任务看到
+    const history = this.getHistory()
+
     this.abortController = agentLoop({
       prompt: next.content,
-      history: next.history,
+      history,
       onToken: (delta) => next.callbacks.onToken(delta),
       onStatus: next.callbacks.onStatus ? (text) => next.callbacks.onStatus!(text) : undefined,
       onDone: (fullContent, newMessages) => {

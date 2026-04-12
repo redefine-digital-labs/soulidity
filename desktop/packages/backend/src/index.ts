@@ -17,6 +17,7 @@ import {
 
 export { initDataDir } from './paths'
 export { copyInitialTemplates } from './paths'
+export { addAllowedRoot } from './security/allowed-roots-store'
 
 const DEFAULT_PORT = 3721
 

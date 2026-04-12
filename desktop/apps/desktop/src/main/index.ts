@@ -1,8 +1,8 @@
-import { app, BrowserWindow, ipcMain, Menu, screen } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen } from 'electron'
 import { randomBytes } from 'crypto'
-import { join, basename, extname } from 'path'
+import { join, basename, extname, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'fs'
-import { startBackend, copyInitialTemplates } from '@soulidity/backend'
+import { startBackend, copyInitialTemplates, addAllowedRoot } from '@soulidity/backend'
 import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus } from './status-watcher'
 import { generateAgentKeypair, loadAgentKeypair, exportAgentAddress } from './agent-wallet'
 import { loadLlmConfig, saveLlmConfig } from './llm-config'
@@ -200,6 +200,8 @@ ipcMain.handle('drop:files', (_event, paths: string[]): FileAttachmentMain[] => 
           ext: extname(p).toLowerCase(),
           size: stat.size
         })
+        // 将拖入文件的父目录注册为 agent 可访问路径
+        addAllowedRoot(dirname(p))
       }
     } catch {
       console.warn(`[main] drop:files — cannot stat: ${p}`)
@@ -569,6 +571,12 @@ app.whenReady().then(async () => {
     }
   } catch (err: unknown) {
     console.error('[main] Failed to start backend:', err)
+    dialog.showErrorBox(
+      '启动失败',
+      `后端服务无法启动（端口 ${BACKEND_PORT} 可能已被占用）。\n\n${err instanceof Error ? err.message : String(err)}`
+    )
+    app.quit()
+    return
   }
 
   // Soulidity: start status watcher and generate agent keypair

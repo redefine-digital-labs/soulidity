@@ -79,13 +79,6 @@ function createUserCode() {
   ].join('-')
 }
 
-function buildDesktopDeviceDeepLink(deviceCode: string) {
-  const deepLink = new URL('soulidity://auth/device')
-  deepLink.searchParams.set('deviceCode', deviceCode)
-  deepLink.searchParams.set('status', 'confirmed')
-  return deepLink.toString()
-}
-
 function toStartResponse(session: {
   deviceCode: string
   userCode: string
@@ -151,7 +144,7 @@ function toCompleteConfirmedResponse(session: {
     accountId: session.accountId,
     deviceCode: session.deviceCode,
     userCode: session.userCode,
-    deepLink: buildDesktopDeviceDeepLink(session.deviceCode),
+    deepLink: null,
     expiresAt: asIso(session.expiresAt),
     confirmedAt: asIso(session.confirmedAt),
     pollInterval: session.pollIntervalSeconds,

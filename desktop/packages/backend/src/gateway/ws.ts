@@ -24,6 +24,8 @@ const coordinator = new TaskCoordinator(
   // pushMessages：任务完成后追加本轮所有消息（tool_calls + tool_result + final assistant）
   (messages, userContent) => {
     conversation.push(...messages)
+    // Persist user message to disk only on success (deferred from enqueue-time)
+    if (userContent) memoryService.appendMessage({ role: 'user', content: userContent })
     memoryService.appendMessages(messages)
     // 异步触发摘要压缩检查（不阻塞当前任务完成）
     void memoryService.compressIfNeeded(conversation)
@@ -123,7 +125,9 @@ function handleClientMessage(
 
       // 先将用户消息追加到内存会话，确保 enqueue → drain → getHistory()
       // 能看到完整历史（slice(0,-1) 正确去掉本条 user 消息而非上轮 assistant 回复）
-      conversation.push({ role: 'user', content })
+      // 保持对 userMsg 的引用，以便 onError/onCancelled 能按引用精确回滚
+      const userMsg: ChatMessageData = { role: 'user', content }
+      conversation.push(userMsg)
 
       // 入队 Task Coordinator（串行执行）
       let streamNotified = false
@@ -161,6 +165,10 @@ function handleClientMessage(
           })
         },
         onError(code, message) {
+          // Rollback in-memory user message — disk was never written (deferred to onDone)
+          // 按引用定位，避免多任务排队时 pop() 误删其他任务的消息
+          const idx = conversation.indexOf(userMsg)
+          if (idx !== -1) conversation.splice(idx, 1)
           emotionService.notifyStreamEnd()
           broadcast({
             id: genMsgId(),
@@ -171,6 +179,9 @@ function handleClientMessage(
           })
         },
         onCancelled() {
+          // Rollback in-memory user message — disk was never written (deferred to onDone)
+          const idx = conversation.indexOf(userMsg)
+          if (idx !== -1) conversation.splice(idx, 1)
           emotionService.notifyStreamEnd()
           broadcast({
             id: genMsgId(),
@@ -184,7 +195,8 @@ function handleClientMessage(
 
       if (!accepted) {
         // 入队失败，回滚内存中的消息
-        conversation.pop()
+        const idx = conversation.indexOf(userMsg)
+        if (idx !== -1) conversation.splice(idx, 1)
         broadcast({
           id: genMsgId(),
           type: 'task.error',
@@ -195,8 +207,7 @@ function handleClientMessage(
         break
       }
 
-      // 入队成功，写入磁盘归档
-      memoryService.appendMessage({ role: 'user', content })
+      // 入队成功 — 磁盘写入已推迟到 onDone（pushMessages 回调）
       emotionService.notifyUserMessage()
 
       // 广播 ack（附带 content 以便其他窗口同步用户消息）
