@@ -8,6 +8,7 @@ use soulidity::grant::{Self as grant, SoulGrant};
 use soulidity::market::{Self as market, CollectionListing, KioskRegistry, MarketConfig, SoulListing};
 use soulidity::memory::{Self as memory, SoulMemory};
 use soulidity::skills::{Self as skills, SoulSkills};
+use soulidity::assets::{Self as assets, SoulAssets};
 use soulidity::seal_policy;
 use soulidity::soul::{Self as soul, Soul, SoulState};
 use sui::clock::{Self as clock, Clock};
@@ -31,6 +32,8 @@ const COLLECTION_PRICE: u64 = 300_000;
 const CREATOR_ROYALTY_BPS: u16 = 1_000;
 const COLLECTION_ROYALTY_BPS: u16 = 500;
 const BLOB_ROOT_HASH_C: u256 = 0xABE;
+const BLOB_ROOT_HASH_D: u256 = 0xABF;
+const BLOB_ROOT_HASH_E: u256 = 0xAC0;
 
 public struct SourceNft has key, store {
     id: UID,
@@ -101,6 +104,29 @@ fun mint_test_blobs_to_three_recipients(
     transfer::public_transfer(first_blob, first_recipient);
     transfer::public_transfer(second_blob, second_recipient);
     transfer::public_transfer(third_blob, third_recipient);
+}
+
+fun mint_test_blobs_to_four_recipients(
+    first_recipient: address,
+    first_root_hash: u256,
+    second_recipient: address,
+    second_root_hash: u256,
+    third_recipient: address,
+    third_root_hash: u256,
+    fourth_recipient: address,
+    fourth_root_hash: u256,
+    ctx: &mut TxContext,
+) {
+    let mut walrus_system = system::new_for_testing(ctx);
+    let first_blob = register_test_blob_with_root(&mut walrus_system, first_root_hash, ctx);
+    let second_blob = register_test_blob_with_root(&mut walrus_system, second_root_hash, ctx);
+    let third_blob = register_test_blob_with_root(&mut walrus_system, third_root_hash, ctx);
+    let fourth_blob = register_test_blob_with_root(&mut walrus_system, fourth_root_hash, ctx);
+    std::unit_test::destroy(walrus_system);
+    transfer::public_transfer(first_blob, first_recipient);
+    transfer::public_transfer(second_blob, second_recipient);
+    transfer::public_transfer(third_blob, third_recipient);
+    transfer::public_transfer(fourth_blob, fourth_recipient);
 }
 
 fun mint_test_blob_to_recipient(recipient: address, root_hash: u256, ctx: &mut TxContext) {
@@ -186,6 +212,35 @@ fun skill_document_id(skills_id: ID, skill_name: std::string::String, version_in
 
 fun default_skill_name(): std::string::String {
     string::utf8(b"default")
+}
+
+fun default_asset_name(): std::string::String {
+    string::utf8(b"persona-sprite")
+}
+
+fun asset_document_id(assets_id: ID, asset_name: std::string::String, version_index: u64): vector<u8> {
+    let mut id = b"soul-asset:";
+    let assets_id_bytes = assets_id.to_bytes();
+    let asset_name_bytes = string::as_bytes(&asset_name);
+    let mut assets_id_index = 0;
+    let mut asset_name_index = 0;
+    id.push_back(0x01);
+    while (assets_id_index < assets_id_bytes.length()) {
+        id.push_back(assets_id_bytes[assets_id_index]);
+        assets_id_index = assets_id_index + 1;
+    };
+    while (asset_name_index < asset_name_bytes.length()) {
+        id.push_back(asset_name_bytes[asset_name_index]);
+        asset_name_index = asset_name_index + 1;
+    };
+    id.push_back(0x00);
+    append_u64_be_bytes(&mut id, version_index);
+    let mut i = 0u64;
+    while (i < 16u64) {
+        id.push_back(0x6A);
+        i = i + 1u64;
+    };
+    id
 }
 
 fun init_protocol_for_testing(scenario: &mut ts::Scenario, admin: address) {
@@ -4099,5 +4154,486 @@ fun paused_market_blocks_kiosk_registration() {
         let _ = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
 
         abort 105
+    }
+}
+
+// ── SoulAssets Tests ──
+
+#[test]
+fun asset_version_append_and_seal_approval_by_owner() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint 4 blobs for creator: protected, founding memory, initial asset, extra asset
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blobs_to_four_recipients(
+            creator,
+            BLOB_ROOT_HASH_A,
+            creator,
+            BLOB_ROOT_HASH_B,
+            creator,
+            BLOB_ROOT_HASH_C,
+            creator,
+            BLOB_ROOT_HASH_D,
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    // Mint soul with initial asset
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Asset Soul"),
+            string::utf8(b"Soul with initial asset"),
+            string::utf8(b"https://example.com/asset-soul.png"),
+            option::none(),
+            protected_blob,
+            option::some(founding_memory_blob),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::some(initial_asset_blob),
+            default_asset_name(),
+            false,
+            0,
+            0,
+            0,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Append a second asset version under a different name
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let extra_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let version_index = assets::append_version_as_owner(
+            &mut assets_book,
+            &state,
+            string::utf8(b"persona-hires"),
+            false,
+            0,
+            extra_asset_blob,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(version_index == 0, 100);
+        assert!(assets::asset_count(&assets_book) == 2, 101);
+        assert!(assets::version_count(&assets_book, default_asset_name()) == 1, 102);
+        assert!(assets::version_count(&assets_book, string::utf8(b"persona-hires")) == 1, 103);
+
+        ts::return_shared(state);
+        ts::return_shared(assets_book);
+        ts::return_shared(clock_obj);
+    };
+
+    // Seal approve the initial asset read as owner
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+
+        assets::seal_approve_asset_read_as_owner_for_testing(
+            asset_document_id(assets_id, default_asset_name(), 0),
+            &state,
+            &assets_book,
+            default_asset_name(),
+            0,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(state);
+        ts::return_shared(assets_book);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun granted_agent_can_append_and_seal_approve_asset() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let agent = @0xA63E;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint 4 blobs: 3 for creator + 1 for agent
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blobs_to_four_recipients(
+            creator,
+            BLOB_ROOT_HASH_A,
+            creator,
+            BLOB_ROOT_HASH_B,
+            creator,
+            BLOB_ROOT_HASH_C,
+            agent,
+            BLOB_ROOT_HASH_D,
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    // Mint soul with initial asset
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Agent Asset Soul"),
+            string::utf8(b"Soul for agent asset test"),
+            string::utf8(b"https://example.com/agent-asset.png"),
+            option::none(),
+            protected_blob,
+            option::some(founding_memory_blob),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::some(initial_asset_blob),
+            default_asset_name(),
+            false,
+            0,
+            0,
+            0,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Issue grant with scope_assets() to agent
+    ts::next_tx(&mut scenario, creator);
+    {
+        let mut state: SoulState = ts::take_shared(&scenario);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let soul_grant = grant::issue(
+            &mut state,
+            agent,
+            grant::scope_assets(),
+            option::none(),
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+        ts::return_shared(clock_obj);
+        transfer::public_transfer(soul_grant, agent);
+        ts::return_shared(state);
+    };
+
+    // Agent appends a new asset version
+    ts::next_tx(&mut scenario, agent);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
+        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let version_index = assets::append_version_as_granted_agent(
+            &mut assets_book,
+            &state,
+            &soul_grant,
+            default_asset_name(),
+            false,
+            0,
+            agent_blob,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(version_index == 1, 100);
+        assert!(assets::asset_count(&assets_book) == 1, 101);
+        assert!(assets::version_count(&assets_book, default_asset_name()) == 2, 102);
+
+        ts::return_shared(state);
+        ts::return_shared(assets_book);
+        ts::return_shared(clock_obj);
+        transfer::public_transfer(soul_grant, agent);
+    };
+
+    // Agent calls seal approve for the appended asset
+    ts::next_tx(&mut scenario, agent);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
+
+        assets::seal_approve_asset_read_as_granted_agent_for_testing(
+            asset_document_id(assets_id, default_asset_name(), 1),
+            &state,
+            &assets_book,
+            default_asset_name(),
+            1,
+            &soul_grant,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(state);
+        ts::return_shared(assets_book);
+        ts::return_shared(clock_obj);
+        transfer::public_transfer(soul_grant, agent);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun owner_can_soft_delete_asset_version() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint 2 blobs: protected + initial asset
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blobs_to_recipients(
+            creator,
+            BLOB_ROOT_HASH_A,
+            creator,
+            BLOB_ROOT_HASH_B,
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    // Mint soul with initial asset (no founding memory)
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Delete Asset Soul"),
+            string::utf8(b"Soul for delete test"),
+            string::utf8(b"https://example.com/delete-asset.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::some(initial_asset_blob),
+            default_asset_name(),
+            false,
+            0,
+            0,
+            0,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Delete the initial asset version
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+
+        assets::delete_version_as_owner(
+            &mut assets_book,
+            &state,
+            default_asset_name(),
+            0,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(assets::version_is_deleted(&assets_book, default_asset_name(), 0) == true, 100);
+
+        ts::return_shared(state);
+        ts::return_shared(assets_book);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = soulidity::assets::EAssetVersionDeleted)]
+fun seal_approval_fails_on_deleted_asset() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint 2 blobs: protected + initial asset
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blobs_to_recipients(
+            creator,
+            BLOB_ROOT_HASH_A,
+            creator,
+            BLOB_ROOT_HASH_B,
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    // Mint soul with initial asset (no founding memory)
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Fail Seal Soul"),
+            string::utf8(b"Soul for seal fail test"),
+            string::utf8(b"https://example.com/fail-seal.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::some(initial_asset_blob),
+            default_asset_name(),
+            false,
+            0,
+            0,
+            0,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Delete the initial asset version
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+
+        assets::delete_version_as_owner(
+            &mut assets_book,
+            &state,
+            default_asset_name(),
+            0,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(state);
+        ts::return_shared(assets_book);
+    };
+
+    // Try to seal approve the deleted asset — should abort
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+
+        assets::seal_approve_asset_read_as_owner_for_testing(
+            asset_document_id(assets_id, default_asset_name(), 0),
+            &state,
+            &assets_book,
+            default_asset_name(),
+            0,
+            ts::ctx(&mut scenario),
+        );
+
+        abort 100
     }
 }
