@@ -13,8 +13,8 @@ import {
   type BackendAccessConfig
 } from '../security/request-auth'
 
-/** 内存会话记录 — 启动时从当日 JSON 恢复 */
-const conversation: ChatMessageData[] = memoryService.getTodayMessages()
+/** 内存会话记录 — setupWebSocket 时从当日 JSON 恢复（须在 initDataDir 之后） */
+let conversation: ChatMessageData[] = []
 const clients = new Set<WebSocket>()
 
 /** 任务协调器：FIFO 串行队列 */
@@ -62,6 +62,9 @@ export async function setupWebSocket(
   app: FastifyInstance,
   accessConfig: BackendAccessConfig
 ): Promise<void> {
+  // 延迟加载：确保 initDataDir() 已执行，路径正确
+  conversation = memoryService.getTodayMessages()
+
   await app.register(websocket)
 
   app.get('/ws', { websocket: true }, (socket, request) => {

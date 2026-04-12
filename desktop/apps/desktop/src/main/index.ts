@@ -107,6 +107,7 @@ function createBallWindow(): void {
   const BALL_SIZE = PET_SIZE
   const pollTimer = setInterval(() => {
     if (!ballWin || ballWin.isDestroyed()) return
+    if (quickInputVisible) return
     const cursor = screen.getCursorScreenPoint()
     const bounds = ballWin.getBounds()
     // 球图标位于窗口底部居中
@@ -285,6 +286,7 @@ ipcMain.handle('quickinput:toggle', () => {
   })
 
   quickInputVisible = true
+  ballWin.setIgnoreMouseEvents(false)
   qiDirection = direction
   return { visible: true, direction }
 })

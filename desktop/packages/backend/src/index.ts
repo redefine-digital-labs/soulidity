@@ -50,7 +50,7 @@ export async function startBackend(options: {
       reply.header('Vary', 'Origin')
     }
 
-    reply.header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
     if (request.method === 'OPTIONS') {

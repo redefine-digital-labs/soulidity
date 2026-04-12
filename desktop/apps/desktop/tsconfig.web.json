@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
+    "resolveJsonModule": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
     "target": "ES2022",
@@ -9,5 +10,5 @@
     "jsx": "react-jsx",
     "outDir": "out/renderer"
   },
-  "include": ["src/renderer/**/*"]
+  "include": ["src/renderer/**/*", "resources/**/*.json"]
 }
