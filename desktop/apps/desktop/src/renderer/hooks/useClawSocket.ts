@@ -15,6 +15,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
+  taskId?: string
 }
 
 interface WsEnvelope {
@@ -83,12 +84,15 @@ export function useClawSocket(): {
       // 降级显示
       setMessages((prev) => {
         const updated = [...prev]
-        const last = updated[updated.length - 1]
-        if (last?.streaming) {
-          updated[updated.length - 1] = {
-            ...last,
-            content: last.content
-              ? last.content + '\n\n⚠️ 回复中断，请重试'
+        const idx = taskId
+          ? updated.findLastIndex((m) => m.taskId === taskId && m.streaming)
+          : updated.findLastIndex((m) => m.streaming)
+        if (idx !== -1) {
+          const msg = updated[idx]
+          updated[idx] = {
+            ...msg,
+            content: msg.content
+              ? msg.content + '\n\n⚠️ 回复中断，请重试'
               : '⚠️ 回复中断，请重试',
             streaming: false
           }
@@ -120,10 +124,10 @@ export function useClawSocket(): {
         if (content !== undefined) {
           setMessages((prev) => [...prev, { id: nextMsgId(), role: 'user', content }])
         }
-        // 添加"正在思考"的 AI 占位消息
+        // 添加"正在思考"的 AI 占位消息，绑定 taskId 用于后续 token 定位
         setMessages((prev) => [
           ...prev,
-          { id: nextMsgId(), role: 'assistant', content: '', streaming: true }
+          { id: nextMsgId(), role: 'assistant', content: '', streaming: true, taskId: envelope.taskId }
         ])
         // 启动 watchdog
         activeTaskId.current = envelope.taskId
@@ -134,7 +138,7 @@ export function useClawSocket(): {
       case 'task.status': {
         const text = (envelope.payload.text as string) ?? ''
         setStatusText(text)
-        resetWatchdog()
+        if (envelope.taskId === activeTaskId.current) resetWatchdog()
         break
       }
 
@@ -143,14 +147,14 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last?.streaming) {
-            updated[updated.length - 1] = { ...last, content: last.content + delta }
+          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          if (idx !== -1) {
+            updated[idx] = { ...updated[idx], content: updated[idx].content + delta }
           }
           return updated
         })
-        // 收到 token，重置 watchdog
-        resetWatchdog()
+        // 只为当前活跃任务重置 watchdog
+        if (envelope.taskId === activeTaskId.current) resetWatchdog()
         break
       }
 
@@ -159,9 +163,9 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last?.streaming) {
-            updated[updated.length - 1] = { ...last, content, streaming: false }
+          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          if (idx !== -1) {
+            updated[idx] = { ...updated[idx], content, streaming: false }
           } else {
             updated.push({ id: nextMsgId(), role: 'assistant', content })
           }
@@ -169,7 +173,7 @@ export function useClawSocket(): {
         })
         // 清理已完成的 taskId
         sentTaskIds.current.delete(envelope.taskId)
-        clearWatchdog()
+        if (envelope.taskId === activeTaskId.current) clearWatchdog()
         break
       }
 
@@ -178,10 +182,10 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last?.streaming) {
-            updated[updated.length - 1] = {
-              ...last,
+          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          if (idx !== -1) {
+            updated[idx] = {
+              ...updated[idx],
               content: `⚠️ ${message}`,
               streaming: false
             }
@@ -191,7 +195,7 @@ export function useClawSocket(): {
           return updated
         })
         sentTaskIds.current.delete(envelope.taskId)
-        clearWatchdog()
+        if (envelope.taskId === activeTaskId.current) clearWatchdog()
         break
       }
 
@@ -199,14 +203,14 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last?.streaming) {
-            updated[updated.length - 1] = { ...last, content: '（已取消）', streaming: false }
+          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          if (idx !== -1) {
+            updated[idx] = { ...updated[idx], content: '（已取消）', streaming: false }
           }
           return updated
         })
         sentTaskIds.current.delete(envelope.taskId)
-        clearWatchdog()
+        if (envelope.taskId === activeTaskId.current) clearWatchdog()
         break
       }
     }
