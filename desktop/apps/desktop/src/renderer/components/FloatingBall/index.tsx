@@ -10,7 +10,7 @@ import { SpriteRenderer } from '../SpriteRenderer'
 import type { SpriteSheetConfig } from '../SpriteRenderer'
 import { useCliStatus } from '../../hooks/useCliStatus'
 import type { CliAgentStatus } from '../../hooks/useCliStatus'
-import spriteConfigJson from '../../../resources/default-persona/sprite-config.json'
+import spriteConfigJson from '../../../../resources/default-persona/sprite-config.json'
 
 /** 按情绪状态分流的点击文案池（LLM 取不到时的 fallback） */
 const CLICK_PHRASES: Record<EmotionState, string[]> = {
@@ -111,7 +111,7 @@ const DISMISS_COOLDOWN = 3 * 60_000 // 3 分钟
 
 const spriteConfig: SpriteSheetConfig = {
   ...spriteConfigJson,
-  src: new URL('../../../resources/default-persona/sprite.png', import.meta.url).href,
+  src: new URL('../../../../resources/default-persona/sprite.png', import.meta.url).href,
 }
 
 /** Map 4 backend emotions to CLI 6-status for sprite animation fallback */
