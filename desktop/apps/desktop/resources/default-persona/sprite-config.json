@@ -1,14 +1,14 @@
 {
-  "src": "sheet.png",
-  "frameWidth": 64,
-  "frameHeight": 64,
-  "columns": 6,
+  "src": "sprite.png",
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "columns": 8,
   "animations": {
-    "idle":            { "frames": [0, 1, 2, 3],     "fps": 4,  "loop": true },
-    "thinking":        { "frames": [6, 7, 8, 9],     "fps": 6,  "loop": true },
-    "working":         { "frames": [12, 13, 14, 15], "fps": 8,  "loop": true },
-    "needs-attention": { "frames": [18, 19, 20, 21], "fps": 4,  "loop": true },
-    "completed":       { "frames": [24, 25, 26],     "fps": 4,  "loop": false },
-    "error":           { "frames": [30, 31],          "fps": 2,  "loop": true }
+    "idle":             { "frames": [0,1,2,3,4,5,6,7],       "fps": 4,  "loop": true },
+    "thinking":         { "frames": [8,9,10,11,12,13,14,15], "fps": 6,  "loop": true },
+    "working":          { "frames": [24,25,26,27,28,29,30,31], "fps": 8, "loop": true },
+    "needs-attention":  { "frames": [32,33,34,35,36,37,38,39], "fps": 4, "loop": true },
+    "completed":        { "frames": [16,17,18,19,20,21,22,23], "fps": 4, "loop": false },
+    "error":            { "frames": [40,41,42,43,44,45,46,47], "fps": 2, "loop": true }
   }
 }
