@@ -44,6 +44,7 @@ describe('soulidity-codex-hook', () => {
     expect(session.status).toBe('completed')
     expect(typeof session.startedAt).toBe('number')
     expect(typeof session.lastUpdated).toBe('number')
+    expect(session.endedAt).toBeTypeOf('number')
   })
 
   it('extracts session title from input-messages', () => {
@@ -107,6 +108,7 @@ describe('soulidity-codex-hook', () => {
 
     const session = readStatus().sessions['codex-5']
     expect(session.status).toBe('working')
+    expect(session.endedAt).toBeUndefined()
   })
 
   it('agent-error maps to error', () => {
@@ -120,6 +122,7 @@ describe('soulidity-codex-hook', () => {
 
     const session = readStatus().sessions['codex-6']
     expect(session.status).toBe('error')
+    expect(session.endedAt).toBeTypeOf('number')
   })
 
   it('creates new session if not found', () => {

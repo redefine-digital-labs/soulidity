@@ -116,6 +116,11 @@ function processCodexEvent(input, dir) {
   session.status = mapEventToStatus(eventType)
   session.lastUpdated = now
 
+  // Terminal events: mark session as ended so useCliStatus filters it out
+  if (eventType === 'agent-turn-complete' || eventType === 'agent-error') {
+    session.endedAt = now
+  }
+
   // Extract session title from first user message
   const title = extractSessionTitle(input)
   if (title) {

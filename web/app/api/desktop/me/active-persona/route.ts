@@ -48,12 +48,19 @@ export async function PUT(request: Request) {
     body = null
   }
 
-  const sourceType = normalizeSourceType(
-    body && typeof body === 'object' && 'sourceType' in body ? body.sourceType : null,
-  )
-  const sourceRef = normalizeSourceRef(
-    body && typeof body === 'object' && 'sourceRef' in body ? body.sourceRef : null,
-  )
+  const bodyObj = body && typeof body === 'object' ? (body as Record<string, unknown>) : null
+  const hasSourceType = bodyObj !== null && 'sourceType' in bodyObj
+  const hasSourceRef = bodyObj !== null && 'sourceRef' in bodyObj
+
+  if (!hasSourceType && !hasSourceRef) {
+    return NextResponse.json(
+      { error: 'Request body must include sourceType and sourceRef' },
+      { status: 400 },
+    )
+  }
+
+  const sourceType = normalizeSourceType(hasSourceType ? bodyObj.sourceType : null)
+  const sourceRef = normalizeSourceRef(hasSourceRef ? bodyObj.sourceRef : null)
 
   if (sourceType === 'invalid') {
     return NextResponse.json({ error: 'sourceType must be "starter" or "soul"' }, { status: 400 })
