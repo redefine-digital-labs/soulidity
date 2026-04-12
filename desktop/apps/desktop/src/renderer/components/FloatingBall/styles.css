@@ -119,8 +119,12 @@ body,
 }
 
 .ball__icon {
-  font-size: 26px;
-  line-height: 1;
+  pointer-events: none;
+}
+
+.ball canvas {
+  display: block;
+  border-radius: 50%;
   pointer-events: none;
 }
 

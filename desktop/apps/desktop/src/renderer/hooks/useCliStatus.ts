@@ -1,15 +1,6 @@
 import { useState, useEffect } from 'react'
 
-type CliAgentStatus = 'idle' | 'thinking' | 'working' | 'needs-attention' | 'completed' | 'error'
-
-const CLI_TO_EMOTION: Record<CliAgentStatus, string> = {
-  idle: 'idle',
-  thinking: 'busy',
-  working: 'busy',
-  completed: 'done',
-  'needs-attention': 'night',
-  error: 'night',
-}
+export type CliAgentStatus = 'idle' | 'thinking' | 'working' | 'needs-attention' | 'completed' | 'error'
 
 export function useCliStatus() {
   const [status, setStatus] = useState<CliAgentStatus>('idle')
@@ -37,5 +28,5 @@ export function useCliStatus() {
     return () => { unsub?.() }
   }, [])
 
-  return { status, emotion: CLI_TO_EMOTION[status] ?? 'idle' }
+  return { status }
 }

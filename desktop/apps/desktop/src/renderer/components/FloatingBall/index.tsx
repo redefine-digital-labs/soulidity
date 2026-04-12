@@ -6,6 +6,11 @@ import { useClawSocket } from '../../hooks/useClawSocket'
 import { useClawEmotion } from '../../hooks/useClawEmotion'
 import { backendFetch } from '../../lib/backend-client'
 import './styles.css'
+import { SpriteRenderer } from '../SpriteRenderer'
+import type { SpriteSheetConfig } from '../SpriteRenderer'
+import { useCliStatus } from '../../hooks/useCliStatus'
+import type { CliAgentStatus } from '../../hooks/useCliStatus'
+import spriteConfigJson from '../../../resources/default-persona/sprite-config.json'
 
 /** 按情绪状态分流的点击文案池（LLM 取不到时的 fallback） */
 const CLICK_PHRASES: Record<EmotionState, string[]> = {
@@ -104,6 +109,29 @@ const AUTO_BUBBLE_INTERVAL: Record<string, [number, number]> = {
 /** 用户关闭气泡后的冷却时间 */
 const DISMISS_COOLDOWN = 3 * 60_000 // 3 分钟
 
+const spriteConfig: SpriteSheetConfig = {
+  ...spriteConfigJson,
+  src: new URL('../../../resources/default-persona/sprite.png', import.meta.url).href,
+}
+
+/** Map 4 backend emotions to CLI 6-status for sprite animation fallback */
+const EMOTION_TO_CLI_STATUS: Record<string, CliAgentStatus> = {
+  idle: 'idle',
+  busy: 'working',
+  done: 'completed',
+  night: 'error',
+}
+
+/** Map CLI 6-status to 4 CSS emotions for halo effects */
+const CLI_STATUS_TO_EMOTION: Record<CliAgentStatus, string> = {
+  idle: 'idle',
+  thinking: 'busy',
+  working: 'busy',
+  'needs-attention': 'night',
+  completed: 'done',
+  error: 'night',
+}
+
 function randomInRange(min: number, max: number): number {
   return min + Math.random() * (max - min)
 }
@@ -122,6 +150,9 @@ interface BubbleItem {
 export function FloatingBall(): React.JSX.Element {
   const { messages, statusText, sendMessage } = useClawSocket()
   const { snapshot, emotion } = useClawEmotion()
+  const { status: cliStatus } = useCliStatus()
+  const spriteAnimation = cliStatus !== 'idle' ? cliStatus : (EMOTION_TO_CLI_STATUS[emotion] ?? 'idle')
+  const haloEmotion = cliStatus !== 'idle' ? CLI_STATUS_TO_EMOTION[cliStatus] : emotion
   const [bubbles, setBubbles] = useState<BubbleItem[]>([])
   const [qiState, setQiState] = useState<QuickInputState | null>(null)
   const movedRef = useRef(false)
@@ -476,14 +507,14 @@ export function FloatingBall(): React.JSX.Element {
         <div
           ref={ballRef}
           className={`ball${dropActive ? ' ball--drop-active' : ''}`}
-          data-emotion={emotion}
+          data-emotion={haloEmotion}
           onMouseDown={handleMouseDown}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onContextMenu={handleContextMenu}
           title="Claw 🐾"
         >
-          <span className="ball__icon">🐾</span>
+          <SpriteRenderer config={spriteConfig} animation={spriteAnimation} width={56} height={56} />
         </div>
         {expanded && direction === 'right' && (
           <div className="qi-area">
