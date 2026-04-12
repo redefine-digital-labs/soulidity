@@ -9,6 +9,7 @@ use soulidity::market::{Self as market, CollectionListing, KioskRegistry, Market
 use soulidity::memory::{Self as memory, SoulMemory};
 use soulidity::skills::{Self as skills, SoulSkills};
 use soulidity::assets::{Self as assets, SoulAssets};
+use soulidity::content_access::{Self as content_access, ContentAccessList};
 use soulidity::seal_policy;
 use soulidity::soul::{Self as soul, Soul, SoulState};
 use sui::clock::{Self as clock, Clock};
@@ -4636,4 +4637,436 @@ fun seal_approval_fails_on_deleted_asset() {
 
         abort 100
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ── ContentAccessList tests ──────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+const CONTENT_ACCESS_PRICE: u64 = 1_000_000;
+const SCOPE_SKILLS: u64 = 4;
+const SCOPE_ASSETS: u64 = 8;
+const SCOPE_SKILLS_AND_ASSETS: u64 = 12; // SCOPE_SKILLS | SCOPE_ASSETS
+
+#[test]
+fun content_access_add_and_has_access() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let buyer = @0xB0B;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint blob for creator
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
+    };
+
+    // Mint soul with content access (price > 0, scope = SKILLS|ASSETS)
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Content Access Soul"),
+            string::utf8(b"Soul with content access list"),
+            string::utf8(b"https://example.com/ca.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::none(),
+            default_asset_name(),
+            false,
+            0,
+            CONTENT_ACCESS_PRICE,
+            SCOPE_SKILLS_AND_ASSETS,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Add buyer to access list, then assert has_access
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let access_list_id = *soul::access_list_id(&state).borrow();
+        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+
+        content_access::add_access(
+            &mut access_list,
+            &state,
+            buyer,
+            SCOPE_SKILLS_AND_ASSETS,
+            option::none(),
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        // Buyer has SKILLS scope
+        assert!(content_access::has_access(&access_list, buyer, SCOPE_SKILLS, &clock_obj) == true, 0);
+        // Buyer has ASSETS scope
+        assert!(content_access::has_access(&access_list, buyer, SCOPE_ASSETS, &clock_obj) == true, 1);
+        // Random address has no access
+        assert!(content_access::has_access(&access_list, @0xDEAD, SCOPE_SKILLS, &clock_obj) == false, 2);
+        // Entry count is 1
+        assert!(content_access::entry_count(&access_list) == 1, 3);
+
+        ts::return_shared(state);
+        ts::return_shared(access_list);
+        ts::return_shared(clock_obj);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun content_access_revoke_removes_entry() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let buyer = @0xB0B;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint blob for creator
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
+    };
+
+    // Mint soul with content access list
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Revoke Test Soul"),
+            string::utf8(b"Soul for revoke test"),
+            string::utf8(b"https://example.com/revoke.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::none(),
+            default_asset_name(),
+            false,
+            0,
+            CONTENT_ACCESS_PRICE,
+            SCOPE_SKILLS_AND_ASSETS,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Add buyer to access list
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let access_list_id = *soul::access_list_id(&state).borrow();
+        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+
+        content_access::add_access(
+            &mut access_list,
+            &state,
+            buyer,
+            SCOPE_SKILLS_AND_ASSETS,
+            option::none(),
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(content_access::has_access(&access_list, buyer, SCOPE_SKILLS, &clock_obj) == true, 0);
+
+        ts::return_shared(state);
+        ts::return_shared(access_list);
+        ts::return_shared(clock_obj);
+    };
+
+    // Revoke buyer access
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let access_list_id = *soul::access_list_id(&state).borrow();
+        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
+
+        content_access::revoke_access(
+            &mut access_list,
+            &state,
+            buyer,
+            ts::ctx(&mut scenario),
+        );
+
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        // Buyer should no longer have access
+        assert!(content_access::has_access(&access_list, buyer, SCOPE_SKILLS, &clock_obj) == false, 1);
+        assert!(content_access::entry_count(&access_list) == 0, 2);
+
+        ts::return_shared(state);
+        ts::return_shared(access_list);
+        ts::return_shared(clock_obj);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun content_access_set_price_updates_price() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint blob for creator
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
+    };
+
+    // Mint soul with content access list (price = 1_000_000)
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Price Update Soul"),
+            string::utf8(b"Soul for price update test"),
+            string::utf8(b"https://example.com/price.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::none(),
+            default_asset_name(),
+            false,
+            0,
+            CONTENT_ACCESS_PRICE,
+            SCOPE_SKILLS_AND_ASSETS,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Update price from 1_000_000 to 2_000_000
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let access_list_id = *soul::access_list_id(&state).borrow();
+        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
+
+        // Verify initial price
+        assert!(content_access::price_atomic(&access_list) == CONTENT_ACCESS_PRICE, 0);
+
+        content_access::set_content_price(
+            &mut access_list,
+            &state,
+            2_000_000,
+            ts::ctx(&mut scenario),
+        );
+
+        // Verify updated price
+        assert!(content_access::price_atomic(&access_list) == 2_000_000, 1);
+
+        ts::return_shared(state);
+        ts::return_shared(access_list);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun seal_approve_asset_allowlisted_works() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let buyer = @0xB0B;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    // Mint 2 blobs: 1 protected + 1 initial asset
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blobs_to_recipients(
+            creator,
+            BLOB_ROOT_HASH_A,
+            creator,
+            BLOB_ROOT_HASH_B,
+            ts::ctx(&mut scenario),
+        );
+    };
+
+    // Mint soul with initial asset AND content access list (scope = SCOPE_ASSETS)
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        let _ = market::mint_native_in_personal_kiosk(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Seal Asset Soul"),
+            string::utf8(b"Soul for seal approve asset allowlisted test"),
+            string::utf8(b"https://example.com/seal-asset.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            option::none(),
+            default_skill_name(),
+            false,
+            option::some(initial_asset_blob),
+            default_asset_name(),
+            false,
+            0,
+            CONTENT_ACCESS_PRICE,
+            SCOPE_ASSETS,
+            CREATOR_ROYALTY_BPS,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(clock_obj);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Add buyer to access list with SCOPE_ASSETS
+    ts::next_tx(&mut scenario, creator);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let access_list_id = *soul::access_list_id(&state).borrow();
+        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+
+        content_access::add_access(
+            &mut access_list,
+            &state,
+            buyer,
+            SCOPE_ASSETS,
+            option::none(),
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(state);
+        ts::return_shared(access_list);
+        ts::return_shared(clock_obj);
+    };
+
+    // Buyer calls seal_approve_asset_allowlisted — should succeed
+    ts::next_tx(&mut scenario, buyer);
+    {
+        let state: SoulState = ts::take_shared(&scenario);
+        let access_list_id = *soul::access_list_id(&state).borrow();
+        let access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
+        let assets_id = *soul::assets_id(&state).borrow();
+        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+        let clock_obj: Clock = ts::take_shared(&scenario);
+
+        let doc_id = asset_document_id(assets_id, default_asset_name(), 0);
+
+        content_access::seal_approve_asset_allowlisted(
+            doc_id,
+            &state,
+            &access_list,
+            &assets_book,
+            default_asset_name(),
+            0,
+            &clock_obj,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(state);
+        ts::return_shared(access_list);
+        ts::return_shared(assets_book);
+        ts::return_shared(clock_obj);
+    };
+
+    ts::end(scenario);
 }
