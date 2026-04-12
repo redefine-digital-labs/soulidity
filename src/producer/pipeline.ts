@@ -73,18 +73,21 @@ export async function runAgentPipeline(
     const editorRaw = await llm.generate(EDITOR_SYSTEM_PROMPT, editorPrompt)
     const editorOutput = parseEditorResponse(editorRaw)
 
-    // --- Save article ---
+    // --- Save article (idempotent: skip insert if a previous run already created one) ---
     const status = editorOutput.approved ? 'draft' : 'rejected'
-    const articleId = await insertArticle(prisma, {
-      raw_item_id: rawItemId,
-      title_zh: editorOutput.title_zh,
-      title_en: editorOutput.title_zh,
-      summary_zh: editorOutput.summary_zh,
-      summary_en: editorOutput.summary_zh,
-      analysis_zh: editorOutput.analysis_zh,
-      analysis_en: null,
-      tags: JSON.stringify(analystOutput.tags),
-    })
+    const existing = await prisma.article.findUnique({ where: { rawItemId } })
+    const articleId = existing
+      ? existing.id
+      : await insertArticle(prisma, {
+          raw_item_id: rawItemId,
+          title_zh: editorOutput.title_zh,
+          title_en: editorOutput.title_zh,
+          summary_zh: editorOutput.summary_zh,
+          summary_en: editorOutput.summary_zh,
+          analysis_zh: editorOutput.analysis_zh,
+          analysis_en: null,
+          tags: JSON.stringify(analystOutput.tags),
+        })
 
     // Update article pipeline status
     await prisma.article.update({

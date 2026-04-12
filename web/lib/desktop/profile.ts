@@ -82,7 +82,13 @@ async function upsertDesktopProfile(
 }
 
 export async function getDesktopMe(accountId: string): Promise<DesktopMeResponse> {
-  const profileRow = await upsertDesktopProfile(accountId)
+  let profileRow = await prisma.desktopProfile.findUnique({
+    where: { accountId },
+    select: desktopProfileSelect,
+  })
+  if (!profileRow) {
+    profileRow = await upsertDesktopProfile(accountId)
+  }
   const profile = toDesktopProfile(profileRow)
 
   if (!profile.activeSourceType || !profile.activeSourceRef) {

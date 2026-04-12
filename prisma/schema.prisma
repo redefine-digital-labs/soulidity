@@ -41,7 +41,7 @@ model CollectorState {
 
 model Article {
   id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  rawItemId    String           @map("raw_item_id") @db.Uuid
+  rawItemId    String           @unique @map("raw_item_id") @db.Uuid
   rawItem      RawItem          @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
   titleZh      String           @map("title_zh")
   titleEn      String           @map("title_en")
