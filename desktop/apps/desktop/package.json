@@ -35,7 +35,10 @@
     ],
     "mac": {
       "icon": "resources/icon.icns",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.productivity",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
@@ -44,7 +47,10 @@
     },
     "win": {
       "icon": "resources/icon.ico",
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
@@ -56,9 +62,10 @@
     }
   },
   "dependencies": {
+    "@fastify/websocket": "^11.2.0",
+    "@mysten/sui": "^2.15.0",
     "@soulidity/backend": "workspace:*",
     "@soulidity/shared": "workspace:*",
-    "@fastify/websocket": "^11.2.0",
     "fastify": "^5.8.2",
     "ws": "^8.19.0"
   },
