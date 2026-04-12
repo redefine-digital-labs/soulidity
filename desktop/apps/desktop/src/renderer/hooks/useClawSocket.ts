@@ -26,6 +26,14 @@ interface WsEnvelope {
   payload: Record<string, unknown>
 }
 
+/** ES2022 polyfill — Array.prototype.findLastIndex is ES2023 */
+function findLastIdx<T>(arr: T[], predicate: (item: T) => unknown): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (predicate(arr[i])) return i
+  }
+  return -1
+}
+
 let localMsgId = 0
 function nextMsgId(): number {
   return ++localMsgId
@@ -85,8 +93,8 @@ export function useClawSocket(): {
       setMessages((prev) => {
         const updated = [...prev]
         const idx = taskId
-          ? updated.findLastIndex((m) => m.taskId === taskId && m.streaming)
-          : updated.findLastIndex((m) => m.streaming)
+          ? findLastIdx(updated,(m) => m.taskId === taskId && m.streaming)
+          : findLastIdx(updated,(m) => m.streaming)
         if (idx !== -1) {
           const msg = updated[idx]
           updated[idx] = {
@@ -147,7 +155,7 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          const idx = findLastIdx(updated,(m) => m.taskId === envelope.taskId && m.streaming)
           if (idx !== -1) {
             updated[idx] = { ...updated[idx], content: updated[idx].content + delta }
           }
@@ -163,7 +171,7 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          const idx = findLastIdx(updated,(m) => m.taskId === envelope.taskId && m.streaming)
           if (idx !== -1) {
             updated[idx] = { ...updated[idx], content, streaming: false }
           } else {
@@ -182,7 +190,7 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          const idx = findLastIdx(updated,(m) => m.taskId === envelope.taskId && m.streaming)
           if (idx !== -1) {
             updated[idx] = {
               ...updated[idx],
@@ -203,7 +211,7 @@ export function useClawSocket(): {
         setStatusText('')
         setMessages((prev) => {
           const updated = [...prev]
-          const idx = updated.findLastIndex((m) => m.taskId === envelope.taskId && m.streaming)
+          const idx = findLastIdx(updated,(m) => m.taskId === envelope.taskId && m.streaming)
           if (idx !== -1) {
             updated[idx] = { ...updated[idx], content: '（已取消）', streaming: false }
           }

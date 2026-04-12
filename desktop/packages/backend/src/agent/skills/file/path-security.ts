@@ -1,4 +1,4 @@
-import { resolve, normalize, relative, isAbsolute, sep } from 'path'
+import { resolve, normalize, relative, isAbsolute, sep, dirname } from 'path'
 import { realpathSync, existsSync } from 'fs'
 import { homedir } from 'os'
 
@@ -73,8 +73,24 @@ export function validatePath(
     }
     return { valid: true, resolved: real }
   } catch {
-    // 文件尚不存在（write_file 场景），跳过 realpath 检查
-    return { valid: true, resolved }
+    // 文件不存在 — 向上找最近存在的祖先目录，解析其真实路径
+    let ancestor = resolved
+    while (ancestor !== dirname(ancestor)) {
+      ancestor = dirname(ancestor)
+      if (existsSync(ancestor)) {
+        const realAncestor = realpathSync(ancestor)
+        const ancestorInAllowed = allowedRoots.some((root) => {
+          const normalizedRoot = normalize(resolve(root))
+          const rel = relative(normalizedRoot, realAncestor)
+          return !rel.startsWith('..') && !isAbsolute(rel)
+        })
+        if (!ancestorInAllowed) {
+          return { valid: false, resolved, error: `父目录符号链接指向允许范围之外: ${realAncestor}` }
+        }
+        return { valid: true, resolved }
+      }
+    }
+    return { valid: false, resolved, error: '无法验证路径: 找不到存在的祖先目录' }
   }
 }
 
