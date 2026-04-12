@@ -18,6 +18,9 @@ export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'import',
   'personal-join',
   'agent-buy',
+  'content-access:purchase',
+  'content-access:add',
+  'content-access:revoke',
 ] as const
 
 export type SoulidityTxSyncRouteKey = (typeof SOULIDITY_TX_SYNC_ROUTE_KEYS)[number]

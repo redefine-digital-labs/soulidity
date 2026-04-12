@@ -15,6 +15,8 @@ const ECollectionAlreadyBound: u64 = 2;
 const EInvalidOwner: u64 = 3;
 const ESkillsAlreadyBound: u64 = 4;
 const EMemoryAlreadyBound: u64 = 5;
+const EAssetsAlreadyBound: u64 = 12;
+const EAccessListAlreadyBound: u64 = 13;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
@@ -53,7 +55,9 @@ public struct SoulState has key {
     active_grants: vector<ActiveGrantSlot>,
     memory_id: Option<ID>,
     skills_id: Option<ID>,
+    assets_id: Option<ID>,
     collection_id: Option<ID>,
+    access_list_id: Option<ID>,
 }
 
 public struct SoulCreated has copy, drop {
@@ -159,8 +163,16 @@ public fun skills_id(self: &SoulState): &Option<ID> {
     &self.skills_id
 }
 
+public fun assets_id(self: &SoulState): &Option<ID> {
+    &self.assets_id
+}
+
 public fun collection_id(self: &SoulState): &Option<ID> {
     &self.collection_id
+}
+
+public fun access_list_id(self: &SoulState): &Option<ID> {
+    &self.access_list_id
 }
 
 public fun active_grant_slot_grant_id(self: &ActiveGrantSlot): ID {
@@ -230,7 +242,9 @@ public(package) fun create_state(
         active_grants: vector[],
         memory_id,
         skills_id: option::none(),
+        assets_id: option::none(),
         collection_id: option::none(),
+        access_list_id: option::none(),
     }
 }
 
@@ -273,6 +287,20 @@ public(package) fun set_memory_id(state: &mut SoulState, memory_id: ID) {
 public(package) fun set_skills_id(state: &mut SoulState, skills_id: ID) {
     assert!(state.skills_id.is_none(), ESkillsAlreadyBound);
     state.skills_id = option::some(skills_id);
+}
+
+public(package) fun set_assets_id(state: &mut SoulState, assets_id: ID) {
+    assert!(state.assets_id.is_none(), EAssetsAlreadyBound);
+    state.assets_id = option::some(assets_id);
+}
+
+public(package) fun set_access_list_id(state: &mut SoulState, id: ID) {
+    assert!(state.access_list_id.is_none(), EAccessListAlreadyBound);
+    state.access_list_id = option::some(id);
+}
+
+public(package) fun set_grant_capacity(state: &mut SoulState, cap: u64) {
+    state.grant_capacity = cap;
 }
 
 public(package) fun active_grant_index_by_grantee(
@@ -411,7 +439,9 @@ public fun destroy_state_for_testing(self: SoulState) {
         active_grants: _,
         memory_id: _,
         skills_id: _,
+        assets_id: _,
         collection_id: _,
+        access_list_id: _,
     } = self;
     id.delete();
 }

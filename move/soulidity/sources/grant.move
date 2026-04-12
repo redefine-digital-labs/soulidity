@@ -17,10 +17,15 @@ const EEmptyScopeMask: u64 = 10;
 const EGrantIdMismatch: u64 = 11;
 const EGrantScopeWouldRemoveAll: u64 = 12;
 const EGrantInvalidScopeMask: u64 = 13;
+const EGrantCapacityTooLow: u64 = 14;
+const EGrantCapacityTooHigh: u64 = 15;
+
+const MAX_GRANT_CAPACITY: u64 = 10_000;
 
 const SCOPE_SEAL: u64 = 1;
 const SCOPE_MEMORY: u64 = 2;
 const SCOPE_SKILLS: u64 = 4;
+const SCOPE_ASSETS: u64 = 8;
 
 public struct SoulGrant has key, store {
     id: UID,
@@ -70,6 +75,12 @@ public struct SoulGrantInvalidated has copy, drop {
     new_owner: address,
 }
 
+public struct GrantCapacityUpdated has copy, drop {
+    soul_id: ID,
+    old_capacity: u64,
+    new_capacity: u64,
+}
+
 public fun soul_id(self: &SoulGrant): ID {
     self.soul_id
 }
@@ -100,6 +111,10 @@ public fun scope_memory(): u64 {
 
 public fun scope_skills(): u64 {
     SCOPE_SKILLS
+}
+
+public fun scope_assets(): u64 {
+    SCOPE_ASSETS
 }
 
 public fun has_scope(self: &SoulGrant, required_scope_mask: u64): bool {
@@ -241,6 +256,25 @@ public fun cleanup_expired(state: &mut SoulState, clock: &Clock) {
     cleanup_expired_impl(state, clock);
 }
 
+public fun set_grant_capacity(
+    state: &mut SoulState,
+    capacity: u64,
+    clock: &Clock,
+    ctx: &TxContext,
+) {
+    soul::assert_owner(state, ctx.sender());
+    cleanup_expired_impl(state, clock);
+    assert!(capacity >= soul::active_grant_count(state), EGrantCapacityTooLow);
+    assert!(capacity <= MAX_GRANT_CAPACITY, EGrantCapacityTooHigh);
+    let old_capacity = soul::grant_capacity(state);
+    soul::set_grant_capacity(state, capacity);
+    event::emit(GrantCapacityUpdated {
+        soul_id: soul::soul_id(state),
+        old_capacity,
+        new_capacity: capacity,
+    });
+}
+
 public(package) fun invalidate_all_for_owner_rotation(
     state: &mut SoulState,
     new_owner: address,
@@ -311,7 +345,7 @@ fun assert_valid_scope_mask(scope_mask: u64) {
 }
 
 fun all_scopes(): u64 {
-    SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS
+    SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS | SCOPE_ASSETS
 }
 
 fun has_required_scope(scope_mask: u64, required_scope_mask: u64): bool {

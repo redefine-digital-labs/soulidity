@@ -122,7 +122,7 @@ Authorization: Bearer snk_...`}</code>
         <h2 className="text-lg font-semibold">Key Types</h2>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
           <code>{`// Scope values
-type SoulGrantScope = 'seal' | 'memory' | 'skills'
+type SoulGrantScope = 'seal' | 'memory' | 'skills' | 'assets'
 
 // Provenance
 type SoulProvenanceKind = 'native' | 'imported' | 'personal-join'

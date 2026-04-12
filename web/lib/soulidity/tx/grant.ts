@@ -78,3 +78,24 @@ export function buildRevokeGrantScopeTx(params: {
   tx.transferObjects([grantObject], tx.pure.address(params.granteeAddress))
   return tx
 }
+
+export function buildSetGrantCapacityTx(params: {
+  stateObjectId: string
+  capacity: number
+}) {
+  if (!Number.isInteger(params.capacity) || params.capacity < 0) {
+    throw new Error('capacity must be a non-negative integer')
+  }
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::grant::set_grant_capacity`,
+    arguments: [
+      tx.object(params.stateObjectId),
+      tx.pure.u64(params.capacity),
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ],
+  })
+  return tx
+}

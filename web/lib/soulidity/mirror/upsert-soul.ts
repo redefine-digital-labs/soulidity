@@ -25,6 +25,14 @@ export async function upsertSoulProjection(params: {
     ? { skillsOnChainId: params.state.skillsId }
     : {}
 
+  const assetsUpdate = params.state.assetsId != null
+    ? { assetsOnChainId: params.state.assetsId }
+    : {}
+
+  const accessListUpdate = params.state.accessListId != null
+    ? { accessListOnChainId: params.state.accessListId }
+    : {}
+
   const result = await prisma.soulAsset.upsert({
     where: { onChainId: params.soul.objectId },
     update: {
@@ -52,6 +60,8 @@ export async function upsertSoulProjection(params: {
       grantCapacity: params.state.grantCapacity,
       activeGrantCount: params.state.activeGrantCount,
       ...skillsUpdate,
+      ...assetsUpdate,
+      ...accessListUpdate,
       sealSidecar: params.sealSidecar ?? Prisma.DbNull,
       category: params.category,
       tags: params.tags,
@@ -84,6 +94,8 @@ export async function upsertSoulProjection(params: {
       grantCapacity: params.state.grantCapacity,
       activeGrantCount: params.state.activeGrantCount,
       skillsOnChainId: params.state.skillsId,
+      assetsOnChainId: params.state.assetsId,
+      accessListOnChainId: params.state.accessListId,
       sealSidecar: params.sealSidecar ?? Prisma.DbNull,
       category: params.category,
       tags: params.tags,

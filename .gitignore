@@ -13,6 +13,7 @@ CLAUDE.md
 /docs/design/
 
 e2e/
+e2e-artifacts/
 
 /generated/prisma
 .worktrees/
@@ -33,3 +34,4 @@ tests/mcp/
 docker/review-memory/
 scripts/review-memory-*
 .gstack/
+web/tsconfig.tsbuildinfo

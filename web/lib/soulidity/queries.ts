@@ -515,6 +515,7 @@ export function scopeMaskToScopes(scopeMask: number): SoulGrantScope[] {
   if ((scopeMask & 1) === 1) scopes.push('seal')
   if ((scopeMask & 2) === 2) scopes.push('memory')
   if ((scopeMask & 4) === 4) scopes.push('skills')
+  if ((scopeMask & 8) === 8) scopes.push('assets')
   return scopes
 }
 
@@ -583,6 +584,8 @@ export async function getSoulStateObject(objectId: string, packageId: string): P
     activeGrants,
     memoryId: readNestedObjectId(fields.memory_id, 'SoulState memory_id'),
     skillsId: readNestedObjectId(fields.skills_id, 'SoulState skills_id'),
+    assetsId: readNestedObjectId(fields.assets_id, 'SoulState assets_id'),
+    accessListId: readNestedObjectId(fields.access_list_id, 'SoulState access_list_id'),
     collectionId: readOptionalString(fields.collection_id, 'SoulState collection_id'),
   }
 }
@@ -781,10 +784,12 @@ export async function getRegisteredPersonalKiosk(params: {
   marketConfigId: string
   marketPackageId: string
   ownerAddress: string
+  kioskRegistryId?: string
 }) {
+  const parentId = params.kioskRegistryId ?? params.marketConfigId
   try {
     const response = await suiClient.getDynamicFieldObject({
-      parentId: params.marketConfigId,
+      parentId,
       name: {
         type: `${normalizePackageId(params.marketPackageId)}::market::PersonalKioskOwnerKey`,
         value: { owner: params.ownerAddress },

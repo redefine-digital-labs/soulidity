@@ -158,15 +158,18 @@ describe('scopeMaskToScopes', () => {
     [5, ['seal', 'skills']],
     [6, ['memory', 'skills']],
     [7, ['seal', 'memory', 'skills']],
+    [8, ['assets']],
+    [9, ['seal', 'assets']],
+    [12, ['skills', 'assets']],
+    [15, ['seal', 'memory', 'skills', 'assets']],
   ])('maps bitmask %i to %j', (mask, expected) => {
     expect(scopeMaskToScopes(mask)).toEqual(expected)
   })
 
   it('ignores bits beyond the defined scopes', () => {
-    // Bit 3 (value 8) is not a defined scope, so mask 8 yields []
-    expect(scopeMaskToScopes(8)).toEqual([])
-    // mask 9 = 8 | 1 → only 'seal' from bit 0
-    expect(scopeMaskToScopes(9)).toEqual(['seal'])
+    // Bit 4 (value 16) and above are not defined grant scopes.
+    expect(scopeMaskToScopes(16)).toEqual([])
+    expect(scopeMaskToScopes(17)).toEqual(['seal'])
   })
 })
 

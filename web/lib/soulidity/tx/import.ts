@@ -1,6 +1,7 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildBuyerKioskArgs, finishBuyerKioskArgs, validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
+import type { AssetType } from '@/lib/soulidity/types'
 
 type ImportSoulTxParams = {
   currentKioskId?: string | null
@@ -14,6 +15,12 @@ type ImportSoulTxParams = {
   skillsBlobObjectId?: string | null
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
+  assetBlobObjectId?: string | null
+  initialAssetName?: string | null
+  assetVisibility?: 'public' | 'private'
+  assetType?: AssetType
+  contentAccessPriceAtomic?: number
+  contentAccessDefaultScopeMask?: number
   originRef: string
   creatorRoyaltyBps: number
 }
@@ -35,6 +42,22 @@ function buildSkillsArg(tx: Transaction, blobObjectId?: string | null) {
   })
 }
 
+function buildAssetArg(tx: Transaction, blobObjectId?: string | null) {
+  return tx.object.option({
+    type: WALRUS_BLOB_TYPE,
+    value: blobObjectId ? tx.object(blobObjectId) : null,
+  })
+}
+
+function assetTypeToU8(assetType?: AssetType): number {
+  switch (assetType) {
+    case 'sprite': return 0
+    case 'live2d': return 1
+    case 'audio': return 2
+    default: return 0
+  }
+}
+
 export function buildImportSoulTx(params: ImportSoulTxParams) {
   validateSoulPublishArgs(params)
   if (params.originRef.trim().length === 0) {
@@ -43,6 +66,7 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const personalKiosk = buildBuyerKioskArgs(tx, {
@@ -53,6 +77,7 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
     target: `${packageId}::market::mint_imported_in_personal_kiosk`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
       tx.object(transferPolicyId),
       personalKiosk.buyerKiosk,
       personalKiosk.buyerKioskCap,
@@ -65,6 +90,12 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
       buildSkillsArg(tx, params.skillsBlobObjectId),
       tx.pure.string(params.initialSkillName || 'default'),
       tx.pure.bool((params.skillsVisibility ?? 'private') === 'public'),
+      buildAssetArg(tx, params.assetBlobObjectId),
+      tx.pure.string(params.initialAssetName || 'default'),
+      tx.pure.bool((params.assetVisibility ?? 'private') === 'public'),
+      tx.pure.u8(assetTypeToU8(params.assetType)),
+      tx.pure.u64(params.contentAccessPriceAtomic ?? 0),
+      tx.pure.u64(params.contentAccessDefaultScopeMask ?? 0),
       tx.pure.string(params.originRef),
       tx.pure.u16(params.creatorRoyaltyBps),
       tx.object(SUI_CLOCK_OBJECT_ID),

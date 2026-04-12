@@ -1,6 +1,6 @@
 import type { Prisma } from '../../../../generated/prisma/client'
 import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
-import type { SkillVersionObject } from '@/lib/soulidity/types'
+import type { AssetVersionObject, SkillVersionObject } from '@/lib/soulidity/types'
 import {
   getRegisteredPersonalKiosk,
   getSoulCollectionObject,
@@ -14,6 +14,8 @@ import {
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { upsertCollectionProjection } from '@/lib/soulidity/mirror/upsert-collection'
 import { endActiveSoulGrantProjections, endSoulGrantProjection, upsertGrantProjection } from '@/lib/soulidity/mirror/upsert-grant'
+import { upsertAssetVersionProjection } from '@/lib/soulidity/mirror/upsert-asset'
+import { upsertContentAccessProjection, markContentAccessRevoked } from '@/lib/soulidity/mirror/upsert-content-access'
 import { markSkillVersionDeleted, upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
 import { upsertSoulProjection } from '@/lib/soulidity/mirror/upsert-soul'
 
@@ -51,6 +53,7 @@ export async function syncSoulProjectionFromChain(params: {
         marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
         marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
         ownerAddress: state.currentOwnerAddress,
+        kioskRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'),
       })
       if (registered) {
         kioskCapOnChainId = registered.kioskCapOnChainId
@@ -193,4 +196,39 @@ export async function markSkillVersionDeletedFromChain(params: {
   deletedAt?: Date | null
 }) {
   return markSkillVersionDeleted(params)
+}
+
+export async function syncAssetVersionProjectionFromChain(params: {
+  version: AssetVersionObject
+  soulOnChainId: string
+  assetsOnChainId: string
+  deletedAt?: Date | null
+  sealSidecar?: SealEnvelopeSidecar | null
+}) {
+  return upsertAssetVersionProjection({
+    version: params.version,
+    soulOnChainId: params.soulOnChainId,
+    assetsOnChainId: params.assetsOnChainId,
+    deletedAt: params.deletedAt ?? null,
+    sealSidecar: params.sealSidecar ?? null,
+  })
+}
+
+export async function syncContentAccessProjectionFromChain(params: {
+  soulOnChainId: string
+  accessListOnChainId: string
+  granteeAddress: string
+  scopeMask: number
+  pricePaidAtomic: number | bigint
+  grantedAtMs: number | bigint
+  expiresAtMs?: number | bigint | null
+}) {
+  return upsertContentAccessProjection(params)
+}
+
+export async function markContentAccessRevokedFromChain(params: {
+  accessListOnChainId: string
+  granteeAddress: string
+}) {
+  return markContentAccessRevoked(params)
 }

@@ -15,6 +15,7 @@ describe('publish-soulidity-and-sync', () => {
           type: '0xpackage::market::MarketInitialized',
           parsedJson: {
             config_id: '0xconfig',
+            registry_id: '0xregistry',
             soul_policy_id: '0xsoulpolicy',
             collection_policy_id: '0xcollectionpolicy',
           },
@@ -27,6 +28,7 @@ describe('publish-soulidity-and-sync', () => {
     expect(deployment).toEqual({
       packageId: '0xpackage',
       marketConfigId: '0xconfig',
+      kioskRegistryId: '0xregistry',
       soulTransferPolicyId: '0xsoulpolicy',
       collectionTransferPolicyId: '0xcollectionpolicy',
       paymentCoinType: '0x2::coin::COIN',
@@ -47,6 +49,7 @@ describe('publish-soulidity-and-sync', () => {
           type: '0xpackage::market::MarketInitialized',
           parsedJson: {
             config_id: '0xconfig',
+            registry_id: '0xregistry',
             soul_policy_id: '0xsoulpolicy',
             collection_policy_id: '0xcollectionpolicy',
           },
@@ -69,6 +72,7 @@ describe('publish-soulidity-and-sync', () => {
           type: '0xpackage::market::MarketInitialized',
           parsedJson: {
             config_id: '0xconfig',
+            registry_id: '0xregistry',
             soul_policy_id: '0xsoulpolicy',
             collection_policy_id: '0xcollectionpolicy',
           },

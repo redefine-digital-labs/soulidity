@@ -1,4 +1,5 @@
 import type {
+  AssetType,
   CollectionListingObject,
   SoulCollectionObject,
   SoulGrantObject,
@@ -398,6 +399,236 @@ export function tryExtractSkillVersionAppendedEvent(transaction: TransactionLike
     visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
     createdAtMs: readNumber(event.created_at_ms, 'SkillVersionAppended created_at_ms'),
     blobObjectId: readObjectId(event.blob_object_id, 'SkillVersionAppended blob_object_id'),
+  }
+}
+
+function mapAssetType(value: number): AssetType {
+  switch (value) {
+    case 0: return 'sprite'
+    case 1: return 'live2d'
+    case 2: return 'audio'
+    default: return 'sprite'
+  }
+}
+
+export function extractAssetVersionAppendedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::assets::AssetVersionAppended`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('AssetVersionAppended event is missing from the transaction')
+  }
+  return {
+    assetsId: readObjectId(event.assets_id, 'AssetVersionAppended assets_id'),
+    soulId: readObjectId(event.soul_id, 'AssetVersionAppended soul_id'),
+    assetName: readString(event.asset_name, 'AssetVersionAppended asset_name'),
+    versionIndex: readNumber(event.version_index, 'AssetVersionAppended version_index'),
+    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
+    assetType: mapAssetType(readNumber(event.asset_type, 'AssetVersionAppended asset_type')),
+    createdAtMs: readNumber(event.created_at_ms, 'AssetVersionAppended created_at_ms'),
+    blobObjectId: readObjectId(event.blob_object_id, 'AssetVersionAppended blob_object_id'),
+  }
+}
+
+export function tryExtractAssetVersionAppendedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::assets::AssetVersionAppended`, trustedPackageIds)
+  if (!event) return null
+  return {
+    assetsId: readObjectId(event.assets_id, 'AssetVersionAppended assets_id'),
+    soulId: readObjectId(event.soul_id, 'AssetVersionAppended soul_id'),
+    assetName: readString(event.asset_name, 'AssetVersionAppended asset_name'),
+    versionIndex: readNumber(event.version_index, 'AssetVersionAppended version_index'),
+    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
+    assetType: mapAssetType(readNumber(event.asset_type, 'AssetVersionAppended asset_type')),
+    createdAtMs: readNumber(event.created_at_ms, 'AssetVersionAppended created_at_ms'),
+    blobObjectId: readObjectId(event.blob_object_id, 'AssetVersionAppended blob_object_id'),
+  }
+}
+
+export function extractContentAccessListCreatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessListCreated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentAccessListCreated event is missing from the transaction')
+  }
+  return {
+    accessListId: readObjectId(event.access_list_id, 'ContentAccessListCreated access_list_id'),
+    soulId: readObjectId(event.soul_id, 'ContentAccessListCreated soul_id'),
+    creator: readAddress(event.creator, 'ContentAccessListCreated creator'),
+    priceAtomic: readNumber(event.price_atomic, 'ContentAccessListCreated price_atomic'),
+    defaultScopeMask: readNumber(event.default_scope_mask, 'ContentAccessListCreated default_scope_mask'),
+  }
+}
+
+export function tryExtractContentAccessListCreatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessListCreated`, trustedPackageIds)
+  if (!event) return null
+  return {
+    accessListId: readObjectId(event.access_list_id, 'ContentAccessListCreated access_list_id'),
+    soulId: readObjectId(event.soul_id, 'ContentAccessListCreated soul_id'),
+    creator: readAddress(event.creator, 'ContentAccessListCreated creator'),
+    priceAtomic: readNumber(event.price_atomic, 'ContentAccessListCreated price_atomic'),
+    defaultScopeMask: readNumber(event.default_scope_mask, 'ContentAccessListCreated default_scope_mask'),
+  }
+}
+
+export function extractContentAccessGrantedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessGranted`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentAccessGranted event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'ContentAccessGranted soul_id'),
+    accessListId: readObjectId(event.access_list_id, 'ContentAccessGranted access_list_id'),
+    grantee: readAddress(event.grantee, 'ContentAccessGranted grantee'),
+    scopeMask: readNumber(event.scope_mask, 'ContentAccessGranted scope_mask'),
+    pricePaidAtomic: readNumber(event.price_paid_atomic, 'ContentAccessGranted price_paid_atomic'),
+  }
+}
+
+/**
+ * Find the ContentAccessGranted event that matches a specific access_list_id and grantee.
+ * Used by the purchase mirror route to pair the grant event with the purchase event
+ * in multi-call PTBs where multiple ContentAccessGranted events may exist.
+ */
+export function extractMatchedContentAccessGrantedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  matchAccessListId: string,
+  matchGrantee: string,
+  trustedPackageIds?: string[],
+) {
+  const type = `${packageId}::content_access::ContentAccessGranted`
+  const suffix = type.replace(/^0x[0-9a-fA-F]+/, '')
+  const trustedPackages = getTrustedPackageIds(...(trustedPackageIds ?? []))
+
+  const candidates = (transaction.events ?? []).filter((item) => {
+    if (item?.type === type) return true
+    if (typeof item?.type !== 'string' || !item.type.endsWith(suffix)) return false
+    if (trustedPackages.length === 0) return false
+    const fallbackPackageId = readPackageIdFromType(item.type)
+    return fallbackPackageId ? trustedPackages.includes(fallbackPackageId) : false
+  })
+
+  for (const candidate of candidates) {
+    const parsed = asRecord(candidate.parsedJson)
+    if (!parsed) continue
+    try {
+      const accessListId = readObjectId(parsed.access_list_id, 'ContentAccessGranted access_list_id')
+      const grantee = readAddress(parsed.grantee, 'ContentAccessGranted grantee')
+      if (accessListId === matchAccessListId && grantee === matchGrantee) {
+        return {
+          soulId: readObjectId(parsed.soul_id, 'ContentAccessGranted soul_id'),
+          accessListId,
+          grantee,
+          scopeMask: readNumber(parsed.scope_mask, 'ContentAccessGranted scope_mask'),
+          pricePaidAtomic: readNumber(parsed.price_paid_atomic, 'ContentAccessGranted price_paid_atomic'),
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+
+  throw new OnChainVerificationError('No ContentAccessGranted event matches the purchase (access_list_id + grantee)')
+}
+
+export function extractContentAccessRevokedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessRevoked`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentAccessRevoked event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'ContentAccessRevoked soul_id'),
+    accessListId: readObjectId(event.access_list_id, 'ContentAccessRevoked access_list_id'),
+    grantee: readAddress(event.grantee, 'ContentAccessRevoked grantee'),
+  }
+}
+
+export function extractContentAccessPurchasedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::market::ContentAccessPurchased`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentAccessPurchased event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'ContentAccessPurchased soul_id'),
+    accessListId: readObjectId(event.access_list_id, 'ContentAccessPurchased access_list_id'),
+    buyer: readAddress(event.buyer, 'ContentAccessPurchased buyer'),
+    priceAtomic: readBigInt(event.price, 'ContentAccessPurchased price'),
+    platformFeeAtomic: readBigInt(event.platform_fee, 'ContentAccessPurchased platform_fee'),
+    paymentRecipient: readAddress(event.payment_recipient, 'ContentAccessPurchased payment_recipient'),
+  }
+}
+
+export function tryExtractContentAccessPurchasedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::market::ContentAccessPurchased`, trustedPackageIds)
+  if (!event) return null
+  return {
+    soulId: readObjectId(event.soul_id, 'ContentAccessPurchased soul_id'),
+    accessListId: readObjectId(event.access_list_id, 'ContentAccessPurchased access_list_id'),
+    buyer: readAddress(event.buyer, 'ContentAccessPurchased buyer'),
+    priceAtomic: readBigInt(event.price, 'ContentAccessPurchased price'),
+    platformFeeAtomic: readBigInt(event.platform_fee, 'ContentAccessPurchased platform_fee'),
+    paymentRecipient: readAddress(event.payment_recipient, 'ContentAccessPurchased payment_recipient'),
+  }
+}
+
+export function extractGrantCapacityUpdatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::grant::GrantCapacityUpdated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('GrantCapacityUpdated event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'GrantCapacityUpdated soul_id'),
+    oldCapacity: readNumber(event.old_capacity, 'GrantCapacityUpdated old_capacity'),
+    newCapacity: readNumber(event.new_capacity, 'GrantCapacityUpdated new_capacity'),
+  }
+}
+
+export function tryExtractGrantCapacityUpdatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::grant::GrantCapacityUpdated`, trustedPackageIds)
+  if (!event) return null
+  return {
+    soulId: readObjectId(event.soul_id, 'GrantCapacityUpdated soul_id'),
+    oldCapacity: readNumber(event.old_capacity, 'GrantCapacityUpdated old_capacity'),
+    newCapacity: readNumber(event.new_capacity, 'GrantCapacityUpdated new_capacity'),
   }
 }
 

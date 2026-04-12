@@ -1,6 +1,7 @@
 import { unsealDekEnvelope } from '@web/lib/services/dek-envelope'
 import { createSealClient, getSealRuntimeConfig } from '@web/lib/services/seal'
 import {
+  createAssetVersionSealEnvelopeSidecar,
   createMemoryEntrySealEnvelopeSidecar,
   createSealEnvelopeSidecar,
   createSkillVersionSealEnvelopeSidecar,
@@ -19,20 +20,25 @@ export async function buildSyncSealSidecars(params: {
   memoryBinding?: { memoryObjectId: string; timestampKey: number } | null
   rawSkillsEnvelope?: string | null
   skillBinding?: { skillsObjectId: string; skillName: string; versionIndex: number } | null
+  rawAssetsEnvelope?: string | null
+  assetBinding?: { assetsObjectId: string; assetName: string; versionIndex: number } | null
 }): Promise<{
   soulSidecar: SealEnvelopeSidecar | null
   memorySidecar: SealEnvelopeSidecar | null
   skillsSidecar: SealEnvelopeSidecar | null
+  assetsSidecar: SealEnvelopeSidecar | null
 }> {
   const rawSoulEnvelope = params.rawSoulEnvelope ?? null
   const rawMemoryEnvelope = params.rawMemoryEnvelope ?? null
   const rawSkillsEnvelope = params.rawSkillsEnvelope ?? null
+  const rawAssetsEnvelope = params.rawAssetsEnvelope ?? null
 
-  if (!rawSoulEnvelope && !rawMemoryEnvelope && !rawSkillsEnvelope) {
+  if (!rawSoulEnvelope && !rawMemoryEnvelope && !rawSkillsEnvelope && !rawAssetsEnvelope) {
     return {
       soulSidecar: null,
       memorySidecar: null,
       skillsSidecar: null,
+      assetsSidecar: null,
     }
   }
 
@@ -48,6 +54,7 @@ export async function buildSyncSealSidecars(params: {
   let soulSidecar: SealEnvelopeSidecar | null = null
   let memorySidecar: SealEnvelopeSidecar | null = null
   let skillsSidecar: SealEnvelopeSidecar | null = null
+  let assetsSidecar: SealEnvelopeSidecar | null = null
 
   if (rawSoulEnvelope) {
     const unsealedEnvelope = unsealDekEnvelope(rawSoulEnvelope)
@@ -109,9 +116,31 @@ export async function buildSyncSealSidecars(params: {
     }
   }
 
+  if (rawAssetsEnvelope && params.assetBinding) {
+    const unsealedAssetsEnvelope = unsealDekEnvelope(rawAssetsEnvelope)
+    try {
+      assetsSidecar = await createAssetVersionSealEnvelopeSidecar({
+        sealClient,
+        packageId: sealPackageId,
+        assetsObjectId: params.assetBinding.assetsObjectId,
+        assetName: params.assetBinding.assetName,
+        versionIndex: params.assetBinding.versionIndex,
+        threshold: runtimeConfig.threshold,
+        dek: unsealedAssetsEnvelope.dek,
+        iv: unsealedAssetsEnvelope.iv,
+        contentHash: unsealedAssetsEnvelope.contentHash,
+        mimeType: unsealedAssetsEnvelope.mimeType,
+        fileName: unsealedAssetsEnvelope.fileName,
+      })
+    } finally {
+      unsealedAssetsEnvelope.dek.fill(0)
+    }
+  }
+
   return {
     soulSidecar,
     memorySidecar,
     skillsSidecar,
+    assetsSidecar,
   }
 }

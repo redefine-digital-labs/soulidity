@@ -9,6 +9,7 @@ import type {
   SoulCollectionAssetDetail,
   SoulCollectionAssetSummary,
   SoulGrantRecord,
+  SoulGrantScope,
   SoulListingStatus,
   SoulMemoryEntryRecord,
   SoulSkillVersionRecord,
@@ -96,6 +97,8 @@ export const soulAssetSummarySelect = {
   grantCapacity: true,
   activeGrantCount: true,
   skillsOnChainId: true,
+  assetsOnChainId: true,
+  accessListOnChainId: true,
   createdAt: true,
   updatedAt: true,
 } as const
@@ -229,6 +232,12 @@ type SoulCollectionSummaryRecord = Prisma.SoulCollectionAssetGetPayload<{ select
 type SoulAssetDetailRecord = Prisma.SoulAssetGetPayload<{ select: typeof soulAssetDetailSelect }>
 type SoulCollectionDetailRecord = Prisma.SoulCollectionAssetGetPayload<{ select: typeof soulCollectionDetailSelect }>
 
+export function toSoulGrantScopes(scopes: string[]): SoulGrantScope[] {
+  return scopes.filter((scope): scope is SoulGrantScope =>
+    scope === 'seal' || scope === 'memory' || scope === 'skills' || scope === 'assets',
+  )
+}
+
 export function toSoulGrantRecord(record: SoulGrantRecordRecord): SoulGrantRecord {
   return {
     id: record.id,
@@ -238,7 +247,7 @@ export function toSoulGrantRecord(record: SoulGrantRecordRecord): SoulGrantRecor
     issuedByMemberId: record.issuedByMemberId,
     granteeAddress: record.granteeAddress,
     granteeMemberId: record.granteeMemberId,
-    scopes: record.scopes.map((scope) => scope === 'skills' ? 'skills' : scope === 'memory' ? 'memory' : 'seal'),
+    scopes: toSoulGrantScopes(record.scopes),
     status: record.status === 'revoked'
       ? 'revoked'
       : record.status === 'expired'
@@ -357,6 +366,8 @@ export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSum
     grantCapacity: record.grantCapacity,
     activeGrantCount: record.activeGrantCount,
     skillsOnChainId: record.skillsOnChainId,
+    assetsOnChainId: record.assetsOnChainId,
+    accessListOnChainId: record.accessListOnChainId,
     createdAt: asIso(record.createdAt),
     updatedAt: asIso(record.updatedAt),
   }
