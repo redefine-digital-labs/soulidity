@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react'
+import { processSpriteSheeet } from '../lib/chroma-key'
 
 export interface SpriteSheetConfig {
   src: string
@@ -23,7 +24,7 @@ interface SpriteRendererProps {
 
 export function SpriteRenderer({ config, animation, width, height }: SpriteRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const sheetRef = useRef<HTMLImageElement | null>(null)
+  const sheetRef = useRef<HTMLCanvasElement | null>(null)
   const rafRef = useRef<number>(0)
   const frameRef = useRef(0)
   const lastTimeRef = useRef(0)
@@ -32,7 +33,9 @@ export function SpriteRenderer({ config, animation, width, height }: SpriteRende
   useEffect(() => {
     const img = new Image()
     img.src = config.src
-    img.onload = () => { sheetRef.current = img }
+    img.onload = () => {
+      sheetRef.current = processSpriteSheeet(img)
+    }
     return () => { sheetRef.current = null }
   }, [config.src])
 

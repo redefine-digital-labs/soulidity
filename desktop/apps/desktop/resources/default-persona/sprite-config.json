@@ -1,7 +1,7 @@
 {
   "src": "sprite.png",
-  "frameWidth": 128,
-  "frameHeight": 128,
+  "frameWidth": 512,
+  "frameHeight": 512,
   "columns": 8,
   "animations": {
     "idle":             { "frames": [0,1,2,3,4,5,6,7],       "fps": 4,  "loop": true },
