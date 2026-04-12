@@ -76,6 +76,7 @@ export async function runAgentPipeline(
     // --- Save article (idempotent: skip insert if a previous run already created one) ---
     const status = editorOutput.approved ? 'draft' : 'rejected'
     const existing = await prisma.article.findUnique({ where: { rawItemId } })
+    const isReuse = !!existing
     const articleId = existing
       ? existing.id
       : await insertArticle(prisma, {
@@ -95,49 +96,52 @@ export async function runAgentPipeline(
       data: { status, pipelineStatus: 'completed' },
     })
 
-    // --- Write process logs (best-effort, after article exists) ---
-    try {
-      const [scoutRole, reporterRole, analystRole, editorRole] = await Promise.all([
-        getRoleByName(prisma, 'scout'),
-        getRoleByName(prisma, 'reporter'),
-        getRoleByName(prisma, 'analyst'),
-        getRoleByName(prisma, 'editor'),
-      ])
-      const now = new Date()
+    // Skip side effects on retry reuse — logs and company links were already written on first insert
+    if (!isReuse) {
+      // --- Write process logs (best-effort, after article exists) ---
+      try {
+        const [scoutRole, reporterRole, analystRole, editorRole] = await Promise.all([
+          getRoleByName(prisma, 'scout'),
+          getRoleByName(prisma, 'reporter'),
+          getRoleByName(prisma, 'analyst'),
+          getRoleByName(prisma, 'editor'),
+        ])
+        const now = new Date()
 
-      if (scoutRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: scoutRole.id })
-        await updateProcessLog(prisma, logId, {
-          status: 'completed',
-          output: JSON.stringify({ title: item.title, score: item.score, source: item.sourceName }),
-          startedAt: item.createdAt,
-          completedAt: now,
-        })
+        if (scoutRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: scoutRole.id })
+          await updateProcessLog(prisma, logId, {
+            status: 'completed',
+            output: JSON.stringify({ title: item.title, score: item.score, source: item.sourceName }),
+            startedAt: item.createdAt,
+            completedAt: now,
+          })
+        }
+        if (reporterRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: reporterRole.id })
+          await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(reporterOutput), completedAt: now })
+        }
+        if (analystRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: analystRole.id })
+          await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(analystOutput), completedAt: now })
+        }
+        if (editorRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: editorRole.id })
+          await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(editorOutput), completedAt: now })
+        }
+      } catch (logErr) {
+        console.error('Failed to write process logs:', logErr)
       }
-      if (reporterRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: reporterRole.id })
-        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(reporterOutput), completedAt: now })
-      }
-      if (analystRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: analystRole.id })
-        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(analystOutput), completedAt: now })
-      }
-      if (editorRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: editorRole.id })
-        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(editorOutput), completedAt: now })
-      }
-    } catch (logErr) {
-      console.error('Failed to write process logs:', logErr)
-    }
 
-    // Link companies
-    if (analystOutput.companies.length) {
-      for (const c of analystOutput.companies) {
-        try {
-          const companyId = await upsertCompany(prisma, c)
-          await linkArticleCompany(prisma, articleId, companyId)
-        } catch (err) {
-          console.error(`Failed to link company ${c.name}:`, err)
+      // Link companies
+      if (analystOutput.companies.length) {
+        for (const c of analystOutput.companies) {
+          try {
+            const companyId = await upsertCompany(prisma, c)
+            await linkArticleCompany(prisma, articleId, companyId)
+          } catch (err) {
+            console.error(`Failed to link company ${c.name}:`, err)
+          }
         }
       }
     }
