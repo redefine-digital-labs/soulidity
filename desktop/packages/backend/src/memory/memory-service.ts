@@ -4,7 +4,7 @@ import type { ChatMessageData } from '@soulidity/shared'
 import { streamChat } from '../llm/client'
 import { loadLLMConfig } from '../llm/config'
 import { estimateHistoryTokens } from '../llm/token-estimator'
-import { getMemoryDir, getPersonaDir } from '../paths'
+import { getMemoryDir, getPersonaDir, BOOTSTRAP_COMPLETE_THRESHOLD } from '../paths'
 import { flushInterpretBuffer } from './interpret-service'
 import { runMaintenance } from './maintain-service'
 import { compileCapsules, canCompileUserMd, canCompileContextMd } from './capsule-compiler'
@@ -575,7 +575,7 @@ ${transcript}
       const userContent = existsSync(userPath) ? readFileSync(userPath, 'utf-8') : ''
       const memDir = resolveMemoryDir()
       const hasArchives = readdirSync(memDir).some((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
-      if (userContent.length > 150 || hasArchives) {
+      if (userContent.length > BOOTSTRAP_COMPLETE_THRESHOLD || hasArchives) {
         unlinkSync(bootstrapPath)
         console.log('[boot] BOOTSTRAP.md auto-cleaned — user profile or archives already exist')
         result.isBootstrap = false

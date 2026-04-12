@@ -15,6 +15,9 @@
 import { join } from 'path'
 import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 
+/** USER.md 字符数阈值：超过此值视为引导已完成，不再复制 BOOTSTRAP.md */
+export const BOOTSTRAP_COMPLETE_THRESHOLD = 150
+
 // ─── 单例路径 ────────────────────────────────
 
 let _dataDir: string | null = null
@@ -196,7 +199,7 @@ export function copyInitialTemplates(builtinPersonaDir: string): void {
   const bootstrapTarget = join(targetDir, 'BOOTSTRAP.md')
   const bootstrapSource = join(builtinPersonaDir, 'BOOTSTRAP.md')
   const bootstrapCompleted = existsSync(userMdPath)
-    && readFileSync(userMdPath, 'utf-8').length > 200
+    && readFileSync(userMdPath, 'utf-8').length > BOOTSTRAP_COMPLETE_THRESHOLD
   if (!bootstrapCompleted && !existsSync(bootstrapTarget) && existsSync(bootstrapSource)) {
     copyFileSync(bootstrapSource, bootstrapTarget)
   }

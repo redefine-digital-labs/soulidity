@@ -109,7 +109,26 @@ describe('createPrisma', () => {
     expect(firstClient.$disconnect).toHaveBeenCalledTimes(1)
     expect(secondClient.rawItem.findUnique).toHaveBeenCalledTimes(1)
     expect(adapterOptions).toHaveLength(2)
-    expect(warnSpy).toHaveBeenCalledWith('Prisma connection closed; recreated PrismaClient and retrying once.')
+    expect(warnSpy).toHaveBeenCalledWith('Prisma connection closed; recreated PrismaClient.')
+  })
+
+  it('reconnects but does not retry write operations on transient connection errors', async () => {
+    const firstClient = createClient() as MockClient & { rawItem: { create: ReturnType<typeof vi.fn> } }
+    firstClient.rawItem.create = vi.fn().mockRejectedValueOnce(makeClosedConnectionError())
+
+    const secondClient = createClient()
+    queuedClients.push(firstClient, secondClient)
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { createPrisma } = await import('../../src/db/database.js')
+    const prisma = createPrisma()
+
+    await expect((prisma.rawItem as any).create({ data: {} })).rejects.toThrow()
+
+    expect(createdClients).toHaveLength(2)
+    expect(firstClient.rawItem.create).toHaveBeenCalledTimes(1)
+    expect(firstClient.$disconnect).toHaveBeenCalledTimes(1)
+    expect(warnSpy).toHaveBeenCalledWith('Prisma connection closed; recreated PrismaClient.')
   })
 
   it('does not retry non-connection Prisma errors', async () => {

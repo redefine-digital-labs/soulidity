@@ -35,15 +35,20 @@ export function createPrisma(): PrismaClient {
   let disconnected = false
   const delegateCache = new Map<PropertyKey, object>()
 
+  const IDEMPOTENT_METHODS = new Set([
+    'findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow',
+    'findMany', 'count', 'aggregate', 'groupBy',
+  ])
+
   const reconnect = async (stale: PrismaClient): Promise<void> => {
     if (disconnected || current !== stale) return
 
     current = buildPrismaClient(connectionString)
     await stale.$disconnect().catch(() => {})
-    console.warn('Prisma connection closed; recreated PrismaClient and retrying once.')
+    console.warn('Prisma connection closed; recreated PrismaClient.')
   }
 
-  const runWithReconnect = async <T>(operation: (client: PrismaClient) => Promise<T>): Promise<T> => {
+  const runWithReconnect = async <T>(operation: (client: PrismaClient) => Promise<T>, canRetry: boolean): Promise<T> => {
     const initialClient = current
 
     try {
@@ -52,6 +57,7 @@ export function createPrisma(): PrismaClient {
       if (disconnected || !isTransientPrismaConnectionError(error)) throw error
 
       await reconnect(initialClient)
+      if (!canRetry) throw error
       return operation(current)
     }
   }
@@ -63,12 +69,13 @@ export function createPrisma(): PrismaClient {
 
       if (typeof value !== 'function') return value
 
+      const canRetry = typeof methodName === 'string' && IDEMPOTENT_METHODS.has(methodName)
       return (...args: unknown[]) => runWithReconnect(async (client) => {
         const liveDelegate = Reflect.get(client as object, delegateName)
         const liveMethod = Reflect.get(liveDelegate as object, methodName)
 
         return Reflect.apply(liveMethod as (...methodArgs: unknown[]) => unknown, liveDelegate, args) as Promise<unknown>
-      })
+      }, canRetry)
     },
   })
 
@@ -85,10 +92,11 @@ export function createPrisma(): PrismaClient {
       const value = Reflect.get(current as object, property)
 
       if (typeof value === 'function') {
+        const canRetry = typeof property === 'string' && property.startsWith('$')
         return (...args: unknown[]) => runWithReconnect(async (client) => {
           const liveMethod = Reflect.get(client as object, property) as (...methodArgs: unknown[]) => Promise<unknown>
           return Reflect.apply(liveMethod, client, args)
-        })
+        }, canRetry)
       }
 
       if (isModelDelegate(value)) {

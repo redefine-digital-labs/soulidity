@@ -279,6 +279,9 @@ ipcMain.handle('quickinput:toggle', () => {
     // 球在左侧，输入框向右展开
     newX = ballScreenCenterX - BALL_EDGE_OFFSET
   }
+  const minX = display.workArea.x
+  const maxX = display.workArea.x + display.workArea.width - EXPANDED_W
+  newX = Math.max(minX, Math.min(maxX, newX))
 
   ballWin.setBounds({
     x: Math.round(newX),
@@ -347,6 +350,9 @@ ipcMain.handle('quickinput:reposition', () => {
     } else {
       newX = ballCenterX - BALL_EDGE_OFFSET
     }
+    const minX = display.workArea.x
+    const maxX = display.workArea.x + display.workArea.width - EXPANDED_W
+    newX = Math.max(minX, Math.min(maxX, newX))
     ballWin.setBounds({
       x: Math.round(newX),
       y: bounds.y,
