@@ -62,6 +62,19 @@ function broadcast(envelope: object): void {
 }
 
 /**
+ * Flush pending user turns to disk. Called during shutdown to ensure queued
+ * turns that haven't been processed by the task coordinator are persisted
+ * before the day archive is sealed.
+ */
+export function flushPendingUserTurns(): void {
+  for (const [taskId, content] of pendingUserTurns) {
+    conversation.push({ role: 'user', content })
+    memoryService.appendMessage({ role: 'user', content })
+    pendingUserTurns.delete(taskId)
+  }
+}
+
+/**
  * 注册 Fastify WebSocket 插件并设置 /ws 路由
  */
 export async function setupWebSocket(

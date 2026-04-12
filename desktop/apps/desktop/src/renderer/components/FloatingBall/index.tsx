@@ -431,6 +431,13 @@ export function FloatingBall(): React.JSX.Element {
     dropCounterRef.current = 0
     setDropActive(false)
 
+    // Restore click-through early so every exit path resets it.
+    // dragenter called setIgnoreMouseEvents(false); we must undo that
+    // even when files are empty or paths can't be resolved.
+    if (!isDraggingRef.current) {
+      window.electronAPI.setIgnoreMouseEvents(true)
+    }
+
     const files = e.dataTransfer.files
     if (files.length === 0) return
 
@@ -452,10 +459,6 @@ export function FloatingBall(): React.JSX.Element {
       }
     } catch (err) {
       console.error('[FloatingBall] drop error:', err)
-    }
-
-    if (!isDraggingRef.current) {
-      window.electronAPI.setIgnoreMouseEvents(true)
     }
   }, [])
 

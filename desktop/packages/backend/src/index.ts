@@ -1,5 +1,5 @@
 import Fastify from 'fastify'
-import { setupWebSocket } from './gateway/ws'
+import { setupWebSocket, flushPendingUserTurns } from './gateway/ws'
 import { setupCalendarRoutes } from './gateway/calendar'
 import { setupPersonaRoutes } from './gateway/persona'
 import { setupEmotionRoutes } from './gateway/emotion'
@@ -102,6 +102,7 @@ export async function startBackend(options: {
       console.log('[backend] server closed')
     },
     sealDay: async () => {
+      flushPendingUserTurns()
       await memoryService.sealDay()
     }
   }
