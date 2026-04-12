@@ -39,6 +39,7 @@ export class TaskCoordinator {
   private running: Task | null = null
   private abortController: AbortController | null = null
   private taskTimer: ReturnType<typeof setTimeout> | null = null
+  private shuttingDown = false
 
   /** 获取会话历史的回调，由外部注入 */
   private getHistory: () => ChatMessageData[]
@@ -58,6 +59,11 @@ export class TaskCoordinator {
    * @returns true 入队成功，false 队列已满
    */
   enqueue(taskId: string, content: string, callbacks: TaskCallbacks): boolean {
+    if (this.shuttingDown) {
+      console.warn(`[coordinator] rejecting task ${taskId} during shutdown`)
+      return false
+    }
+
     if (this.queue.length >= MAX_QUEUE_SIZE) {
       console.warn(`[coordinator] queue full (${MAX_QUEUE_SIZE}), rejecting task ${taskId}`)
       return false
@@ -107,6 +113,30 @@ export class TaskCoordinator {
   /** 队列中等待的任务数 */
   get pendingCount(): number {
     return this.queue.length
+  }
+
+  /**
+   * Freeze the queue for shutdown.
+   * Returns all user turns that still need to be persisted, in execution order.
+   */
+  shutdown(): Array<{ taskId: string; content: string }> {
+    this.shuttingDown = true
+
+    const drained: Array<{ taskId: string; content: string }> = []
+    if (this.running) {
+      drained.push({ taskId: this.running.taskId, content: this.running.content })
+    }
+    for (const task of this.queue) {
+      drained.push({ taskId: task.taskId, content: task.content })
+    }
+
+    this.queue = []
+    this.clearTaskTimer()
+    this.abortController?.abort()
+    this.running = null
+    this.abortController = null
+
+    return drained
   }
 
   // ─── 内部 ───────────────────────────────────

@@ -62,12 +62,26 @@ function broadcast(envelope: object): void {
 }
 
 /**
- * Flush pending user turns to disk. Called during shutdown to ensure queued
- * turns that haven't been processed by the task coordinator are persisted
- * before the day archive is sealed.
+ * Flush pending user turns to disk during shutdown. We first freeze the
+ * coordinator so in-flight tasks cannot complete and append the same user turn
+ * again while sealDay is running.
  */
 export function flushPendingUserTurns(): void {
+  const drained = coordinator.shutdown()
+  const persisted = new Set<string>()
+
+  for (const { taskId, content } of drained) {
+    conversation.push({ role: 'user', content })
+    memoryService.appendMessage({ role: 'user', content })
+    pendingUserTurns.delete(taskId)
+    persisted.add(taskId)
+  }
+
+  // Fallback for any residual map entries if the queue state and replay map
+  // ever diverge; preserve them once rather than dropping user-visible input.
   for (const [taskId, content] of pendingUserTurns) {
+    if (persisted.has(taskId)) continue
+
     conversation.push({ role: 'user', content })
     memoryService.appendMessage({ role: 'user', content })
     pendingUserTurns.delete(taskId)
