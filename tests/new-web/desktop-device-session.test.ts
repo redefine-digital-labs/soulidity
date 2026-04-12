@@ -6,12 +6,20 @@ const mockedPrisma = vi.hoisted(() => ({
     findUnique: vi.fn(),
     update: vi.fn(),
   },
+  $transaction: vi.fn(),
 }))
+
+function resetMocks() {
+  vi.resetAllMocks()
+  mockedPrisma.$transaction.mockImplementation(
+    (fn: (tx: typeof mockedPrisma) => Promise<unknown>) => fn(mockedPrisma),
+  )
+}
 
 vi.mock('@web/lib/prisma', () => ({ prisma: mockedPrisma }))
 
 describe('startDesktopDeviceSession', () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(resetMocks)
 
   it('creates a session with device and user codes', async () => {
     mockedPrisma.desktopDeviceSession.create.mockImplementation(({ data }) => {
@@ -34,7 +42,7 @@ describe('startDesktopDeviceSession', () => {
 })
 
 describe('pollDesktopDeviceSession', () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(resetMocks)
 
   it('returns invalid_code when session not found', async () => {
     mockedPrisma.desktopDeviceSession.findUnique.mockResolvedValue(null)
@@ -122,7 +130,7 @@ describe('pollDesktopDeviceSession', () => {
 })
 
 describe('completeDesktopDeviceSession', () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(resetMocks)
 
   it('confirms session by user code', async () => {
     const session = {
@@ -135,7 +143,9 @@ describe('completeDesktopDeviceSession', () => {
       pollIntervalSeconds: 5,
       status: 'pending',
     }
-    mockedPrisma.desktopDeviceSession.findUnique.mockResolvedValue(session)
+    mockedPrisma.desktopDeviceSession.findUnique
+      .mockResolvedValueOnce(session) // outer lookup
+      .mockResolvedValueOnce({ status: 'pending', accountId: null }) // tx re-check
     mockedPrisma.desktopDeviceSession.update.mockResolvedValue({
       accountId: 'account-123',
       deviceCode: 'device-abc',
@@ -155,5 +165,64 @@ describe('completeDesktopDeviceSession', () => {
     if (result.status === 'confirmed') {
       expect(result.accountId).toBe('account-123')
     }
+    expect(mockedPrisma.$transaction).toHaveBeenCalledOnce()
+  })
+
+  it('throws conflict when concurrent request confirmed with different account', async () => {
+    const session = {
+      id: 'session-1',
+      accountId: null,
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: new Date('2026-04-12T10:10:00Z'),
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'pending',
+    }
+    mockedPrisma.desktopDeviceSession.findUnique
+      .mockResolvedValueOnce(session) // outer lookup sees pending
+      .mockResolvedValueOnce({ status: 'confirmed', accountId: 'account-other' }) // tx re-check: already confirmed by someone else
+
+    const { completeDesktopDeviceSession, DesktopDeviceSessionConflictError } =
+      await import('../../web/lib/desktop/device-session')
+
+    await expect(
+      completeDesktopDeviceSession('ABCD-EFGH', 'account-123', {
+        now: new Date('2026-04-12T10:05:00Z'),
+      }),
+    ).rejects.toThrow(DesktopDeviceSessionConflictError)
+  })
+
+  it('succeeds when concurrent request confirmed with same account', async () => {
+    const session = {
+      id: 'session-1',
+      accountId: null,
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: new Date('2026-04-12T10:10:00Z'),
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'pending',
+    }
+    const confirmedSession = {
+      accountId: 'account-123',
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: session.expiresAt,
+      confirmedAt: new Date('2026-04-12T10:04:00Z'),
+      pollIntervalSeconds: 5,
+      status: 'confirmed',
+    }
+    mockedPrisma.desktopDeviceSession.findUnique
+      .mockResolvedValueOnce(session) // outer lookup sees pending
+      .mockResolvedValueOnce({ status: 'confirmed', accountId: 'account-123' }) // tx: already confirmed by same account
+      .mockResolvedValueOnce(confirmedSession) // tx: re-read for return
+
+    const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', {
+      now: new Date('2026-04-12T10:05:00Z'),
+    })
+
+    expect(result.status).toBe('confirmed')
   })
 })

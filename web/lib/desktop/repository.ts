@@ -289,8 +289,8 @@ export async function listDesktopCatalogItems(params: {
 }
 
 export async function findDesktopPersonaManifestById(id: string): Promise<DesktopPersonaManifest | null> {
-  const entry = await prisma.desktopCatalogEntry.findUnique({
-    where: { id },
+  const entry = await prisma.desktopCatalogEntry.findFirst({
+    where: { id, isPublished: true, isHidden: false },
     select: desktopCatalogEntryManifestSelect,
   })
 
@@ -305,12 +305,12 @@ export async function findDesktopPersonaManifestBySource(params: {
   sourceType: DesktopCatalogSourceType
   sourceRef: string
 }): Promise<DesktopPersonaManifest | null> {
-  const entry = await prisma.desktopCatalogEntry.findUnique({
+  const entry = await prisma.desktopCatalogEntry.findFirst({
     where: {
-      sourceType_sourceRef: {
-        sourceType: params.sourceType,
-        sourceRef: params.sourceRef,
-      },
+      sourceType: params.sourceType,
+      sourceRef: params.sourceRef,
+      isPublished: true,
+      isHidden: false,
     },
     select: desktopCatalogEntryManifestSelect,
   })

@@ -303,15 +303,32 @@ export async function completeDesktopDeviceSession(
     })
   }
 
-  const confirmedSession = await prisma.desktopDeviceSession.update({
-    where: { id: session.id },
-    data: {
-      accountId,
-      status: 'confirmed',
-      confirmedAt: now,
-    },
-    select: deviceSessionCompleteResultSelect,
+  const confirmedSession = await prisma.$transaction(async (tx) => {
+    const current = await tx.desktopDeviceSession.findUnique({
+      where: { id: session.id },
+      select: { status: true, accountId: true },
+    })
+
+    if (!current || current.status !== 'pending') {
+      if (current?.accountId && current.accountId !== accountId) {
+        throw new DesktopDeviceSessionConflictError()
+      }
+      return tx.desktopDeviceSession.findUnique({
+        where: { id: session.id },
+        select: deviceSessionCompleteResultSelect,
+      })
+    }
+
+    return tx.desktopDeviceSession.update({
+      where: { id: session.id },
+      data: {
+        accountId,
+        status: 'confirmed',
+        confirmedAt: now,
+      },
+      select: deviceSessionCompleteResultSelect,
+    })
   })
 
-  return toCompleteConfirmedResponse(confirmedSession)
+  return toCompleteConfirmedResponse(confirmedSession!)
 }

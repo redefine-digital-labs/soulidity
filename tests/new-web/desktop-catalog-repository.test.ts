@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockedPrisma = vi.hoisted(() => ({
   desktopCatalogEntry: {
     findMany: vi.fn(),
-    findUnique: vi.fn(),
+    findFirst: vi.fn(),
     count: vi.fn(),
   },
   starterPersonaAsset: {
@@ -77,7 +77,7 @@ describe('findDesktopPersonaManifestById', () => {
   beforeEach(() => vi.resetAllMocks())
 
   it('returns null when entry does not exist', async () => {
-    mockedPrisma.desktopCatalogEntry.findUnique.mockResolvedValue(null)
+    mockedPrisma.desktopCatalogEntry.findFirst.mockResolvedValue(null)
 
     const { findDesktopPersonaManifestById } = await import('../../web/lib/desktop/repository')
     const result = await findDesktopPersonaManifestById('nonexistent')
@@ -99,7 +99,7 @@ describe('findDesktopPersonaManifestById', () => {
       updatedAt: new Date('2026-04-10'),
     }
 
-    mockedPrisma.desktopCatalogEntry.findUnique.mockResolvedValue(entry)
+    mockedPrisma.desktopCatalogEntry.findFirst.mockResolvedValue(entry)
     mockedPrisma.starterPersonaAsset.findUnique.mockResolvedValue(starter)
 
     const { findDesktopPersonaManifestById } = await import('../../web/lib/desktop/repository')
@@ -112,5 +112,21 @@ describe('findDesktopPersonaManifestById', () => {
       version: '1.0',
       files: [{ path: 'sprite.png' }],
     })
+  })
+
+  it('filters by isPublished and isHidden', async () => {
+    mockedPrisma.desktopCatalogEntry.findFirst.mockResolvedValue(null)
+
+    const { findDesktopPersonaManifestById } = await import('../../web/lib/desktop/repository')
+    await findDesktopPersonaManifestById('hidden-entry')
+
+    expect(mockedPrisma.desktopCatalogEntry.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          isPublished: true,
+          isHidden: false,
+        }),
+      }),
+    )
   })
 })
