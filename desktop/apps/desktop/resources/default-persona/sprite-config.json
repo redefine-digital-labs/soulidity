@@ -1,0 +1,14 @@
+{
+  "src": "sheet.png",
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "columns": 6,
+  "animations": {
+    "idle":            { "frames": [0, 1, 2, 3],     "fps": 4,  "loop": true },
+    "thinking":        { "frames": [6, 7, 8, 9],     "fps": 6,  "loop": true },
+    "working":         { "frames": [12, 13, 14, 15], "fps": 8,  "loop": true },
+    "needs-attention": { "frames": [18, 19, 20, 21], "fps": 4,  "loop": true },
+    "completed":       { "frames": [24, 25, 26],     "fps": 4,  "loop": false },
+    "error":           { "frames": [30, 31],          "fps": 2,  "loop": true }
+  }
+}
