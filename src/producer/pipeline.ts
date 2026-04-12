@@ -96,11 +96,12 @@ export async function runAgentPipeline(
       data: { status, pipelineStatus: 'completed' },
     })
 
-    // On retry reuse, check whether side effects were already written
-    const hasLogs = isReuse
-      ? (await prisma.agentProcessLog.count({ where: { articleId } })) > 0
-      : false
-    if (!hasLogs) {
+    // On retry reuse, wipe partial side effects so we can recreate from scratch;
+    // this prevents a prior crash leaving orphaned logs that trick count > 0.
+    if (isReuse) {
+      await prisma.agentProcessLog.deleteMany({ where: { articleId } })
+    }
+    {
       // --- Write process logs (best-effort, after article exists) ---
       try {
         const [scoutRole, reporterRole, analystRole, editorRole] = await Promise.all([

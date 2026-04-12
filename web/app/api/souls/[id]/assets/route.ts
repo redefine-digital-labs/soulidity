@@ -94,6 +94,13 @@ export async function POST(
 
     const rawAssetsEnvelope = typeof body?.rawAssetsEnvelope === 'string' ? body.rawAssetsEnvelope : null
 
+    if (appended.visibility === 'private' && !rawAssetsEnvelope) {
+      return NextResponse.json(
+        { error: 'rawAssetsEnvelope is required for private asset versions' },
+        { status: 422 },
+      )
+    }
+
     const mirroredSoul = await syncSoulProjectionFromChain({
       packageId,
       soulObjectId: soul.onChainId,

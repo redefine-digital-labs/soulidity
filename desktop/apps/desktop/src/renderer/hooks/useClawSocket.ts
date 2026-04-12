@@ -5,8 +5,8 @@ import { getBackendWebSocketURL } from '../lib/backend-client'
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 30_000
 
-/** 流式 token watchdog：15s 无 token 视为中断 */
-const TOKEN_WATCHDOG_MS = 15_000
+/** 流式 token watchdog：35s 无 token 视为中断（须大于后端 PER_TOKEN_TIMEOUT 30s） */
+const TOKEN_WATCHDOG_MS = 35_000
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected'
 
