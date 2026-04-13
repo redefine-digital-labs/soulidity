@@ -43,6 +43,7 @@ const deviceSessionPollResultSelect = {
 const deviceSessionCompleteSelect = {
   id: true,
   accountId: true,
+  agentAddress: true,
   deviceCode: true,
   userCode: true,
   expiresAt: true,
@@ -171,7 +172,7 @@ export class DesktopDeviceSessionConflictError extends Error {
 }
 
 export async function startDesktopDeviceSession(
-  options: { now?: Date } = {},
+  options: { now?: Date; agentAddress?: string } = {},
 ): Promise<DesktopDeviceStartResponse> {
   const now = options.now ?? new Date()
   const expiresAt = new Date(now.getTime() + DESKTOP_DEVICE_SESSION_TTL_MS)
@@ -182,6 +183,7 @@ export async function startDesktopDeviceSession(
         data: {
           deviceCode: createDeviceCode(),
           userCode: createUserCode(),
+          agentAddress: options.agentAddress ?? null,
           status: 'pending',
           pollIntervalSeconds: DESKTOP_DEVICE_POLL_INTERVAL_SECONDS,
           expiresAt,
@@ -315,7 +317,7 @@ export async function completeDesktopDeviceSession(
       })
     }
 
-    return tx.desktopDeviceSession.update({
+    const confirmed = await tx.desktopDeviceSession.update({
       where: { id: session.id },
       data: {
         accountId,
@@ -324,6 +326,16 @@ export async function completeDesktopDeviceSession(
       },
       select: deviceSessionCompleteResultSelect,
     })
+
+    if (session.agentAddress) {
+      await tx.desktopProfile.upsert({
+        where: { accountId },
+        create: { accountId, agentAddress: session.agentAddress },
+        update: { agentAddress: session.agentAddress },
+      })
+    }
+
+    return confirmed
   })
 
   if (!confirmedSession || confirmedSession.status === 'expired') {

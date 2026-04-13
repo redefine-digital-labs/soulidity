@@ -2,55 +2,72 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { BrowserWindow } from 'electron'
+import { watch as chokidarWatch, type FSWatcher as ChokidarWatcher } from 'chokidar'
+import {
+  deduplicateAgentSessions,
+  parseAgentStatusFile,
+  type AgentStatusFile,
+} from '@soulidity/shared'
 
 const SOULIDITY_DIR = path.join(os.homedir(), '.soulidity')
 const STATUS_FILE = path.join(SOULIDITY_DIR, 'agent-status.json')
 
-let watcher: fs.FSWatcher | null = null
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
-let currentStatus: Record<string, unknown> | null = null
+let watcher: ChokidarWatcher | null = null
+let currentStatus: AgentStatusFile | null = null
 
 function ensureDir() {
   fs.mkdirSync(SOULIDITY_DIR, { recursive: true })
 }
 
-function readCurrent(): Record<string, unknown> | null {
+function readCurrent(): AgentStatusFile | null {
   try {
     const raw = fs.readFileSync(STATUS_FILE, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (parsed?.version === 1) return parsed
-    return null
+    return parseAgentStatusFile(raw)
   } catch {
     return null
   }
 }
 
-function broadcastToWindows(status: Record<string, unknown>) {
+function sanitizeStatus(status: AgentStatusFile | null): AgentStatusFile | null {
+  if (!status) return null
+  return {
+    ...status,
+    sessions: deduplicateAgentSessions(status.sessions),
+  }
+}
+
+function broadcastToWindows(status: AgentStatusFile) {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('agent-status-changed', status)
   }
 }
 
-export function getCurrentAgentStatus(): Record<string, unknown> | null {
-  return currentStatus
+export function getCurrentAgentStatus(): AgentStatusFile | null {
+  return sanitizeStatus(currentStatus)
 }
 
-export function startStatusWatcher() {
+export function startStatusWatcher(onStatusChanged?: (status: AgentStatusFile) => void) {
   ensureDir()
-  currentStatus = readCurrent()
+  currentStatus = sanitizeStatus(readCurrent())
+  if (currentStatus) {
+    onStatusChanged?.(currentStatus)
+  }
 
   try {
-    watcher = fs.watch(SOULIDITY_DIR, (eventType, filename) => {
-      if (filename && filename !== 'agent-status.json') return
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        const parsed = readCurrent()
-        if (parsed) {
-          currentStatus = parsed
-          broadcastToWindows(parsed)
-        }
-      }, 100)
+    watcher = chokidarWatch(STATUS_FILE, {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 100 },
     })
+    const handleFileUpdate = () => {
+      const parsed = sanitizeStatus(readCurrent())
+      if (parsed) {
+        currentStatus = parsed
+        onStatusChanged?.(parsed)
+        broadcastToWindows(parsed)
+      }
+    }
+    watcher.on('add', handleFileUpdate)
+    watcher.on('change', handleFileUpdate)
   } catch (err) {
     console.warn('[status-watcher] Failed to start:', err)
   }
@@ -60,9 +77,5 @@ export function stopStatusWatcher() {
   if (watcher) {
     watcher.close()
     watcher = null
-  }
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-    debounceTimer = null
   }
 }

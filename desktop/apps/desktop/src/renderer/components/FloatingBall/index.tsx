@@ -1,336 +1,736 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
-import type { EmotionState } from '@soulidity/shared'
-import { ChatBubble } from '../ChatBubble'
-import { useClawEmotion } from '../../hooks/useClawEmotion'
-import { backendFetch } from '../../lib/backend-client'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  CLI_TERMINAL_GRACE_MS,
+  MOOD_TO_SPRITE,
+  getVisiblePetTasks,
+  type AgentStatusFile,
+  type Mood,
+  type PetAgentEvent,
+  type PetTaskSummary,
+  type PetUpdateStatus,
+} from '@soulidity/shared'
+import { useMood } from '../../hooks/useMood'
 import './styles.css'
 import { SpriteRenderer } from '../SpriteRenderer'
 import type { SpriteSheetConfig } from '../SpriteRenderer'
-import { useCliStatus } from '../../hooks/useCliStatus'
-import type { CliAgentStatus } from '../../hooks/useCliStatus'
 import spriteConfigJson from '../../../../resources/default-persona/sprite-config.json'
 
-/** 按情绪状态分流的点击文案池（LLM 取不到时的 fallback） */
-const CLICK_PHRASES: Record<EmotionState, string[]> = {
-  idle: [
-    '在呢～',
-    '有什么需要帮忙的吗？',
-    '今天怎么样？',
-    '嗨～',
-    '我在这里',
-    '你好呀～',
-    '陪着你呢'
-  ],
-  busy: [
-    '在忙呢～有事说',
-    '嗯？还有什么事吗？',
-    '我在听～',
-    '有什么需要帮的？',
-    '说吧，在线投入中'
-  ],
-  done: [
-    '今天辛苦了！',
-    '刚才聊得挺开心的～',
-    '休息一下也好',
-    '有事随时叫我哦',
-    '收工啦～',
-    '我在这里等你～'
-  ],
-  night: [
-    '嘘…',
-    '夜深了，早点休息哦',
-    '别太晚了呀'
-  ]
+type TaskAgent = 'claude' | 'codex'
+type ToastKind = 'info' | 'success' | 'error' | 'attention'
+
+interface ToastState {
+  id: number
+  kind: ToastKind
+  text: string
 }
 
-/** 按时段分组的启动开场语 */
-const STARTUP_GREETINGS: Record<string, string[]> = {
-  morning: [
-    '早～今天也一起加油',
-    '早安，新的一天开始啦',
-    '早上好呀，今天有什么计划？',
-    '早！精神怎么样？'
-  ],
-  afternoon: [
-    '下午好呀，在忙什么呢？',
-    '下午好～需要帮忙随时叫我',
-    '午后时光，状态怎么样？',
-    '下午好，我在呢'
-  ],
-  evening: [
-    '晚上好～有什么需要帮忙的吗',
-    '晚上好呀，今天辛苦了',
-    '晚上好，还在忙吗？',
-    '嗨～晚上好'
-  ],
-  latenight: [
-    '这么晚了，注意休息哦',
-    '夜深了，别太累了',
-    '还没睡呀，我陪着你',
-    '深夜了，早点休息哦'
-  ]
+interface TaskPanelState {
+  phase: 'compose' | 'output'
+  files: string[]
+  agent: TaskAgent
+  instruction: string
+  output: string
+  running: boolean
+  taskId?: string
+  error?: string
 }
 
-function getStartupGreeting(): string {
-  const hour = new Date().getHours()
-  let period: string
-  if (hour >= 6 && hour < 12) period = 'morning'
-  else if (hour >= 12 && hour < 18) period = 'afternoon'
-  else if (hour >= 18 && hour < 23) period = 'evening'
-  else period = 'latenight'
-  const pool = STARTUP_GREETINGS[period]
-  return pool[Math.floor(Math.random() * pool.length)]
+interface FileWithPath extends File {
+  path?: string
 }
 
-const MAX_BUBBLES = 3
-
-/** 根据气泡数量返回从旧到新的 opacity 列表 */
-function getBubbleOpacities(count: number): number[] {
-  if (count <= 1) return [1.0]
-  if (count === 2) return [0.6, 1.0]
-  return [0.4, 0.7, 1.0]
-}
-
-/** 根据文本长度计算气泡停留时间（ms）：5s 底 + 50ms/字，上限 15s */
-function calcBubbleDuration(text: string): number {
-  return Math.max(5000, Math.min(15000, 5000 + text.length * 50))
-}
-
-/** 自动冒泡间隔范围（毫秒） */
-const AUTO_BUBBLE_INTERVAL: Record<string, [number, number]> = {
-  idle: [6 * 60_000, 15 * 60_000],   // 6-15 分钟
-  done: [10 * 60_000, 20 * 60_000]   // 10-20 分钟
-}
-
-/** 用户关闭气泡后的冷却时间 */
-const DISMISS_COOLDOWN = 3 * 60_000 // 3 分钟
+const WINDOW_PADDING = 28
+const BASE_WINDOW_WIDTH = 280
+const EXPANDED_WINDOW_WIDTH = 420
+const BASE_WINDOW_HEIGHT = 260
+const EXPANDED_WINDOW_HEIGHT = 600
 
 const spriteConfig: SpriteSheetConfig = {
   ...spriteConfigJson,
   src: new URL('../../../../resources/default-persona/sprite.png', import.meta.url).href,
 }
 
-/** Map 4 backend emotions to CLI 6-status for sprite animation fallback */
-const EMOTION_TO_CLI_STATUS: Record<string, CliAgentStatus> = {
-  idle: 'idle',
-  busy: 'working',
-  done: 'completed',
-  night: 'error',
+const DEFAULT_UPDATE_STATUS: PetUpdateStatus = { state: 'idle' }
+
+function basename(filePath: string): string {
+  return filePath.split(/[/\\]/).pop() || filePath
 }
 
-/** Map CLI 6-status to 4 CSS emotions for halo effects */
-const CLI_STATUS_TO_EMOTION: Record<CliAgentStatus, string> = {
-  idle: 'idle',
-  thinking: 'busy',
-  working: 'busy',
-  'needs-attention': 'night',
-  completed: 'done',
-  error: 'night',
+function dirname(filePath: string): string {
+  return filePath.replace(/[/\\][^/\\]+$/, '')
 }
 
-function randomInRange(min: number, max: number): number {
-  return min + Math.random() * (max - min)
+function summarizePath(filePath?: string): string | undefined {
+  if (!filePath) return undefined
+  const parts = filePath.split(/[/\\]/).filter(Boolean)
+  if (parts.length <= 2) return filePath
+  return `.../${parts.slice(-2).join('/')}`
 }
 
-interface BubbleItem {
-  id: number
-  text: string
+function truncate(text: string, max = 72): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length > max ? `${normalized.slice(0, max - 3)}...` : normalized
+}
+
+function formatAgentLabel(agent: string): string {
+  if (agent === 'codex') return 'Codex'
+  if (agent === 'claude') return 'Claude'
+  if (agent === 'claude-code') return 'Claude Code'
+  if (agent === 'opencode') return 'OpenCode'
+  return agent
+}
+
+function buildFallbackTask(files: string[], agent: TaskAgent, instruction: string, taskId: string): PetTaskSummary {
+  return {
+    agent,
+    sessionId: taskId,
+    sessionTitle: truncate(instruction || `Work on ${basename(files[0] ?? taskId)}`),
+    currentAction: `Running ${formatAgentLabel(agent)}`,
+    workingDirectory: files[0] ? dirname(files[0]) : undefined,
+    timestamp: Date.now(),
+  }
+}
+
+function extractFilePaths(dataTransfer: DataTransfer): string[] {
+  return Array.from(dataTransfer.files)
+    .map((file) => (file as FileWithPath).path)
+    .filter((filePath): filePath is string => Boolean(filePath))
 }
 
 export function FloatingBall(): React.JSX.Element {
-  const { snapshot, emotion } = useClawEmotion()
-  const { status: cliStatus } = useCliStatus()
-  const spriteAnimation = cliStatus !== 'idle' ? cliStatus : (EMOTION_TO_CLI_STATUS[emotion] ?? 'idle')
-  const haloEmotion = cliStatus !== 'idle' ? CLI_STATUS_TO_EMOTION[cliStatus] : emotion
-  const [bubbles, setBubbles] = useState<BubbleItem[]>([])
-  const movedRef = useRef(false)
-  const isDraggingRef = useRef(false)
-  const bubbleIdRef = useRef(0)
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { mood: backendMood } = useMood()
+
+  const [statusFile, setStatusFile] = useState<AgentStatusFile | null>(null)
+  const [updateStatus, setUpdateStatus] = useState<PetUpdateStatus>(DEFAULT_UPDATE_STATUS)
+  const [toast, setToast] = useState<ToastState | null>(null)
+  const [transientMood, setTransientMood] = useState<Mood | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragDelta, setDragDelta] = useState({ x: 0, y: 0 })
+  const [isHovered, setIsHovered] = useState(false)
+  const [isDropTargetActive, setIsDropTargetActive] = useState(false)
+  const [taskPanel, setTaskPanel] = useState<TaskPanelState | null>(null)
+  const [localTasks, setLocalTasks] = useState<Record<string, PetTaskSummary>>({})
+
   const ballRef = useRef<HTMLDivElement>(null)
-  const listenersRef = useRef<{ onMove: () => void; onUp: (e: MouseEvent) => void } | null>(null)
-  /** 用户手动关闭气泡的时间戳，3 分钟内不自动冒泡 */
-  const bubbleDismissedAtRef = useRef(0)
+  const toastIdRef = useRef(0)
+  const dragEnterDepthRef = useRef(0)
+  const listenersRef = useRef<{ onMove: (e: MouseEvent) => void; onUp: (e: MouseEvent) => void } | null>(null)
+  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clickCountRef = useRef(0)
+  const lastClickTimeRef = useRef(0)
+  const lastActivityRef = useRef(Date.now())
+  const lastDragPosRef = useRef({ x: 0, y: 0 })
+  const movedRef = useRef(false)
+  const petCountRef = useRef(0)
+  const isPettingRef = useRef(false)
+  const instructionRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const showToast = useCallback((kind: ToastKind, text: string) => {
+    toastIdRef.current += 1
+    setToast({ id: toastIdRef.current, kind, text })
+  }, [])
+
+  const setMoodFor = useCallback((nextMood: Mood, durationMs: number) => {
+    setTransientMood(nextMood)
+    if (transientTimerRef.current) clearTimeout(transientTimerRef.current)
+    if (durationMs > 0) {
+      transientTimerRef.current = setTimeout(() => setTransientMood(null), durationMs)
+    }
+  }, [])
+
+  const statusTasks = useMemo(
+    () => getVisiblePetTasks(statusFile, {
+      now: Date.now(),
+      terminalGraceMs: CLI_TERMINAL_GRACE_MS,
+    }),
+    [statusFile],
+  )
+
+  const fallbackTasks = useMemo(
+    () => Object.values(localTasks).sort((a, b) => b.timestamp - a.timestamp),
+    [localTasks],
+  )
+
+  const activeTasks = statusTasks.length > 0 ? statusTasks : fallbackTasks
+  const showTaskTooltip = isHovered && activeTasks.length > 0 && !taskPanel
+  const showUpdateBubble = updateStatus.state === 'available'
+    || updateStatus.state === 'downloading'
+    || updateStatus.state === 'downloaded'
+  const effectiveMood: Mood = isDragging
+    ? 'dragging'
+    : transientMood ?? (activeTasks.length > 0 ? 'working' : backendMood)
 
   useEffect(() => {
     return () => {
       if (listenersRef.current) {
         window.removeEventListener('mousemove', listenersRef.current.onMove)
         window.removeEventListener('mouseup', listenersRef.current.onUp)
-        listenersRef.current = null
       }
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current)
-      }
+      if (transientTimerRef.current) clearTimeout(transientTimerRef.current)
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
     }
   }, [])
 
-  const pushBubble = useCallback((text: string) => {
-    bubbleIdRef.current += 1
-    const newBubble: BubbleItem = { id: bubbleIdRef.current, text }
-    setBubbles((prev) => {
-      const next = [...prev, newBubble]
-      return next.length > MAX_BUBBLES ? next.slice(-MAX_BUBBLES) : next
+  useEffect(() => {
+    if (!toast) return
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => {
+      setToast((current) => current?.id === toast.id ? null : current)
+    }, 3200)
+  }, [toast])
+
+  useEffect(() => {
+    if (taskPanel?.phase === 'compose') {
+      instructionRef.current?.focus()
+    }
+  }, [taskPanel?.phase])
+
+  useEffect(() => {
+    let disposed = false
+
+    window.electronAPI.getCurrentAgentStatus()
+      .then((file) => {
+        if (!disposed) setStatusFile((file as AgentStatusFile | null) ?? null)
+      })
+      .catch(() => {})
+
+    window.electronAPI.getUpdateStatus()
+      .then((status) => {
+        if (!disposed) setUpdateStatus(status)
+      })
+      .catch(() => {})
+
+    const unsubscribeStatus = window.electronAPI.onAgentStatusChanged((file) => {
+      setStatusFile((file as AgentStatusFile | null) ?? null)
     })
-  }, [])
 
-  // 启动时弹出时段问候气泡（仅一次）
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      pushBubble(getStartupGreeting())
-    }, 800)
-    return () => clearTimeout(timer)
-  }, [pushBubble])
+    const unsubscribeAgentEvent = window.electronAPI.onAgentEvent((event: PetAgentEvent) => {
+      if (event.type === 'task-complete') {
+        setMoodFor('celebrate', 3600)
+        showToast('success', event.task?.sessionTitle ? `${event.task.sessionTitle} 已完成` : '任务已完成')
+      } else if (event.type === 'task-error') {
+        setMoodFor('angry', 3600)
+        showToast('error', event.message || '任务执行失败')
+      } else if (event.type === 'needs-attention') {
+        setMoodFor('surprised', 3200)
+        showToast('attention', event.message || '需要你的处理')
+      }
+    })
 
-  // ── 自动冒泡策略（克制）────────────────────────────
-  // 仅 idle/done 状态冒泡；busy/night 不冒泡
-  useEffect(() => {
-    const range = AUTO_BUBBLE_INTERVAL[emotion]
-    if (!range) return // busy / night → 不冒泡
+    const unsubscribeUpdate = window.electronAPI.onUpdateStatus((status) => {
+      setUpdateStatus(status)
+      if (status.state === 'available') {
+        showToast('info', `发现新版本 ${status.version ?? ''}`.trim())
+        setMoodFor('surprised', 2200)
+      } else if (status.state === 'downloaded') {
+        showToast('success', `更新 ${status.version ?? ''} 已下载，可立即安装`.trim())
+      } else if (status.state === 'error' && status.error) {
+        showToast('error', `更新失败：${status.error}`)
+      }
+    })
 
-    let timer: ReturnType<typeof setTimeout> | null = null
+    const unsubscribeOutput = window.electronAPI.onTaskOutput(({ taskId, text }) => {
+      setTaskPanel((current) => {
+        if (!current || current.taskId !== taskId) return current
+        return { ...current, output: `${current.output}${text}` }
+      })
+    })
 
-    const schedule = (): void => {
-      const delay = randomInRange(range[0], range[1])
-      timer = setTimeout(() => {
-        const recentlyDismissed = Date.now() - bubbleDismissedAtRef.current < DISMISS_COOLDOWN
-
-        if (!recentlyDismissed) {
-          // 从当前 snapshot phrases 中随机取一句
-          const pool = snapshot.phrases
-          if (pool.length > 0) {
-            pushBubble(pool[Math.floor(Math.random() * pool.length)])
-          }
+    const unsubscribeComplete = window.electronAPI.onTaskComplete(({ taskId, success, error }) => {
+      setLocalTasks((current) => {
+        const next = { ...current }
+        delete next[taskId]
+        return next
+      })
+      setTaskPanel((current) => {
+        if (!current || current.taskId !== taskId) return current
+        return {
+          ...current,
+          running: false,
+          error: success ? undefined : error,
         }
+      })
+    })
 
-        schedule()
-      }, delay)
-    }
-
-    schedule()
     return () => {
-      if (timer) clearTimeout(timer)
+      disposed = true
+      unsubscribeStatus?.()
+      unsubscribeAgentEvent?.()
+      unsubscribeUpdate?.()
+      unsubscribeOutput?.()
+      unsubscribeComplete?.()
     }
-  }, [emotion, snapshot.phrases, pushBubble])
+  }, [setMoodFor, showToast])
 
-  const handleSingleClick = useCallback(() => {
-    const pool = CLICK_PHRASES[emotion]
-    const fallback = (): string => pool[Math.floor(Math.random() * pool.length)]
+  useEffect(() => {
+    if (taskPanel) {
+      window.electronAPI.setIgnoreMouseEvents(false)
+    } else if (!isHovered && !isDragging && !isDropTargetActive) {
+      window.electronAPI.setIgnoreMouseEvents(true)
+    }
+  }, [isDropTargetActive, isDragging, isHovered, taskPanel])
 
-    // 先尝试从 LLM 预生成池取，失败则 fallback 到按状态文案
-    backendFetch('/greeting')
-      .then((r) => r.json())
-      .then((data: { greeting: string | null }) => {
-        pushBubble(data.greeting ?? fallback())
-      })
-      .catch(() => {
-        pushBubble(fallback())
-      })
-  }, [pushBubble, emotion])
+  useEffect(() => {
+    const overlayHeight = taskPanel
+      ? EXPANDED_WINDOW_HEIGHT
+      : Math.min(
+        380,
+        BASE_WINDOW_HEIGHT
+          + (toast ? 60 : 0)
+          + (isHovered && activeTasks.length > 0 ? Math.min(120, activeTasks.length * 52) : 0)
+          + (showUpdateBubble ? 48 : 0),
+      )
 
-  const handleBubbleDismiss = useCallback((id: number) => {
-    bubbleDismissedAtRef.current = Date.now()
-    setBubbles((prev) => prev.filter((b) => b.id !== id))
-  }, [])
+    window.electronAPI.resizePetWindow(
+      taskPanel ? EXPANDED_WINDOW_WIDTH : BASE_WINDOW_WIDTH,
+      overlayHeight + WINDOW_PADDING * 2,
+    )
+  }, [activeTasks.length, isHovered, showUpdateBubble, taskPanel, toast])
 
-  const handleMouseEnter = useCallback(() => {
+  useEffect(() => {
+    if (taskPanel || transientMood || isDragging) return
+
+    const randomTimer = setInterval(() => {
+      const rand = Math.random()
+      if (rand < 0.1) setMoodFor('sleepy', 9000)
+      else if (rand < 0.15) setMoodFor('happy', 1800)
+    }, 10_000)
+
+    const snoringTimer = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= 60_000) {
+        setMoodFor('snoring', 25_000)
+      }
+    }, 5000)
+
+    return () => {
+      clearInterval(randomTimer)
+      clearInterval(snoringTimer)
+    }
+  }, [isDragging, setMoodFor, taskPanel, transientMood])
+
+  const dragStyle: React.CSSProperties | undefined = isDragging
+    ? {
+      transform: `rotate(${Math.max(-25, Math.min(25, -dragDelta.x * 2))}deg) scaleX(${1 - Math.abs(dragDelta.x) * 0.005}) scaleY(${1 + Math.abs(dragDelta.y) * 0.01})`,
+      transition: 'transform 0.05s ease-out',
+      animation: 'none',
+    }
+    : undefined
+
+  const handleRootMouseEnter = useCallback(() => {
+    setIsHovered(true)
     window.electronAPI.setIgnoreMouseEvents(false)
   }, [])
 
-  const handleMouseLeave = useCallback(() => {
-    if (!isDraggingRef.current) {
+  const handleRootMouseLeave = useCallback(() => {
+    setIsHovered(false)
+    if (!isDragging && !taskPanel && !isDropTargetActive) {
       window.electronAPI.setIgnoreMouseEvents(true)
     }
-  }, [])
+    if (isPettingRef.current) {
+      isPettingRef.current = false
+      petCountRef.current = 0
+    }
+  }, [isDragging, isDropTargetActive, taskPanel])
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.button !== 0) return
-      e.preventDefault()
+  const handleBallMouseMove = useCallback(() => {
+    if (isDragging) return
+    lastActivityRef.current = Date.now()
+    if (!isPettingRef.current) isPettingRef.current = true
+    petCountRef.current += 1
 
-      movedRef.current = false
-      isDraggingRef.current = true
-      window.electronAPI.dragStart()
+    if (petCountRef.current > 5 && petCountRef.current < 15) {
+      setMoodFor('happy', 2500)
+    } else if (petCountRef.current >= 15) {
+      setMoodFor('love', 2800)
+    }
+  }, [isDragging, setMoodFor])
 
-      const onMove = (): void => {
+  const handleSingleClick = useCallback(() => {
+    lastActivityRef.current = Date.now()
+    const now = Date.now()
+    clickCountRef.current = (now - lastClickTimeRef.current < 400) ? clickCountRef.current + 1 : 1
+    lastClickTimeRef.current = now
+
+    if (clickCountRef.current >= 5) {
+      setMoodFor('angry', 2000)
+      clickCountRef.current = 0
+    } else if (clickCountRef.current >= 2) {
+      setMoodFor('surprised', 500)
+      setTimeout(() => setMoodFor('excited', 1800), 500)
+    } else {
+      setMoodFor('happy', 1800)
+    }
+
+    window.electronAPI.moodInteract().catch(() => {})
+  }, [setMoodFor])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    lastActivityRef.current = Date.now()
+    movedRef.current = false
+    lastDragPosRef.current = { x: e.screenX, y: e.screenY }
+    window.electronAPI.dragStart()
+
+    longPressTimerRef.current = setTimeout(() => {
+      if (!movedRef.current) setMoodFor('shy', 2500)
+    }, 800)
+
+    const onMove = (event: MouseEvent): void => {
+      if (longPressTimerRef.current && !movedRef.current) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+
+      if (!movedRef.current) {
         movedRef.current = true
-        window.electronAPI.dragMove()
+        setIsDragging(true)
+        window.electronAPI.moodDragStart().catch(() => {})
       }
 
-      const onUp = (ev: MouseEvent): void => {
-        window.electronAPI.dragEnd()
-        isDraggingRef.current = false
+      const frameDx = event.screenX - lastDragPosRef.current.x
+      const frameDy = event.screenY - lastDragPosRef.current.y
+      lastDragPosRef.current = { x: event.screenX, y: event.screenY }
+      setDragDelta((current) => ({
+        x: current.x * 0.7 + frameDx * 0.3,
+        y: current.y * 0.7 + frameDy * 0.3,
+      }))
 
-        const rect = ballRef.current?.getBoundingClientRect()
-        if (rect) {
-          const isOver =
-            ev.clientX >= rect.left &&
-            ev.clientX <= rect.right &&
-            ev.clientY >= rect.top &&
-            ev.clientY <= rect.bottom
-          if (!isOver) {
-            window.electronAPI.setIgnoreMouseEvents(true)
-          }
+      window.electronAPI.dragMove()
+    }
+
+    const onUp = (event: MouseEvent): void => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+
+      window.electronAPI.dragEnd()
+
+      if (movedRef.current) {
+        setIsDragging(false)
+        setDragDelta({ x: 0, y: 0 })
+        window.electronAPI.moodDragEnd().catch(() => {})
+      }
+
+      const rect = ballRef.current?.getBoundingClientRect()
+      if (rect) {
+        const isOverBall = event.clientX >= rect.left && event.clientX <= rect.right
+          && event.clientY >= rect.top && event.clientY <= rect.bottom
+        if (!isOverBall && !taskPanel && !isDropTargetActive) {
+          window.electronAPI.setIgnoreMouseEvents(true)
         }
+      }
 
-        if (!movedRef.current) {
-          if (clickTimerRef.current) {
-            clearTimeout(clickTimerRef.current)
+      if (!movedRef.current) {
+        if (clickTimerRef.current) {
+          clearTimeout(clickTimerRef.current)
+          clickTimerRef.current = null
+        } else {
+          clickTimerRef.current = setTimeout(() => {
             clickTimerRef.current = null
-          } else {
-            clickTimerRef.current = setTimeout(() => {
-              clickTimerRef.current = null
-              handleSingleClick()
-            }, 250)
-          }
+            handleSingleClick()
+          }, 250)
         }
-
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        listenersRef.current = null
       }
 
-      listenersRef.current = { onMove, onUp }
-      window.addEventListener('mousemove', onMove)
-      window.addEventListener('mouseup', onUp)
-    },
-    [handleSingleClick]
-  )
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      listenersRef.current = null
+    }
+
+    listenersRef.current = { onMove, onUp }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [handleSingleClick, isDropTargetActive, setMoodFor, taskPanel])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     window.electronAPI.showContextMenu()
   }, [])
 
-  const opacities = getBubbleOpacities(bubbles.length)
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragEnterDepthRef.current += 1
+    setIsDropTargetActive(true)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    if (!isDropTargetActive) setIsDropTargetActive(true)
+  }, [isDropTargetActive])
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragEnterDepthRef.current = Math.max(0, dragEnterDepthRef.current - 1)
+    if (dragEnterDepthRef.current === 0) {
+      setIsDropTargetActive(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragEnterDepthRef.current = 0
+    setIsDropTargetActive(false)
+
+    if (taskPanel?.running) {
+      showToast('attention', '当前任务仍在运行，请先取消或等待完成。')
+      return
+    }
+
+    const filePaths = extractFilePaths(e.dataTransfer)
+    if (filePaths.length === 0) {
+      showToast('error', '没有读取到可执行的本地文件路径。')
+      return
+    }
+
+    setTaskPanel({
+      phase: 'compose',
+      files: filePaths,
+      agent: taskPanel?.agent ?? 'codex',
+      instruction: taskPanel?.phase === 'compose' ? taskPanel.instruction : '',
+      output: '',
+      running: false,
+    })
+    setMoodFor('surprised', 1200)
+  }, [setMoodFor, showToast, taskPanel])
+
+  const handleInstructionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setTaskPanel((current) => current ? { ...current, instruction: value } : current)
+  }, [])
+
+  const handleAgentChange = useCallback((agent: TaskAgent) => {
+    setTaskPanel((current) => current ? { ...current, agent } : current)
+  }, [])
+
+  const handleClosePanel = useCallback(() => {
+    if (taskPanel?.running) return
+    setTaskPanel(null)
+  }, [taskPanel?.running])
+
+  const handleCancelTask = useCallback(() => {
+    if (!taskPanel?.taskId || !taskPanel.running) return
+    window.electronAPI.cancelTask(taskPanel.taskId)
+    showToast('info', '正在取消任务...')
+  }, [showToast, taskPanel])
+
+  const handleSubmitTask = useCallback(async () => {
+    if (!taskPanel) return
+    const instruction = taskPanel.instruction.trim()
+    if (!instruction) {
+      showToast('attention', '先写清楚你要它处理什么。')
+      return
+    }
+
+    const result = await window.electronAPI.executeTask({
+      agent: taskPanel.agent,
+      instruction,
+      filePaths: taskPanel.files,
+    })
+
+    if (result.error) {
+      showToast('error', result.error)
+      setTaskPanel((current) => current ? { ...current, error: result.error } : current)
+      return
+    }
+
+    const taskId = result.taskId
+    const fallbackTask = buildFallbackTask(taskPanel.files, taskPanel.agent, instruction, taskId)
+    setLocalTasks((current) => ({ ...current, [taskId]: fallbackTask }))
+    setTaskPanel((current) => current ? {
+      ...current,
+      phase: 'output',
+      output: '',
+      running: true,
+      taskId,
+      error: undefined,
+    } : current)
+    setMoodFor('working', 1400)
+  }, [setMoodFor, showToast, taskPanel])
+
+  const handleUpdateBubbleClick = useCallback(async () => {
+    if (updateStatus.state === 'available') {
+      const result = await window.electronAPI.updaterDownload()
+      if (!result.ok && result.error) {
+        showToast('error', result.error)
+      }
+      return
+    }
+
+    if (updateStatus.state === 'downloaded') {
+      await window.electronAPI.updaterInstall()
+    }
+  }, [showToast, updateStatus.state])
+
+  const updateBubbleLabel = updateStatus.state === 'available'
+    ? `发现更新 ${updateStatus.version ?? ''}`.trim()
+    : updateStatus.state === 'downloading'
+      ? `下载中 ${Math.round(updateStatus.progress ?? 0)}%`
+      : `安装 ${updateStatus.version ?? ''}`.trim()
 
   return (
-    <div className="ball-root">
-      <div className="bubble-area">
-        {bubbles.map((b, i) => (
-          <ChatBubble
-            key={b.id}
-            message={b}
-            duration={calcBubbleDuration(b.text)}
-            opacity={opacities[i]}
-            showTail={i === bubbles.length - 1}
-            tailAlign="center"
-            onDismiss={handleBubbleDismiss}
-          />
-        ))}
+    <div
+      className={`ball-root${taskPanel ? ' ball-root--expanded' : ''}`}
+      onMouseEnter={handleRootMouseEnter}
+      onMouseLeave={handleRootMouseLeave}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="pet-overlay-stack">
+        {showUpdateBubble && (
+          <button
+            className={`update-bubble${updateStatus.state === 'downloaded' ? ' update-bubble--ready' : ''}`}
+            disabled={updateStatus.state === 'downloading'}
+            onClick={handleUpdateBubbleClick}
+            title={updateStatus.state === 'downloaded' ? 'Install update' : 'Download update'}
+          >
+            {updateBubbleLabel}
+          </button>
+        )}
+
+        {toast && (
+          <div className={`pet-toast pet-toast--${toast.kind}`}>
+            {toast.text}
+          </div>
+        )}
+
+        {showTaskTooltip && (
+          <div className="task-tooltip">
+            <div className="task-tooltip__title">当前任务</div>
+            <div className="task-tooltip__list">
+              {activeTasks.map((task) => (
+                <div key={task.sessionId ?? `${task.agent}-${task.timestamp}`} className="task-tooltip__item">
+                  <div className="task-tooltip__head">
+                    <span>{formatAgentLabel(task.agent)}</span>
+                    {task.sessionTitle && <span>{task.sessionTitle}</span>}
+                  </div>
+                  {task.currentAction && <div className="task-tooltip__meta">{task.currentAction}</div>}
+                  {task.workingDirectory && (
+                    <div className="task-tooltip__meta">{summarizePath(task.workingDirectory)}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {taskPanel && (
+          <div className="task-panel">
+            <div className="task-panel__header">
+              <div>
+                <div className="task-panel__title">
+                  {taskPanel.phase === 'compose' ? '投递任务' : taskPanel.running ? '任务执行中' : '任务输出'}
+                </div>
+                <div className="task-panel__subtitle">
+                  {taskPanel.files.length} 个文件
+                </div>
+              </div>
+              <button
+                className="task-panel__ghost"
+                onClick={taskPanel.running ? handleCancelTask : handleClosePanel}
+              >
+                {taskPanel.running ? 'Cancel' : 'Close'}
+              </button>
+            </div>
+
+            <div className="task-panel__files">
+              {taskPanel.files.map((filePath) => (
+                <span key={filePath} className="task-panel__file-chip">{basename(filePath)}</span>
+              ))}
+            </div>
+
+            {taskPanel.phase === 'compose' && (
+              <>
+                <div className="task-panel__agents">
+                  {(['codex', 'claude'] as TaskAgent[]).map((agent) => (
+                    <button
+                      key={agent}
+                      className={`task-panel__agent ${taskPanel.agent === agent ? 'task-panel__agent--active' : ''}`}
+                      onClick={() => handleAgentChange(agent)}
+                    >
+                      {formatAgentLabel(agent)}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  ref={instructionRef}
+                  className="task-panel__textarea"
+                  placeholder="告诉它要做什么，例如：比较这些文件里的交互差异并给出修复方案。"
+                  value={taskPanel.instruction}
+                  onChange={handleInstructionChange}
+                />
+
+                {taskPanel.error && (
+                  <div className="task-panel__error">{taskPanel.error}</div>
+                )}
+
+                <div className="task-panel__actions">
+                  <button className="task-panel__primary" onClick={handleSubmitTask}>
+                    开始执行
+                  </button>
+                </div>
+              </>
+            )}
+
+            {taskPanel.phase === 'output' && (
+              <>
+                <div className="task-panel__status">
+                  {taskPanel.running
+                    ? `${formatAgentLabel(taskPanel.agent)} 正在处理`
+                    : taskPanel.error
+                      ? `执行失败：${taskPanel.error}`
+                      : '执行完成'}
+                </div>
+                <pre className="task-panel__output">
+                  {taskPanel.output || '等待输出...'}
+                </pre>
+              </>
+            )}
+          </div>
+        )}
       </div>
+
+      {isDropTargetActive && (
+        <div className="drop-overlay">
+          <div className="drop-overlay__card">
+            <div className="drop-overlay__title">把文件丢给宠物</div>
+            <div className="drop-overlay__subtitle">释放后会进入任务说明面板</div>
+          </div>
+        </div>
+      )}
+
       <div className="bottom-section">
         <div
           ref={ballRef}
           className="ball"
-          data-emotion={haloEmotion}
+          data-mood={effectiveMood}
+          style={dragStyle}
           onMouseDown={handleMouseDown}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
+          onMouseMove={handleBallMouseMove}
           onContextMenu={handleContextMenu}
           title="Claw"
         >
-          <SpriteRenderer config={spriteConfig} animation={spriteAnimation} width={120} height={120} />
+          <SpriteRenderer
+            config={spriteConfig}
+            animation={MOOD_TO_SPRITE[effectiveMood]}
+            width={120}
+            height={120}
+            idlePause
+          />
         </div>
       </div>
     </div>

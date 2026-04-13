@@ -9,10 +9,23 @@ export type CliAgentStatus =
   | 'completed'
   | 'error'
 
+export const CLI_TERMINAL_GRACE_MS = 3000
+
+const STATUS_PRIORITY: Record<CliAgentStatus, number> = {
+  error: 5,
+  'needs-attention': 4,
+  working: 3,
+  thinking: 2,
+  completed: 1,
+  idle: 0,
+}
+
 export interface AgentSession {
   sessionId: string
-  clientType: 'claude-code' | 'codex' | 'custom'
+  clientType: 'claude-code' | 'codex' | 'opencode' | 'custom'
   status: CliAgentStatus
+  /** 数据来源：hook 主动上报 or monitor 被动检测 */
+  source?: 'hook' | 'monitor'
   workingDirectory?: string
   sessionTitle?: string
   currentAction?: {
@@ -44,7 +57,13 @@ const VALID_STATUSES: ReadonlySet<string> = new Set([
 const VALID_CLIENT_TYPES: ReadonlySet<string> = new Set([
   'claude-code',
   'codex',
+  'opencode',
   'custom',
+])
+
+const VALID_SOURCES: ReadonlySet<string> = new Set([
+  'hook',
+  'monitor',
 ])
 
 /**
@@ -87,6 +106,8 @@ function isValidSession(s: unknown): s is AgentSession {
   if (session.endedAt !== undefined && typeof session.endedAt !== 'number') return false
   if (session.needsAttention !== undefined && typeof session.needsAttention !== 'string') return false
 
+  if (session.source !== undefined && !VALID_SOURCES.has(session.source as string)) return false
+
   if (session.currentAction !== undefined) {
     if (typeof session.currentAction !== 'object' || session.currentAction === null) return false
     const action = session.currentAction as Record<string, unknown>
@@ -99,21 +120,89 @@ function isValidSession(s: unknown): s is AgentSession {
 }
 
 /**
- * Derive aggregate status from the status file.
- * Returns the status of the most-recently-updated non-ended session,
- * or 'idle' if all sessions are ended.
+ * Filter out monitor sessions for clientTypes that also have a hook session.
+ * Hook sessions are more accurate (event-driven), so they take priority.
  */
-export function deriveAggregateStatus(file: AgentStatusFile): CliAgentStatus {
-  let latest: AgentSession | null = null
-
-  for (const session of Object.values(file.sessions)) {
-    // Skip ended sessions
-    if (session.endedAt !== undefined) continue
-
-    if (latest === null || session.lastUpdated > latest.lastUpdated) {
-      latest = session
+export function deduplicateAgentSessions(
+  sessions: Record<string, AgentSession>,
+): Record<string, AgentSession> {
+  const hookCovered = new Set<string>()
+  for (const session of Object.values(sessions)) {
+    // Only suppress monitor sessions when there is a currently-active hook session.
+    // Ended hook sessions must not hide live monitor sessions.
+    const isHookSource = session.source === 'hook' || session.source === undefined
+    if (isHookSource && session.endedAt === undefined) {
+      hookCovered.add(session.clientType)
     }
   }
 
-  return latest ? latest.status : 'idle'
+  if (hookCovered.size === 0) return sessions
+
+  const deduped: Record<string, AgentSession> = {}
+  for (const [id, session] of Object.entries(sessions)) {
+    if (session.source === 'monitor' && hookCovered.has(session.clientType)) {
+      continue
+    }
+    deduped[id] = session
+  }
+
+  return deduped
+}
+
+/**
+ * Derive aggregate status from the status file.
+ * Returns the highest-priority visible session status, or 'idle' when none is visible.
+ */
+export interface AgentConfig {
+  name: string
+  displayName: string
+  clientType: AgentSession['clientType']
+  processPatterns: string[]
+  logPaths: string[]
+  filePatterns: string[]
+}
+
+/**
+ * Derive aggregate status from the status file.
+ * Returns the highest-priority visible session status, or 'idle' when none is visible.
+ */
+export function deriveAggregateStatus(
+  file: AgentStatusFile,
+  options: { now?: number; terminalGraceMs?: number } = {},
+): CliAgentStatus {
+  const now = options.now ?? Date.now()
+  const terminalGraceMs = options.terminalGraceMs ?? 0
+
+  const deduped = Object.values(deduplicateAgentSessions(file.sessions))
+
+  // Partition into active (non-ended) and grace-window terminal sessions.
+  // Active sessions always take priority so a recent error/completion
+  // cannot mask a currently-running session.
+  const activeSessions: AgentSession[] = []
+  const graceSessions: AgentSession[] = []
+
+  for (const session of deduped) {
+    if (session.endedAt === undefined) {
+      activeSessions.push(session)
+    } else if (terminalGraceMs > 0 && (now - session.endedAt) < terminalGraceMs) {
+      graceSessions.push(session)
+    }
+  }
+
+  const candidates = activeSessions.length > 0 ? activeSessions : graceSessions
+
+  let current: AgentSession | null = null
+  for (const session of candidates) {
+    if (!current) {
+      current = session
+      continue
+    }
+
+    const priorityDelta = STATUS_PRIORITY[session.status] - STATUS_PRIORITY[current.status]
+    if (priorityDelta > 0 || (priorityDelta === 0 && session.lastUpdated > current.lastUpdated)) {
+      current = session
+    }
+  }
+
+  return current ? current.status : 'idle'
 }

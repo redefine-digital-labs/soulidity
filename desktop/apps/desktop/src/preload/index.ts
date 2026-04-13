@@ -1,43 +1,98 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { PetAgentEvent, PetUpdateStatus } from '@soulidity/shared'
 
-// 通过 contextBridge 向渲染进程安全暴露 IPC 通道
 contextBridge.exposeInMainWorld('electronAPI', {
-  /** IPC 通路验证 */
+  // ── 基础 ──
   ping: (): Promise<string> => ipcRenderer.invoke('ipc:ping'),
-  /** 悬浮球拖拽 */
+  closeWindow: (): void => { ipcRenderer.send('window:close') },
+  getConfig: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('config:get'),
+  setConfig: (config: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('config:set', config),
+
+  // ── 悬浮球拖拽 ──
   dragStart: (): void => { ipcRenderer.send('drag:start') },
   dragMove: (): void => { ipcRenderer.send('drag:move') },
   dragEnd: (): void => { ipcRenderer.send('drag:end') },
-  /** 透明区域点击穿透控制 */
-  setIgnoreMouseEvents: (ignore: boolean): void => {
-    ipcRenderer.send('set-ignore-mouse-events', ignore)
-  },
-  /** 右键上下文菜单 */
+  setIgnoreMouseEvents: (ignore: boolean): void => { ipcRenderer.send('set-ignore-mouse-events', ignore) },
   showContextMenu: (): void => { ipcRenderer.send('contextmenu:show') },
-  /** 关闭当前窗口 */
-  closeWindow: (): void => { ipcRenderer.send('window:close') },
-  /** 本地后端运行时配置 */
-  getBackendRuntimeConfig: (): Promise<{
-    httpBaseURL: string
-    authToken: string
-  }> => ipcRenderer.invoke('backend:get-runtime-config'),
-  /** 读取配置 */
-  getConfig: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('config:get'),
-  /** 写入配置 */
-  setConfig: (config: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('config:set', config),
+  hidePet: (): void => { ipcRenderer.send('pet:hide') },
+  resizePetWindow: (width: number, height: number): void => { ipcRenderer.send('resize-pet-window', width, height) },
 
-  // ── Soulidity: status watcher, agent wallet ─────────────
-  /** 监听 agent status 文件变更 */
-  onAgentStatusChanged: (callback: (status: unknown) => void): (() => void) => {
-    ipcRenderer.on('agent-status-changed', (_e, status) => callback(status))
-    return () => { ipcRenderer.removeAllListeners('agent-status-changed') }
+  // ── Mood / Greeting / Persona ──
+  getMoodSnapshot: (): Promise<unknown> => ipcRenderer.invoke('mood:get'),
+  onMoodChanged: (callback: (snapshot: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, snapshot: unknown) => callback(snapshot)
+    ipcRenderer.on('mood-changed', listener)
+    return () => { ipcRenderer.removeListener('mood-changed', listener) }
   },
-  /** 获取当前 agent status */
+  moodInteract: (): Promise<void> => ipcRenderer.invoke('mood:interact'),
+  moodDragStart: (): Promise<void> => ipcRenderer.invoke('mood:drag-start'),
+  moodDragEnd: (): Promise<void> => ipcRenderer.invoke('mood:drag-end'),
+  getPersona: (): Promise<{ soul: string | null; user: string | null; context: string | null }> =>
+    ipcRenderer.invoke('persona:get'),
+
+  // ── Status watcher ──
+  onAgentStatusChanged: (callback: (status: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, status: unknown) => callback(status)
+    ipcRenderer.on('agent-status-changed', listener)
+    return () => { ipcRenderer.removeListener('agent-status-changed', listener) }
+  },
+  onAgentEvent: (callback: (event: PetAgentEvent) => void): (() => void) => {
+    const listener = (_event: unknown, event: PetAgentEvent) => callback(event)
+    ipcRenderer.on('agent-event', listener)
+    return () => { ipcRenderer.removeListener('agent-event', listener) }
+  },
   getCurrentAgentStatus: (): Promise<unknown> => ipcRenderer.invoke('get-current-agent-status'),
-  /** 生成 agent keypair */
+
+  // ── Agent wallet ──
   generateAgentKeypair: (): Promise<unknown> => ipcRenderer.invoke('generate-agent-keypair'),
-  /** 加载 agent keypair */
   loadAgentKeypair: (): Promise<unknown> => ipcRenderer.invoke('load-agent-keypair'),
-  /** 导出 agent 地址 */
-  exportAgentAddress: (): Promise<string> => ipcRenderer.invoke('export-agent-address')
+  exportAgentAddress: (): Promise<string> => ipcRenderer.invoke('export-agent-address'),
+  getSecretStorageStatus: (): Promise<'encrypted' | 'legacy' | 'missing'> =>
+    ipcRenderer.invoke('get-secret-storage-status'),
+
+  // ── 设备绑定 ──
+  deviceStartLink: (agentAddress: string): Promise<{
+    deviceCode: string; userCode: string; expiresAt: string; pollInterval: number
+  }> => ipcRenderer.invoke('device:start-link', agentAddress),
+  devicePoll: (deviceCode: string): Promise<{
+    status: string; accountId?: string; expiresAt?: string | null
+  }> => ipcRenderer.invoke('device:poll', deviceCode),
+  deviceGetLinkUrl: (): Promise<string> => ipcRenderer.invoke('device:get-link-url'),
+
+  // ── Task 执行 (Claude / Codex) ──
+  executeTask: (payload: { agent: string; instruction: string; filePaths?: string[]; cwd?: string }):
+    Promise<{ taskId: string; error?: string }> => ipcRenderer.invoke('task:execute', payload),
+  cancelTask: (taskId: string): void => { ipcRenderer.send('task:cancel', taskId) },
+  listActiveTasks: (): Promise<string[]> => ipcRenderer.invoke('task:list-active'),
+  onTaskOutput: (callback: (data: { taskId: string; text: string }) => void): (() => void) => {
+    const listener = (_event: unknown, data: { taskId: string; text: string }) => callback(data)
+    ipcRenderer.on('task:output', listener)
+    return () => { ipcRenderer.removeListener('task:output', listener) }
+  },
+  onTaskComplete: (callback: (data: { taskId: string; success: boolean; error?: string }) => void): (() => void) => {
+    const listener = (_event: unknown, data: { taskId: string; success: boolean; error?: string }) => callback(data)
+    ipcRenderer.on('task:complete', listener)
+    return () => { ipcRenderer.removeListener('task:complete', listener) }
+  },
+
+  // ── 本地缓存 ──
+  cacheHasSprite: (spriteId: string): Promise<boolean> => ipcRenderer.invoke('cache:has-sprite', spriteId),
+  cacheGetSprite: (spriteId: string): Promise<unknown> => ipcRenderer.invoke('cache:get-sprite', spriteId),
+  cacheRemoveSprite: (spriteId: string): Promise<boolean> => ipcRenderer.invoke('cache:remove-sprite', spriteId),
+  cachePrune: (maxAgeMs: number): Promise<number> => ipcRenderer.invoke('cache:prune', maxAgeMs),
+  cacheStats: (): Promise<{ totalSprites: number; totalBytes: number }> => ipcRenderer.invoke('cache:stats'),
+  cacheList: (): Promise<unknown[]> => ipcRenderer.invoke('cache:list'),
+
+  // ── 自动更新 ──
+  updaterCheck: (): Promise<{ available: boolean; version?: string; error?: string }> =>
+    ipcRenderer.invoke('updater:check'),
+  getUpdateStatus: (): Promise<PetUpdateStatus> => ipcRenderer.invoke('updater:status'),
+  onUpdateStatus: (callback: (status: PetUpdateStatus) => void): (() => void) => {
+    const listener = (_event: unknown, status: PetUpdateStatus) => callback(status)
+    ipcRenderer.on('update-status', listener)
+    return () => { ipcRenderer.removeListener('update-status', listener) }
+  },
+  updaterDownload: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('updater:download'),
+  updaterInstall: (): Promise<void> => ipcRenderer.invoke('updater:install'),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
 })

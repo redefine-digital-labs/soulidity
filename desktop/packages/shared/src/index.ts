@@ -23,14 +23,54 @@ export type {
 
 export type {
   EmotionState,
-  EmotionSnapshot
+  EmotionSnapshot,
+  Mood,
+  MoodSnapshot
 } from './types/emotion'
 
 export {
   EMOTION_PRIORITY,
   EMOTION_MIN_HOLD_MS,
-  EMOTION_DEBOUNCE_MS
+  EMOTION_DEBOUNCE_MS,
+  ALL_MOODS,
+  MOOD_TO_SPRITE,
+  MOOD_PARAMS
 } from './types/emotion'
+
+// ─── CLI Status ─────────────────────────────
+export type {
+  CliAgentStatus,
+  AgentSession,
+  AgentStatusFile,
+  AgentConfig
+} from './types/cli-status'
+
+export {
+  CLI_TERMINAL_GRACE_MS,
+  deduplicateAgentSessions,
+  parseAgentStatusFile,
+  deriveAggregateStatus
+} from './types/cli-status'
+
+export type {
+  PetTaskAgent,
+  PetTaskSummary,
+  PetAgentEventType,
+  PetAgentEvent,
+  PetUpdateState,
+  PetUpdateStatus,
+  PetTaskOptions,
+} from './types/pet'
+
+export {
+  toPetTaskSummary,
+  getVisiblePetTasks,
+  derivePetAgentEvents,
+} from './types/pet'
+
+// NOTE: AGENT_CONFIGS is NOT re-exported here — it uses node:os/node:path
+// which can't be bundled into the renderer. Import directly:
+//   import { AGENT_CONFIGS } from '@soulidity/shared/types/agent-configs'
 
 // ─── Memory System ───────────────────────────
 

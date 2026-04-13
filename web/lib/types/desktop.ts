@@ -67,6 +67,7 @@ export interface DesktopDeviceCompleteResponse {
 
 export interface DesktopProfile {
   accountId: string
+  agentAddress: string | null
   activeSourceType: DesktopCatalogSourceType | null
   activeSourceRef: string | null
   preferences: Record<string, unknown> | null

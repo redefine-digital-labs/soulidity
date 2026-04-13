@@ -9,6 +9,7 @@ import type {
 
 const desktopProfileSelect = {
   accountId: true,
+  agentAddress: true,
   activeSourceType: true,
   activeSourceRef: true,
   preferences: true,
@@ -37,6 +38,7 @@ function normalizeDesktopPreferences(value: Prisma.JsonValue | null): Record<str
 function toDesktopProfile(row: DesktopProfileRow): DesktopProfile {
   return {
     accountId: row.accountId,
+    agentAddress: row.agentAddress ?? null,
     activeSourceType: isDesktopCatalogSourceType(row.activeSourceType) ? row.activeSourceType : null,
     activeSourceRef: row.activeSourceRef,
     preferences: normalizeDesktopPreferences(row.preferences),
