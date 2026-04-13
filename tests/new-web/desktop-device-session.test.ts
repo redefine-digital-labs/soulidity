@@ -6,6 +6,9 @@ const mockedPrisma = vi.hoisted(() => ({
     findUnique: vi.fn(),
     update: vi.fn(),
   },
+  desktopProfile: {
+    upsert: vi.fn(),
+  },
   $transaction: vi.fn(),
 }))
 
@@ -38,6 +41,29 @@ describe('startDesktopDeviceSession', () => {
     expect(result.deviceCode).toBeTruthy()
     expect(result.userCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
     expect(result.pollInterval).toBe(5)
+  })
+
+  it('persists agentAddress when desktop starts linking', async () => {
+    mockedPrisma.desktopDeviceSession.create.mockImplementation(({ data }) => {
+      return Promise.resolve({
+        deviceCode: data.deviceCode,
+        userCode: data.userCode,
+        expiresAt: data.expiresAt,
+        pollIntervalSeconds: data.pollIntervalSeconds,
+      })
+    })
+
+    const { startDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    await startDesktopDeviceSession({
+      now: new Date('2026-04-12T10:00:00Z'),
+      agentAddress: '0xagent123',
+    })
+
+    expect(mockedPrisma.desktopDeviceSession.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        agentAddress: '0xagent123',
+      }),
+    }))
   })
 })
 
@@ -171,6 +197,48 @@ describe('completeDesktopDeviceSession', () => {
       expect(result.accountId).toBe('account-123')
     }
     expect(mockedPrisma.$transaction).toHaveBeenCalledOnce()
+  })
+
+  it('upserts DesktopProfile.agentAddress when confirming a bound device session', async () => {
+    const session = {
+      id: 'session-1',
+      accountId: null,
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: new Date('2026-04-12T10:10:00Z'),
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'pending',
+    }
+    mockedPrisma.desktopDeviceSession.findUnique
+      .mockResolvedValueOnce(session)
+      .mockResolvedValueOnce({ status: 'pending', accountId: null })
+    mockedPrisma.desktopDeviceSession.update.mockResolvedValue({
+      accountId: 'account-123',
+      agentAddress: '0xagent123',
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: session.expiresAt,
+      confirmedAt: new Date('2026-04-12T10:05:00Z'),
+      pollIntervalSeconds: 5,
+      status: 'confirmed',
+    })
+    mockedPrisma.desktopProfile.upsert.mockResolvedValue({
+      accountId: 'account-123',
+      agentAddress: '0xagent123',
+    })
+
+    const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', {
+      now: new Date('2026-04-12T10:05:00Z'),
+    })
+
+    expect(result.status).toBe('confirmed')
+    expect(mockedPrisma.desktopProfile.upsert).toHaveBeenCalledWith({
+      where: { accountId: 'account-123' },
+      create: { accountId: 'account-123', agentAddress: '0xagent123' },
+      update: { agentAddress: '0xagent123' },
+    })
   })
 
   it('throws conflict when concurrent request confirmed with different account', async () => {

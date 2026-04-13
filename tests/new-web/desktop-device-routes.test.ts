@@ -36,6 +36,26 @@ describe('POST /api/desktop/device/start', () => {
 
     expect(body).toEqual(sessionData)
   })
+
+  it('forwards agentAddress from request body', async () => {
+    const sessionData = {
+      deviceCode: 'abc123',
+      userCode: 'ABCD-EFGH',
+      expiresAt: '2026-04-12T10:10:00.000Z',
+      pollInterval: 5,
+    }
+    mockedStartDesktopDeviceSession.mockResolvedValue(sessionData)
+
+    const { POST } = await import('../../web/app/api/desktop/device/start/route')
+    await POST(new Request('http://localhost', {
+      method: 'POST',
+      body: JSON.stringify({ agentAddress: ' 0xagent123 ' }),
+    }) as any)
+
+    expect(mockedStartDesktopDeviceSession).toHaveBeenCalledWith({
+      agentAddress: '0xagent123',
+    })
+  })
 })
 
 describe('POST /api/desktop/device/poll', () => {

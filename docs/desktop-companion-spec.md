@@ -8,15 +8,15 @@
 
 ## Scope
 
-### Phase 1 — Companion Shell（当前执行目标）
+### Phase 1 — Companion Shell（已完成）
 
 1. **统一状态协议** — `~/.soulidity/agent-status.json` 文件监听 + Claude Code / Codex 适配器
-2. **悬浮球 Electron 应用** — FloatingBall 透明悬浮窗口 + SettingsPanel 设置窗口
+2. **悬浮球 Electron 应用** — FloatingBall 透明悬浮窗口 + MainWindow 管理窗口
 3. **Sprite Sheet 渲染** — Canvas API 逐帧动画，接入本地默认 persona 和 CLI 状态驱动
-4. **桌面 Agent 钱包** — 每设备一个 Ed25519 agent 地址，显示于 SettingsPanel
+4. **桌面 Agent 钱包** — 每设备一个 Ed25519 agent 地址，显示于 MainWindow / SettingsTab
 5. **情绪系统（基础）** — 4 态 emotion（idle/busy/done/night）+ CLI 6 态映射，后端 LLM 生成互动语
 
-### Phase 1.5 — 被动检测与 Mood 升级（未开始）
+### Phase 1.5 — 被动检测与 Mood 升级（已完成，OpenCode 适配待补）
 
 1. **AgentMonitor 被动检测** — 进程探测（pgrep）+ JSONL 会话日志监听，无 hook 也能感知 CLI 状态
 2. **12 Mood 系统** — CLI 6 态 + 上下文规则映射，替代当前 4 emotion
@@ -52,6 +52,12 @@
 | Sprite 渲染 | 原生 Canvas API + requestAnimationFrame | 不引入 Phaser/Pixi |
 | 依赖位置 | Phase 1 所有桌面依赖放 `apps/desktop/package.json` | 不放 `packages/backend` |
 | 后端架构 | 纯 IPC（无 HTTP 服务器） | Phase 1.5 从 Fastify 迁移；无端口冲突、打包更简单、调用链更短 |
+| Agent 检测 | 声明式 `AGENT_CONFIGS`（claude-code / codex / opencode） | 每个 agent 声明 processPatterns + logPaths + filePatterns |
+| 文件监听 | chokidar（替代 fs.watch） | 跨平台可靠、内置 awaitWriteFinish 防抖 |
+| 配置存储 | `electron-store`（替代手写 JSON 读写） | 原子写入、schema 验证、迁移支持 |
+| 自动更新 | `electron-updater` + GitHub Releases | autoDownload=false，用户手动触发 |
+| 自定义协议 | `soulidity://` deep link | settings / install-sprite 入口 |
+| 单实例锁 | `requestSingleInstanceLock` | 防双开，deep link 转发到已有实例 |
 
 ---
 
@@ -59,7 +65,7 @@
 
 ### Tech Stack
 
-Electron, React, electron-vite, pnpm workspace, Node `fs.watch`, Canvas API, `@mysten/sui`（纯 IPC 架构，无 HTTP 后端）
+Electron, React, electron-vite, pnpm workspace, chokidar, Canvas API, `@mysten/sui`, `electron-store`, `electron-updater`（纯 IPC 架构，无 HTTP 后端）
 
 ### Workspace Layout
 
@@ -74,8 +80,7 @@ desktop/                          # Desktop-Claw-based pnpm workspace
 │   ├── src/preload/              # IPC bridge
 │   ├── src/renderer/
 │   │   ├── components/
-│   │   │   ├── FloatingBall/     # overlay sprite + bubbles + interaction
-│   │   │   ├── ChatBubble/       # speech bubble with fade animation
+│   │   │   ├── FloatingBall/     # overlay sprite + task tooltip/toast/drop/output interaction
 │   │   │   ├── MainWindow/       # 三 tab 管理面板 (Settings/Library/Agent)
 │   │   │   └── SpriteRenderer.tsx # Canvas sprite sheet animation
 │   │   └── hooks/
@@ -93,28 +98,30 @@ desktop/                          # Desktop-Claw-based pnpm workspace
 └── packages/shared/              # shared types
     └── src/types/
         ├── cli-status.ts         # 6 态 + source + opencode
-        └── emotion.ts            # Mood (12 态), MoodSnapshot, EmotionState (legacy)
+        ├── emotion.ts            # Mood (12 态), MoodSnapshot, EmotionState (legacy)
+        └── pet.ts                # PetTaskSummary, PetAgentEvent, PetUpdateStatus
 ```
 
 ### Window Model
 
 ```
 Electron Main Process
-├── window lifecycle (FloatingBall + SettingsPanel)
+├── window lifecycle (FloatingBall + MainWindow)
 ├── status watcher (hooks 层)
 ├── wallet IPC
 └── config management
 
 FloatingBall Window（透明悬浮 companion）
 ├── transparent, frameless, alwaysOnTop, skipTaskbar
-├── 尺寸：200x230（含气泡区域）
+├── 尺寸：随 sprite 配置动态调整（默认资源约 200x230）
 ├── 位置：记忆上次位置（config.json → ballPosition）
-├── 内容：Canvas sprite 动画 + ChatBubble 气泡 + 右键菜单
+├── 内容：Canvas sprite 动画 + 任务 tooltip / toast / update bubble + 原生右键菜单
 └── 点击穿透：轮询光标位置，球区域内接收事件
 
-SettingsPanel Window（设置面板）
+MainWindow（设置面板）
 ├── agent wallet 地址显示（只读 + 复制）
-└── CLI agent monitor 状态
+├── library / settings / agent 三 tab
+└── account linking / CLI monitor / persona 管理
 ```
 
 ### Interaction
@@ -122,8 +129,9 @@ SettingsPanel Window（设置面板）
 | 操作 | 行为 |
 |------|------|
 | 拖拽 | 移动位置，松手保存 |
-| 左键点击 | 弹出互动语气泡（LLM 预生成或 fallback） |
-| 右键 | 上下文菜单：设置 / 退出 |
+| Hover（有活跃任务） | 显示任务 tooltip（agent、会话、当前动作、工作目录摘要） |
+| 文件拖入 | 打开任务说明面板，提交后显示 live output，可取消 |
+| 右键 | 原生上下文菜单：Settings / Hide Character / Check for Updates / Quit |
 | 状态变化 | 切换 sprite 动画 + CSS halo 呼吸效果 |
 | 无活跃 session | 显示 idle 动画 |
 
@@ -138,7 +146,8 @@ data/                             # userData/data/ (prod) or desktop/data/ (dev)
 └── files/                        # user files
 
 userData/state/
-└── agent_keypair.json            # Ed25519 keypair (Phase 1: full key; Phase 1.5: public only + keytar)
+├── agent_keypair.json            # 公开 metadata（address/publicKey/createdAt）
+└── agent_secret.enc              # private key，经 Electron safeStorage 加密
 ```
 
 ---
@@ -209,37 +218,23 @@ interface AgentSession {
 - debounce 后解析 JSON，广播 `agent-status-changed` 到所有窗口
 - 容忍原子写入过程中的短暂半成品文件
 
-### Module 2 — 情绪系统（当前实现）
+### Module 2 — Mood 与 Pet 反馈系统（当前实现）
 
-**4 态 emotion + CLI 6 态映射：**
+**12 态 Mood + 任务驱动反馈：**
 
-后端 `EmotionService` 维护 `EmotionSnapshot`（state, reason, phrases, intensity, ambient）。每 15 秒由 `useClawEmotion` hook 轮询。
+后端 `MoodService` 输出 `MoodSnapshot`，前端通过 `useMood.ts` 订阅；宠物层额外消费 `PetTaskSummary`、`PetAgentEvent`、`PetUpdateStatus`，把 CLI / task / updater 状态统一编排成 companion 反馈。
 
-| EmotionState | 触发条件 |
+| 层级 | 当前实现 |
 |---|---|
-| idle | 默认 / 无活动 |
-| busy | 收到用户消息 / 流式输出中 |
-| done | 任务完成 |
-| night | 深夜时段 |
+| Mood | `idle / happy / love / excited / celebrate / sleepy / snoring / working / angry / surprised / shy / dragging` |
+| Sprite | 由 `MOOD_TO_SPRITE` 映射到 sprite 动画；`dragging` 优先请求独立动画 |
+| Task 反馈 | hover task tooltip、完成/报错/attention toast、update bubble、文件拖拽任务面板 |
 
-**CLI 6 态 → Emotion 映射：**
-
-| CLI Status | → Sprite Animation | → CSS Halo |
-|---|---|---|
-| idle | idle (emotion fallback) | idle / emotion |
-| thinking | thinking | busy |
-| working | working | busy |
-| needs-attention | needs-attention | night |
-| completed | completed | done |
-| error | error | night |
-
-规则：CLI status 非 idle 时直接驱动 sprite；CLI idle 时 fallback 到 emotion 映射。
-
-**互动语：**
-- 启动时按时段弹出问候气泡（morning / afternoon / evening / latenight）
-- 空闲态每 6–15 分钟自动冒泡（从 snapshot.phrases 取）
-- 点击弹出互动语（先调 `/greeting` 取 LLM 生成的，fallback 到本地按 emotion 的文案池）
-- 用户关闭气泡后 3 分钟冷却
+**关键规则：**
+- CLI / AgentMonitor 的 6 态文件协议仍是基础 source of truth
+- `derivePetAgentEvents()` 把 session 变化归一成 `agent-active / agent-idle / task-complete / task-error / needs-attention`
+- 宠物窗口保留原生右键菜单，任务状态优先于旧陪伴型随机冒泡
+- 启动问候、自动 idle 气泡、`ChatBubble` 主反馈链已从当前实现中移除
 
 ### Module 3 — Sprite Sheet 渲染
 
@@ -268,13 +263,15 @@ interface SpriteSheetConfig {
 |----|--------|--------|
 | 0 | 0-7 | idle |
 | 1 | 8-15 | thinking |
-| 2 | 16-23 | working |
-| 3 | 24-31 | needs-attention |
-| 4 | 32-39 | completed |
+| 2 | 16-23 | completed |
+| 3 | 24-31 | working |
+| 4 | 32-39 | needs-attention |
 | 5 | 40-47 | error |
-| 6 | 48-55 | (reserved) |
+| 6 | 48-55 | dragging |
 
-CSS halo 通过 `data-emotion` 属性驱动呼吸动画（idle 5s / busy 2.2s / done 6s / night 8s）。
+`SpriteRenderer` 当前支持“可选 dragging 动画”策略：若 persona 提供 `dragging` 帧段则优先播放；若未提供则运行时自动 fallback 到 `idle`。
+
+CSS halo 当前通过 `data-mood` 属性驱动。
 
 ### Module 4 — Agent 钱包
 
@@ -287,12 +284,12 @@ interface AgentKeypairInfo {
 ```
 
 - Sui SDK `toSuiAddress()` 推导地址
-- Phase 1: 完整 keypair 存入 `userData/state/agent_keypair.json`
-- Phase 1.5 目标: private key → OS keychain via `keytar`
+- 公开 metadata 写入 `userData/state/agent_keypair.json`
+- private key 写入 `userData/state/agent_secret.enc`，由 Electron `safeStorage` 加密
 - 每台设备一个 agent 地址
-- SettingsPanel 显示地址（可复制）
+- MainWindow / SettingsTab 显示地址（可复制）
 
-### Module 5 — 内嵌后端（Fastify）
+### Module 5 — 主进程服务层（纯 IPC）
 
 纯 IPC 架构，无 HTTP 服务器。Services 运行在 Electron 主进程，渲染进程通过 `contextBridge` IPC 通道调用。
 
@@ -304,11 +301,15 @@ interface AgentKeypairInfo {
 | `mood:interact` | 用户互动信号 |
 | `mood:drag-start` / `mood:drag-end` | 拖拽状态 |
 | `persona:get` | 返回 SOUL.md / USER.md / CONTEXT.md |
-| `greeting:take` | 返回 LLM 预生成的互动语 |
+| `task:execute` / `task:cancel` | 从宠物窗口发起或取消 CLI 任务 |
+| `updater:status` | 返回当前更新状态快照 |
+| `contextmenu:show` / `pet:hide` | 原生右键菜单与隐藏宠物 |
+| `agent-event` / `update-status` / `task:output` / `task:complete` | main → renderer 推送事件 |
 
 **后端服务：**
 - `MoodService` — 12 mood 状态机，1 分钟 tick，跨小时边界检测
-- `GreetingService` — LLM 预生成互动语池（8 条/次），低于 3 条时自动补充
+- `TaskExecutor` — spawn claude/codex CLI，逐 chunk 推送任务输出
+- `Updater` — GitHub Releases 更新检查 / 下载 / 安装状态管理
 - `MemoryService` — 对话归档、日级压缩、sealDay
 
 ### Module 6 — Soul Metadata 扩展（Phase 2）
@@ -488,17 +489,19 @@ public struct ContentAccessList has key {
 1. Claude Code hook 安装后，悬浮窗口形象随 CLI 状态实时切换（idle / working / completed）
 2. Codex hook 安装后，agent-turn-complete 反映在悬浮窗口
 3. FloatingBall 渲染乌萨奇 sprite 动画（不是 emoji）
-4. 无 CLI session 时 fallback 到后端 emotion
+4. 宠物窗口保留原生右键菜单，菜单项为 `Settings / Hide Character / Check for Updates / Quit`
 5. 7 个 Web Desktop API 端点可用且有相关测试
-6. Agent 钱包首次启动自动生成，地址显示在 SettingsPanel
+6. Agent 钱包首次启动自动生成，地址显示在 MainWindow / SettingsTab
 
 ### Phase 1.5
 
 7. AgentMonitor 无 hook 检测：未安装 hook 时，通过进程探测 + JSONL 日志解析仍可感知 agent 状态
 8. 多 agent 并行：同时运行多个 CLI（如 Claude Code + Codex）时，事件正确聚合
-9. 12 mood 系统替代 4 emotion
+9. 12 mood 系统替代 4 emotion，旧 greeting / auto-bubble 主反馈链退出宠物窗口
 10. MainWindow + OverlayWindow 双窗口模型
-11. `keytar` 私钥存储
+11. Electron `safeStorage` 私钥加密存储
+12. 宠物窗口支持任务 tooltip、完成/报错/attention toast、更新气泡、文件拖拽任务面板、live output
+13. 自定义 sprite 支持可选 `dragging` 动画；缺失时自动 fallback 到 `idle`
 
 ### Phase 2
 
@@ -524,6 +527,8 @@ public struct ContentAccessList has key {
 
 ### Phase 1 — Complete
 
+以下为初版 shell 落地项；已被 Phase 1.5 替代或清理的旧入口不再在此处重复标记为“当前实现”。
+
 - [x] Desktop-Claw fork + Soulidity branding
 - [x] `desktop/packages/shared/src/types/cli-status.ts`
 - [x] `desktop/apps/desktop/src/main/status-watcher.ts`
@@ -532,13 +537,8 @@ public struct ContentAccessList has key {
 - [x] 默认 persona 资源（乌萨奇 sprite bundle）
 - [x] `SpriteRenderer.tsx` — Canvas sprite sheet 渲染
 - [x] `useCliStatus.ts` — CLI status subscription
-- [x] `useClawEmotion.ts` — Backend emotion polling
-- [x] `FloatingBall` — sprite + CLI status + emotion + bubble + drag + context menu
-- [x] `ChatBubble` — speech bubble with fade animation
-- [x] `SettingsPanel` — agent wallet display + CLI status
-- [x] `backend-client.ts` — HTTP fetch wrapper
 - [x] Agent wallet（Ed25519 keypair, JSON storage）
-- [x] 内嵌 Fastify 后端（emotion, persona, greeting routes）
+- [x] 初版 `FloatingBall` shell（透明窗口、拖拽、CLI 状态驱动）
 - [x] Web Desktop API：profile / catalog / device start / poll / complete
 - [x] Desktop 相关测试文件
 - [x] CI/CD release workflow（`.github/workflows/desktop-release.yml`）
@@ -551,6 +551,7 @@ public struct ContentAccessList has key {
 - [x] ~~QuickInput~~ — 删除
 - [x] ~~ClawProfile~~ — 删除（仅 ChatPanel 使用）
 - [x] ~~useClawSocket~~ — 删除
+- [x] ~~ChatBubble/~~ — 删除（宠物主反馈改为 task-driven tooltip / toast / update bubble）
 - [x] ~~llm-config.ts~~ — 删除（SettingsPanel 不再配置 LLM）
 - [x] ~~gateway/ws.ts~~ — 删除（WebSocket 聊天）
 - [x] ~~gateway/calendar.ts~~ — 删除（日历查询）
@@ -576,12 +577,28 @@ public struct ContentAccessList has key {
 - [x] `desktop/apps/desktop/src/renderer/hooks/useMood.ts` — 替代 `useClawEmotion`
 - [x] `desktop/apps/desktop/src/renderer/hooks/useMoodResolver.ts` — drag 状态前端 override
 - [x] `FloatingBall` — `data-mood` 驱动 12 mood halo 动画
+- [x] `desktop/packages/shared/src/types/pet.ts` — `PetTaskSummary` / `PetAgentEvent` / `PetUpdateStatus`
+- [x] `desktop/apps/desktop/src/main/index.ts` — 保留原生宠物右键菜单，新增 `agent-event` / `update-status` 广播与 task / updater IPC
+- [x] `desktop/apps/desktop/src/preload/index.ts` — 暴露 `hidePet()` / `onAgentEvent()` / `onUpdateStatus()` / task stream API
+- [x] `FloatingBall` — hover task tooltip、完成/报错/attention toast、update bubble、文件拖拽任务面板、live output
 - [x] `MainWindow` — 三 tab（Settings / Library / Agent）替代 SettingsPanel
 - [x] `agent-wallet.ts` — `safeStorage` 加密私钥 + Phase 1 JSON 自动迁移
 - [x] ~~`useClawEmotion.ts`~~ — 删除（被 `useMood.ts` 替代）
 - [x] ~~`SettingsPanel/`~~ — 删除（迁入 `MainWindow/SettingsTab`）
+- [x] ~~启动 greeting / 自动 idle 气泡链路~~ — 删除（宠物反馈改为任务优先）
 - [x] 设备绑定全链路：Prisma `agentAddress` 字段 + Web API start/complete + Web `/desktop/link` 页面 + Desktop SettingsTab Link Account + IPC 代理
 - [x] Fastify → 纯 IPC 迁移：删除 Fastify HTTP 后端，所有 Service 通过 IPC 直调；删除 `gateway/`, `security/request-auth.ts`, `backend-client.ts`；删除 `fastify`, `@fastify/websocket`, `ws` 依赖
+- [x] 声明式 `AGENT_CONFIGS`：3 agent（claude-code / codex / opencode），每个声明 processPatterns + logPaths + filePatterns
+- [x] chokidar 替代 fs.watch：`status-watcher.ts` 使用 chokidar + awaitWriteFinish
+- [x] `electron-store` 替代手写 config：`readConfig/writeConfig` → `store.get/set`
+- [x] System Tray：托盘图标 + Show/Hide/Settings/Check for Updates/Quit 菜单
+- [x] 单实例锁：`requestSingleInstanceLock` + deep link 转发
+- [x] `soulidity://` 自定义协议：macOS `open-url` + Windows `second-instance` 双路径
+- [x] 窗口自适应尺寸：`resize-pet-window` IPC，FloatingBall 根据 sprite 配置动态调整
+- [x] `task-executor.ts`：spawn claude/codex CLI，stream-json 输出 → IPC 逐 chunk 推送
+- [x] `electron-updater` 自动更新：check/download/install IPC + GitHub Releases publish config
+- [x] `cache-manager.ts`：sprite/persona 本地缓存（cache/get/has/prune/stats/list）
+- [x] `SpriteRenderer.tsx` + 默认 persona — `dragging` 动画接线完成；无第七行 persona 自动 fallback 到 `idle`
 
 ### Phase 1.5 — Known Gaps
 

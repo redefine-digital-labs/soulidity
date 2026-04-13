@@ -37,6 +37,7 @@ describe('GET /api/desktop/me', () => {
     const meResponse = {
       profile: {
         accountId: 'account-123',
+        agentAddress: '0xagent123',
         activeSourceType: null,
         activeSourceRef: null,
         preferences: null,
@@ -52,6 +53,7 @@ describe('GET /api/desktop/me', () => {
     const body = await response.json()
 
     expect(body.profile.accountId).toBe('account-123')
+    expect(body.profile.agentAddress).toBe('0xagent123')
   })
 
   it('rejects non-human identities', async () => {
@@ -81,6 +83,7 @@ describe('PUT /api/desktop/me/active-persona', () => {
     const meResponse = {
       profile: {
         accountId: 'account-123',
+        agentAddress: '0xagent123',
         activeSourceType: 'starter',
         activeSourceRef: 'aurora',
         preferences: null,

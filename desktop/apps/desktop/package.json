@@ -38,6 +38,13 @@
         "to": "hooks"
       }
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "fabw222",
+        "repo": "clawnews"
+      }
+    ],
     "mac": {
       "icon": "resources/icon.icns",
       "target": [
@@ -69,7 +76,10 @@
   "dependencies": {
     "@mysten/sui": "^2.15.0",
     "@soulidity/backend": "workspace:*",
-    "@soulidity/shared": "workspace:*"
+    "@soulidity/shared": "workspace:*",
+    "chokidar": "^5.0.0",
+    "electron-store": "8",
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

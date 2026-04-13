@@ -20,6 +20,7 @@ describe('getDesktopMe', () => {
   it('returns profile with null activePersona when no source set', async () => {
     mockedPrisma.desktopProfile.findUnique.mockResolvedValue({
       accountId: 'account-123',
+      agentAddress: '0xagent123',
       activeSourceType: null,
       activeSourceRef: null,
       preferences: null,
@@ -31,6 +32,7 @@ describe('getDesktopMe', () => {
     const result = await getDesktopMe('account-123')
 
     expect(result.profile.accountId).toBe('account-123')
+    expect(result.profile.agentAddress).toBe('0xagent123')
     expect(result.activePersona).toBeNull()
   })
 
@@ -38,6 +40,7 @@ describe('getDesktopMe', () => {
     mockedPrisma.desktopProfile.findUnique.mockResolvedValue(null)
     mockedPrisma.desktopProfile.upsert.mockResolvedValue({
       accountId: 'account-123',
+      agentAddress: null,
       activeSourceType: null,
       activeSourceRef: null,
       preferences: null,
@@ -57,6 +60,7 @@ describe('getDesktopMe', () => {
   it('returns activePersona when source is set', async () => {
     mockedPrisma.desktopProfile.findUnique.mockResolvedValue({
       accountId: 'account-123',
+      agentAddress: '0xagent999',
       activeSourceType: 'starter',
       activeSourceRef: 'aurora',
       preferences: null,
@@ -83,5 +87,6 @@ describe('getDesktopMe', () => {
     const result = await getDesktopMe('account-123')
 
     expect(result.activePersona).toMatchObject({ title: 'Aurora' })
+    expect(result.profile.agentAddress).toBe('0xagent999')
   })
 })

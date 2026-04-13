@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseAgentStatusFile,
+  deduplicateAgentSessions,
   deriveAggregateStatus,
   type AgentStatusFile,
 } from '../../desktop/packages/shared/src/types/cli-status'
@@ -138,28 +139,58 @@ describe('parseAgentStatusFile', () => {
 })
 
 describe('deriveAggregateStatus', () => {
-  it('picks most-recent non-ended session', () => {
+  it('picks the highest-priority active session even when it is older', () => {
     const file: AgentStatusFile = {
       version: 1,
       lastUpdated: 3000,
       sessions: {
-        old: {
-          sessionId: 'old',
+        working: {
+          sessionId: 'working',
           clientType: 'claude-code',
           status: 'working',
           startedAt: 1000,
           lastUpdated: 1500,
         },
-        recent: {
-          sessionId: 'recent',
+        completed: {
+          sessionId: 'completed',
           clientType: 'codex',
-          status: 'needs-attention',
+          status: 'completed',
           startedAt: 2000,
           lastUpdated: 3000,
+          endedAt: 2900,
         },
       },
     }
-    expect(deriveAggregateStatus(file)).toBe('needs-attention')
+
+    expect(deriveAggregateStatus(file, {
+      now: 3000,
+      terminalGraceMs: 3000,
+    })).toBe('working')
+  })
+
+  it('uses lastUpdated as a tiebreaker when priorities match', () => {
+    const file: AgentStatusFile = {
+      version: 1,
+      lastUpdated: 6000,
+      sessions: {
+        olderThinking: {
+          sessionId: 'olderThinking',
+          clientType: 'claude-code',
+          status: 'thinking',
+          startedAt: 1000,
+          lastUpdated: 4000,
+        },
+        newerThinking: {
+          sessionId: 'newerThinking',
+          clientType: 'codex',
+          status: 'thinking',
+          startedAt: 2000,
+          lastUpdated: 5000,
+        },
+      },
+    }
+
+    expect(deriveAggregateStatus(file)).toBe('thinking')
   })
 
   it('ignores ended sessions and picks active', () => {
@@ -185,6 +216,28 @@ describe('deriveAggregateStatus', () => {
       },
     }
     expect(deriveAggregateStatus(file)).toBe('thinking')
+  })
+
+  it('keeps a recently-ended terminal session visible during the grace window', () => {
+    const file: AgentStatusFile = {
+      version: 1,
+      lastUpdated: 5000,
+      sessions: {
+        completed: {
+          sessionId: 'completed',
+          clientType: 'codex',
+          status: 'completed',
+          startedAt: 1000,
+          lastUpdated: 4800,
+          endedAt: 4800,
+        },
+      },
+    }
+
+    expect(deriveAggregateStatus(file, {
+      now: 5000,
+      terminalGraceMs: 3000,
+    })).toBe('completed')
   })
 
   it('returns idle when all sessions ended', () => {
@@ -220,5 +273,38 @@ describe('deriveAggregateStatus', () => {
       sessions: {},
     }
     expect(deriveAggregateStatus(file)).toBe('idle')
+  })
+})
+
+describe('deduplicateAgentSessions', () => {
+  it('drops monitor sessions when the same clientType already has a hook session', () => {
+    const deduped = deduplicateAgentSessions({
+      'claude-hook': {
+        sessionId: 'claude-hook',
+        clientType: 'claude-code',
+        source: 'hook',
+        status: 'working',
+        startedAt: 1000,
+        lastUpdated: 5000,
+      },
+      'claude-monitor': {
+        sessionId: 'claude-monitor',
+        clientType: 'claude-code',
+        source: 'monitor',
+        status: 'working',
+        startedAt: 1000,
+        lastUpdated: 4000,
+      },
+      'codex-monitor': {
+        sessionId: 'codex-monitor',
+        clientType: 'codex',
+        source: 'monitor',
+        status: 'thinking',
+        startedAt: 2000,
+        lastUpdated: 4500,
+      },
+    })
+
+    expect(Object.keys(deduped)).toEqual(['claude-hook', 'codex-monitor'])
   })
 })
