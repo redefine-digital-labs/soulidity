@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedPrisma = vi.hoisted(() => ({
+  account: {
+    findUnique: vi.fn(),
+  },
   desktopProfile: {
     findUnique: vi.fn(),
     upsert: vi.fn(),
@@ -18,6 +21,9 @@ describe('getDesktopMe', () => {
   beforeEach(() => vi.resetAllMocks())
 
   it('returns profile with null activePersona when no source set', async () => {
+    mockedPrisma.account.findUnique.mockResolvedValue({
+      members: [{ walletBindings: [{ address: '0xwallet123' }] }],
+    })
     mockedPrisma.desktopProfile.findUnique.mockResolvedValue({
       accountId: 'account-123',
       agentAddress: '0xagent123',
@@ -33,10 +39,14 @@ describe('getDesktopMe', () => {
 
     expect(result.profile.accountId).toBe('account-123')
     expect(result.profile.agentAddress).toBe('0xagent123')
+    expect(result.profile.primarySuiAddress).toBe('0xwallet123')
     expect(result.activePersona).toBeNull()
   })
 
   it('falls back to upsert when profile does not exist', async () => {
+    mockedPrisma.account.findUnique.mockResolvedValue({
+      members: [{ walletBindings: [] }],
+    })
     mockedPrisma.desktopProfile.findUnique.mockResolvedValue(null)
     mockedPrisma.desktopProfile.upsert.mockResolvedValue({
       accountId: 'account-123',
@@ -54,10 +64,14 @@ describe('getDesktopMe', () => {
     expect(mockedPrisma.desktopProfile.findUnique).toHaveBeenCalledOnce()
     expect(mockedPrisma.desktopProfile.upsert).toHaveBeenCalledOnce()
     expect(result.profile.accountId).toBe('account-123')
+    expect(result.profile.primarySuiAddress).toBeNull()
     expect(result.activePersona).toBeNull()
   })
 
   it('returns activePersona when source is set', async () => {
+    mockedPrisma.account.findUnique.mockResolvedValue({
+      members: [{ walletBindings: [{ address: '0xprimary999' }] }],
+    })
     mockedPrisma.desktopProfile.findUnique.mockResolvedValue({
       accountId: 'account-123',
       agentAddress: '0xagent999',
@@ -88,5 +102,6 @@ describe('getDesktopMe', () => {
 
     expect(result.activePersona).toMatchObject({ title: 'Aurora' })
     expect(result.profile.agentAddress).toBe('0xagent999')
+    expect(result.profile.primarySuiAddress).toBe('0xprimary999')
   })
 })

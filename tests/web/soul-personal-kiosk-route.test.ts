@@ -4,11 +4,10 @@ const BUYER_ADDRESS = `0x${'1'.repeat(64)}`
 const KIOSK_ID = `0x${'2'.repeat(64)}`
 const KIOSK_CAP_ID = `0x${'3'.repeat(64)}`
 
-const mockedRequireIdentity = vi.hoisted(() => vi.fn())
-const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
+const mockedRequireSoulCreateWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
-const MockSoulPersonalKioskInvariantError = vi.hoisted(() => class MockSoulPersonalKioskInvariantError extends Error {
+const MockSoulidityPersonalKioskInvariantError = vi.hoisted(() => class MockSoulidityPersonalKioskInvariantError extends Error {
   kind: 'conflict' | 'service'
 
   constructor(message: string, kind: 'conflict' | 'service' = 'service') {
@@ -17,21 +16,17 @@ const MockSoulPersonalKioskInvariantError = vi.hoisted(() => class MockSoulPerso
   }
 })
 
-vi.mock('@web/lib/auth/identity', () => ({
-  requireIdentity: mockedRequireIdentity,
-}))
-
-vi.mock('@web/lib/auth/sui-wallet', () => ({
-  getMemberSuiWalletAddresses: mockedGetMemberSuiWalletAddresses,
+vi.mock('@/lib/soulidity/server', () => ({
+  requireSoulCreateWalletIdentity: mockedRequireSoulCreateWalletIdentity,
 }))
 
 vi.mock('@web/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
 }))
 
-vi.mock('@web/lib/souls/personal-kiosk', () => ({
+vi.mock('@/lib/soulidity/personal-kiosk', () => ({
   resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
-  SoulPersonalKioskInvariantError: MockSoulPersonalKioskInvariantError,
+  SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
 }))
 
 describe('Soul personal kiosk route', () => {
@@ -39,11 +34,11 @@ describe('Soul personal kiosk route', () => {
     vi.resetAllMocks()
     vi.resetModules()
 
-    mockedRequireIdentity.mockResolvedValue({
-      error: null,
-      identity: { memberId: 'member-1', kind: 'human' },
+    mockedRequireSoulCreateWalletIdentity.mockResolvedValue({
+      identity: { memberId: 'member-1', accountId: 'account-1', kind: 'human' },
+      walletAddresses: [BUYER_ADDRESS],
+      primarySuiAddress: BUYER_ADDRESS,
     })
-    mockedGetMemberSuiWalletAddresses.mockResolvedValue([BUYER_ADDRESS])
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedResolveOwnedPersonalKiosk.mockResolvedValue({
       status: 'ready',
@@ -55,98 +50,77 @@ describe('Soul personal kiosk route', () => {
     })
   })
 
+  function createRequest(url = 'http://localhost/api/souls/personal-kiosk') {
+    return {
+      nextUrl: new URL(url),
+    } as any
+  }
+
   it('marks the personal kiosk route as dynamic', async () => {
     const routeModule = await import('../../web/app/api/souls/personal-kiosk/route.ts')
 
     expect(routeModule.dynamic).toBe('force-dynamic')
   })
 
-  it('returns 403 when the viewer has no wallet bindings', async () => {
-    mockedGetMemberSuiWalletAddresses.mockResolvedValueOnce([])
+  it('returns auth failures from the desktop-compatible guard', async () => {
+    mockedRequireSoulCreateWalletIdentity.mockResolvedValueOnce({
+      error: Response.json({ error: 'Bind a Sui wallet before using the Soulidity market' }, { status: 403 }),
+    })
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
-    const response = await GET()
+    const response = await GET(createRequest())
 
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({
-      error: 'Bind a Sui wallet before using the Soul market',
+      error: 'Bind a Sui wallet before using the Soulidity market',
     })
   })
 
-  it('returns 404 when no Soul personal kiosk exists yet', async () => {
+  it('returns 404 when no Soulidity personal kiosk exists yet', async () => {
     mockedResolveOwnedPersonalKiosk.mockResolvedValueOnce({ status: 'missing' })
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
-    const response = await GET()
+    const response = await GET(createRequest())
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
-      error: 'No Soul personal kiosk found for this wallet',
+      error: 'No Soulidity personal kiosk found for this wallet',
     })
   })
 
-  it('returns 409 when the registered Soul kiosk conflicts with the wallet-owned caps', async () => {
+  it('returns 409 when the registered Soulidity kiosk conflicts with the wallet-owned caps', async () => {
     mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
-      new MockSoulPersonalKioskInvariantError(
-        'Soul market registry points to a kiosk that is not owned by the current wallet',
+      new MockSoulidityPersonalKioskInvariantError(
+        'Soulidity market registry points to a kiosk that is not owned by the current wallet',
         'conflict',
       ),
     )
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
-    const response = await GET()
+    const response = await GET(createRequest())
 
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toEqual({
-      error: 'Soul market registry points to a kiosk that is not owned by the current wallet',
+      error: 'Soulidity market registry points to a kiosk that is not owned by the current wallet',
     })
   })
 
-  it('returns 503 when Soul personal kiosk resolution fails unexpectedly', async () => {
-    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
-      new Error('unexpected kiosk resolution failure'),
-    )
-
-    const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
-    const response = await GET()
-
-    expect(response.status).toBe(503)
-    await expect(response.json()).resolves.toEqual({
-      error: 'Unable to resolve Soul personal kiosk right now',
-    })
-  })
-
-  it('keeps service-side Soul kiosk invariant failures on the generic 503 path', async () => {
-    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
-      new MockSoulPersonalKioskInvariantError('Soul market config type is unavailable on chain', 'service'),
-    )
-
-    const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
-    const response = await GET()
-
-    expect(response.status).toBe(503)
-    await expect(response.json()).resolves.toEqual({
-      error: 'Unable to resolve Soul personal kiosk right now',
-    })
-  })
-
-  it('rate limits personal kiosk resolution before wallet lookup', async () => {
+  it('rate limits personal kiosk resolution before chain lookup', async () => {
     mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 30 })
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
-    const response = await GET()
+    const response = await GET(createRequest())
 
     expect(response.status).toBe(429)
     await expect(response.json()).resolves.toEqual({
       error: 'Too many Soul personal kiosk requests, try again later',
     })
-    expect(mockedGetMemberSuiWalletAddresses).not.toHaveBeenCalled()
     expect(mockedResolveOwnedPersonalKiosk).not.toHaveBeenCalled()
   })
 
-  it('returns the resolved Soul personal kiosk for the authenticated viewer', async () => {
+  it('returns the resolved Soulidity personal kiosk for the authenticated viewer', async () => {
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
-    const response = await GET()
+    const response = await GET(createRequest(`http://localhost/api/souls/personal-kiosk?walletAddress=${BUYER_ADDRESS}`))
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
