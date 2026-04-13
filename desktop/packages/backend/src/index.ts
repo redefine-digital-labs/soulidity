@@ -1,6 +1,4 @@
 import Fastify from 'fastify'
-import { setupWebSocket, flushPendingUserTurns } from './gateway/ws'
-import { setupCalendarRoutes } from './gateway/calendar'
 import { setupPersonaRoutes } from './gateway/persona'
 import { setupEmotionRoutes } from './gateway/emotion'
 import { memoryService } from './memory/memory-service'
@@ -70,12 +68,6 @@ export async function startBackend(options: {
     return { status: 'ok', timestamp: new Date().toISOString() }
   })
 
-  // 注册 WebSocket 路由（必须在 listen 之前）
-  await setupWebSocket(app, accessConfig)
-
-  // 注册日历查询路由（B.8）
-  await setupCalendarRoutes(app)
-
   // 注册人格信息路由
   await setupPersonaRoutes(app)
 
@@ -84,11 +76,9 @@ export async function startBackend(options: {
 
   await app.listen({ port, host: '127.0.0.1' })
   console.log(`[backend] Fastify listening on http://127.0.0.1:${port}`)
-  console.log(`[backend] WebSocket ready on ws://127.0.0.1:${port}/ws`)
   console.log(`[backend] allowed renderer origins: ${allowedOrigins.join(', ') || '(originless only)'}`)
 
   // BOOT 行为：启动后异步执行（不阻塞服务就绪）
-  // boot 完成后异步初始化互动语池（LLM 预生成）
   emotionService.start()
   void memoryService.boot()
     .then(() => greetingService.init())
@@ -102,7 +92,6 @@ export async function startBackend(options: {
       console.log('[backend] server closed')
     },
     sealDay: async () => {
-      flushPendingUserTurns()
       await memoryService.sealDay()
     }
   }

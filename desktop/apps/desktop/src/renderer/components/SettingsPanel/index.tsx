@@ -1,100 +1,100 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useCliStatus } from '../../hooks/useCliStatus'
 import './styles.css'
 
-interface LLMConfig {
-  apiKey: string
-  baseURL: string
-  model: string
-}
-
-const defaultConfig: LLMConfig = {
-  apiKey: '',
-  baseURL: 'https://api.openai.com/v1',
-  model: 'gpt-4o'
+interface AgentKeypairInfo {
+  address: string
+  publicKey: string
+  createdAt: number
 }
 
 export function SettingsPanel(): React.JSX.Element {
-  const [config, setConfig] = useState<LLMConfig>(defaultConfig)
-  const [saved, setSaved] = useState(false)
-  const [showKey, setShowKey] = useState(false)
+  const [keypair, setKeypair] = useState<AgentKeypairInfo | null>(null)
+  const [copied, setCopied] = useState(false)
+  const { status: cliStatus } = useCliStatus()
 
   useEffect(() => {
-    window.electronAPI.getConfig().then((c) => {
-      if (c?.llm) setConfig({ ...defaultConfig, ...c.llm })
+    window.electronAPI.loadAgentKeypair().then((kp) => {
+      if (kp) setKeypair(kp as AgentKeypairInfo)
     })
   }, [])
 
-  const handleSave = useCallback(async () => {
-    await window.electronAPI.setConfig({ llm: config })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }, [config])
+  const handleCopyAddress = useCallback(async () => {
+    if (!keypair?.address) return
+    await navigator.clipboard.writeText(keypair.address)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [keypair])
 
   const handleClose = useCallback(() => {
     window.electronAPI.closeWindow()
   }, [])
 
+  const truncateAddress = (addr: string): string => {
+    if (addr.length <= 16) return addr
+    return `${addr.slice(0, 10)}...${addr.slice(-6)}`
+  }
+
   return (
     <div className="settings-panel">
       <div className="settings-panel__header">
-        <span className="settings-panel__title">设置</span>
-        <button className="settings-panel__close" onClick={handleClose} title="关闭">
+        <span className="settings-panel__title">Settings</span>
+        <button className="settings-panel__close" onClick={handleClose} title="Close">
           ×
         </button>
       </div>
 
       <div className="settings-panel__body">
         <section className="settings-section">
-          <h3 className="settings-section__title">LLM 配置</h3>
+          <h3 className="settings-section__title">Agent Wallet</h3>
 
-          <label className="settings-field">
-            <span className="settings-field__label">API Key</span>
+          <div className="settings-field">
+            <span className="settings-field__label">Sui Address</span>
             <div className="settings-field__input-group">
               <input
-                type={showKey ? 'text' : 'password'}
+                type="text"
                 className="settings-field__input"
-                value={config.apiKey}
-                onChange={(e) => setConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
-                placeholder="sk-..."
+                value={keypair ? truncateAddress(keypair.address) : 'Generating...'}
+                readOnly
+                title={keypair?.address}
               />
               <button
                 className="settings-field__toggle"
-                onClick={() => setShowKey((v) => !v)}
-                title={showKey ? '隐藏' : '显示'}
+                onClick={handleCopyAddress}
+                title={copied ? 'Copied!' : 'Copy address'}
+                disabled={!keypair}
               >
-                {showKey ? '🙈' : '👁'}
+                {copied ? '\u2713' : '\u2398'}
               </button>
             </div>
-          </label>
+          </div>
 
-          <label className="settings-field">
-            <span className="settings-field__label">Base URL</span>
-            <input
-              type="url"
-              className="settings-field__input"
-              value={config.baseURL}
-              onChange={(e) => setConfig((prev) => ({ ...prev, baseURL: e.target.value }))}
-              placeholder="https://api.openai.com/v1"
-            />
-          </label>
+          {keypair && (
+            <div className="settings-field">
+              <span className="settings-field__label">Created</span>
+              <input
+                type="text"
+                className="settings-field__input"
+                value={new Date(keypair.createdAt).toLocaleDateString()}
+                readOnly
+              />
+            </div>
+          )}
+        </section>
 
-          <label className="settings-field">
-            <span className="settings-field__label">Model</span>
+        <section className="settings-section">
+          <h3 className="settings-section__title">Agent Monitor</h3>
+
+          <div className="settings-field">
+            <span className="settings-field__label">CLI Status</span>
             <input
               type="text"
               className="settings-field__input"
-              value={config.model}
-              onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
-              placeholder="gpt-4o"
+              value={cliStatus}
+              readOnly
             />
-          </label>
+          </div>
         </section>
-      </div>
-
-      <div className="settings-panel__footer">
-        <button className="settings-panel__save" onClick={handleSave}>
-          {saved ? '✓ 已保存' : '保存'}
-        </button>
       </div>
     </div>
   )

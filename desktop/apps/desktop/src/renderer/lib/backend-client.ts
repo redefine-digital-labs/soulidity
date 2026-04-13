@@ -1,6 +1,5 @@
 export interface BackendRuntimeConfig {
   httpBaseURL: string
-  wsBaseURL: string
   authToken: string
 }
 
@@ -28,11 +27,4 @@ export async function backendFetch(path: string, init: RequestInit = {}): Promis
     ...init,
     headers
   })
-}
-
-export async function getBackendWebSocketURL(path = '/ws'): Promise<string> {
-  const runtime = await getRuntime()
-  const url = new URL(buildURL(runtime.wsBaseURL, path))
-  url.searchParams.set('token', runtime.authToken)
-  return url.toString()
 }

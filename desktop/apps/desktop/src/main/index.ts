@@ -1,14 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, screen } from 'electron'
 import { randomBytes } from 'crypto'
-import { join, basename, extname, dirname } from 'path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'fs'
-import { startBackend, copyInitialTemplates, addAllowedRoot } from '@soulidity/backend'
+import { join } from 'path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { startBackend, copyInitialTemplates } from '@soulidity/backend'
 import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus } from './status-watcher'
 import { generateAgentKeypair, loadAgentKeypair, exportAgentAddress } from './agent-wallet'
-import { loadLlmConfig, saveLlmConfig } from './llm-config'
 
 let ballWin: BrowserWindow | null = null
-let panelWin: BrowserWindow | null = null
 let settingsWin: BrowserWindow | null = null
 let backendHandle: { close: () => Promise<void>; sealDay: () => Promise<void> } | null = null
 const BACKEND_PORT = 3721
@@ -100,14 +98,12 @@ function createBallWindow(): void {
   // 透明区域点击穿透，forward: true 保留 mousemove 以触发 mouseenter/leave
   ballWin.setIgnoreMouseEvents(true, { forward: true })
 
-  // ── 定时器补偿：系统拖拽(drag-and-drop)期间 forward 不转发 drag 事件，
-  //    需要 polling 检测光标是否在球图标区域上方，临时关闭穿透以接收 drop ──
-  let pollIgnoring = true // 当前 main 认为的穿透状态
+  // ── 定时器补偿：系统拖拽期间 forward 不转发 drag 事件，
+  //    需要 polling 检测光标是否在球图标区域上方，临时关闭穿透以接收事件 ──
   const POLL_INTERVAL = 80
   const BALL_SIZE = PET_SIZE
   const pollTimer = setInterval(() => {
     if (!ballWin || ballWin.isDestroyed()) return
-    if (quickInputVisible) return
     const cursor = screen.getCursorScreenPoint()
     const bounds = ballWin.getBounds()
     // 球图标位于窗口底部居中
@@ -116,11 +112,9 @@ function createBallWindow(): void {
     const dx = cursor.x - ballCenterX
     const dy = cursor.y - ballCenterY
     const inBall = dx * dx + dy * dy <= (BALL_SIZE / 2 + 4) * (BALL_SIZE / 2 + 4)
-    if (inBall && pollIgnoring) {
-      pollIgnoring = false
+    if (inBall) {
       ballWin.setIgnoreMouseEvents(false)
-    } else if (!inBall && !pollIgnoring) {
-      pollIgnoring = true
+    } else {
       ballWin.setIgnoreMouseEvents(true, { forward: true })
     }
   }, POLL_INTERVAL)
@@ -176,265 +170,20 @@ ipcMain.on('set-ignore-mouse-events', (_event, ignore: boolean) => {
 // ── IPC: 调试 ──────────────────────────────────────────────
 ipcMain.handle('ipc:ping', () => {
   console.log('[main] received ping from renderer')
-  return 'pong from main 🐾'
-})
-
-// ── IPC: 文件拖拽入口 ─────────────────────────────────────
-
-interface FileAttachmentMain {
-  path: string
-  name: string
-  ext: string
-  size: number
-}
-
-ipcMain.handle('drop:files', (_event, paths: string[]): FileAttachmentMain[] => {
-  const results: FileAttachmentMain[] = []
-  for (const p of paths) {
-    try {
-      const stat = statSync(p)
-      if (stat.isFile()) {
-        results.push({
-          path: p,
-          name: basename(p),
-          ext: extname(p).toLowerCase(),
-          size: stat.size
-        })
-        // 将拖入文件的父目录注册为 agent 可访问路径
-        addAllowedRoot(dirname(p))
-      }
-    } catch {
-      console.warn(`[main] drop:files — cannot stat: ${p}`)
-    }
-  }
-  return results
-})
-
-/** 待 ChatPanel 拉取的文件附件（拉模型避免 race condition） */
-let pendingFilesForPanel: FileAttachmentMain[] | null = null
-
-ipcMain.on('panel:open-with-files', (_event, files: FileAttachmentMain[]) => {
-  pendingFilesForPanel = files
-  createPanelWindow()
-  // 如果面板已存在（不是新建），直接 push 过去
-  if (panelWin && !panelWin.webContents.isLoading()) {
-    panelWin.webContents.send('receive-files', files)
-    pendingFilesForPanel = null
-  }
-  // 新窗口场景：ChatPanel 挂载后会主动调 getPendingFiles 拉取
-})
-
-ipcMain.handle('panel:get-pending-files', () => {
-  const files = pendingFilesForPanel
-  pendingFilesForPanel = null
-  return files
+  return 'pong from main'
 })
 
 ipcMain.handle('backend:get-runtime-config', () => {
   return {
     httpBaseURL: `http://127.0.0.1:${BACKEND_PORT}`,
-    wsBaseURL: `ws://127.0.0.1:${BACKEND_PORT}`,
     authToken: BACKEND_AUTH_TOKEN
   }
 })
 
-// ── IPC: QuickInput 条形输入框 ─────────────────────────────
-let quickInputVisible = false
-let savedBallBounds: Electron.Rectangle | null = null
-let qiDirection: 'left' | 'right' = 'left'
-const EXPANDED_W = 420
-const BALL_EDGE_OFFSET = 40 // 球中心距最近窗口边缘的距离
-
-ipcMain.handle('quickinput:toggle', () => {
-  if (!ballWin) return { visible: false, direction: 'left' }
-
-  if (quickInputVisible) {
-    // 收起：恢复原始窗口尺寸与位置
-    if (savedBallBounds) {
-      ballWin.setBounds(savedBallBounds)
-      savedBallBounds = null
-    }
-    quickInputVisible = false
-    ballWin.setIgnoreMouseEvents(true, { forward: true })
-    return { visible: false, direction: 'left' }
-  }
-
-  // 展开：计算方向并扩大窗口
-  const bounds = ballWin.getBounds()
-  savedBallBounds = { ...bounds }
-
-  const ballScreenCenterX = bounds.x + Math.round(BALL_WIN_W / 2)
-  const display = screen.getDisplayNearestPoint({
-    x: ballScreenCenterX,
-    y: bounds.y + Math.round(bounds.height / 2)
-  })
-  const screenCenterX = display.workArea.x + Math.round(display.workArea.width / 2)
-  const direction: 'left' | 'right' = ballScreenCenterX > screenCenterX ? 'left' : 'right'
-
-  let newX: number
-  if (direction === 'left') {
-    // 球在右侧，输入框向左展开
-    newX = ballScreenCenterX - (EXPANDED_W - BALL_EDGE_OFFSET)
-  } else {
-    // 球在左侧，输入框向右展开
-    newX = ballScreenCenterX - BALL_EDGE_OFFSET
-  }
-  const minX = display.workArea.x
-  const maxX = display.workArea.x + display.workArea.width - EXPANDED_W
-  newX = Math.max(minX, Math.min(maxX, newX))
-
-  ballWin.setBounds({
-    x: Math.round(newX),
-    y: bounds.y,
-    width: EXPANDED_W,
-    height: BALL_WIN_H
-  })
-
-  quickInputVisible = true
-  ballWin.setIgnoreMouseEvents(false)
-  qiDirection = direction
-  return { visible: true, direction }
-})
-
-// 拖拽结束后，若 QuickInput 处于展开态，根据新位置重算方向
-ipcMain.handle('quickinput:reposition', () => {
-  if (!ballWin || !quickInputVisible) return null
-
-  const bounds = ballWin.getBounds()
-
-  // 当前球在窗口内的屏幕中心 X（取决于当前 direction）
-  // direction=left → 球列在窗口右侧; direction=right → 球列在窗口左侧
-  // 为简化，直接用 savedBallBounds 的球中心 + 拖拽偏移量
-  // 拖拽移动的是整个窗口，球列宽 80px，球居中
-  const oldDir = savedBallBounds
-    ? (savedBallBounds.x < bounds.x - 100 ? 'right' : 'left')
-    : 'left'
-
-  // 从当前 bounds 反推球的屏幕中心 X
-  // direction=left: 球列在右侧 → ballCenterX = bounds.x + bounds.width - 40
-  // direction=right: 球列在左侧 → ballCenterX = bounds.x + 40
-  // 但拖拽是整体移动，我们直接用窗口中心来判断新方向
-  const windowCenterX = bounds.x + Math.round(bounds.width / 2)
-  const display = screen.getDisplayNearestPoint({
-    x: windowCenterX,
-    y: bounds.y + Math.round(bounds.height / 2)
-  })
-  const screenCenterX = display.workArea.x + Math.round(display.workArea.width / 2)
-  const newDirection: 'left' | 'right' = windowCenterX > screenCenterX ? 'left' : 'right'
-
-  // 从当前 bounds 推算球的实际屏幕位置，得到收起后的 savedBallBounds
-  // 当前展开 direction 决定球列在哪侧
-  const currentDirection = qiDirection
-  let ballColumnX: number
-  if (currentDirection === 'left') {
-    // 球列在窗口右侧
-    ballColumnX = bounds.x + bounds.width - 80
-  } else {
-    // 球列在窗口左侧
-    ballColumnX = bounds.x
-  }
-  // 球中心在 ballColumnX + 40，savedBallBounds.x = ballCenterX - BALL_WIN_W/2
-  const ballCenterX = ballColumnX + 40
-  savedBallBounds = {
-    x: ballCenterX - Math.round(BALL_WIN_W / 2),
-    y: bounds.y,
-    width: BALL_WIN_W,
-    height: BALL_WIN_H
-  }
-
-  // 如果方向变了，需要重新布局窗口
-  if (newDirection !== currentDirection) {
-    let newX: number
-    if (newDirection === 'left') {
-      newX = ballCenterX - (EXPANDED_W - BALL_EDGE_OFFSET)
-    } else {
-      newX = ballCenterX - BALL_EDGE_OFFSET
-    }
-    const minX = display.workArea.x
-    const maxX = display.workArea.x + display.workArea.width - EXPANDED_W
-    newX = Math.max(minX, Math.min(maxX, newX))
-    ballWin.setBounds({
-      x: Math.round(newX),
-      y: bounds.y,
-      width: EXPANDED_W,
-      height: BALL_WIN_H
-    })
-    qiDirection = newDirection
-  }
-
-  return { direction: newDirection }
-})
-
 // ── IPC: 右键上下文菜单 ───────────────────────────────────
 
-const PANEL_W = 400
-const PANEL_H = 600
 const SETTINGS_W = 360
 const SETTINGS_H = 420
-
-function createPanelWindow(): void {
-  if (panelWin) {
-    panelWin.focus()
-    return
-  }
-
-  // 定位面板在球附近（左上方）
-  let x = 100
-  let y = 100
-  if (ballWin) {
-    const ballBounds = ballWin.getBounds()
-    const display = screen.getDisplayNearestPoint({
-      x: ballBounds.x + Math.round(ballBounds.width / 2),
-      y: ballBounds.y + Math.round(ballBounds.height / 2)
-    })
-    const workArea = display.workArea
-
-    // 面板出现在球的左侧上方，若空间不够则调整
-    x = ballBounds.x - PANEL_W - 16
-    y = ballBounds.y + ballBounds.height - PANEL_H
-
-    // 防止超出屏幕
-    if (x < workArea.x) x = ballBounds.x + ballBounds.width + 16
-    if (y < workArea.y) y = workArea.y
-    if (x + PANEL_W > workArea.x + workArea.width) x = workArea.x + workArea.width - PANEL_W
-    if (y + PANEL_H > workArea.y + workArea.height) y = workArea.y + workArea.height - PANEL_H
-  }
-
-  panelWin = new BrowserWindow({
-    width: PANEL_W,
-    height: PANEL_H,
-    x,
-    y,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: false,
-    resizable: true,
-    minWidth: 320,
-    minHeight: 400,
-    hasShadow: true,
-    show: false,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
-    }
-  })
-
-  if (process.platform === 'darwin') {
-    panelWin.setAlwaysOnTop(true, 'floating')
-  } else {
-    panelWin.setAlwaysOnTop(true)
-  }
-  panelWin.on('ready-to-show', () => panelWin?.show())
-  panelWin.on('closed', () => { panelWin = null })
-
-  const panelParam = '?view=panel'
-  if (process.env['NODE_ENV'] === 'development' && process.env['ELECTRON_RENDERER_URL']) {
-    panelWin.loadURL(process.env['ELECTRON_RENDERER_URL'] + panelParam)
-  } else {
-    panelWin.loadFile(join(__dirname, '../renderer/index.html'), { search: 'view=panel' })
-  }
-}
 
 function createSettingsWindow(): void {
   if (settingsWin) {
@@ -487,20 +236,14 @@ ipcMain.on('contextmenu:show', () => {
 
   const menu = Menu.buildFromTemplate([
     {
-      label: '打开面板',
-      click: () => {
-        createPanelWindow()
-      }
-    },
-    {
-      label: '设置',
+      label: 'Settings',
       click: () => {
         createSettingsWindow()
       }
     },
     { type: 'separator' },
     {
-      label: '退出 Soulidity',
+      label: 'Quit Soulidity',
       click: () => {
         app.quit()
       }
@@ -547,16 +290,11 @@ ipcMain.handle('config:set', (_event, config: Record<string, unknown>) => {
   writeConfig({ ...existing, ...config })
 })
 
-// ── IPC: Soulidity — status watcher, agent wallet, LLM config ─────
+// ── IPC: Soulidity — status watcher, agent wallet ─────────
 ipcMain.handle('get-current-agent-status', () => getCurrentAgentStatus())
 ipcMain.handle('generate-agent-keypair', () => generateAgentKeypair())
 ipcMain.handle('load-agent-keypair', () => loadAgentKeypair())
 ipcMain.handle('export-agent-address', () => exportAgentAddress())
-ipcMain.handle('load-llm-config', () => loadLlmConfig())
-ipcMain.handle('save-llm-config', (_e, config) => saveLlmConfig(config))
-
-// ── 启动内嵌后端 ───────────────────────────────────────────
-// 后端在 app.whenReady() 内启动，确保顺序可控
 
 // ── App 生命周期 ───────────────────────────────────────────
 app.whenReady().then(async () => {
@@ -578,8 +316,8 @@ app.whenReady().then(async () => {
   } catch (err: unknown) {
     console.error('[main] Failed to start backend:', err)
     dialog.showErrorBox(
-      '启动失败',
-      `后端服务无法启动（端口 ${BACKEND_PORT} 可能已被占用）。\n\n${err instanceof Error ? err.message : String(err)}`
+      'Startup Failed',
+      `Backend service could not start (port ${BACKEND_PORT} may be in use).\n\n${err instanceof Error ? err.message : String(err)}`
     )
     app.quit()
     return
@@ -598,19 +336,16 @@ app.whenReady().then(async () => {
 
 let isQuitting = false
 app.on('before-quit', (event) => {
-  if (isQuitting) return           // 第二次进入：不拦截，让 Electron 正常退出
+  if (isQuitting) return
   stopStatusWatcher()
-  if (!backendHandle) return       // 后端未启动：直接退出
+  if (!backendHandle) return
   event.preventDefault()
   isQuitting = true
 
-  // 先关闭所有窗口（断开 WS），再做后端清理
   for (const win of BrowserWindow.getAllWindows()) {
     win.destroy()
   }
 
-  // 关机归档：sealDay → close → exit，设 60s 超时兜底
-  // sealDay 内部：flush(15s) + finalize(15s) + internalize(15s) + maintain + capsule ≈ 50s 上限
   const exitTimer = setTimeout(() => {
     console.warn('[main] shutdown timeout, force exit')
     app.exit(0)

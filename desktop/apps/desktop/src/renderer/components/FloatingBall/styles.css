@@ -27,7 +27,7 @@ body,
   padding-bottom: 8px;
 }
 
-/* ── 气泡区域 ─────────────────────────────── */
+/* ── 气泡区域 ─────��───────────────────────── */
 .bubble-area {
   flex: 1;
   display: flex;
@@ -39,22 +39,7 @@ body,
   pointer-events: none;
 }
 
-/* ── 底部区域（球 + QuickInput）────────────── */
-
-.ball-status {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
-  text-align: center;
-  padding: 2px 8px;
-  white-space: nowrap;
-  pointer-events: none;
-  animation: ball-status-in 0.2s ease;
-}
-
-@keyframes ball-status-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* ── 底部区域 ────────────────────────────── */
 
 .bottom-section {
   display: flex;
@@ -62,26 +47,6 @@ body,
   align-items: flex-end;
   justify-content: center;
   flex-shrink: 0;
-}
-
-/* ── 展开态 ──────────────────────────────── */
-.ball-root--expanded .bubble-area {
-  align-items: stretch;
-  padding: 8px 12px;
-  overflow-y: auto;
-  pointer-events: auto;
-}
-
-.ball-root--expanded .bottom-section {
-  width: 100%;
-}
-
-.qi-area {
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  min-width: 0;
-  padding-bottom: 4px;
 }
 
 /* ── 悬浮球 ──────────────────────────────── */
@@ -107,31 +72,15 @@ body,
   transform: scale(0.92);
 }
 
-.ball__icon {
-  pointer-events: none;
-}
-
 .ball canvas {
   display: block;
   pointer-events: none;
 }
 
-/* ── 文件拖入高亮 ────────────────────────── */
-.ball--drop-active {
-  transform: scale(1.2);
-  filter: drop-shadow(0 0 12px rgba(100, 180, 255, 0.8));
-  animation: drop-pulse 1s ease-in-out infinite;
-}
-
-@keyframes drop-pulse {
-  0%, 100% { filter: drop-shadow(0 0 12px rgba(100, 180, 255, 0.8)); }
-  50% { filter: drop-shadow(0 0 20px rgba(100, 180, 255, 1)); }
-}
-
 /* ══════════════════════════════════════════════
    情绪层样式映射 — 通过 data-emotion 属性驱动
    纯 scale 呼吸动画，无背景色/光晕（角色自带透明）
-   ══════════════════════════════════════════════ */
+   ════════���══════════��══════════════════════════ */
 
 .ball[data-emotion] {
   animation-fill-mode: both;
@@ -180,9 +129,4 @@ body,
 
 .ball[data-emotion]:active {
   animation-play-state: paused;
-}
-
-/* ── drop-active 高于情绪层 ─────────────── */
-.ball--drop-active[data-emotion] {
-  animation: drop-pulse 1s ease-in-out infinite;
 }
