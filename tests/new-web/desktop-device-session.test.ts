@@ -203,6 +203,7 @@ describe('completeDesktopDeviceSession', () => {
     const session = {
       id: 'session-1',
       accountId: null,
+      agentAddress: '0xagent123',
       deviceCode: 'device-abc',
       userCode: 'ABCD-EFGH',
       expiresAt: new Date('2026-04-12T10:10:00Z'),

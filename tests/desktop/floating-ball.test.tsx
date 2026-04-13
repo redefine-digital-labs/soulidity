@@ -66,8 +66,21 @@ describe('FloatingBall', () => {
       dragEnd: vi.fn(),
       setIgnoreMouseEvents: vi.fn(),
       showContextMenu: vi.fn(),
+      resizePetWindow: vi.fn(),
       moodInteract: vi.fn().mockResolvedValue(undefined),
-      takeGreeting: vi.fn().mockResolvedValue({ greeting: '你好' }),
+      moodDragStart: vi.fn().mockResolvedValue(undefined),
+      moodDragEnd: vi.fn().mockResolvedValue(undefined),
+      getCurrentAgentStatus: vi.fn().mockResolvedValue(null),
+      getUpdateStatus: vi.fn().mockResolvedValue({ state: 'idle' }),
+      onAgentStatusChanged: vi.fn().mockReturnValue(() => {}),
+      onAgentEvent: vi.fn().mockReturnValue(() => {}),
+      onUpdateStatus: vi.fn().mockReturnValue(() => {}),
+      onTaskOutput: vi.fn().mockReturnValue(() => {}),
+      onTaskComplete: vi.fn().mockReturnValue(() => {}),
+      executeTask: vi.fn().mockResolvedValue({ taskId: 'test-task' }),
+      cancelTask: vi.fn(),
+      updaterDownload: vi.fn().mockResolvedValue({ ok: true }),
+      updaterInstall: vi.fn().mockResolvedValue(undefined),
     } as typeof window.electronAPI
   })
 
@@ -121,6 +134,5 @@ describe('FloatingBall', () => {
     })
 
     expect(window.electronAPI.moodInteract).toHaveBeenCalledOnce()
-    expect(window.electronAPI.takeGreeting).toHaveBeenCalledOnce()
   })
 })

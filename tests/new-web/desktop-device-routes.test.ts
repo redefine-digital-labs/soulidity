@@ -4,6 +4,7 @@ const mockedStartDesktopDeviceSession = vi.hoisted(() => vi.fn())
 const mockedPollDesktopDeviceSession = vi.hoisted(() => vi.fn())
 const mockedCompleteDesktopDeviceSession = vi.hoisted(() => vi.fn())
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/desktop/device-session', () => ({
   startDesktopDeviceSession: mockedStartDesktopDeviceSession,
@@ -18,8 +19,21 @@ vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
 }))
 
+vi.mock('@web/lib/rate-limit', () => ({
+  takeRateLimitToken: mockedTakeRateLimitToken,
+  getRequestIp: () => '127.0.0.1',
+  getAnonymousRateLimitFingerprint: () => 'test-fingerprint',
+}))
+
+vi.mock('@web/lib/auth/challenge', () => ({
+  normalizeSuiWalletAddress: (value: string | null | undefined) => value?.trim() || null,
+}))
+
 describe('POST /api/desktop/device/start', () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
+  })
 
   it('creates a device session', async () => {
     const sessionData = {
