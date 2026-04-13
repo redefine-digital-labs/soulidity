@@ -67,18 +67,14 @@
     }
   },
   "dependencies": {
-    "@fastify/websocket": "^11.2.0",
     "@mysten/sui": "^2.15.0",
     "@soulidity/backend": "workspace:*",
-    "@soulidity/shared": "workspace:*",
-    "fastify": "^5.8.2",
-    "ws": "^8.19.0"
+    "@soulidity/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "^34.0.0",
     "electron-builder": "^26.8.1",

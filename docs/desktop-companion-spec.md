@@ -44,13 +44,14 @@
 | 决策 | 结论 | 原因 |
 |------|------|------|
 | 桌面运行时 | Electron（Desktop-Claw fork） | 不保留 Tauri 并行方案 |
-| 钱包存储 | 当前 JSON（Phase 1），目标 keytar（Phase 1.5） | Phase 1 暂用 JSON，后续迁移 OS keychain |
+| 钱包存储 | Electron `safeStorage` API（OS keychain 加密） | Phase 1 JSON → Phase 1.5 迁移到 safeStorage |
 | 地址推导 | `keypair.toSuiAddress()` / Sui SDK 语义 | 不手写 SHA-256/blake2b |
 | 状态协议 | 6 态文件协议 `~/.soulidity/agent-status.json` | 统一 CLI 适配 |
 | 检测策略 | Phase 1 仅 Hooks 主动上报；Phase 1.5 追加 AgentMonitor 被动检测 | 分阶段交付 |
 | 情绪系统 | Phase 1: 4 态 emotion + CLI 6 态映射；Phase 1.5: 12 mood | 分阶段交付 |
 | Sprite 渲染 | 原生 Canvas API + requestAnimationFrame | 不引入 Phaser/Pixi |
 | 依赖位置 | Phase 1 所有桌面依赖放 `apps/desktop/package.json` | 不放 `packages/backend` |
+| 后端架构 | 纯 IPC（无 HTTP 服务器） | Phase 1.5 从 Fastify 迁移；无端口冲突、打包更简单、调用链更短 |
 
 ---
 
@@ -58,7 +59,7 @@
 
 ### Tech Stack
 
-Electron, React, electron-vite, pnpm workspace, Node `fs.watch`, Canvas API, `@mysten/sui`, Fastify（内嵌后端）
+Electron, React, electron-vite, pnpm workspace, Node `fs.watch`, Canvas API, `@mysten/sui`（纯 IPC 架构，无 HTTP 后端）
 
 ### Workspace Layout
 
@@ -66,36 +67,33 @@ Electron, React, electron-vite, pnpm workspace, Node `fs.watch`, Canvas API, `@m
 desktop/                          # Desktop-Claw-based pnpm workspace
 ├── apps/desktop/
 │   ├── src/main/                 # Electron main process
-│   │   ├── index.ts              # lifecycle, IPC, window management
-│   │   ├── status-watcher.ts     # ~/.soulidity/ file watcher (hooks 层)
-│   │   └── agent-wallet.ts       # Ed25519 keypair management
+│   │   ├── index.ts              # lifecycle, IPC handlers, window management
+│   │   ├── status-watcher.ts     # ~/.soulidity/ file watcher + dedup
+│   │   ├── agent-monitor.ts      # 被动检测 (ProcessProbe + LogWatcher + HookDetector)
+│   │   └── agent-wallet.ts       # Ed25519 keypair + safeStorage
 │   ├── src/preload/              # IPC bridge
 │   ├── src/renderer/
 │   │   ├── components/
 │   │   │   ├── FloatingBall/     # overlay sprite + bubbles + interaction
 │   │   │   ├── ChatBubble/       # speech bubble with fade animation
-│   │   │   ├── SettingsPanel/    # agent wallet display + CLI status
+│   │   │   ├── MainWindow/       # 三 tab 管理面板 (Settings/Library/Agent)
 │   │   │   └── SpriteRenderer.tsx # Canvas sprite sheet animation
-│   │   ├── hooks/
-│   │   │   ├── useCliStatus.ts   # CLI status subscription (hooks 层)
-│   │   │   └── useClawEmotion.ts # backend emotion polling
-│   │   └── lib/
-│   │       └── backend-client.ts # HTTP fetch wrapper
+│   │   └── hooks/
+│   │       ├── useCliStatus.ts   # CLI status subscription
+│   │       ├── useMood.ts        # IPC mood snapshot polling
+│   │       └── useMoodResolver.ts # drag state override
 │   └── resources/
 │       ├── hooks/                # CLI adapter scripts
 │       └── default-persona/      # bundled sprite assets
-├── packages/backend/             # Desktop-Claw backend (Fastify)
+├── packages/backend/             # Service 层（纯 IPC，无 HTTP 服务器）
 │   └── src/
-│       ├── gateway/
-│       │   ├── emotion.ts        # GET /emotion, POST /emotion/interact
-│       │   └── persona.ts        # GET /persona, GET /greeting
-│       ├── memory/               # emotion service, greeting service, memory persistence
+│       ├── memory/               # MoodService, GreetingService, MemoryService
 │       ├── llm/                  # LLM client (greeting/memory 用)
-│       └── security/             # request auth, allowed roots
+│       └── paths.ts              # 数据目录管理
 └── packages/shared/              # shared types
     └── src/types/
-        ├── cli-status.ts         # canonical status protocol types
-        └── emotion.ts            # EmotionState, EmotionSnapshot
+        ├── cli-status.ts         # 6 态 + source + opencode
+        └── emotion.ts            # Mood (12 态), MoodSnapshot, EmotionState (legacy)
 ```
 
 ### Window Model
@@ -296,26 +294,22 @@ interface AgentKeypairInfo {
 
 ### Module 5 — 内嵌后端（Fastify）
 
-本地 Fastify 服务，由 Electron 主进程启动，端口 3721。
+纯 IPC 架构，无 HTTP 服务器。Services 运行在 Electron 主进程，渲染进程通过 `contextBridge` IPC 通道调用。
 
-**当前路由：**
+**IPC 通道（替代原 Fastify 路由）：**
 
-| 端点 | 方法 | 功能 |
-|------|------|------|
-| `/health` | GET | 健康检查 |
-| `/persona` | GET | 返回 SOUL.md / USER.md / CONTEXT.md |
-| `/greeting` | GET | 返回 LLM 预生成的互动语 |
-| `/emotion` | GET | 返回当前 EmotionSnapshot |
-| `/emotion/interact` | POST | 用户互动信号 |
+| IPC channel | 功能 |
+|---|---|
+| `mood:get` | 返回当前 MoodSnapshot |
+| `mood:interact` | 用户互动信号 |
+| `mood:drag-start` / `mood:drag-end` | 拖拽状态 |
+| `persona:get` | 返回 SOUL.md / USER.md / CONTEXT.md |
+| `greeting:take` | 返回 LLM 预生成的互动语 |
 
 **后端服务：**
-- `EmotionService` — 情绪状态机，1 分钟 tick，跨小时边界检测
+- `MoodService` — 12 mood 状态机，1 分钟 tick，跨小时边界检测
 - `GreetingService` — LLM 预生成互动语池（8 条/次），低于 3 条时自动补充
 - `MemoryService` — 对话归档、日级压缩、sealDay
-
-**安全：**
-- Bearer token 认证（每次启动随机生成）
-- Origin 白名单（仅允许渲染进程源）
 
 ### Module 6 — Soul Metadata 扩展（Phase 2）
 
@@ -567,17 +561,31 @@ public struct ContentAccessList has key {
 
 ### Phase 1 — Known Gaps
 
-- [ ] `keytar` 私钥存储未接入（JSON 落盘，可用但非目标态）
-- [ ] Agent 钱包地址尚未从 SettingsPanel 链到 web 端账号绑定
+- [x] ~~`keytar` 私钥存储未接入~~ — Phase 1.5 改用 Electron `safeStorage` API 实现 OS keychain 加密（`agent-wallet.ts`）
+- [x] ~~Agent 钱包地址尚未从 SettingsPanel 链到 web 端账号绑定~~ — 设备绑定全链路：`POST /api/desktop/device/start`（含 agentAddress）→ Desktop 显示 userCode → Web `/desktop/link` 页面输入确认 → `DesktopProfile.agentAddress` 写入
 
-### Phase 1.5 — Not Started
+### Phase 1.5 — Complete
 
-- [ ] `soulidity-opencode-plugin.ts`
-- [ ] `desktop/apps/desktop/src/main/agent-monitor.ts`
-- [ ] `desktop/apps/desktop/src/renderer/hooks/useMoodResolver.ts`
-- [ ] hooks + monitor 合并事件流 / installed hook 排除逻辑
-- [ ] MainWindow（library / market / settings / agent 管理）
-- [ ] 12 mood 系统
+- [x] `desktop/apps/desktop/src/main/agent-monitor.ts` — ProcessProbe（pgrep 5s 轮询）+ HookDetector（检测已安装 hook 避免重复）
+- [x] `desktop/apps/desktop/src/main/status-watcher.ts` — `deduplicateSessions()` hook/monitor 去重
+- [x] `desktop/packages/shared/src/types/cli-status.ts` — `source` 字段 + `opencode` clientType
+- [x] `desktop/packages/shared/src/types/emotion.ts` — `Mood`（12 态）+ `MoodSnapshot` + `MOOD_TO_SPRITE` + `MOOD_PARAMS`
+- [x] `desktop/packages/backend/src/memory/mood.ts` — `resolveMood()` 纯函数，12 mood 优先级推导 + 话术池
+- [x] `desktop/packages/backend/src/memory/mood-service.ts` — `MoodService` 替代 `EmotionService`
+- [x] `desktop/packages/backend/src/gateway/emotion.ts` — `GET /emotion` 返回 `MoodSnapshot`，新增 drag-start/drag-end
+- [x] `desktop/apps/desktop/src/renderer/hooks/useMood.ts` — 替代 `useClawEmotion`
+- [x] `desktop/apps/desktop/src/renderer/hooks/useMoodResolver.ts` — drag 状态前端 override
+- [x] `FloatingBall` — `data-mood` 驱动 12 mood halo 动画
+- [x] `MainWindow` — 三 tab（Settings / Library / Agent）替代 SettingsPanel
+- [x] `agent-wallet.ts` — `safeStorage` 加密私钥 + Phase 1 JSON 自动迁移
+- [x] ~~`useClawEmotion.ts`~~ — 删除（被 `useMood.ts` 替代）
+- [x] ~~`SettingsPanel/`~~ — 删除（迁入 `MainWindow/SettingsTab`）
+- [x] 设备绑定全链路：Prisma `agentAddress` 字段 + Web API start/complete + Web `/desktop/link` 页面 + Desktop SettingsTab Link Account + IPC 代理
+- [x] Fastify → 纯 IPC 迁移：删除 Fastify HTTP 后端，所有 Service 通过 IPC 直调；删除 `gateway/`, `security/request-auth.ts`, `backend-client.ts`；删除 `fastify`, `@fastify/websocket`, `ws` 依赖
+
+### Phase 1.5 — Known Gaps
+
+- [ ] `soulidity-opencode-plugin.ts`（OpenCode 适配器，待 OpenCode 稳定后实现）
 
 ### Phase 2 — Already Landed In Move / Web Layer
 

@@ -645,6 +645,7 @@ model DesktopDeviceSession {
   account             Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
   deviceCode          String    @unique @map("device_code")
   userCode            String    @unique @map("user_code")
+  agentAddress        String?   @map("agent_address")
   status              String    @default("pending")
   pollIntervalSeconds Int       @default(5) @map("poll_interval_seconds")
   expiresAt           DateTime  @map("expires_at") @db.Timestamptz
@@ -662,6 +663,7 @@ model DesktopProfile {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   accountId        String    @unique @map("account_id") @db.Uuid
   account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  agentAddress     String?   @map("agent_address")
   activeSourceType String?   @map("active_source_type")
   activeSourceRef  String?   @map("active_source_ref")
   preferences      Json?
