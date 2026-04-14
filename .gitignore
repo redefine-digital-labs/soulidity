@@ -35,3 +35,4 @@ docker/review-memory/
 scripts/review-memory-*
 .gstack/
 web/tsconfig.tsbuildinfo
+**/next-env.d.ts
