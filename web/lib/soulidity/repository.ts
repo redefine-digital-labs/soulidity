@@ -1,4 +1,4 @@
-import type { Prisma } from '../../../generated/prisma/client'
+import type { Prisma } from '../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 import { isUuid } from '@web/lib/is-uuid'
 import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'

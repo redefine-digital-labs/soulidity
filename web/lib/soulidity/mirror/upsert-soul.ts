@@ -1,4 +1,4 @@
-import { Prisma } from '../../../../generated/prisma/client'
+import { Prisma } from '../../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 import type { SoulObject, SoulStateObject, SoulMemoryObject } from '@/lib/soulidity/types'
 

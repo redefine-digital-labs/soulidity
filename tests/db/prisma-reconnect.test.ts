@@ -35,7 +35,7 @@ class MockPrismaPg {
   }
 }
 
-vi.mock('../../generated/prisma/client.js', () => ({
+vi.mock('../../web/generated/prisma/client.js', () => ({
   PrismaClient: MockPrismaClient,
 }))
 

@@ -15,7 +15,7 @@ CLAUDE.md
 e2e/
 e2e-artifacts/
 
-/generated/prisma
+/web/generated/prisma
 .worktrees/
 .autoteam/
 review/

@@ -17,7 +17,7 @@ const mockedPrisma = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('../../../generated/prisma/client', () => ({
+vi.mock('../../../web/generated/prisma/client', () => ({
   Prisma: {
     Decimal: class MockDecimal {
       value: string

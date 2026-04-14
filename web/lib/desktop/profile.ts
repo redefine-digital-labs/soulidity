@@ -1,4 +1,4 @@
-import type { Prisma } from '../../../generated/prisma/client'
+import type { Prisma } from '../../generated/prisma/client'
 import { prisma } from '@web/lib/prisma'
 import { findDesktopPersonaManifestBySource } from '@/lib/desktop/repository'
 import type {
