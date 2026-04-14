@@ -67,34 +67,32 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
 
   return (
     <header className="sticky top-0 z-[100] border-b border-border bg-[var(--nav-bg)] backdrop-blur-[12px]">
-      <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <div className="flex min-w-0 items-center gap-4 lg:gap-7">
-          <SoulidityLogo />
+      <div className="grid h-14 grid-cols-[auto_1fr_auto] items-center gap-4 px-4 sm:px-6 lg:px-8">
+        <SoulidityLogo />
 
-          <nav className="hidden items-center gap-6 md:flex">
-            {navLinks.map(({ label, href, auth }) => {
-              if (auth && !connected) return null
-              const isActive = pathname === href || pathname.startsWith(href + '/')
-              return (
-                <Link key={href} href={href} className={navLinkClass(isActive)}>
-                  {label}
-                </Link>
-              )
-            })}
-            <NavCreateMenu />
-            <NavResourcesMenu />
-            {isAdmin && (
-              <Link
-                href="/admin"
-                className={navLinkClass(pathname === '/admin' || pathname.startsWith('/admin/'))}
-              >
-                Admin
+        <nav className="hidden items-center justify-center gap-6 md:flex">
+          {navLinks.map(({ label, href, auth }) => {
+            if (auth && !connected) return null
+            const isActive = pathname === href || pathname.startsWith(href + '/')
+            return (
+              <Link key={href} href={href} className={navLinkClass(isActive)}>
+                {label}
               </Link>
-            )}
-          </nav>
-        </div>
+            )
+          })}
+          <NavCreateMenu />
+          <NavResourcesMenu />
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className={navLinkClass(pathname === '/admin' || pathname.startsWith('/admin/'))}
+            >
+              Admin
+            </Link>
+          )}
+        </nav>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-end gap-2.5">
           {connected ? (
             <AccountButton
               balance=""
