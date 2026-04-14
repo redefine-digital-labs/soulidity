@@ -9,6 +9,7 @@ export interface SoulidityDeployment {
   paymentCoinType: string
   publishTxDigest?: string
   upgradeCapId?: string
+  upgradeStateId?: string
 }
 
 export type SoulidityDeploymentManifest = Record<string, SoulidityDeployment>

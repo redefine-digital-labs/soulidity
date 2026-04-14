@@ -7,6 +7,7 @@ export interface SoulidityDeployment {
   paymentCoinType: string
   publishTxDigest?: string
   upgradeCapId?: string
+  upgradeStateId?: string
 }
 
 const deploymentManifest: Record<string, SoulidityDeployment> = {

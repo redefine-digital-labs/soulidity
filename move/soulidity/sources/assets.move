@@ -18,11 +18,6 @@ const EEmptyAssetName: u64 = 5;
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
 
-// ── Asset type constants ──
-const ASSET_TYPE_SPRITE: u8 = 0;
-const ASSET_TYPE_LIVE2D: u8 = 1;
-const ASSET_TYPE_AUDIO: u8 = 2;
-
 // ── Structs ──
 
 public struct AssetSlot has copy, drop, store {

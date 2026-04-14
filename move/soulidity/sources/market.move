@@ -1,6 +1,5 @@
 module soulidity::market;
 
-use std::string;
 use kiosk::kiosk_lock_rule;
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
@@ -45,6 +44,11 @@ const ECollectionMismatch: u64 = 15;
 const ECollectionRightMismatch: u64 = 16;
 const EStateMismatch: u64 = 18;
 const EAccessListStateMismatch: u64 = 19;
+const EUpgradeCapNotTracked: u64 = 20;
+const EUpgradeCapMismatch: u64 = 21;
+const EUpgradesImmutable: u64 = 22;
+const EUpgradeAlreadyPending: u64 = 23;
+const EUpgradeNotPending: u64 = 24;
 
 public struct MARKET has drop {}
 
@@ -61,6 +65,17 @@ public struct MarketConfig has key {
 
 public struct KioskRegistry has key {
     id: UID,
+}
+
+public struct MarketUpgradeState has key {
+    id: UID,
+    tracked_package_id: Option<ID>,
+    tracked_upgrade_cap_id: Option<ID>,
+    tracked_upgrade_policy: u8,
+    tracked_upgrade_version: u64,
+    upgrade_cap_live: bool,
+    immutable: bool,
+    pending_upgrade: bool,
 }
 
 public struct SoulListing has key, store {
@@ -125,6 +140,37 @@ public struct PersonalKioskInitialized has copy, drop {
     kiosk_id: ID,
     kiosk_cap_id: ID,
     owner: address,
+}
+
+public struct MarketUpgradeStateInitialized has copy, drop {
+    upgrade_state_id: ID,
+}
+
+public struct MarketUpgradeCapTracked has copy, drop {
+    upgrade_state_id: ID,
+    package_id: ID,
+    upgrade_cap_id: ID,
+    policy: u8,
+    version: u64,
+}
+
+public struct MarketUpgradeAuthorized has copy, drop {
+    upgrade_state_id: ID,
+    package_id: ID,
+    policy: u8,
+}
+
+public struct MarketUpgradeCommitted has copy, drop {
+    upgrade_state_id: ID,
+    from_package_id: ID,
+    to_package_id: ID,
+    version: u64,
+}
+
+public struct MarketUpgradesFrozen has copy, drop {
+    upgrade_state_id: ID,
+    package_id: ID,
+    version: u64,
 }
 
 public struct SoulMintedToKiosk has copy, drop {
@@ -219,6 +265,34 @@ public fun paused(self: &MarketConfig): bool {
     self.paused
 }
 
+public fun tracked_upgrade_policy(self: &MarketUpgradeState): u8 {
+    self.tracked_upgrade_policy
+}
+
+public fun tracked_upgrade_version(self: &MarketUpgradeState): u64 {
+    self.tracked_upgrade_version
+}
+
+public fun has_tracked_upgrade_cap(self: &MarketUpgradeState): bool {
+    self.tracked_upgrade_cap_id.is_some()
+}
+
+public fun upgrade_cap_live(self: &MarketUpgradeState): bool {
+    self.upgrade_cap_live
+}
+
+public fun upgrades_immutable(self: &MarketUpgradeState): bool {
+    self.immutable
+}
+
+public fun upgrade_pending(self: &MarketUpgradeState): bool {
+    self.pending_upgrade
+}
+
+public fun tracked_package_id(self: &MarketUpgradeState): Option<ID> {
+    self.tracked_package_id
+}
+
 public fun quote_soul_purchase(
     config: &MarketConfig,
     price: u64,
@@ -290,6 +364,151 @@ public fun update_paused(
 ) {
     config.paused = paused;
     event::emit(MarketPauseUpdated { paused });
+}
+
+public fun track_upgrade_cap(
+    upgrade_state: &mut MarketUpgradeState,
+    _: &MarketAdminCap,
+    upgrade_cap: &package::UpgradeCap,
+) {
+    assert!(!upgrade_state.immutable, EUpgradesImmutable);
+    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
+    let package_id = package::upgrade_package(upgrade_cap);
+    assert!(package_id.to_address() != @0x0, EInvalidRecipient);
+    let upgrade_cap_id = object::id(upgrade_cap);
+    if (upgrade_state.tracked_upgrade_cap_id.is_some()) {
+        assert!(*upgrade_state.tracked_upgrade_cap_id.borrow() == upgrade_cap_id, EUpgradeCapMismatch);
+    };
+    upgrade_state.tracked_package_id = option::some(package_id);
+    upgrade_state.tracked_upgrade_cap_id = option::some(upgrade_cap_id);
+    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
+    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
+    upgrade_state.upgrade_cap_live = true;
+    event::emit(MarketUpgradeCapTracked {
+        upgrade_state_id: object::id(upgrade_state),
+        package_id,
+        upgrade_cap_id,
+        policy: upgrade_state.tracked_upgrade_policy,
+        version: upgrade_state.tracked_upgrade_version,
+    });
+}
+
+public fun restrict_upgrade_policy_additive(
+    upgrade_state: &mut MarketUpgradeState,
+    _: &MarketAdminCap,
+    upgrade_cap: &mut package::UpgradeCap,
+) {
+    assert!(!upgrade_state.immutable, EUpgradesImmutable);
+    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
+    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
+    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
+    package::only_additive_upgrades(upgrade_cap);
+    upgrade_state.tracked_package_id = option::some(package::upgrade_package(upgrade_cap));
+    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
+    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
+    event::emit(MarketUpgradeCapTracked {
+        upgrade_state_id: object::id(upgrade_state),
+        package_id: package::upgrade_package(upgrade_cap),
+        upgrade_cap_id: object::id(upgrade_cap),
+        policy: upgrade_state.tracked_upgrade_policy,
+        version: package::version(upgrade_cap),
+    });
+}
+
+public fun restrict_upgrade_policy_dep_only(
+    upgrade_state: &mut MarketUpgradeState,
+    _: &MarketAdminCap,
+    upgrade_cap: &mut package::UpgradeCap,
+) {
+    assert!(!upgrade_state.immutable, EUpgradesImmutable);
+    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
+    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
+    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
+    package::only_dep_upgrades(upgrade_cap);
+    upgrade_state.tracked_package_id = option::some(package::upgrade_package(upgrade_cap));
+    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
+    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
+    event::emit(MarketUpgradeCapTracked {
+        upgrade_state_id: object::id(upgrade_state),
+        package_id: package::upgrade_package(upgrade_cap),
+        upgrade_cap_id: object::id(upgrade_cap),
+        policy: upgrade_state.tracked_upgrade_policy,
+        version: package::version(upgrade_cap),
+    });
+}
+
+public fun authorize_upgrade(
+    upgrade_state: &mut MarketUpgradeState,
+    _: &MarketAdminCap,
+    upgrade_cap: &mut package::UpgradeCap,
+    policy: u8,
+    digest: vector<u8>,
+): package::UpgradeTicket {
+    assert!(!upgrade_state.immutable, EUpgradesImmutable);
+    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
+    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
+    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
+
+    let package_id = package::upgrade_package(upgrade_cap);
+    let ticket = package::authorize_upgrade(upgrade_cap, policy, digest);
+    upgrade_state.pending_upgrade = true;
+    event::emit(MarketUpgradeAuthorized {
+        upgrade_state_id: object::id(upgrade_state),
+        package_id,
+        policy: package::ticket_policy(&ticket),
+    });
+    ticket
+}
+
+public fun commit_upgrade(
+    upgrade_state: &mut MarketUpgradeState,
+    _: &MarketAdminCap,
+    upgrade_cap: &mut package::UpgradeCap,
+    receipt: package::UpgradeReceipt,
+) {
+    assert!(!upgrade_state.immutable, EUpgradesImmutable);
+    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
+    assert!(upgrade_state.pending_upgrade, EUpgradeNotPending);
+    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
+
+    let from_package_id = *upgrade_state.tracked_package_id.borrow();
+    package::commit_upgrade(upgrade_cap, receipt);
+    let to_package_id = package::upgrade_package(upgrade_cap);
+    upgrade_state.tracked_package_id = option::some(to_package_id);
+    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
+    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
+    upgrade_state.pending_upgrade = false;
+    event::emit(MarketUpgradeCommitted {
+        upgrade_state_id: object::id(upgrade_state),
+        from_package_id,
+        to_package_id,
+        version: upgrade_state.tracked_upgrade_version,
+    });
+}
+
+public fun freeze_upgrades(
+    upgrade_state: &mut MarketUpgradeState,
+    _: &MarketAdminCap,
+    upgrade_cap: package::UpgradeCap,
+) {
+    assert!(!upgrade_state.immutable, EUpgradesImmutable);
+    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
+    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
+
+    let upgrade_cap_id = object::id(&upgrade_cap);
+    assert_tracked_upgrade_cap(upgrade_state, upgrade_cap_id);
+    let package_id = package::upgrade_package(&upgrade_cap);
+    let version = package::version(&upgrade_cap);
+    package::make_immutable(upgrade_cap);
+    upgrade_state.tracked_package_id = option::some(package_id);
+    upgrade_state.tracked_upgrade_version = version;
+    upgrade_state.upgrade_cap_live = false;
+    upgrade_state.immutable = true;
+    event::emit(MarketUpgradesFrozen {
+        upgrade_state_id: object::id(upgrade_state),
+        package_id,
+        version,
+    });
 }
 
 public fun init_personal_kiosk(
@@ -890,7 +1109,7 @@ public fun buy_collection_right_fixed_price(
 
 // ── Content access purchase (H-1 fix: pays current owner, I-2: platform fee) ──
 
-public entry fun purchase_content_access(
+public fun purchase_content_access(
     config: &MarketConfig,
     access_list: &mut content_access::ContentAccessList,
     state: &SoulState,
@@ -1301,6 +1520,11 @@ fun assert_registered_personal_kiosk(
     assert!(registration.kiosk_cap_id == kiosk_cap_id, EPersonalKioskMismatch);
 }
 
+fun assert_tracked_upgrade_cap(upgrade_state: &MarketUpgradeState, upgrade_cap_id: ID) {
+    assert!(upgrade_state.tracked_upgrade_cap_id.is_some(), EUpgradeCapNotTracked);
+    assert!(*upgrade_state.tracked_upgrade_cap_id.borrow() == upgrade_cap_id, EUpgradeCapMismatch);
+}
+
 #[allow(lint(share_owned))]
 fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
     let (mut soul_policy, soul_policy_cap) = transfer_policy::new<Soul>(&publisher, ctx);
@@ -1315,8 +1539,19 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
     let registry = KioskRegistry {
         id: object::new(ctx),
     };
+    let upgrade_state = MarketUpgradeState {
+        id: object::new(ctx),
+        tracked_package_id: option::none(),
+        tracked_upgrade_cap_id: option::none(),
+        tracked_upgrade_policy: package::compatible_policy(),
+        tracked_upgrade_version: 0,
+        upgrade_cap_live: false,
+        immutable: false,
+        pending_upgrade: false,
+    };
     let config_id = object::id(&config);
     let registry_id = object::id(&registry);
+    let upgrade_state_id = object::id(&upgrade_state);
     let soul_policy_id = object::id(&soul_policy);
     let collection_policy_id = object::id(&collection_policy);
     let admin_cap = MarketAdminCap { id: object::new(ctx) };
@@ -1331,6 +1566,7 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
 
     transfer::share_object(config);
     transfer::share_object(registry);
+    transfer::share_object(upgrade_state);
     transfer::public_share_object(soul_policy);
     transfer::public_share_object(collection_policy);
     transfer::transfer(admin_cap, admin);
@@ -1344,6 +1580,9 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
         soul_policy_id,
         collection_policy_id,
         admin,
+    });
+    event::emit(MarketUpgradeStateInitialized {
+        upgrade_state_id,
     });
 }
 

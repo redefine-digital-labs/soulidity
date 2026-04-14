@@ -11,10 +11,8 @@ use soulidity::soul::{Self as soul, SoulState};
 const ENotCreatorOrOwner: u64 = 1;
 const EAlreadyHasAccess: u64 = 2;
 const ENoAccessEntry: u64 = 3;
-const EAccessExpired: u64 = 4;
-const EScopeMismatch: u64 = 5;
-const EIncorrectPaymentAmount: u64 = 6;
-const EAccessListMismatch: u64 = 7;
+const EScopeMismatch: u64 = 4;
+const EAccessListMismatch: u64 = 5;
 
 // ── Structs ──
 
@@ -163,7 +161,7 @@ public(package) fun record_purchase(
 
 // ── Manual add (creator or owner) ──
 
-public entry fun add_access(
+public fun add_access(
     access_list: &mut ContentAccessList,
     state: &SoulState,
     grantee: address,
@@ -212,7 +210,7 @@ public entry fun add_access(
 
 // ── Revoke ──
 
-public entry fun revoke_access(
+public fun revoke_access(
     access_list: &mut ContentAccessList,
     state: &SoulState,
     grantee: address,
@@ -238,7 +236,7 @@ public entry fun revoke_access(
 
 // ── Set price ──
 
-public entry fun set_content_price(
+public fun set_content_price(
     access_list: &mut ContentAccessList,
     state: &SoulState,
     new_price_atomic: u64,
@@ -262,7 +260,7 @@ public entry fun set_content_price(
 
 // ── Seal approval for allowlisted users (skills) ──
 
-public entry fun seal_approve_skill_allowlisted(
+public fun seal_approve_skill_allowlisted(
     id: vector<u8>,
     state: &SoulState,
     access_list: &ContentAccessList,
@@ -280,7 +278,7 @@ public entry fun seal_approve_skill_allowlisted(
 
 // ── Seal approval for allowlisted users (assets) ──
 
-public entry fun seal_approve_asset_allowlisted(
+public fun seal_approve_asset_allowlisted(
     id: vector<u8>,
     state: &SoulState,
     access_list: &ContentAccessList,
