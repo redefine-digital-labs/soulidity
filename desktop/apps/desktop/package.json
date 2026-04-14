@@ -1,0 +1,104 @@
+{
+  "name": "@soulidity/desktop",
+  "version": "0.0.4",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "pnpm run build:backend && pnpm run build:skills && electron-vite dev",
+    "build": "pnpm run build:backend && electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --mac",
+    "package:mac": "pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --mac",
+    "package:win": "pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --win",
+    "build:backend": "pnpm --filter @soulidity/backend run build",
+    "build:shared": "pnpm --filter @soulidity/shared run build",
+    "build:skills": "node ../../scripts/build-skills.mjs && tsc -p ../../packages/backend/src/agent/skills/tsconfig.scripts.json",
+    "typecheck": "pnpm run build:shared && pnpm run build:backend && tsc -p ../../packages/backend/tsconfig.json --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "build": {
+    "appId": "com.soulidity.desktop",
+    "productName": "Soulidity Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/persona",
+        "to": "persona"
+      },
+      {
+        "from": "resources/skills",
+        "to": "skills"
+      },
+      {
+        "from": "resources/hooks",
+        "to": "hooks"
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "fabw222",
+        "repo": "clawnews"
+      }
+    ],
+    "mac": {
+      "icon": "resources/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    },
+    "win": {
+      "icon": "resources/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Soulidity Desktop"
+    }
+  },
+  "dependencies": {
+    "@mysten/dapp-kit": "^1.0.4",
+    "@mysten/sui": "^2.15.0",
+    "@noble/hashes": "^1.8.0",
+    "@soulidity/backend": "workspace:*",
+    "@soulidity/shared": "workspace:*",
+    "@tanstack/react-query": "^5.96.2",
+    "@privy-io/react-auth": "^3.20.0",
+    "chokidar": "^5.0.0",
+    "electron-store": "8",
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^34.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

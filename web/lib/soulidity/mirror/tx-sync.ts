@@ -10,6 +10,8 @@ export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'grant:revoke-scope',
   'skills:append',
   'skills:delete',
+  'assets:append',
+  'assets:delete',
   'collection:mint',
   'collection:list',
   'collection:delist',

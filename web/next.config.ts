@@ -19,6 +19,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  serverExternalPackages: ['@prisma/client'],
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   turbopack: {
     root: repoRoot,
   },

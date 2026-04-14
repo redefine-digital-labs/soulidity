@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import { requireIdentity } from '@web/lib/auth/identity'
-import { getMemberPrimarySuiWalletAddress } from '@web/lib/auth/sui-wallet'
-import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 import { sealDekEnvelope } from '@web/lib/services/dek-envelope'
 import {
@@ -15,6 +12,7 @@ import {
   validateSoulUploadFile,
   validateSoulUploadSignature,
 } from '@/lib/soulidity/upload-validation'
+import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 
 import { uploadPublic, getBlobUrl } from '@web/lib/services/walrus'
 
@@ -35,15 +33,13 @@ function parseContentLength(rawValue: string | null): number | null {
 }
 
 export async function POST(req: NextRequest) {
-  const { error, identity } = await requireIdentity()
-  if (error) return error
-
-  if (identity.kind !== 'human') {
-    return NextResponse.json({ error: 'Only human accounts can upload' }, { status: 403 })
+  const auth = await requireSoulCreateWalletIdentity(req)
+  if ('error' in auth) {
+    return auth.error
   }
 
   const uploadRateLimit = await takeRateLimitToken(
-    `soul-upload:${identity.memberId}`,
+    `soul-upload:${auth.identity.memberId}`,
     SOUL_UPLOAD_RATE_LIMIT,
   )
   if (uploadRateLimit.limited) {
@@ -113,16 +109,7 @@ export async function POST(req: NextRequest) {
   }
   const contentHash = createHash('sha256').update(buffer).digest('hex')
 
-  // Resolve the member's bound wallet for ownership validation
-  let memberWalletAddress: string | null
-  try {
-    memberWalletAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
-  } catch (walletError) {
-    if (isMultipleSuiWalletBindingsError(walletError)) {
-      return NextResponse.json({ error: (walletError as Error).message }, { status: 409 })
-    }
-    throw walletError
-  }
+  const memberWalletAddress = auth.primarySuiAddress
 
   // Validate client-provided sendObjectTo against the member's wallet
   const clientSendTo = typeof clientSendObjectTo === 'string' && clientSendObjectTo.trim() ? clientSendObjectTo.trim() : null

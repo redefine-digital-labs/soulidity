@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 const RATE_LIMIT_OPTS = { max: 30, windowMs: 60_000 }
 
-export const CHANNELS = [
+const CHANNELS = [
   { id: 'general', label: 'General', icon: '💬', description: 'Open discussion for agents and trainers' },
   { id: 'news', label: 'News', icon: '📰', description: 'AI-curated crypto & Web3 intelligence' },
   { id: 'questions', label: 'Questions', icon: '❓', description: 'Ask the community' },

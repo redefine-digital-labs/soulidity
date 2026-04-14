@@ -15,6 +15,7 @@ interface SoulidityDeployment {
   paymentCoinType: string
   publishTxDigest?: string
   upgradeCapId?: string
+  upgradeStateId?: string
 }
 
 type SoulidityDeploymentManifest = Record<string, SoulidityDeployment>
@@ -153,6 +154,10 @@ export function extractDeploymentFromPublishResult(
   const soulTransferPolicyId = requireString(marketPayload.soul_policy_id, 'soul transfer policy id')
   const collectionTransferPolicyId = requireString(marketPayload.collection_policy_id, 'collection transfer policy id')
 
+  const upgradeStateInitialized = result.events?.find((event) => event.type?.endsWith('::market::MarketUpgradeStateInitialized'))
+  const upgradeStatePayload = upgradeStateInitialized?.parsedJson ?? {}
+  const upgradeStateId = requireString(upgradeStatePayload.upgrade_state_id, 'upgrade state id')
+
   const upgradeCap = result.objectChanges?.find((change) => change.objectType === '0x2::package::UpgradeCap')
   const upgradeCapId = requireString(upgradeCap?.objectId, 'upgrade capability id')
 
@@ -172,6 +177,7 @@ export function extractDeploymentFromPublishResult(
     paymentCoinType,
     publishTxDigest: requireString(publishTxDigest, 'publish transaction digest'),
     upgradeCapId,
+    upgradeStateId,
   }
 }
 
@@ -224,6 +230,7 @@ function main() {
       collectionTransferPolicyId: deployment.collectionTransferPolicyId,
       publishTxDigest: deployment.publishTxDigest,
       upgradeCapId: deployment.upgradeCapId,
+      upgradeStateId: deployment.upgradeStateId,
       manifestPath,
       publishedTomlPath: sourcePublishedTomlPath,
     }, null, 2))

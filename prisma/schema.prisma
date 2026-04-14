@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../web/generated/prisma"
 }
 
 datasource db {
@@ -41,7 +41,7 @@ model CollectorState {
 
 model Article {
   id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  rawItemId    String           @map("raw_item_id") @db.Uuid
+  rawItemId    String           @unique @map("raw_item_id") @db.Uuid
   rawItem      RawItem          @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
   titleZh      String           @map("title_zh")
   titleEn      String           @map("title_en")
@@ -140,7 +140,9 @@ model Account {
   avatar    String?
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  members Member[]
+  members               Member[]
+  desktopDeviceSessions DesktopDeviceSession[]
+  desktopProfile        DesktopProfile?
 
   @@map("accounts")
 }
@@ -598,4 +600,77 @@ model ContentAccessRecord {
   @@index([soulOnChainId])
   @@index([granteeAddress])
   @@map("content_access_records")
+}
+
+// ============================================================
+// Desktop Companion Domain
+// ============================================================
+
+model StarterPersonaAsset {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug        String   @unique
+  title       String
+  description String?
+  coverImage  String   @map("cover_image")
+  thumbnail   String
+  version     String
+  checksum    String
+  files       Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([updatedAt(sort: Desc)])
+  @@map("starter_persona_assets")
+}
+
+model DesktopCatalogEntry {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceType  String   @map("source_type")
+  sourceRef   String   @map("source_ref")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isPublished Boolean  @default(true) @map("is_published")
+  isHidden    Boolean  @default(false) @map("is_hidden")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([sourceType, sourceRef])
+  @@index([isPublished, isHidden, sortOrder])
+  @@index([sourceType, sortOrder])
+  @@map("desktop_catalog_entries")
+}
+
+model DesktopDeviceSession {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId           String?   @map("account_id") @db.Uuid
+  account             Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  deviceCode          String    @unique @map("device_code")
+  userCode            String    @unique @map("user_code")
+  agentAddress        String?   @map("agent_address")
+  status              String    @default("pending")
+  pollIntervalSeconds Int       @default(5) @map("poll_interval_seconds")
+  expiresAt           DateTime  @map("expires_at") @db.Timestamptz
+  confirmedAt         DateTime? @map("confirmed_at") @db.Timestamptz
+  lastPolledAt        DateTime? @map("last_polled_at") @db.Timestamptz
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status, expiresAt])
+  @@index([accountId, updatedAt(sort: Desc)])
+  @@map("desktop_device_sessions")
+}
+
+model DesktopProfile {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId        String    @unique @map("account_id") @db.Uuid
+  account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  agentAddress     String?   @map("agent_address")
+  activeSourceType String?   @map("active_source_type")
+  activeSourceRef  String?   @map("active_source_ref")
+  preferences      Json?
+  lastSyncedAt     DateTime? @map("last_synced_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([activeSourceType, activeSourceRef])
+  @@map("desktop_profiles")
 }

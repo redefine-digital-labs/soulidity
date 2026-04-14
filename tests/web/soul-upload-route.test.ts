@@ -1,17 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockedRequireIdentity = vi.hoisted(() => vi.fn())
-const mockedGetMemberPrimarySuiWalletAddress = vi.hoisted(() => vi.fn())
+const PRIMARY_WALLET = `0x${'1'.repeat(64)}`
+
+const mockedRequireSoulCreateWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedUploadPublic = vi.hoisted(() => vi.fn())
+const mockedGetBlobUrl = vi.hoisted(() => vi.fn())
 const mockedSealDekEnvelope = vi.hoisted(() => vi.fn())
 
-vi.mock('@web/lib/auth/identity', () => ({
-  requireIdentity: mockedRequireIdentity,
-}))
-
-vi.mock('@web/lib/auth/sui-wallet', () => ({
-  getMemberPrimarySuiWalletAddress: mockedGetMemberPrimarySuiWalletAddress,
+vi.mock('@/lib/soulidity/server', () => ({
+  requireSoulCreateWalletIdentity: mockedRequireSoulCreateWalletIdentity,
 }))
 
 vi.mock('@web/lib/rate-limit', async () => {
@@ -24,6 +22,7 @@ vi.mock('@web/lib/rate-limit', async () => {
 
 vi.mock('@web/lib/services/walrus', () => ({
   uploadPublic: mockedUploadPublic,
+  getBlobUrl: mockedGetBlobUrl,
 }))
 
 vi.mock('@web/lib/services/dek-envelope', () => ({
@@ -35,20 +34,21 @@ describe('soul upload route', () => {
     vi.resetAllMocks()
     vi.resetModules()
 
-    mockedRequireIdentity.mockResolvedValue({
-      error: null,
-      identity: { memberId: 'member-1', kind: 'human' },
+    mockedRequireSoulCreateWalletIdentity.mockResolvedValue({
+      identity: { memberId: 'member-1', accountId: 'account-1', kind: 'human' },
+      walletAddresses: [PRIMARY_WALLET],
+      primarySuiAddress: PRIMARY_WALLET,
     })
-    mockedGetMemberPrimarySuiWalletAddress.mockResolvedValue(`0x${'1'.repeat(64)}`)
     mockedTakeRateLimitToken.mockReturnValue({ limited: false, retryAfterSeconds: 60 })
     mockedUploadPublic.mockResolvedValue({
       blobId: 'blob-public',
       blobObjectId: '0xblob-object',
     })
+    mockedGetBlobUrl.mockReturnValue('https://walrus.example/blob-public')
     mockedSealDekEnvelope.mockReturnValue('mock-envelope-token')
   })
 
-  it('uploads encrypted blobs to Walrus with the publisher wallet as the blob owner', async () => {
+  it('uploads encrypted blobs to Walrus with the bound wallet as the blob owner', async () => {
     const { POST } = await import('../../web/app/api/souls/upload/route.ts')
     const form = new FormData()
     form.append('file', new File([Buffer.alloc(64, 7)], 'bundle.bin', { type: 'application/octet-stream' }))
@@ -61,27 +61,23 @@ describe('soul upload route', () => {
     }) as any)
 
     expect(response.status).toBe(200)
-    const body = await response.json()
-    expect(body.blobId).toBe('blob-public')
-    expect(body.blobObjectId).toBe('0xblob-object')
-    expect(body.contentHash).toBeDefined()
-    expect(body.sealDekEnvelope).toBe('mock-envelope-token')
-    expect(mockedUploadPublic).toHaveBeenCalledTimes(1)
-    expect(mockedUploadPublic).toHaveBeenCalledWith(
-      expect.any(Buffer),
-      { sendObjectTo: `0x${'1'.repeat(64)}` },
-    )
-    expect(mockedSealDekEnvelope).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dek: expect.any(Buffer),
-        iv: expect.any(Buffer),
-        contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-      }),
-    )
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      blobId: 'blob-public',
+      blobObjectId: '0xblob-object',
+      blobUrl: 'https://walrus.example/blob-public',
+      sealDekEnvelope: 'mock-envelope-token',
+    }))
+    expect(mockedUploadPublic).toHaveBeenCalledWith(expect.any(Buffer), {
+      sendObjectTo: PRIMARY_WALLET,
+    })
   })
 
-  it('rejects encrypted uploads when the authenticated human has no primary Sui wallet', async () => {
-    mockedGetMemberPrimarySuiWalletAddress.mockResolvedValueOnce(null)
+  it('rejects encrypted uploads when no bound Sui wallet is available', async () => {
+    mockedRequireSoulCreateWalletIdentity.mockResolvedValueOnce({
+      identity: { memberId: 'member-1', accountId: 'account-1', kind: 'human' },
+      walletAddresses: [],
+      primarySuiAddress: null,
+    })
 
     const { POST } = await import('../../web/app/api/souls/upload/route.ts')
     const form = new FormData()

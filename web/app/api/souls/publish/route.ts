@@ -17,7 +17,7 @@ import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
-import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
+import { assertTransactionSender, requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 import type { SoulWriterKind } from '@/lib/soulidity/types'
 
 export const dynamic = 'force-dynamic'
@@ -43,7 +43,7 @@ function writerKindToString(kind: number): SoulWriterKind {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireHumanWalletIdentity()
+  const auth = await requireSoulCreateWalletIdentity(request)
   if ('error' in auth) {
     return auth.error
   }

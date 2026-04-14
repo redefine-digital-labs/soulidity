@@ -21,7 +21,7 @@
 
 1. 本仓库当前运行时目录是 `web/`，不是 `new-web/`；文内凡涉及前端/SDK/API 路径和验收，均以 `web/**` 为准，测试则覆盖 `tests/new-web/**` 与 `tests/web/**` 的相关用例。
 2. `SoulAssets` 的 `Blob` 存储必须与现有 `memory.move` / `skills.move` 一致：使用 `sui::dynamic_object_field` 挂在 `SoulAssets.id` 下，并记录 `blob_object_id`。禁止把 `Blob` wrapper `transfer` 到 `@0x0`。
-3. `ContentAccessList` 一期支付语义采用“精确付款”而非“允许多付”：`purchase_content_access` 必须要求 `payment.value() == price_atomic`，否则链上多收款且无找零路径。若后续要支持自动拆分/找零，需单独补 tx builder 与测试。
+3. `ContentAccessList` 的购买语义最终落在 `market::purchase_content_access`：支付仍采用“精确付款”而非“允许多付”，否则链上多收款且无找零路径。`content_access` 模块本身只负责记录授权与访问校验。
 4. mint 签名一旦扩展，必须同轮修改 `web/lib/soulidity/tx/publish.ts`、`tx/import.ts`、`tx/personal-join.ts` 以及对应的 publish/import/wrap-link sync 路由；仅改 Move 签名不改 SDK builder 视为未完成。
 5. `assetsOnChainId` / `accessListOnChainId` 不能靠“后续手查对象”补录，必须在 mint 后通过事件提取 + projection patch 落到 `SoulAsset` 主记录，方式与当前 `skillsOnChainId` fallback patch 同级。
 6. 资产私读不能复用旧的 `web/lib/services/seal.ts` allowlist descriptor；必须新增与 `skill-access.ts` 同模式的资产访问响应类型、document-id 生成器、审批 PTB builder、human/agent 两套路由。
@@ -525,17 +525,13 @@ module soulidity::content_access {
     use sui::table;
     use sui::event;
     use sui::clock::Clock;
-    use sui::coin::Coin;
-    use sui::usdc::USDC;
     use soulidity::soul::{Self, SoulState};
     // ── Error codes ──
     const ENotCreatorOrOwner: u64 = 1;
     const EAlreadyHasAccess: u64 = 2;
     const ENoAccessEntry: u64 = 3;
-    const EAccessExpired: u64 = 4;
-    const EScopeMismatch: u64 = 5;
-    const EIncorrectPaymentAmount: u64 = 6;
-    const EAccessListMismatch: u64 = 7;
+    const EScopeMismatch: u64 = 4;
+    const EAccessListMismatch: u64 = 5;
 
     // ── Structs ──
 
@@ -642,27 +638,30 @@ module soulidity::content_access {
         true
     }
 
-    // ── Purchase (on-chain USDC payment) ──
+    // ── Record purchase (called by market module after payment split) ──
 
-    public entry fun purchase_content_access(
+    public(package) fun record_purchase(
         access_list: &mut ContentAccessList,
-        state: &SoulState,
-        payment: Coin<USDC>,
+        buyer: address,
+        price_paid_atomic: u64,
         clock: &Clock,
-        ctx: &mut TxContext,
     ) {
-        let buyer = ctx.sender();
-        assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
-        assert!(!access_list.entries.contains(buyer), EAlreadyHasAccess);
-        let paid = payment.value();
-        assert!(paid == access_list.price_atomic, EIncorrectPaymentAmount);
-
-        transfer::public_transfer(payment, access_list.creator);
+        if (access_list.entries.contains(buyer)) {
+            let entry = &access_list.entries[buyer];
+            if (entry.expires_at_ms.is_some()) {
+                let expires = *entry.expires_at_ms.borrow();
+                assert!(clock.timestamp_ms() >= expires, EAlreadyHasAccess);
+                access_list.entries.remove(buyer);
+                access_list.entry_count = access_list.entry_count - 1;
+            } else {
+                abort EAlreadyHasAccess
+            };
+        };
 
         let now_ms = clock.timestamp_ms();
         let entry = ContentAccessEntry {
             scope_mask: access_list.default_scope_mask,
-            price_paid_atomic: paid,
+            price_paid_atomic,
             granted_at_ms: now_ms,
             expires_at_ms: option::none(),
         };
@@ -674,7 +673,7 @@ module soulidity::content_access {
             access_list_id: object::id(access_list),
             grantee: buyer,
             scope_mask: access_list.default_scope_mask,
-            price_paid_atomic: paid,
+            price_paid_atomic,
         });
     }
 
@@ -799,7 +798,7 @@ module soulidity::content_access {
 sui move build --path move/soulidity 2>&1 | tail -10
 ```
 
-注意: USDC import 路径需与 `market.move` 现有用法一致。
+注意: 当前实现里支付校验在 `market.move`，`content_access` 不再直接持有 `Coin<USDC>`。
 
 - [ ] **Step 3: 提交**
 

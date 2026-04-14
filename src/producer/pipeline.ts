@@ -5,6 +5,7 @@ import { insertArticle, updateRawItemStatus, upsertCompany, linkArticleCompany }
 import { buildReporterPrompt, parseReporterResponse, REPORTER_SYSTEM_PROMPT } from './agents/reporter.js'
 import { buildAnalystPrompt, parseAnalystResponse, ANALYST_SYSTEM_PROMPT } from './agents/analyst.js'
 import { buildEditorPrompt, parseEditorResponse, EDITOR_SYSTEM_PROMPT } from './agents/editor.js'
+import { getPrismaConnectionErrorCode, isTransientPrismaConnectionError } from '../shared/prisma-errors.js'
 
 interface PipelineResult {
   success: boolean
@@ -12,8 +13,6 @@ interface PipelineResult {
   error?: string
   retryLater?: boolean
 }
-
-const TRANSIENT_DB_ERROR_CODES = new Set(['08006', '08003', '08001', '57P01'])
 
 function getReviewHint(rawData: string | null): { title?: string; summary?: string } | undefined {
   if (!rawData) return undefined
@@ -49,10 +48,10 @@ export async function runAgentPipeline(
   llm: LLMAdapter,
   rawItemId: string,
 ): Promise<PipelineResult> {
-  const item = await prisma.rawItem.findUnique({ where: { id: rawItemId } })
-  if (!item) return { success: false, articleId: null, error: 'Raw item not found' }
-
   try {
+    const item = await prisma.rawItem.findUnique({ where: { id: rawItemId } })
+    if (!item) return { success: false, articleId: null, error: 'Raw item not found' }
+
     await updateRawItemStatus(prisma, rawItemId, 'processing')
 
     // --- Reporter phase ---
@@ -74,18 +73,22 @@ export async function runAgentPipeline(
     const editorRaw = await llm.generate(EDITOR_SYSTEM_PROMPT, editorPrompt)
     const editorOutput = parseEditorResponse(editorRaw)
 
-    // --- Save article ---
+    // --- Save article (idempotent: skip insert if a previous run already created one) ---
     const status = editorOutput.approved ? 'draft' : 'rejected'
-    const articleId = await insertArticle(prisma, {
-      raw_item_id: rawItemId,
-      title_zh: editorOutput.title_zh,
-      title_en: editorOutput.title_zh,
-      summary_zh: editorOutput.summary_zh,
-      summary_en: editorOutput.summary_zh,
-      analysis_zh: editorOutput.analysis_zh,
-      analysis_en: null,
-      tags: JSON.stringify(analystOutput.tags),
-    })
+    const existing = await prisma.article.findUnique({ where: { rawItemId } })
+    const isReuse = !!existing
+    const articleId = existing
+      ? existing.id
+      : await insertArticle(prisma, {
+          raw_item_id: rawItemId,
+          title_zh: editorOutput.title_zh,
+          title_en: editorOutput.title_zh,
+          summary_zh: editorOutput.summary_zh,
+          summary_en: editorOutput.summary_zh,
+          analysis_zh: editorOutput.analysis_zh,
+          analysis_en: null,
+          tags: JSON.stringify(analystOutput.tags),
+        })
 
     // Update article pipeline status
     await prisma.article.update({
@@ -93,49 +96,56 @@ export async function runAgentPipeline(
       data: { status, pipelineStatus: 'completed' },
     })
 
-    // --- Write process logs (best-effort, after article exists) ---
-    try {
-      const [scoutRole, reporterRole, analystRole, editorRole] = await Promise.all([
-        getRoleByName(prisma, 'scout'),
-        getRoleByName(prisma, 'reporter'),
-        getRoleByName(prisma, 'analyst'),
-        getRoleByName(prisma, 'editor'),
-      ])
-      const now = new Date()
-
-      if (scoutRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: scoutRole.id })
-        await updateProcessLog(prisma, logId, {
-          status: 'completed',
-          output: JSON.stringify({ title: item.title, score: item.score, source: item.sourceName }),
-          startedAt: item.createdAt,
-          completedAt: now,
-        })
-      }
-      if (reporterRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: reporterRole.id })
-        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(reporterOutput), completedAt: now })
-      }
-      if (analystRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: analystRole.id })
-        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(analystOutput), completedAt: now })
-      }
-      if (editorRole) {
-        const logId = await createProcessLog(prisma, { articleId, roleId: editorRole.id })
-        await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(editorOutput), completedAt: now })
-      }
-    } catch (logErr) {
-      console.error('Failed to write process logs:', logErr)
+    // On retry reuse, wipe partial side effects so we can recreate from scratch;
+    // this prevents a prior crash leaving orphaned logs that trick count > 0.
+    if (isReuse) {
+      await prisma.agentProcessLog.deleteMany({ where: { articleId } })
     }
+    {
+      // --- Write process logs (best-effort, after article exists) ---
+      try {
+        const [scoutRole, reporterRole, analystRole, editorRole] = await Promise.all([
+          getRoleByName(prisma, 'scout'),
+          getRoleByName(prisma, 'reporter'),
+          getRoleByName(prisma, 'analyst'),
+          getRoleByName(prisma, 'editor'),
+        ])
+        const now = new Date()
 
-    // Link companies
-    if (analystOutput.companies.length) {
-      for (const c of analystOutput.companies) {
-        try {
-          const companyId = await upsertCompany(prisma, c)
-          await linkArticleCompany(prisma, articleId, companyId)
-        } catch (err) {
-          console.error(`Failed to link company ${c.name}:`, err)
+        if (scoutRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: scoutRole.id })
+          await updateProcessLog(prisma, logId, {
+            status: 'completed',
+            output: JSON.stringify({ title: item.title, score: item.score, source: item.sourceName }),
+            startedAt: item.createdAt,
+            completedAt: now,
+          })
+        }
+        if (reporterRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: reporterRole.id })
+          await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(reporterOutput), completedAt: now })
+        }
+        if (analystRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: analystRole.id })
+          await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(analystOutput), completedAt: now })
+        }
+        if (editorRole) {
+          const logId = await createProcessLog(prisma, { articleId, roleId: editorRole.id })
+          await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(editorOutput), completedAt: now })
+        }
+      } catch (logErr) {
+        console.error('Failed to write process logs:', logErr)
+      }
+
+      // Link companies
+      if (analystOutput.companies.length) {
+        for (const c of analystOutput.companies) {
+          try {
+            const companyId = await upsertCompany(prisma, c)
+            await linkArticleCompany(prisma, articleId, companyId)
+          } catch (err) {
+            console.error(`Failed to link company ${c.name}:`, err)
+          }
         }
       }
     }
@@ -152,8 +162,8 @@ export async function runAgentPipeline(
     }
 
     // Retryable: transient DB connection errors
-    const pgCode = err?.cause?.code ?? err?.code
-    if (TRANSIENT_DB_ERROR_CODES.has(pgCode)) {
+    if (isTransientPrismaConnectionError(err)) {
+      const pgCode = getPrismaConnectionErrorCode(err) ?? 'unknown'
       console.warn(`Pipeline transient DB error for ${rawItemId}, will retry:`, err.message)
       await requeueRawItem(prisma, rawItemId)
       return { success: false, articleId: null, error: `DB connection error ${pgCode}`, retryLater: true }

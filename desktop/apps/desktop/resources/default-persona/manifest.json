@@ -1,0 +1,17 @@
+{
+  "id": "a7604d57-cb3d-488b-8ac0-c10ee7a1940e",
+  "name": "乌萨奇！！",
+  "description": "到~~~~~！",
+  "frameCount": 56,
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "columns": 8,
+  "rows": 7,
+  "spriteFile": "sprite.png",
+  "author": {
+    "id": "81206b9c-cd45-42ca-aaeb-9e1606fc6a95",
+    "displayName": "うさぎ"
+  },
+  "createdAt": "2026-01-27T08:59:21.323Z",
+  "version": "1.0"
+}

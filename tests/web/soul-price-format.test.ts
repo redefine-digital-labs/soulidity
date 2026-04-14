@@ -1,4 +1,4 @@
-import { Prisma } from '../../generated/prisma/client'
+import { Prisma } from '../../web/generated/prisma/client'
 import { describe, expect, it } from 'vitest'
 
 import {

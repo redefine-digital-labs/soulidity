@@ -451,6 +451,24 @@ export function tryExtractAssetVersionAppendedEvent(
   }
 }
 
+export function extractAssetVersionDeletedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::assets::AssetVersionDeleted`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('AssetVersionDeleted event is missing from the transaction')
+  }
+  return {
+    assetsId: readObjectId(event.assets_id, 'AssetVersionDeleted assets_id'),
+    soulId: readObjectId(event.soul_id, 'AssetVersionDeleted soul_id'),
+    assetName: readString(event.asset_name, 'AssetVersionDeleted asset_name'),
+    versionIndex: readNumber(event.version_index, 'AssetVersionDeleted version_index'),
+    deletedBy: readObjectId(event.deleted_by, 'AssetVersionDeleted deleted_by'),
+  }
+}
+
 export function extractContentAccessListCreatedEvent(
   transaction: TransactionLike,
   packageId: string,

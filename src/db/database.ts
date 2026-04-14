@@ -1,15 +1,116 @@
-import { PrismaClient } from '../../generated/prisma/client.js'
+import { PrismaClient } from '../../web/generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
 import type { RawItem, Article, RawItemStatus, ArticleStatus, CollectorState } from '../shared/types.js'
 import { normalizeUrl } from '../shared/dedup.js'
+import { isTransientPrismaConnectionError } from '../shared/prisma-errors.js'
 
 export type { PrismaClient }
+
+function buildPrismaClient(connectionString: string): PrismaClient {
+  const adapter = new PrismaPg({ connectionString })
+  return new PrismaClient({ adapter })
+}
+
+function isModelDelegate(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object') return false
+
+  return [
+    'findUnique',
+    'findFirst',
+    'findMany',
+    'create',
+    'update',
+    'updateMany',
+    'upsert',
+    'count',
+    'delete',
+  ].some((method) => typeof (value as Record<string, unknown>)[method] === 'function')
+}
 
 export function createPrisma(): PrismaClient {
   const connectionString = process.env.DATABASE_URL
   if (!connectionString) throw new Error('DATABASE_URL is not set')
-  const adapter = new PrismaPg({ connectionString })
-  return new PrismaClient({ adapter })
+
+  let current = buildPrismaClient(connectionString)
+  let disconnected = false
+  const delegateCache = new Map<PropertyKey, object>()
+
+  const IDEMPOTENT_METHODS = new Set([
+    'findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow',
+    'findMany', 'count', 'aggregate', 'groupBy',
+  ])
+
+  const reconnect = async (stale: PrismaClient): Promise<void> => {
+    if (disconnected || current !== stale) return
+
+    current = buildPrismaClient(connectionString)
+    await stale.$disconnect().catch(() => {})
+    console.warn('Prisma connection closed; recreated PrismaClient.')
+  }
+
+  const runWithReconnect = async <T>(operation: (client: PrismaClient) => Promise<T>, canRetry: boolean): Promise<T> => {
+    const initialClient = current
+
+    try {
+      return await operation(initialClient)
+    } catch (error) {
+      if (disconnected || !isTransientPrismaConnectionError(error)) throw error
+
+      await reconnect(initialClient)
+      if (!canRetry) throw error
+      return operation(current)
+    }
+  }
+
+  const wrapDelegate = (delegateName: PropertyKey): object => new Proxy({}, {
+    get(_target, methodName) {
+      const delegate = Reflect.get(current as object, delegateName)
+      const value = Reflect.get(delegate as object, methodName)
+
+      if (typeof value !== 'function') return value
+
+      const canRetry = typeof methodName === 'string' && IDEMPOTENT_METHODS.has(methodName)
+      return (...args: unknown[]) => runWithReconnect(async (client) => {
+        const liveDelegate = Reflect.get(client as object, delegateName)
+        const liveMethod = Reflect.get(liveDelegate as object, methodName)
+
+        return Reflect.apply(liveMethod as (...methodArgs: unknown[]) => unknown, liveDelegate, args) as Promise<unknown>
+      }, canRetry)
+    },
+  })
+
+  return new Proxy(current as PrismaClient, {
+    get(_target, property) {
+      if (property === '$disconnect') {
+        return async (...args: unknown[]) => {
+          disconnected = true
+          const disconnect = Reflect.get(current as object, '$disconnect') as (...disconnectArgs: unknown[]) => Promise<unknown>
+          return Reflect.apply(disconnect, current, args)
+        }
+      }
+
+      const value = Reflect.get(current as object, property)
+
+      if (typeof value === 'function') {
+        const canRetry = typeof property === 'string' && property.startsWith('$')
+        return (...args: unknown[]) => runWithReconnect(async (client) => {
+          const liveMethod = Reflect.get(client as object, property) as (...methodArgs: unknown[]) => Promise<unknown>
+          return Reflect.apply(liveMethod, client, args)
+        }, canRetry)
+      }
+
+      if (isModelDelegate(value)) {
+        const cached = delegateCache.get(property)
+        if (cached) return cached
+
+        const wrapped = wrapDelegate(property)
+        delegateCache.set(property, wrapped)
+        return wrapped
+      }
+
+      return value
+    },
+  }) as PrismaClient
 }
 
 // --- raw_items ---
