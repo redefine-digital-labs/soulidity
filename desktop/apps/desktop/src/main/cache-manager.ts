@@ -15,6 +15,8 @@ interface CacheMeta {
   version: string
   downloadedAt: number // epoch ms
   size: number // total bytes
+  catalogSourceType?: 'starter' | 'soul'
+  catalogSourceRef?: string
 }
 
 interface CachedSprite {
@@ -40,8 +42,12 @@ function getThumbnailPath(spriteId: string): string {
 }
 
 export function hasCachedSprite(spriteId: string): boolean {
-  const metaPath = path.join(getSpriteDir(spriteId), 'meta.json')
-  return fs.existsSync(metaPath)
+  const dir = getSpriteDir(spriteId)
+  return (
+    fs.existsSync(path.join(dir, 'meta.json'))
+    && fs.existsSync(path.join(dir, 'sprite.png'))
+    && fs.existsSync(path.join(dir, 'sprite-config.json'))
+  )
 }
 
 export function getCachedSprite(spriteId: string): CachedSprite | null {
@@ -56,10 +62,14 @@ export function getCachedSprite(spriteId: string): CachedSprite | null {
     const configPath = path.join(dir, 'sprite-config.json')
     const thumbPath = getThumbnailPath(spriteId)
 
+    if (!fs.existsSync(spritePath) || !fs.existsSync(configPath)) {
+      return null
+    }
+
     return {
       meta,
-      spritePath: fs.existsSync(spritePath) ? spritePath : '',
-      configPath: fs.existsSync(configPath) ? configPath : '',
+      spritePath,
+      configPath,
       thumbnailPath: fs.existsSync(thumbPath) ? thumbPath : null,
     }
   } catch {

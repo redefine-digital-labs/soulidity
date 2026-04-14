@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 
 import { prisma } from '@web/lib/prisma'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
+import { generateDesktopAccessToken } from '@/lib/desktop/auth'
 import type {
   DesktopDeviceCompleteResponse,
   DesktopDevicePollResponse,
@@ -99,6 +100,7 @@ function toPollResponse(session: {
   accountId: string | null
   expiresAt: Date
   pollIntervalSeconds: number
+  desktopAccessToken?: string | null
 }): DesktopDevicePollResponse {
   const shared = {
     expiresAt: asIso(session.expiresAt),
@@ -110,6 +112,7 @@ function toPollResponse(session: {
       status: 'confirmed',
       accountId: session.accountId,
       deepLink: null,
+      ...(session.desktopAccessToken ? { desktopAccessToken: session.desktopAccessToken } : {}),
       ...shared,
     }
   }
@@ -135,6 +138,7 @@ function toCompleteConfirmedResponse(session: {
   expiresAt: Date
   confirmedAt: Date | null
   pollIntervalSeconds: number
+  desktopAccessToken?: string
 }): DesktopDeviceCompleteResponse {
   if (session.status !== 'confirmed' || !session.accountId || !session.confirmedAt) {
     throw new Error('Desktop device session is not confirmed')
@@ -146,6 +150,7 @@ function toCompleteConfirmedResponse(session: {
     deviceCode: session.deviceCode,
     userCode: session.userCode,
     deepLink: null,
+    ...(session.desktopAccessToken ? { desktopAccessToken: session.desktopAccessToken } : {}),
     expiresAt: asIso(session.expiresAt),
     confirmedAt: asIso(session.confirmedAt),
     pollInterval: session.pollIntervalSeconds,
@@ -236,7 +241,35 @@ export async function pollDesktopDeviceSession(
     select: deviceSessionPollResultSelect,
   })
 
-  return toPollResponse(updatedSession)
+  // When confirmed, read the pending desktop access token from the profile.
+  // The pending token is kept in preferences until the next link flow overwrites
+  // it, so that the desktop can retry local storage across multiple polls if the
+  // first attempt fails (e.g. safeStorage unavailable).
+  let desktopAccessToken: string | null = null
+
+  if (updatedSession.status === 'confirmed' && updatedSession.accountId) {
+    const profile = await prisma.desktopProfile.findUnique({
+      where: { accountId: updatedSession.accountId },
+      select: { preferences: true },
+    })
+
+    const prefs =
+      profile?.preferences &&
+      typeof profile.preferences === 'object' &&
+      !Array.isArray(profile.preferences)
+        ? (profile.preferences as Record<string, unknown>)
+        : null
+
+    if (
+      prefs &&
+      typeof prefs.desktopAccessTokenPending === 'string' &&
+      prefs.desktopAccessTokenSessionId === session.id
+    ) {
+      desktopAccessToken = prefs.desktopAccessTokenPending
+    }
+  }
+
+  return toPollResponse({ ...updatedSession, desktopAccessToken })
 }
 
 export async function completeDesktopDeviceSession(
@@ -298,6 +331,8 @@ export async function completeDesktopDeviceSession(
     })
   }
 
+  const { token: desktopAccessToken, hash: desktopAccessTokenHash } = generateDesktopAccessToken()
+
   const confirmedSession = await prisma.$transaction(async (tx) => {
     const current = await tx.desktopDeviceSession.findUnique({
       where: { id: session.id },
@@ -327,13 +362,39 @@ export async function completeDesktopDeviceSession(
       select: deviceSessionCompleteResultSelect,
     })
 
-    if (session.agentAddress) {
-      await tx.desktopProfile.upsert({
-        where: { accountId },
-        create: { accountId, agentAddress: session.agentAddress },
-        update: { agentAddress: session.agentAddress },
-      })
+    // Read current preferences to preserve existing fields
+    const existingProfile = await tx.desktopProfile.findUnique({
+      where: { accountId },
+      select: { preferences: true },
+    })
+
+    const existingPrefs =
+      existingProfile?.preferences &&
+      typeof existingProfile.preferences === 'object' &&
+      !Array.isArray(existingProfile.preferences)
+        ? (existingProfile.preferences as Record<string, unknown>)
+        : {}
+
+    const tokenPreferences = {
+      ...existingPrefs,
+      desktopAccessTokenHash,
+      desktopAccessTokenIssuedAt: now.toISOString(),
+      desktopAccessTokenPending: desktopAccessToken,
+      desktopAccessTokenSessionId: session.id,
     }
+
+    await tx.desktopProfile.upsert({
+      where: { accountId },
+      create: {
+        accountId,
+        agentAddress: session.agentAddress ?? null,
+        preferences: tokenPreferences,
+      },
+      update: {
+        ...(session.agentAddress ? { agentAddress: session.agentAddress } : {}),
+        preferences: tokenPreferences,
+      },
+    })
 
     return confirmed
   })
@@ -342,5 +403,5 @@ export async function completeDesktopDeviceSession(
     return toStatusResponse(session)
   }
 
-  return toCompleteConfirmedResponse(confirmedSession)
+  return toCompleteConfirmedResponse({ ...confirmedSession, desktopAccessToken })
 }

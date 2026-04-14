@@ -45,7 +45,10 @@ export async function POST(request: Request) {
       return NextResponse.json(result, { status: 410 })
     }
 
-    return NextResponse.json(result)
+    // Strip desktop-only credentials from the browser response.
+    // The desktop receives the bearer token through the poll channel instead.
+    const { desktopAccessToken: _token, deviceCode: _code, ...browserResult } = result
+    return NextResponse.json(browserResult)
   } catch (error) {
     if (error instanceof DesktopDeviceSessionConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 })

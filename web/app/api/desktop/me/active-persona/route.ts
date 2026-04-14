@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireIdentity } from '@web/lib/auth/identity'
+import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import {
   DesktopActivePersonaNotFoundError,
   setDesktopActivePersona,
@@ -31,13 +31,9 @@ function normalizeSourceRef(value: unknown): string | null | 'invalid' {
 }
 
 export async function PUT(request: Request) {
-  const { error, identity } = await requireIdentity()
-  if (error) {
-    return error
-  }
-
-  if (identity.kind !== 'human') {
-    return NextResponse.json({ error: 'Only human accounts can sync a desktop active persona' }, { status: 403 })
+  const auth = await requireDesktopIdentity(request)
+  if (auth.error) {
+    return auth.error
   }
 
   let body: unknown
@@ -82,7 +78,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const response = await setDesktopActivePersona(identity.accountId, {
+    const response = await setDesktopActivePersona(auth.accountId!, {
       sourceType,
       sourceRef,
     })

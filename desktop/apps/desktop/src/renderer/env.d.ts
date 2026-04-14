@@ -1,6 +1,13 @@
 export {}
 
-import type { PetAgentEvent, PetUpdateStatus } from '@soulidity/shared'
+import type {
+  ExtractSoulDraft,
+  PetAgentEvent,
+  PetUpdateStatus,
+  SessionScanResult,
+  SoulProfile,
+  ScanProgress,
+} from '@soulidity/shared'
 
 declare global {
   interface Window {
@@ -44,9 +51,48 @@ declare global {
         deviceCode: string; userCode: string; expiresAt: string; pollInterval: number
       }>
       devicePoll: (deviceCode: string) => Promise<{
-        status: string; accountId?: string; expiresAt?: string | null
+        status: string; accountId?: string; desktopAccessToken?: string; expiresAt?: string | null
       }>
       deviceGetLinkUrl: () => Promise<string>
+
+      // ── Desktop auth ──
+      getDesktopAuthStatus: () => Promise<{ hasToken: boolean; accountId: string | null }>
+      getDesktopRuntimeConfig: () => Promise<{ privyAppId: string | null; suiNetwork: string }>
+      getDesktopMe: () => Promise<unknown>
+      getDesktopPrivyToken: () => Promise<{ jwt: string; alreadyLinked: boolean }>
+
+      // ── Desktop create draft ──
+      'desktop:create-draft:load': () => Promise<ExtractSoulDraft | null>
+      'desktop:create-draft:save': (draft: ExtractSoulDraft) => Promise<void>
+      'desktop:create-draft:clear': () => Promise<void>
+
+      // ── Desktop create + mint ──
+      'desktop:create:upload': (params: {
+        bytes: Uint8Array
+        fileName: string
+        mimeType: string
+        uploadType: 'public' | 'encrypted'
+        sendObjectTo?: string | null
+      }) => Promise<unknown>
+      'desktop:create:personal-kiosk': (params: { walletAddress?: string | null }) => Promise<unknown>
+      'desktop:create:publish': (payload: Record<string, unknown>) => Promise<unknown>
+
+      // ── Soul download + active persona ──
+      soulDownload: (params: { catalogId: string }) => Promise<{ catalogId: string; spriteId: string } | { error: string }>
+      onDownloadProgress: (callback: (progress: unknown) => void) => () => void
+      soulSetActive: (params: { catalogId: string } | null) => Promise<void>
+      soulGetActive: () => Promise<{ catalogId?: string; spriteConfig?: unknown } | null>
+      onPersonaChanged: (callback: (data: unknown) => void) => () => void
+      soulFetchCatalog: (params: { page: number; pageSize: number }) => Promise<unknown>
+      soulGetMySouls: () => Promise<unknown[]>
+
+      // ── Session extraction + profile analysis ──
+      'extraction:scan-sessions': () => Promise<SessionScanResult[]>
+      'extraction:analyze-profile': (results: SessionScanResult[]) => Promise<SoulProfile>
+      'extraction:scan-progress': (callback: (progress: ScanProgress) => void) => () => void
+
+      // ── Shell ──
+      'shell:open-external': (url: string) => Promise<void>
 
       // ── Task 执行 ──
       executeTask: (payload: { agent: string; instruction: string; filePaths?: string[]; cwd?: string }) =>

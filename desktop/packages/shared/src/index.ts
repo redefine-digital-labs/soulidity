@@ -72,6 +72,23 @@ export {
 // which can't be bundled into the renderer. Import directly:
 //   import { AGENT_CONFIGS } from '@soulidity/shared/types/agent-configs'
 
+// ─── Soul Profile ───────────────────────────────
+export type {
+  SessionFeatures,
+  SessionScanResult,
+  SoulProfile,
+  ScanProgress
+} from './types/soul-profile'
+
+export type {
+  ExtractSoulDraft,
+} from './types/extract-draft'
+
+export {
+  createExtractSoulDraft,
+  regenerateExtractSoulDraftContent,
+} from './types/extract-draft'
+
 // ─── Memory System ───────────────────────────
 
 export type {

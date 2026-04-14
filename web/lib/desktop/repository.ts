@@ -135,6 +135,7 @@ function toStarterPersonaManifest(
     version: starter.version,
     checksum: starter.checksum,
     files: normalizeManifestFiles(starter.files),
+    downloadMode: 'direct',
     updatedAt: asIso(starter.updatedAt),
   }
 }
@@ -178,6 +179,9 @@ function toSoulPersonaManifest(
         checksum,
       },
     ],
+    routeId: soul.onChainId,
+    onChainId: soul.onChainId,
+    downloadMode: 'authenticated',
     updatedAt: asIso(soul.updatedAt),
   }
 }
@@ -284,6 +288,61 @@ export async function listDesktopCatalogItems(params: {
 
   const start = (params.page - 1) * params.pageSize
   return { items: items.slice(start, start + params.pageSize), total: items.length }
+}
+
+export async function listDesktopCatalogItemsBySourceRefs(params: {
+  sourceType: DesktopCatalogSourceType
+  sourceRefs: string[]
+}): Promise<DesktopCatalogItem[]> {
+  if (params.sourceRefs.length === 0) {
+    return []
+  }
+
+  const entries = await prisma.desktopCatalogEntry.findMany({
+    where: {
+      sourceType: params.sourceType,
+      sourceRef: { in: params.sourceRefs },
+      isPublished: true,
+      isHidden: false,
+    },
+    select: desktopCatalogEntryListSelect,
+    orderBy: [
+      { sortOrder: 'asc' },
+      { updatedAt: 'desc' },
+    ],
+  })
+
+  if (entries.length === 0) {
+    return []
+  }
+
+  if (params.sourceType === 'starter') {
+    const refs = entries.map((e) => e.sourceRef)
+    const starters = await prisma.starterPersonaAsset.findMany({
+      where: { slug: { in: refs } },
+      select: starterCatalogSelect,
+    })
+    const bySlug = new Map(starters.map((s) => [s.slug, s]))
+    return entries.flatMap((entry) => {
+      const starter = bySlug.get(entry.sourceRef)
+      return starter ? [toStarterCatalogItem(entry, starter)] : []
+    })
+  }
+
+  if (params.sourceType === 'soul') {
+    const refs = entries.map((e) => e.sourceRef)
+    const souls = await prisma.soulAsset.findMany({
+      where: { onChainId: { in: refs } },
+      select: soulCatalogSelect,
+    })
+    const byId = new Map(souls.map((s) => [s.onChainId, s]))
+    return entries.flatMap((entry) => {
+      const soul = byId.get(entry.sourceRef)
+      return soul ? [toSoulCatalogItem(entry, soul)] : []
+    })
+  }
+
+  return []
 }
 
 export async function findDesktopPersonaManifestById(id: string): Promise<DesktopPersonaManifest | null> {

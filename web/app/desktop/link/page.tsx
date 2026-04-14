@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { useLinkJwtAccount } from '@privy-io/react-auth'
 import { AuthGate } from '@/components/auth/auth-gate'
+import { useAuth } from '@/components/providers/auth-provider'
 
 type LinkStatus = 'idle' | 'submitting' | 'confirmed' | 'error'
 
@@ -17,6 +19,8 @@ function DesktopLinkForm() {
   const [code, setCode] = useState('')
   const [status, setStatus] = useState<LinkStatus>('idle')
   const [message, setMessage] = useState('')
+  const { linkWithCustomJwt } = useLinkJwtAccount()
+  const { getAuthHeaders } = useAuth()
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,15 +31,33 @@ function DesktopLinkForm() {
     setMessage('')
 
     try {
+      const authHeaders = await getAuthHeaders()
       const res = await fetch('/api/desktop/device/complete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ userCode: trimmed }),
       })
 
       const data = await res.json()
 
       if (data.status === 'confirmed') {
+        const privyTokenResponse = await fetch('/api/desktop/auth/privy-token', {
+          method: 'POST',
+          headers: authHeaders,
+        })
+        const privyTokenBody = await privyTokenResponse.json().catch(() => ({}))
+        if (!privyTokenResponse.ok) {
+          throw new Error(
+            typeof privyTokenBody.error === 'string'
+              ? privyTokenBody.error
+              : 'Desktop linked, but wallet auth setup failed.',
+          )
+        }
+
+        if (!privyTokenBody.alreadyLinked && typeof privyTokenBody.jwt === 'string') {
+          await linkWithCustomJwt(privyTokenBody.jwt)
+        }
+
         setStatus('confirmed')
         setMessage('Device linked successfully!')
       } else if (data.status === 'expired') {
@@ -48,11 +70,11 @@ function DesktopLinkForm() {
         setStatus('error')
         setMessage(data.error)
       }
-    } catch {
+    } catch (error) {
       setStatus('error')
-      setMessage('Network error. Please try again.')
+      setMessage(error instanceof Error ? error.message : 'Network error. Please try again.')
     }
-  }, [code])
+  }, [code, linkWithCustomJwt, getAuthHeaders])
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">

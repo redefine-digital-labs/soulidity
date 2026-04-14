@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { PetAgentEvent, PetUpdateStatus } from '@soulidity/shared'
+import type {
+  ExtractSoulDraft,
+  PetAgentEvent,
+  PetUpdateStatus,
+  SessionScanResult,
+  SoulProfile,
+  ScanProgress,
+} from '@soulidity/shared'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ── 基础 ──
@@ -55,9 +62,77 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deviceCode: string; userCode: string; expiresAt: string; pollInterval: number
   }> => ipcRenderer.invoke('device:start-link', agentAddress),
   devicePoll: (deviceCode: string): Promise<{
-    status: string; accountId?: string; expiresAt?: string | null
+    status: string; accountId?: string; desktopAccessToken?: string; expiresAt?: string | null
   }> => ipcRenderer.invoke('device:poll', deviceCode),
   deviceGetLinkUrl: (): Promise<string> => ipcRenderer.invoke('device:get-link-url'),
+
+  // ── Desktop auth ──
+  getDesktopAuthStatus: (): Promise<{ hasToken: boolean; accountId: string | null }> =>
+    ipcRenderer.invoke('desktop-auth:status'),
+  getDesktopRuntimeConfig: (): Promise<{ privyAppId: string | null; suiNetwork: string }> =>
+    ipcRenderer.invoke('desktop-auth:runtime-config'),
+  getDesktopMe: (): Promise<unknown> =>
+    ipcRenderer.invoke('desktop-auth:me'),
+  getDesktopPrivyToken: (): Promise<{ jwt: string; alreadyLinked: boolean }> =>
+    ipcRenderer.invoke('desktop-auth:get-privy-token'),
+
+  // ── Desktop create draft ──
+  'desktop:create-draft:load': (): Promise<ExtractSoulDraft | null> =>
+    ipcRenderer.invoke('desktop:create-draft:load'),
+  'desktop:create-draft:save': (draft: ExtractSoulDraft): Promise<void> =>
+    ipcRenderer.invoke('desktop:create-draft:save', draft),
+  'desktop:create-draft:clear': (): Promise<void> =>
+    ipcRenderer.invoke('desktop:create-draft:clear'),
+
+  // ── Desktop create + mint ──
+  'desktop:create:upload': (params: {
+    bytes: Uint8Array
+    fileName: string
+    mimeType: string
+    uploadType: 'public' | 'encrypted'
+    sendObjectTo?: string | null
+  }): Promise<unknown> => ipcRenderer.invoke('desktop:create:upload', params),
+  'desktop:create:personal-kiosk': (params: { walletAddress?: string | null }): Promise<unknown> =>
+    ipcRenderer.invoke('desktop:create:personal-kiosk', params),
+  'desktop:create:publish': (payload: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('desktop:create:publish', payload),
+
+  // ── Soul download + active persona ──
+  soulDownload: (params: { catalogId: string }): Promise<{ catalogId: string; spriteId: string } | { error: string }> =>
+    ipcRenderer.invoke('soul:download', params),
+  onDownloadProgress: (callback: (progress: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, progress: unknown) => callback(progress)
+    ipcRenderer.on('soul:download-progress', listener)
+    return () => { ipcRenderer.removeListener('soul:download-progress', listener) }
+  },
+  soulSetActive: (params: { catalogId: string; sourceType: string; sourceRef: string } | null): Promise<void> =>
+    ipcRenderer.invoke('soul:set-active', params),
+  soulGetActive: (): Promise<{ catalogId?: string; spriteConfig?: unknown } | null> =>
+    ipcRenderer.invoke('soul:get-active'),
+  onPersonaChanged: (callback: (data: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, data: unknown) => callback(data)
+    ipcRenderer.on('persona-changed', listener)
+    return () => { ipcRenderer.removeListener('persona-changed', listener) }
+  },
+  soulFetchCatalog: (params: { page: number; pageSize: number }): Promise<unknown> =>
+    ipcRenderer.invoke('soul:fetch-catalog', params),
+  soulGetMySouls: (): Promise<unknown[]> =>
+    ipcRenderer.invoke('soul:get-my-souls'),
+
+  // ── Session extraction + profile analysis ──
+  'extraction:scan-sessions': (): Promise<SessionScanResult[]> =>
+    ipcRenderer.invoke('extraction:scan-sessions'),
+  'extraction:analyze-profile': (results: SessionScanResult[]): Promise<SoulProfile> =>
+    ipcRenderer.invoke('extraction:analyze-profile', results),
+  'extraction:scan-progress': (callback: (progress: ScanProgress) => void): (() => void) => {
+    const listener = (_event: unknown, progress: ScanProgress) => callback(progress)
+    ipcRenderer.on('extraction:scan-progress', listener)
+    return () => { ipcRenderer.removeListener('extraction:scan-progress', listener) }
+  },
+
+  // ── Shell ──
+  'shell:open-external': (url: string): Promise<void> =>
+    ipcRenderer.invoke('shell:open-external', url),
 
   // ── Task 执行 (Claude / Codex) ──
   executeTask: (payload: { agent: string; instruction: string; filePaths?: string[]; cwd?: string }):

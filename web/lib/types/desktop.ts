@@ -21,6 +21,12 @@ export interface DesktopPersonaManifest extends DesktopCatalogItem {
   version: string
   checksum: string
   files: DesktopPersonaManifestFile[]
+  /** Soul route ID for access APIs (= onChainId for soul entries) */
+  routeId?: string
+  /** On-chain soul ID */
+  onChainId?: string
+  /** direct = public file URLs (starter), authenticated = needs desktop token (soul) */
+  downloadMode?: 'direct' | 'authenticated'
 }
 
 export interface DesktopDeviceStartResponse {
@@ -40,6 +46,7 @@ export type DesktopDevicePollResponse =
       status: 'confirmed'
       accountId: string
       deepLink: string | null
+      desktopAccessToken?: string
       expiresAt: string
       pollInterval: number
     }
@@ -60,6 +67,7 @@ export interface DesktopDeviceCompleteResponse {
   deviceCode: string
   userCode: string
   deepLink: string | null
+  desktopAccessToken?: string
   expiresAt: string
   confirmedAt: string
   pollInterval: number
@@ -68,6 +76,7 @@ export interface DesktopDeviceCompleteResponse {
 export interface DesktopProfile {
   accountId: string
   agentAddress: string | null
+  primarySuiAddress: string | null
   activeSourceType: DesktopCatalogSourceType | null
   activeSourceRef: string | null
   preferences: Record<string, unknown> | null

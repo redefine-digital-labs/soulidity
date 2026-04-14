@@ -16,6 +16,15 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   renderer: {
-    plugins: [react()]
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@soulidity/shared': resolve(__dirname, '../../packages/shared/src/index.ts'),
+      },
+    },
+    define: {
+      'process.env.NEXT_PUBLIC_SUI_NETWORK': JSON.stringify(process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet'),
+      'process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID': JSON.stringify(process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID || '0x2'),
+    },
   }
 })

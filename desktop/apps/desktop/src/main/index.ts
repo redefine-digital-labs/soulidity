@@ -1,20 +1,24 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import Store from 'electron-store'
 import { autoUpdater } from 'electron-updater'
 import {
   bootServices, shutdownServices, sealDay,
-  copyInitialTemplates, getPersonaDir,
-  moodService
+  prepareBuiltinPersonaTemplates, getPersonaDir,
+  moodService,
+  analyzeSoulProfile,
 } from '@soulidity/backend'
 import {
   CLI_TERMINAL_GRACE_MS,
   deriveAggregateStatus,
   derivePetAgentEvents,
   type AgentStatusFile,
+  type ExtractSoulDraft,
   type MoodSnapshot,
   type PetUpdateStatus,
+  type SessionScanResult,
+  type ScanProgress,
 } from '@soulidity/shared'
 import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus } from './status-watcher'
 import { startAgentMonitor, stopAgentMonitor } from './agent-monitor'
@@ -24,6 +28,13 @@ import {
   hasCachedSprite, getCachedSprite, cacheSprite, removeCachedSprite,
   pruneCache, getCacheStats, listCachedSprites
 } from './cache-manager'
+import { downloadSoulPersona } from './soul-downloader'
+import { storeDesktopToken, loadDesktopToken, clearDesktopToken, getDesktopAuthStatus } from './desktop-auth-store'
+import { clearExtractSoulDraft, loadExtractSoulDraft, saveExtractSoulDraft } from './extract-draft-store'
+import { scanSessions } from './soul-extraction/session-scanner'
+import { buildUpdateErrorStatus, isMissingLatestReleaseAssetError, toUpdateErrorMessage } from './update-errors'
+import { getDesktopWebBaseUrl, readDesktopJsonResponse } from './web-api'
+import { validateOpenExternalUrl } from './external-url'
 
 // ── electron-store 替代手写 config ──────────────────────────
 const store = new Store({ name: 'soulidity-settings' })
@@ -317,11 +328,11 @@ autoUpdater.on('update-downloaded', (info) => {
 })
 
 autoUpdater.on('error', (err) => {
-  setUpdateStatus({
-    state: 'error',
-    version: currentUpdateStatus.version,
-    error: err?.message ?? String(err),
-  })
+  const status = buildUpdateErrorStatus(err, currentUpdateStatus.version)
+  if (status.state === 'not-available') {
+    console.warn('[updater] release metadata missing, treating as no update')
+  }
+  setUpdateStatus(status)
 })
 
 async function performUpdateCheck(showNoUpdateDialog = false): Promise<{
@@ -339,7 +350,14 @@ async function performUpdateCheck(showNoUpdateDialog = false): Promise<{
     }
     return { available, version: currentUpdateStatus.version }
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
+    if (isMissingLatestReleaseAssetError(err)) {
+      if (showNoUpdateDialog) {
+        dialog.showMessageBox({ message: 'You are on the latest version.', type: 'info' }).catch(() => {})
+      }
+      return { available: false }
+    }
+
+    const error = toUpdateErrorMessage(err)
     if (showNoUpdateDialog) {
       dialog.showMessageBox({ message: error, type: 'error' }).catch(() => {})
     }
@@ -444,29 +462,264 @@ ipcMain.handle('config:set', (_event, config: Record<string, unknown>) => {
 })
 
 // ── 设备绑定 IPC ──────────────────────────────────────────
-const WEB_BASE_URL = process.env['SOULIDITY_WEB_URL'] || 'https://clawnews-mu.vercel.app'
+const WEB_BASE_URL = getDesktopWebBaseUrl()
+
+function getRequiredDesktopToken() {
+  const token = loadDesktopToken()
+  if (!token) {
+    throw new Error('Desktop auth token is missing. Link this desktop again from Settings.')
+  }
+
+  return token
+}
+
+async function readJsonOrThrow<T>(response: Response, action: string, pathname: string) {
+  return readDesktopJsonResponse<T>(response, {
+    action,
+    baseUrl: WEB_BASE_URL,
+    pathname,
+  })
+}
+
+async function fetchDesktopJson<T>(pathname: string, init: RequestInit = {}, action = 'Desktop request') {
+  const token = getRequiredDesktopToken()
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+
+  const response = await fetch(`${WEB_BASE_URL}${pathname}`, {
+    ...init,
+    headers,
+  })
+
+  return readJsonOrThrow<T>(response, action, pathname)
+}
 
 ipcMain.handle('device:start-link', async (_event, agentAddress: string) => {
+  const pathname = '/api/desktop/device/start'
   const res = await fetch(`${WEB_BASE_URL}/api/desktop/device/start`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agentAddress }),
   })
-  const data = (await res.json()) as Record<string, unknown>
-  if (!res.ok) throw new Error((data.error as string) || `Link start failed (${res.status})`)
-  return data
+  return readJsonOrThrow<{
+    deviceCode: string
+    userCode: string
+    expiresAt: string
+    pollInterval: number
+  }>(res, 'Start desktop link', pathname)
 })
 
 ipcMain.handle('device:poll', async (_event, deviceCode: string) => {
+  const pathname = '/api/desktop/device/poll'
   const res = await fetch(`${WEB_BASE_URL}/api/desktop/device/poll`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceCode }),
   })
-  const data = (await res.json()) as Record<string, unknown>
-  if (!res.ok) throw new Error((data.error as string) || `Poll failed (${res.status})`)
+  const data = await readJsonOrThrow<{
+    status: string
+    accountId?: string
+    desktopAccessToken?: string
+    expiresAt?: string | null
+  }>(res, 'Poll desktop link status', pathname)
+
+  // Store desktop access token when confirmed. If local storage fails (e.g.
+  // safeStorage unavailable), log and continue — the server keeps the pending
+  // token so the next poll can retry.
+  if (data.status === 'confirmed' && typeof data.desktopAccessToken === 'string' && data.desktopAccessToken.length > 0 && typeof data.accountId === 'string') {
+    try {
+      storeDesktopToken(data.desktopAccessToken, data.accountId)
+    } catch (error) {
+      console.error('[device:poll] Failed to store desktop token locally, will retry on next poll', error)
+    }
+  }
+
   return data
 })
 
 ipcMain.handle('device:get-link-url', () => `${WEB_BASE_URL}/desktop/link`)
+
+// ── Desktop Auth ─────────────────────────────────────────
+ipcMain.handle('desktop-auth:status', () => getDesktopAuthStatus())
+ipcMain.handle('desktop-auth:runtime-config', () => ({
+  privyAppId: process.env['NEXT_PUBLIC_PRIVY_APP_ID'] ?? null,
+  suiNetwork: process.env['NEXT_PUBLIC_SUI_NETWORK'] ?? 'testnet',
+}))
+ipcMain.handle('desktop-auth:me', async () => {
+  return fetchDesktopJson('/api/desktop/me', {}, 'Fetch desktop profile')
+})
+ipcMain.handle('desktop-auth:get-privy-token', async () => {
+  return fetchDesktopJson<{ jwt: string; alreadyLinked: boolean }>('/api/desktop/auth/privy-token', {
+    method: 'POST',
+  }, 'Fetch desktop Privy token')
+})
+
+// ── Extract Draft Persistence ────────────────────────────
+ipcMain.handle('desktop:create-draft:load', () => loadExtractSoulDraft())
+ipcMain.handle('desktop:create-draft:save', (_event, draft: ExtractSoulDraft) => {
+  saveExtractSoulDraft(draft)
+})
+ipcMain.handle('desktop:create-draft:clear', () => {
+  clearExtractSoulDraft()
+})
+
+// ── Desktop Create + Mint Proxy ──────────────────────────
+ipcMain.handle('desktop:create:upload', async (_event, params: {
+  bytes: Uint8Array
+  fileName: string
+  mimeType: string
+  uploadType: 'public' | 'encrypted'
+  sendObjectTo?: string | null
+}) => {
+  const formData = new FormData()
+  formData.append('file', new File([params.bytes], params.fileName, { type: params.mimeType }))
+  formData.append('type', params.uploadType)
+  if (params.sendObjectTo?.trim()) {
+    formData.append('sendObjectTo', params.sendObjectTo.trim())
+  }
+
+  return fetchDesktopJson('/api/souls/upload', {
+    method: 'POST',
+    body: formData,
+  }, 'Upload desktop soul asset')
+})
+ipcMain.handle('desktop:create:personal-kiosk', async (_event, params: {
+  walletAddress?: string | null
+}) => {
+  const walletAddress = params.walletAddress?.trim()
+  const query = walletAddress
+    ? `?walletAddress=${encodeURIComponent(walletAddress)}`
+    : ''
+  return fetchDesktopJson(`/api/souls/personal-kiosk${query}`, {}, 'Fetch desktop personal kiosk')
+})
+ipcMain.handle('desktop:create:publish', async (_event, payload: Record<string, unknown>) => {
+  return fetchDesktopJson('/api/souls/publish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }, 'Publish desktop soul')
+})
+
+// ── Soul Download + Active Persona ──────────────────────
+ipcMain.handle('soul:download', async (_event, params: { catalogId: string }) => {
+  const token = loadDesktopToken()
+  return downloadSoulPersona(
+    { catalogId: params.catalogId },
+    {
+      webBaseUrl: WEB_BASE_URL,
+      desktopToken: token,
+      onProgress: (progress) => broadcastToAllWindows('soul:download-progress', progress),
+    },
+  )
+})
+
+ipcMain.handle('soul:set-active', async (_event, params: { catalogId: string; sourceType: string; sourceRef: string } | null) => {
+  if (!params) {
+    store.delete('activePersonaCatalogId')
+    store.delete('lastAppliedPersona')
+
+    // Sync reset to server so remote state is cleared
+    const token = loadDesktopToken()
+    if (token) {
+      try {
+        await fetch(`${WEB_BASE_URL}/api/desktop/me/active-persona`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ sourceType: null, sourceRef: null }),
+        })
+      } catch { /* offline — local cache is fallback */ }
+    }
+
+    broadcastToAllWindows('persona-changed', null)
+    return
+  }
+
+  const cached = getCachedSprite(`catalog-${params.catalogId}`)
+  if (!cached) throw new Error('Persona not cached — download it first')
+
+  let spriteConfig = null
+  try {
+    const configRaw = readFileSync(cached.configPath, 'utf-8')
+    spriteConfig = JSON.parse(configRaw)
+    // Resolve src to absolute file URL
+    if (cached.spritePath) {
+      spriteConfig.src = `file://${cached.spritePath}`
+    }
+  } catch {
+    throw new Error('Failed to load cached persona config')
+  }
+
+  store.set('activePersonaCatalogId', params.catalogId)
+  store.set('lastAppliedPersona', { catalogId: params.catalogId, spriteConfig })
+
+  // Sync to web if token available — use the catalog entry's real sourceType/sourceRef
+  const token = loadDesktopToken()
+  if (token) {
+    try {
+      const res = await fetch(`${WEB_BASE_URL}/api/desktop/me/active-persona`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sourceType: params.sourceType, sourceRef: params.sourceRef }),
+      })
+      if (!res.ok) {
+        console.warn(`[main] active-persona sync failed: ${res.status} ${res.statusText}`)
+      }
+    } catch { /* offline — local cache is fallback */ }
+  }
+
+  broadcastToAllWindows('persona-changed', { spriteConfig })
+})
+
+ipcMain.handle('soul:get-active', () => {
+  const saved = store.get('lastAppliedPersona') as { catalogId?: string; spriteConfig?: unknown } | undefined
+  if (saved?.spriteConfig) {
+    return { catalogId: saved.catalogId, spriteConfig: saved.spriteConfig }
+  }
+  return null
+})
+
+ipcMain.handle('soul:fetch-catalog', async (_event, params: { page: number; pageSize: number }) => {
+  const pathname = `/api/desktop/catalog?page=${params.page}&pageSize=${params.pageSize}`
+  try {
+    const res = await fetch(
+      `${WEB_BASE_URL}${pathname}`,
+    )
+    if (!res.ok) return null
+    return await readJsonOrThrow(res, 'Fetch desktop catalog', pathname)
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('soul:get-my-souls', async () => {
+  const token = loadDesktopToken()
+  if (!token) return []
+  const pathname = '/api/desktop/me/souls'
+  try {
+    const res = await fetch(`${WEB_BASE_URL}/api/desktop/me/souls`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return []
+    const data = await readJsonOrThrow<{ souls?: unknown[] }>(res, 'Fetch linked desktop souls', pathname)
+    return data.souls ?? []
+  } catch {
+    return []
+  }
+})
+
+// ── Session Extraction + Profile Analysis ────────────────
+ipcMain.handle('extraction:scan-sessions', async () => {
+  return scanSessions({
+    onProgress: (progress: ScanProgress) => broadcastToAllWindows('extraction:scan-progress', progress),
+  })
+})
+
+ipcMain.handle('extraction:analyze-profile', async (_event, results: SessionScanResult[]) => {
+  return analyzeSoulProfile(results)
+})
+
+// ── Shell ─────────────────────────────────────────────────
+ipcMain.handle('shell:open-external', async (_event, url: string) => {
+  await shell.openExternal(validateOpenExternalUrl(url))
+})
 
 // ── Agent wallet + status watcher IPC ──────────────────────
 ipcMain.handle('get-current-agent-status', () => getCurrentAgentStatus())
@@ -540,14 +793,15 @@ app.whenReady().then(async () => {
   if (deepLinkArg) handleDeepLink(deepLinkArg)
 
   try {
+    const dataDir = resolveDataDir()
     const builtinPersona = app.isPackaged
       ? join(process.resourcesPath, 'persona')
       : join(__dirname, '..', '..', 'resources', 'persona')
     if (existsSync(builtinPersona)) {
-      copyInitialTemplates(builtinPersona)
+      prepareBuiltinPersonaTemplates(dataDir, builtinPersona)
     }
 
-    await bootServices(resolveDataDir())
+    await bootServices(dataDir)
   } catch (err: unknown) {
     console.error('[main] Failed to boot services:', err)
     dialog.showErrorBox(

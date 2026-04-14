@@ -12,8 +12,7 @@ import {
 import { useMood } from '../../hooks/useMood'
 import './styles.css'
 import { SpriteRenderer } from '../SpriteRenderer'
-import type { SpriteSheetConfig } from '../SpriteRenderer'
-import spriteConfigJson from '../../../../resources/default-persona/sprite-config.json'
+import { useActivePersona } from '../../hooks/useActivePersona'
 
 type TaskAgent = 'claude' | 'codex'
 type ToastKind = 'info' | 'success' | 'error' | 'attention'
@@ -44,11 +43,6 @@ const BASE_WINDOW_WIDTH = 280
 const EXPANDED_WINDOW_WIDTH = 420
 const BASE_WINDOW_HEIGHT = 260
 const EXPANDED_WINDOW_HEIGHT = 600
-
-const spriteConfig: SpriteSheetConfig = {
-  ...spriteConfigJson,
-  src: new URL('../../../../resources/default-persona/sprite.png', import.meta.url).href,
-}
 
 const DEFAULT_UPDATE_STATUS: PetUpdateStatus = { state: 'idle' }
 
@@ -99,6 +93,7 @@ function extractFilePaths(dataTransfer: DataTransfer): string[] {
 
 export function FloatingBall(): React.JSX.Element {
   const { mood: backendMood } = useMood()
+  const { config: spriteConfig } = useActivePersona()
 
   const [statusFile, setStatusFile] = useState<AgentStatusFile | null>(null)
   const [updateStatus, setUpdateStatus] = useState<PetUpdateStatus>(DEFAULT_UPDATE_STATUS)

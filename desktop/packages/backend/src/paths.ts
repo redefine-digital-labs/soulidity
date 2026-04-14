@@ -32,6 +32,15 @@ export function initDataDir(dir: string): void {
 }
 
 /**
+ * 安全准备 dataDir + builtin persona 模板。
+ * 先显式初始化 dataDir，避免 copyInitialTemplates 在 packaged 环境退回到 app bundle 内部路径。
+ */
+export function prepareBuiltinPersonaTemplates(dataDir: string, builtinPersonaDir: string): void {
+  initDataDir(dataDir)
+  copyInitialTemplates(builtinPersonaDir)
+}
+
+/**
  * 获取数据根目录
  * - 已初始化 → 返回注入的路径
  * - 未初始化 → 开发模式 fallback 探测

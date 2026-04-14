@@ -27,18 +27,60 @@ function isDesktopCatalogSourceType(value: string | null): value is DesktopCatal
   return value === 'starter' || value === 'soul'
 }
 
+const SENSITIVE_PREFERENCE_KEYS = new Set([
+  'desktopAccessTokenPending',
+  'desktopAccessTokenHash',
+  'desktopAccessTokenIssuedAt',
+  'desktopAccessTokenSessionId',
+])
+
 function normalizeDesktopPreferences(value: Prisma.JsonValue | null): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null
   }
 
-  return value as Record<string, unknown>
+  const raw = value as Record<string, unknown>
+  const sanitized: Record<string, unknown> = {}
+  for (const key of Object.keys(raw)) {
+    if (!SENSITIVE_PREFERENCE_KEYS.has(key)) {
+      sanitized[key] = raw[key]
+    }
+  }
+  return sanitized
 }
 
-function toDesktopProfile(row: DesktopProfileRow): DesktopProfile {
+async function resolvePrimarySuiAddress(accountId: string): Promise<string | null> {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: {
+      members: {
+        where: { kind: 'human' },
+        orderBy: { joinedAt: 'asc' },
+        take: 1,
+        select: {
+          walletBindings: {
+            where: { chain: 'sui' },
+            orderBy: [
+              { isPrimary: 'desc' },
+              { createdAt: 'asc' },
+              { id: 'asc' },
+            ],
+            take: 1,
+            select: { address: true },
+          },
+        },
+      },
+    },
+  })
+
+  return account?.members[0]?.walletBindings[0]?.address ?? null
+}
+
+function toDesktopProfile(row: DesktopProfileRow, primarySuiAddress: string | null): DesktopProfile {
   return {
     accountId: row.accountId,
     agentAddress: row.agentAddress ?? null,
+    primarySuiAddress,
     activeSourceType: isDesktopCatalogSourceType(row.activeSourceType) ? row.activeSourceType : null,
     activeSourceRef: row.activeSourceRef,
     preferences: normalizeDesktopPreferences(row.preferences),
@@ -91,7 +133,8 @@ export async function getDesktopMe(accountId: string): Promise<DesktopMeResponse
   if (!profileRow) {
     profileRow = await upsertDesktopProfile(accountId)
   }
-  const profile = toDesktopProfile(profileRow)
+  const primarySuiAddress = await resolvePrimarySuiAddress(accountId)
+  const profile = toDesktopProfile(profileRow, primarySuiAddress)
 
   if (!profile.activeSourceType || !profile.activeSourceRef) {
     return {
@@ -138,7 +181,7 @@ export async function setDesktopActivePersona(
     })
 
     return {
-      profile: toDesktopProfile(profileRow),
+      profile: toDesktopProfile(profileRow, await resolvePrimarySuiAddress(accountId)),
       activePersona,
     }
   }
@@ -150,7 +193,7 @@ export async function setDesktopActivePersona(
   })
 
   return {
-    profile: toDesktopProfile(profileRow),
+    profile: toDesktopProfile(profileRow, await resolvePrimarySuiAddress(accountId)),
     activePersona: null,
   }
 }
