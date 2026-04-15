@@ -46,6 +46,15 @@ vi.mock('@/lib/soulidity/mirror/upsert-grant', () => ({
   endActiveSoulGrantProjections: vi.fn(),
 }))
 
+vi.mock('@/lib/soulidity/mirror/upsert-asset', () => ({
+  upsertAssetVersionProjection: vi.fn(),
+}))
+
+vi.mock('@/lib/soulidity/mirror/upsert-content-access', () => ({
+  upsertContentAccessProjection: vi.fn(),
+  markContentAccessRevoked: vi.fn(),
+}))
+
 describe('syncSoulProjectionFromChain', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -97,7 +106,6 @@ describe('syncSoulProjectionFromChain', () => {
       soulObjectId: '0xsoul',
       stateObjectId: '0xstate',
       memoryObjectId: '0xmemory',
-      category: 'agents',
       tags: ['alpha'],
       previewImages: [],
     })

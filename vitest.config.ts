@@ -18,6 +18,7 @@ export default defineConfig({
       { find: '@bot', replacement: fileURLToPath(new URL('./src/bot', import.meta.url)) },
       { find: '@shared', replacement: fileURLToPath(new URL('./src/shared', import.meta.url)) },
       { find: '@web', replacement: fileURLToPath(new URL('./web', import.meta.url)) },
+      { find: '@lib', replacement: fileURLToPath(new URL('./web/lib', import.meta.url)) },
       { find: '@soulidity/shared', replacement: fileURLToPath(new URL('./desktop/packages/shared/src/index.ts', import.meta.url)) },
       { find: 'react/jsx-dev-runtime', replacement: requireExistingAliasTarget('./web/node_modules/react/jsx-dev-runtime.js') },
       { find: 'react/jsx-runtime', replacement: requireExistingAliasTarget('./web/node_modules/react/jsx-runtime.js') },

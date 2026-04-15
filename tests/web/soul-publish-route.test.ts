@@ -154,7 +154,7 @@ describe('soul publish route', () => {
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(createRequest({
       txDigest: TX_DIGEST,
-      category: 'Assistant',
+
       tags: ['typescript'],
       previewImages: ['https://example.com/cover.png'],
       sealSidecar: 'envelope',
@@ -176,7 +176,7 @@ describe('soul publish route', () => {
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(createRequest({
       txDigest: TX_DIGEST,
-      category: 'Assistant',
+
       tags: ['typescript'],
       previewImages: ['https://example.com/cover.png'],
       sealSidecar: 'envelope',
@@ -196,7 +196,7 @@ describe('soul publish route', () => {
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(createRequest({
       txDigest: TX_DIGEST,
-      category: 'Assistant',
+
       tags: ['typescript'],
       previewImages: ['https://example.com/cover.png'],
       sealSidecar: 'envelope',
@@ -215,7 +215,7 @@ describe('soul publish route', () => {
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(createRequest({
       txDigest: TX_DIGEST,
-      category: 'Assistant',
+
       tags: ['typescript'],
       previewImages: ['https://example.com/cover.png'],
       sealSidecar: 'envelope',
@@ -232,7 +232,7 @@ describe('soul publish route', () => {
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(createRequest({
       txDigest: TX_DIGEST,
-      category: 'Assistant',
+
       tags: ['typescript', 'desktop'],
       previewImages: ['https://example.com/cover.png'],
       sealSidecar: 'envelope',
@@ -261,7 +261,7 @@ describe('soul publish route', () => {
       soulObjectId: SOUL_ID,
       stateObjectId: STATE_ID,
       memoryObjectId: MEMORY_ID,
-      category: 'Assistant',
+
       tags: ['typescript', 'desktop'],
       creatorMemberId: 'member-1',
       currentOwnerMemberId: 'member-1',

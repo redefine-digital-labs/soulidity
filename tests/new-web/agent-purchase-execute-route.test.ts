@@ -112,7 +112,6 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
       onChainId: SOUL_ID,
       stateOnChainId: STATE_ID,
       memoryOnChainId: MEMORY_ID,
-      category: 'Trading',
       tags: ['e2e'],
       previewImages: [],
       readme: null,

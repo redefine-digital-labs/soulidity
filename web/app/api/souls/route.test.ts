@@ -25,7 +25,7 @@ describe('buildSoulsWhere', () => {
     expect(
       buildSoulsWhere({
         q: 'trading',
-        category: '',
+        tag: '',
         minPriceRaw: '',
         maxPriceRaw: '',
         creator: 'alice',

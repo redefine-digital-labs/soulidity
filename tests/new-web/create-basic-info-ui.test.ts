@@ -11,7 +11,7 @@ describe('web create basic info regression guards', () => {
     const source = readSource('web/app/create/page.tsx')
 
     expect(source).not.toContain("import { FlowBar } from '@/components/nav/flow-bar'")
-    expect(source).toContain('FieldLabel label="Category" required')
+    expect(source).not.toContain('FieldLabel label="Category"')
     expect(source).toContain('FieldLabel label="Tags (comma-separated)"')
     expect(source).toContain('FieldLabel label="Preview Image" required')
     expect(source).toContain('FieldLabel label="Creator Royalty" optional')

@@ -20,7 +20,7 @@
 - `creator_royalty_bps` 计入所有 Soul 购买总价，包括创作者首售；首售时 surcharge 不单独拆出 royalty coin，而是随卖家收款一起流向 creator。
 
 待确认差异：
-- `logic-diagram.html` 写了平台费 `2.5%` 且提到 `Solana USDC relayer`，当前 Move 包只有 Sui 上的 `Coin<USDC>`，平台费也是可配置且默认 `0`。
+- `logic-diagram.html` 写了平台费 `2.5%` 且提到 `Solana USDC relayer`，当前 Move 包只有 Sui 上的 `Coin<USDC>`，平台费也是可配置且默认 `2.5%`。
 - 文档里有 `Collection Expand` 概念，但当前合约只实现了 `Personal Join`，没有整集合扩展能力。
 
 ## Move E2E 范围外

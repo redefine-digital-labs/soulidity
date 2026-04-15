@@ -32,7 +32,6 @@ describe('extract draft helpers', () => {
     })
 
     expect(draft.name).toBe('JSON Thorough')
-    expect(draft.category).toBe('Assistant')
     expect(draft.royaltyBps).toBe(500)
     expect(draft.tags).toEqual(['thorough', 'hands-on', 'systems-oriented'])
     expect(draft.traits).toEqual(['thorough', 'hands-on', 'systems-oriented'])
