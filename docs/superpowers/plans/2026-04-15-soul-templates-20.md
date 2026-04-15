@@ -548,29 +548,15 @@ if (params.category) searchParams.set('category', params.category)
 if (params.tag) searchParams.set('tag', params.tag)
 ```
 
-- [ ] **Step 9: Allow zero-price in use-list-soul.ts**
+- [x] **Step 9: ~~Allow zero-price in use-list-soul.ts~~ (Obsolete)**
 
-```typescript
-// REPLACE (line 30-34):
-if (priceAtomic <= 0n) {
-  setError('Price must be greater than zero')
-  setStatus('error')
-  return
-}
-
-// WITH:
-if (priceAtomic < 0n) {
-  setError('Price cannot be negative')
-  setStatus('error')
-  return
-}
-```
+> **Obsolete:** Zero-price listing support was removed. Soul listings require a strictly positive price. See invalidation note at the top of this plan.
 
 - [ ] **Step 10: Commit**
 
 ```bash
 git add web/components/providers/ web/lib/hooks/
-git commit -m "feat: remove category from providers and hooks, allow zero-price listing"
+git commit -m "feat: remove category from providers and hooks"
 ```
 
 ---
@@ -806,26 +792,14 @@ Files and their fixture patterns:
 - `tests/web/soul-repository.test.ts` — remove `category: 'Research'`
 - `tests/web/soul-detail-route-ids.test.ts` — remove `category: 'Research'` (3 occurrences)
 - `tests/web/community-profile-route.test.ts` — remove `category: 'Research'`
-- `tests/web/tx-builder.test.ts` — remove `category: 'Research'` (6 occurrences), add zero-price list test
+- `tests/web/tx-builder.test.ts` — remove `category: 'Research'` (6 occurrences)
 - `tests/web/soul-publish-route.test.ts` — remove `category: 'Assistant'` (6 occurrences)
 - `tests/web/soul-publish-draft.test.ts` — remove category from fixtures
 - `tests/desktop/extract-draft.test.ts` — remove `expect(draft.category)` assertion
 
-- [ ] **Step 2: Add zero-price TX builder test**
+- [x] **Step 2: ~~Add zero-price TX builder test~~ (Obsolete)**
 
-In `tests/web/tx-builder.test.ts`, add:
-```typescript
-it('buildListSoulTx accepts zero price', () => {
-  const tx = buildListSoulTx({
-    currentKioskId: '0x1',
-    currentKioskCapOnChainId: '0x2',
-    stateObjectId: '0x3',
-    soulObjectId: '0x4',
-    priceAtomic: 0n,
-  })
-  expect(tx).toBeDefined()
-})
-```
+> **Obsolete:** Zero-price listing support was removed. `buildListSoulTx` requires `priceAtomic > 0n`. See invalidation note at the top of this plan.
 
 - [ ] **Step 3: Add tag normalization tests**
 
@@ -864,7 +838,7 @@ npm test
 
 ```bash
 git add tests/ web/lib/soulidity/tags.test.ts
-git commit -m "test: update all fixtures for category removal, add tag + zero-price tests"
+git commit -m "test: update all fixtures for category removal, add tag normalization tests"
 ```
 
 ---
