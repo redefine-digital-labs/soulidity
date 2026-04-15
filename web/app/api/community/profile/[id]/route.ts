@@ -119,7 +119,6 @@ export async function GET(
           name: true,
           description: true,
           imageUrl: true,
-          category: true,
           tags: true,
           previewImages: true,
           creatorRoyaltyBps: true,

@@ -82,6 +82,7 @@ export type {
 
 export type {
   ExtractSoulDraft,
+  ExtractSoulDraftPendingSync,
 } from './types/extract-draft'
 
 export {

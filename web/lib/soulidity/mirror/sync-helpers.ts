@@ -24,7 +24,6 @@ export async function syncSoulProjectionFromChain(params: {
   soulObjectId: string
   stateObjectId: string
   memoryObjectId: string
-  category: string
   tags: string[]
   previewImages: string[]
   readme?: string | null
@@ -98,7 +97,6 @@ export async function syncSoulProjectionFromChain(params: {
     currentKioskCapOnChainId: kioskCapOnChainId,
     creatorMemberId: params.creatorMemberId ?? null,
     currentOwnerMemberId: params.currentOwnerMemberId ?? null,
-    category: params.category,
     tags: params.tags,
     previewImages: params.previewImages,
     readme: params.readme ?? null,

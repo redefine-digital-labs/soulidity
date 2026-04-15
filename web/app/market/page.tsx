@@ -10,42 +10,17 @@ import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { FilterTabs } from '@/components/nav/filter-tabs'
 import { Input, Select } from '@/components/ui/input'
-import { Tag, type TagColor } from '@/components/ui/tag'
+import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@/lib/soulidity/types'
 
-const filterTabs = [
-  { id: 'all', label: 'All' },
-  { id: 'trading', label: 'Trading' },
-  { id: 'research', label: 'Research' },
-  { id: 'social', label: 'Social' },
-  { id: 'defi', label: 'DeFi' },
-  { id: 'nft', label: 'NFT' },
-  { id: 'infra', label: 'Infrastructure' },
-]
-
-const tagColors: Record<string, TagColor> = {
-  trading: 'gold',
-  research: 'teal',
-  social: 'gold',
-  defi: 'gold',
-  nft: 'purple',
-  art: 'purple',
-  infrastructure: 'teal',
-  imported: 'teal',
-  native: 'success',
-  'personal-join': 'purple',
-}
+// Tag colors removed — tags now use uniform 'muted' styling
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
   return `${value.slice(0, 6)}…${value.slice(-4)}`
-}
-
-function resolveTagColor(value: string) {
-  return tagColors[value.toLowerCase()] ?? 'muted'
 }
 
 function buildHeroStyle(imageUrl: string | null | undefined) {
@@ -165,6 +140,7 @@ export default function MarketPage() {
   const [creator, setCreator] = useState('')
   const [debouncedCreator, setDebouncedCreator] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [hotTags, setHotTags] = useState<Array<{ tag: string; count: number }>>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Debounce search query 300ms
@@ -190,14 +166,21 @@ export default function MarketPage() {
     }
   }, [creator])
 
-  const categoryMap: Record<string, string> = {
-    all: '', trading: 'trading', research: 'research', social: 'social',
-    defi: 'defi', nft: 'nft', infra: 'infrastructure',
-  }
+  useEffect(() => {
+    fetch('/api/souls/tags')
+      .then((r) => r.json())
+      .then((data) => setHotTags(data.tags ?? []))
+      .catch(() => {})
+  }, [])
+
+  const filterTabs = [
+    { id: 'all', label: 'All' },
+    ...hotTags.slice(0, 8).map((t) => ({ id: t.tag, label: t.tag })),
+  ]
 
   const { data: soulsData, isLoading: soulsLoading } = useSoulsList({
     page: 1,
-    category: categoryMap[activeFilter] || '',
+    tag: activeFilter === 'all' ? '' : activeFilter,
     q: debouncedQuery,
     sort,
     minPrice: humanPriceToAtomic(minPrice),
@@ -387,8 +370,9 @@ export default function MarketPage() {
                     </div>
                     <div className="space-y-2.5 p-3.5">
                       <div className="flex flex-wrap gap-1.5">
-                        <Tag color={resolveTagColor(soul.category)}>{soul.category}</Tag>
-                        <Tag color="muted">Soul</Tag>
+                        {soul.tags.slice(0, 3).map((tag) => (
+                          <Tag key={tag} color="muted">{tag}</Tag>
+                        ))}
                       </div>
                       <div>
                         <h3 className="text-sm font-bold text-foreground">{soul.name}</h3>

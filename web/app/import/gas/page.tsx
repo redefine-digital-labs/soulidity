@@ -228,7 +228,6 @@ export default function ImportGasPage() {
       await importSoul({
         name: ctx.resolvedName,
         description: ctx.resolvedDescription,
-        category: ctx.category,
         tags: parsedTags,
         imageUrl: results.coverImage.blobUrl,
         previewImages: [results.coverImage.blobUrl],
@@ -254,7 +253,7 @@ export default function ImportGasPage() {
     setDeployError(null)
     try {
       await importSoul({
-        name: '', description: '', category: '', tags: [], imageUrl: '',
+        name: '', description: '', tags: [], imageUrl: '',
         previewImages: [], protectedBlobObjectId: '', creatorRoyaltyBps: 0,
         originRef: ctx.originRef,
       })

@@ -7,7 +7,7 @@ export type SoulsSortOption = 'newest' | 'price_asc' | 'price_desc' | 'popular'
 
 export interface SoulsListParams {
   page?: number
-  category?: string
+  tag?: string
   q?: string
   sort?: SoulsSortOption
   minPrice?: string
@@ -18,7 +18,7 @@ export interface SoulsListParams {
 export function useSoulsList(params: SoulsListParams) {
   const searchParams = new URLSearchParams()
   if (params.page) searchParams.set('page', String(params.page))
-  if (params.category) searchParams.set('category', params.category)
+  if (params.tag) searchParams.set('tag', params.tag)
   if (params.q) searchParams.set('q', params.q)
   if (params.sort && params.sort !== 'newest') searchParams.set('sort', params.sort)
   if (params.minPrice) searchParams.set('minPrice', params.minPrice)

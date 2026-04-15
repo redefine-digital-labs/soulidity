@@ -37,10 +37,10 @@ export default function GettingStartedPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">2. Browse Souls</h2>
         <p className="text-sm text-muted">
-          All listed Souls are visible on the <Link href="/market" className="text-purple hover:text-foreground transition">marketplace</Link>. Each card shows the Soul name, creator, listed price in USDC, and category tags.
+          All listed Souls are visible on the <Link href="/market" className="text-purple hover:text-foreground transition">marketplace</Link>. Each card shows the Soul name, creator, listed price in USDC, and tags.
         </p>
         <ul className="text-sm text-muted space-y-1.5">
-          <li>Use the category filter and search to narrow results.</li>
+          <li>Use the tag filter and search to narrow results.</li>
           <li>Click a Soul card to view its detail page — description, preview images, and grant status.</li>
           <li>The Soul detail page shows the current owner, creator royalty rate, and any active collection membership.</li>
           <li>Unlisted (held) Souls are not shown in the public marketplace.</li>

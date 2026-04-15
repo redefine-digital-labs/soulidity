@@ -10,7 +10,7 @@ import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hi
 import { buttonStyles } from '@/components/ui/button'
 import { UploadZone } from '@/components/ui/upload-zone'
 import { cn } from '@/lib/utils/cn'
-import { Input, Select, Textarea } from '@/components/ui/input'
+import { Input, Textarea } from '@/components/ui/input'
 import { useImportSoul } from '@/components/providers/import-soul-provider'
 import { MAPPING_OPTIONS, type SoulTargetField } from '@/lib/import/field-mapping'
 import { SOUL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
@@ -24,8 +24,6 @@ const steps = [
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
-
-const categoryOptions = ['Trading', 'Research', 'Assistant', 'Creator'] as const
 
 const royaltyOptions = [
   { value: 0, label: 'Off', desc: '0%' },
@@ -476,35 +474,6 @@ export default function ImportMapPage() {
               </button>
             </div>
           )}
-        </div>
-
-        {/* Category */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5">
-            <span className="page-kicker text-muted">Category</span>
-            <span className="text-xs font-semibold text-danger">*</span>
-          </div>
-          <div className="relative">
-            <Select
-              value={ctx.category}
-              onChange={(e) => ctx.setCategory(e.target.value)}
-              className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 pr-11 text-sm text-foreground focus:border-purple"
-            >
-              {categoryOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Select>
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-muted"
-            >
-              <svg width="12" height="8" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1 1.25L6 6.25L11 1.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-          </div>
         </div>
 
         {/* Tags */}

@@ -8,7 +8,6 @@ describe('normalizeBatchTemplateRows', () => {
       {
         'Soul Name': 'AlphaScout',
         Description: 'Tracks new Sui pools',
-        Category: 'Trading',
         Tags: 'ai, trading,  defi ',
         'Creator Royalty (%)': '5',
       },
@@ -19,11 +18,23 @@ describe('normalizeBatchTemplateRows', () => {
       {
         name: 'AlphaScout',
         description: 'Tracks new Sui pools',
-        category: 'Trading',
         tags: ['ai', 'trading', 'defi'],
         creatorRoyaltyBps: 500,
       },
     ])
+  })
+
+  it('uses default royalty when column is missing', () => {
+    const result = normalizeBatchTemplateRows([
+      {
+        'Soul Name': 'AlphaScout',
+        Description: 'Tracks new Sui pools',
+        Tags: 'ai',
+      },
+    ], 300)
+
+    expect(result.errors).toEqual([])
+    expect(result.souls[0].creatorRoyaltyBps).toBe(300)
   })
 
   it('adds a supply-cap mismatch error without dropping parsed rows', () => {
@@ -31,7 +42,6 @@ describe('normalizeBatchTemplateRows', () => {
       {
         'Soul Name': 'AlphaScout',
         Description: 'Tracks new Sui pools',
-        Category: 'Trading',
       },
     ], 300, 2)
 

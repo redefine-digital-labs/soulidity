@@ -20,6 +20,12 @@ describe('publish-soulidity-and-sync', () => {
             collection_policy_id: '0xcollectionpolicy',
           },
         },
+        {
+          type: '0xpackage::market::MarketUpgradeStateInitialized',
+          parsedJson: {
+            upgrade_state_id: '0xupgradestate',
+          },
+        },
       ],
     }, {
       paymentCoinType: '0x2::coin::COIN',
@@ -34,6 +40,7 @@ describe('publish-soulidity-and-sync', () => {
       paymentCoinType: '0x2::coin::COIN',
       publishTxDigest: '6XqMK1KoLFXTP4gg4rVraN4vqzTJ28kQp7iPR7wkhdLd',
       upgradeCapId: '0xupgradecap',
+      upgradeStateId: '0xupgradestate',
     })
   })
 
@@ -52,6 +59,12 @@ describe('publish-soulidity-and-sync', () => {
             registry_id: '0xregistry',
             soul_policy_id: '0xsoulpolicy',
             collection_policy_id: '0xcollectionpolicy',
+          },
+        },
+        {
+          type: '0xpackage::market::MarketUpgradeStateInitialized',
+          parsedJson: {
+            upgrade_state_id: '0xupgradestate',
           },
         },
       ],
@@ -75,6 +88,12 @@ describe('publish-soulidity-and-sync', () => {
             registry_id: '0xregistry',
             soul_policy_id: '0xsoulpolicy',
             collection_policy_id: '0xcollectionpolicy',
+          },
+        },
+        {
+          type: '0xpackage::market::MarketUpgradeStateInitialized',
+          parsedJson: {
+            upgrade_state_id: '0xupgradestate',
           },
         },
       ],

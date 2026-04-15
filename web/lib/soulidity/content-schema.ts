@@ -1,10 +1,7 @@
 export const SOUL_ENTRY_TYPES = ['founding-memory', 'memory-entry', 'skill-version'] as const
 export const SOUL_WRITER_KINDS = ['founder', 'owner', 'granted-agent'] as const
-export const SOUL_CATEGORIES = ['Trading', 'Research', 'Assistant', 'Creator'] as const
-
 export type SoulEntryType = (typeof SOUL_ENTRY_TYPES)[number]
 export type SoulWriterKindName = (typeof SOUL_WRITER_KINDS)[number]
-export type SoulCategory = (typeof SOUL_CATEGORIES)[number]
 export type SoulidityMetadata = Record<string, unknown>
 
 export interface SkillMdFrontmatter {

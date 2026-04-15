@@ -7,6 +7,7 @@ const mockedPrisma = vi.hoisted(() => ({
     update: vi.fn(),
   },
   desktopProfile: {
+    findUnique: vi.fn(),
     upsert: vi.fn(),
   },
   $transaction: vi.fn(),
@@ -235,11 +236,13 @@ describe('completeDesktopDeviceSession', () => {
     })
 
     expect(result.status).toBe('confirmed')
-    expect(mockedPrisma.desktopProfile.upsert).toHaveBeenCalledWith({
-      where: { accountId: 'account-123' },
-      create: { accountId: 'account-123', agentAddress: '0xagent123' },
-      update: { agentAddress: '0xagent123' },
-    })
+    expect(mockedPrisma.desktopProfile.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId: 'account-123' },
+        create: expect.objectContaining({ accountId: 'account-123', agentAddress: '0xagent123' }),
+        update: expect.objectContaining({ agentAddress: '0xagent123' }),
+      }),
+    )
   })
 
   it('throws conflict when concurrent request confirmed with different account', async () => {

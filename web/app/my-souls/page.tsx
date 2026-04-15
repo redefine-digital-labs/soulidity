@@ -460,7 +460,7 @@ export default function MySoulsPage() {
                     <div className="text-sm font-bold text-foreground truncate">{soul.name}</div>
                     <div className="text-xs text-muted line-clamp-2 leading-relaxed">{soul.description}</div>
                     <div className="flex items-center justify-between pt-1">
-                      <span className="text-[10px] uppercase text-muted tracking-wide">{soul.category}</span>
+                      <span className="text-[10px] uppercase text-muted tracking-wide">{soul.tags[0] ?? 'Soul'}</span>
                       <span className="text-xs font-bold text-gold">
                         {soul.listedPriceAtomic ? formatAtomicAmountForDisplay(soul.listedPriceAtomic) : 'Held'}
                       </span>

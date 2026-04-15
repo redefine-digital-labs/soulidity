@@ -14,4 +14,18 @@ describe('sell flow regression guards', () => {
     expect(source).toContain("router.replace(`/souls/${encodeURIComponent(id)}/sell/success?price=${encodeURIComponent(rawPrice)}`)")
     expect(source).not.toContain("if (status === 'done' && soul)")
   })
+
+  it('allows zero-price listings to reach authorization from the sell page', () => {
+    const source = readSource('web/app/souls/[id]/sell/page.tsx')
+
+    expect(source).toContain('const authorizeHref = priceAtomic != null && !belowFloor')
+    expect(source).not.toContain('const authorizeHref = priceAtomic && !belowFloor')
+  })
+
+  it('treats 0 as a valid price on the authorize page', () => {
+    const source = readSource('web/app/souls/[id]/sell/authorize/page.tsx')
+
+    expect(source).toContain('if (priceAtomic == null || priceError)')
+    expect(source).not.toContain('if (!priceAtomic || priceError)')
+  })
 })

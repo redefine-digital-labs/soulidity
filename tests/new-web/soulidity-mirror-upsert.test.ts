@@ -169,7 +169,7 @@ describe('upsertSoulProjection', () => {
       state: makeSoulStateObject(),
       memory: makeSoulMemoryObject(),
       currentKioskCapOnChainId: '0xkioskcap_explicit',
-      category: 'agents',
+
       tags: ['test'],
       previewImages: ['https://example.com/preview.png'],
     })
@@ -195,7 +195,7 @@ describe('upsertSoulProjection', () => {
       state: makeSoulStateObject({ currentKioskId: '0xkiosk_state_value' }),
       memory: makeSoulMemoryObject(),
       currentKioskCapOnChainId: '0xkioskcap_from_params',
-      category: 'agents',
+
       tags: [],
       previewImages: [],
     })
@@ -221,7 +221,7 @@ describe('upsertSoulProjection', () => {
       state: makeSoulStateObject(),
       memory: makeSoulMemoryObject(),
       currentKioskCapOnChainId: '0xkioskcap',
-      category: 'agents',
+
       tags: [],
       previewImages: [],
       listedPriceAtomic: 1_000_000_000n,
@@ -246,7 +246,7 @@ describe('upsertSoulProjection', () => {
       state: makeSoulStateObject(),
       memory: makeSoulMemoryObject(),
       currentKioskCapOnChainId: '0xkioskcap',
-      category: 'agents',
+
       tags: [],
       previewImages: [],
     })
@@ -267,7 +267,7 @@ describe('upsertSoulProjection', () => {
       state: makeSoulStateObject(),
       memory: makeSoulMemoryObject(),
       currentKioskCapOnChainId: '0xkioskcap',
-      category: 'agents',
+
       tags: [],
       previewImages: [],
     })
@@ -288,7 +288,7 @@ describe('upsertSoulProjection', () => {
       state: makeSoulStateObject(),
       memory: makeSoulMemoryObject(),
       currentKioskCapOnChainId: '0xkioskcap',
-      category: 'agents',
+
       tags: [],
       previewImages: [],
     })
@@ -314,7 +314,7 @@ describe('upsertSoulProjection', () => {
       currentKioskCapOnChainId: '0xkioskcap',
       creatorMemberId: 'member-creator',
       currentOwnerMemberId: 'member-owner',
-      category: 'agents',
+
       tags: ['ai', 'bot'],
       previewImages: ['img1', 'img2'],
       readme: '# Hello',
@@ -344,7 +344,6 @@ describe('upsertSoulProjection', () => {
       expect(section.activeGrantCount).toBe(0)
       expect(section.skillsOnChainId).toBe('0xskills')
       expect(section).not.toHaveProperty('latestSkillVersionOnChainId')
-      expect(section.category).toBe('agents')
       expect(section.tags).toEqual(['ai', 'bot'])
       expect(section.previewImages).toEqual(['img1', 'img2'])
       expect(section.readme).toBe('# Hello')
@@ -362,7 +361,7 @@ describe('upsertSoulProjection', () => {
       state: makeSoulStateObject(),
       memory: makeSoulMemoryObject(),
       currentKioskCapOnChainId: '0xkioskcap',
-      category: 'agents',
+
       tags: [],
       previewImages: [],
       // deliberately omit optional fields

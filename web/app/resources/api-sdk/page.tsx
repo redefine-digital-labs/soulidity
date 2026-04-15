@@ -26,9 +26,9 @@ export default function ApiSdkPage() {
         <p className="text-sm text-muted">All routes are under <code>/api/souls/</code> in <code>web/app/api/souls/</code>.</p>
         <div className="space-y-3">
           {[
-            ['GET', '/api/souls', 'Browse all public souls. Supports pagination, category, and tag filters.'],
+            ['GET', '/api/souls', 'Browse all public souls. Supports pagination and tag filters.'],
             ['GET', '/api/souls/my', 'List souls owned by the authenticated user.'],
-            ['GET', '/api/souls/categories', 'List available soul categories.'],
+            ['GET', '/api/souls/tags', 'List popular soul tags with counts.'],
             ['GET', '/api/souls/[id]', 'Get soul detail by on-chain object ID or DB slug.'],
             ['POST', '/api/souls/publish', 'Mirror a publish TX. Body: txDigest + Seal envelope(s). Returns soul + state mirror.'],
             ['POST', '/api/souls/upload', 'Upload content files to Walrus and return blob object IDs + sealed DEK envelopes.'],

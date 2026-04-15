@@ -106,7 +106,6 @@ export async function POST(
       soulObjectId: soul.onChainId,
       stateObjectId: soul.stateOnChainId,
       memoryObjectId: soul.memoryOnChainId,
-      category: soul.category,
       tags: soul.tags,
       previewImages: soul.previewImages,
       readme: soul.readme,

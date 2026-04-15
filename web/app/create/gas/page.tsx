@@ -335,7 +335,6 @@ export default function CreateGasPage() {
       await publish({
         name: ctx.name,
         description: ctx.description,
-        category: ctx.category,
         tags: parsedTags,
         imageUrl: results.coverImage.blobUrl,
         previewImages: [results.coverImage.blobUrl],
@@ -362,7 +361,7 @@ export default function CreateGasPage() {
     try {
       // Recovery path in usePublish skips build+sign and uses stored sync body
       await publish({
-        name: '', description: '', category: '', tags: [], imageUrl: '',
+        name: '', description: '', tags: [], imageUrl: '',
         previewImages: [], protectedBlobObjectId: '', creatorRoyaltyBps: 0,
       })
     } catch (err) {

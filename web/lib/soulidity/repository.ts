@@ -82,7 +82,6 @@ export const soulAssetSummarySelect = {
   contentBlobObjectId: true,
   provenanceKind: true,
   originRef: true,
-  category: true,
   tags: true,
   previewImages: true,
   creatorAddress: true,
@@ -351,7 +350,6 @@ export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSum
         ? 'personal-join'
         : 'native',
     originRef: record.originRef,
-    category: record.category,
     tags: record.tags,
     previewImages: record.previewImages,
     creatorAddress: record.creatorAddress,

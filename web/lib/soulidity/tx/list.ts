@@ -9,8 +9,8 @@ export function buildListSoulTx(params: {
   priceAtomic: bigint
   collectionObjectId?: string | null
 }) {
-  if (params.priceAtomic <= 0n) {
-    throw new Error('priceAtomic must be positive')
+  if (params.priceAtomic < 0n) {
+    throw new Error('priceAtomic cannot be negative')
   }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')

@@ -68,7 +68,7 @@ function makeSoulAssetRow(overrides: Record<string, unknown> = {}) {
     contentBlobObjectId: '0x' + '44'.repeat(32),
     provenanceKind: 'native',
     originRef: null,
-    category: 'agents',
+
     tags: ['test', 'soul'],
     previewImages: ['preview-blob-1'],
     creatorAddress: '0x' + '55'.repeat(32),
@@ -441,10 +441,10 @@ describe('toSoulGrantRecord', () => {
     expect(result.scopes).toEqual(['skills', 'memory', 'seal'])
   })
 
-  it('defaults unknown scope to "seal"', () => {
+  it('filters out unknown scopes', () => {
     const row = makeGrantRecordRow({ scopes: ['unknown-scope'] })
     const result = toSoulGrantRecord(row as never)
-    expect(result.scopes).toEqual(['seal'])
+    expect(result.scopes).toEqual([])
   })
 
   it('handles null expiresAt', () => {
@@ -549,6 +549,7 @@ describe('toSoulAssetDetail', () => {
       grantRecords: [],
       memoryEntries: [],
       skillVersions: [],
+      _count: { skillVersions: 0 },
       ...overrides,
     }
   }

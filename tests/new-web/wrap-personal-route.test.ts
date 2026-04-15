@@ -10,6 +10,8 @@ const mockedCreateSkillVersionSealEnvelopeSidecar = vi.hoisted(() => vi.fn())
 const mockedExtractSoulMintedToKioskEvent = vi.hoisted(() => vi.fn())
 const mockedExtractMemoryEntryAppendedEvent = vi.hoisted(() => vi.fn())
 const mockedExtractSkillVersionAppendedEvent = vi.hoisted(() => vi.fn())
+const mockedExtractAssetVersionAppendedEvent = vi.hoisted(() => vi.fn())
+const mockedExtractContentAccessListCreatedEvent = vi.hoisted(() => vi.fn())
 const mockedGetRequiredSoulidityEnv = vi.hoisted(() => vi.fn())
 const mockedSyncSoulProjectionFromChain = vi.hoisted(() => vi.fn())
 const mockedUpsertMemoryEntryProjection = vi.hoisted(() => vi.fn())
@@ -24,6 +26,13 @@ const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
 const mockedResolveWalrusBlobId = vi.hoisted(() => vi.fn())
 const mockedAssertTransactionSender = vi.hoisted(() => vi.fn())
 const mockedRequireHumanWalletIdentity = vi.hoisted(() => vi.fn())
+const mockedBuildSyncSealSidecars = vi.hoisted(() => vi.fn())
+const mockedUpsertAssetVersionProjection = vi.hoisted(() => vi.fn())
+const mockedUpsertContentAccessProjection = vi.hoisted(() => vi.fn())
+
+vi.mock('@web/lib/prisma', () => ({
+  prisma: {},
+}))
 
 vi.mock('@web/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
@@ -48,6 +57,8 @@ vi.mock('@/lib/soulidity/events', () => ({
   extractSoulMintedToKioskEvent: mockedExtractSoulMintedToKioskEvent,
   tryExtractMemoryEntryAppendedEvent: mockedExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent: mockedExtractSkillVersionAppendedEvent,
+  tryExtractAssetVersionAppendedEvent: mockedExtractAssetVersionAppendedEvent,
+  tryExtractContentAccessListCreatedEvent: mockedExtractContentAccessListCreatedEvent,
 }))
 
 vi.mock('@/lib/soulidity/env', () => ({
@@ -56,6 +67,19 @@ vi.mock('@/lib/soulidity/env', () => ({
 
 vi.mock('@/lib/soulidity/mirror/sync-helpers', () => ({
   syncSoulProjectionFromChain: mockedSyncSoulProjectionFromChain,
+}))
+
+vi.mock('@/lib/soulidity/mirror/build-seal-sidecars', () => ({
+  buildSyncSealSidecars: mockedBuildSyncSealSidecars,
+  SealSidecarSyncConfigError: class SealSidecarSyncConfigError extends Error {},
+}))
+
+vi.mock('@/lib/soulidity/mirror/upsert-asset', () => ({
+  upsertAssetVersionProjection: mockedUpsertAssetVersionProjection,
+}))
+
+vi.mock('@/lib/soulidity/mirror/upsert-content-access', () => ({
+  upsertContentAccessProjection: mockedUpsertContentAccessProjection,
 }))
 
 vi.mock('@/lib/soulidity/mirror/upsert-memory', () => ({
@@ -147,66 +171,18 @@ describe('POST /api/wrap-link/personal', () => {
       createdAtMs: 1710000000001,
       blobObjectId: `0x${'8'.repeat(64)}`,
     })
-    mockedGetSealRuntimeConfig.mockReturnValue({
-      threshold: 2,
-      serverConfigs: [{ objectId: '0xserver', weight: 1 }],
-    })
-    mockedCreateSealClient.mockReturnValue({ encrypt: vi.fn() })
-    mockedGetSoulStateObject.mockResolvedValue({
-      packageId: RESOLVED_PACKAGE_ID,
-      skillsId: SKILLS_ID,
-    })
     mockedResolveWalrusBlobId.mockResolvedValue('walrus-blob-id-mock')
-    mockedUnsealDekEnvelope.mockImplementation((envelope: string) => ({
-      dek: Uint8Array.from({ length: 32 }, () => (
-        envelope === 'skills-envelope' ? 3 : envelope === 'memory-envelope' ? 2 : 1
-      )),
-      iv: Uint8Array.from({ length: 12 }, () => (
-        envelope === 'skills-envelope' ? 5 : envelope === 'memory-envelope' ? 4 : 3
-      )),
-      contentHash: envelope === 'skills-envelope'
-        ? 'b'.repeat(64)
-        : envelope === 'memory-envelope'
-          ? 'c'.repeat(64)
-          : 'a'.repeat(64),
-      mimeType: envelope === 'skills-envelope' ? 'application/zip' : 'text/markdown',
-      fileName: envelope === 'skills-envelope' ? 'skills.zip' : envelope === 'memory-envelope' ? 'memory.md' : 'character.md',
-    }))
-    mockedCreateSealEnvelopeSidecar.mockResolvedValue({
-      version: 1,
-      mode: 'seal-envelope',
-      documentId: '0xsoul-doc',
-      encryptedDek: 'soul-encrypted',
-      iv: 'soul-iv',
-      cipher: 'AES-GCM-256',
-      mimeType: 'text/markdown',
-      fileName: 'character.md',
-      contentHash: 'a'.repeat(64),
+    mockedBuildSyncSealSidecars.mockResolvedValue({
+      soulSidecar: { version: 1, mode: 'seal-envelope', documentId: '0xsoul-doc', encryptedDek: 'soul-encrypted', iv: 'soul-iv' },
+      memorySidecar: { version: 1, mode: 'seal-envelope', documentId: '0xmemory-doc', encryptedDek: 'memory-encrypted', iv: 'memory-iv' },
+      skillsSidecar: { version: 1, mode: 'seal-envelope', documentId: '0xskill-doc', encryptedDek: 'skill-encrypted', iv: 'skill-iv' },
+      assetsSidecar: null,
     })
-    mockedCreateMemoryEntrySealEnvelopeSidecar.mockResolvedValue({
-      version: 1,
-      mode: 'seal-envelope',
-      documentId: '0xmemory-doc',
-      encryptedDek: 'memory-encrypted',
-      iv: 'memory-iv',
-      cipher: 'AES-GCM-256',
-      mimeType: 'text/markdown',
-      fileName: 'memory.md',
-      contentHash: 'c'.repeat(64),
-    })
-    mockedCreateSkillVersionSealEnvelopeSidecar.mockResolvedValue({
-      version: 1,
-      mode: 'seal-envelope',
-      documentId: '0xskill-doc',
-      encryptedDek: 'skill-encrypted',
-      iv: 'skill-iv',
-      cipher: 'AES-GCM-256',
-      mimeType: 'application/zip',
-      fileName: 'skills.zip',
-      contentHash: 'b'.repeat(64),
-    })
+    mockedExtractAssetVersionAppendedEvent.mockReturnValue(null)
+    mockedExtractContentAccessListCreatedEvent.mockReturnValue(null)
     mockedUpsertMemoryEntryProjection.mockResolvedValue(undefined)
     mockedUpsertSkillVersionProjection.mockResolvedValue(undefined)
+    mockedUpsertAssetVersionProjection.mockResolvedValue(undefined)
     mockedSyncSoulProjectionFromChain.mockResolvedValue({
       onChainId: SOUL_ID,
       provenanceKind: 'personal-join',
@@ -223,36 +199,19 @@ describe('POST /api/wrap-link/personal', () => {
   it('converts string DEK envelopes into Seal sidecars before syncing the projection', async () => {
     const response = await callRoute({
       txDigest: TX_DIGEST,
-      category: 'personal-join',
       sealSidecar: 'char-envelope',
       memorySealSidecar: 'memory-envelope',
       skillsSealSidecar: 'skills-envelope',
     })
 
     expect(response.status).toBe(200)
-    expect(mockedUnsealDekEnvelope).toHaveBeenNthCalledWith(1, 'char-envelope')
-    expect(mockedUnsealDekEnvelope).toHaveBeenNthCalledWith(2, 'memory-envelope')
-    expect(mockedUnsealDekEnvelope).toHaveBeenNthCalledWith(3, 'skills-envelope')
-    expect(mockedCreateSealEnvelopeSidecar).toHaveBeenCalledWith(expect.objectContaining({
-      packageId: RESOLVED_PACKAGE_ID,
+    expect(mockedBuildSyncSealSidecars).toHaveBeenCalledWith(expect.objectContaining({
+      packageId: PACKAGE_ID,
       soulObjectId: SOUL_ID,
-      mimeType: 'text/markdown',
-      fileName: 'character.md',
-    }))
-    expect(mockedCreateMemoryEntrySealEnvelopeSidecar).toHaveBeenCalledWith(expect.objectContaining({
-      packageId: RESOLVED_PACKAGE_ID,
-      memoryObjectId: MEMORY_ID,
-      timestampKey: 1710000000000,
-      mimeType: 'text/markdown',
-      fileName: 'memory.md',
-    }))
-    expect(mockedCreateSkillVersionSealEnvelopeSidecar).toHaveBeenCalledWith(expect.objectContaining({
-      packageId: RESOLVED_PACKAGE_ID,
-      skillsObjectId: SKILLS_ID,
-      skillName: 'reporter',
-      versionIndex: 0,
-      mimeType: 'application/zip',
-      fileName: 'skills.zip',
+      stateObjectId: STATE_ID,
+      rawSoulEnvelope: 'char-envelope',
+      rawMemoryEnvelope: 'memory-envelope',
+      rawSkillsEnvelope: 'skills-envelope',
     }))
     expect(mockedSyncSoulProjectionFromChain).toHaveBeenCalledWith(expect.objectContaining({
       soulObjectId: SOUL_ID,
@@ -269,10 +228,10 @@ describe('POST /api/wrap-link/personal', () => {
   })
 
   it('returns 503 when Seal runtime is unavailable for a pending DEK envelope', async () => {
-    mockedGetSealRuntimeConfig.mockReturnValueOnce({
-      threshold: 0,
-      serverConfigs: [],
-    })
+    const { SealSidecarSyncConfigError } = await import('../../web/lib/soulidity/mirror/build-seal-sidecars') as any
+    mockedBuildSyncSealSidecars.mockRejectedValueOnce(
+      new SealSidecarSyncConfigError('Seal is not configured for Soul publishing'),
+    )
 
     const response = await callRoute({
       txDigest: TX_DIGEST,

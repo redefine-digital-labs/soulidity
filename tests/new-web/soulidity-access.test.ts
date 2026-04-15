@@ -94,7 +94,6 @@ function makeSoulAssetDetail(overrides: Partial<SoulAssetDetail> = {}): SoulAsse
     contentBlobObjectId: BLOB_OBJ_ID,
     provenanceKind: 'native',
     originRef: null,
-    category: 'agent',
     tags: [],
     previewImages: [],
     creatorAddress: OWNER_ADDR,

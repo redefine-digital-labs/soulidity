@@ -361,7 +361,6 @@ model SoulAsset {
   assetVersions         SoulAssetVersionRecord[] @relation("SoulAssetAssetVersions")
   contentAccess         ContentAccessRecord[]    @relation("SoulContentAccess")
   sealSidecar           Json?    @map("seal_sidecar")
-  category              String
   tags                  String[]
   previewImages         String[] @map("preview_images")
   readme                String?
@@ -378,7 +377,6 @@ model SoulAsset {
   @@index([skillsOnChainId])
   @@index([listingStatus, createdAt(sort: Desc)])
   @@index([currentKioskId, currentKioskCapOnChainId])
-  @@index([category])
   @@index([createdAt(sort: Desc)])
   @@map("soul_assets")
 }

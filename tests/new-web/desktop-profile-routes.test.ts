@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedRequireDesktopIdentity = vi.hoisted(() => vi.fn())
 const mockedGetDesktopMe = vi.hoisted(() => vi.fn())
 const mockedSetDesktopActivePersona = vi.hoisted(() => vi.fn())
 
-vi.mock('@web/lib/auth/identity', () => ({
-  requireIdentity: mockedRequireIdentity,
+vi.mock('@/lib/desktop/auth', () => ({
+  requireDesktopIdentity: mockedRequireDesktopIdentity,
 }))
 
 vi.mock('@/lib/desktop/profile', () => {
@@ -27,9 +27,8 @@ describe('GET /api/desktop/me', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
-    mockedRequireIdentity.mockResolvedValue({
-      error: null,
-      identity: { accountId: 'account-123', memberId: 'member-123', kind: 'human' },
+    mockedRequireDesktopIdentity.mockResolvedValue({
+      accountId: 'account-123',
     })
   })
 
@@ -57,9 +56,8 @@ describe('GET /api/desktop/me', () => {
   })
 
   it('rejects non-human identities', async () => {
-    mockedRequireIdentity.mockResolvedValue({
-      error: null,
-      identity: { accountId: 'agent-1', kind: 'agent' },
+    mockedRequireDesktopIdentity.mockResolvedValue({
+      error: Response.json({ error: 'Only human accounts can access desktop endpoints' }, { status: 403 }),
     })
 
     const { GET } = await import('../../web/app/api/desktop/me/route')
@@ -73,9 +71,8 @@ describe('PUT /api/desktop/me/active-persona', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
-    mockedRequireIdentity.mockResolvedValue({
-      error: null,
-      identity: { accountId: 'account-123', memberId: 'member-123', kind: 'human' },
+    mockedRequireDesktopIdentity.mockResolvedValue({
+      accountId: 'account-123',
     })
   })
 

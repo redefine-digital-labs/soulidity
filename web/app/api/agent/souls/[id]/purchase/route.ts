@@ -55,25 +55,30 @@ export async function POST(
       creatorRoyaltyBps: soul.creatorRoyaltyBps,
       collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
     })
+    const totalRequired = BigInt(quote.totalAtomic)
 
     const kioskResult = await resolveOwnedPersonalKiosk({ ownerAddresses: auth.walletAddresses })
     const buyerKioskId = kioskResult.status === 'ready' ? kioskResult.kiosk.currentKioskId : null
     const buyerKioskCapOnChainId = kioskResult.status === 'ready' ? kioskResult.kiosk.currentKioskCapOnChainId : null
 
-    const coinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
-      owner: agentAddress,
-      coinType: PAYMENT_COIN_TYPE,
-      requiredAmount: BigInt(quote.totalAtomic),
-    })
-    if (!coinIds || coinIds.length === 0) {
-      return NextResponse.json({ error: 'Insufficient USDC balance for purchase' }, { status: 402 })
+    let coinIds: string[] = []
+    if (totalRequired > 0n) {
+      const selectedCoinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
+        owner: agentAddress,
+        coinType: PAYMENT_COIN_TYPE,
+        requiredAmount: totalRequired,
+      })
+      if (!selectedCoinIds || selectedCoinIds.length === 0) {
+        return NextResponse.json({ error: 'Insufficient USDC balance for purchase' }, { status: 402 })
+      }
+      coinIds = selectedCoinIds
     }
 
     const tx = buildBuySoulTx({
       sellerKioskId: soul.currentKioskId,
       stateObjectId: soul.stateOnChainId,
       listingObjectId: soul.listingObjectOnChainId,
-      totalAtomic: BigInt(quote.totalAtomic),
+      totalAtomic: totalRequired,
       paymentCoinObjectIds: coinIds,
       collectionObjectId: soul.collectionOnChainId ?? null,
       buyerKioskId,

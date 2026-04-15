@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  SOUL_CATEGORIES,
   SOUL_ENTRY_TYPES,
   SOUL_WRITER_KINDS,
   parseSkillMd,
@@ -46,7 +45,6 @@ description: Missing name
   it('exports the shipped Soulidity content enums', () => {
     expect(SOUL_ENTRY_TYPES).toEqual(['founding-memory', 'memory-entry', 'skill-version'])
     expect(SOUL_WRITER_KINDS).toEqual(['founder', 'owner', 'granted-agent'])
-    expect(SOUL_CATEGORIES).toEqual(['Trading', 'Research', 'Assistant', 'Creator'])
   })
 })
 

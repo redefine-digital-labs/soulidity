@@ -6,6 +6,7 @@ import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { PrivyProvider as BasePrivyProvider, useCustomAuth, usePrivy } from '@privy-io/react-auth'
 import type {
   ExtractSoulDraft,
+  ExtractSoulDraftPendingSync,
   SessionScanResult,
   ScanProgress,
   SoulProfile,
@@ -243,14 +244,14 @@ async function ipcResolvePersonalKiosk(walletAddress: string): Promise<PersonalK
   }
 }
 
-async function ipcPublish(payload: Record<string, unknown>): Promise<DesktopPublishResponse> {
+async function ipcPublish(payload: ExtractSoulDraftPendingSync): Promise<DesktopPublishResponse> {
   const invoke = getElectronMethod<(payload: Record<string, unknown>) => Promise<DesktopPublishResponse>>(
     'desktop:create:publish',
     'Desktop publish IPC is not available',
   )
 
   try {
-    return await invoke(payload)
+    return await invoke(payload as unknown as Record<string, unknown>)
   } catch (err) {
     throw asIpcError(err, 'Failed to mirror publish')
   }
@@ -516,7 +517,6 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
       // after mirror failure resumes from here instead of re-minting.
       const syncPayload = {
         txDigest: signed.digest,
-        category: draft.category,
         tags: draft.tags,
         previewImages: [coverImage.blobUrl],
         readme: null,
@@ -1060,21 +1060,6 @@ export function ExtractTab(): React.JSX.Element {
                 }))}
                 rows={3}
                 maxLength={500}
-              />
-            </div>
-
-            <div className="settings-field">
-              <span className="settings-field__label">Category</span>
-              <input
-                type="text"
-                className="settings-field__input"
-                value={draft.category}
-                onChange={(event) => updateDraft((current) => ({
-                  ...current,
-                  category: event.target.value,
-                  updatedAt: new Date().toISOString(),
-                }))}
-                maxLength={60}
               />
             </div>
 

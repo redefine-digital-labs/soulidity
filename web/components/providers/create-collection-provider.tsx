@@ -42,7 +42,6 @@ interface StoredCollectionPublishResult {
 export interface BatchSoulEntry {
   name: string
   description: string
-  category: string
   tags: string[]
   creatorRoyaltyBps: number
 }
@@ -201,7 +200,6 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
             setBatchSouls(recovery.souls.map((s: { input?: BatchSoulEntry }) => ({
               name: s.input?.name ?? '',
               description: s.input?.description ?? '',
-              category: s.input?.category ?? '',
               tags: Array.isArray(s.input?.tags) ? s.input.tags : [],
               creatorRoyaltyBps: s.input?.creatorRoyaltyBps ?? 0,
             })))
