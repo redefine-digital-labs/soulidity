@@ -118,45 +118,16 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     return POST(makeRequest(), { params: Promise.resolve({ id: SOUL_ID }) })
   }
 
-  it('prepares a zero-price purchase without requiring payment coin selection', async () => {
+  it('rejects zero-price listings before preparing a purchase', async () => {
     const response = await callRoute()
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(409)
     expect(mockedSelectCoinObjectIdsForAmountAcrossPages).not.toHaveBeenCalled()
-    expect(mockedBuildBuySoulTx).toHaveBeenCalledWith({
-      sellerKioskId: KIOSK_ID,
-      stateObjectId: STATE_ID,
-      listingObjectId: LISTING_ID,
-      totalAtomic: 0n,
-      paymentCoinObjectIds: [],
-      collectionObjectId: null,
-      buyerKioskId: null,
-      buyerKioskCapOnChainId: null,
-    })
-    expect(tx.setSender).toHaveBeenCalledWith(AGENT_ADDRESS)
-    expect(mockedPrisma.soulPreparedPurchase.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          soulOnChainId: SOUL_ID,
-          agentAddress: AGENT_ADDRESS,
-          totalAtomic: '0',
-        }),
-      }),
-    )
-    await expect(response.json()).resolves.toEqual({
-      preparedPurchaseId: PREPARED_PURCHASE_ID,
-      txBytes: Buffer.from(Uint8Array.from([1, 2, 3])).toString('base64'),
-      context: {
-        soulOnChainId: SOUL_ID,
-        listingObjectId: LISTING_ID,
-        sellerKioskId: KIOSK_ID,
-        priceAtomic: '0',
-        platformFeeAtomic: '0',
-        creatorRoyaltyAtomic: '0',
-        totalAtomic: '0',
-        agentAddress: AGENT_ADDRESS,
-        expiresAt: expect.any(String),
-      },
-    })
+    expect(mockedGetMarketConfig).not.toHaveBeenCalled()
+    expect(mockedQuoteSoulPurchase).not.toHaveBeenCalled()
+    expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+    expect(tx.setSender).not.toHaveBeenCalled()
+    expect(mockedPrisma.soulPreparedPurchase.create).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({ error: 'Soul is not listed for sale' })
   })
 })

@@ -15,17 +15,16 @@ describe('sell flow regression guards', () => {
     expect(source).not.toContain("if (status === 'done' && soul)")
   })
 
-  it('allows zero-price listings to reach authorization from the sell page', () => {
+  it('blocks zero-price listings from reaching authorization from the sell page', () => {
     const source = readSource('web/app/souls/[id]/sell/page.tsx')
 
-    expect(source).toContain('const authorizeHref = priceAtomic != null && !belowFloor')
-    expect(source).not.toContain('const authorizeHref = priceAtomic && !belowFloor')
+    expect(source).toContain('const invalidPrice = priceAtomic != null && priceAtomic <= 0n')
+    expect(source).toContain('const authorizeHref = priceAtomic != null && priceAtomic > 0n && !belowFloor')
   })
 
-  it('treats 0 as a valid price on the authorize page', () => {
+  it('treats 0 as an invalid price on the authorize page', () => {
     const source = readSource('web/app/souls/[id]/sell/authorize/page.tsx')
 
-    expect(source).toContain('if (priceAtomic == null || priceError)')
-    expect(source).not.toContain('if (!priceAtomic || priceError)')
+    expect(source).toContain('if (priceAtomic == null || priceAtomic <= 0n || priceError)')
   })
 })

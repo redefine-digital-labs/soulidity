@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Populate the Soulidity marketplace with 20 diverse Souls via category-to-tags migration, zero-price listing support, content generation, and batch publish automation.
+**Goal:** Populate the Soulidity marketplace with 20 diverse Souls via category-to-tags migration, positive-price marketplace listings, content generation, and batch publish automation.
 
-**Architecture:** Three parallel workstreams — (A) schema/API category-to-tags hard-cut, (B) Move contract + TX builder zero-price support, (C) Soul content files + batch publish script. Workstream C depends on A and B being complete.
+**Architecture:** Three parallel workstreams — (A) schema/API category-to-tags hard-cut, (B) marketplace positive-price guards, (C) Soul content files + batch publish script. Workstream C depends on A and B being complete.
+
+> **2026-04-15 invalidation note:** Any instructions below that remove positive-price guards or add zero-price / zero-payment Soul marketplace flows are obsolete. Follow `docs/specs/2026-04-15-soul-listing-price-positive-guard/SPEC.md` instead.
 
 **Tech Stack:** Sui Move, Prisma (PostgreSQL), Next.js App Router, TypeScript, Vitest
 
@@ -42,7 +44,7 @@
 
 ---
 
-## Task 1: Move Contract — Zero-Price Soul Listing
+## Task 1: Move Contract — Historical Zero-Price Listing Task (Obsolete)
 
 **Files:**
 - Modify: `move/soulidity/sources/market.move:809,858` (remove price>0 assert for Soul listings only)
@@ -666,7 +668,7 @@ git commit -m "feat(ui): replace category with tag-based marketplace filtering"
 
 ---
 
-## Task 8: TX Builders — Zero-Price Support
+## Task 8: TX Builders — Historical Zero-Price Support Task (Obsolete)
 
 **Files:**
 - Modify: `web/lib/soulidity/tx/list.ts:12-14`

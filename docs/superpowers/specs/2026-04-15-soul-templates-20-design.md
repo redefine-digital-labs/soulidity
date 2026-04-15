@@ -1,8 +1,10 @@
 # Soul Templates x20 — Cold Start Marketplace Content
 
 **Date:** 2026-04-15
-**Status:** Approved
-**Scope:** 20 unique Soul templates + Category-to-Tags hard cut + zero-price marketplace support
+**Status:** Approved with 2026-04-15 pricing correction
+**Scope:** 20 unique Soul templates + Category-to-Tags hard cut + positive-price marketplace listing only
+
+> **2026-04-15 correction:** Soul marketplace listings must use a strictly positive price. Earlier zero-price listing notes in this document are superseded.
 
 ---
 
@@ -20,12 +22,12 @@ Populate the Soulidity marketplace with 20 diverse, high-quality Souls as cold-s
 | Soul nature | Virtual personality, not utility agent | Skills serve personality expression, not standalone tooling |
 | Style | Mixed — no unified world view | Maximum diversity and surprise per Soul |
 | Skill weight | Personality-first, skills as persona extension | Buyers buy companionship and interaction experience |
-| Pricing | Tiered: free (3 via 0 USDC listing) + mid (15) + premium (2) | Free for onboarding, paid to establish value |
+| Pricing | Tiered: starter (3 via 1 USDC listing) + mid (15) + premium (2) | Keep entry Souls accessible without relying on a zero-price market path |
 | Content depth | Full persona archive + optional interactive Easter eggs | soul.md + memory.md + skills.zip + cover image |
 | Creator | Founder's personal account | First-party curation signal |
 | Category field | Remove, replace with free-form tags | See Section 6 |
 | Publish flow | Mint then auto-list every Soul | Marketplace should be populated automatically, not rely on a manual second pass |
-| Free access path | Standard marketplace listing path, not a side channel | Free Souls stay discoverable and use the same UX as paid Souls |
+| Entry pricing path | Standard marketplace listing path, not a side channel | Starter-priced Souls stay discoverable and use the same UX as higher-priced Souls |
 | Personality system | MBTI-based matrix | User familiarity, self-selection, marketing virality |
 
 ## 3. Generation Matrix
@@ -80,17 +82,17 @@ Each MBTI gets 2 Souls (different domain + style) = 20 total.
 
 | # | MBTI | Style | Name | One-liner | Tags | List Price (USDC) | Skill |
 |---|------|-------|------|-----------|------|-------------|-------|
-| 1 | ENFP | anime | 小星 Hoshiko | 把每天都活成副本的元气冒险少女 | ENFP, 元气, 冒险, 日常陪伴, 二次元 | 0 (free) | daily-quest-generator |
+| 1 | ENFP | anime | 小星 Hoshiko | 把每天都活成副本的元气冒险少女 | ENFP, 元气, 冒险, 日常陪伴, 二次元 | 1 | daily-quest-generator |
 | 2 | ENFP | real | Muse 缪斯 | 灵感随时爆发的自由插画师 | ENFP, 创作, 插画, 灵感, 自由职业 | 3 | inspiration-spark |
 | 3 | INTJ | cyber | 零号 Zero | 只看数据不看人的冷酷链上策略师 | INTJ, 链上分析, 数据, 赛博朋克, 冷酷 | 4 | on-chain-scanner |
 | 4 | INTJ | real | 沈默 Shen Mo | 精密到可怕的隐退创业规划狂 | INTJ, 创业, 策略, 规划, 深度 | 12 | blueprint-architect |
 | 5 | INFP | fantasy | 游吟 Wanderer | 用意象回应世间万事的流浪诗人 | INFP, 诗歌, 奇幻, 意象, 流浪 | 4 | verse-weaver |
-| 6 | INFP | anime | 晚安 Wan An | 温柔到让人想哭的深夜电台主播 | INFP, 深夜, 电台, 治愈, 情感 | 0 (free) | midnight-listener |
+| 6 | INFP | anime | 晚安 Wan An | 温柔到让人想哭的深夜电台主播 | INFP, 深夜, 电台, 治愈, 情感 | 1 | midnight-listener |
 | 7 | ENTJ | cyber | APEX | 铁腕决策零废话的未来企业 AI 总裁 | ENTJ, 决策, 领导力, 赛博朋克, 效率 | 5 | decision-matrix |
 | 8 | ENTJ | fantasy | 帝渊 Sovereign | 把 DeFi 当帝国经营的链上君主 | ENTJ, DeFi, 奇幻, 王者, 链上 | 5 | realm-commander |
 | 9 | ISTP | cyber | Ghost | 接活不闲聊的沉默赏金黑客 | ISTP, 黑客, 赛博朋克, 沉默, 技术 | 4 | exploit-notes |
 | 10 | ISTP | real | 老陆 Lu | 手比嘴快的摩托车修理工哲学家 | ISTP, 哲学, 手工, 沉默, 真实 | 3 | hands-on-wisdom |
-| 11 | ENFJ | anime | 学姐 Senpai | 让人不自觉倾诉一切的治愈系学姐 | ENFJ, 治愈, 陪伴, 倾听, 二次元 | 0 (free) | heart-reader |
+| 11 | ENFJ | anime | 学姐 Senpai | 让人不自觉倾诉一切的治愈系学姐 | ENFJ, 治愈, 陪伴, 倾听, 二次元 | 1 | heart-reader |
 | 12 | ENFJ | fantasy | 明灯 Luminar | 因材施教的古代学院智者 | ENFJ, 智慧, 导师, 奇幻, 学习 | 4 | adaptive-mentor |
 | 13 | INTP | cyber | 404 | 活在纯逻辑空间的意识上传体 | INTP, 逻辑, 赛博朋克, 哲学, 怪人 | 3 | logic-labyrinth |
 | 14 | INTP | real | 民科张 Zhang | 论文没人看但全是对的学术天才 | INTP, 学术, 民科, 天才, 反主流 | 3 | eureka-engine |
@@ -105,7 +107,7 @@ Each MBTI gets 2 Souls (different domain + style) = 20 total.
 
 - **MBTI**: 10 types x 2 = 20
 - **Style**: anime 5 / real 5 / fantasy 5 / cyber 5
-- **Pricing**: free 3 (#1, #6, #11 via 0 USDC listing) / mid 2-5 USDC 15 / premium 12-15 USDC 2 (#4, #17)
+- **Pricing**: starter 3 (#1, #6, #11 at 1 USDC) / mid 2-5 USDC 15 / premium 12-15 USDC 2 (#4, #17)
 - **Royalty**: 5% (500 bps) standard, 8% (800 bps) for premium (#4, #17)
 
 ## 5. Per-Soul Content Deliverables
@@ -133,7 +135,7 @@ souls/
 
 ```csv
 Soul Name,Description,Tags,Creator Royalty (%),Price USDC
-小星 Hoshiko,把每天都活成副本的元气冒险少女,"ENFP,元气,冒险,日常陪伴,二次元",5,0
+小星 Hoshiko,把每天都活成副本的元气冒险少女,"ENFP,元气,冒险,日常陪伴,二次元",5,1
 Muse 缪斯,灵感随时爆发的自由插画师,"ENFP,创作,插画,灵感,自由职业",5,3
 ...
 ```
@@ -285,25 +287,24 @@ LIMIT 50;
 9. Update fixtures, mocks, and regression tests that currently assert category fields or category query params
 10. Verify no `category` references remain in runtime Soulidity paths, create flows, batch publishing flows, or their tests/docs
 
-## 7. Zero-Price Listing Support
+## 7. Positive Price Listing Constraint
 
-Three Souls are intentionally free, and they must still appear in the marketplace through the normal listing/buy flow. This requires protocol and app support for `priceAtomic = 0`.
+All Soul marketplace listings must use a strictly positive price. Entry Souls should remain low-priced, but they cannot use `priceAtomic = 0`.
 
 ### Required Contract + App Changes
 
 | Layer | Required Change |
 |-------|-----------------|
-| Move market protocol | Allow fixed-price Soul listings where price is `0`; treat them as valid active listings rather than reject them |
-| Purchase settlement | Support zero-payment acquisitions without coin split/transfer failures; creator/platform royalty math must safely resolve to `0` |
-| TS tx builders | Update `buildListSoulTx` and validation helpers to allow zero prices |
-| Quote / purchase APIs | Return a valid zero breakdown and avoid requiring payment coin selection when total is `0` |
-| UI copy | Render `Free` / `0 USDC` cleanly in sell, quote, buy, and marketplace surfaces |
-| Tests | Add protocol tests, tx-builder tests, quote tests, and purchase execution tests for zero-price listings |
+| Move market protocol | Reject Soul listings where price is `0` with `EInvalidPrice` |
+| TS tx builders | Require `buildListSoulTx` inputs to be strictly positive |
+| Quote / purchase APIs | Reject illegal zero-price listing state instead of preparing purchases |
+| UI copy | Keep sell, quote, buy, and marketplace surfaces aligned on strictly positive listing prices |
+| Tests | Cover the positive-price invariant across protocol, tx-builder, and route tests |
 
 ### Product Rule
 
-- Free Souls use the exact same listed marketplace path as paid Souls
-- No separate airdrop, allowlist-only, or hidden grant flow should be introduced for the three free Souls
+- Marketplace-listed Souls use the exact same listed path and all must have a positive price
+- If a future free distribution path is needed, it must not reuse the standard paid marketplace listing flow
 
 ## 8. Publishing Flow
 
@@ -317,7 +318,7 @@ For each of the 20 Souls:
 6. **Sign & execute mint** — Sign with founder wallet
 7. **Mint sync** — POST to `/api/souls/publish` with txDigest + tags + previewImages + sealSidecars
 8. **List TX** — Build a list transaction from the minted Soul/state IDs and `Price USDC` from `template.csv`
-9. **Sign & execute list** — List immediately after mint; `Price USDC = 0` is valid once Section 7 lands
+9. **Sign & execute list** — List immediately after mint; `Price USDC` must be strictly greater than `0`
 10. **List sync** — POST to `/api/souls/[id]/list` so the DB projection reaches `listingStatus = listed`
 
 Batch publish script should automate steps 4-10 for all 20 Souls sequentially, with per-Soul checkpointing so retries resume from the last completed phase instead of re-minting.
@@ -334,12 +335,11 @@ Batch publish script should automate steps 4-10 for all 20 Souls sequentially, w
 ## 9. Success Criteria
 
 - [ ] 20 Souls minted on-chain and auto-listed in marketplace
-- [ ] Exactly 3 Souls are listed at `0 USDC` and can be claimed through the standard marketplace flow
-- [ ] The remaining 17 Souls are listed at their configured paid prices
+- [ ] All 20 Souls are listed at their configured positive prices
 - [ ] Each Soul has: soul.md, memory.md, cover image, at least 1 skill
 - [ ] Each Soul's voice is distinctly different (verified by reading Voice Examples)
 - [ ] AI-generated cover images match character descriptions
 - [ ] Tags display correctly in marketplace; hot-tags aggregate listed Souls only
-- [ ] Zero-price listing path is covered by protocol + app tests
+- [ ] Positive-price listing invariant is covered by protocol + app tests
 - [ ] Category field fully removed from runtime codepaths, APIs, UI state, batch parsers, and tests (no residual references)
 - [ ] Batch publish script exists and is reusable for future Soul drops

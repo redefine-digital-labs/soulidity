@@ -27,6 +27,12 @@ v6 kiosk rewrite 完成后，new-web 前端（当前仓库目录为 `web/`，Nex
 **测试 Fixture：** `/Users/admin/Documents/example`（单 Soul）+ `/Users/admin/Documents/example-collection`（Collection）
 **总计：92 个测试项（91 项主流程 + 1 项白盒附加验证），14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
 
+**价格约束（2026-04-15 double-check）：**
+- `Soul` 的 listing price 必须严格大于 `0`
+- sell 页面输入 `0` 时不得进入 Authorize
+- 若绕过前端直接上链，`move/soulidity::market` 必须以 `EInvalidPrice` 拒绝
+- 本计划中的上架用例全部使用正数价格；`0` 价不再是合法测试路径
+
 ---
 
 ## 执行约束（全自动 + Chrome DevTools MCP）

@@ -300,9 +300,9 @@ describe('buy.ts — buildBuySoulTx', () => {
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('accepts zero totalAtomic (free purchase)', () => {
-    const tx = buildBuySoulTx({ ...VALID_PARAMS, totalAtomic: 0n })
-    expect(tx).toBeInstanceOf(Transaction)
+  it('throws when totalAtomic is zero', () => {
+    expect(() => buildBuySoulTx({ ...VALID_PARAMS, totalAtomic: 0n }))
+      .toThrow('totalAtomic must be positive')
   })
 
   it('throws when totalAtomic is negative', () => {
@@ -387,14 +387,14 @@ describe('list.ts — buildListSoulTx', () => {
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('accepts zero price (free listing)', () => {
-    const tx = buildListSoulTx({ ...VALID_PARAMS, priceAtomic: 0n })
-    expect(tx).toBeInstanceOf(Transaction)
+  it('throws when priceAtomic is zero', () => {
+    expect(() => buildListSoulTx({ ...VALID_PARAMS, priceAtomic: 0n }))
+      .toThrow('priceAtomic must be positive')
   })
 
   it('throws when priceAtomic is negative', () => {
     expect(() => buildListSoulTx({ ...VALID_PARAMS, priceAtomic: -1n }))
-      .toThrow('priceAtomic cannot be negative')
+      .toThrow('priceAtomic must be positive')
   })
 })
 
