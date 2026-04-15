@@ -3,14 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { normalizeBatchTemplateRows } from '../../web/lib/collections/batch-template'
 
 describe('normalizeBatchTemplateRows', () => {
-  it('parses valid rows and normalizes tags/royalty/price', () => {
+  it('parses valid rows and normalizes tags/royalty', () => {
     const result = normalizeBatchTemplateRows([
       {
         'Soul Name': 'AlphaScout',
         Description: 'Tracks new Sui pools',
         Tags: 'ai, trading,  defi ',
         'Creator Royalty (%)': '5',
-        'Price USDC': '3',
       },
     ], 300)
 
@@ -21,12 +20,11 @@ describe('normalizeBatchTemplateRows', () => {
         description: 'Tracks new Sui pools',
         tags: ['ai', 'trading', 'defi'],
         creatorRoyaltyBps: 500,
-        priceUsdc: 3,
       },
     ])
   })
 
-  it('treats missing Price USDC as null', () => {
+  it('uses default royalty when column is missing', () => {
     const result = normalizeBatchTemplateRows([
       {
         'Soul Name': 'AlphaScout',
@@ -36,21 +34,7 @@ describe('normalizeBatchTemplateRows', () => {
     ], 300)
 
     expect(result.errors).toEqual([])
-    expect(result.souls[0].priceUsdc).toBeNull()
-  })
-
-  it('rejects negative Price USDC values', () => {
-    const result = normalizeBatchTemplateRows([
-      {
-        'Soul Name': 'AlphaScout',
-        Description: 'Tracks new Sui pools',
-        Tags: 'ai',
-        'Price USDC': '-1',
-      },
-    ], 300)
-
-    expect(result.errors).toContain('Row 2: Price USDC must be a non-negative number')
-    expect(result.souls).toHaveLength(0)
+    expect(result.souls[0].creatorRoyaltyBps).toBe(300)
   })
 
   it('adds a supply-cap mismatch error without dropping parsed rows', () => {
