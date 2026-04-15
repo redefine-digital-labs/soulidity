@@ -11,6 +11,12 @@ v6 kiosk rewrite 完成后，new-web 前端（当前仓库目录为 `web/`，Nex
 - **M-2**: 新增 `set_grant_capacity` 函数，owner 可动态调整 grant 容量（默认 1）
 - **M-3**: `KioskRegistry` 提取为独立共享对象，减少 `MarketConfig` 争用
 
+**v6.2 taxonomy 重构 + upgrade 基建（2026-04-14 ~ 04-15）：**
+- **T-1**: Create 页移除 Category 下拉，仅保留 Tags 自由输入。Prisma `category` 字段保留 `@default("Other")` 但 UI 不再暴露（开发库，无需迁移）
+- **T-2**: 新增 `/api/souls/tags` API，返回 listed Soul 的 top 50 tag cloud
+- **U-1**: `deployment-manifest.json` 新增 `upgradeCapId`；`deployment.ts` 接口新增可选 `upgradeCapId` / `upgradeStateId`
+- **U-2**: 链上新增 `MarketUpgradeState` 结构体 + 5 error codes + 5 event types；协议测试扩展到 117 项
+
 **全自动执行：** 本计划设计为 AI agent 独立可执行，零人工判断。自动化覆盖：
 - **浏览器交互** — Chrome DevTools MCP（snapshot → uid → click/fill/upload）
 - **链上状态发现 + USDC mint** — `sui client` CLI（balance / objects / call）
@@ -19,7 +25,7 @@ v6 kiosk rewrite 完成后，new-web 前端（当前仓库目录为 `web/`，Nex
 
 **唯一人工介入：** 2 次 Privy 邮箱 OTP（执行者仅需输入 6 位验证码，其余全部自动化）
 **测试 Fixture：** `/Users/admin/Documents/example`（单 Soul）+ `/Users/admin/Documents/example-collection`（Collection）
-**总计：91 个测试项（90 项主流程 + 1 项白盒附加验证），14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
+**总计：92 个测试项（91 项主流程 + 1 项白盒附加验证），14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
 
 ---
 
@@ -400,15 +406,14 @@ mkdir -p "$ARTIFACT_DIR"
 2. `wait_for` text "Step 1 — Basic Info"
 3. `fill` Soul Name（`input[placeholder="e.g. AlphaScout, Kaze no Akira..."]`）: `E2E Soul Alpha NW`
 4. `fill` Description（`textarea[placeholder*="Describe your Soul"]`）: `E2E test Soul A — alpha trading strategy content`
-5. **Cover image 上传 — fixture file:**
+5. `fill` Tags 输入（`input[placeholder="e.g. ai, trading, signals"]`）: `e2e, test`
+6. **Cover image 上传 — fixture file:**
    ```
    upload_file(selector: 'div[aria-label="Click to upload cover image"] input[type="file"]',
                filePath: '/Users/admin/Documents/example/images.jpeg')
    ```
-6. `wait_for` text "images.jpeg"（确认文件已选择，provider 显示文件名）
-7. `evaluate_script` 验证 Category 下拉默认 'Trading'（保持默认）
-8. `fill` Tags 输入（`input[placeholder="e.g. ai, trading, signals"]`）: `e2e, test`
-9. `evaluate_script` 验证 5% royalty 按钮默认推荐选中（4 个按钮：0% / 2.5% / 5% / 10%）
+7. `wait_for` text "images.jpeg"（确认文件已选择，provider 显示文件名）
+8. `evaluate_script` 验证 5% royalty 按钮默认推荐选中（4 个按钮：0% / 2.5% / 5% / 10%）
 
 ### Test 1.3: 创建向导 Step 2 — Living Content
 1. `click` "Next: Living Content →" 按钮（`button:has-text("Next: Living Content")`）
@@ -1143,12 +1148,14 @@ const env = getRequiredSoulidityEnv();
 console.log('packageId:', env.packageId);
 console.log('marketConfigId:', env.marketConfigId);
 console.log('kioskRegistryId:', env.kioskRegistryId);
+console.log('upgradeCapId:', env.upgradeCapId);
 "
 ```
 验证:
 - `packageId` = `0x65898551bc1ccd3cfb52a9dcf77632464d1e82460325167aa510ce5f40d2cd16`
 - `kioskRegistryId` = `0x51c3c0b58052cfc55bd531a85ed550669218d67b3fe0a7e498be518972d122e7`
-- 两个新 ID 均非空
+- `upgradeCapId` = `0x7fd33aedd3f2679c681f8c4d9a3e61aa464fb01c31a5719ed2c626e34538883b`
+- 三个 ID 均非空
 
 ### Test 7.10c: KioskRegistry 共享对象存在（M-3 修复验证）
 
@@ -1201,54 +1208,70 @@ npx tsx web/scripts/e2e-agent-verify-content.ts
 
 ---
 
-## Phase 8: Import 流程（5 tests）
+## Phase 8: Import 流程（6 tests）
 
 > Buyer 仍登录，使用 `/Documents/example/` fixture 文件测试 Import 功能。
+> Import wizard 共 6 步：Choose Source → Upload File → Map Fields → Soul Awakened → Pay Gas → On-chain。
 
-### Test 8.1: Import Step 1 — 选择来源
+### Test 8.1: Import Step 1 — Choose Source（`/import`）
 1. `navigate_page` → `http://localhost:3100/import`
-2. `wait_for` text "Step 1"
-3. `evaluate_script` 验证 source 选项存在
-4. `click` "Local File" 或合适的来源选项
-5. `click` Next 按钮
+2. `wait_for` text "Choose Source"
+3. `evaluate_script` 验证 "Local File" source 选项存在且 enabled
+4. `click` "Local File" 选项卡
+5. `click` "Next: Upload File →" 按钮
+6. `wait_for` URL 含 `/import/upload`
 
-### Test 8.2: Import Step 2-3 — 上传 + 字段映射
-1. `wait_for` upload 或 map 页面
-2. 手动填写 Soul Name: `E2E Imported Soul`, Description: `Imported from local file`
-3. **上传 fixture 文件** — Import map 页有 4 个 UploadTarget（与 create/content 结构类似）:
-   ```javascript
-   evaluate_script(`
-     const inputs = document.querySelectorAll('input[type="file"].sr-only');
-     inputs.forEach((inp, i) => inp.setAttribute('data-e2e', 'import-input-' + i));
-     return inputs.length;
-   `)
+### Test 8.2: Import Step 2 — Upload File（`/import/upload`）
+1. `wait_for` text "Upload File"
+2. **上传 source file：**
    ```
-   按顺序上传:
-   - Soul Character: `upload_file` ← `/Users/admin/Documents/example/soul.md`
-   - Memory: `upload_file` ← `/Users/admin/Documents/example/memory.md`
-   - Skills: `upload_file` ← `/Users/admin/Documents/example/skill.zip`
-   - Cover Image — 使用 UploadZone:
-     ```
-     upload_file(selector: 'div[aria-label*="upload cover"] input[type="file"]',
-                 filePath: '/Users/admin/Documents/example/images.jpeg')
-     ```
-4. `wait_for` 所有文件上传确认
-5. `click` Next 按钮
+   upload_file(selector: upload zone file input,
+               filePath: '/Users/admin/Documents/example/soul.md')
+   ```
+3. `wait_for` 文件解析完成（显示文件名 + 格式 badge + field count）
+4. `click` "Continue" 按钮
+5. `wait_for` URL 含 `/import/map`
 
-### Test 8.3: Import Preview
-1. `wait_for` preview 页面
-2. `evaluate_script` 验证 import provenance badge 显示 "imported"
+### Test 8.3: Import Step 3 — Map Fields（`/import/map`）
+1. `wait_for` text "Map Fields"
+2. `evaluate_script` 验证 field mapping 表格已渲染（detected fields → Soul fields 下拉）
+3. 若 name/description 未自动映射，手动 `fill` Soul Name: `E2E Imported Soul`, Description: `Imported from local file`
+4. **上传 Soul Character 文件** — UploadZone:
+   ```
+   upload_file(selector: soul character upload zone input,
+               filePath: '/Users/admin/Documents/example/soul.md')
+   ```
+5. **上传 Memory 文件** — UploadZone:
+   ```
+   upload_file(selector: memory upload zone input,
+               filePath: '/Users/admin/Documents/example/memory.md')
+   ```
+6. **上传 Cover Image** — UploadZone:
+   ```
+   upload_file(selector: cover image upload zone input,
+               filePath: '/Users/admin/Documents/example/images.jpeg')
+   ```
+7. （可选）上传 Skills Bundle: `/Users/admin/Documents/example/skill.zip`
+8. `click` "Continue" 按钮
+9. `wait_for` URL 含 `/import/preview`
+
+### Test 8.4: Import Step 4 — Soul Awakened / Preview（`/import/preview`）
+1. `wait_for` text "Soul Awakened"
+2. `evaluate_script` 验证 import provenance badge 显示（Import Source 卡片）
 3. `evaluate_script` 验证 Soul name "E2E Imported Soul" 显示
+4. `evaluate_script` 验证 Basic Info / Import Source / Living Content / Royalty 四个 review 卡片均渲染
+5. `click` proceed 按钮进入 gas 页
+6. `wait_for` URL 含 `/import/gas`
 
-### Test 8.4: Import Gas & Deploy
-1. `click` proceed 按钮进入 gas 页
+### Test 8.5: Import Step 5 — Pay Gas & Deploy（`/import/gas`）
+1. `wait_for` text "Pay Gas"
 2. `click` "Sign & Deploy" 按钮（`button:has-text("Sign & Deploy")`）
 3. Privy 自动签名
 4. `wait_for` URL 含 `/import/success`，timeout 90s
 
-### Test 8.5: Import Success
+### Test 8.6: Import Step 6 — On-chain Success（`/import/success`）
 1. `wait_for` success 页面内容
-2. `evaluate_script` 提取 imported Soul on-chain ID
+2. `evaluate_script` 提取 imported Soul on-chain ID，记录为 `$IMPORTED_SOUL_ID`
 3. `take_screenshot` → `$ARTIFACT_DIR/phase8-import-done.png`
 
 ---
@@ -1439,7 +1462,7 @@ Test 7.9 (DB revoke) → Test 7.10 (verify revoked via API)
 Tests 7.10a-c (v6.1 修复验证) ← H-1 付款路由 + I-2 平台抽成 + M-3 KioskRegistry
 Test 7.11 (agent seal decrypt) ← 需 Seal key server 与网络环境可用
 Test 7.12 (Seal content verify) ← 需 CAPTURED_RAW_ENVELOPE 暴露点落地 + Agent Alpha owns Soul B；默认不计主流程
-Phase 8 (import) ← buyer 仍登录，创建新 Soul
+Phase 8 (import, 6 步 wizard) ← buyer 仍登录，创建新 Soul
 Phase 9 (API boundary) → 独立于浏览器状态；Tests 9.7-9.9 验证 asset/content-access 边界
 Phase 10 (page renders + follow) ← 需 SELLER_MEMBER_ID
 Phase 11 (cleanup) → 收尾
@@ -1461,11 +1484,11 @@ Phase 11 (cleanup) → 收尾
 | **6.5** | **4** | **SoulAssets API（asset list 空状态 + 404 边界）** |
 | 7 | 7 | Agent API 主流程 + Seal 解密验证 + 白盒内容比对（7.6/7.7 → 7.11/7.12） |
 | **7.5** | **8** | **ContentAccess API（list + DB grant + verify + DB revoke + verify + 付款路由 + 平台抽成 + KioskRegistry）** |
-| 8 | 5 | Import 流程 |
+| 8 | 6 | Import 流程（6 步 wizard） |
 | 9 | **9** | API 边界测试（原 6 + 新 3: asset 404/400, content-access 401） |
 | 10 | 6 | 页面渲染冒烟 + Follow/Unfollow |
 | 11 | 1 | Cleanup |
-| **Total** | **91** | **（原 86 + 5 新增：Phase 5×2 set_grant_capacity + Phase 7.5×3 付款路由/平台抽成/KioskRegistry）** |
+| **Total** | **92** | **（原 86 + 5 新增 v6.1 + 1 新增 v6.2 Import 步骤拆分）** |
 
 ---
 
@@ -1488,7 +1511,6 @@ Phase 11 (cleanup) → 收尾
 | Bookmark（移除） | `button[aria-label="Remove bookmark"]` | /market |
 | Soul Name | `input[placeholder="e.g. AlphaScout, Kaze no Akira..."]` | /create |
 | Description | `textarea[placeholder*="Describe your Soul"]` | /create |
-| Category | Category select（默认 'Trading'） | /create |
 | Tags | `input[placeholder="e.g. ai, trading, signals"]` | /create |
 | Price | `input[placeholder="0.00"][type="number"]` | /sell |
 | Cover image (create) | `div[aria-label="Click to upload cover image"] input[type="file"]` | /create |
@@ -1563,10 +1585,12 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/app/collections/create/page.tsx` | Collection Step 1 — Phase 3.1 |
 | `web/app/collections/create/souls/page.tsx` | Collection Step 2 — Phase 3.2 |
 | `web/app/collections/create/preview/page.tsx` | Collection Step 3 — Phase 3.3 |
-| `web/app/import/page.tsx` | Import Step 1 — Phase 8.1 |
-| `web/app/import/map/page.tsx` | Import Map — Phase 8.2 |
-| `web/app/import/preview/page.tsx` | Import Preview — Phase 8.3 |
-| `web/app/import/gas/page.tsx` | Import Gas — Phase 8.4 |
+| `web/app/import/page.tsx` | Import Choose Source — Phase 8.1 |
+| `web/app/import/upload/page.tsx` | Import Upload File — Phase 8.2 |
+| `web/app/import/map/page.tsx` | Import Map Fields — Phase 8.3 |
+| `web/app/import/preview/page.tsx` | Import Soul Awakened — Phase 8.4 |
+| `web/app/import/gas/page.tsx` | Import Pay Gas — Phase 8.5 |
+| `web/app/import/success/page.tsx` | Import On-chain Success — Phase 8.6 |
 | `web/app/my-souls/page.tsx` | My Souls 5-tab + GrantModal — Phase 1.11, 4.3a-c, 4.6, 5.2, 5.5, 5.6 |
 | `web/app/resources/content-format/page.tsx` | Content Format 参考 — Phase 10.2 |
 | `web/app/resources/getting-started/page.tsx` | Getting Started — Phase 10.2 |
@@ -1605,6 +1629,11 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/app/api/agent/souls/[id]/skills/[skillName]/versions/[versionIndex]/access/route.ts` | Agent Skills Seal 访问 |
 | `web/app/api/agent/souls/[id]/memory/[entryKey]/access/route.ts` | Agent Memory Seal 访问 |
 | `tests/new-web/soulidity-agent-server.test.ts` | Auth 中间件单元测试 |
+
+### Taxonomy API（v6.2 新增）
+| 文件 | 用途 |
+|------|------|
+| `web/app/api/souls/tags/route.ts` | Tag cloud API（top 50 tags by count）— 替代 Category 分类 |
 
 ### E2E 脚本（已实现 ✅）
 | 文件 | 用途 |
@@ -1670,6 +1699,8 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 20. **KioskRegistry 新增共享对象**: SDK TX builders 已全部添加 `kioskRegistryId` 参数。若遗漏会导致链上 TX abort。
 21. **Content Access 付款路由变更**: 购买 content access 的 USDC 现发给 `soul::current_owner(state)` 而非固定 creator。这改变了 Soul 转售后的收益模型。Tests 7.10a-c 验证此行为。
 22. **`set_grant_capacity` 无 UI 入口**: GrantModal 当前不支持调整 grant 容量。Tests 5.2a-5.2b 标记为 `pending-ui`，仅做链上状态验证。
+23. **Category → Tags taxonomy 迁移**: Create 页已移除 Category 下拉（v6.2 T-1）。Prisma `category` 字段仍存在并 `@default("Other")`，但 UI 不暴露（开发库，无需迁移）。Test 1.2 不再验证 Category。Market 页无 category filter，Tags 为自由输入。
+24. **`upgradeStateId` 未入 manifest**: `deployment.ts` 接口已声明可选 `upgradeStateId`，但 `deployment-manifest.json` 尚未包含。待 MarketUpgradeState 部署后需更新 manifest 并补充 Test 7.10b 验证项。
 
 ---
 
@@ -1677,7 +1708,7 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 
 默认验收口径：
 - Phase -1 仅作为环境准备单独记录，不计入通过率
-- 90 项主流程通过（含 Phase 7.11 Seal 解密，Seal 已部署 testnet）
+- 91 项主流程通过（含 Phase 7.11 Seal 解密，Seal 已部署 testnet）
 - 1 项白盒附加验证（Phase 7.12）默认不计入 E2E 主流程通过率
 - Phase 5 全部走 GrantModal UI（不依赖 gas 页 `__e2e*` 函数）
 - Phase 6.3 改为 Memory Panel 渲染 smoke（不需要 `__e2eAppendMemory`）

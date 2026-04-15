@@ -348,7 +348,7 @@ public(package) fun push_active_grant(
 }
 
 public(package) fun remove_active_grant_at(state: &mut SoulState, index: u64): ActiveGrantSlot {
-    state.active_grants.remove(index)
+    state.active_grants.swap_remove(index)
 }
 
 public(package) fun rotate_owner(

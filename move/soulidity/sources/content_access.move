@@ -171,10 +171,7 @@ public fun add_access(
     ctx: &TxContext,
 ) {
     let sender = ctx.sender();
-    assert!(
-        sender == access_list.creator || sender == soul::current_owner(state),
-        ENotCreatorOrOwner,
-    );
+    assert!(sender == soul::current_owner(state), ENotCreatorOrOwner);
     assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
     // Allow renewal: if grantee has an expired entry, remove it first
     if (access_list.entries.contains(grantee)) {
@@ -217,10 +214,7 @@ public fun revoke_access(
     ctx: &TxContext,
 ) {
     let sender = ctx.sender();
-    assert!(
-        sender == access_list.creator || sender == soul::current_owner(state),
-        ENotCreatorOrOwner,
-    );
+    assert!(sender == soul::current_owner(state), ENotCreatorOrOwner);
     assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
     assert!(access_list.entries.contains(grantee), ENoAccessEntry);
 
@@ -243,10 +237,7 @@ public fun set_content_price(
     ctx: &TxContext,
 ) {
     let sender = ctx.sender();
-    assert!(
-        sender == access_list.creator || sender == soul::current_owner(state),
-        ENotCreatorOrOwner,
-    );
+    assert!(sender == soul::current_owner(state), ENotCreatorOrOwner);
     assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
     let old_price = access_list.price_atomic;
     access_list.price_atomic = new_price_atomic;
@@ -260,7 +251,7 @@ public fun set_content_price(
 
 // ── Seal approval for allowlisted users (skills) ──
 
-public fun seal_approve_skill_allowlisted(
+entry fun seal_approve_skill_allowlisted(
     id: vector<u8>,
     state: &SoulState,
     access_list: &ContentAccessList,
@@ -278,7 +269,7 @@ public fun seal_approve_skill_allowlisted(
 
 // ── Seal approval for allowlisted users (assets) ──
 
-public fun seal_approve_asset_allowlisted(
+entry fun seal_approve_asset_allowlisted(
     id: vector<u8>,
     state: &SoulState,
     access_list: &ContentAccessList,

@@ -437,7 +437,7 @@ fun mint_imported_in_personal_kiosk_no_skills(
 
 fun mint_joined_in_personal_kiosk_no_skills<T: key + store>(
     config: &MarketConfig,
-    registry: &KioskRegistry,
+    registry: &mut KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -1380,7 +1380,7 @@ fun import_and_personal_join_set_expected_provenance() {
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let mut registry: KioskRegistry = ts::take_shared(&scenario);
         let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
         let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
         let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
@@ -1388,7 +1388,7 @@ fun import_and_personal_join_set_expected_provenance() {
 
         let joined_id = mint_joined_in_personal_kiosk_no_skills<SourceNft>(
             &config,
-            &registry,
+            &mut registry,
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
@@ -8494,7 +8494,7 @@ fun list_soul_zero_price_succeeds() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    // List with price = 0 — should succeed now
+    // List with price = 0 — should succeed
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
@@ -8524,8 +8524,8 @@ fun list_soul_zero_price_succeeds() {
     ts::end(scenario);
 }
 
-#[test]
-fun buy_soul_zero_price_succeeds() {
+#[test, expected_failure(abort_code = market::EInvalidPrice)]
+fun buy_soul_zero_price_fails() {
     let admin = @0xA11CE;
     let creator = @0xC0DE;
     let buyer = @0xF00D;

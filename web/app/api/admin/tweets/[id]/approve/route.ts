@@ -64,9 +64,10 @@ export async function POST(
       return NextResponse.json({ error: 'Item already claimed by another action' }, { status: 409 })
     }
 
-    const apiKey = process.env.ZAI_API_KEY
+    const geminiKey = process.env.GEMINI_API_KEY
+    const zaiKey = process.env.ZAI_API_KEY
+    const apiKey = geminiKey ?? zaiKey
     if (!apiKey) {
-      // Rollback the CAS claim — no LLM key means we can't proceed
       await prisma.rawItem.updateMany({
         where: { id, status: 'reviewing' },
         data: { status: 'pending_review' },
@@ -74,15 +75,18 @@ export async function POST(
       return NextResponse.json({ error: 'LLM API key not configured' }, { status: 500 })
     }
 
+    const useGemini = !!geminiKey
     const meta = parseTweetMeta(item.rawData) ?? {}
 
     const client = new OpenAI({
-      baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+      baseURL: useGemini
+        ? 'https://generativelanguage.googleapis.com/v1beta/openai'
+        : 'https://open.bigmodel.cn/api/paas/v4',
       apiKey,
     })
 
     const response = await client.chat.completions.create({
-      model: 'glm-4.7',
+      model: useGemini ? 'gemini-2.5-flash' : 'glm-4.7',
       max_tokens: 4096,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },

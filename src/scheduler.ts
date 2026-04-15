@@ -50,11 +50,9 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter, bot?: Bot)
 
       // Step 1: Dedup
       const dedupResult = await runDedup(prisma)
-      if (dedupResult.total === 0) {
-        console.log(`[${new Date().toISOString()}] No new items to process, skipping dedup/produce cycle`)
-        return
+      if (dedupResult.total > 0) {
+        console.log(`Dedup: total ${dedupResult.total}, kept ${dedupResult.kept}, duplicates ${dedupResult.duplicates}`)
       }
-      console.log(`Dedup: total ${dedupResult.total}, kept ${dedupResult.kept}, duplicates ${dedupResult.duplicates}`)
 
       // Step 2: Produce all deduped items continuously
       console.log(`[${new Date().toISOString()}] Running content production...`)

@@ -50,6 +50,7 @@ const EUpgradeCapMismatch: u64 = 21;
 const EUpgradesImmutable: u64 = 22;
 const EUpgradeAlreadyPending: u64 = 23;
 const EUpgradeNotPending: u64 = 24;
+const ESourceAlreadyJoined: u64 = 25;
 
 public struct MARKET has drop {}
 
@@ -108,6 +109,10 @@ public struct PersonalKioskOwnerKey has copy, drop, store {
     owner: address,
 }
 
+public struct JoinedSourceKey has copy, drop, store {
+    source_object_id: ID,
+}
+
 public struct PersonalKioskRegistration has copy, drop, store {
     kiosk_id: ID,
     kiosk_cap_id: ID,
@@ -138,6 +143,12 @@ public struct MarketPauseUpdated has copy, drop {
 }
 
 public struct PersonalKioskInitialized has copy, drop {
+    kiosk_id: ID,
+    kiosk_cap_id: ID,
+    owner: address,
+}
+
+public struct PersonalKioskRegistrationUpdated has copy, drop {
     kiosk_id: ID,
     kiosk_cap_id: ID,
     owner: address,
@@ -688,7 +699,7 @@ public fun mint_imported_in_personal_kiosk(
 
 public fun mint_joined_in_personal_kiosk<T: key + store>(
     config: &MarketConfig,
-    registry: &KioskRegistry,
+    registry: &mut KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -714,6 +725,9 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     ctx: &mut TxContext,
 ): ID {
     assert!(kiosk::has_item_with_type<T>(kiosk_obj, source_object_id), ECollectionMismatch);
+    let join_key = JoinedSourceKey { source_object_id };
+    assert!(!df::exists_(&registry.id, join_key), ESourceAlreadyJoined);
+    df::add(&mut registry.id, join_key, true);
     mint_soul_in_personal_kiosk_impl(
         config,
         registry,
@@ -1497,6 +1511,11 @@ fun upsert_personal_kiosk_registration(
             },
         );
     };
+    event::emit(PersonalKioskRegistrationUpdated {
+        kiosk_id,
+        kiosk_cap_id,
+        owner,
+    });
 }
 
 fun borrow_personal_kiosk_registration(
