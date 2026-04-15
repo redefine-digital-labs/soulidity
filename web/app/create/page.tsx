@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
-import { Input, Select, Textarea } from '@/components/ui/input'
+import { Input, Textarea } from '@/components/ui/input'
 import { buttonStyles } from '@/components/ui/button'
 import { UploadZone } from '@/components/ui/upload-zone'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
@@ -16,8 +16,6 @@ const royaltyOptions = [
   { value: 500, label: 'Standard', desc: '5%', recommended: true },
   { value: 1000, label: 'High', desc: '10%' },
 ] as const
-
-const categoryOptions = ['Trading', 'Research', 'Assistant', 'Creator'] as const
 
 function FieldLabel({
   label,
@@ -86,31 +84,6 @@ export default function CreateSoulPage() {
               onChange={(e) => ctx.setDescription(e.target.value)}
               className="min-h-[104px] resize-none rounded-xl border-purple/35 bg-card2/90 px-4 py-3 placeholder:text-[#5f4f90] focus:border-purple"
             />
-          </div>
-
-          <div className="space-y-2">
-            <FieldLabel label="Category" required />
-            <div className="relative">
-              <Select
-                value={ctx.category}
-                onChange={(event) => ctx.setCategory(event.target.value)}
-                className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 pr-11 text-sm text-foreground focus:border-purple"
-              >
-                {categoryOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-muted"
-              >
-                <svg width="12" height="8" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M1 1.25L6 6.25L11 1.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-            </div>
           </div>
 
           <div className="space-y-2">

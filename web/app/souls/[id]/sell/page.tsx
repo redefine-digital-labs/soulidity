@@ -96,7 +96,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     ? (100 - platformFeePct - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct) - collectionRoyaltyPct).toFixed(1)
     : null
 
-  const authorizeHref = priceAtomic && !belowFloor
+  const authorizeHref = priceAtomic != null && !belowFloor
     ? `/souls/${encodeURIComponent(soul.onChainId)}/sell/authorize?price=${encodeURIComponent(price)}`
     : null
 
@@ -140,7 +140,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-bold text-sm">{soul.name}</p>
-            <p className="text-xs text-muted capitalize">{soul.category || 'Soul'}</p>
+            <p className="text-xs text-muted capitalize">{soul.tags[0] ?? 'Soul'}</p>
           </div>
           <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-success/10 text-success border border-success/30">
             For Sale

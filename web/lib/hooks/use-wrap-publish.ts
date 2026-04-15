@@ -16,7 +16,6 @@ const WRAP_MINT_RECOVERY_KEY = 'soul-wrap-personal-recovery'
 
 interface WrapSyncBody {
   txDigest: string
-  category: 'personal-join'
   sealSidecar: string | null
   memorySealSidecar: string | null
   skillsSealSidecar: string | null
@@ -44,7 +43,6 @@ function isWrapSyncBody(value: unknown): value is WrapSyncBody {
   const candidate = value as Partial<WrapSyncBody>
   return typeof candidate.txDigest === 'string'
     && candidate.txDigest.length > 0
-    && candidate.category === 'personal-join'
     && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'string')
     && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'string')
     && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'string')
@@ -239,7 +237,6 @@ export function useWrapPublish() {
             txDigest: executedDigest,
             syncBody: {
               txDigest: executedDigest,
-              category: 'personal-join',
               sealSidecar: typeof charUpload.sealDekEnvelope === 'string' ? charUpload.sealDekEnvelope : null,
               memorySealSidecar: typeof memUpload.sealDekEnvelope === 'string' ? memUpload.sealDekEnvelope : null,
               skillsSealSidecar: typeof skillsUpload?.sealDekEnvelope === 'string' ? skillsUpload.sealDekEnvelope : null,

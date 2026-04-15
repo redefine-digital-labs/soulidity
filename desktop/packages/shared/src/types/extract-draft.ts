@@ -2,7 +2,6 @@ import type { SoulProfile } from './soul-profile'
 
 export interface ExtractSoulDraftPendingSync {
   txDigest: string
-  category: string
   tags: string[]
   previewImages: string[]
   readme: string | null
@@ -18,7 +17,6 @@ export interface ExtractSoulDraft {
   sourceProfile: SoulProfile
   name: string
   description: string
-  category: string
   tags: string[]
   royaltyBps: number
   traits: string[]
@@ -48,7 +46,6 @@ type RegenerateDraftOptions = {
   nowIso?: string
 }
 
-const DEFAULT_CATEGORY = 'Assistant'
 const DEFAULT_ROYALTY_BPS = 500
 
 function formatList(items: string[]) {
@@ -88,11 +85,11 @@ function pickCoverPalette(seed: number) {
   return palettes[seed % palettes.length]
 }
 
-function buildCoverImageDataUrl(name: string, category: string, tags: string[]) {
-  const seed = hashSeed(`${name}|${category}|${tags.join('|')}`)
+function buildCoverImageDataUrl(name: string, tags: string[]) {
+  const seed = hashSeed(`${name}|${tags.join('|')}`)
   const [background, accent, foreground] = pickCoverPalette(seed)
   const initials = (name.trim().match(/[A-Za-z0-9]/g) ?? ['S']).slice(0, 2).join('').toUpperCase()
-  const tagLine = tags.slice(0, 3).join(' • ') || category
+  const tagLine = tags.slice(0, 3).join(' · ') || 'Soul'
 
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" role="img" aria-label="${name}">
@@ -106,7 +103,7 @@ function buildCoverImageDataUrl(name: string, category: string, tags: string[]) 
   <circle cx="930" cy="260" r="170" fill="${foreground}" fill-opacity="0.12" />
   <circle cx="260" cy="930" r="220" fill="${foreground}" fill-opacity="0.08" />
   <rect x="96" y="96" width="1008" height="1008" rx="56" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.18)" />
-  <text x="120" y="250" fill="${foreground}" font-size="68" font-family="SF Pro Display, Segoe UI, sans-serif" font-weight="600">${category}</text>
+  <text x="120" y="250" fill="${foreground}" font-size="68" font-family="SF Pro Display, Segoe UI, sans-serif" font-weight="600">${tagLine}</text>
   <text x="120" y="760" fill="${foreground}" font-size="420" font-family="SF Pro Display, Segoe UI, sans-serif" font-weight="700">${initials}</text>
   <text x="120" y="980" fill="${foreground}" font-size="88" font-family="SF Pro Display, Segoe UI, sans-serif" font-weight="600">${name}</text>
   <text x="120" y="1052" fill="${foreground}" font-size="42" font-family="SF Pro Text, Segoe UI, sans-serif" opacity="0.9">${tagLine}</text>
@@ -193,7 +190,7 @@ function applyGeneratedContent(
     ...draft,
     updatedAt,
     coverImageDataUrl: draft.coverImageGenerated
-      ? buildCoverImageDataUrl(draft.name, draft.category, draft.tags)
+      ? buildCoverImageDataUrl(draft.name, draft.tags)
       : draft.coverImageDataUrl,
     coverImageFileName: draft.coverImageGenerated ? 'extract-cover.svg' : draft.coverImageFileName,
     coverImageMimeType: 'image/svg+xml',
@@ -230,7 +227,6 @@ export function createExtractSoulDraft(
     sourceProfile: profile,
     name: profile.suggested.name,
     description: profile.suggested.description,
-    category: DEFAULT_CATEGORY,
     tags: [...profile.suggested.tags],
     royaltyBps: DEFAULT_ROYALTY_BPS,
     traits: [...profile.personality.traits],

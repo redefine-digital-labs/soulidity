@@ -27,17 +27,17 @@ export async function GET(request: NextRequest) {
 
   const url = new URL(request.url)
   const q = url.searchParams.get('q')?.trim().slice(0, 200) || ''
-  const category = url.searchParams.get('category')?.trim().slice(0, 200) || ''
+  const tag = url.searchParams.get('tag')?.trim().slice(0, 200) || ''
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || DEFAULT_LIMIT, 1), MAX_LIMIT)
   const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0)
 
   const where: Record<string, unknown> = { listingStatus: 'listed' }
-  if (category) where.category = { equals: category, mode: 'insensitive' }
+  if (tag) where.tags = { has: tag.toLowerCase() }
   if (q) {
     where.OR = [
       { name: { contains: q, mode: 'insensitive' } },
       { description: { contains: q, mode: 'insensitive' } },
-      { tags: { has: q } },
+      { tags: { has: q.toLowerCase() } },
     ]
   }
 

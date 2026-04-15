@@ -3,7 +3,6 @@ import type { BatchSoulEntry } from '@/components/providers/create-collection-pr
 export const BATCH_TEMPLATE_HEADERS = [
   'Soul Name',
   'Description',
-  'Category',
   'Tags',
   'Creator Royalty (%)',
 ] as const
@@ -11,12 +10,9 @@ export const BATCH_TEMPLATE_HEADERS = [
 export const BATCH_TEMPLATE_EXAMPLE_ROW = [
   'AlphaScout',
   'A DeFi alpha-hunting agent specializing in emerging DEX pools on Sui',
-  'Trading',
   'ai, trading, defi',
   5,
 ] as const
-
-const VALID_CATEGORIES = ['Trading', 'Research', 'Assistant', 'Creator'] as const
 
 function str(raw: unknown): string {
   return String(raw ?? '').trim()
@@ -50,18 +46,6 @@ export function normalizeBatchTemplateRows(
       continue
     }
 
-    const categoryRaw = str(row.Category)
-    if (!categoryRaw) {
-      errors.push(`Row ${rowNumber}: Category is required`)
-      continue
-    }
-
-    const category = VALID_CATEGORIES.find((value) => value.toLowerCase() === categoryRaw.toLowerCase())
-    if (!category) {
-      errors.push(`Row ${rowNumber}: Category must be one of: ${VALID_CATEGORIES.join(', ')}`)
-      continue
-    }
-
     const tagsRaw = str(row.Tags)
     const tags = tagsRaw ? tagsRaw.split(',').map((value) => value.trim()).filter(Boolean) : []
 
@@ -79,7 +63,6 @@ export function normalizeBatchTemplateRows(
     souls.push({
       name,
       description,
-      category,
       tags,
       creatorRoyaltyBps,
     })

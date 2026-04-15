@@ -10,6 +10,7 @@ import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
+import { normalizeTags } from '@/lib/soulidity/tags'
 
 const IMPORT_RECOVERY_KEY = 'soul-import-recovery'
 
@@ -32,7 +33,6 @@ export interface ImportSyncResponse {
 export interface ImportParams {
   name: string
   description: string
-  category: string
   tags: string[]
   imageUrl: string
   metadataRef?: string | null
@@ -134,8 +134,7 @@ export function useImport() {
         // Persist recovery state before sync
         const syncBody = {
           txDigest: executedDigest,
-          category: params.category,
-          tags: params.tags,
+          tags: normalizeTags(params.tags),
           previewImages: params.previewImages,
           readme: params.readme ?? null,
           sealSidecar: params.sealSidecar ?? null,
@@ -151,8 +150,7 @@ export function useImport() {
         ? recoveryRef.current.syncBody
         : {
             txDigest: digest,
-            category: params.category,
-            tags: params.tags,
+            tags: normalizeTags(params.tags),
             previewImages: params.previewImages,
             readme: params.readme ?? null,
             sealSidecar: params.sealSidecar ?? null,

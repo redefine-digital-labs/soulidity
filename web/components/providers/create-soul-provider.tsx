@@ -77,8 +77,6 @@ interface CreateSoulContextValue {
   setName: (v: string) => void
   description: string
   setDescription: (v: string) => void
-  category: string
-  setCategory: (v: string) => void
   tags: string
   setTags: (v: string) => void
   royalty: number
@@ -118,7 +116,6 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
   // Step 1
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('Trading')
   const [tags, setTags] = useState('')
   const [royalty, setRoyalty] = useState(500)
   const [coverImageFile, setCoverImageFileRaw] = useState<File | null>(null)
@@ -210,7 +207,6 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
   const reset = useCallback(() => {
     setName('')
     setDescription('')
-    setCategory('Trading')
     setTags('')
     setRoyalty(500)
     setCoverImage(null)
@@ -229,7 +225,6 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
     <CreateSoulContext value={{
       name, setName,
       description, setDescription,
-      category, setCategory,
       tags, setTags,
       royalty, setRoyalty,
       coverImageFile, coverImagePreviewUrl, setCoverImage,

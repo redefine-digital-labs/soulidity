@@ -10,6 +10,7 @@ import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
+import { normalizeTags } from '@/lib/soulidity/tags'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
@@ -33,7 +34,6 @@ export interface PublishSyncResponse {
 export interface PublishParams {
   name: string
   description: string
-  category: string
   tags: string[]
   imageUrl: string
   metadataRef?: string | null
@@ -134,8 +134,7 @@ export function usePublish() {
         // Persist recovery state before sync — survives page refresh to prevent duplicate mints
         const syncBody = {
           txDigest: executedDigest,
-          category: params.category,
-          tags: params.tags,
+          tags: normalizeTags(params.tags),
           previewImages: params.previewImages,
           readme: params.readme ?? null,
           sealSidecar: params.sealSidecar ?? null,
@@ -152,8 +151,7 @@ export function usePublish() {
         ? recoveryRef.current.syncBody
         : {
             txDigest: digest,
-            category: params.category,
-            tags: params.tags,
+            tags: normalizeTags(params.tags),
             previewImages: params.previewImages,
             readme: params.readme ?? null,
             sealSidecar: params.sealSidecar ?? null,

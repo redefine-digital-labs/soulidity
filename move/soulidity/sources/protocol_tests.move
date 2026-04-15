@@ -31,6 +31,7 @@ const PAYMENT_FROST: u64 = 1_000_000_000;
 const SOUL_PRICE: u64 = 1_000_000;
 const SOUL_RESALE_PRICE: u64 = 2_000_000;
 const COLLECTION_PRICE: u64 = 300_000;
+const DEFAULT_PLATFORM_FEE_BPS: u16 = 250;
 const CREATOR_ROYALTY_BPS: u16 = 1_000;
 const COLLECTION_ROYALTY_BPS: u16 = 500;
 const BLOB_ROOT_HASH_C: u256 = 0xABE;
@@ -309,6 +310,37 @@ fun mint_usdc_to_recipient(
         test_usdc::mint(&mut treasury_cap, amount, recipient, ts::ctx(scenario));
         transfer::public_transfer(treasury_cap, admin);
     };
+}
+
+fun bps_amount_for_tests(price: u64, bps: u16): u64 {
+    ((price as u128 * (bps as u128)) / 10_000) as u64
+}
+
+fun default_platform_fee_amount(price: u64): u64 {
+    bps_amount_for_tests(price, DEFAULT_PLATFORM_FEE_BPS)
+}
+
+fun soul_purchase_total(price: u64, creator_royalty_bps: u16, collection_royalty_bps: u16): u64 {
+    price
+        + default_platform_fee_amount(price)
+        + bps_amount_for_tests(price, creator_royalty_bps)
+        + bps_amount_for_tests(price, collection_royalty_bps)
+}
+
+fun collection_purchase_total(price: u64): u64 {
+    price + default_platform_fee_amount(price)
+}
+
+fun content_access_purchase_total(price: u64): u64 {
+    price + default_platform_fee_amount(price)
+}
+
+fun collection_purchase_total_with_platform_fee(price: u64, platform_fee_bps: u16): u64 {
+    price + bps_amount_for_tests(price, platform_fee_bps)
+}
+
+fun content_access_purchase_total_with_platform_fee(price: u64, platform_fee_bps: u16): u64 {
+    price + bps_amount_for_tests(price, platform_fee_bps)
 }
 
 fun mint_native_in_personal_kiosk_no_skills(
@@ -640,7 +672,7 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
         let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
         test_usdc::mint(
             &mut treasury_cap,
-            SOUL_PRICE + ((SOUL_PRICE as u128 * (CREATOR_ROYALTY_BPS as u128) / 10_000) as u64),
+            soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0),
             buyer,
             ts::ctx(&mut scenario),
         );
@@ -842,7 +874,12 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
     ts::next_tx(&mut scenario, admin);
     {
         let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
-        test_usdc::mint(&mut treasury_cap, COLLECTION_PRICE, holder, ts::ctx(&mut scenario));
+        test_usdc::mint(
+            &mut treasury_cap,
+            collection_purchase_total(COLLECTION_PRICE),
+            holder,
+            ts::ctx(&mut scenario),
+        );
         transfer::public_transfer(treasury_cap, admin);
     };
 
@@ -923,11 +960,9 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
     ts::next_tx(&mut scenario, admin);
     {
         let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
-        let creator_royalty = ((SOUL_PRICE as u128 * (CREATOR_ROYALTY_BPS as u128)) / 10_000) as u64;
-        let collection_royalty = ((SOUL_PRICE as u128 * (COLLECTION_ROYALTY_BPS as u128)) / 10_000) as u64;
         test_usdc::mint(
             &mut treasury_cap,
-            SOUL_PRICE + creator_royalty + collection_royalty,
+            soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, COLLECTION_ROYALTY_BPS),
             buyer,
             ts::ctx(&mut scenario),
         );
@@ -1064,7 +1099,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
         &mut scenario,
         admin,
         buyer,
-        SOUL_PRICE + (((SOUL_PRICE as u128 * (CREATOR_ROYALTY_BPS as u128)) / 10_000) as u64),
+        soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0),
     );
 
     ts::next_tx(&mut scenario, buyer);
@@ -2403,8 +2438,9 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
     let creator_kiosk_id: ID;
     let buyer_kiosk_id: ID;
     let soul_id: ID;
-    let creator_royalty = ((SOUL_PRICE as u128 * (CREATOR_ROYALTY_BPS as u128)) / 10_000) as u64;
-    let total = SOUL_PRICE + creator_royalty;
+    let expected_platform_fee = default_platform_fee_amount(SOUL_PRICE);
+    let creator_royalty = bps_amount_for_tests(SOUL_PRICE, CREATOR_ROYALTY_BPS);
+    let total = soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0);
 
     init_protocol_for_testing(&mut scenario, admin);
     creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
@@ -2462,7 +2498,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
                 0,
             );
 
-        assert!(platform_fee == 0, 30);
+        assert!(platform_fee == expected_platform_fee, 30);
         assert!(quoted_price == SOUL_PRICE, 31);
         assert!(quoted_creator_royalty == creator_royalty, 32);
         assert!(quoted_collection_royalty == 0, 33);
@@ -2529,7 +2565,7 @@ fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
     ts::next_tx(&mut scenario, creator);
     {
         let creator_payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        assert!(coin::value(&creator_payment) == total, 37);
+        assert!(coin::value(&creator_payment) == SOUL_PRICE + creator_royalty, 37);
         transfer::public_transfer(creator_payment, creator);
     };
 
@@ -2548,6 +2584,8 @@ fun secondary_sale_pays_creator_royalty() {
     let buyer_kiosk_id: ID;
     let soul_id: ID;
     let creator_royalty = ((SOUL_RESALE_PRICE as u128 * (CREATOR_ROYALTY_BPS as u128)) / 10_000) as u64;
+    let initial_sale_total = soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0);
+    let resale_total = soul_purchase_total(SOUL_RESALE_PRICE, CREATOR_ROYALTY_BPS, 0);
 
     init_protocol_for_testing(&mut scenario, admin);
     creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
@@ -2621,7 +2659,7 @@ fun secondary_sale_pays_creator_royalty() {
         &mut scenario,
         admin,
         seller,
-        SOUL_PRICE + (((SOUL_PRICE as u128 * (CREATOR_ROYALTY_BPS as u128)) / 10_000) as u64),
+        initial_sale_total,
     );
 
     ts::next_tx(&mut scenario, seller);
@@ -2700,7 +2738,7 @@ fun secondary_sale_pays_creator_royalty() {
         &mut scenario,
         admin,
         buyer,
-        SOUL_RESALE_PRICE + creator_royalty,
+        resale_total,
     );
 
     ts::next_tx(&mut scenario, buyer);
@@ -2879,7 +2917,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    mint_usdc_to_recipient(&mut scenario, admin, holder, COLLECTION_PRICE);
+    mint_usdc_to_recipient(&mut scenario, admin, holder, collection_purchase_total(COLLECTION_PRICE));
 
     ts::next_tx(&mut scenario, holder);
     {
@@ -3056,7 +3094,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    mint_usdc_to_recipient(&mut scenario, admin, holder, COLLECTION_PRICE);
+    mint_usdc_to_recipient(&mut scenario, admin, holder, collection_purchase_total(COLLECTION_PRICE));
 
     ts::next_tx(&mut scenario, holder);
     {
@@ -8409,8 +8447,7 @@ fun update_fee_recipient_zero_fails() {
 // ── 2. EInvalidPrice ────────────────────────────────────────────
 
 #[test]
-#[expected_failure(abort_code = soulidity::market::EInvalidPrice)]
-fun list_soul_zero_price_fails() {
+fun list_soul_zero_price_succeeds() {
     let admin = @0xA11CE;
     let creator = @0xC0DE;
     let mut scenario = ts::begin(@0x0);
@@ -8440,8 +8477,8 @@ fun list_soul_zero_price_fails() {
             &soul_policy,
             &mut creator_kiosk,
             &personal_cap,
-            string::utf8(b"Price Test Soul"),
-            string::utf8(b"Should fail on zero price"),
+            string::utf8(b"Free Soul"),
+            string::utf8(b"Zero-price listing should succeed"),
             string::utf8(b"https://example.com/soul.png"),
             option::none(),
             protected_blob,
@@ -8457,7 +8494,7 @@ fun list_soul_zero_price_fails() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    // List with price = 0 → EInvalidPrice
+    // List with price = 0 — should succeed now
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);
@@ -8477,8 +8514,135 @@ fun list_soul_zero_price_fails() {
             ts::ctx(&mut scenario),
         );
 
-        abort 100
-    }
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(state);
+        ts::return_shared(creator_kiosk);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun buy_soul_zero_price_succeeds() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let buyer = @0xF00D;
+    let mut scenario = ts::begin(@0x0);
+    let creator_kiosk_id: ID;
+    let buyer_kiosk_id: ID;
+    let soul_id: ID;
+
+    init_protocol_for_testing(&mut scenario, admin);
+    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
+
+    ts::next_tx(&mut scenario, admin);
+    {
+        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
+    };
+
+    // Mint soul
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+
+        soul_id = mint_native_in_personal_kiosk_no_skills(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(b"Free Soul"),
+            string::utf8(b"Zero-price purchase test"),
+            string::utf8(b"https://example.com/free-soul.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            CREATOR_ROYALTY_BPS,
+            &mut scenario,
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // List at price 0
+    ts::next_tx(&mut scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let state: SoulState = ts::take_shared(&scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+
+        let _listing_id = market::list_soul_fixed_price(
+            &config,
+            &registry,
+            &mut creator_kiosk,
+            &personal_cap,
+            &state,
+            soul_id,
+            0,
+            ts::ctx(&mut scenario),
+        );
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(state);
+        ts::return_shared(creator_kiosk);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
+    };
+
+    // Buy with zero-value coin
+    ts::next_tx(&mut scenario, buyer);
+    {
+        let config: MarketConfig = ts::take_shared(&scenario);
+        let registry: KioskRegistry = ts::take_shared(&scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
+        let mut state: SoulState = ts::take_shared(&scenario);
+        let mut listing: SoulListing = ts::take_shared(&scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
+        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
+        let payment = coin::zero<USDC>(ts::ctx(&mut scenario));
+
+        market::buy_soul_fixed_price(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &mut buyer_kiosk,
+            &buyer_cap,
+            &mut state,
+            &mut listing,
+            payment,
+            ts::ctx(&mut scenario),
+        );
+
+        assert!(soul::current_owner(&state) == buyer, 1);
+        assert!(soul::current_kiosk_id(&state) == buyer_kiosk_id, 2);
+
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(state);
+        ts::return_shared(listing);
+        ts::return_shared(creator_kiosk);
+        ts::return_shared(buyer_kiosk);
+        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
+    };
+
+    ts::end(scenario);
 }
 
 // ── 3. EPlatformFeeTooHigh ──────────────────────────────────────
@@ -8794,7 +8958,7 @@ fun buy_soul_wrong_payment_fails() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    // Mint wrong USDC amount to buyer (1 token instead of SOUL_PRICE + royalty)
+    // Mint wrong USDC amount to buyer (1 token instead of the quoted total)
     mint_usdc_to_recipient(&mut scenario, admin, buyer, 1);
 
     // Buyer tries to buy with wrong payment → EIncorrectPaymentAmount
@@ -9455,7 +9619,12 @@ fun access_list_state_mismatch_on_purchase_fails() {
     };
 
     // Mint USDC to buyer for content access purchase
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, CONTENT_ACCESS_PRICE);
+    mint_usdc_to_recipient(
+        &mut scenario,
+        admin,
+        buyer,
+        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+    );
 
     // Find soul B's state_id — take both states, identify the one that does NOT
     // own access_list_a, that is state_b.
@@ -9562,8 +9731,18 @@ fun content_access_repeat_purchase_same_tx_fails_after_state_update() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, CONTENT_ACCESS_PRICE);
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, CONTENT_ACCESS_PRICE);
+    mint_usdc_to_recipient(
+        &mut scenario,
+        admin,
+        buyer,
+        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+    );
+    mint_usdc_to_recipient(
+        &mut scenario,
+        admin,
+        buyer,
+        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+    );
 
     ts::next_tx(&mut scenario, buyer);
     {
@@ -9792,7 +9971,12 @@ fun content_access_expired_purchase_renews_and_skill_allowlist_succeeds() {
         ts::return_shared(clock_obj);
     };
 
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, CONTENT_ACCESS_PRICE);
+    mint_usdc_to_recipient(
+        &mut scenario,
+        admin,
+        buyer,
+        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+    );
 
     ts::next_tx(&mut scenario, buyer);
     {
@@ -10688,7 +10872,12 @@ fun buy_collection_right_wrong_payment_fails() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, COLLECTION_PRICE - 1);
+    mint_usdc_to_recipient(
+        &mut scenario,
+        admin,
+        buyer,
+        collection_purchase_total(COLLECTION_PRICE) - 1,
+    );
 
     ts::next_tx(&mut scenario, buyer);
     {
@@ -10935,7 +11124,12 @@ fun collection_purchase_with_platform_fee_branch_works() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, 315_000);
+    mint_usdc_to_recipient(
+        &mut scenario,
+        admin,
+        buyer,
+        collection_purchase_total_with_platform_fee(COLLECTION_PRICE, 500),
+    );
 
     ts::next_tx(&mut scenario, buyer);
     {
@@ -11251,7 +11445,12 @@ fun content_access_purchase_with_platform_fee_branch_works() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, 1_050_000);
+    mint_usdc_to_recipient(
+        &mut scenario,
+        admin,
+        buyer,
+        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, 500),
+    );
 
     ts::next_tx(&mut scenario, buyer);
     {
@@ -11300,7 +11499,7 @@ fun protocol_init_creates_all_expected_objects() {
 
         // MarketConfig defaults
         assert!(market::fee_recipient(&config) == admin, 0);
-        assert!(market::platform_fee_bps(&config) == 0, 1);
+        assert!(market::platform_fee_bps(&config) == 250, 1);
         assert!(market::paused(&config) == false, 2);
         assert!(market::has_tracked_upgrade_cap(&upgrade_state) == false, 3);
         assert!(market::tracked_upgrade_version(&upgrade_state) == 0, 4);

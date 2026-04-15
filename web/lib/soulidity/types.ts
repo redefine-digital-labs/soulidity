@@ -196,7 +196,6 @@ export interface SoulAssetSummary {
   contentBlobObjectId: string
   provenanceKind: SoulProvenanceKind
   originRef: string | null
-  category: string
   tags: string[]
   previewImages: string[]
   creatorAddress: string

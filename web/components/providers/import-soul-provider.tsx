@@ -106,8 +106,6 @@ interface ImportSoulContextValue {
   setCoverImage: (f: File | null) => void
   royalty: number
   setRoyalty: (v: number) => void
-  category: string
-  setCategory: (v: string) => void
   tags: string
   setTags: (v: string) => void
 
@@ -157,7 +155,6 @@ export function ImportSoulProvider({ children }: { children: React.ReactNode }) 
   const [coverImagePreviewUrl, setCoverImagePreviewUrl] = useState<string | null>(null)
   const previewUrlRef = useRef<string | null>(null)
   const [royalty, setRoyalty] = useState(500)
-  const [category, setCategory] = useState('Trading')
   const [tags, setTags] = useState('')
 
   // Step 5
@@ -309,7 +306,6 @@ export function ImportSoulProvider({ children }: { children: React.ReactNode }) 
     setSkillsFileRaw(null)
     setCoverImage(null)
     setRoyalty(500)
-    setCategory('Trading')
     setTags('')
     setUploadResultsRaw(null)
     setImportResultRaw(null)
@@ -335,7 +331,6 @@ export function ImportSoulProvider({ children }: { children: React.ReactNode }) 
       skillsFile, setSkillsFile,
       coverImageFile, coverImagePreviewUrl, setCoverImage,
       royalty, setRoyalty,
-      category, setCategory,
       tags, setTags,
       resolvedName, resolvedDescription, nameMapped, descriptionMapped,
       uploadResults, setUploadResults,

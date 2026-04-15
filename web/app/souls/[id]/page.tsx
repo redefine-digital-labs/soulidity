@@ -153,7 +153,6 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-3">
               <div className="flex flex-wrap gap-1.5">
-                <Tag color="purple">{soul.category}</Tag>
                 {soul.tags.map((tag) => (
                   <Tag key={tag} color="muted">{tag}</Tag>
                 ))}

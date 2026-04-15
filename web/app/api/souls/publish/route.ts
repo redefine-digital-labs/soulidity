@@ -18,6 +18,7 @@ import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
+import { normalizeTags } from '@/lib/soulidity/tags'
 import type { SoulWriterKind } from '@/lib/soulidity/types'
 
 export const dynamic = 'force-dynamic'
@@ -136,8 +137,7 @@ export async function POST(request: Request) {
       soulObjectId: minted.soulId,
       stateObjectId: minted.stateId,
       memoryObjectId: minted.memoryId,
-      category: typeof body?.category === 'string' ? body.category.trim() || 'uncategorized' : 'uncategorized',
-      tags: parseStringArray(body?.tags, 12),
+      tags: normalizeTags(parseStringArray(body?.tags, 12)),
       previewImages: parseStringArray(body?.previewImages, 8),
       readme: typeof body?.readme === 'string' ? body.readme : null,
       sealSidecar: soulSidecar,

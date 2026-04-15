@@ -27,7 +27,7 @@ function formatRoyalty(bps: number) {
 }
 
 function isSoulReady(s: BatchSoulEntry, folder?: SoulFolderFiles) {
-  return !!(s.name && s.description && s.category && folder?.characterFile && folder?.memoryFile)
+  return !!(s.name && s.description && folder?.characterFile && folder?.memoryFile)
 }
 
 // ── Fallback image component ──
@@ -176,7 +176,6 @@ export default function PreviewPage() {
         souls: ctx.batchSouls.map((s) => ({
           name: s.name,
           description: s.description,
-          category: s.category,
           tags: s.tags,
           creatorRoyaltyBps: s.creatorRoyaltyBps,
         })),
@@ -251,7 +250,6 @@ export default function PreviewPage() {
       souls: ctx.batchSouls.map((s) => ({
         name: s.name,
         description: s.description,
-        category: s.category,
         tags: s.tags,
         creatorRoyaltyBps: s.creatorRoyaltyBps,
       })),

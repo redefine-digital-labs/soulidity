@@ -37,18 +37,18 @@ function buildOrderBy(sort: SortOption): Prisma.SoulAssetOrderByWithRelationInpu
 
 export function buildSoulsWhere(params: {
   q: string
-  category: string
+  tag: string
   minPriceRaw: string
   maxPriceRaw: string
   creator: string
 }): Prisma.SoulAssetWhereInput {
-  const { q, category, minPriceRaw, maxPriceRaw, creator } = params
+  const { q, tag, minPriceRaw, maxPriceRaw, creator } = params
   const where: Prisma.SoulAssetWhereInput = {
     listingStatus: 'listed',
   }
 
-  if (category) {
-    where.category = category
+  if (tag) {
+    where.tags = { has: tag.toLowerCase() }
   }
 
   const conditions: Prisma.SoulAssetWhereInput[] = []
@@ -58,7 +58,7 @@ export function buildSoulsWhere(params: {
       OR: [
         { name: { contains: q, mode: 'insensitive' } },
         { description: { contains: q, mode: 'insensitive' } },
-        { tags: { has: q } },
+        { tags: { has: q.toLowerCase() } },
       ],
     })
   }
@@ -100,13 +100,13 @@ export async function GET(request: NextRequest) {
     parsePositiveInteger(request.nextUrl.searchParams.get('pageSize'), DEFAULT_PAGE_SIZE),
   )
   const q = request.nextUrl.searchParams.get('q')?.trim() || ''
-  const category = request.nextUrl.searchParams.get('category')?.trim() || ''
+  const tag = request.nextUrl.searchParams.get('tag')?.trim() || ''
   const sort = parseSortOption(request.nextUrl.searchParams.get('sort'))
   const minPriceRaw = request.nextUrl.searchParams.get('minPrice')?.trim() || ''
   const maxPriceRaw = request.nextUrl.searchParams.get('maxPrice')?.trim() || ''
   const creator = request.nextUrl.searchParams.get('creator')?.trim() || ''
 
-  const where = buildSoulsWhere({ q, category, minPriceRaw, maxPriceRaw, creator })
+  const where = buildSoulsWhere({ q, tag, minPriceRaw, maxPriceRaw, creator })
 
   const orderBy = buildOrderBy(sort)
 

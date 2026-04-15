@@ -41,7 +41,6 @@ type CommunityProfile = {
     name: string
     description: string
     previewImages: string[]
-    category: string
     tags: string[]
     listedPriceAtomic: string | null
     listingStatus: string
@@ -238,7 +237,7 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
                     <div className="font-bold text-sm mb-1 truncate">{soul.name}</div>
                     <div className="text-xs text-muted leading-relaxed line-clamp-2 mb-2">{soul.description}</div>
                     <div className="flex items-center justify-between">
-                      <Tag color="muted">{soul.category}</Tag>
+                      <Tag color="muted">{soul.tags[0] ?? 'Soul'}</Tag>
                       <span className="text-gold text-xs font-bold">
                         {soul.listedPriceAtomic ? formatAtomicAmountForDisplay(soul.listedPriceAtomic) : 'Held'}
                       </span>

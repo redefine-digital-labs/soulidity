@@ -9,7 +9,6 @@ export async function upsertSoulProjection(params: {
   currentKioskCapOnChainId: string
   creatorMemberId?: string | null
   currentOwnerMemberId?: string | null
-  category: string
   tags: string[]
   previewImages: string[]
   readme?: string | null
@@ -63,7 +62,6 @@ export async function upsertSoulProjection(params: {
       ...assetsUpdate,
       ...accessListUpdate,
       sealSidecar: params.sealSidecar ?? Prisma.DbNull,
-      category: params.category,
       tags: params.tags,
       previewImages: params.previewImages,
       readme: params.readme ?? null,
@@ -97,7 +95,6 @@ export async function upsertSoulProjection(params: {
       assetsOnChainId: params.state.assetsId,
       accessListOnChainId: params.state.accessListId,
       sealSidecar: params.sealSidecar ?? Prisma.DbNull,
-      category: params.category,
       tags: params.tags,
       previewImages: params.previewImages,
       readme: params.readme ?? null,

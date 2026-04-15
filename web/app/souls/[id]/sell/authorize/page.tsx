@@ -95,7 +95,7 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
     )
   }
 
-  if (!priceAtomic || priceError) {
+  if (priceAtomic == null || priceError) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
         <EmptyState

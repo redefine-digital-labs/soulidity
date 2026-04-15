@@ -69,7 +69,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
     && priceAtomic === BigInt(soul.listedPriceAtomic)
 
   async function handleUpdatePrice() {
-    if (!priceAtomic || !soul.listingObjectOnChainId) return
+    if (priceAtomic == null || !soul.listingObjectOnChainId) return
     setStatus('signing')
     setError(null)
     try {
@@ -159,7 +159,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
       <Button
         variant="gold"
         full
-        disabled={!priceAtomic || !!priceError || samePrice || belowFloor || status !== 'idle'}
+        disabled={priceAtomic == null || !!priceError || samePrice || belowFloor || status !== 'idle'}
         onClick={handleUpdatePrice}
       >
         {status === 'signing' ? 'Signing\u2026' : status === 'syncing' ? 'Syncing\u2026' : 'Update Price'}

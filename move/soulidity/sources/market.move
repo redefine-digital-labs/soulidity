@@ -24,6 +24,7 @@ use walrus::blob::Blob;
 
 const MAX_BPS: u16 = 10_000;
 const MAX_U64_AS_U128: u128 = 18446744073709551615;
+const DEFAULT_PLATFORM_FEE_BPS: u16 = 250;
 
 const EInvalidRecipient: u64 = 0;
 const EInvalidPrice: u64 = 1;
@@ -805,7 +806,6 @@ public fun list_soul_fixed_price(
     ctx: &mut TxContext,
 ): ID {
     assert!(!config.paused, EMarketPaused);
-    assert!(price > 0, EInvalidPrice);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
@@ -854,7 +854,6 @@ public fun list_soul_fixed_price_with_collection(
     ctx: &mut TxContext,
 ): ID {
     assert!(!config.paused, EMarketPaused);
-    assert!(price > 0, EInvalidPrice);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     let collection_id = object::id(collection_obj);
@@ -1533,7 +1532,7 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
     let config = MarketConfig {
         id: object::new(ctx),
         fee_recipient: admin,
-        platform_fee_bps: 0,
+        platform_fee_bps: DEFAULT_PLATFORM_FEE_BPS,
         paused: false,
     };
     let registry = KioskRegistry {

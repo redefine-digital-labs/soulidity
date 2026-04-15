@@ -106,10 +106,6 @@ export default function ImportPreviewPage() {
                 {royaltyLabels[ctx.royalty] ?? `${ctx.royalty / 100}%`}
               </span>
             </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted">Category</span>
-              <span className="font-medium text-foreground">{ctx.category}</span>
-            </div>
             <div className="flex items-center gap-1.5 text-[10px] text-[#c89a4a]">
               <span>🔒</span>
               <span>Locked after mint</span>

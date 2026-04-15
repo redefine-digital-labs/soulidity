@@ -89,7 +89,6 @@ interface PublishSyncResponse {
 export interface BatchSoulToMint {
   name: string
   description: string
-  category: string
   tags: string[]
   creatorRoyaltyBps: number
 }
@@ -164,7 +163,6 @@ export function buildCollectionDraftSignature(params: Pick<
     souls: (params.souls ?? []).map((soul) => ({
       name: soul.name.trim(),
       description: soul.description.trim(),
-      category: soul.category.trim(),
       tags: soul.tags,
       creatorRoyaltyBps: soul.creatorRoyaltyBps,
     })),
@@ -593,7 +591,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               txDigest: mintDigest,
-              category: soul.category,
               tags: soul.tags,
               previewImages: previewImageUrl ? [previewImageUrl] : [],
               sealSidecar: soulState.uploads.sealDekEnvelope,
