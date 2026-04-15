@@ -201,6 +201,14 @@ function parseRequiredNumber(raw: string, fieldName: string, csvRow: number): nu
   return value
 }
 
+function parseRequiredPositiveNumber(raw: string, fieldName: string, csvRow: number): number {
+  const value = parseRequiredNumber(raw, fieldName, csvRow)
+  if (value <= 0) {
+    throw new Error(`Row ${csvRow}: ${fieldName} must be greater than 0, got "${raw}"`)
+  }
+  return value
+}
+
 // ── CSV Parser ─────────────────────────────────────────────
 
 function parseCSV(csvPath: string): SoulRow[] {
@@ -236,7 +244,7 @@ function parseCSV(csvPath: string): SoulRow[] {
     const tagsRaw = fields[2]!.split(',').map(t => t.trim()).filter(Boolean)
 
     const creatorRoyaltyPct = parseRequiredNumber(fields[3]!, 'creatorRoyaltyPct', i + 2)
-    const priceUsdc = parseRequiredNumber(fields[4]!, 'priceUsdc', i + 2)
+    const priceUsdc = parseRequiredPositiveNumber(fields[4]!, 'priceUsdc', i + 2)
 
     return {
       index: i + 1,
@@ -516,6 +524,10 @@ function buildListSoulTx(
     priceAtomic: bigint
   },
 ): Transaction {
+  if (params.priceAtomic <= 0n) {
+    throw new Error('priceAtomic must be positive')
+  }
+
   const { packageId, marketConfigId, kioskRegistryId } = deployment
   const tx = new Transaction()
 
@@ -813,7 +825,7 @@ async function phaseSyncList(
   entry: SoulManifestEntry,
 ): Promise<void> {
   if (!entry.listTxDigest || !entry.soulOnChainId) {
-    // If no list TX, we're already done (free Soul)
+    // If no list TX and already done, skip (e.g. mint-only without listing)
     if (entry.phase === 'done') return
     throw new Error('Cannot sync-list without list TX digest')
   }
@@ -926,7 +938,7 @@ async function main() {
       console.log(`    Phase:    ${entry.phase}`)
       console.log(`    Tags:     ${normalizeTags(row.tags).join(', ')}`)
       console.log(`    Royalty:  ${row.creatorRoyaltyPct}% (${Math.round(row.creatorRoyaltyPct * 100)} bps)`)
-      console.log(`    Price:    ${row.priceUsdc} USDC${row.priceUsdc === 0 ? ' (free listing)' : ''}`)
+      console.log(`    Price:    ${row.priceUsdc} USDC`)
       console.log(`    Files:    soul.md${hasMem ? ' memory.md' : ''}${hasSkill ? ' skill.zip' : ''}${hasImage ? ' image.png' : ''}`)
       console.log('')
     }

@@ -95,13 +95,16 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
     )
   }
 
-  if (priceAtomic == null || priceError) {
+  if (priceAtomic == null || priceAtomic <= 0n || priceError) {
+    const invalidPriceMessage = priceError ?? (priceAtomic != null && priceAtomic <= 0n
+      ? 'Listing price must be greater than 0.'
+      : 'Go back and enter the asking price before signing.')
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
         <EmptyState
           icon="💸"
           label="Missing listing price"
-          sublabel={priceError ?? 'Go back and enter the asking price before signing.'}
+          sublabel={invalidPriceMessage}
           actionLabel="Set Price"
           onAction={() => {
             window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}/sell`

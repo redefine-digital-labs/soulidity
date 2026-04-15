@@ -27,8 +27,8 @@ export function useListSoul(soul: SoulAssetDetail | null) {
       setStatus('error')
       return
     }
-    if (priceAtomic < 0n) {
-      setError('Price cannot be negative')
+    if (priceAtomic <= 0n) {
+      setError('Price must be greater than 0')
       setStatus('error')
       return
     }

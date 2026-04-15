@@ -112,9 +112,10 @@ export async function GET(
     const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
     const config = await getCachedMarketConfig(marketConfigId, packageId)
     platformFeeBps = config.platformFeeBps
-    if (soul.listingStatus === 'listed' && soul.listedPriceAtomic != null) {
+    const listedPrice = soul.listedPriceAtomic != null ? BigInt(soul.listedPriceAtomic.toString()) : null
+    if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
       quote = quoteSoulPurchase(config, {
-        priceAtomic: BigInt(soul.listedPriceAtomic.toString()),
+        priceAtomic: listedPrice,
         creatorRoyaltyBps: soul.creatorRoyaltyBps,
         collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
       })

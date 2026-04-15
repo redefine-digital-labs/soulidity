@@ -43,6 +43,10 @@ export async function POST(
   if (soul.listingStatus !== 'listed' || !soul.listingObjectOnChainId || !soul.listedPriceAtomic) {
     return NextResponse.json({ error: 'Soul is not listed for sale' }, { status: 409 })
   }
+  const listedPriceAtomic = BigInt(soul.listedPriceAtomic.toString())
+  if (listedPriceAtomic <= 0n) {
+    return NextResponse.json({ error: 'Soul is not listed for sale' }, { status: 409 })
+  }
 
   const agentAddress = auth.walletAddresses[0]!
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
@@ -51,7 +55,7 @@ export async function POST(
   try {
     const config = await getMarketConfig(configId, packageId)
     const quote = quoteSoulPurchase(config, {
-      priceAtomic: BigInt(soul.listedPriceAtomic.toString()),
+      priceAtomic: listedPriceAtomic,
       creatorRoyaltyBps: soul.creatorRoyaltyBps,
       collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
     })

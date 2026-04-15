@@ -1303,6 +1303,7 @@ fun create_soul_listing(
     collection_royalty_bps: u16,
     ctx: &mut TxContext,
 ): SoulListing {
+    assert!(price > 0, EInvalidPrice);
     let _soul_ref = kiosk::borrow<Soul>(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap), soul_id);
     let (_, _, _, _, _) = quote_soul_purchase(
         config,

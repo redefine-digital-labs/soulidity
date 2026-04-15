@@ -26,6 +26,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
 
   // Floor price enforcement: soul in a collection must list at or above the floor
   const collectionFloor = soul?.collection?.floorPriceAtomic ? BigInt(soul.collection.floorPriceAtomic) : null
+  const invalidPrice = priceAtomic != null && priceAtomic <= 0n
   const belowFloor = priceAtomic != null && collectionFloor != null && priceAtomic < collectionFloor
 
   if (isLoading) {
@@ -96,7 +97,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     ? (100 - platformFeePct - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct) - collectionRoyaltyPct).toFixed(1)
     : null
 
-  const authorizeHref = priceAtomic != null && !belowFloor
+  const authorizeHref = priceAtomic != null && priceAtomic > 0n && !belowFloor
     ? `/souls/${encodeURIComponent(soul.onChainId)}/sell/authorize?price=${encodeURIComponent(price)}`
     : null
 
@@ -154,13 +155,14 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           </label>
           <Input
             type="number"
-            min="0"
+            min="0.000001"
             step="0.000001"
             value={price}
             onChange={(event) => setPrice(event.target.value)}
             placeholder="0.00"
           />
           {priceError && <p className="text-danger text-xs">{priceError}</p>}
+          {invalidPrice && <p className="text-danger text-xs">Listing price must be greater than 0</p>}
           {belowFloor && collectionFloor && (
             <p className="text-danger text-xs">
               Minimum price for this collection is {formatAtomicAmountForDisplay(collectionFloor.toString())}

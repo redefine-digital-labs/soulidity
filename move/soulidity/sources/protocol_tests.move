@@ -8447,7 +8447,8 @@ fun update_fee_recipient_zero_fails() {
 // ── 2. EInvalidPrice ────────────────────────────────────────────
 
 #[test]
-fun list_soul_zero_price_succeeds() {
+#[expected_failure(abort_code = soulidity::market::EInvalidPrice)]
+fun list_soul_zero_price_fails() {
     let admin = @0xA11CE;
     let creator = @0xC0DE;
     let mut scenario = ts::begin(@0x0);
@@ -8494,7 +8495,7 @@ fun list_soul_zero_price_succeeds() {
         personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
     };
 
-    // List with price = 0 — should succeed
+    // List with price = 0 — should fail
     ts::next_tx(&mut scenario, creator);
     {
         let config: MarketConfig = ts::take_shared(&scenario);

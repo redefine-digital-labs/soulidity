@@ -70,7 +70,7 @@ function ListingCta({
     )
   }
 
-  if (!listed) {
+  if (!listed || !soul.quote) {
     return null
   }
 

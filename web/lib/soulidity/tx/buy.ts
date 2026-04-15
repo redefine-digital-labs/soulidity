@@ -19,15 +19,6 @@ function buildPaymentCoin(tx: Transaction, paymentCoinObjectIds: string[], total
   return paymentCoin
 }
 
-function buildZeroPaymentCoin(tx: Transaction) {
-  const usdcType = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
-  const [zeroCoin] = tx.moveCall({
-    target: '0x2::coin::zero',
-    typeArguments: [usdcType],
-  })
-  return zeroCoin
-}
-
 export function buildBuySoulTx(params: {
   sellerKioskId: string
   stateObjectId: string
@@ -47,9 +38,7 @@ export function buildBuySoulTx(params: {
     buyerKioskId: params.buyerKioskId,
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
   })
-  const paymentCoin = params.totalAtomic === 0n
-    ? buildZeroPaymentCoin(tx)
-    : buildPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
+  const paymentCoin = buildPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
 
   tx.moveCall({
     target: params.collectionObjectId
@@ -123,4 +112,3 @@ export function buildBuyCollectionTx(params: {
   finishBuyerKioskArgs(tx, buyerKiosk)
   return tx
 }
-

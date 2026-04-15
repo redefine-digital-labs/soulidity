@@ -63,13 +63,14 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
     : null
 
   const collectionFloor = soul.collection?.floorPriceAtomic ? BigInt(soul.collection.floorPriceAtomic) : null
+  const invalidPrice = priceAtomic != null && priceAtomic <= 0n
   const belowFloor = priceAtomic != null && collectionFloor != null && priceAtomic < collectionFloor
 
   const samePrice = priceAtomic != null && soul.listedPriceAtomic != null
     && priceAtomic === BigInt(soul.listedPriceAtomic)
 
   async function handleUpdatePrice() {
-    if (priceAtomic == null || !soul.listingObjectOnChainId) return
+    if (priceAtomic == null || priceAtomic <= 0n || !soul.listingObjectOnChainId) return
     setStatus('signing')
     setError(null)
     try {
@@ -144,6 +145,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
           className="w-full rounded-lg border border-border bg-card2 px-3 py-2.5 text-sm text-foreground placeholder:text-muted/50 outline-none focus:border-gold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         />
         {priceError && <p className="mt-1 text-xs text-danger">{priceError}</p>}
+        {invalidPrice && <p className="mt-1 text-xs text-danger">Listing price must be greater than 0</p>}
         {belowFloor && collectionFloor && (
           <p className="mt-1 text-xs text-danger">
             Minimum price for this collection is {formatAtomicAmountForDisplay(collectionFloor.toString())} USDC
@@ -159,7 +161,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
       <Button
         variant="gold"
         full
-        disabled={priceAtomic == null || !!priceError || samePrice || belowFloor || status !== 'idle'}
+        disabled={priceAtomic == null || invalidPrice || !!priceError || samePrice || belowFloor || status !== 'idle'}
         onClick={handleUpdatePrice}
       >
         {status === 'signing' ? 'Signing\u2026' : status === 'syncing' ? 'Syncing\u2026' : 'Update Price'}
