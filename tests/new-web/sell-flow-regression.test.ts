@@ -27,4 +27,13 @@ describe('sell flow regression guards', () => {
 
     expect(source).toContain('if (priceAtomic == null || priceAtomic <= 0n || priceError)')
   })
+
+  it('blocks zero-price repricing in the listing modal before signing', () => {
+    const source = readSource('web/components/souls/listing-modals.tsx')
+
+    expect(source).toContain('const invalidPrice = priceAtomic != null && priceAtomic <= 0n')
+    expect(source).toContain('if (priceAtomic == null || priceAtomic <= 0n || !soul.listingObjectOnChainId) return')
+    expect(source).toContain('Listing price must be greater than 0')
+    expect(source).toContain("disabled={priceAtomic == null || invalidPrice || !!priceError || samePrice || belowFloor || status !== 'idle'}")
+  })
 })
