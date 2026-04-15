@@ -7,12 +7,12 @@ describe('normalizeTags', () => {
     expect(normalizeTags(['  foo  ', '', '  '])).toEqual(['foo'])
   })
 
-  it('forces MBTI to uppercase', () => {
-    expect(normalizeTags(['enfp', 'intj'])).toEqual(['ENFP', 'INTJ'])
+  it('lowercases all tags including MBTI', () => {
+    expect(normalizeTags(['enfp', 'INTJ'])).toEqual(['enfp', 'intj'])
   })
 
-  it('deduplicates case-insensitively preserving first spelling', () => {
-    expect(normalizeTags(['Trading', 'trading', 'TRADING'])).toEqual(['Trading'])
+  it('deduplicates case-insensitively', () => {
+    expect(normalizeTags(['Trading', 'trading', 'TRADING'])).toEqual(['trading'])
   })
 
   it('caps at 12 tags', () => {
