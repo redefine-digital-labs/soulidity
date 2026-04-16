@@ -270,7 +270,7 @@ export default function ImportMapPage() {
                   <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                     <path d="M8 2.5v6m0 0 2.25-2.25M8 8.5 5.75 6.25M3 10.75v1.25c0 .69.56 1.25 1.25 1.25h7.5c.69 0 1.25-.56 1.25-1.25v-1.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  <span className="text-muted">Don't have one yet?</span>
+                  <span className="text-muted">Don&apos;t have one yet?</span>
                   <span>Download template</span>
                   <span aria-hidden="true">→</span>
                 </button>

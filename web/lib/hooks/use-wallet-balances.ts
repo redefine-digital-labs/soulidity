@@ -17,30 +17,69 @@ export function formatBalance(atomicBalance: bigint, decimals: number): string {
 export interface BalanceState {
   sui: bigint | null
   loading: boolean
+  walletAddress: string | null
 }
 
 export function useWalletBalances(walletAddress: string | null) {
   const suiClient = useSuiClient()
-  const [state, setState] = useState<BalanceState>({ sui: null, loading: true })
+  const [state, setState] = useState<BalanceState>({
+    sui: null,
+    loading: walletAddress !== null,
+    walletAddress,
+  })
 
   const refresh = useCallback(async () => {
     if (!walletAddress) {
-      setState({ sui: null, loading: false })
       return
     }
-    setState((prev) => ({ ...prev, loading: true }))
     try {
       const suiRes = await suiClient.getBalance({ owner: walletAddress, coinType: SUI_COIN_TYPE })
       setState({
         sui: BigInt(suiRes.totalBalance),
         loading: false,
+        walletAddress,
       })
     } catch {
-      setState({ sui: null, loading: false })
+      setState({ sui: null, loading: false, walletAddress })
     }
   }, [walletAddress, suiClient])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    let cancelled = false
 
-  return { ...state, refresh }
+    if (!walletAddress) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void suiClient
+      .getBalance({ owner: walletAddress, coinType: SUI_COIN_TYPE })
+      .then((suiRes) => {
+        if (!cancelled) {
+          setState({
+            sui: BigInt(suiRes.totalBalance),
+            loading: false,
+            walletAddress,
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState({ sui: null, loading: false, walletAddress })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [walletAddress, suiClient])
+
+  const isCurrentAddress = state.walletAddress === walletAddress
+
+  return {
+    sui: walletAddress && isCurrentAddress ? state.sui : null,
+    loading: walletAddress ? !isCurrentAddress || state.loading : false,
+    refresh,
+  }
 }

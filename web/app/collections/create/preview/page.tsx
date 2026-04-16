@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -33,19 +33,18 @@ function isSoulReady(s: BatchSoulEntry, folder?: SoulFolderFiles) {
 // ── Fallback image component ──
 
 function SoulThumb({ name, imageFile }: { name: string; imageFile?: File }) {
-  const [failed, setFailed] = useState(false)
-  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [erroredSrc, setErroredSrc] = useState<string | null>(null)
+  const blobUrl = useMemo(() => (imageFile ? URL.createObjectURL(imageFile) : null), [imageFile])
 
   useEffect(() => {
-    if (imageFile) {
-      const url = URL.createObjectURL(imageFile)
-      setBlobUrl(url)
-      return () => URL.revokeObjectURL(url)
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl)
+      }
     }
-    setBlobUrl(null)
-  }, [imageFile])
+  }, [blobUrl])
 
-  if (failed || !blobUrl) {
+  if (!blobUrl || erroredSrc === blobUrl) {
     return (
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-xs font-bold text-purple">
         {name.slice(0, 2).toUpperCase()}
@@ -57,7 +56,7 @@ function SoulThumb({ name, imageFile }: { name: string; imageFile?: File }) {
     <img
       src={blobUrl}
       alt={name}
-      onError={() => setFailed(true)}
+      onError={() => setErroredSrc(blobUrl)}
       className="h-8 w-8 shrink-0 rounded-lg border border-purple/20 object-cover"
     />
   )

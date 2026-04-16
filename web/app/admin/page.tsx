@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
@@ -82,8 +82,12 @@ export default function AdminDashboardPage() {
       .finally(() => setLoadingStats(false))
   }, [adminFetch])
 
-  useEffect(() => {
+  const handleFilterChange = useCallback((nextFilter: string) => {
+    setFilter(nextFilter)
     setLoadingArticles(true)
+  }, [])
+
+  useEffect(() => {
     const url =
       filter === 'all'
         ? '/api/admin/articles?limit=50'
@@ -122,7 +126,7 @@ export default function AdminDashboardPage() {
           <FilterTabs
             tabs={STATUS_FILTERS}
             activeId={filter}
-            onChange={setFilter}
+            onChange={handleFilterChange}
           />
         </div>
 

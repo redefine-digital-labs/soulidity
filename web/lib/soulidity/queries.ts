@@ -3,13 +3,11 @@ import { suiClient } from '@web/lib/sui'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import type {
   ActiveGrantSlotObject,
-  CollectionListingObject,
   ResolvedPersonalKiosk,
   SoulCollectionObject,
   SoulCollectionRightObject,
   SoulGrantObject,
   SoulGrantScope,
-  SoulListingObject,
   SoulMemoryObject,
   SoulObject,
   SoulProvenanceKind,
@@ -590,31 +588,6 @@ export async function getSoulStateObject(objectId: string, packageId: string): P
   }
 }
 
-export async function getSoulListingObject(objectId: string, packageId: string): Promise<SoulListingObject> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::market::SoulListing`
-  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  return {
-    objectId,
-    packageId: resolvedPackageId,
-    soulId: readObjectId(fields.soul_id, 'SoulListing soul_id'),
-    stateId: readObjectId(fields.state_id, 'SoulListing state_id'),
-    sellerAddress: readAddress(fields.seller, 'SoulListing seller'),
-    sellerKioskId: readObjectId(fields.seller_kiosk_id, 'SoulListing seller_kiosk_id'),
-    priceAtomic: readBigInt(fields.price, 'SoulListing price'),
-    creatorAddress: readAddress(fields.creator, 'SoulListing creator'),
-    creatorRoyaltyBps: readNumber(fields.creator_royalty_bps, 'SoulListing creator_royalty_bps'),
-    collectionId: readOptionalString(fields.collection_id, 'SoulListing collection_id'),
-    active: Boolean(fields.is_active),
-  }
-}
-
 export async function getSoulCollectionObject(objectId: string, packageId: string): Promise<SoulCollectionObject> {
   const response = await suiClient.getObject({
     id: objectId,
@@ -657,28 +630,6 @@ export async function getSoulCollectionRightObject(objectId: string, packageId: 
     imageUrl: readString(fields.image_url, 'SoulCollectionRight image_url'),
     extraRoyaltyBps: readNumber(fields.extra_royalty_bps, 'SoulCollectionRight extra_royalty_bps'),
     tradeable: Boolean(fields.tradeable),
-  }
-}
-
-export async function getCollectionListingObject(objectId: string, packageId: string): Promise<CollectionListingObject> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::market::CollectionListing`
-  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  return {
-    objectId,
-    packageId: resolvedPackageId,
-    collectionId: readObjectId(fields.collection_id, 'CollectionListing collection_id'),
-    rightId: readObjectId(fields.right_id, 'CollectionListing right_id'),
-    sellerAddress: readAddress(fields.seller, 'CollectionListing seller'),
-    sellerKioskId: readObjectId(fields.seller_kiosk_id, 'CollectionListing seller_kiosk_id'),
-    priceAtomic: readBigInt(fields.price, 'CollectionListing price'),
-    active: Boolean(fields.is_active),
   }
 }
 

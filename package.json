@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "test": "vitest run",
+    "test": "npm run prisma:generate && vitest run",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "typecheck:root": "npm run prisma:generate && tsc -p tsconfig.json --noEmit",
@@ -22,7 +22,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
-    "dotenv": "^17.4.1",
+    "dotenv": "^17.4.2",
     "grammy": "^1.42.0",
     "jsonrepair": "^3.13.3",
     "node-cron": "^4.2.1",
@@ -33,14 +33,19 @@
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.19.17",
     "@types/node-cron": "^3.0.11",
     "@types/node-fetch": "^2.6.13",
     "@types/pg": "^8.20.0",
     "@types/xml2js": "^0.4.14",
-    "jsdom": "^29.0.1",
+    "jsdom": "^29.0.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "@hono/node-server": "1.19.14",
+    "hono": "4.12.14",
+    "vite": "7.3.2"
   }
 }

@@ -27,8 +27,3 @@ export function normalizeCommunityTags(input: string | string[] | null | undefin
   }
   return normalized
 }
-
-export function serializeCommunityTags(input: string | string[] | null | undefined): string | null {
-  const parsed = parseCommunityTags(input)
-  return parsed.length > 0 ? parsed.join(COMMUNITY_TAG_SPLIT) : null
-}

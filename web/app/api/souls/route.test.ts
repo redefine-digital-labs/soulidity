@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildSoulsWhere, GET } from './route'
+import { GET } from './route'
+import { buildSoulsWhere } from './query'
 import { NextRequest } from 'next/server'
 
 const mockedFindMany = vi.hoisted(() => vi.fn())

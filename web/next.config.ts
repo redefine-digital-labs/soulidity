@@ -20,11 +20,17 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactCompiler: true,
   serverExternalPackages: ['@prisma/client'],
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   turbopack: {
     root: repoRoot,
+  },
+  webpack(config) {
+    // Privy eagerly resolves this optional Farcaster peer during build.
+    config.resolve ??= {}
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      '@farcaster/mini-app-solana': false,
+    }
+    return config
   },
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }]

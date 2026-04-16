@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const article = await prisma.article.findUnique({

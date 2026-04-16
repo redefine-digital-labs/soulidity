@@ -5,6 +5,8 @@ import { formatArticle } from '@web/lib/formatter'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { syncArticleToPost } from '@shared/sync-article-post'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { error } = await requireAdmin()
   if (error) return error

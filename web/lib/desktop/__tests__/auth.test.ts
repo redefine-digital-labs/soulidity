@@ -5,12 +5,12 @@ import { generateDesktopAccessToken, verifyDesktopAccessToken } from '../auth'
 const DESKTOP_TOKEN_PREFIX = 'dtk_'
 
 // ── Mock prisma ────────────────────────────────────────────
-const mockFindFirst = vi.fn()
+const mockFindUnique = vi.fn()
 
 vi.mock('@web/lib/prisma', () => ({
   prisma: {
     desktopProfile: {
-      findFirst: (...args: unknown[]) => mockFindFirst(...args),
+      findUnique: (...args: unknown[]) => mockFindUnique(...args),
     },
   },
 }))
@@ -58,7 +58,7 @@ describe('verifyDesktopAccessToken', () => {
   it('returns null for a token without the dtk_ prefix', async () => {
     const result = await verifyDesktopAccessToken('invalid_token')
     expect(result).toBeNull()
-    expect(mockFindFirst).not.toHaveBeenCalled()
+    expect(mockFindUnique).not.toHaveBeenCalled()
   })
 
   it('returns null for an empty dtk_ token', async () => {
@@ -67,23 +67,22 @@ describe('verifyDesktopAccessToken', () => {
   })
 
   it('returns null when no matching profile is found', async () => {
-    mockFindFirst.mockResolvedValue(null)
+    mockFindUnique.mockResolvedValue(null)
 
     const { token } = generateDesktopAccessToken()
     const result = await verifyDesktopAccessToken(token)
 
     expect(result).toBeNull()
-    expect(mockFindFirst).toHaveBeenCalledTimes(1)
+    expect(mockFindUnique).toHaveBeenCalledTimes(1)
   })
 
-  it('returns accountId when the token hash matches a stored profile', async () => {
+  it('returns accountId when the token hash matches an indexed profile column', async () => {
     const { token, hash } = generateDesktopAccessToken()
 
-    mockFindFirst.mockResolvedValue({
+    mockFindUnique.mockResolvedValue({
       accountId: 'account-123',
-      preferences: {
-        desktopAccessTokenHash: hash,
-      },
+      desktopAccessTokenHash: hash,
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
 
     const result = await verifyDesktopAccessToken(token)
@@ -94,27 +93,33 @@ describe('verifyDesktopAccessToken', () => {
   it('returns null when the stored hash does not match the token', async () => {
     const { token } = generateDesktopAccessToken()
 
-    mockFindFirst.mockResolvedValue({
+    mockFindUnique.mockResolvedValue({
       accountId: 'account-123',
-      preferences: {
-        desktopAccessTokenHash: 'wrong_hash_value',
-      },
+      desktopAccessTokenHash: 'wrong_hash_value',
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
 
     const result = await verifyDesktopAccessToken(token)
     expect(result).toBeNull()
   })
 
-  it('returns null when preferences is null', async () => {
-    const { token } = generateDesktopAccessToken()
+  it('returns null when the indexed token is expired', async () => {
+    vi.useFakeTimers()
+    const now = new Date('2026-07-15T10:00:00Z')
+    vi.setSystemTime(now)
 
-    mockFindFirst.mockResolvedValue({
+    const { token, hash } = generateDesktopAccessToken()
+
+    mockFindUnique.mockResolvedValue({
       accountId: 'account-123',
-      preferences: null,
+      desktopAccessTokenHash: hash,
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
 
     const result = await verifyDesktopAccessToken(token)
     expect(result).toBeNull()
+
+    vi.useRealTimers()
   })
 })
 
@@ -132,11 +137,10 @@ describe('token rotation', () => {
     const fresh = generateDesktopAccessToken()
 
     // Store now has the fresh hash
-    mockFindFirst.mockResolvedValue({
+    mockFindUnique.mockResolvedValue({
       accountId: 'account-123',
-      preferences: {
-        desktopAccessTokenHash: fresh.hash,
-      },
+      desktopAccessTokenHash: fresh.hash,
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
 
     // Old token should fail
@@ -147,11 +151,10 @@ describe('token rotation', () => {
   it('new token succeeds verification after hash is replaced in the store', async () => {
     const fresh = generateDesktopAccessToken()
 
-    mockFindFirst.mockResolvedValue({
+    mockFindUnique.mockResolvedValue({
       accountId: 'account-123',
-      preferences: {
-        desktopAccessTokenHash: fresh.hash,
-      },
+      desktopAccessTokenHash: fresh.hash,
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
 
     const result = await verifyDesktopAccessToken(fresh.token)

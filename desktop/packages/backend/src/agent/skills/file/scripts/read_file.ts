@@ -47,14 +47,22 @@ async function readDocx(filePath: string) {
   return result.value || '（DOCX 未提取到文本内容）'
 }
 
+function formatSpreadsheetCell(value: unknown) {
+  if (value == null) return ''
+  if (value instanceof Date) return value.toISOString()
+  return String(value)
+}
+
 async function readXlsx(filePath: string) {
-  const XLSX = await import('xlsx')
-  const workbook = XLSX.read(readFileSync(filePath))
+  const excelModule = await import('read-excel-file/node')
+  const readXlsxFile = excelModule.default
+  const sheets = await readXlsxFile(filePath)
   const lines: string[] = []
-  for (const sheetName of workbook.SheetNames) {
-    lines.push(`=== Sheet: ${sheetName} ===`)
-    const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName])
-    lines.push(csv)
+  for (const sheet of sheets) {
+    lines.push(`=== Sheet: ${sheet.sheet} ===`)
+    for (const row of sheet.data) {
+      lines.push(row.map(formatSpreadsheetCell).join('\t'))
+    }
   }
   return lines.join('\n') || '（XLSX 未提取到内容）'
 }
@@ -103,7 +111,9 @@ async function main() {
       content = await readPdf(resolved)
     } else if (ext === '.docx') {
       content = await readDocx(resolved)
-    } else if (ext === '.xlsx' || ext === '.xls') {
+    } else if (ext === '.xls') {
+      throw new Error('旧版 .xls 不受支持，请先转换为 .xlsx')
+    } else if (ext === '.xlsx') {
       content = await readXlsx(resolved)
     } else if (TEXT_EXTENSIONS.has(ext)) {
       content = readFileSync(resolved, 'utf-8')

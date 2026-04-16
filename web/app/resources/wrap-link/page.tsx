@@ -24,7 +24,7 @@ export default function WrapLinkPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">What Personal Join Does</h2>
         <ul className="text-sm text-muted space-y-2">
-          <li>Calls <code>market::mint_joined_in_personal_kiosk</code> with your source NFT's object ID and type.</li>
+          <li>Calls <code>market::mint_joined_in_personal_kiosk</code> with your source NFT&apos;s object ID and type.</li>
           <li>The source NFT is placed into your personal kiosk (using <code>kiosk::place</code>) before the Soul is minted — the contract requires co-location to prove current ownership.</li>
           <li>A fresh <code>Soul</code> object is created with <code>provenance_kind = 2</code> (personal-join) and <code>origin_ref</code> set to a string encoding the source type and object ID.</li>
           <li>A <code>SoulState</code> shared object is created and linked to the new Soul.</li>
@@ -88,7 +88,7 @@ export default function WrapLinkPage() {
         <ul className="text-sm text-muted space-y-1.5">
           <li>If <code>currentKioskId</code> is null, a new personal kiosk is created in the same PTB.</li>
           <li>The source NFT is placed via <code>kiosk::place</code> using a borrowed <code>KioskOwnerCap</code> extracted with <code>personal_kiosk::borrow_val</code> / <code>return_val</code>.</li>
-          <li>The market contract requires the source NFT to be inside the same kiosk where the Soul is minted. It reads the NFT's object ID from the kiosk directly on-chain.</li>
+          <li>The market contract requires the source NFT to be inside the same kiosk where the Soul is minted. It reads the NFT&apos;s object ID from the kiosk directly on-chain.</li>
           <li>After mint the source NFT remains in your kiosk alongside the new Soul.</li>
         </ul>
       </div>
@@ -96,7 +96,7 @@ export default function WrapLinkPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Provenance on-chain</h2>
         <p className="text-sm text-muted">
-          The <code>origin_ref</code> field on the <code>Soul</code> object permanently records the wrapped NFT's identity. It is a human-readable string set by the UI at wrap time. The <code>SoulCreated</code> event carries <code>provenance_kind = 2</code> so indexers can distinguish personal-join Souls from native mints.
+          The <code>origin_ref</code> field on the <code>Soul</code> object permanently records the wrapped NFT&apos;s identity. It is a human-readable string set by the UI at wrap time. The <code>SoulCreated</code> event carries <code>provenance_kind = 2</code> so indexers can distinguish personal-join Souls from native mints.
         </p>
         <p className="text-sm text-muted">
           The source NFT is never locked, burned, or modified. You can still trade the source NFT independently. The Soul layer is purely additive — revoking it would require the Soul owner to manually burn or abandon the Soul object.

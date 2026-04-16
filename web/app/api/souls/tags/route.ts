@@ -1,6 +1,8 @@
 import { prisma } from '@web/lib/prisma'
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   const result = await prisma.$queryRaw<Array<{ tag: string; count: bigint }>>`
     SELECT LOWER(tag) AS tag, COUNT(*) AS count
