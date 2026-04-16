@@ -12,6 +12,7 @@
     "declaration": true,
     "sourceMap": true,
     "paths": {
+      "@db/*": ["./src/db/*"],
       "@/*": ["./src/*"],
       "@shared/*": ["./src/shared/*"],
       "@web/*": ["./web/*"]

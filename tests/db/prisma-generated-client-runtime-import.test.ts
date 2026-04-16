@@ -5,16 +5,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const rootGeneratedClientSourcePath = resolve(repoRoot, 'generated/prisma/client.ts')
-const rootGeneratedClientRuntimeImport = pathToFileURL(resolve(repoRoot, 'generated/prisma/client.js')).href
+const prismaShimSourcePath = resolve(repoRoot, 'src/db/prisma-client.ts')
+const prismaShimRuntimeImport = pathToFileURL(resolve(repoRoot, 'src/db/prisma-client.js')).href
 
 describe('root prisma generated client runtime import', () => {
-  it('provides a root-generated Prisma client for the root runtime', async () => {
-    expect(existsSync(rootGeneratedClientSourcePath)).toBe(true)
+  it('provides PrismaClient and Prisma runtime helpers through the root shim for the root runtime', async () => {
+    expect(existsSync(prismaShimSourcePath)).toBe(true)
 
-    const imported = await import(rootGeneratedClientRuntimeImport)
+    const imported = await import(prismaShimRuntimeImport)
     expect(typeof imported.PrismaClient).toBe('function')
-
+    expect(imported.PrismaRuntime).toBeTruthy()
     expect(() => execFileSync(
       process.execPath,
       ['--import', 'tsx', '--eval', "await import('./src/db/database.ts')"],

@@ -15,6 +15,7 @@ export default defineConfig({
     alias: [
       { find: /^@\//, replacement: `${fileURLToPath(new URL('./web/', import.meta.url))}/` },
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+      { find: '@db', replacement: fileURLToPath(new URL('./src/db', import.meta.url)) },
       { find: '@bot', replacement: fileURLToPath(new URL('./src/bot', import.meta.url)) },
       { find: '@shared', replacement: fileURLToPath(new URL('./src/shared', import.meta.url)) },
       { find: '@web', replacement: fileURLToPath(new URL('./web', import.meta.url)) },
@@ -26,6 +27,7 @@ export default defineConfig({
       { find: 'react-dom', replacement: requireExistingAliasTarget('./web/node_modules/react-dom/index.js') },
       { find: 'react', replacement: requireExistingAliasTarget('./web/node_modules/react/index.js') },
       { find: 'jose', replacement: requireExistingAliasTarget('./web/node_modules/jose/dist/webapi/index.js') },
+      { find: '@mysten/dapp-kit', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/dapp-kit/src/index.ts') },
       // These pin the workspace tests to the web package's bundled ESM entrypoints. Revisit them
       // when upgrading `@mysten/sui`, because the dist layout is an external package contract.
       { find: '@mysten/sui/transactions', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/sui/dist/transactions/index.mjs') },
