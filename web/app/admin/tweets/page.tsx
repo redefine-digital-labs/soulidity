@@ -58,20 +58,33 @@ export default function TweetsReviewPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [tweetTags, setTweetTags] = useState<Record<string, string>>({})
 
-  async function fetchItems() {
-    setLoading(true)
-    const res = await adminFetch('/api/admin/tweets')
-    if (res.ok) {
-      setItems(await res.json())
-    } else if (res.status === 401 || res.status === 403) {
-      showToast('无权限访问此页面', 'danger')
-    }
-    setLoading(false)
-  }
-
   useEffect(() => {
-    void fetchItems()
-  }, [adminFetch])
+    let cancelled = false
+
+    void (async () => {
+      const res = await adminFetch('/api/admin/tweets')
+      if (cancelled) {
+        return
+      }
+
+      if (res.ok) {
+        const nextItems = await res.json()
+        if (!cancelled) {
+          setItems(nextItems)
+        }
+      } else if (res.status === 401 || res.status === 403) {
+        showToast('无权限访问此页面', 'danger')
+      }
+
+      if (!cancelled) {
+        setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [adminFetch, showToast])
 
   async function handleApprove(id: string) {
     const tags = parseTags(tweetTags[id] ?? '')

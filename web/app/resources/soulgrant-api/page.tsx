@@ -69,7 +69,7 @@ export default function SoulGrantApiPage() {
             <strong className="text-foreground">Supersede (revoke-scope):</strong> Owner calls <code>grant::revoke_scope</code> to strip specific scope bits and issue a replacement grant in one atomic transaction. The event log records both <code>SoulGrantSuperseded</code> and a new <code>SoulGrantIssued</code>.
           </li>
           <li>
-            <strong className="text-foreground">Revoke:</strong> Owner calls <code>grant::revoke</code> to remove a grantee's slot entirely. Emits <code>SoulGrantRevoked</code>.
+            <strong className="text-foreground">Revoke:</strong> Owner calls <code>grant::revoke</code> to remove a grantee&apos;s slot entirely. Emits <code>SoulGrantRevoked</code>.
           </li>
           <li>
             <strong className="text-foreground">Expiry:</strong> If <code>expires_at_ms</code> is set, the grant silently fails validation once the Sui clock passes that timestamp. Expired grants are cleaned up lazily on the next write operation. Emits <code>SoulGrantExpired</code>.
@@ -106,7 +106,7 @@ export default function SoulGrantApiPage() {
             Mirror a grant transaction after it succeeds on-chain. Required body fields:
             <ul className="mt-1 ml-4 space-y-1 text-xs list-disc">
               <li><code>txDigest</code> — the Sui transaction digest</li>
-              <li><code>action</code> — <code>"issue"</code> | <code>"revoke"</code> | <code>"revoke-scope"</code></li>
+              <li><code>action</code> — <code>&quot;issue&quot;</code> | <code>&quot;revoke&quot;</code> | <code>&quot;revoke-scope&quot;</code></li>
               <li><code>granteeAddress</code> — required for revoke and revoke-scope actions</li>
             </ul>
             Returns <code>grantOnChainId</code>, <code>activeGrantCount</code>, and the TX digest. Idempotent — replaying the same <code>txDigest</code> returns the cached response.

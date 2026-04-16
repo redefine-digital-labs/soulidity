@@ -69,7 +69,7 @@ description: |
           </pre>
         </div>
         <p className="text-xs text-muted">
-          The <code>name</code> field from the frontmatter becomes the <code>skillName</code> used as the table key on-chain. If the name already exists in the <code>SoulSkills</code> table, the new version is appended to that skill's vector (versionIndex increments). If it is new, a fresh entry is created (versionIndex = 0).
+          The <code>name</code> field from the frontmatter becomes the <code>skillName</code> used as the table key on-chain. If the name already exists in the <code>SoulSkills</code> table, the new version is appended to that skill&apos;s vector (versionIndex increments). If it is new, a fresh entry is created (versionIndex = 0).
         </p>
       </div>
 

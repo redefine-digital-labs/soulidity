@@ -57,7 +57,7 @@ public struct MemoryBlobKey has copy, drop, store {
               <tr className="border-b border-border/30">
                 <td className="py-2 pr-4 font-mono text-xs">founder</td>
                 <td className="py-2 pr-4 font-mono text-xs">0</td>
-                <td className="py-2 text-xs">Called during mint — the creator's founding memory entry</td>
+                <td className="py-2 text-xs">Called during mint — the creator&apos;s founding memory entry</td>
               </tr>
               <tr className="border-b border-border/30">
                 <td className="py-2 pr-4 font-mono text-xs">owner</td>
@@ -99,7 +99,7 @@ public struct MemoryBlobKey has copy, drop, store {
           <li><code className="text-xs text-foreground">memoryOnChainId</code> — the <code>SoulMemory</code> shared object ID</li>
           <li><code className="text-xs text-foreground">timestampKey</code> — the on-chain table key (bigint, stored as decimal string in JSON)</li>
           <li><code className="text-xs text-foreground">writerAddress</code> — the address that signed the append TX</li>
-          <li><code className="text-xs text-foreground">writerKind</code> — <code>"founder"</code> | <code>"owner"</code> | <code>"granted-agent"</code></li>
+          <li><code className="text-xs text-foreground">writerKind</code> — <code>&quot;founder&quot;</code> | <code>&quot;owner&quot;</code> | <code>&quot;granted-agent&quot;</code></li>
           <li><code className="text-xs text-foreground">blobObjectId</code> — Sui object ID of the Walrus <code>Blob</code></li>
           <li><code className="text-xs text-foreground">blobId</code> — Walrus blob ID (used to build the download URL)</li>
           <li><code className="text-xs text-foreground">sealSidecar</code> — encrypted DEK envelope for client-side decryption</li>

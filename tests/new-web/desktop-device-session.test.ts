@@ -159,6 +159,50 @@ describe('pollDesktopDeviceSession', () => {
       }),
     )
   })
+
+  it('rotates a desktop token for confirmed sessions without reading plaintext preferences', async () => {
+    const now = new Date('2026-04-12T10:15:00Z')
+    const session = {
+      id: 'session-1',
+      accountId: 'account-123',
+      deviceCode: 'device-abc',
+      expiresAt: new Date('2026-04-12T10:10:00Z'),
+      pollIntervalSeconds: 5,
+      status: 'confirmed',
+    }
+    mockedPrisma.desktopDeviceSession.findUnique.mockResolvedValue(session)
+    mockedPrisma.desktopDeviceSession.update.mockResolvedValue({
+      status: 'confirmed',
+      accountId: 'account-123',
+      expiresAt: session.expiresAt,
+      pollIntervalSeconds: 5,
+    })
+    mockedPrisma.desktopProfile.upsert.mockResolvedValue({
+      accountId: 'account-123',
+    })
+
+    const { pollDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    const result = await pollDesktopDeviceSession('device-abc', { now })
+
+    expect(result.status).toBe('confirmed')
+    if (result.status === 'confirmed') {
+      expect(result.desktopAccessToken).toMatch(/^dtk_[0-9a-f]{64}$/)
+    }
+    expect(mockedPrisma.desktopProfile.findUnique).not.toHaveBeenCalled()
+
+    const upsertArgs = mockedPrisma.desktopProfile.upsert.mock.calls[0]?.[0]
+    expect(upsertArgs).toBeTruthy()
+    expect(upsertArgs.where).toEqual({ accountId: 'account-123' })
+    expect(upsertArgs.create).toEqual(expect.objectContaining({
+      accountId: 'account-123',
+      desktopAccessTokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      desktopAccessTokenIssuedAt: now,
+    }))
+    expect(upsertArgs.update).toEqual(expect.objectContaining({
+      desktopAccessTokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      desktopAccessTokenIssuedAt: now,
+    }))
+  })
 })
 
 describe('completeDesktopDeviceSession', () => {
@@ -243,6 +287,55 @@ describe('completeDesktopDeviceSession', () => {
         update: expect.objectContaining({ agentAddress: '0xagent123' }),
       }),
     )
+  })
+
+  it('stores only token hash metadata on DesktopProfile when confirming a device session', async () => {
+    const now = new Date('2026-04-12T10:05:00Z')
+    const session = {
+      id: 'session-1',
+      accountId: null,
+      agentAddress: null,
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: new Date('2026-04-12T10:10:00Z'),
+      confirmedAt: null,
+      pollIntervalSeconds: 5,
+      status: 'pending',
+    }
+    mockedPrisma.desktopDeviceSession.findUnique
+      .mockResolvedValueOnce(session)
+      .mockResolvedValueOnce({ status: 'pending', accountId: null })
+    mockedPrisma.desktopDeviceSession.update.mockResolvedValue({
+      accountId: 'account-123',
+      agentAddress: null,
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: session.expiresAt,
+      confirmedAt: now,
+      pollIntervalSeconds: 5,
+      status: 'confirmed',
+    })
+    mockedPrisma.desktopProfile.upsert.mockResolvedValue({
+      accountId: 'account-123',
+    })
+
+    const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', { now })
+
+    expect(result.status).toBe('confirmed')
+    const upsertArgs = mockedPrisma.desktopProfile.upsert.mock.calls[0]?.[0]
+    expect(upsertArgs).toBeTruthy()
+    expect(upsertArgs.create).toEqual(expect.objectContaining({
+      accountId: 'account-123',
+      desktopAccessTokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      desktopAccessTokenIssuedAt: now,
+    }))
+    expect(upsertArgs.update).toEqual(expect.objectContaining({
+      desktopAccessTokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      desktopAccessTokenIssuedAt: now,
+    }))
+    expect(upsertArgs.create).not.toHaveProperty('preferences')
+    expect(upsertArgs.update).not.toHaveProperty('preferences')
   })
 
   it('throws conflict when concurrent request confirmed with different account', async () => {

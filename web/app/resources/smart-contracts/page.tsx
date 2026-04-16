@@ -54,7 +54,7 @@ export default function SmartContractsPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Soul + SoulState</h2>
         <p className="text-sm text-muted">
-          Every Soulidity asset is two objects: a <code>Soul</code> NFT held inside the owner's personal kiosk, and a shared <code>SoulState</code> that tracks ownership, grants, and bound sub-object IDs.
+          Every Soulidity asset is two objects: a <code>Soul</code> NFT held inside the owner&apos;s personal kiosk, and a shared <code>SoulState</code> that tracks ownership, grants, and bound sub-object IDs.
         </p>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
           <code>{`// Held inside personal kiosk (kiosk::place / kiosk::take)

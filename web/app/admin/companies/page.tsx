@@ -43,7 +43,6 @@ export default function AdminCompaniesPage() {
   const [loading, setLoading] = useState(true)
 
   const fetchCompanies = useCallback(() => {
-    setLoading(true)
     const url = filter ? `/api/admin/companies?category=${filter}` : '/api/admin/companies'
     adminFetch(url)
       .then((r) => (r.ok ? r.json() : []))
@@ -55,6 +54,11 @@ export default function AdminCompaniesPage() {
     fetchCompanies()
   }, [fetchCompanies])
 
+  const handleFilterChange = useCallback((nextFilter: string) => {
+    setFilter(nextFilter)
+    setLoading(true)
+  }, [])
+
   return (
     <PageContainer>
       <SectionHeader label="Admin" title="项目追踪" subtitle="追踪加密生态中的项目与实体" />
@@ -62,7 +66,7 @@ export default function AdminCompaniesPage() {
       <FilterTabs
         tabs={CATEGORY_TABS}
         activeId={filter}
-        onChange={setFilter}
+        onChange={handleFilterChange}
         className="mb-6"
       />
 

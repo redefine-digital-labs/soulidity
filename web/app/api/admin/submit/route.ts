@@ -4,6 +4,8 @@ import { prisma } from '@web/lib/prisma'
 import { scrapeUrl } from '@web/lib/scraper'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
+export const dynamic = 'force-dynamic'
+
 // --- Score (inline from src/collector/score.ts) ---
 
 const KEYWORDS: { pattern: RegExp; weight: number }[] = [

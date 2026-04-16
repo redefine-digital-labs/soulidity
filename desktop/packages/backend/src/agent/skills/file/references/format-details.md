@@ -47,8 +47,8 @@
 - 不支持旧版 .doc 格式
 
 ### Excel (.xlsx)
-- 使用 `xlsx` 库读取
-- 每个 Sheet 导出为 CSV 格式文本
+- 使用 `read-excel-file` 读取
+- 每个 Sheet 导出为制表符分隔的纯文本
 - 公式显示计算结果（非公式本身）
 - 不支持旧版 .xls 格式
 

@@ -3,6 +3,11 @@ generator client {
   output   = "../web/generated/prisma"
 }
 
+generator root_client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
 datasource db {
   provider = "postgresql"
 }
@@ -664,6 +669,8 @@ model DesktopProfile {
   agentAddress     String?   @map("agent_address")
   activeSourceType String?   @map("active_source_type")
   activeSourceRef  String?   @map("active_source_ref")
+  desktopAccessTokenHash     String?   @unique(map: "desktop_profiles_desktop_access_token_hash_key") @map("desktop_access_token_hash")
+  desktopAccessTokenIssuedAt DateTime? @map("desktop_access_token_issued_at") @db.Timestamptz
   preferences      Json?
   lastSyncedAt     DateTime? @map("last_synced_at") @db.Timestamptz
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz

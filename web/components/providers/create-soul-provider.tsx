@@ -69,6 +69,26 @@ interface StoredPublishResult {
   deploymentSignature?: string
 }
 
+function readStoredPublishResult(userId: string | null): PublishResult | null {
+  if (!userId || typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = sessionStorage.getItem(PUBLISH_RESULT_KEY)
+    if (!raw) {
+      return null
+    }
+
+    const stored = JSON.parse(raw) as StoredPublishResult
+    return stored.userId === userId && stored.result && hasCurrentSoulidityDeploymentSignature(stored)
+      ? stored.result
+      : null
+  } catch {
+    return null
+  }
+}
+
 // ── Context value ──
 
 interface CreateSoulContextValue {
@@ -112,6 +132,16 @@ const CreateSoulContext = createContext<CreateSoulContextValue | null>(null)
 
 export function CreateSoulProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
+  return <CreateSoulProviderInner key={user?.id ?? 'anonymous'} userId={user?.id ?? null}>{children}</CreateSoulProviderInner>
+}
+
+function CreateSoulProviderInner({
+  children,
+  userId,
+}: {
+  children: React.ReactNode
+  userId: string | null
+}) {
 
   // Step 1
   const [name, setName] = useState('')
@@ -148,36 +178,19 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
     setMemoryFileRaw(file)
     setUploadResultsRaw(prev => prev ? { ...prev, memorySeed: undefined } : prev)
   }, [])
-  const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(null)
-  const [isHydrated, setIsHydrated] = useState(false)
-
-  // Hydrate publishResult from sessionStorage on mount (survives page refresh)
-  // Scoped to authenticated user — discard cross-user stale state
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(PUBLISH_RESULT_KEY)
-      if (raw) {
-        const stored = JSON.parse(raw) as StoredPublishResult
-        if (stored.userId === user?.id && stored.result && hasCurrentSoulidityDeploymentSignature(stored)) {
-          setPublishResultRaw(stored.result)
-        } else {
-          sessionStorage.removeItem(PUBLISH_RESULT_KEY)
-        }
-      }
-    } catch { /* ignore corrupt/missing storage */ }
-    setIsHydrated(true)
-  }, [user?.id])
+  const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(() => readStoredPublishResult(userId))
+  const isHydrated = userId !== null
 
   const setPublishResult = useCallback((result: PublishResult | null) => {
     setPublishResultRaw(result)
     try {
-      if (result && user?.id) {
-        sessionStorage.setItem(PUBLISH_RESULT_KEY, JSON.stringify(attachSoulidityDeploymentSignature({ userId: user.id, result })))
+      if (result && userId) {
+        sessionStorage.setItem(PUBLISH_RESULT_KEY, JSON.stringify(attachSoulidityDeploymentSignature({ userId, result })))
       } else {
         sessionStorage.removeItem(PUBLISH_RESULT_KEY)
       }
     } catch { /* storage quota exceeded */ }
-  }, [user?.id])
+  }, [userId])
 
   // Cover image preview URL lifecycle
   const setCoverImage = useCallback((file: File | null) => {

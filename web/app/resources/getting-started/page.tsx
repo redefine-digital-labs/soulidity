@@ -52,7 +52,7 @@ export default function GettingStartedPage() {
         <ol className="text-sm text-muted space-y-2 list-decimal ml-5">
           <li>Open a Soul listing and click <strong className="text-foreground">Buy</strong>. The price is shown in USDC atomic units.</li>
           <li>Review the fee breakdown — platform fee + creator royalty (+ optional collection royalty). Fees are deducted from the purchase amount on-chain atomically.</li>
-          <li>Approve the transaction in the Privy wallet modal. The TX calls <code>market::buy_from_personal_kiosk</code> which moves the Soul from the seller's kiosk to your personal kiosk in a single atomic step.</li>
+          <li>Approve the transaction in the Privy wallet modal. The TX calls <code>market::buy_from_personal_kiosk</code> which moves the Soul from the seller&apos;s kiosk to your personal kiosk in a single atomic step.</li>
           <li>After the TX confirms, the app calls the post-TX API to mirror the new owner in the DB. All active grants on the Soul are invalidated automatically at this point.</li>
           <li>The Soul now appears in your <Link href="/my-souls" className="text-purple hover:text-foreground transition">My Souls</Link> page.</li>
         </ol>

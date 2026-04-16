@@ -3,6 +3,8 @@ import { prisma } from '@web/lib/prisma'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 
+export const dynamic = 'force-dynamic'
+
 const VOTE_RATE_LIMIT = { max: 30, windowMs: 60 * 1000 } as const
 
 export async function POST(

@@ -465,7 +465,7 @@ export default function CreateContentPage() {
                   className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#f1b85b] transition hover:text-[#ffd08a]"
                 >
                   <DownloadIcon className="h-3.5 w-3.5" />
-                  <span className="text-muted">Don't have one yet?</span>
+                  <span className="text-muted">Don&apos;t have one yet?</span>
                   <span>Download template</span>
                   <span aria-hidden="true">→</span>
                 </button>

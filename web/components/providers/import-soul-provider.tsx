@@ -68,6 +68,26 @@ interface StoredImportResult {
   deploymentSignature?: string
 }
 
+function readStoredImportResult(userId: string | null): ImportResult | null {
+  if (!userId || typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = sessionStorage.getItem(IMPORT_RESULT_KEY)
+    if (!raw) {
+      return null
+    }
+
+    const stored = JSON.parse(raw) as StoredImportResult
+    return stored.userId === userId && stored.result && hasCurrentSoulidityDeploymentSignature(stored)
+      ? stored.result
+      : null
+  } catch {
+    return null
+  }
+}
+
 // ── Context ──
 
 interface ImportSoulContextValue {
@@ -133,6 +153,16 @@ const ImportSoulContext = createContext<ImportSoulContextValue | null>(null)
 
 export function ImportSoulProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
+  return <ImportSoulProviderInner key={user?.id ?? 'anonymous'} userId={user?.id ?? null}>{children}</ImportSoulProviderInner>
+}
+
+function ImportSoulProviderInner({
+  children,
+  userId,
+}: {
+  children: React.ReactNode
+  userId: string | null
+}) {
 
   // Step 1
   const [sourceType, setSourceType] = useState<'local-file' | null>(null)
@@ -162,36 +192,19 @@ export function ImportSoulProvider({ children }: { children: React.ReactNode }) 
   const setUploadResults = useCallback((r: UploadResults) => setUploadResultsRaw(r), [])
 
   // Step 6
-  const [importResult, setImportResultRaw] = useState<ImportResult | null>(null)
-  const [isHydrated, setIsHydrated] = useState(false)
-
-  // Hydrate importResult from sessionStorage — wait for auth to resolve before clearing
-  useEffect(() => {
-    if (!user?.id) return // Auth still loading; don't clear or mark hydrated yet
-    try {
-      const raw = sessionStorage.getItem(IMPORT_RESULT_KEY)
-      if (raw) {
-        const stored = JSON.parse(raw) as StoredImportResult
-        if (stored.userId === user.id && stored.result && hasCurrentSoulidityDeploymentSignature(stored)) {
-          setImportResultRaw(stored.result)
-        } else {
-          sessionStorage.removeItem(IMPORT_RESULT_KEY)
-        }
-      }
-    } catch { /* ignore */ }
-    setIsHydrated(true)
-  }, [user?.id])
+  const [importResult, setImportResultRaw] = useState<ImportResult | null>(() => readStoredImportResult(userId))
+  const isHydrated = userId !== null
 
   const setImportResult = useCallback((result: ImportResult | null) => {
     setImportResultRaw(result)
     try {
-      if (result && user?.id) {
-        sessionStorage.setItem(IMPORT_RESULT_KEY, JSON.stringify(attachSoulidityDeploymentSignature({ userId: user.id, result })))
+      if (result && userId) {
+        sessionStorage.setItem(IMPORT_RESULT_KEY, JSON.stringify(attachSoulidityDeploymentSignature({ userId, result })))
       } else {
         sessionStorage.removeItem(IMPORT_RESULT_KEY)
       }
     } catch { /* storage quota */ }
-  }, [user?.id])
+  }, [userId])
 
   // Cover image preview URL lifecycle
   const setCoverImage = useCallback((file: File | null) => {

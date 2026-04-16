@@ -31,18 +31,14 @@ export async function verifyDesktopAccessToken(
 
   const hash = hashToken(token)
 
-  // Look up the profile that contains this token hash in its preferences JSON.
-  // Prisma's Json filter supports path-based equality checks.
-  const profile = await prisma.desktopProfile.findFirst({
+  const profile = await prisma.desktopProfile.findUnique({
     where: {
-      preferences: {
-        path: ['desktopAccessTokenHash'],
-        equals: hash,
-      },
+      desktopAccessTokenHash: hash,
     },
     select: {
       accountId: true,
-      preferences: true,
+      desktopAccessTokenHash: true,
+      desktopAccessTokenIssuedAt: true,
     },
   })
 
@@ -50,18 +46,15 @@ export async function verifyDesktopAccessToken(
     return null
   }
 
-  // Double-check the hash in the preferences object (belt-and-suspenders)
-  const prefs = profile.preferences as Record<string, unknown> | null
-  if (!prefs || prefs.desktopAccessTokenHash !== hash) {
+  if (profile.desktopAccessTokenHash !== hash) {
     return null
   }
 
-  // Enforce token TTL using stored issuance timestamp
-  if (typeof prefs.desktopAccessTokenIssuedAt === 'string') {
-    const issuedMs = new Date(prefs.desktopAccessTokenIssuedAt).getTime()
-    if (!Number.isNaN(issuedMs) && Date.now() - issuedMs > TOKEN_MAX_AGE_MS) {
-      return null
-    }
+  if (
+    profile.desktopAccessTokenIssuedAt &&
+    Date.now() - profile.desktopAccessTokenIssuedAt.getTime() > TOKEN_MAX_AGE_MS
+  ) {
+    return null
   }
 
   return { accountId: profile.accountId }

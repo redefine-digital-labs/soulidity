@@ -3,6 +3,8 @@ import { prisma } from '@web/lib/prisma'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
 
+export const dynamic = 'force-dynamic'
+
 const PROFILE_RATE_LIMIT = { max: 10, windowMs: 5 * 60 * 1000 } as const
 const HANDLE_RE = /^[a-zA-Z0-9_]{3,30}$/
 const RESERVED_HANDLES = new Set(['clawnews-bot', 'clawnews_bot', 'system', 'admin', 'moderator'])

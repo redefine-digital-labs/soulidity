@@ -4,6 +4,8 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { buildApprovedTweetUpdate, parseTweetMeta } from '@/lib/admin-tweet-review'
 import OpenAI from 'openai'
 
+export const dynamic = 'force-dynamic'
+
 const SYSTEM_PROMPT = `你是一名专业的 AI×Web3 新闻编辑。
 根据一条推文，生成一条结构化的中文新闻。
 必须只返回合法 JSON，不要 markdown 代码块。`

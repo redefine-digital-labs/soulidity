@@ -4,6 +4,8 @@ import { cached } from '@web/lib/cache'
 import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
+export const dynamic = 'force-dynamic'
+
 const RATE_LIMIT_OPTS = { max: 60, windowMs: 60_000 }
 
 export async function GET(request: NextRequest) {

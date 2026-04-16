@@ -241,32 +241,23 @@ export async function pollDesktopDeviceSession(
     select: deviceSessionPollResultSelect,
   })
 
-  // When confirmed, read the pending desktop access token from the profile.
-  // The pending token is kept in preferences until the next link flow overwrites
-  // it, so that the desktop can retry local storage across multiple polls if the
-  // first attempt fails (e.g. safeStorage unavailable).
   let desktopAccessToken: string | null = null
 
   if (updatedSession.status === 'confirmed' && updatedSession.accountId) {
-    const profile = await prisma.desktopProfile.findUnique({
+    const { token, hash } = generateDesktopAccessToken()
+    await prisma.desktopProfile.upsert({
       where: { accountId: updatedSession.accountId },
-      select: { preferences: true },
+      create: {
+        accountId: updatedSession.accountId,
+        desktopAccessTokenHash: hash,
+        desktopAccessTokenIssuedAt: now,
+      },
+      update: {
+        desktopAccessTokenHash: hash,
+        desktopAccessTokenIssuedAt: now,
+      },
     })
-
-    const prefs =
-      profile?.preferences &&
-      typeof profile.preferences === 'object' &&
-      !Array.isArray(profile.preferences)
-        ? (profile.preferences as Record<string, unknown>)
-        : null
-
-    if (
-      prefs &&
-      typeof prefs.desktopAccessTokenPending === 'string' &&
-      prefs.desktopAccessTokenSessionId === session.id
-    ) {
-      desktopAccessToken = prefs.desktopAccessTokenPending
-    }
+    desktopAccessToken = token
   }
 
   return toPollResponse({ ...updatedSession, desktopAccessToken })
@@ -362,37 +353,18 @@ export async function completeDesktopDeviceSession(
       select: deviceSessionCompleteResultSelect,
     })
 
-    // Read current preferences to preserve existing fields
-    const existingProfile = await tx.desktopProfile.findUnique({
-      where: { accountId },
-      select: { preferences: true },
-    })
-
-    const existingPrefs =
-      existingProfile?.preferences &&
-      typeof existingProfile.preferences === 'object' &&
-      !Array.isArray(existingProfile.preferences)
-        ? (existingProfile.preferences as Record<string, unknown>)
-        : {}
-
-    const tokenPreferences = {
-      ...existingPrefs,
-      desktopAccessTokenHash,
-      desktopAccessTokenIssuedAt: now.toISOString(),
-      desktopAccessTokenPending: desktopAccessToken,
-      desktopAccessTokenSessionId: session.id,
-    }
-
     await tx.desktopProfile.upsert({
       where: { accountId },
       create: {
         accountId,
         agentAddress: session.agentAddress ?? null,
-        preferences: tokenPreferences,
+        desktopAccessTokenHash,
+        desktopAccessTokenIssuedAt: now,
       },
       update: {
         ...(session.agentAddress ? { agentAddress: session.agentAddress } : {}),
-        preferences: tokenPreferences,
+        desktopAccessTokenHash,
+        desktopAccessTokenIssuedAt: now,
       },
     })
 
