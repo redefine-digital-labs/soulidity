@@ -1,4 +1,4 @@
-import type { Prisma } from '../../../generated/prisma/client'
+import type { Prisma } from '@db/prisma-client'
 
 export function buildSoulsWhere(params: {
   q: string

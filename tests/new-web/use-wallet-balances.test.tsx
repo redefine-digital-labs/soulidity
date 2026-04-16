@@ -18,6 +18,7 @@ vi.mock('@mysten/dapp-kit', () => ({
 interface BalanceSnapshot {
   sui: bigint | null
   loading: boolean
+  refresh: () => Promise<void>
 }
 
 function flushPromises() {
@@ -45,6 +46,7 @@ function createHookHarness(useWalletBalances: typeof import('../../web/lib/hooks
     props.snapshotRef.current = {
       sui: balances.sui,
       loading: balances.loading,
+      refresh: balances.refresh,
     }
 
     return null
@@ -89,7 +91,7 @@ describe('useWalletBalances', () => {
       await flushPromises()
     })
 
-    expect(snapshotRef.current).toEqual({ sui: null, loading: true })
+    expect(snapshotRef.current).toEqual(expect.objectContaining({ sui: null, loading: true }))
 
     await act(async () => {
       firstBalance.resolve({ totalBalance: '1000000000' })
@@ -97,14 +99,14 @@ describe('useWalletBalances', () => {
       await flushPromises()
     })
 
-    expect(snapshotRef.current).toEqual({ sui: 1000000000n, loading: false })
+    expect(snapshotRef.current).toEqual(expect.objectContaining({ sui: 1000000000n, loading: false }))
 
     await act(async () => {
       root.render(<HookHarness walletAddress={null} snapshotRef={snapshotRef} />)
       await flushPromises()
     })
 
-    expect(snapshotRef.current).toEqual({ sui: null, loading: false })
+    expect(snapshotRef.current).toEqual(expect.objectContaining({ sui: null, loading: false }))
 
     await act(async () => {
       await flushPromises()
@@ -115,7 +117,7 @@ describe('useWalletBalances', () => {
       await flushPromises()
     })
 
-    expect(snapshotRef.current).toEqual({ sui: null, loading: true })
+    expect(snapshotRef.current).toEqual(expect.objectContaining({ sui: null, loading: true }))
 
     await act(async () => {
       secondBalance.resolve({ totalBalance: '2000000000' })
@@ -123,6 +125,75 @@ describe('useWalletBalances', () => {
       await flushPromises()
     })
 
-    expect(snapshotRef.current).toEqual({ sui: 2000000000n, loading: false })
+    expect(snapshotRef.current).toEqual(expect.objectContaining({ sui: 2000000000n, loading: false }))
+  })
+
+  it('ignores a stale manual refresh result after the wallet switches', async () => {
+    const HookHarness = createHookHarness(useWalletBalances)
+    const initialBalance = createDeferred<{ totalBalance: string }>()
+    const staleRefreshBalance = createDeferred<{ totalBalance: string }>()
+    const nextWalletBalance = createDeferred<{ totalBalance: string }>()
+    const snapshotRef = { current: null as BalanceSnapshot | null }
+    let balanceRequestCount = 0
+
+    mockedGetBalance.mockImplementation(() => {
+      balanceRequestCount += 1
+      if (balanceRequestCount === 1) return initialBalance.promise
+      if (balanceRequestCount === 2) return staleRefreshBalance.promise
+      return nextWalletBalance.promise
+    })
+
+    await act(async () => {
+      root.render(<HookHarness walletAddress="0xaaa" snapshotRef={snapshotRef} />)
+      await flushPromises()
+    })
+
+    await act(async () => {
+      initialBalance.resolve({ totalBalance: '1000000000' })
+      await initialBalance.promise
+      await flushPromises()
+    })
+
+    expect(snapshotRef.current?.sui).toBe(1000000000n)
+    expect(snapshotRef.current?.loading).toBe(false)
+
+    let refreshPromise: Promise<void> | undefined
+    await act(async () => {
+      refreshPromise = snapshotRef.current?.refresh()
+      await flushPromises()
+    })
+
+    await act(async () => {
+      root.render(<HookHarness walletAddress="0xbbb" snapshotRef={snapshotRef} />)
+      await flushPromises()
+    })
+
+    expect(snapshotRef.current).toEqual(expect.objectContaining({
+      sui: null,
+      loading: true,
+    }))
+
+    await act(async () => {
+      nextWalletBalance.resolve({ totalBalance: '2000000000' })
+      await nextWalletBalance.promise
+      await flushPromises()
+    })
+
+    expect(snapshotRef.current).toEqual(expect.objectContaining({
+      sui: 2000000000n,
+      loading: false,
+    }))
+
+    await act(async () => {
+      staleRefreshBalance.resolve({ totalBalance: '1500000000' })
+      await staleRefreshBalance.promise
+      await refreshPromise
+      await flushPromises()
+    })
+
+    expect(snapshotRef.current).toEqual(expect.objectContaining({
+      sui: 2000000000n,
+      loading: false,
+    }))
   })
 })

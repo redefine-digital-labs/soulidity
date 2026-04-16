@@ -49,19 +49,37 @@ async function readDocx(filePath: string) {
 
 function formatSpreadsheetCell(value: unknown) {
   if (value == null) return ''
-  if (value instanceof Date) return value.toISOString()
+
   return String(value)
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t')
 }
 
 async function readXlsx(filePath: string) {
-  const excelModule = await import('read-excel-file/node')
-  const readXlsxFile = excelModule.default
-  const sheets = await readXlsxFile(filePath)
+  const XLSX = await import('xlsx')
+  const workbook = XLSX.read(readFileSync(filePath), {
+    cellDates: true,
+    cellText: true,
+  })
   const lines: string[] = []
-  for (const sheet of sheets) {
-    lines.push(`=== Sheet: ${sheet.sheet} ===`)
-    for (const row of sheet.data) {
-      lines.push(row.map(formatSpreadsheetCell).join('\t'))
+  for (const sheetName of workbook.SheetNames) {
+    lines.push(`=== Sheet: ${sheetName} ===`)
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+      header: 1,
+      raw: false,
+      defval: '',
+      blankrows: false,
+    })
+
+    for (const row of rows) {
+      const formattedRow = row.map(formatSpreadsheetCell)
+
+      while (formattedRow.length > 0 && formattedRow[formattedRow.length - 1] === '') {
+        formattedRow.pop()
+      }
+
+      lines.push(formattedRow.join('\t'))
     }
   }
   return lines.join('\n') || '（XLSX 未提取到内容）'

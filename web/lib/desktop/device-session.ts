@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto'
 
 import { prisma } from '@web/lib/prisma'
+import type { Prisma } from '@db/prisma-client'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
-import { generateDesktopAccessToken } from '@/lib/desktop/auth'
+import { generateDesktopAccessTokenForDeviceSession } from '@/lib/desktop/auth'
 import type {
   DesktopDeviceCompleteResponse,
   DesktopDevicePollResponse,
@@ -176,6 +177,54 @@ export class DesktopDeviceSessionConflictError extends Error {
   }
 }
 
+async function persistConfirmedDesktopSession(
+  tx: Prisma.TransactionClient,
+  params: {
+    accountId: string
+    sessionId: string
+    deviceCode: string
+    agentAddress?: string | null
+    now: Date
+  },
+) {
+  const { hash } = generateDesktopAccessTokenForDeviceSession(params.deviceCode)
+  const existingProfile = await tx.desktopProfile.findUnique({
+    where: { accountId: params.accountId },
+    select: { desktopAccessTokenHash: true },
+  })
+
+  const sharedUpdate = {
+    ...(params.agentAddress ? { agentAddress: params.agentAddress } : {}),
+    desktopAccessTokenHash: hash,
+  }
+
+  await tx.desktopProfile.upsert({
+    where: { accountId: params.accountId },
+    create: {
+      accountId: params.accountId,
+      ...sharedUpdate,
+      desktopAccessTokenIssuedAt: params.now,
+    },
+    update: {
+      ...sharedUpdate,
+      ...(existingProfile?.desktopAccessTokenHash !== hash
+        ? { desktopAccessTokenIssuedAt: params.now }
+        : {}),
+    },
+  })
+
+  await tx.desktopDeviceSession.updateMany({
+    where: {
+      accountId: params.accountId,
+      status: 'confirmed',
+      id: { not: params.sessionId },
+    },
+    data: {
+      status: 'expired',
+    },
+  })
+}
+
 export async function startDesktopDeviceSession(
   options: { now?: Date; agentAddress?: string } = {},
 ): Promise<DesktopDeviceStartResponse> {
@@ -241,26 +290,12 @@ export async function pollDesktopDeviceSession(
     select: deviceSessionPollResultSelect,
   })
 
-  let desktopAccessToken: string | null = null
-
   if (updatedSession.status === 'confirmed' && updatedSession.accountId) {
-    const { token, hash } = generateDesktopAccessToken()
-    await prisma.desktopProfile.upsert({
-      where: { accountId: updatedSession.accountId },
-      create: {
-        accountId: updatedSession.accountId,
-        desktopAccessTokenHash: hash,
-        desktopAccessTokenIssuedAt: now,
-      },
-      update: {
-        desktopAccessTokenHash: hash,
-        desktopAccessTokenIssuedAt: now,
-      },
-    })
-    desktopAccessToken = token
+    const { token } = generateDesktopAccessTokenForDeviceSession(session.deviceCode)
+    return toPollResponse({ ...updatedSession, desktopAccessToken: token })
   }
 
-  return toPollResponse({ ...updatedSession, desktopAccessToken })
+  return toPollResponse(updatedSession)
 }
 
 export async function completeDesktopDeviceSession(
@@ -315,14 +350,31 @@ export async function completeDesktopDeviceSession(
       throw new DesktopDeviceSessionConflictError()
     }
 
+    const confirmedSession = await prisma.$transaction(async (tx) => {
+      await persistConfirmedDesktopSession(tx, {
+        accountId,
+        sessionId: session.id,
+        deviceCode: session.deviceCode,
+        agentAddress: session.agentAddress,
+        now,
+      })
+
+      return tx.desktopDeviceSession.findUnique({
+        where: { id: session.id },
+        select: deviceSessionCompleteResultSelect,
+      })
+    })
+
+    if (!confirmedSession || confirmedSession.status === 'expired') {
+      return toStatusResponse(session)
+    }
+
     return toCompleteConfirmedResponse({
-      ...session,
+      ...confirmedSession,
       accountId,
-      confirmedAt: session.confirmedAt ?? now,
+      confirmedAt: confirmedSession.confirmedAt ?? now,
     })
   }
-
-  const { token: desktopAccessToken, hash: desktopAccessTokenHash } = generateDesktopAccessToken()
 
   const confirmedSession = await prisma.$transaction(async (tx) => {
     const current = await tx.desktopDeviceSession.findUnique({
@@ -353,19 +405,12 @@ export async function completeDesktopDeviceSession(
       select: deviceSessionCompleteResultSelect,
     })
 
-    await tx.desktopProfile.upsert({
-      where: { accountId },
-      create: {
-        accountId,
-        agentAddress: session.agentAddress ?? null,
-        desktopAccessTokenHash,
-        desktopAccessTokenIssuedAt: now,
-      },
-      update: {
-        ...(session.agentAddress ? { agentAddress: session.agentAddress } : {}),
-        desktopAccessTokenHash,
-        desktopAccessTokenIssuedAt: now,
-      },
+    await persistConfirmedDesktopSession(tx, {
+      accountId,
+      sessionId: session.id,
+      deviceCode: session.deviceCode,
+      agentAddress: session.agentAddress,
+      now,
     })
 
     return confirmed
@@ -375,5 +420,5 @@ export async function completeDesktopDeviceSession(
     return toStatusResponse(session)
   }
 
-  return toCompleteConfirmedResponse({ ...confirmedSession, desktopAccessToken })
+  return toCompleteConfirmedResponse(confirmedSession)
 }

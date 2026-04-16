@@ -22,7 +22,12 @@ export function FilterTabs({ tabs, activeId, onChange, className }: FilterTabsPr
         return (
           <button
             key={tab.id}
-            onClick={() => onChange(tab.id)}
+            type="button"
+            onClick={() => {
+              if (!isActive) {
+                onChange(tab.id)
+              }
+            }}
             className={cn(
               'inline-flex items-center rounded-[20px] border px-3.5 py-1.5 text-xs font-semibold cursor-pointer select-none transition-colors duration-150',
               isActive

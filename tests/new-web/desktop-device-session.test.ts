@@ -8,8 +8,10 @@ const mockedPrisma = vi.hoisted(() => ({
     updateMany: vi.fn(),
   },
   desktopProfile: {
+    create: vi.fn(),
     findUnique: vi.fn(),
     upsert: vi.fn(),
+    updateMany: vi.fn(),
   },
   $transaction: vi.fn(),
 }))
@@ -155,15 +157,30 @@ describe('pollDesktopDeviceSession', () => {
       pollIntervalSeconds: 5,
     })
     mockedPrisma.desktopDeviceSession.updateMany.mockImplementation(async ({ where, data }) => {
-      if (status === where.status) {
-        status = data.status
+      const matchesStatus = where.status ? status === where.status : true
+      const matchesId =
+        typeof where.id === 'string'
+          ? session.id === where.id
+          : where.id?.not
+            ? session.id !== where.id.not
+            : true
+
+      if (matchesStatus && matchesId) {
+        if ('status' in data && data.status) {
+          status = data.status
+        }
         return { count: 1 }
       }
 
       return { count: 0 }
     })
-    mockedPrisma.desktopProfile.upsert.mockResolvedValue({
-      accountId: 'account-123',
+    mockedPrisma.desktopProfile.create.mockResolvedValue({ accountId: 'account-123' })
+    mockedPrisma.desktopProfile.updateMany.mockResolvedValue({ count: 1 })
+
+    const { generateDesktopAccessTokenForDeviceSession } = await import('../../web/lib/desktop/auth')
+    const sameSessionHash = generateDesktopAccessTokenForDeviceSession('device-abc').hash
+    mockedPrisma.desktopProfile.findUnique.mockResolvedValue({
+      desktopAccessTokenHash: sameSessionHash,
     })
 
     const { pollDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
@@ -183,70 +200,10 @@ describe('pollDesktopDeviceSession', () => {
     if (first.status === 'confirmed' && second.status === 'confirmed') {
       expect(second.desktopAccessToken).toBe(first.desktopAccessToken)
     }
-    expect(mockedPrisma.desktopDeviceSession.updateMany).not.toHaveBeenCalled()
     expect(mockedPrisma.desktopDeviceSession.update).toHaveBeenCalledTimes(2)
-    expect(mockedPrisma.desktopProfile.upsert).toHaveBeenCalledTimes(2)
-  })
-
-  it('issues a desktop token for confirmed sessions without expiring the session', async () => {
-    const now = new Date('2026-04-12T10:15:00Z')
-    const session = {
-      id: 'session-1',
-      accountId: 'account-123',
-      agentAddress: '0xagent123',
-      deviceCode: 'device-abc',
-      expiresAt: new Date('2026-04-12T10:10:00Z'),
-      pollIntervalSeconds: 5,
-      status: 'confirmed',
-    }
-    mockedPrisma.desktopDeviceSession.findUnique.mockResolvedValue(session)
-    mockedPrisma.desktopDeviceSession.update.mockResolvedValue({
-      status: 'confirmed',
-      accountId: 'account-123',
-      expiresAt: session.expiresAt,
-      pollIntervalSeconds: 5,
-    })
-    mockedPrisma.desktopDeviceSession.updateMany.mockResolvedValue({ count: 1 })
-    mockedPrisma.desktopProfile.upsert.mockResolvedValue({
-      accountId: 'account-123',
-    })
-
-    const { pollDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
-    const result = await pollDesktopDeviceSession('device-abc', { now })
-
-    expect(result.status).toBe('confirmed')
-    if (result.status === 'confirmed') {
-      expect(result.desktopAccessToken).toMatch(/^dtk_[0-9a-f]{64}$/)
-    }
-    expect(mockedPrisma.desktopProfile.findUnique).not.toHaveBeenCalled()
-    expect(mockedPrisma.desktopDeviceSession.update).toHaveBeenCalledWith({
-      where: { id: 'session-1' },
-      data: {
-        lastPolledAt: now,
-      },
-      select: {
-        status: true,
-        accountId: true,
-        expiresAt: true,
-        pollIntervalSeconds: true,
-      },
-    })
     expect(mockedPrisma.desktopDeviceSession.updateMany).not.toHaveBeenCalled()
-
-    const upsertArgs = mockedPrisma.desktopProfile.upsert.mock.calls[0]?.[0]
-    expect(upsertArgs).toBeTruthy()
-    expect(upsertArgs.where).toEqual({ accountId: 'account-123' })
-    expect(upsertArgs.create).toEqual(expect.objectContaining({
-      accountId: 'account-123',
-      agentAddress: '0xagent123',
-      desktopAccessTokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-      desktopAccessTokenIssuedAt: now,
-    }))
-    expect(upsertArgs.update).toEqual(expect.objectContaining({
-      agentAddress: '0xagent123',
-      desktopAccessTokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-      desktopAccessTokenIssuedAt: now,
-    }))
+    expect(mockedPrisma.desktopProfile.findUnique).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopProfile.upsert).not.toHaveBeenCalled()
   })
 })
 
@@ -289,7 +246,8 @@ describe('completeDesktopDeviceSession', () => {
     expect(mockedPrisma.$transaction).toHaveBeenCalledOnce()
   })
 
-  it('does not mint desktop credentials while browser confirms a bound device session', async () => {
+  it('rotates desktop credentials and expires older confirmed sessions while browser confirms a device session', async () => {
+    const now = new Date('2026-04-12T10:05:00Z')
     const session = {
       id: 'session-1',
       accountId: null,
@@ -310,22 +268,54 @@ describe('completeDesktopDeviceSession', () => {
       deviceCode: 'device-abc',
       userCode: 'ABCD-EFGH',
       expiresAt: session.expiresAt,
-      confirmedAt: new Date('2026-04-12T10:05:00Z'),
+      confirmedAt: now,
       pollIntervalSeconds: 5,
       status: 'confirmed',
     })
-
-    const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
-    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', {
-      now: new Date('2026-04-12T10:05:00Z'),
+    mockedPrisma.desktopDeviceSession.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.desktopProfile.findUnique.mockResolvedValue({
+      desktopAccessTokenHash: 'legacy-session-hash',
     })
+    mockedPrisma.desktopProfile.upsert.mockResolvedValue({ accountId: 'account-123' })
+
+    const { generateDesktopAccessTokenForDeviceSession } = await import('../../web/lib/desktop/auth')
+    const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', { now })
 
     expect(result.status).toBe('confirmed')
-    expect(mockedPrisma.desktopProfile.upsert).not.toHaveBeenCalled()
+    const expectedHash = generateDesktopAccessTokenForDeviceSession('device-abc').hash
+    expect(mockedPrisma.desktopProfile.findUnique).toHaveBeenCalledWith({
+      where: { accountId: 'account-123' },
+      select: { desktopAccessTokenHash: true },
+    })
+    expect(mockedPrisma.desktopProfile.upsert).toHaveBeenCalledWith({
+      where: { accountId: 'account-123' },
+      create: {
+        accountId: 'account-123',
+        agentAddress: '0xagent123',
+        desktopAccessTokenHash: expectedHash,
+        desktopAccessTokenIssuedAt: now,
+      },
+      update: {
+        agentAddress: '0xagent123',
+        desktopAccessTokenHash: expectedHash,
+        desktopAccessTokenIssuedAt: now,
+      },
+    })
+    expect(mockedPrisma.desktopDeviceSession.updateMany).toHaveBeenCalledWith({
+      where: {
+        accountId: 'account-123',
+        status: 'confirmed',
+        id: { not: 'session-1' },
+      },
+      data: {
+        status: 'expired',
+      },
+    })
     expect(result).not.toHaveProperty('desktopAccessToken')
   })
 
-  it('does not persist desktop token metadata while browser confirms a device session', async () => {
+  it('fills an existing blank desktop profile row during browser confirmation instead of waiting for first poll', async () => {
     const now = new Date('2026-04-12T10:05:00Z')
     const session = {
       id: 'session-1',
@@ -351,13 +341,23 @@ describe('completeDesktopDeviceSession', () => {
       pollIntervalSeconds: 5,
       status: 'confirmed',
     })
+    mockedPrisma.desktopDeviceSession.updateMany.mockResolvedValue({ count: 0 })
+    mockedPrisma.desktopProfile.findUnique.mockResolvedValue({
+      desktopAccessTokenHash: null,
+    })
+    mockedPrisma.desktopProfile.upsert.mockResolvedValue({ accountId: 'account-123' })
 
+    const { generateDesktopAccessTokenForDeviceSession } = await import('../../web/lib/desktop/auth')
     const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
     const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', { now })
 
     expect(result.status).toBe('confirmed')
-    expect(mockedPrisma.desktopProfile.upsert).not.toHaveBeenCalled()
-    expect(result).not.toHaveProperty('desktopAccessToken')
+    const expectedHash = generateDesktopAccessTokenForDeviceSession('device-abc').hash
+    const upsertArgs = mockedPrisma.desktopProfile.upsert.mock.calls[0]?.[0]
+    expect(upsertArgs?.update).toEqual({
+      desktopAccessTokenHash: expectedHash,
+      desktopAccessTokenIssuedAt: now,
+    })
   })
 
   it('throws conflict when concurrent request confirmed with different account', async () => {

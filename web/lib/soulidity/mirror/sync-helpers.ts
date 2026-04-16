@@ -1,4 +1,4 @@
-import type { Prisma } from '../../../generated/prisma/client'
+import type { Prisma } from '@db/prisma-client'
 import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
 import type { AssetVersionObject, SkillVersionObject } from '@/lib/soulidity/types'
 import {

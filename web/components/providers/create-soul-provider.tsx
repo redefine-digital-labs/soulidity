@@ -131,15 +131,26 @@ interface CreateSoulContextValue {
 const CreateSoulContext = createContext<CreateSoulContextValue | null>(null)
 
 export function CreateSoulProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
-  return <CreateSoulProviderInner key={user?.id ?? 'anonymous'} userId={user?.id ?? null}>{children}</CreateSoulProviderInner>
+  const { user, loading } = useAuth()
+  const userId = user?.id ?? null
+  return (
+    <CreateSoulProviderInner
+      key={loading ? 'pending' : (userId ?? 'anonymous')}
+      authLoading={loading}
+      userId={userId}
+    >
+      {children}
+    </CreateSoulProviderInner>
+  )
 }
 
 function CreateSoulProviderInner({
   children,
+  authLoading,
   userId,
 }: {
   children: React.ReactNode
+  authLoading: boolean
   userId: string | null
 }) {
 
@@ -178,8 +189,8 @@ function CreateSoulProviderInner({
     setMemoryFileRaw(file)
     setUploadResultsRaw(prev => prev ? { ...prev, memorySeed: undefined } : prev)
   }, [])
-  const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(() => readStoredPublishResult(userId))
-  const isHydrated = userId !== null
+  const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(null)
+  const [isHydrated, setIsHydrated] = useState(false)
 
   const setPublishResult = useCallback((result: PublishResult | null) => {
     setPublishResultRaw(result)
@@ -208,6 +219,15 @@ function CreateSoulProviderInner({
     setCoverImageFileRaw(file)
     setUploadResultsRaw(prev => prev ? { ...prev, coverImage: undefined } : prev)
   }, [])
+
+  useEffect(() => {
+    if (authLoading) {
+      return
+    }
+
+    setPublishResultRaw(readStoredPublishResult(userId))
+    setIsHydrated(true)
+  }, [authLoading, userId])
 
   useEffect(() => {
     return () => {

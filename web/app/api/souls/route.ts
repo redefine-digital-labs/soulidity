@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@/lib/soulidity/repository'
-import type { Prisma } from '../../../generated/prisma/client'
+import type { Prisma } from '@db/prisma-client'
 import { buildSoulsWhere } from './query'
 
 const DEFAULT_PAGE = 1

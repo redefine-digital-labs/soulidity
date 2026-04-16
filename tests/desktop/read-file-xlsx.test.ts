@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const { zipSync, strToU8 } = require('../../web/node_modules/fflate')
+const desktopRequire = createRequire(resolve(dirname(fileURLToPath(import.meta.url)), '../../desktop/packages/backend/package.json'))
+const XLSX = desktopRequire('xlsx')
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const readFileScriptPath = resolve(
@@ -55,6 +57,21 @@ function createEscapedWorkbook(filePath: string) {
   writeFileSync(filePath, Buffer.from(zipSync(files)))
 }
 
+function createFormattedWorkbook(filePath: string) {
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['date', 'currency', 'percent', 'path'],
+    [new Date('2026-04-16T00:00:00Z'), 1234.5, 0.125, 'C:\\Users\\Alice'],
+  ])
+
+  sheet.A2.z = 'yyyy-mm-dd'
+  sheet.B2.z = '$#,##0.00'
+  sheet.C2.z = '0.0%'
+
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Sheet1')
+  writeFileSync(filePath, XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }))
+}
+
 function runReadFile(filePath: string) {
   return JSON.parse(
     execFileSync(
@@ -87,6 +104,19 @@ describe('read_file xlsx extraction', () => {
     expect(result).toEqual({
       success: true,
       content: '=== Sheet: Sheet1 ===\nhello\\tworld\tline1\\nline2\n2',
+    })
+  })
+
+  it('preserves formatted display values and literal backslashes', () => {
+    tempDir = mkdtempSync(join(repoRoot, 'tmp-read-file-'))
+    const workbookPath = join(tempDir, 'formatted-cells.xlsx')
+    createFormattedWorkbook(workbookPath)
+
+    const result = runReadFile(workbookPath)
+
+    expect(result).toEqual({
+      success: true,
+      content: '=== Sheet: Sheet1 ===\ndate\tcurrency\tpercent\tpath\n2026-04-16\t$1,234.50\t12.5%\tC:\\Users\\Alice',
     })
   })
 })

@@ -152,15 +152,26 @@ interface ImportSoulContextValue {
 const ImportSoulContext = createContext<ImportSoulContextValue | null>(null)
 
 export function ImportSoulProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
-  return <ImportSoulProviderInner key={user?.id ?? 'anonymous'} userId={user?.id ?? null}>{children}</ImportSoulProviderInner>
+  const { user, loading } = useAuth()
+  const userId = user?.id ?? null
+  return (
+    <ImportSoulProviderInner
+      key={loading ? 'pending' : (userId ?? 'anonymous')}
+      authLoading={loading}
+      userId={userId}
+    >
+      {children}
+    </ImportSoulProviderInner>
+  )
 }
 
 function ImportSoulProviderInner({
   children,
+  authLoading,
   userId,
 }: {
   children: React.ReactNode
+  authLoading: boolean
   userId: string | null
 }) {
 
@@ -192,8 +203,8 @@ function ImportSoulProviderInner({
   const setUploadResults = useCallback((r: UploadResults) => setUploadResultsRaw(r), [])
 
   // Step 6
-  const [importResult, setImportResultRaw] = useState<ImportResult | null>(() => readStoredImportResult(userId))
-  const isHydrated = userId !== null
+  const [importResult, setImportResultRaw] = useState<ImportResult | null>(null)
+  const [isHydrated, setIsHydrated] = useState(false)
 
   const setImportResult = useCallback((result: ImportResult | null) => {
     setImportResultRaw(result)
@@ -222,6 +233,15 @@ function ImportSoulProviderInner({
     setCoverImageFileRaw(file)
     setUploadResultsRaw((prev) => (prev ? { ...prev, coverImage: undefined } : prev))
   }, [])
+
+  useEffect(() => {
+    if (authLoading) {
+      return
+    }
+
+    setImportResultRaw(readStoredImportResult(userId))
+    setIsHydrated(true)
+  }, [authLoading, userId])
 
   useEffect(() => {
     return () => {

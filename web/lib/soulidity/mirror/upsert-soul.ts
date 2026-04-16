@@ -1,6 +1,7 @@
-import { Prisma } from '../../../generated/prisma/client'
+import { PrismaRuntime } from '@db/prisma-client'
 import { prisma } from '@web/lib/prisma'
 import type { SoulObject, SoulStateObject, SoulMemoryObject } from '@/lib/soulidity/types'
+import type { Prisma } from '@db/prisma-client'
 
 export async function upsertSoulProjection(params: {
   soul: SoulObject
@@ -61,7 +62,7 @@ export async function upsertSoulProjection(params: {
       ...skillsUpdate,
       ...assetsUpdate,
       ...accessListUpdate,
-      sealSidecar: params.sealSidecar ?? Prisma.DbNull,
+      sealSidecar: params.sealSidecar ?? PrismaRuntime.DbNull,
       tags: params.tags,
       previewImages: params.previewImages,
       readme: params.readme ?? null,
@@ -94,7 +95,7 @@ export async function upsertSoulProjection(params: {
       skillsOnChainId: params.state.skillsId,
       assetsOnChainId: params.state.assetsId,
       accessListOnChainId: params.state.accessListId,
-      sealSidecar: params.sealSidecar ?? Prisma.DbNull,
+      sealSidecar: params.sealSidecar ?? PrismaRuntime.DbNull,
       tags: params.tags,
       previewImages: params.previewImages,
       readme: params.readme ?? null,

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 
 import { NextResponse } from 'next/server'
 
@@ -15,8 +15,29 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
+function getDesktopAccessTokenSecret(): string {
+  const secret = process.env.AUTH_SECRET ?? process.env.SOUL_UPLOAD_SECRET
+  if (secret && secret.length > 0) {
+    return secret
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    return 'clawnews-desktop-access-token-dev-secret'
+  }
+
+  throw new Error('AUTH_SECRET or SOUL_UPLOAD_SECRET is required to mint desktop access tokens')
+}
+
 export function generateDesktopAccessToken(): { token: string; hash: string } {
   const token = `${TOKEN_PREFIX}${randomBytes(TOKEN_RANDOM_BYTES).toString('hex')}`
+  return { token, hash: hashToken(token) }
+}
+
+export function generateDesktopAccessTokenForDeviceSession(deviceCode: string): { token: string; hash: string } {
+  const digest = createHmac('sha256', getDesktopAccessTokenSecret())
+    .update(`desktop-device-session:${deviceCode}`)
+    .digest('hex')
+  const token = `${TOKEN_PREFIX}${digest}`
   return { token, hash: hashToken(token) }
 }
 

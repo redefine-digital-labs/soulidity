@@ -522,8 +522,8 @@ ipcMain.handle('device:poll', async (_event, deviceCode: string) => {
   }>(res, 'Poll desktop link status', pathname)
 
   // Store desktop access token when confirmed. If local storage fails (e.g.
-  // safeStorage unavailable), log and continue — the server keeps the pending
-  // token so the next poll can retry.
+  // safeStorage unavailable), log and continue — repeated polls return the
+  // same token for the confirmed device session, so the next poll can retry.
   if (data.status === 'confirmed' && typeof data.desktopAccessToken === 'string' && data.desktopAccessToken.length > 0 && typeof data.accountId === 'string') {
     try {
       storeDesktopToken(data.desktopAccessToken, data.accountId)

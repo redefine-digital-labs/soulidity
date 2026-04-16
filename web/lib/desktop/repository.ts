@@ -1,4 +1,4 @@
-import type { Prisma } from '../../generated/prisma/client'
+import type { Prisma } from '@db/prisma-client'
 import { prisma } from '@web/lib/prisma'
 import { getBlobUrl, materializeWalrusBlobUrls } from '@web/lib/services/walrus'
 import type {

@@ -163,7 +163,7 @@ interface ActiveGrantSlotObject {
           <li><code className="text-xs text-foreground">@web/*</code> → <code>web/*</code> — shared services (Walrus, Seal, Prisma, auth)</li>
         </ul>
         <p className="text-xs text-muted mt-1">
-          The Prisma client is generated at <code>web/generated/prisma/</code> and imported via <code>@web/lib/prisma</code>. Run <code>npm --prefix web run prisma:generate</code> after schema changes.
+          The Prisma client is generated once at <code>generated/prisma/</code>, exposed through <code>src/db/prisma-client.ts</code>, and used from web via <code>@web/lib/prisma</code>. Run <code>npm run prisma:generate</code> after schema changes.
         </p>
       </div>
 
