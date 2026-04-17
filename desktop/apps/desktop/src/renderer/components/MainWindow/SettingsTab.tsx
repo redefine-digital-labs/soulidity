@@ -12,17 +12,28 @@ type LinkState =
   | { phase: 'restoring' }
   | { phase: 'idle' }
   | { phase: 'linking'; userCode: string; deviceCode: string; linkUrl: string; expiresAt: string }
-  | { phase: 'confirmed'; accountId: string }
+  | { phase: 'confirmed'; accountId: string; suiAddress: string | null }
   | { phase: 'error'; message: string; canUnlink?: boolean }
 
-function getRestoredAccountId(value: unknown): string | null {
+interface RestoredIdentity {
+  accountId: string
+  suiAddress: string | null
+}
+
+function getRestoredIdentity(value: unknown): RestoredIdentity | null {
   if (!value || typeof value !== 'object') return null
 
   const profile = (value as Record<string, unknown>).profile
   if (!profile || typeof profile !== 'object') return null
 
-  const accountId = (profile as Record<string, unknown>).accountId
-  return typeof accountId === 'string' && accountId.trim() ? accountId : null
+  const profileRecord = profile as Record<string, unknown>
+  const accountId = profileRecord.accountId
+  if (typeof accountId !== 'string' || !accountId.trim()) return null
+
+  const rawSui = profileRecord.primarySuiAddress
+  const suiAddress = typeof rawSui === 'string' && rawSui.trim() ? rawSui : null
+
+  return { accountId, suiAddress }
 }
 
 export function SettingsTab(): React.JSX.Element {
@@ -55,9 +66,9 @@ export function SettingsTab(): React.JSX.Element {
         const me = await window.electronAPI.getDesktopMe()
         if (cancelled) return
 
-        const restoredAccountId = getRestoredAccountId(me)
-        if (restoredAccountId) {
-          setLinkState({ phase: 'confirmed', accountId: restoredAccountId })
+        const restored = getRestoredIdentity(me)
+        if (restored) {
+          setLinkState({ phase: 'confirmed', accountId: restored.accountId, suiAddress: restored.suiAddress })
           return
         }
       } catch {
@@ -107,7 +118,12 @@ export function SettingsTab(): React.JSX.Element {
           const poll = await window.electronAPI.devicePoll(session.deviceCode)
           if (poll.status === 'confirmed' && poll.accountId) {
             if (pollTimerRef.current) clearInterval(pollTimerRef.current)
-            setLinkState({ phase: 'confirmed', accountId: poll.accountId })
+            let suiAddress: string | null = null
+            try {
+              const me = await window.electronAPI.getDesktopMe()
+              suiAddress = getRestoredIdentity(me)?.suiAddress ?? null
+            } catch { /* fall through with null — accountId still renders */ }
+            setLinkState({ phase: 'confirmed', accountId: poll.accountId, suiAddress })
           } else if (poll.status === 'expired') {
             if (pollTimerRef.current) clearInterval(pollTimerRef.current)
             setLinkState({ phase: 'error', message: 'Code expired. Try again.' })
@@ -238,13 +254,15 @@ export function SettingsTab(): React.JSX.Element {
 
         {linkState.phase === 'confirmed' && (
           <div className="link-panel link-panel--success">
-            <p className="link-panel__status">Linked to account</p>
+            <p className="link-panel__status">
+              {linkState.suiAddress ? 'Linked to Sui wallet' : 'Linked to account'}
+            </p>
             <input
               type="text"
               className="settings-field__input"
-              value={truncateAddress(linkState.accountId)}
+              value={truncateAddress(linkState.suiAddress ?? linkState.accountId)}
               readOnly
-              title={linkState.accountId}
+              title={linkState.suiAddress ?? linkState.accountId}
             />
             <button
               className="link-button link-button--secondary"

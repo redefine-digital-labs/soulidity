@@ -113,8 +113,32 @@ describe('SettingsTab desktop auth restore', () => {
     expect(api.getDesktopMe).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Linked to account')
     expect(container.textContent).toContain('Unlink Device')
+    // suiAddress missing → fall back to accountId in the address field
     const restoredAccountInput = container.querySelector('input[title="0xfeedfacecafebeef"]')
     expect(restoredAccountInput).not.toBeNull()
+  })
+
+  it('prefers the Sui wallet address over the account id when both are present', async () => {
+    const api = createElectronApi({
+      getDesktopAuthStatus: vi.fn().mockResolvedValue({ hasToken: true, accountId: 'acct_cuid_1234' }),
+      getDesktopMe: vi.fn().mockResolvedValue({
+        profile: {
+          accountId: 'acct_cuid_1234',
+          primarySuiAddress: '0x1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        activePersona: null,
+      }),
+    })
+
+    await renderWithApi(api)
+
+    expect(container.textContent).toContain('Linked to Sui wallet')
+    expect(container.textContent).not.toContain('Linked to account')
+    const suiInput = container.querySelector(
+      'input[title="0x1111111111111111111111111111111111111111111111111111111111111111"]',
+    )
+    expect(suiInput).not.toBeNull()
+    expect(container.querySelector('input[title="acct_cuid_1234"]')).toBeNull()
   })
 
   it('shows recovery state instead of confirmed when saved token can no longer be verified', async () => {
