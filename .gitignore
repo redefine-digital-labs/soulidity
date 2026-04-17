@@ -38,3 +38,4 @@ scripts/review-memory-*
 .gstack/
 web/tsconfig.tsbuildinfo
 **/next-env.d.ts
+.vercel

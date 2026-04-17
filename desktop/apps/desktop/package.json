@@ -52,11 +52,13 @@
     "mac": {
       "icon": "resources/icon.icns",
       "target": [
-        "dmg",
-        "zip"
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
       ],
       "category": "public.app-category.productivity",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "identity": null,
+      "notarize": false
     },
     "dmg": {
       "title": "${productName} ${version}"
