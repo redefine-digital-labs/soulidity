@@ -22,16 +22,25 @@ export function MainWindow(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    const listener = (event: Event) => {
+    const handleDomNavigate = (event: Event) => {
       const nextTab = (event as CustomEvent<{ tab?: string }>).detail?.tab
       if (nextTab === 'settings' || nextTab === 'library' || nextTab === 'agent' || nextTab === 'extract') {
         setActiveTab(nextTab)
       }
     }
 
-    window.addEventListener('desktop:navigate-tab', listener)
+    const handleElectronNavigate = (detail: { tab?: string }) => {
+      const nextTab = detail.tab
+      if (nextTab === 'settings' || nextTab === 'library' || nextTab === 'agent' || nextTab === 'extract') {
+        setActiveTab(nextTab)
+      }
+    }
+
+    window.addEventListener('desktop:navigate-tab', handleDomNavigate)
+    const unsubscribe = window.electronAPI.onNavigateTab(handleElectronNavigate)
     return () => {
-      window.removeEventListener('desktop:navigate-tab', listener)
+      window.removeEventListener('desktop:navigate-tab', handleDomNavigate)
+      unsubscribe()
     }
   }, [])
 

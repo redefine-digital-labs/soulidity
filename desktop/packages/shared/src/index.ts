@@ -47,10 +47,31 @@ export type {
 
 export {
   CLI_TERMINAL_GRACE_MS,
+  createAgentStatusSignature,
   deduplicateAgentSessions,
   parseAgentStatusFile,
   deriveAggregateStatus
 } from './types/cli-status'
+
+export type {
+  SupportedAgentSource,
+  RuntimeStatus,
+  ToolHistoryEntry,
+  RecentMessage,
+  RuntimeSession,
+  PendingPermission,
+  PendingQuestion,
+  HookInstallStatus,
+  TransportStatus,
+  AgentRuntimeSnapshot,
+} from './types/agent-runtime'
+
+export {
+  isAgentRuntimeSnapshot,
+  runtimeStatusToCliStatus,
+  toAgentStatusFile,
+  deriveAggregateRuntimeCliStatus,
+} from './types/agent-runtime'
 
 export type {
   PetTaskAgent,

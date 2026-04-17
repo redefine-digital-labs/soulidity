@@ -1,17 +1,27 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AgentRuntimeSnapshot,
+  HookInstallStatus,
   ExtractSoulDraft,
   PetAgentEvent,
   PetUpdateStatus,
   SessionScanResult,
   SoulProfile,
   ScanProgress,
+  SupportedAgentSource,
 } from '@soulidity/shared'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ── 基础 ──
   ping: (): Promise<string> => ipcRenderer.invoke('ipc:ping'),
   closeWindow: (): void => { ipcRenderer.send('window:close') },
+  openMainWindowTab: (tab?: 'settings' | 'library' | 'agent' | 'extract'): Promise<void> =>
+    ipcRenderer.invoke('window:open-main-tab', tab),
+  onNavigateTab: (callback: (detail: { tab?: string }) => void): (() => void) => {
+    const listener = (_event: unknown, detail: { tab?: string }) => callback(detail)
+    ipcRenderer.on('desktop:navigate-tab', listener)
+    return () => { ipcRenderer.removeListener('desktop:navigate-tab', listener) }
+  },
   getConfig: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('config:get'),
   setConfig: (config: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('config:set', config),
 
@@ -43,12 +53,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('agent-status-changed', listener)
     return () => { ipcRenderer.removeListener('agent-status-changed', listener) }
   },
+  onAgentRuntimeChanged: (callback: (snapshot: AgentRuntimeSnapshot) => void): (() => void) => {
+    const listener = (_event: unknown, snapshot: AgentRuntimeSnapshot) => callback(snapshot)
+    ipcRenderer.on('agent-runtime-changed', listener)
+    return () => { ipcRenderer.removeListener('agent-runtime-changed', listener) }
+  },
   onAgentEvent: (callback: (event: PetAgentEvent) => void): (() => void) => {
     const listener = (_event: unknown, event: PetAgentEvent) => callback(event)
     ipcRenderer.on('agent-event', listener)
     return () => { ipcRenderer.removeListener('agent-event', listener) }
   },
   getCurrentAgentStatus: (): Promise<unknown> => ipcRenderer.invoke('get-current-agent-status'),
+  getCurrentAgentRuntime: (): Promise<AgentRuntimeSnapshot | null> => ipcRenderer.invoke('get-current-agent-runtime'),
+  approveAgentPermission: (requestId: string, allowAlways = false): Promise<boolean> =>
+    ipcRenderer.invoke('agent:approve-permission', requestId, allowAlways),
+  denyAgentPermission: (requestId: string): Promise<boolean> =>
+    ipcRenderer.invoke('agent:deny-permission', requestId),
+  answerAgentQuestion: (requestId: string, answer: string): Promise<boolean> =>
+    ipcRenderer.invoke('agent:answer-question', requestId, answer),
+  skipAgentQuestion: (requestId: string): Promise<boolean> =>
+    ipcRenderer.invoke('agent:skip-question', requestId),
+  getHookInstallStatus: (): Promise<HookInstallStatus[]> =>
+    ipcRenderer.invoke('hooks:get-install-status'),
+  installHooks: (targets?: SupportedAgentSource[]): Promise<HookInstallStatus[]> =>
+    ipcRenderer.invoke('hooks:install', targets),
+  repairHooks: (targets?: SupportedAgentSource[]): Promise<HookInstallStatus[]> =>
+    ipcRenderer.invoke('hooks:repair', targets),
+  uninstallHooks: (targets?: SupportedAgentSource[]): Promise<HookInstallStatus[]> =>
+    ipcRenderer.invoke('hooks:uninstall', targets),
 
   // ── Agent wallet ──
   generateAgentKeypair: (): Promise<unknown> => ipcRenderer.invoke('generate-agent-keypair'),

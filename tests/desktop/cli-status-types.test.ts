@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  createAgentStatusSignature,
   parseAgentStatusFile,
   deduplicateAgentSessions,
   deriveAggregateStatus,
@@ -306,5 +307,95 @@ describe('deduplicateAgentSessions', () => {
     })
 
     expect(Object.keys(deduped)).toEqual(['claude-hook', 'codex-monitor'])
+  })
+})
+
+describe('createAgentStatusSignature', () => {
+  it('ignores root-level lastUpdated churn when sessions are unchanged', () => {
+    const base: AgentStatusFile = {
+      version: 1,
+      lastUpdated: 1000,
+      sessions: {
+        s1: {
+          sessionId: 's1',
+          clientType: 'claude-code',
+          status: 'working',
+          source: 'hook',
+          startedAt: 100,
+          lastUpdated: 900,
+        },
+      },
+    }
+
+    expect(createAgentStatusSignature(base)).toBe(createAgentStatusSignature({
+      ...base,
+      lastUpdated: 2000,
+    }))
+  })
+
+  it('ignores monitor sessions that downstream deduplication already hides', () => {
+    const visibleOnly: AgentStatusFile = {
+      version: 1,
+      lastUpdated: 1000,
+      sessions: {
+        hook: {
+          sessionId: 'hook',
+          clientType: 'claude-code',
+          status: 'working',
+          source: 'hook',
+          startedAt: 100,
+          lastUpdated: 900,
+        },
+      },
+    }
+
+    const withHiddenMonitor: AgentStatusFile = {
+      ...visibleOnly,
+      sessions: {
+        ...visibleOnly.sessions,
+        monitor: {
+          sessionId: 'monitor',
+          clientType: 'claude-code',
+          status: 'working',
+          source: 'monitor',
+          startedAt: 100,
+          lastUpdated: 950,
+        },
+      },
+    }
+
+    expect(createAgentStatusSignature(withHiddenMonitor)).toBe(createAgentStatusSignature(visibleOnly))
+  })
+
+  it('changes when a visible session changes', () => {
+    const before: AgentStatusFile = {
+      version: 1,
+      lastUpdated: 1000,
+      sessions: {
+        s1: {
+          sessionId: 's1',
+          clientType: 'codex',
+          status: 'working',
+          source: 'hook',
+          startedAt: 100,
+          lastUpdated: 900,
+        },
+      },
+    }
+
+    const after: AgentStatusFile = {
+      ...before,
+      lastUpdated: 2000,
+      sessions: {
+        s1: {
+          ...before.sessions.s1,
+          status: 'needs-attention',
+          needsAttention: 'Approve this change?',
+          lastUpdated: 1900,
+        },
+      },
+    }
+
+    expect(createAgentStatusSignature(before)).not.toBe(createAgentStatusSignature(after))
   })
 })

@@ -38,7 +38,8 @@ describe('MainWindow', () => {
 
     window.electronAPI = {
       closeWindow: vi.fn(),
-    } as typeof window.electronAPI
+      onNavigateTab: vi.fn().mockReturnValue(() => {}),
+    } as unknown as typeof window.electronAPI
   })
 
   afterEach(async () => {

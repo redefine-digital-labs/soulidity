@@ -22,6 +22,7 @@ const STATUS_PRIORITY: Record<CliAgentStatus, number> = {
 
 export interface AgentSession {
   sessionId: string
+  taskId?: string
   clientType: 'claude-code' | 'codex' | 'opencode' | 'custom'
   status: CliAgentStatus
   /** 数据来源：hook 主动上报 or monitor 被动检测 */
@@ -43,6 +44,32 @@ export interface AgentStatusFile {
   version: 1
   lastUpdated: number
   sessions: Record<string, AgentSession>
+}
+
+function normalizeCurrentActionForSignature(action: AgentSession['currentAction']) {
+  if (!action) return null
+  return {
+    tool: action.tool ?? null,
+    details: action.details ?? null,
+    timestamp: action.timestamp,
+  }
+}
+
+function normalizeSessionForSignature(session: AgentSession) {
+  return {
+    sessionId: session.sessionId,
+    taskId: session.taskId ?? null,
+    clientType: session.clientType,
+    status: session.status,
+    source: session.source ?? null,
+    workingDirectory: session.workingDirectory ?? null,
+    sessionTitle: session.sessionTitle ?? null,
+    currentAction: normalizeCurrentActionForSignature(session.currentAction),
+    needsAttention: session.needsAttention ?? null,
+    startedAt: session.startedAt,
+    lastUpdated: session.lastUpdated,
+    endedAt: session.endedAt ?? null,
+  }
 }
 
 const VALID_STATUSES: ReadonlySet<string> = new Set([
@@ -101,6 +128,7 @@ function isValidSession(s: unknown): s is AgentSession {
   if (typeof session.lastUpdated !== 'number') return false
 
   // Optional fields
+  if (session.taskId !== undefined && typeof session.taskId !== 'string') return false
   if (session.workingDirectory !== undefined && typeof session.workingDirectory !== 'string') return false
   if (session.sessionTitle !== undefined && typeof session.sessionTitle !== 'string') return false
   if (session.endedAt !== undefined && typeof session.endedAt !== 'number') return false
@@ -147,6 +175,22 @@ export function deduplicateAgentSessions(
   }
 
   return deduped
+}
+
+/**
+ * Build a stable signature for the status payload that downstream desktop
+ * consumers actually react to. Root-level snapshot timestamps are intentionally
+ * excluded so repeated no-op publications do not rebroadcast identical state.
+ */
+export function createAgentStatusSignature(file: AgentStatusFile): string {
+  const sessions = Object.entries(deduplicateAgentSessions(file.sessions))
+    .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+    .map(([sessionId, session]) => [sessionId, normalizeSessionForSignature(session)])
+
+  return JSON.stringify({
+    version: file.version,
+    sessions,
+  })
 }
 
 /**

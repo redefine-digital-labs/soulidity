@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  type AgentRuntimeSnapshot,
   CLI_TERMINAL_GRACE_MS,
   MOOD_TO_SPRITE,
   getVisiblePetTasks,
@@ -13,6 +14,7 @@ import { useMood } from '../../hooks/useMood'
 import './styles.css'
 import { SpriteRenderer } from '../SpriteRenderer'
 import { useActivePersona } from '../../hooks/useActivePersona'
+import { useAgentRuntime } from '../../hooks/useAgentRuntime'
 
 type TaskAgent = 'claude' | 'codex'
 type ToastKind = 'info' | 'success' | 'error' | 'attention'
@@ -77,12 +79,39 @@ function formatAgentLabel(agent: string): string {
 function buildFallbackTask(files: string[], agent: TaskAgent, instruction: string, taskId: string): PetTaskSummary {
   return {
     agent,
+    taskId,
     sessionId: taskId,
     sessionTitle: truncate(instruction || `Work on ${basename(files[0] ?? taskId)}`),
     currentAction: `Running ${formatAgentLabel(agent)}`,
     workingDirectory: files[0] ? dirname(files[0]) : undefined,
     timestamp: Date.now(),
   }
+}
+
+function buildTaskIdentity(task: Pick<PetTaskSummary, 'taskId' | 'sessionId'>): string | null {
+  if (task.taskId) return `task:${task.taskId}`
+  if (task.sessionId) return `session:${task.sessionId}`
+  return null
+}
+
+function mergeActiveTasks(runtimeTasks: PetTaskSummary[], fallbackTasks: PetTaskSummary[]): PetTaskSummary[] {
+  const seen = new Set<string>()
+  const merged: PetTaskSummary[] = []
+
+  for (const task of runtimeTasks) {
+    const identity = buildTaskIdentity(task)
+    if (identity) seen.add(identity)
+    merged.push(task)
+  }
+
+  for (const task of fallbackTasks) {
+    const identity = buildTaskIdentity(task)
+    if (identity && seen.has(identity)) continue
+    if (identity) seen.add(identity)
+    merged.push(task)
+  }
+
+  return merged.sort((left, right) => right.timestamp - left.timestamp)
 }
 
 function extractFilePaths(dataTransfer: DataTransfer): string[] {
@@ -94,8 +123,9 @@ function extractFilePaths(dataTransfer: DataTransfer): string[] {
 export function FloatingBall(): React.JSX.Element {
   const { mood: backendMood } = useMood()
   const { config: spriteConfig } = useActivePersona()
+  const { snapshot: runtimeSnapshot } = useAgentRuntime()
 
-  const [statusFile, setStatusFile] = useState<AgentStatusFile | null>(null)
+  const [statusFile, setStatusFile] = useState<AgentStatusFile | AgentRuntimeSnapshot | null>(null)
   const [updateStatus, setUpdateStatus] = useState<PetUpdateStatus>(DEFAULT_UPDATE_STATUS)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [transientMood, setTransientMood] = useState<Mood | null>(null)
@@ -149,8 +179,15 @@ export function FloatingBall(): React.JSX.Element {
     [localTasks],
   )
 
-  const activeTasks = statusTasks.length > 0 ? statusTasks : fallbackTasks
+  const activeTasks = useMemo(
+    () => mergeActiveTasks(statusTasks, fallbackTasks),
+    [fallbackTasks, statusTasks],
+  )
   const showTaskTooltip = isHovered && activeTasks.length > 0 && !taskPanel
+  const topPermission = runtimeSnapshot?.pendingPermissions[0] ?? null
+  const topQuestion = runtimeSnapshot?.pendingQuestions[0] ?? null
+  const topAttention = topPermission ?? topQuestion
+  const showAttentionBubble = Boolean(topAttention) && !taskPanel
   const showUpdateBubble = updateStatus.state === 'available'
     || updateStatus.state === 'downloading'
     || updateStatus.state === 'downloaded'
@@ -186,6 +223,12 @@ export function FloatingBall(): React.JSX.Element {
   }, [taskPanel?.phase])
 
   useEffect(() => {
+    if (runtimeSnapshot) {
+      setStatusFile(runtimeSnapshot)
+    }
+  }, [runtimeSnapshot])
+
+  useEffect(() => {
     let disposed = false
 
     window.electronAPI.getCurrentAgentStatus()
@@ -205,13 +248,7 @@ export function FloatingBall(): React.JSX.Element {
     })
 
     const unsubscribeAgentEvent = window.electronAPI.onAgentEvent((event: PetAgentEvent) => {
-      if (event.type === 'task-complete') {
-        setMoodFor('celebrate', 3600)
-        showToast('success', event.task?.sessionTitle ? `${event.task.sessionTitle} 已完成` : '任务已完成')
-      } else if (event.type === 'task-error') {
-        setMoodFor('angry', 3600)
-        showToast('error', event.message || '任务执行失败')
-      } else if (event.type === 'needs-attention') {
+      if (event.type === 'needs-attention') {
         setMoodFor('surprised', 3200)
         showToast('attention', event.message || '需要你的处理')
       }
@@ -250,6 +287,14 @@ export function FloatingBall(): React.JSX.Element {
           error: success ? undefined : error,
         }
       })
+
+      if (success) {
+        setMoodFor('celebrate', 3600)
+        showToast('success', '任务已完成')
+      } else {
+        setMoodFor('angry', 3600)
+        showToast('error', error || '任务执行失败')
+      }
     })
 
     return () => {
@@ -277,6 +322,7 @@ export function FloatingBall(): React.JSX.Element {
         380,
         BASE_WINDOW_HEIGHT
           + (toast ? 60 : 0)
+          + (showAttentionBubble ? 88 : 0)
           + (isHovered && activeTasks.length > 0 ? Math.min(120, activeTasks.length * 52) : 0)
           + (showUpdateBubble ? 48 : 0),
       )
@@ -285,7 +331,21 @@ export function FloatingBall(): React.JSX.Element {
       taskPanel ? EXPANDED_WINDOW_WIDTH : BASE_WINDOW_WIDTH,
       overlayHeight + WINDOW_PADDING * 2,
     )
-  }, [activeTasks.length, isHovered, showUpdateBubble, taskPanel, toast])
+  }, [activeTasks.length, isHovered, showAttentionBubble, showUpdateBubble, taskPanel, toast])
+
+  const handleOpenAgentTab = useCallback(async () => {
+    await window.electronAPI.openMainWindowTab('agent')
+  }, [])
+
+  const handleQuickApprove = useCallback(async () => {
+    if (!topPermission) return
+    await window.electronAPI.approveAgentPermission(topPermission.requestId)
+  }, [topPermission])
+
+  const handleQuickDeny = useCallback(async () => {
+    if (!topPermission) return
+    await window.electronAPI.denyAgentPermission(topPermission.requestId)
+  }, [topPermission])
 
   useEffect(() => {
     if (taskPanel || transientMood || isDragging) return
@@ -599,6 +659,34 @@ export function FloatingBall(): React.JSX.Element {
         {toast && (
           <div className={`pet-toast pet-toast--${toast.kind}`}>
             {toast.text}
+          </div>
+        )}
+
+        {showAttentionBubble && topAttention && (
+          <div className="attention-bubble">
+            <div className="attention-bubble__title">
+              {topPermission ? 'Permission Request' : 'Question Waiting'}
+            </div>
+            <div className="attention-bubble__text">
+              {topPermission
+                ? `${formatAgentLabel(topPermission.source)} wants ${topPermission.toolName}`
+                : topQuestion?.question}
+            </div>
+            <div className="attention-bubble__actions">
+              {topPermission && (
+                <>
+                  <button type="button" className="attention-bubble__button" onClick={() => { void handleQuickApprove() }}>
+                    Allow
+                  </button>
+                  <button type="button" className="attention-bubble__button attention-bubble__button--secondary" onClick={() => { void handleQuickDeny() }}>
+                    Deny
+                  </button>
+                </>
+              )}
+              <button type="button" className="attention-bubble__button attention-bubble__button--secondary" onClick={() => { void handleOpenAgentTab() }}>
+                Open Agent
+              </button>
+            </div>
           </div>
         )}
 

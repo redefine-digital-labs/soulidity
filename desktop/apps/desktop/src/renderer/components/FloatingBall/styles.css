@@ -68,11 +68,59 @@ body,
 }
 
 .pet-toast,
+.attention-bubble,
 .task-tooltip,
 .task-panel,
 .drop-overlay__card {
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+}
+
+.attention-bubble {
+  align-self: center;
+  width: min(340px, 100%);
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(42, 31, 10, 0.92);
+  border: 1px solid rgba(255, 196, 112, 0.24);
+  color: #fff7db;
+  box-shadow: 0 18px 34px rgba(4, 8, 18, 0.34);
+  pointer-events: auto;
+}
+
+.attention-bubble__title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 241, 211, 0.72);
+}
+
+.attention-bubble__text {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #fff7db;
+}
+
+.attention-bubble__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.attention-bubble__button {
+  border: none;
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #f8d66d, #f59e0b);
+  color: #241308;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attention-bubble__button--secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff7db;
 }
 
 .pet-toast {

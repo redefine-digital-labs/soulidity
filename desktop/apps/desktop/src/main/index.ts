@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import Store from 'electron-store'
 import { autoUpdater } from 'electron-updater'
 import {
@@ -11,16 +11,20 @@ import {
 } from '@soulidity/backend'
 import {
   CLI_TERMINAL_GRACE_MS,
+  createAgentStatusSignature,
   deriveAggregateStatus,
   derivePetAgentEvents,
+  toAgentStatusFile,
   type AgentStatusFile,
+  type AgentRuntimeSnapshot,
   type ExtractSoulDraft,
   type MoodSnapshot,
   type PetUpdateStatus,
   type SessionScanResult,
   type ScanProgress,
+  type SupportedAgentSource,
 } from '@soulidity/shared'
-import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus } from './status-watcher'
+import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus, publishAgentStatus } from './status-watcher'
 import { startAgentMonitor, stopAgentMonitor } from './agent-monitor'
 import { generateAgentKeypair, loadAgentKeypair, exportAgentAddress, getSecretStorageStatus } from './agent-wallet'
 import { executeTask, cancelTask, getActiveTaskIds, shutdownAllTasks } from './task-executor'
@@ -35,6 +39,9 @@ import { scanSessions } from './soul-extraction/session-scanner'
 import { buildUpdateErrorStatus, isMissingLatestReleaseAssetError, toUpdateErrorMessage } from './update-errors'
 import { getDesktopWebBaseUrl, readDesktopJsonResponse } from './web-api'
 import { validateOpenExternalUrl } from './external-url'
+import { AgentRuntimeController, createUnixSocketTransportServer, type UnixSocketTransportServerHandle } from './agent-runtime'
+import { AgentRuntimeHookManager, getDefaultRuntimeSocketPath } from './agent-runtime-hooks'
+import { createCompatMirrorWriter } from './compat-mirror-writer'
 
 // ── electron-store 替代手写 config ──────────────────────────
 const store = new Store({ name: 'soulidity-settings' })
@@ -50,6 +57,15 @@ let currentPetSize = 120
 let lastAgentStatus: AgentStatusFile | null = null
 let currentUpdateStatus: PetUpdateStatus = { state: 'idle' }
 let moodGraceTimer: ReturnType<typeof setTimeout> | null = null
+let currentRuntimeSnapshot: AgentRuntimeSnapshot | null = null
+let runtimeCompatStatus: AgentStatusFile | null = null
+let monitorFallbackStatus: AgentStatusFile | null = null
+let compatMirrorSignature: string | null = null
+let publishedStatusSignature: string | null = null
+let runtimeController: AgentRuntimeController | null = null
+let runtimeTransportServer: UnixSocketTransportServerHandle | null = null
+let runtimeHookManager: AgentRuntimeHookManager | null = null
+const compatMirrorWriter = createCompatMirrorWriter({ write: writeCompatMirrorNow, delayMs: 200 })
 
 function broadcastToAllWindows(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -153,6 +169,108 @@ function resolveDataDir(): string {
     return join(app.getPath('userData'), 'data')
   }
   return join(__dirname, '..', '..', '..', '..', 'data')
+}
+
+function resolveHookResourcesDir(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'hooks')
+  }
+  return join(__dirname, '..', '..', 'resources', 'hooks')
+}
+
+function resolveCompatMirrorPath(): string {
+  return join(app.getPath('home'), '.soulidity', 'agent-status.json')
+}
+
+function writeCompatMirrorNow(status: AgentStatusFile): void {
+  const targetPath = resolveCompatMirrorPath()
+  const serialized = `${JSON.stringify(status, null, 2)}\n`
+  if (serialized === compatMirrorSignature) return
+  compatMirrorSignature = serialized
+
+  try {
+    const targetDir = join(app.getPath('home'), '.soulidity')
+    const tmpPath = `${targetPath}.${process.pid}.tmp`
+    mkdirSync(targetDir, { recursive: true })
+    writeFileSync(tmpPath, serialized, 'utf8')
+    renameSync(tmpPath, targetPath)
+  } catch (error) {
+    console.warn('[main] failed to write agent compat mirror:', error)
+  }
+}
+
+function mergeAgentStatuses(
+  runtimeStatus: AgentStatusFile | null,
+  monitorStatus: AgentStatusFile | null,
+): AgentStatusFile | null {
+  if (!runtimeStatus && !monitorStatus) return null
+
+  const sessions = {
+    ...(runtimeStatus?.sessions ?? {}),
+  }
+
+  if (monitorStatus) {
+    for (const [sessionId, session] of Object.entries(monitorStatus.sessions)) {
+      if (session.source === 'monitor') {
+        sessions[sessionId] = session
+      }
+    }
+  }
+
+  return {
+    version: 1,
+    lastUpdated: Date.now(),
+    sessions,
+  }
+}
+
+function notifyCliStatus(status: AgentStatusFile): void {
+  const signature = createAgentStatusSignature(status)
+  if (signature === publishedStatusSignature) return
+  publishedStatusSignature = signature
+
+  publishAgentStatus(status)
+
+  const now = Date.now()
+  const agentEvents = derivePetAgentEvents(lastAgentStatus, status, {
+    now,
+    terminalGraceMs: CLI_TERMINAL_GRACE_MS,
+  })
+  lastAgentStatus = status
+
+  for (const event of agentEvents) {
+    broadcastToAllWindows('agent-event', event)
+  }
+
+  if (moodGraceTimer) {
+    clearTimeout(moodGraceTimer)
+    moodGraceTimer = null
+  }
+
+  const aggregateStatus = deriveAggregateStatus(status, {
+    now,
+    terminalGraceMs: CLI_TERMINAL_GRACE_MS,
+  })
+  moodService.notifyCliStatusChanged(aggregateStatus)
+
+  if (aggregateStatus === 'completed' || aggregateStatus === 'error') {
+    moodGraceTimer = setTimeout(() => {
+      moodGraceTimer = null
+      const currentStatus = getCurrentAgentStatus()
+      if (currentStatus) {
+        moodService.notifyCliStatusChanged(deriveAggregateStatus(currentStatus, {
+          now: Date.now(),
+          terminalGraceMs: CLI_TERMINAL_GRACE_MS,
+        }))
+      }
+    }, CLI_TERMINAL_GRACE_MS)
+  }
+}
+
+function publishMergedAgentStatus(): void {
+  const merged = mergeAgentStatuses(runtimeCompatStatus, monitorFallbackStatus)
+  if (!merged) return
+  notifyCliStatus(merged)
 }
 
 // ── 悬浮球窗口 ────────────────────────────────────────────
@@ -420,6 +538,25 @@ function createMainWindow(): void {
   }
 }
 
+function openMainWindowTab(tab?: 'settings' | 'library' | 'agent' | 'extract'): void {
+  createMainWindow()
+  if (!mainWin) return
+
+  const sendNavigation = () => {
+    if (tab) {
+      mainWin?.webContents.send('desktop:navigate-tab', { tab })
+    }
+    mainWin?.show()
+    mainWin?.focus()
+  }
+
+  if (mainWin.webContents.isLoadingMainFrame()) {
+    mainWin.webContents.once('did-finish-load', sendNavigation)
+  } else {
+    sendNavigation()
+  }
+}
+
 function hidePetWindow(): void {
   petHoverLock = false
   petContextMenuOpen = false
@@ -451,6 +588,10 @@ ipcMain.on('contextmenu:show', () => {
 
 ipcMain.on('window:close', (event) => {
   BrowserWindow.fromWebContents(event.sender)?.close()
+})
+
+ipcMain.handle('window:open-main-tab', (_event, tab?: 'settings' | 'library' | 'agent' | 'extract') => {
+  openMainWindowTab(tab)
 })
 
 // ── 配置管理 IPC ──────────────────────────────────────────
@@ -723,6 +864,50 @@ ipcMain.handle('shell:open-external', async (_event, url: string) => {
 
 // ── Agent wallet + status watcher IPC ──────────────────────
 ipcMain.handle('get-current-agent-status', () => getCurrentAgentStatus())
+ipcMain.handle('get-current-agent-runtime', () => currentRuntimeSnapshot ?? runtimeController?.getSnapshot() ?? null)
+ipcMain.handle('agent:approve-permission', (_event, requestId: string, allowAlways?: boolean) =>
+  runtimeController?.approvePermission(requestId, Boolean(allowAlways)) ?? false)
+ipcMain.handle('agent:deny-permission', (_event, requestId: string) =>
+  runtimeController?.denyPermission(requestId) ?? false)
+ipcMain.handle('agent:answer-question', (_event, requestId: string, answer: string) =>
+  runtimeController?.answerQuestion(requestId, answer) ?? false)
+ipcMain.handle('agent:skip-question', (_event, requestId: string) =>
+  runtimeController?.skipQuestion(requestId) ?? false)
+ipcMain.handle('hooks:get-install-status', () => runtimeHookManager?.getStatuses() ?? [])
+function runHookManagerAction(
+  action: 'install' | 'repair' | 'uninstall',
+  targets?: SupportedAgentSource[],
+) {
+  try {
+    const statuses = action === 'install'
+      ? runtimeHookManager?.installHooks(targets) ?? []
+      : action === 'repair'
+        ? runtimeHookManager?.repairHooks(targets) ?? []
+        : runtimeHookManager?.uninstallHooks(targets) ?? []
+    runtimeController?.setHooks(statuses)
+    return statuses
+  } catch (error) {
+    dialog.showErrorBox(
+      'Hook Action Failed',
+      error instanceof Error ? error.message : String(error),
+    )
+    const statuses = runtimeHookManager?.getStatuses() ?? []
+    runtimeController?.setHooks(statuses)
+    return statuses
+  }
+}
+ipcMain.handle('hooks:install', (_event, targets?: SupportedAgentSource[]) => {
+  const statuses = runHookManagerAction('install', targets)
+  return statuses
+})
+ipcMain.handle('hooks:repair', (_event, targets?: SupportedAgentSource[]) => {
+  const statuses = runHookManagerAction('repair', targets)
+  return statuses
+})
+ipcMain.handle('hooks:uninstall', (_event, targets?: SupportedAgentSource[]) => {
+  const statuses = runHookManagerAction('uninstall', targets)
+  return statuses
+})
 ipcMain.handle('generate-agent-keypair', () => generateAgentKeypair())
 ipcMain.handle('load-agent-keypair', () => loadAgentKeypair())
 ipcMain.handle('export-agent-address', () => exportAgentAddress())
@@ -812,46 +997,49 @@ app.whenReady().then(async () => {
     return
   }
 
+  runtimeController = new AgentRuntimeController()
+  runtimeHookManager = new AgentRuntimeHookManager({
+    resourcesDir: resolveHookResourcesDir(),
+  })
+  runtimeController.setHooks(runtimeHookManager.getStatuses())
+  runtimeController.subscribe((snapshot) => {
+    currentRuntimeSnapshot = snapshot
+    runtimeCompatStatus = toAgentStatusFile(snapshot)
+    compatMirrorWriter.schedule(runtimeCompatStatus)
+    broadcastToAllWindows('agent-runtime-changed', snapshot)
+    publishMergedAgentStatus()
+  })
+
+  try {
+    runtimeTransportServer = await createUnixSocketTransportServer(
+      runtimeController,
+      getDefaultRuntimeSocketPath(),
+    )
+  } catch (error) {
+    console.error('[main] failed to start agent runtime transport:', error)
+    runtimeController.setTransportStatus({
+      status: 'error',
+      mode: process.platform === 'win32' ? 'disabled' : 'unix-socket',
+      endpoint: getDefaultRuntimeSocketPath(),
+      lastError: error instanceof Error ? error.message : String(error),
+    })
+  }
+
   startStatusWatcher((status) => {
-    const now = Date.now()
-    const agentEvents = derivePetAgentEvents(lastAgentStatus, status, {
-      now,
-      terminalGraceMs: CLI_TERMINAL_GRACE_MS,
-    })
-    lastAgentStatus = status
+    const serialized = `${JSON.stringify(status, null, 2)}\n`
+    if (serialized === compatMirrorSignature) return
 
-    for (const event of agentEvents) {
-      broadcastToAllWindows('agent-event', event)
-    }
-
-    // Clear any pending grace timer — a new status update supersedes it
-    if (moodGraceTimer) {
-      clearTimeout(moodGraceTimer)
-      moodGraceTimer = null
-    }
-
-    const aggregateStatus = deriveAggregateStatus(status, {
-      now,
-      terminalGraceMs: CLI_TERMINAL_GRACE_MS,
-    })
-    moodService.notifyCliStatusChanged(aggregateStatus)
-
-    // Schedule post-grace re-evaluation for terminal states so the mood
-    // returns to idle once the grace window expires (mirrors useCliStatus)
-    if (aggregateStatus === 'completed' || aggregateStatus === 'error') {
-      moodGraceTimer = setTimeout(() => {
-        moodGraceTimer = null
-        const currentStatus = getCurrentAgentStatus()
-        if (currentStatus) {
-          moodService.notifyCliStatusChanged(deriveAggregateStatus(currentStatus, {
-            now: Date.now(),
-            terminalGraceMs: CLI_TERMINAL_GRACE_MS,
-          }))
-        }
-      }, CLI_TERMINAL_GRACE_MS)
+    const hasMonitorSessions = Object.values(status.sessions).some((session) => session.source === 'monitor')
+    monitorFallbackStatus = hasMonitorSessions ? status : monitorFallbackStatus
+    if (hasMonitorSessions) {
+      publishMergedAgentStatus()
     }
   })
-  startAgentMonitor()
+
+  startAgentMonitor((status) => {
+    monitorFallbackStatus = status
+    publishMergedAgentStatus()
+  })
   generateAgentKeypair().catch((err) => console.warn('Agent keypair generation deferred:', err.message))
 
   createBallWindow()
@@ -866,6 +1054,7 @@ app.whenReady().then(async () => {
 let isQuitting = false
 app.on('before-quit', (event) => {
   if (isQuitting) return
+  compatMirrorWriter.flush()
   stopAgentMonitor()
   stopStatusWatcher()
   shutdownAllTasks()
@@ -885,7 +1074,17 @@ app.on('before-quit', (event) => {
 
   sealDay()
     .catch((err) => console.error('[main] sealDay error:', err))
-    .then(() => shutdownServices())
+    .then(async () => {
+      if (runtimeTransportServer) {
+        try {
+          await runtimeTransportServer.stop()
+        } catch (error) {
+          console.warn('[main] failed to stop runtime transport:', error)
+        }
+        runtimeTransportServer = null
+      }
+      await shutdownServices()
+    })
     .finally(() => {
       clearTimeout(exitTimer)
       app.exit(0)

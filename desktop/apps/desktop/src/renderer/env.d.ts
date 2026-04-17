@@ -1,12 +1,15 @@
 export {}
 
 import type {
+  AgentRuntimeSnapshot,
+  HookInstallStatus,
   ExtractSoulDraft,
   PetAgentEvent,
   PetUpdateStatus,
   SessionScanResult,
   SoulProfile,
   ScanProgress,
+  SupportedAgentSource,
 } from '@soulidity/shared'
 
 declare global {
@@ -15,6 +18,8 @@ declare global {
       // ── 基础 ──
       ping: () => Promise<string>
       closeWindow: () => void
+      openMainWindowTab: (tab?: 'settings' | 'library' | 'agent' | 'extract') => Promise<void>
+      onNavigateTab: (callback: (detail: { tab?: string }) => void) => () => void
       getConfig: () => Promise<Record<string, unknown>>
       setConfig: (config: Record<string, unknown>) => Promise<void>
 
@@ -37,8 +42,18 @@ declare global {
 
       // ── Status watcher ──
       onAgentStatusChanged: (callback: (status: unknown) => void) => () => void
+      onAgentRuntimeChanged: (callback: (snapshot: AgentRuntimeSnapshot) => void) => () => void
       onAgentEvent: (callback: (event: PetAgentEvent) => void) => () => void
       getCurrentAgentStatus: () => Promise<unknown>
+      getCurrentAgentRuntime: () => Promise<AgentRuntimeSnapshot | null>
+      approveAgentPermission: (requestId: string, allowAlways?: boolean) => Promise<boolean>
+      denyAgentPermission: (requestId: string) => Promise<boolean>
+      answerAgentQuestion: (requestId: string, answer: string) => Promise<boolean>
+      skipAgentQuestion: (requestId: string) => Promise<boolean>
+      getHookInstallStatus: () => Promise<HookInstallStatus[]>
+      installHooks: (targets?: SupportedAgentSource[]) => Promise<HookInstallStatus[]>
+      repairHooks: (targets?: SupportedAgentSource[]) => Promise<HookInstallStatus[]>
+      uninstallHooks: (targets?: SupportedAgentSource[]) => Promise<HookInstallStatus[]>
 
       // ── Agent wallet ──
       generateAgentKeypair: () => Promise<unknown>

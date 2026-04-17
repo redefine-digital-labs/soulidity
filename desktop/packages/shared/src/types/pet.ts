@@ -3,12 +3,18 @@ import {
   type AgentSession,
   type AgentStatusFile,
 } from './cli-status'
+import {
+  isAgentRuntimeSnapshot,
+  toAgentStatusFile,
+  type AgentRuntimeSnapshot,
+} from './agent-runtime'
 
 export type PetTaskAgent = AgentSession['clientType'] | 'claude' | 'codex'
 
 export interface PetTaskSummary {
   agent: PetTaskAgent
   sessionId?: string
+  taskId?: string
   sessionTitle?: string
   currentAction?: string
   workingDirectory?: string
@@ -50,6 +56,16 @@ export interface PetTaskOptions {
   terminalGraceMs?: number
 }
 
+type AgentStatusInput = AgentStatusFile | AgentRuntimeSnapshot | null
+
+function normalizeStatusFile(input: AgentStatusInput): AgentStatusFile | null {
+  if (!input) return null
+  if (isAgentRuntimeSnapshot(input)) {
+    return toAgentStatusFile(input)
+  }
+  return input
+}
+
 function isVisibleSession(
   session: AgentSession,
   now: number,
@@ -82,6 +98,7 @@ export function toPetTaskSummary(session: AgentSession): PetTaskSummary {
   return {
     agent: session.clientType,
     sessionId: session.sessionId,
+    taskId: session.taskId,
     sessionTitle: session.sessionTitle,
     currentAction: formatCurrentAction(session),
     workingDirectory: session.workingDirectory,
@@ -90,31 +107,34 @@ export function toPetTaskSummary(session: AgentSession): PetTaskSummary {
 }
 
 export function getVisiblePetTasks(
-  file: AgentStatusFile | null,
+  file: AgentStatusInput,
   options: PetTaskOptions = {},
 ): PetTaskSummary[] {
-  if (!file) return []
+  const normalized = normalizeStatusFile(file)
+  if (!normalized) return []
 
   const now = options.now ?? Date.now()
   const terminalGraceMs = options.terminalGraceMs ?? 0
 
-  return Object.values(deduplicateAgentSessions(file.sessions))
+  return Object.values(deduplicateAgentSessions(normalized.sessions))
     .filter((session) => isVisibleSession(session, now, terminalGraceMs) && isPetVisibleStatus(session.status))
     .map((session) => toPetTaskSummary(session))
     .sort((a, b) => b.timestamp - a.timestamp)
 }
 
 export function derivePetAgentEvents(
-  previous: AgentStatusFile | null,
-  next: AgentStatusFile | null,
+  previous: AgentStatusInput,
+  next: AgentStatusInput,
   options: PetTaskOptions = {},
 ): PetAgentEvent[] {
-  if (!next) return []
+  const previousFile = normalizeStatusFile(previous)
+  const nextFile = normalizeStatusFile(next)
+  if (!nextFile) return []
 
   const now = options.now ?? Date.now()
   const terminalGraceMs = options.terminalGraceMs ?? 0
-  const previousSessions = previous ? deduplicateAgentSessions(previous.sessions) : {}
-  const nextSessions = deduplicateAgentSessions(next.sessions)
+  const previousSessions = previousFile ? deduplicateAgentSessions(previousFile.sessions) : {}
+  const nextSessions = deduplicateAgentSessions(nextFile.sessions)
   const events: PetAgentEvent[] = []
 
   for (const [sessionId, session] of Object.entries(nextSessions)) {
@@ -152,12 +172,12 @@ export function derivePetAgentEvents(
     }
   }
 
-  const previousTasks = getVisiblePetTasks(previous, { now, terminalGraceMs })
-  const nextTasks = getVisiblePetTasks(next, { now, terminalGraceMs })
+  const previousTasks = getVisiblePetTasks(previousFile, { now, terminalGraceMs })
+  const nextTasks = getVisiblePetTasks(nextFile, { now, terminalGraceMs })
   if (previousTasks.length > 0 && nextTasks.length === 0) {
     events.push({
       type: 'agent-idle',
-      timestamp: next.lastUpdated || now,
+      timestamp: nextFile.lastUpdated || now,
     })
   }
 

@@ -10,7 +10,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import * as path from 'node:path'
 import { BrowserWindow } from 'electron'
-import type { PetAgentEvent, PetTaskSummary } from '@soulidity/shared'
 
 let taskCounter = 0
 const activeProcesses = new Map<string, ChildProcess>()
@@ -38,29 +37,6 @@ function broadcastToWindows(channel: string, data: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(channel, data)
   }
-}
-
-function truncateInstruction(instruction: string): string {
-  const singleLine = instruction.replace(/\s+/g, ' ').trim()
-  return singleLine.length > 72 ? `${singleLine.slice(0, 69)}...` : singleLine
-}
-
-function toPetTaskSummary(taskId: string): PetTaskSummary | undefined {
-  const meta = activeTaskMeta.get(taskId)
-  if (!meta) return undefined
-
-  return {
-    agent: meta.agent,
-    sessionId: taskId,
-    sessionTitle: truncateInstruction(meta.instruction),
-    currentAction: `Running ${meta.agent}`,
-    workingDirectory: meta.cwd,
-    timestamp: Date.now(),
-  }
-}
-
-function broadcastAgentEvent(event: PetAgentEvent): void {
-  broadcastToWindows('agent-event', event)
 }
 
 function resolveCliCommand(agent: TaskAgent, prompt: string): { cmd: string; args: string[] } {
@@ -102,7 +78,7 @@ export function executeTask(payload: TaskPayload): TaskStartResult {
   try {
     const child = spawn(cli.cmd, args, {
       cwd: spawnCwd,
-      env: { ...process.env },
+      env: { ...process.env, SOULIDITY_TASK_ID: taskId },
       stdio: ['ignore', 'pipe', 'pipe'],
       // Windows npm-installed CLIs use .cmd shims that require a shell
       shell: process.platform === 'win32',
@@ -113,10 +89,6 @@ export function executeTask(payload: TaskPayload): TaskStartResult {
       agent,
       instruction,
       cwd: spawnCwd ?? process.cwd(),
-    })
-    broadcastAgentEvent({
-      type: 'agent-active',
-      task: toPetTaskSummary(taskId),
     })
 
     let buffer = ''
@@ -167,7 +139,6 @@ export function executeTask(payload: TaskPayload): TaskStartResult {
       if (buffer.trim()) {
         broadcastToWindows('task:output', { taskId, text: buffer })
       }
-      const taskSummary = toPetTaskSummary(taskId)
       activeProcesses.delete(taskId)
       activeTaskMeta.delete(taskId)
       broadcastToWindows('task:complete', {
@@ -175,28 +146,15 @@ export function executeTask(payload: TaskPayload): TaskStartResult {
         success: code === 0,
         error: code !== 0 ? `Process exited with code ${code}` : undefined,
       })
-      broadcastAgentEvent({
-        type: code === 0 ? 'task-complete' : 'task-error',
-        task: taskSummary,
-        message: code === 0 ? 'Task completed.' : `Process exited with code ${code}`,
-        timestamp: Date.now(),
-      })
     })
 
     child.on('error', (err) => {
-      const taskSummary = toPetTaskSummary(taskId)
       activeProcesses.delete(taskId)
       activeTaskMeta.delete(taskId)
       broadcastToWindows('task:complete', {
         taskId,
         success: false,
         error: err.message,
-      })
-      broadcastAgentEvent({
-        type: 'task-error',
-        task: taskSummary,
-        message: err.message,
-        timestamp: Date.now(),
       })
     })
 

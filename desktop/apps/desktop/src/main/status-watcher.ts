@@ -4,6 +4,7 @@ import * as os from 'node:os'
 import { BrowserWindow } from 'electron'
 import { watch as chokidarWatch, type FSWatcher as ChokidarWatcher } from 'chokidar'
 import {
+  createAgentStatusSignature,
   deduplicateAgentSessions,
   parseAgentStatusFile,
   type AgentStatusFile,
@@ -14,6 +15,7 @@ const STATUS_FILE = path.join(SOULIDITY_DIR, 'agent-status.json')
 
 let watcher: ChokidarWatcher | null = null
 let currentStatus: AgentStatusFile | null = null
+let currentStatusSignature: string | null = null
 
 function ensureDir() {
   fs.mkdirSync(SOULIDITY_DIR, { recursive: true })
@@ -42,6 +44,22 @@ function broadcastToWindows(status: AgentStatusFile) {
   }
 }
 
+export function publishAgentStatus(
+  status: AgentStatusFile | null,
+  options?: { broadcast?: (status: AgentStatusFile) => void },
+): void {
+  const sanitized = sanitizeStatus(status)
+  if (!sanitized) return
+
+  const nextSignature = createAgentStatusSignature(sanitized)
+  currentStatus = sanitized
+
+  if (currentStatusSignature === nextSignature) return
+
+  currentStatusSignature = nextSignature
+  ;(options?.broadcast ?? broadcastToWindows)(sanitized)
+}
+
 export function getCurrentAgentStatus(): AgentStatusFile | null {
   return sanitizeStatus(currentStatus)
 }
@@ -49,6 +67,7 @@ export function getCurrentAgentStatus(): AgentStatusFile | null {
 export function startStatusWatcher(onStatusChanged?: (status: AgentStatusFile) => void) {
   ensureDir()
   currentStatus = sanitizeStatus(readCurrent())
+  currentStatusSignature = currentStatus ? createAgentStatusSignature(currentStatus) : null
   if (currentStatus) {
     onStatusChanged?.(currentStatus)
   }
@@ -60,11 +79,15 @@ export function startStatusWatcher(onStatusChanged?: (status: AgentStatusFile) =
     })
     const handleFileUpdate = () => {
       const parsed = sanitizeStatus(readCurrent())
-      if (parsed) {
-        currentStatus = parsed
-        onStatusChanged?.(parsed)
-        broadcastToWindows(parsed)
-      }
+      if (!parsed) return
+
+      const nextSignature = createAgentStatusSignature(parsed)
+      currentStatus = parsed
+      if (currentStatusSignature === nextSignature) return
+
+      currentStatusSignature = nextSignature
+      if (onStatusChanged) onStatusChanged(parsed)
+      else broadcastToWindows(parsed)
     }
     watcher.on('add', handleFileUpdate)
     watcher.on('change', handleFileUpdate)

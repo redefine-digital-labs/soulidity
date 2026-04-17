@@ -279,6 +279,239 @@
   color: rgba(240, 240, 240, 0.35);
 }
 
+.agent-console {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.agent-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-runtime-stat,
+.agent-detail-card,
+.agent-session-row,
+.agent-hook-row {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(50, 50, 56, 0.5);
+}
+
+.agent-runtime-stat {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-runtime-stat strong {
+  font-size: 20px;
+  color: #f0f0f0;
+}
+
+.agent-runtime-stat span:last-child {
+  font-size: 12px;
+  color: rgba(240, 240, 240, 0.55);
+  word-break: break-all;
+}
+
+.agent-runtime-stat__label,
+.agent-detail-grid__label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(240, 240, 240, 0.45);
+}
+
+.agent-console__body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.agent-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-session-list__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(240, 240, 240, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.agent-session-row {
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.agent-session-row--active {
+  border-color: rgba(255, 148, 65, 0.38);
+  box-shadow: 0 0 0 1px rgba(255, 148, 65, 0.16);
+}
+
+.agent-session-row__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.agent-session-row__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f0f0f0;
+  line-height: 1.4;
+}
+
+.agent-session-row__meta,
+.agent-detail-card__subtitle,
+.agent-hook-row__meta,
+.agent-message-row small,
+.agent-timeline-row small {
+  font-size: 11px;
+  color: rgba(240, 240, 240, 0.42);
+}
+
+.agent-session-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.agent-detail-card {
+  padding: 14px;
+}
+
+.agent-detail-card--attention {
+  border-color: rgba(255, 196, 112, 0.26);
+  background: rgba(64, 48, 16, 0.32);
+}
+
+.agent-detail-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-detail-card__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f0f0f0;
+}
+
+.agent-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.agent-detail-grid__value {
+  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(240, 240, 240, 0.84);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.agent-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.agent-option-list,
+.agent-question-form,
+.agent-detail-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.agent-option-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f0f0f0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-option-button small {
+  color: rgba(240, 240, 240, 0.55);
+}
+
+.agent-question-form__textarea {
+  min-height: 88px;
+  margin-top: 0;
+}
+
+.agent-detail-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agent-timeline-row,
+.agent-message-row,
+.agent-hook-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-timeline-row + .agent-timeline-row,
+.agent-message-row + .agent-message-row {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-message-row span,
+.agent-timeline-row span {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(240, 240, 240, 0.82);
+}
+
+.agent-hook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-hook-row {
+  padding: 12px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-hook-row__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f0f0f0;
+}
+
 /* ── Library Tab 样式 ────────────────────────────── */
 
 .library-loading {

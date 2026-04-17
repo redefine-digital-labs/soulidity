@@ -15,8 +15,9 @@ import { exec } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
-import type { AgentSession, AgentStatusFile, CliAgentStatus } from '@soulidity/shared'
+import type { AgentSession, AgentStatusFile, CliAgentStatus, HookInstallStatus, SupportedAgentSource } from '@soulidity/shared'
 import type { AgentConfig } from '@soulidity/shared'
+import { getRuntimeHookStatuses } from './agent-runtime-hooks'
 
 // ── 声明式 Agent 配置 ──────────────────────────────────────
 const AGENT_CONFIGS: readonly AgentConfig[] = [
@@ -48,8 +49,6 @@ const AGENT_CONFIGS: readonly AgentConfig[] = [
 
 // ── Constants ────────────────────────────────────────────────
 
-const SOULIDITY_DIR = path.join(os.homedir(), '.soulidity')
-const STATUS_FILE = path.join(SOULIDITY_DIR, 'agent-status.json')
 const PROBE_INTERVAL_MS = 5_000
 const HOOK_CHECK_INTERVAL_MS = 60_000
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -62,6 +61,8 @@ type ClientType = AgentSession['clientType']
 
 let probeTimer: ReturnType<typeof setInterval> | null = null
 let hookCheckTimer: ReturnType<typeof setInterval> | null = null
+let currentStatus: AgentStatusFile = { version: 1, lastUpdated: Date.now(), sessions: {} }
+let statusSink: ((status: AgentStatusFile) => void) | null = null
 
 /** PIDs we are currently tracking, keyed by sessionId */
 const trackedPids = new Map<string, { pid: number; clientType: ClientType }>()
@@ -71,73 +72,40 @@ let hookCoveredTypes = new Set<ClientType>()
 
 // ── HookDetector ─────────────────────────────────────────────
 
-/**
- * Check if the Claude Code hook is installed by reading ~/.claude/settings.json.
- * Returns true if any hook command contains "soulidity".
- */
-function isClaudeHookInstalled(): boolean {
-  try {
-    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json')
-    const raw = fs.readFileSync(settingsPath, 'utf-8')
-    const settings = JSON.parse(raw)
-
-    // settings.hooks is an object with event keys, each containing an array of hook configs
-    if (typeof settings?.hooks !== 'object' || settings.hooks === null) return false
-
-    for (const hooks of Object.values(settings.hooks)) {
-      if (!Array.isArray(hooks)) continue
-      for (const hook of hooks) {
-        const cmd = typeof hook === 'string' ? hook : hook?.command
-        if (typeof cmd === 'string' && cmd.toLowerCase().includes('soulidity')) {
-          return true
-        }
-      }
-    }
-  } catch {
-    // File doesn't exist or can't be parsed — assume no hook
+function clientTypeForHookSource(source: SupportedAgentSource): ClientType | null {
+  switch (source) {
+    case 'claude':
+      return 'claude-code'
+    case 'codex':
+      return 'codex'
+    case 'opencode':
+      return 'opencode'
+    default:
+      return null
   }
-  return false
+}
+
+export function getHookCoveredTypesFromStatuses(statuses: HookInstallStatus[]): Set<ClientType> {
+  const covered = new Set<ClientType>()
+  for (const status of statuses) {
+    if (!status.installed || !status.healthy) continue
+    const clientType = clientTypeForHookSource(status.source)
+    if (clientType) {
+      covered.add(clientType)
+    }
+  }
+  return covered
 }
 
 /**
- * Refresh the set of clientTypes that have hooks installed.
- * Currently only Claude Code hooks are detectable; Codex and OpenCode
- * don't have a standard hook config path, so they are never hook-covered.
+ * Refresh the set of clientTypes that have hooks installed and healthy.
+ * Any tracked CLI covered by the runtime hook bridge should be suppressed
+ * from passive monitor registration to avoid duplicate sessions.
  */
 function refreshHookCoverage(): void {
-  const covered = new Set<ClientType>()
-  if (isClaudeHookInstalled()) {
-    covered.add('claude-code')
-  }
-  // Future: add detection for codex/opencode hook configs here
+  const statuses = getRuntimeHookStatuses({ homeDir: os.homedir() })
+  const covered = getHookCoveredTypesFromStatuses(statuses)
   hookCoveredTypes = covered
-}
-
-// ── File I/O ─────────────────────────────────────────────────
-
-function readStatusFile(): AgentStatusFile {
-  try {
-    const raw = fs.readFileSync(STATUS_FILE, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (parsed?.version === 1 && typeof parsed.sessions === 'object') {
-      return parsed as AgentStatusFile
-    }
-  } catch {
-    // Missing or corrupted — start fresh
-  }
-  return { version: 1, lastUpdated: Date.now(), sessions: {} }
-}
-
-/**
- * Atomic write: write to .tmp then rename.
- * Same pattern as the hook scripts to avoid partial reads.
- */
-function writeStatusFile(data: AgentStatusFile): void {
-  fs.mkdirSync(SOULIDITY_DIR, { recursive: true })
-  const tmpPath = STATUS_FILE + '.tmp'
-  data.lastUpdated = Date.now()
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
-  fs.renameSync(tmpPath, STATUS_FILE)
 }
 
 /** Remove monitor sessions older than 24 hours */
@@ -404,8 +372,12 @@ async function runProbe(): Promise<void> {
       }
     }
 
-    // Read existing file, merge changes
-    const data = readStatusFile()
+    // Read existing in-memory state, merge changes
+    const data: AgentStatusFile = {
+      version: 1,
+      lastUpdated: currentStatus.lastUpdated,
+      sessions: { ...currentStatus.sessions },
+    }
     cleanupOldMonitorSessions(data)
 
     const now = Date.now()
@@ -512,7 +484,13 @@ async function runProbe(): Promise<void> {
     }
 
     if (changed) {
-      writeStatusFile(data)
+      data.lastUpdated = now
+      currentStatus = data
+      statusSink?.({
+        version: 1,
+        lastUpdated: data.lastUpdated,
+        sessions: { ...data.sessions },
+      })
     }
   } catch (err) {
     console.warn('[agent-monitor] probe error:', err)
@@ -521,15 +499,18 @@ async function runProbe(): Promise<void> {
 
 // ── Public API ───────────────────────────────────────────────
 
-export function startAgentMonitor(): void {
+export function startAgentMonitor(onStatusChanged?: (status: AgentStatusFile) => void): void {
+  statusSink = onStatusChanged ?? null
+  currentStatus = { version: 1, lastUpdated: Date.now(), sessions: {} }
+
   // Initial hook coverage check
   refreshHookCoverage()
 
   // Run first probe immediately
-  runProbe()
+  void runProbe()
 
   // Schedule recurring probes and hook checks
-  probeTimer = setInterval(() => { runProbe() }, PROBE_INTERVAL_MS)
+  probeTimer = setInterval(() => { void runProbe() }, PROBE_INTERVAL_MS)
   hookCheckTimer = setInterval(refreshHookCoverage, HOOK_CHECK_INTERVAL_MS)
 
   console.log('[agent-monitor] started')
@@ -546,5 +527,7 @@ export function stopAgentMonitor(): void {
   }
   trackedPids.clear()
   logFileStates.clear()
+  currentStatus = { version: 1, lastUpdated: Date.now(), sessions: {} }
+  statusSink = null
   console.log('[agent-monitor] stopped')
 }
