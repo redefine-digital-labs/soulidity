@@ -6,33 +6,72 @@ interface AgentKeypairInfo {
   createdAt: number
 }
 
+const LINK_VERIFICATION_FAILED_MESSAGE = 'Saved desktop link could not be verified. Unlink this device and link again.'
+
 type LinkState =
+  | { phase: 'restoring' }
   | { phase: 'idle' }
   | { phase: 'linking'; userCode: string; deviceCode: string; linkUrl: string; expiresAt: string }
   | { phase: 'confirmed'; accountId: string }
-  | { phase: 'error'; message: string }
+  | { phase: 'error'; message: string; canUnlink?: boolean }
+
+function getRestoredAccountId(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+
+  const profile = (value as Record<string, unknown>).profile
+  if (!profile || typeof profile !== 'object') return null
+
+  const accountId = (profile as Record<string, unknown>).accountId
+  return typeof accountId === 'string' && accountId.trim() ? accountId : null
+}
 
 export function SettingsTab(): React.JSX.Element {
   const [keypair, setKeypair] = useState<AgentKeypairInfo | null>(null)
   const [copied, setCopied] = useState(false)
   const [storageStatus, setStorageStatus] = useState<string>('...')
-  const [linkState, setLinkState] = useState<LinkState>({ phase: 'idle' })
+  const [linkState, setLinkState] = useState<LinkState>({ phase: 'restoring' })
   const [unlinking, setUnlinking] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
     window.electronAPI.loadAgentKeypair().then((kp) => {
       if (kp) setKeypair(kp as AgentKeypairInfo)
     })
     window.electronAPI.getSecretStorageStatus().then((s) => {
       setStorageStatus(s === 'encrypted' ? 'OS Keychain' : s === 'legacy' ? 'JSON (legacy)' : 'Not found')
     })
-    window.electronAPI.getDesktopAuthStatus().then((status) => {
-      if (status.hasToken && status.accountId) {
-        setLinkState({ phase: 'confirmed', accountId: status.accountId })
+
+    void window.electronAPI.getDesktopAuthStatus().then(async (status) => {
+      if (cancelled) return
+
+      if (!status.hasToken) {
+        setLinkState({ phase: 'idle' })
+        return
       }
-    }).catch(() => {})
+
+      try {
+        const me = await window.electronAPI.getDesktopMe()
+        if (cancelled) return
+
+        const restoredAccountId = getRestoredAccountId(me)
+        if (restoredAccountId) {
+          setLinkState({ phase: 'confirmed', accountId: restoredAccountId })
+          return
+        }
+      } catch {
+        if (cancelled) return
+      }
+
+      setLinkState({ phase: 'error', message: LINK_VERIFICATION_FAILED_MESSAGE, canUnlink: true })
+    }).catch(() => {
+      if (cancelled) return
+      setLinkState({ phase: 'idle' })
+    })
+
     return () => {
+      cancelled = true
       if (pollTimerRef.current) clearInterval(pollTimerRef.current)
     }
   }, [])
@@ -159,6 +198,12 @@ export function SettingsTab(): React.JSX.Element {
       <section className="settings-section">
         <h3 className="settings-section__title">Account Link</h3>
 
+        {linkState.phase === 'restoring' && (
+          <div className="link-panel">
+            <p className="link-panel__status">Checking saved link...</p>
+          </div>
+        )}
+
         {linkState.phase === 'idle' && (
           <button
             className="link-button"
@@ -214,9 +259,19 @@ export function SettingsTab(): React.JSX.Element {
         {linkState.phase === 'error' && (
           <div className="link-panel">
             <p className="link-panel__error">{linkState.message}</p>
-            <button className="link-button" onClick={handleStartLink} disabled={!keypair}>
-              Try Again
-            </button>
+            {linkState.canUnlink ? (
+              <button
+                className="link-button link-button--secondary"
+                onClick={() => { void handleUnlink() }}
+                disabled={unlinking}
+              >
+                {unlinking ? 'Unlinking…' : 'Unlink Device'}
+              </button>
+            ) : (
+              <button className="link-button" onClick={handleStartLink} disabled={!keypair}>
+                Try Again
+              </button>
+            )}
           </div>
         )}
       </section>
