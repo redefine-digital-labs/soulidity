@@ -43,6 +43,32 @@ export function SettingsTab(): React.JSX.Element {
   const [linkState, setLinkState] = useState<LinkState>({ phase: 'restoring' })
   const [unlinking, setUnlinking] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const linkSessionNonceRef = useRef(0)
+
+  const stopPolling = useCallback((timer?: ReturnType<typeof setInterval> | null) => {
+    const activeTimer = timer ?? pollTimerRef.current
+    if (!activeTimer) return
+    clearInterval(activeTimer)
+    if (!timer || pollTimerRef.current === activeTimer) {
+      pollTimerRef.current = null
+    }
+  }, [])
+
+  const hydrateConfirmedSuiAddress = useCallback(async (sessionNonce: number, accountId: string) => {
+    try {
+      const me = await window.electronAPI.getDesktopMe()
+      if (linkSessionNonceRef.current !== sessionNonce) return
+
+      const suiAddress = getRestoredIdentity(me)?.suiAddress ?? null
+      setLinkState((current) => (
+        current.phase === 'confirmed' && current.accountId === accountId
+          ? { ...current, suiAddress }
+          : current
+      ))
+    } catch {
+      // accountId is already confirmed; leave Sui address as the initial fallback
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -83,9 +109,10 @@ export function SettingsTab(): React.JSX.Element {
 
     return () => {
       cancelled = true
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+      linkSessionNonceRef.current += 1
+      stopPolling()
     }
-  }, [])
+  }, [stopPolling])
 
   const handleCopyAddress = useCallback(async () => {
     if (!keypair?.address) return
@@ -96,12 +123,16 @@ export function SettingsTab(): React.JSX.Element {
 
   const handleStartLink = useCallback(async () => {
     if (!keypair?.address) return
+    linkSessionNonceRef.current += 1
+    const sessionNonce = linkSessionNonceRef.current
+    stopPolling()
 
     try {
       const [session, linkUrl] = await Promise.all([
         window.electronAPI.deviceStartLink(keypair.address),
         window.electronAPI.deviceGetLinkUrl(),
       ])
+      if (linkSessionNonceRef.current !== sessionNonce) return
 
       setLinkState({
         phase: 'linking',
@@ -112,36 +143,38 @@ export function SettingsTab(): React.JSX.Element {
       })
 
       // Start polling
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current)
-      pollTimerRef.current = setInterval(async () => {
+      const timer = setInterval(async () => {
         try {
           const poll = await window.electronAPI.devicePoll(session.deviceCode)
+          if (linkSessionNonceRef.current !== sessionNonce) return
+
           if (poll.status === 'confirmed' && poll.accountId) {
-            if (pollTimerRef.current) clearInterval(pollTimerRef.current)
-            let suiAddress: string | null = null
-            try {
-              const me = await window.electronAPI.getDesktopMe()
-              suiAddress = getRestoredIdentity(me)?.suiAddress ?? null
-            } catch { /* fall through with null — accountId still renders */ }
-            setLinkState({ phase: 'confirmed', accountId: poll.accountId, suiAddress })
+            stopPolling(timer)
+            setLinkState({ phase: 'confirmed', accountId: poll.accountId, suiAddress: null })
+            void hydrateConfirmedSuiAddress(sessionNonce, poll.accountId)
           } else if (poll.status === 'expired') {
-            if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+            stopPolling(timer)
             setLinkState({ phase: 'error', message: 'Code expired. Try again.' })
           }
         } catch { /* keep polling */ }
       }, (session.pollInterval || 5) * 1000)
+      pollTimerRef.current = timer
     } catch (err) {
+      if (linkSessionNonceRef.current !== sessionNonce) return
       setLinkState({ phase: 'error', message: err instanceof Error ? err.message : 'Failed to start linking' })
     }
-  }, [keypair])
+  }, [hydrateConfirmedSuiAddress, keypair, stopPolling])
 
   const handleCancelLink = useCallback(() => {
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+    linkSessionNonceRef.current += 1
+    stopPolling()
     setLinkState({ phase: 'idle' })
-  }, [])
+  }, [stopPolling])
 
   const handleUnlink = useCallback(async () => {
     if (!window.confirm('Unlink this device from your Soulidity account?')) return
+    linkSessionNonceRef.current += 1
+    stopPolling()
     setUnlinking(true)
     try {
       const result = await window.electronAPI.unlinkDesktopDevice()
@@ -155,7 +188,7 @@ export function SettingsTab(): React.JSX.Element {
     } finally {
       setUnlinking(false)
     }
-  }, [])
+  }, [stopPolling])
 
   const truncateAddress = (addr: string): string => {
     if (addr.length <= 16) return addr

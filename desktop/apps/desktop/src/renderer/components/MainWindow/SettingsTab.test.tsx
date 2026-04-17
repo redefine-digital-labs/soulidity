@@ -61,6 +61,12 @@ function flushEffects(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+function findButton(container: HTMLDivElement, label: string): HTMLButtonElement | null {
+  return Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent?.includes(label),
+  ) ?? null
+}
+
 describe('SettingsTab desktop auth restore', () => {
   let container: HTMLDivElement
   let root: Root
@@ -78,6 +84,7 @@ describe('SettingsTab desktop auth restore', () => {
       })
     }
     document.body.innerHTML = ''
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -166,5 +173,111 @@ describe('SettingsTab desktop auth restore', () => {
     expect(api.getDesktopMe).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Link to Web Account')
     expect(container.textContent).not.toContain('Unlink Device')
+  })
+
+  it('confirms immediately after poll and hydrates the Sui address asynchronously', async () => {
+    let resolveMe!: (value: DesktopMeResponse) => void
+
+    const api = createElectronApi({
+      getDesktopMe: vi.fn().mockImplementation(() => new Promise((resolve) => {
+        resolveMe = resolve
+      })),
+      deviceStartLink: vi.fn().mockResolvedValue({
+        userCode: 'UCODE',
+        deviceCode: 'DCODE',
+        expiresAt: '2026-04-17T10:00:00Z',
+        pollInterval: 0.001,
+      }),
+      deviceGetLinkUrl: vi.fn().mockResolvedValue('http://link'),
+      devicePoll: vi.fn().mockResolvedValue({ status: 'confirmed', accountId: 'acct_cuid_1234' }),
+    })
+
+    await renderWithApi(api)
+    vi.useFakeTimers()
+
+    const linkButton = findButton(container, 'Link to Web Account')
+    expect(linkButton).not.toBeNull()
+    await act(async () => {
+      linkButton?.click()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15)
+    })
+
+    expect(container.textContent).toContain('Linked to account')
+    expect(container.textContent).not.toContain('Waiting for confirmation...')
+    expect(findButton(container, 'Cancel')).toBeNull()
+
+    await act(async () => {
+      resolveMe({
+        profile: {
+          accountId: 'acct_cuid_1234',
+          primarySuiAddress: '0x1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        activePersona: null,
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Linked to Sui wallet')
+
+  })
+
+  it('ignores delayed Sui-address hydration after the user unlinks the confirmed device', async () => {
+    let resolveMe!: (value: DesktopMeResponse) => void
+
+    const api = createElectronApi({
+      getDesktopMe: vi.fn().mockImplementation(() => new Promise((resolve) => {
+        resolveMe = resolve
+      })),
+      deviceStartLink: vi.fn().mockResolvedValue({
+        userCode: 'UCODE',
+        deviceCode: 'DCODE',
+        expiresAt: '2026-04-17T10:00:00Z',
+        pollInterval: 0.001,
+      }),
+      deviceGetLinkUrl: vi.fn().mockResolvedValue('http://link'),
+      devicePoll: vi.fn().mockResolvedValue({ status: 'confirmed', accountId: 'acct_cuid_1234' }),
+      unlinkDesktopDevice: vi.fn().mockResolvedValue({ ok: true }),
+    })
+
+    await renderWithApi(api)
+    vi.useFakeTimers()
+
+    const linkButton = findButton(container, 'Link to Web Account')
+    expect(linkButton).not.toBeNull()
+    await act(async () => {
+      linkButton?.click()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15)
+    })
+
+    const unlinkButton = findButton(container, 'Unlink Device')
+    expect(unlinkButton).not.toBeNull()
+    await act(async () => {
+      unlinkButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Link to Web Account')
+    expect(container.textContent).not.toContain('Linked to account')
+
+    await act(async () => {
+      resolveMe({
+        profile: {
+          accountId: 'acct_cuid_1234',
+          primarySuiAddress: '0x1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        activePersona: null,
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Link to Web Account')
+    expect(container.textContent).not.toContain('Linked to Sui wallet')
+
   })
 })
