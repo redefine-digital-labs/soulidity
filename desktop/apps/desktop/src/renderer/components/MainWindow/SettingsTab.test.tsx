@@ -224,6 +224,60 @@ describe('SettingsTab desktop auth restore', () => {
 
   })
 
+  it('ignores a delayed confirmed poll that lands after the user cancels linking', async () => {
+    let resolvePoll!: (value: { status: string; accountId?: string }) => void
+    const devicePoll = vi.fn().mockImplementation(
+      () => new Promise((resolve) => { resolvePoll = resolve }),
+    )
+
+    const api = createElectronApi({
+      deviceStartLink: vi.fn().mockResolvedValue({
+        userCode: 'UCODE',
+        deviceCode: 'DCODE',
+        expiresAt: '2026-04-17T10:00:00Z',
+        pollInterval: 60,
+      }),
+      deviceGetLinkUrl: vi.fn().mockResolvedValue('http://link'),
+      devicePoll,
+    })
+
+    await renderWithApi(api)
+    vi.useFakeTimers()
+
+    const linkButton = findButton(container, 'Link to Web Account')
+    expect(linkButton).not.toBeNull()
+    await act(async () => {
+      linkButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // One poll tick fires but its promise stays pending — UI remains in `linking`.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000)
+    })
+    expect(devicePoll).toHaveBeenCalledTimes(1)
+
+    const cancelButton = findButton(container, 'Cancel')
+    expect(cancelButton).not.toBeNull()
+    await act(async () => {
+      cancelButton?.click()
+    })
+    expect(container.textContent).toContain('Link to Web Account')
+    expect(container.textContent).not.toContain('Waiting for confirmation')
+
+    // Poll resolves `confirmed` AFTER cancel — must be rejected by the nonce guard.
+    await act(async () => {
+      resolvePoll({ status: 'confirmed', accountId: 'acct_cuid_1234' })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Link to Web Account')
+    expect(container.textContent).not.toContain('Linked to Sui wallet')
+    expect(container.textContent).not.toContain('Linked to account')
+  })
+
   it('ignores delayed Sui-address hydration after the user unlinks the confirmed device', async () => {
     let resolveMe!: (value: DesktopMeResponse) => void
 
