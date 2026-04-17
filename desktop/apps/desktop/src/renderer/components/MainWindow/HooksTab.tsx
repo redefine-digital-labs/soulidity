@@ -33,37 +33,54 @@ export function HooksTab(): React.JSX.Element {
     }
   }, [])
 
+  const needsInstall = hookStatuses.some((h) => h.detected && !h.installed)
+  const needsRepair = hookStatuses.some((h) => h.detected && h.installed && !h.healthy)
+  const hasAnyInstalled = hookStatuses.some((h) => h.installed)
+  const isBusy = hookAction !== 'idle'
+  const hasAnyAction = needsInstall || needsRepair || hasAnyInstalled
+
   return (
     <div className="tab-content">
       <section className="settings-section">
-        <div className="settings-section__title-row">
-          <h3 className="settings-section__title">Hooks &amp; Integrations</h3>
-          <div className="agent-detail-actions">
+        <h3 className="settings-section__title">Hooks &amp; Integrations</h3>
+
+        <div className="hooks-actions">
+          {needsInstall && (
             <button
               type="button"
               className="link-button"
-              disabled={hookAction !== 'idle'}
+              disabled={isBusy}
               onClick={() => { void runHookAction('install') }}
+              title="Install hooks for detected CLIs that don't have them yet"
             >
               Install All
             </button>
+          )}
+          {needsRepair && (
             <button
               type="button"
               className="link-button"
-              disabled={hookAction !== 'idle'}
+              disabled={isBusy}
               onClick={() => { void runHookAction('repair') }}
+              title="Repair hooks that are installed but no longer healthy"
             >
               Repair
             </button>
+          )}
+          {hasAnyInstalled && (
             <button
               type="button"
               className="link-button link-button--secondary"
-              disabled={hookAction !== 'idle'}
+              disabled={isBusy}
               onClick={() => { void runHookAction('uninstall') }}
+              title="Remove Soulidity hooks from every detected CLI"
             >
               Uninstall
             </button>
-          </div>
+          )}
+          {!hasAnyAction && (
+            <p className="hooks-actions__empty">No hook actions available.</p>
+          )}
         </div>
 
         <div className="settings-field">
