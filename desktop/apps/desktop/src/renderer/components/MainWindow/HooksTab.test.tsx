@@ -4,7 +4,7 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { HookInstallStatus, SupportedAgentSource } from '@soulidity/shared'
+import type { AgentRuntimeSnapshot, HookInstallStatus, SupportedAgentSource } from '@soulidity/shared'
 import { HooksTab } from './HooksTab'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -49,11 +49,18 @@ function createElectronApi(
   }
 }
 
+function expectRecoveryActionsVisible(container: HTMLDivElement) {
+  expect(container.textContent).toContain('Install All')
+  expect(container.textContent).toContain('Repair')
+  expect(container.textContent).toContain('Uninstall')
+  expect(container.textContent).not.toContain('No hook actions available.')
+}
+
 function flushEffects(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-describe('HooksTab action visibility', () => {
+describe('HooksTab recovery actions', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -85,48 +92,57 @@ describe('HooksTab action visibility', () => {
     })
   }
 
-  it('shows only Uninstall when every hook is installed and healthy', async () => {
+  it('keeps install, repair, and uninstall visible when hook statuses are unknown', async () => {
+    await renderWithStatuses([])
+
+    expectRecoveryActionsVisible(container)
+  })
+
+  it('keeps recovery actions visible after a runtime snapshot overwrites fresher hook status', async () => {
+    let runtimeChanged: ((snapshot: AgentRuntimeSnapshot | null) => void) | null = null
+    Object.defineProperty(window, 'electronAPI', {
+      value: createElectronApi(
+        [makeStatus('claude', 'Claude Code', { installed: false, healthy: false })],
+        {
+          onAgentRuntimeChanged: vi.fn().mockImplementation((callback) => {
+            runtimeChanged = callback
+            return () => {}
+          }),
+        },
+      ) as unknown as Window['electronAPI'],
+      configurable: true,
+    })
+
+    root = createRoot(container)
+    await act(async () => {
+      root.render(<HooksTab />)
+      await flushEffects()
+      await flushEffects()
+    })
+
+    await act(async () => {
+      runtimeChanged?.({
+        version: 1,
+        lastUpdated: Date.now(),
+        transport: { status: 'ready', mode: 'unix-socket' },
+        sessions: {},
+        pendingPermissions: [],
+        pendingQuestions: [],
+        hooks: [makeStatus('claude', 'Claude Code')],
+      })
+      await flushEffects()
+    })
+
+    expectRecoveryActionsVisible(container)
+  })
+
+  it('keeps recovery actions visible when every hook is installed and healthy', async () => {
     await renderWithStatuses([
       makeStatus('claude', 'Claude Code'),
       makeStatus('codex', 'Codex'),
       makeStatus('gemini', 'Gemini CLI'),
     ])
 
-    expect(container.textContent).toContain('Uninstall')
-    expect(container.textContent).not.toContain('Install All')
-    expect(container.textContent).not.toContain('Repair')
-  })
-
-  it('shows Install All when a detected hook is not yet installed', async () => {
-    await renderWithStatuses([
-      makeStatus('claude', 'Claude Code'),
-      makeStatus('codex', 'Codex', { installed: false, healthy: false }),
-    ])
-
-    expect(container.textContent).toContain('Install All')
-    expect(container.textContent).toContain('Uninstall')
-    expect(container.textContent).not.toContain('Repair')
-  })
-
-  it('shows Repair when an installed hook is unhealthy', async () => {
-    await renderWithStatuses([
-      makeStatus('claude', 'Claude Code'),
-      makeStatus('codex', 'Codex', { healthy: false }),
-    ])
-
-    expect(container.textContent).toContain('Repair')
-    expect(container.textContent).toContain('Uninstall')
-    expect(container.textContent).not.toContain('Install All')
-  })
-
-  it('shows only Install All when nothing is installed yet', async () => {
-    await renderWithStatuses([
-      makeStatus('claude', 'Claude Code', { installed: false, healthy: false }),
-      makeStatus('codex', 'Codex', { installed: false, healthy: false }),
-    ])
-
-    expect(container.textContent).toContain('Install All')
-    expect(container.textContent).not.toContain('Repair')
-    expect(container.textContent).not.toContain('Uninstall')
+    expectRecoveryActionsVisible(container)
   })
 })
