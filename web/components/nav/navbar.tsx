@@ -16,6 +16,7 @@ interface NavbarProps {
   userEmoji?: string | null
   userName?: string | null
   walletAddress?: string | null
+  profileHref?: string | null
   isAdmin?: boolean
 }
 
@@ -60,7 +61,7 @@ function navLinkClass(isActive: boolean) {
   )
 }
 
-export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName, walletAddress, isAdmin }: NavbarProps) {
+export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName, walletAddress, profileHref, isAdmin }: NavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -99,6 +100,7 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
               emoji={userEmoji ?? '🌟'}
               userName={userName}
               walletAddress={walletAddress}
+              profileHref={profileHref}
               onDisconnect={onDisconnect ?? (() => {})}
               onNavigate={(href) => router.push(href)}
             />

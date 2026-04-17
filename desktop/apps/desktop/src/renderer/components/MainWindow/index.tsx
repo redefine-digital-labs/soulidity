@@ -3,16 +3,24 @@ import { SettingsTab } from './SettingsTab'
 import { AgentTab } from './AgentTab'
 import { LibraryTab } from './LibraryTab'
 import { ExtractTab } from './ExtractTab'
+import { HooksTab } from './HooksTab'
 import './styles.css'
 
-type TabId = 'settings' | 'library' | 'agent' | 'extract'
+type TabId = 'settings' | 'library' | 'agent' | 'extract' | 'hooks'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'settings', label: 'Settings' },
   { id: 'library', label: 'Library' },
   { id: 'agent', label: 'Agent' },
   { id: 'extract', label: 'Extract' },
+  { id: 'hooks', label: 'Hooks' },
 ]
+
+const TAB_IDS: readonly TabId[] = ['settings', 'library', 'agent', 'extract', 'hooks']
+
+function isTabId(value: unknown): value is TabId {
+  return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
+}
 
 export function MainWindow(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('settings')
@@ -24,14 +32,14 @@ export function MainWindow(): React.JSX.Element {
   useEffect(() => {
     const handleDomNavigate = (event: Event) => {
       const nextTab = (event as CustomEvent<{ tab?: string }>).detail?.tab
-      if (nextTab === 'settings' || nextTab === 'library' || nextTab === 'agent' || nextTab === 'extract') {
+      if (isTabId(nextTab)) {
         setActiveTab(nextTab)
       }
     }
 
     const handleElectronNavigate = (detail: { tab?: string }) => {
       const nextTab = detail.tab
-      if (nextTab === 'settings' || nextTab === 'library' || nextTab === 'agent' || nextTab === 'extract') {
+      if (isTabId(nextTab)) {
         setActiveTab(nextTab)
       }
     }
@@ -71,6 +79,7 @@ export function MainWindow(): React.JSX.Element {
         {activeTab === 'library' && <LibraryTab />}
         {activeTab === 'agent' && <AgentTab />}
         {activeTab === 'extract' && <ExtractTab />}
+        {activeTab === 'hooks' && <HooksTab />}
       </div>
     </div>
   )

@@ -680,6 +680,18 @@ ipcMain.handle('device:get-link-url', () => `${WEB_BASE_URL}/desktop/link`)
 
 // ── Desktop Auth ─────────────────────────────────────────
 ipcMain.handle('desktop-auth:status', () => getDesktopAuthStatus())
+ipcMain.handle('desktop-auth:unlink', () => {
+  try {
+    clearDesktopToken()
+    broadcastToAllWindows('desktop-auth:changed', { hasToken: false, accountId: null })
+    return { ok: true as const }
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
 ipcMain.handle('desktop-auth:runtime-config', () => ({
   privyAppId: process.env['NEXT_PUBLIC_PRIVY_APP_ID'] ?? null,
   suiNetwork: process.env['NEXT_PUBLIC_SUI_NETWORK'] ?? 'testnet',

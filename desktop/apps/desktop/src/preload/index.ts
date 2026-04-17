@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Desktop auth ──
   getDesktopAuthStatus: (): Promise<{ hasToken: boolean; accountId: string | null }> =>
     ipcRenderer.invoke('desktop-auth:status'),
+  unlinkDesktopDevice: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('desktop-auth:unlink'),
   getDesktopRuntimeConfig: (): Promise<{ privyAppId: string | null; suiNetwork: string }> =>
     ipcRenderer.invoke('desktop-auth:runtime-config'),
   getDesktopMe: (): Promise<unknown> =>

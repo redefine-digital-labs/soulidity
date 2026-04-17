@@ -29,6 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         userEmoji={user?.avatar ?? '🌟'}
         userName={user?.displayName || user?.tgName}
         walletAddress={user?.primarySuiAddress}
+        profileHref={user?.id ? `/community/u/${encodeURIComponent(user.id)}` : null}
         isAdmin={user?.isAdmin}
       />
       <main className="relative min-h-[calc(100vh-56px)] overflow-x-clip">

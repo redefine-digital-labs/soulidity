@@ -8,16 +8,15 @@ interface AccountButtonProps {
   emoji: string
   userName?: string | null
   walletAddress?: string | null
+  profileHref?: string | null
   onDisconnect: () => void
   onNavigate: (href: string) => void
 }
 
-const dropdownItems = [
-  { label: 'Profile', href: '/profile' },
-  { label: 'Settings', href: '/profile' },
-  { label: 'My Souls', href: '/my-souls' },
-  { label: 'Wrap + Link', href: '/wrap-link' },
-]
+type DropdownItem = {
+  label: string
+  href: string | null
+}
 
 function formatAddress(addr: string) {
   if (addr.length <= 14) return addr
@@ -41,10 +40,17 @@ function CheckIcon({ className }: { className?: string }) {
   )
 }
 
-export function AccountButton({ balance, emoji, userName, walletAddress, onDisconnect, onNavigate }: AccountButtonProps) {
+export function AccountButton({ balance, emoji, userName, walletAddress, profileHref, onDisconnect, onNavigate }: AccountButtonProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+
+  const dropdownItems: DropdownItem[] = [
+    { label: 'Profile', href: profileHref ?? null },
+    { label: 'Settings', href: '/profile' },
+    { label: 'My Souls', href: '/my-souls' },
+    { label: 'Wrap + Link', href: '/wrap-link' },
+  ]
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -115,18 +121,29 @@ export function AccountButton({ balance, emoji, userName, walletAddress, onDisco
             </>
           )}
 
-          {dropdownItems.map((item) => (
-            <button
-              key={item.href}
-              onClick={() => {
-                onNavigate(item.href)
-                setOpen(false)
-              }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm text-muted transition hover:bg-purple/10 hover:text-foreground"
-            >
-              <span className="text-[13px] font-semibold">{item.label}</span>
-            </button>
-          ))}
+          {dropdownItems.map((item) => {
+            const disabled = !item.href
+            return (
+              <button
+                key={item.label}
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  if (!item.href) return
+                  onNavigate(item.href)
+                  setOpen(false)
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm transition',
+                  disabled
+                    ? 'cursor-not-allowed text-muted/50'
+                    : 'text-muted hover:bg-purple/10 hover:text-foreground',
+                )}
+              >
+                <span className="text-[13px] font-semibold">{item.label}</span>
+              </button>
+            )
+          })}
           <div className="surface-divider my-1.5" />
           <button
             onClick={() => {

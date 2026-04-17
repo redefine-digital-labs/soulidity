@@ -25,22 +25,6 @@ const SOURCES = [
     desc: 'Upload a .JSON, .MD, or folder export from OpenRouter, Claude Projects, Mindplug, or any custom format. Fields will be auto-detected and mapped automatically.',
     enabled: true,
   },
-  {
-    id: 'open-eliza' as const,
-    label: 'OpenEliza',
-    icon: '🤖',
-    desc: 'Subscribe to node and OpenEliza agents directly. Import name, description, and skill bundles.',
-    enabled: false,
-    badge: 'Coming Soon',
-  },
-  {
-    id: 'toplpa' as const,
-    label: 'Toplpa.so',
-    icon: '🔗',
-    desc: 'Paste a character URL and auto-import name, description, and cover image from any public CharacterCard profile.',
-    enabled: false,
-    badge: 'Coming Soon',
-  },
 ] as const
 
 export default function ImportPage() {
@@ -91,11 +75,6 @@ export default function ImportPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[15px] font-bold text-foreground">{src.label}</span>
-                    {'badge' in src && src.badge && (
-                      <span className="rounded-full border border-purple/30 bg-purple/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-purple">
-                        {src.badge}
-                      </span>
-                    )}
                   </div>
                   <p className="mt-1.5 text-[13px] leading-6 text-muted">{src.desc}</p>
                 </div>

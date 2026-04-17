@@ -72,6 +72,7 @@ declare global {
 
       // ── Desktop auth ──
       getDesktopAuthStatus: () => Promise<{ hasToken: boolean; accountId: string | null }>
+      unlinkDesktopDevice: () => Promise<{ ok: true } | { ok: false; error: string }>
       getDesktopRuntimeConfig: () => Promise<{ privyAppId: string | null; suiNetwork: string }>
       getDesktopMe: () => Promise<unknown>
       getDesktopPrivyToken: () => Promise<{ jwt: string; alreadyLinked: boolean }>
