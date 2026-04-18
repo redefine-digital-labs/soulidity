@@ -5,7 +5,7 @@
 - **Who it's for:** Crypto-native content creators ("Trainers") and collectors/builders on Sui
 - **Space/industry:** Web3 / digital entity marketplace, positioned as on-chain ownership for Souls, not an NFT trading floor
 - **Project type:** Web app (Next.js) with on-chain settlement on Sui, Walrus storage, Seal access control
-- **Brand name:** Soulidity (logo: teal/purple antenna creature + "Soul" white + "idity" purple)
+- **Brand name:** Soulidity (mark: Seal & Flame — purple↔teal arcs cradling a gold core on a 32×32 grid; wordmark "Soul" white + "idity" purple, Inter 800, tracking -0.04em display / -0.02em UI)
 
 ## Aesthetic Direction
 - **Direction:** Dark Web3 with intentional color coding
@@ -45,7 +45,7 @@
 | `--bg` | `#0D0A1E` | Page background (deep purple-black) |
 | `--card` | `#1A1040` | Card/panel background |
 | `--card2` | `#261558` | Elevated surface, input backgrounds, sidebar items |
-| `--border` | `#2E1B6E` | Default border color |
+| `--border` | `#3B2388` | Default border color (lifted from #2E1B6E per design review X2 — improves separation against `--card2`) |
 | `--purple` | `#A855F7` | Brand, interactive elements, primary actions, focus rings, active nav |
 | `--purple-deep` | `#7C3AED` | Hover state for purple, gradient endpoint |
 | `--gold` | `#F59E0B` | Pricing, value, Trading category, karma, rewards |
