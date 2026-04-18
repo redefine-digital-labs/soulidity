@@ -21,15 +21,17 @@ describe('web create basic info regression guards', () => {
     expect(source).not.toContain('List immediately')
   })
 
-  it('keeps the preview image control wired to UploadZone with context-driven preview state', () => {
+  it('keeps the preview image control wired to CoverImagePicker with context-driven preview state', () => {
     const source = readSource('web/app/create/page.tsx')
 
-    expect(source).toContain("import { UploadZone } from '@/components/ui/upload-zone'")
-    expect(source).toContain('ctx.coverImageFile')
-    expect(source).toContain('<UploadZone')
+    // CoverImagePicker replaced UploadZone + inline preview block per design-review C7
+    // (crop-to-1:1 + WebP compression is now part of the upload experience).
+    expect(source).toContain("import { CoverImagePicker } from '@/components/ui/cover-image-picker'")
+    expect(source).toContain('<CoverImagePicker')
+    expect(source).toContain('file={ctx.coverImageFile}')
+    expect(source).toContain('previewUrl={ctx.coverImagePreviewUrl}')
     expect(source).toContain('ctx.setCoverImage')
-    expect(source).toContain('alt="Cover preview"')
-    expect(source).toContain('Click to upload cover image')
+    expect(source).not.toContain("import { UploadZone } from '@/components/ui/upload-zone'")
   })
 
   it('keeps royalty options limited to the 4-card screenshot layout with a recommended standard tier', () => {
