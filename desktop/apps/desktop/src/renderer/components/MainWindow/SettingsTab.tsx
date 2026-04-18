@@ -11,7 +11,7 @@ const LINK_VERIFICATION_FAILED_MESSAGE = 'Saved desktop link could not be verifi
 type LinkState =
   | { phase: 'restoring' }
   | { phase: 'idle' }
-  | { phase: 'linking'; userCode: string; deviceCode: string; linkUrl: string; expiresAt: string }
+  | { phase: 'linking'; userCode: string; deviceCode: string; linkUrl: string; expiresAt: string; statusText: string }
   | { phase: 'confirmed'; accountId: string; suiAddress: string | null }
   | { phase: 'error'; message: string; canUnlink?: boolean }
 
@@ -19,6 +19,8 @@ interface RestoredIdentity {
   accountId: string
   suiAddress: string | null
 }
+
+type PendingLinkVerificationResult = 'confirmed' | 'invalid' | 'retry'
 
 function getRestoredIdentity(value: unknown): RestoredIdentity | null {
   if (!value || typeof value !== 'object') return null
@@ -44,6 +46,7 @@ export function SettingsTab(): React.JSX.Element {
   const [unlinking, setUnlinking] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const linkSessionNonceRef = useRef(0)
+  const linkVerificationInFlightRef = useRef<number | null>(null)
 
   const stopPolling = useCallback((timer?: ReturnType<typeof setInterval> | null) => {
     const activeTimer = timer ?? pollTimerRef.current
@@ -54,21 +57,36 @@ export function SettingsTab(): React.JSX.Element {
     }
   }, [])
 
-  const hydrateConfirmedSuiAddress = useCallback(async (sessionNonce: number, accountId: string) => {
-    try {
-      const me = await window.electronAPI.getDesktopMe()
-      if (linkSessionNonceRef.current !== sessionNonce) return
-
-      const suiAddress = getRestoredIdentity(me)?.suiAddress ?? null
-      setLinkState((current) => (
-        current.phase === 'confirmed' && current.accountId === accountId
-          ? { ...current, suiAddress }
-          : current
-      ))
-    } catch {
-      // accountId is already confirmed; leave Sui address as the initial fallback
-    }
+  const getVerifiedDesktopIdentity = useCallback(async (): Promise<RestoredIdentity | null> => {
+    const me = await window.electronAPI.getDesktopMe()
+    return getRestoredIdentity(me)
   }, [])
+
+  const confirmPendingLink = useCallback(async (sessionNonce: number): Promise<PendingLinkVerificationResult> => {
+    if (linkVerificationInFlightRef.current === sessionNonce) {
+      return 'retry'
+    }
+
+    linkVerificationInFlightRef.current = sessionNonce
+    try {
+      const restored = await getVerifiedDesktopIdentity()
+      if (linkSessionNonceRef.current !== sessionNonce) return 'retry'
+
+      if (restored) {
+        setLinkState({ phase: 'confirmed', accountId: restored.accountId, suiAddress: restored.suiAddress })
+        return 'confirmed'
+      }
+      setLinkState({ phase: 'error', message: LINK_VERIFICATION_FAILED_MESSAGE, canUnlink: true })
+      return 'invalid'
+    } catch {
+      if (linkSessionNonceRef.current !== sessionNonce) return 'retry'
+      return 'retry'
+    } finally {
+      if (linkVerificationInFlightRef.current === sessionNonce) {
+        linkVerificationInFlightRef.current = null
+      }
+    }
+  }, [getVerifiedDesktopIdentity])
 
   useEffect(() => {
     let cancelled = false
@@ -89,10 +107,9 @@ export function SettingsTab(): React.JSX.Element {
       }
 
       try {
-        const me = await window.electronAPI.getDesktopMe()
+        const restored = await getVerifiedDesktopIdentity()
         if (cancelled) return
 
-        const restored = getRestoredIdentity(me)
         if (restored) {
           setLinkState({ phase: 'confirmed', accountId: restored.accountId, suiAddress: restored.suiAddress })
           return
@@ -110,9 +127,10 @@ export function SettingsTab(): React.JSX.Element {
     return () => {
       cancelled = true
       linkSessionNonceRef.current += 1
+      linkVerificationInFlightRef.current = null
       stopPolling()
     }
-  }, [stopPolling])
+  }, [getVerifiedDesktopIdentity, stopPolling])
 
   const handleCopyAddress = useCallback(async () => {
     if (!keypair?.address) return
@@ -124,6 +142,7 @@ export function SettingsTab(): React.JSX.Element {
   const handleStartLink = useCallback(async () => {
     if (!keypair?.address) return
     linkSessionNonceRef.current += 1
+    linkVerificationInFlightRef.current = null
     const sessionNonce = linkSessionNonceRef.current
     stopPolling()
 
@@ -140,6 +159,7 @@ export function SettingsTab(): React.JSX.Element {
         deviceCode: session.deviceCode,
         linkUrl,
         expiresAt: session.expiresAt,
+        statusText: 'Waiting for confirmation...',
       })
 
       // Start polling
@@ -148,10 +168,17 @@ export function SettingsTab(): React.JSX.Element {
           const poll = await window.electronAPI.devicePoll(session.deviceCode)
           if (linkSessionNonceRef.current !== sessionNonce) return
 
-          if (poll.status === 'confirmed' && poll.accountId) {
-            stopPolling(timer)
-            setLinkState({ phase: 'confirmed', accountId: poll.accountId, suiAddress: null })
-            void hydrateConfirmedSuiAddress(sessionNonce, poll.accountId)
+          if (poll.status === 'confirmed') {
+            setLinkState((current) => (
+              current.phase === 'linking'
+                ? { ...current, statusText: 'Verifying linked account...' }
+                : current
+            ))
+            const verification = await confirmPendingLink(sessionNonce)
+            if (linkSessionNonceRef.current !== sessionNonce) return
+            if (verification === 'confirmed' || verification === 'invalid') {
+              stopPolling(timer)
+            }
           } else if (poll.status === 'expired') {
             stopPolling(timer)
             setLinkState({ phase: 'error', message: 'Code expired. Try again.' })
@@ -163,10 +190,11 @@ export function SettingsTab(): React.JSX.Element {
       if (linkSessionNonceRef.current !== sessionNonce) return
       setLinkState({ phase: 'error', message: err instanceof Error ? err.message : 'Failed to start linking' })
     }
-  }, [hydrateConfirmedSuiAddress, keypair, stopPolling])
+  }, [confirmPendingLink, keypair, stopPolling])
 
   const handleCancelLink = useCallback(() => {
     linkSessionNonceRef.current += 1
+    linkVerificationInFlightRef.current = null
     stopPolling()
     setLinkState({ phase: 'idle' })
   }, [stopPolling])
@@ -174,6 +202,7 @@ export function SettingsTab(): React.JSX.Element {
   const handleUnlink = useCallback(async () => {
     if (!window.confirm('Unlink this device from your Soulidity account?')) return
     linkSessionNonceRef.current += 1
+    linkVerificationInFlightRef.current = null
     stopPolling()
     setUnlinking(true)
     try {
@@ -278,7 +307,7 @@ export function SettingsTab(): React.JSX.Element {
                 onClick={(e) => (e.target as HTMLInputElement).select()}
               />
             </div>
-            <p className="link-panel__status">Waiting for confirmation...</p>
+            <p className="link-panel__status">{linkState.statusText}</p>
             <button className="link-button link-button--secondary" onClick={handleCancelLink}>
               Cancel
             </button>

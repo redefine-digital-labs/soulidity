@@ -175,7 +175,7 @@ describe('SettingsTab desktop auth restore', () => {
     expect(container.textContent).not.toContain('Unlink Device')
   })
 
-  it('confirms immediately after poll and hydrates the Sui address asynchronously', async () => {
+  it('waits for getDesktopMe verification before showing the confirmed state after poll confirmation', async () => {
     let resolveMe!: (value: DesktopMeResponse) => void
 
     const api = createElectronApi({
@@ -186,7 +186,7 @@ describe('SettingsTab desktop auth restore', () => {
         userCode: 'UCODE',
         deviceCode: 'DCODE',
         expiresAt: '2026-04-17T10:00:00Z',
-        pollInterval: 0.001,
+        pollInterval: 0.05,
       }),
       deviceGetLinkUrl: vi.fn().mockResolvedValue('http://link'),
       devicePoll: vi.fn().mockResolvedValue({ status: 'confirmed', accountId: 'acct_cuid_1234' }),
@@ -202,12 +202,13 @@ describe('SettingsTab desktop auth restore', () => {
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15)
+      await vi.advanceTimersByTimeAsync(60)
     })
 
-    expect(container.textContent).toContain('Linked to account')
-    expect(container.textContent).not.toContain('Waiting for confirmation...')
-    expect(findButton(container, 'Cancel')).toBeNull()
+    expect(container.textContent).toContain('Verifying linked account...')
+    expect(container.textContent).not.toContain('Linked to account')
+    expect(container.textContent).not.toContain('Linked to Sui wallet')
+    expect(findButton(container, 'Cancel')).not.toBeNull()
 
     await act(async () => {
       resolveMe({
@@ -221,7 +222,60 @@ describe('SettingsTab desktop auth restore', () => {
     })
 
     expect(container.textContent).toContain('Linked to Sui wallet')
+    expect(container.textContent).not.toContain('Verifying linked account...')
+    expect(findButton(container, 'Cancel')).toBeNull()
+  })
 
+  it('retries confirmed polling until getDesktopMe validation succeeds', async () => {
+    const api = createElectronApi({
+      getDesktopMe: vi.fn()
+        .mockRejectedValueOnce(new Error('Desktop auth token is missing. Link this desktop again from Settings.'))
+        .mockResolvedValueOnce({
+          profile: {
+            accountId: 'acct_cuid_1234',
+            primarySuiAddress: '0x1111111111111111111111111111111111111111111111111111111111111111',
+          },
+          activePersona: null,
+        }),
+      deviceStartLink: vi.fn().mockResolvedValue({
+        userCode: 'UCODE',
+        deviceCode: 'DCODE',
+        expiresAt: '2026-04-17T10:00:00Z',
+        pollInterval: 0.05,
+      }),
+      deviceGetLinkUrl: vi.fn().mockResolvedValue('http://link'),
+      devicePoll: vi.fn().mockResolvedValue({ status: 'confirmed', accountId: 'acct_cuid_1234' }),
+    })
+
+    await renderWithApi(api)
+    vi.useFakeTimers()
+
+    const linkButton = findButton(container, 'Link to Web Account')
+    expect(linkButton).not.toBeNull()
+    await act(async () => {
+      linkButton?.click()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60)
+    })
+
+    expect(api.devicePoll).toHaveBeenCalledTimes(1)
+    expect(api.getDesktopMe).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Linked to account')
+    expect(container.textContent).not.toContain('Linked to Sui wallet')
+    expect(container.textContent).toContain('Verifying linked account...')
+    expect(container.textContent).not.toContain('Saved desktop link could not be verified')
+    expect(findButton(container, 'Cancel')).not.toBeNull()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60)
+    })
+
+    expect(api.devicePoll).toHaveBeenCalledTimes(2)
+    expect(api.getDesktopMe).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('Linked to Sui wallet')
+    expect(container.textContent).not.toContain('Verifying linked account...')
   })
 
   it('ignores a delayed confirmed poll that lands after the user cancels linking', async () => {
@@ -278,7 +332,7 @@ describe('SettingsTab desktop auth restore', () => {
     expect(container.textContent).not.toContain('Linked to account')
   })
 
-  it('ignores delayed Sui-address hydration after the user unlinks the confirmed device', async () => {
+  it('ignores delayed getDesktopMe verification after the user cancels linking', async () => {
     let resolveMe!: (value: DesktopMeResponse) => void
 
     const api = createElectronApi({
@@ -289,7 +343,7 @@ describe('SettingsTab desktop auth restore', () => {
         userCode: 'UCODE',
         deviceCode: 'DCODE',
         expiresAt: '2026-04-17T10:00:00Z',
-        pollInterval: 0.001,
+        pollInterval: 0.05,
       }),
       deviceGetLinkUrl: vi.fn().mockResolvedValue('http://link'),
       devicePoll: vi.fn().mockResolvedValue({ status: 'confirmed', accountId: 'acct_cuid_1234' }),
@@ -306,13 +360,13 @@ describe('SettingsTab desktop auth restore', () => {
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15)
+      await vi.advanceTimersByTimeAsync(60)
     })
 
-    const unlinkButton = findButton(container, 'Unlink Device')
-    expect(unlinkButton).not.toBeNull()
+    const cancelButton = findButton(container, 'Cancel')
+    expect(cancelButton).not.toBeNull()
     await act(async () => {
-      unlinkButton?.click()
+      cancelButton?.click()
       await Promise.resolve()
     })
 
@@ -332,6 +386,5 @@ describe('SettingsTab desktop auth restore', () => {
 
     expect(container.textContent).toContain('Link to Web Account')
     expect(container.textContent).not.toContain('Linked to Sui wallet')
-
   })
 })
