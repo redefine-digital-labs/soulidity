@@ -10,7 +10,7 @@ import { useCreateSoul } from '@/components/providers/create-soul-provider'
 const steps = [
   { label: 'Basic Info' },
   { label: 'Living Content' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
@@ -50,7 +50,7 @@ export default function CreateSuccessPage() {
           🚀
         </div>
 
-        <h1 className="text-3xl font-bold mb-2">Soul Born</h1>
+        <h1 className="text-3xl font-bold mb-2">✦ Your Soul is Awake</h1>
         <p className="mx-auto mb-10 max-w-[380px] text-sm leading-relaxed text-muted">
           Your Soul is now live on Sui. Its existence is permanent and immutable on-chain.
         </p>
@@ -104,6 +104,10 @@ export default function CreateSuccessPage() {
             </span>
           </Link>
         </div>
+
+        <p className="mb-3 text-xs text-muted">
+          Unlisted Souls live in <Link href="/my-souls" className="font-semibold text-foreground underline underline-offset-4 hover:text-purple">My Souls</Link> — you can list them any time.
+        </p>
 
         {/* Ghost link */}
         <Link

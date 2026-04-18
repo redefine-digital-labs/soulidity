@@ -13,7 +13,7 @@ import { useCreateSoul } from '@/components/providers/create-soul-provider'
 const steps = [
   { label: 'Basic Info' },
   { label: 'Living Content' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
@@ -104,8 +104,8 @@ export default function CreatePreviewPage() {
       <PageContainer size="md" className="space-y-5 pt-7 sm:pt-9">
         <SectionHeader
           label="Create Soul"
-          title="✦ Soul Awakened"
-          subtitle="Your Soul is assembled. Review what will live on-chain before minting."
+          title="✦ Ready to Mint"
+          subtitle="Your Soul is assembled. Review what will live on-chain — then sign to awaken it."
           className="mb-1"
         />
 

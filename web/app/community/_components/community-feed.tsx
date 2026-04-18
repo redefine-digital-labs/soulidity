@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { usePrivy } from '@privy-io/react-auth'
 import { usePathname } from 'next/navigation'
+import { useGenericLogin } from '@/lib/hooks/use-generic-login'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { FilterTabs } from '@/components/nav/filter-tabs'
@@ -60,7 +60,7 @@ const channelColors: Record<string, 'gold' | 'teal' | 'purple' | 'muted'> = {
 
 function PostCard({ post }: { post: CommunityPost }) {
   const { user } = useAuth()
-  const { login } = usePrivy()
+  const login = useGenericLogin()
   const vote = useVotePost()
   const author = post.member
   const displayName = author.displayName || author.tgName || 'Anon'
@@ -71,7 +71,7 @@ function PostCard({ post }: { post: CommunityPost }) {
       {/* Vote column */}
       <div className="flex flex-col items-center gap-0.5 pt-0.5 min-w-[36px]">
         <button
-          onClick={() => user ? vote.mutate({ postId: post.id, direction: 1 }) : void login()}
+          onClick={() => user ? vote.mutate({ postId: post.id, direction: 1 }) : login()}
           className={`text-sm font-bold transition hover:text-foreground ${
             post.userVote === 1 ? 'text-teal' : 'text-muted'
           }`}
@@ -80,7 +80,7 @@ function PostCard({ post }: { post: CommunityPost }) {
         </button>
         <span className="text-xs font-bold text-foreground">{post.likeCount}</span>
         <button
-          onClick={() => user ? vote.mutate({ postId: post.id, direction: -1 }) : void login()}
+          onClick={() => user ? vote.mutate({ postId: post.id, direction: -1 }) : login()}
           className={`text-sm font-bold transition hover:text-foreground ${
             post.userVote === -1 ? 'text-danger' : 'text-muted'
           }`}
@@ -95,10 +95,21 @@ function PostCard({ post }: { post: CommunityPost }) {
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
           <Tag color={channelColors[channel] ?? 'muted'}>{channel}</Tag>
           <span>·</span>
+          <span
+            className="font-bold tracking-[0.04em]"
+            style={author.kind === 'agent' ? {
+              background: 'linear-gradient(92deg, #A855F7, #14B8A6)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              color: 'transparent',
+            } : undefined}
+          >
+            {author.kind === 'agent' ? 'Soul says' : 'Trainer says'}
+          </span>
+          <span>·</span>
           <Link href={`/community/u/${author.id}`} className="font-semibold hover:text-foreground transition">
             {displayName}
           </Link>
-          {author.kind === 'agent' && <Tag color="muted">Bot</Tag>}
           <span>·</span>
           <span>{formatDate(post.createdAt)}</span>
         </div>

@@ -102,7 +102,7 @@ export default function CreateSoulPage() {
               <UploadZone
                 icon="🖼️"
                 label="Click to upload cover image"
-                sublabel="JPEG, PNG, WebP, GIF · max 10MB"
+                sublabel="1:1 square recommended · 800×800 min · JPEG, PNG, WebP, GIF · max 10MB"
                 accept="image/png,image/jpeg,image/webp,image/gif"
                 onFileSelect={(file) => ctx.setCoverImage(file)}
                 className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
@@ -160,7 +160,7 @@ export default function CreateSoulPage() {
               ))}
             </div>
             <p className="text-xs leading-5 text-muted">
-              Locked at mint. Automatically paid to your wallet on every secondary sale.
+              <span className="font-semibold text-foreground">Typical on Soulidity: 5%</span> — you earn this share on every future resale, forever. Locked at mint and cannot be changed.
             </p>
           </div>
         </div>

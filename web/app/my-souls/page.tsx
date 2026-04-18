@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePrivy } from '@privy-io/react-auth'
+import { useGenericLogin } from '@/lib/hooks/use-generic-login'
 import { useMySouls } from '@/lib/hooks/use-souls'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useBookmarks } from '@/lib/hooks/use-social'
@@ -15,7 +16,7 @@ import { buttonStyles } from '@/components/ui/button'
 import { GrantModal } from '@/components/souls/grant-modal'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
 import { CollectionSection } from '@/components/collections/collection-section'
-import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulAssetSummary } from '@/lib/soulidity/types'
+import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulGrantStatus, SoulAssetSummary } from '@/lib/soulidity/types'
 
 const tabs = [
   { id: 'owned', label: 'Owned' },
@@ -263,11 +264,116 @@ function GrantRow({ grant }: { grant: SoulGrantRecord }) {
 /*  Page                                                               */
 /* ------------------------------------------------------------------ */
 
+const GRANT_STATUS_FILTERS = ['all', 'active', 'expired', 'revoked', 'superseded', 'invalidated'] as const satisfies readonly ('all' | SoulGrantStatus)[]
+type GrantStatusFilter = (typeof GRANT_STATUS_FILTERS)[number]
+
+function sumListedValueAtomic(entries: Array<{ listedPriceAtomic: string | null }>): string | null {
+  try {
+    const total = entries.reduce((acc, s) => {
+      if (!s.listedPriceAtomic) return acc
+      return acc + BigInt(s.listedPriceAtomic)
+    }, 0n)
+    return total === 0n ? null : total.toString()
+  } catch {
+    return null
+  }
+}
+
+function PortfolioStrip({ data }: { data: NonNullable<ReturnType<typeof useMySouls>['data']> }) {
+  // Must track the same active sale set as the Listings tab (listed + floor-violation Souls,
+  // plus listed collection caps). Otherwise a seller with only a listed collection cap sees
+  // "0 listed / —" while the Listings tab shows an active sale.
+  const listedSouls = data.owned.filter((s) => s.listingStatus === 'listed' || s.listingStatus === 'floor-violation')
+  const listedCollections = data.collections.filter((c) => c.listingStatus === 'listed')
+  const listedTotalAtomic = sumListedValueAtomic([...listedSouls, ...listedCollections])
+  const listedCount = listedSouls.length + listedCollections.length
+  const activeGrants = data.owned.reduce((acc, s) => acc + (s.activeGrantCount ?? 0), 0)
+  const pendingActions = data.owned.filter((s) => s.listingStatus === 'floor-violation').length
+
+  const items = [
+    {
+      label: 'Listed value',
+      value: listedTotalAtomic ? formatAtomicAmountForDisplay(listedTotalAtomic) : '—',
+      color: 'text-gold',
+      hint: `${listedCount} listed`,
+    },
+    {
+      label: 'Royalty (30d)',
+      value: '—',
+      color: 'text-foreground',
+      hint: 'tracking soon',
+    },
+    {
+      label: 'Active grants',
+      value: activeGrants.toLocaleString(),
+      color: 'text-purple',
+      hint: `${data.owned.length} Souls`,
+    },
+    {
+      label: 'Pending sigs',
+      value: pendingActions.toLocaleString(),
+      color: pendingActions > 0 ? 'text-danger' : 'text-muted',
+      hint: pendingActions > 0 ? 'needs review' : 'all clear',
+    },
+  ]
+
+  return (
+    <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="rounded-xl border border-border bg-[rgba(26,16,64,0.55)] px-3.5 py-3 backdrop-blur-[8px]"
+        >
+          <div className={'font-display text-[22px] font-extrabold leading-none tracking-[-0.02em] ' + item.color}>
+            {item.value}
+          </div>
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-[10.5px] uppercase tracking-[0.08em] text-muted">
+            <span className="font-semibold">{item.label}</span>
+            <span className="normal-case tracking-normal text-muted/70">{item.hint}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function grantsToCsv(grants: SoulGrantRecord[]): string {
+  const header = ['id', 'status', 'scopes', 'grantee', 'issuedBy', 'createdAt', 'expiresAt', 'endedAt']
+  const rows = grants.map((g) => [
+    g.id,
+    g.status,
+    g.scopes.join('|'),
+    g.granteeAddress,
+    g.issuedByAddress,
+    g.createdAt ?? '',
+    g.expiresAt ?? '',
+    g.endedAt ?? '',
+  ].map((field) => `"${String(field).replace(/"/g, '""')}"`).join(','))
+  return [header.join(','), ...rows].join('\n')
+}
+
+function downloadGrantsCsv(grants: SoulGrantRecord[]) {
+  if (typeof window === 'undefined') return
+  const csv = grantsToCsv(grants)
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `soulidity-grants-${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export default function MySoulsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('owned')
   const [grantModalSoul, setGrantModalSoul] = useState<MySoulEntry | null>(null)
+  const [activeGrantsOnly, setActiveGrantsOnly] = useState(false)
+  const [grantStatusFilter, setGrantStatusFilter] = useState<GrantStatusFilter>('all')
   const { user, loading, getAuthHeaders } = useAuth()
-  const { login, ready } = usePrivy()
+  const { ready } = usePrivy()
+  const login = useGenericLogin()
   const { data: myData, isLoading } = useMySouls(user?.id ?? null, getAuthHeaders)
   const { data: bookmarksData, isLoading: bookmarksLoading } = useBookmarks()
 
@@ -296,7 +402,7 @@ export default function MySoulsPage() {
           label="Sign in to load your Soulidity portfolio"
           sublabel="Owned Souls, collections, and grant records are fetched from authenticated routes."
           actionLabel="Sign In"
-          onAction={() => { void login() }}
+          onAction={login}
         />
       </PageContainer>
     )
@@ -339,7 +445,9 @@ export default function MySoulsPage() {
         }
       />
 
-      <div className="mt-5 mb-6">
+      {myData && <div className="mt-5"><PortfolioStrip data={myData} /></div>}
+
+      <div className="mb-6">
         <FilterTabs
           tabs={tabsWithCounts}
           activeId={activeTab}
@@ -355,20 +463,54 @@ export default function MySoulsPage() {
         </div>
       )}
 
-      {!isLoading && myData && activeTab === 'owned' && (
-        myData.owned.length > 0 ? (
+      {!isLoading && myData && activeTab === 'owned' && (() => {
+        if (myData.owned.length === 0) {
+          return <EmptyState icon={'\uD83E\uDEE5'} label="No owned Souls yet" sublabel="Purchased or freshly minted Souls will appear here." />
+        }
+        const filteredOwned = activeGrantsOnly
+          ? myData.owned.filter((s) => s.activeGrantCount > 0)
+          : myData.owned
+        return (
           <>
-            <p className="text-[11px] font-bold text-muted uppercase tracking-[0.08em] mb-3">
-              Souls you hold
-            </p>
-            <div className="flex flex-col gap-3">
-              {myData.owned.map((soul) => <SoulCard key={soul.id} soul={soul} onGrantClick={() => setGrantModalSoul(soul)} />)}
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-[11px] font-bold text-muted uppercase tracking-[0.08em]">
+                Souls you hold
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveGrantsOnly((v) => !v)}
+                className={
+                  'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ' +
+                  (activeGrantsOnly
+                    ? 'border-purple bg-purple/12 text-purple'
+                    : 'border-border bg-transparent text-muted hover:border-purple hover:text-purple')
+                }
+              >
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+                Active grants only
+                {activeGrantsOnly && (
+                  <span className="ml-1 rounded-full bg-purple/20 px-1.5 py-0.5 text-[10px] font-bold">
+                    {myData.owned.filter((s) => s.activeGrantCount > 0).length}
+                  </span>
+                )}
+              </button>
             </div>
+            {filteredOwned.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {filteredOwned.map((soul) => <SoulCard key={soul.id} soul={soul} onGrantClick={() => setGrantModalSoul(soul)} />)}
+              </div>
+            ) : (
+              <EmptyState
+                icon={'\uD83D\uDD10'}
+                label="No Souls match the active grants filter"
+                sublabel="None of your owned Souls currently have active grants."
+                actionLabel="Show all Souls"
+                onAction={() => setActiveGrantsOnly(false)}
+              />
+            )}
           </>
-        ) : (
-          <EmptyState icon={'\uD83E\uDEE5'} label="No owned Souls yet" sublabel="Purchased or freshly minted Souls will appear here." />
         )
-      )}
+      })()}
 
       {!isLoading && myData && activeTab === 'collections' && (
         myData.collections.length > 0 ? (
@@ -407,15 +549,66 @@ export default function MySoulsPage() {
         )
       )}
 
-      {!isLoading && myData && activeTab === 'activity' && (
-        myData.grants.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            {myData.grants.map((grant) => <GrantRow key={grant.id} grant={grant} />)}
+      {!isLoading && myData && activeTab === 'activity' && (() => {
+        if (myData.grants.length === 0) {
+          return <EmptyState icon={'\uD83D\uDD10'} label="No activity yet" sublabel="Grant records and activity will appear here." />
+        }
+        const filteredGrants = grantStatusFilter === 'all'
+          ? myData.grants
+          : myData.grants.filter((g) => g.status === grantStatusFilter)
+        return (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                {GRANT_STATUS_FILTERS.map((status) => {
+                  const count = status === 'all'
+                    ? myData.grants.length
+                    : myData.grants.filter((g) => g.status === status).length
+                  return (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setGrantStatusFilter(status)}
+                      className={
+                        'rounded-full border px-3 py-1 text-[11px] font-semibold capitalize transition-colors ' +
+                        (grantStatusFilter === status
+                          ? 'border-purple bg-purple/12 text-purple'
+                          : 'border-border bg-transparent text-muted hover:border-purple hover:text-purple')
+                      }
+                    >
+                      {status} <span className="ml-0.5 font-mono opacity-70">{count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => downloadGrantsCsv(filteredGrants)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-transparent px-3 py-1.5 text-[11px] font-semibold text-muted transition-colors hover:border-purple hover:text-purple"
+                title="Download CSV of filtered grants"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 2.5v8m0 0L5 7.5m3 3 3-3M3 13h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </svg>
+                Export CSV
+              </button>
+            </div>
+            {filteredGrants.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {filteredGrants.map((grant) => <GrantRow key={grant.id} grant={grant} />)}
+              </div>
+            ) : (
+              <EmptyState
+                icon={'\uD83D\uDD10'}
+                label={`No ${grantStatusFilter} grants`}
+                sublabel="Try a different status filter to see more grant records."
+                actionLabel="Show all grants"
+                onAction={() => setGrantStatusFilter('all')}
+              />
+            )}
           </div>
-        ) : (
-          <EmptyState icon={'\uD83D\uDD10'} label="No activity yet" sublabel="Grant records and activity will appear here." />
         )
-      )}
+      })()}
 
       {activeTab === 'bookmarks' && (
         bookmarksLoading ? (

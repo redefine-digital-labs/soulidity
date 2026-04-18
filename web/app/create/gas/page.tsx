@@ -31,7 +31,7 @@ import {
 const steps = [
   { label: 'Basic Info' },
   { label: 'Living Content' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]

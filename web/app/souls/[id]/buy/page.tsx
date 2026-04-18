@@ -3,6 +3,7 @@
 import { use, useEffect } from 'react'
 import Link from 'next/link'
 import { usePrivy } from '@privy-io/react-auth'
+import { useGenericLogin } from '@/lib/hooks/use-generic-login'
 import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { TxPending } from '@/components/ui/tx-pending'
@@ -19,7 +20,8 @@ function formatAddress(value: string | null | undefined) {
 export default function BuyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user, loading, getAuthHeaders } = useAuth()
-  const { login, ready } = usePrivy()
+  const { ready } = usePrivy()
+  const login = useGenericLogin()
   const { data: soul, isLoading, error: loadError } = useSoulDetail(id, getAuthHeaders, user?.id)
   const { status, error, purchase, txDigest } = usePurchase(soul ?? null)
   const { showToast } = useToast()
@@ -60,9 +62,7 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
           label="Sign in to purchase"
           sublabel="Buying a Soulidity asset requires an authenticated wallet session before the checkout can continue."
           actionLabel="Sign In"
-          onAction={() => {
-            void login()
-          }}
+          onAction={login}
         />
       </div>
     )

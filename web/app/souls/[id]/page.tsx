@@ -11,6 +11,7 @@ import { Button, buttonStyles } from '@/components/ui/button'
 import { SkillsPanel } from '@/components/souls/skills-panel'
 import { MemoryPanel } from '@/components/souls/memory-panel'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
+import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
@@ -78,9 +79,15 @@ function ListingCta({
     <button
       type="button"
       onClick={() => {
-        requireAuth(() => {
-          router.push(`/souls/${encodeURIComponent(soul.onChainId)}/buy`)
-        })
+        requireAuth(
+          () => {
+            router.push(`/souls/${encodeURIComponent(soul.onChainId)}/buy`)
+          },
+          {
+            path: `/souls/${encodeURIComponent(soul.onChainId)}/buy`,
+            label: `Resuming purchase of ${soul.name}.`,
+          },
+        )
       }}
       className={buttonStyles({ variant: 'gold' })}
     >
@@ -95,6 +102,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
   const { data: soul, isLoading, error } = useSoulDetail(id, getAuthHeaders, user?.id)
   const [showUpdatePrice, setShowUpdatePrice] = useState(false)
   const [showDelist, setShowDelist] = useState(false)
+  const [showReport, setShowReport] = useState(false)
 
   if (isLoading) {
     return (
@@ -136,9 +144,20 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="max-w-[760px] w-full mx-auto px-4 sm:px-6 py-8 relative z-10 space-y-6">
-      <Link href="/market" className="text-muted text-xs hover:text-foreground transition block">
-        ← Back to Market
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/market" className="text-muted text-xs hover:text-foreground transition block">
+          ← Back to Market
+        </Link>
+        {user && !soul.isOwner && (
+          <button
+            type="button"
+            onClick={() => setShowReport(true)}
+            className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition hover:text-danger"
+          >
+            ⚑ Report
+          </button>
+        )}
+      </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="w-full h-[200px] sm:h-[240px] flex items-end p-6" style={buildHeroStyle(soul.imageUrl)}>
@@ -300,6 +319,14 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
           <DelistModal soul={soul} open={showDelist} onClose={() => setShowDelist(false)} />
         </>
       )}
+
+      <ReportModal
+        open={showReport}
+        onClose={() => setShowReport(false)}
+        subjectType="soul"
+        subjectId={soul.onChainId}
+        subjectLabel={soul.name}
+      />
     </div>
   )
 }

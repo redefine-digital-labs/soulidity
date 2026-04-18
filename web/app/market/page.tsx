@@ -14,6 +14,7 @@ import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
+import type { PersonaFilter } from '@/lib/soulidity/persona'
 import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@/lib/soulidity/types'
 
 // Tag colors removed — tags now use uniform 'muted' styling
@@ -35,6 +36,23 @@ function buildHeroStyle(imageUrl: string | null | undefined) {
     backgroundSize: 'cover',
     backgroundPosition: 'center',
   }
+}
+
+// Seeded gradient so the same Soul always renders the same avatar fallback.
+function avatarGradientFor(seed: string) {
+  let h = 5381
+  for (let i = 0; i < seed.length; i += 1) {
+    h = ((h << 5) + h + seed.charCodeAt(i)) >>> 0
+  }
+  const hue = h % 360
+  const hue2 = (hue + 55) % 360
+  return `conic-gradient(from ${(h >> 3) % 360}deg at 38% 32%, hsl(${hue}, 62%, 54%), hsl(${hue2}, 52%, 44%), hsl(${hue}, 62%, 54%))`
+}
+
+function avatarInitial(name: string) {
+  const trimmed = name.trim()
+  if (!trimmed) return '✦'
+  return trimmed.charAt(0).toUpperCase()
 }
 
 // ── Bookmark Button ──
@@ -80,29 +98,47 @@ function BookmarkButton({ soul }: { soul: SoulAssetSummary }) {
   )
 }
 
+function CollectionStateRibbon({ collection }: { collection: SoulCollectionAssetSummary }) {
+  if (!collection.tradeable) {
+    return (
+      <div className="flex items-center gap-2 border-b border-muted/30 bg-[rgba(155,142,196,0.12)] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-muted">
+        <span aria-hidden="true">🔒</span>
+        Non-tradeable · permanent
+      </div>
+    )
+  }
+  if (collection.listingStatus === 'listed' && collection.listedPriceAtomic) {
+    return (
+      <div className="flex items-center justify-between border-b border-gold/40 bg-gold/12 px-4 py-2 text-[11px] font-bold tracking-[0.06em] text-gold">
+        <span className="uppercase">Cap listed</span>
+        <span className="font-mono text-[12px] normal-case">{formatAtomicAmountForDisplay(collection.listedPriceAtomic)}</span>
+      </div>
+    )
+  }
+  const heldByCreator =
+    collection.currentHolderAddress.toLowerCase() === collection.creatorAddress.toLowerCase()
+  return (
+    <div className="flex items-center gap-2 border-b border-teal/35 bg-teal/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-teal">
+      <span aria-hidden="true">◆</span>
+      {heldByCreator ? 'Held by creator' : 'Held by collector'}
+    </div>
+  )
+}
+
 function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary }) {
   return (
     <Link
       href={`/collections/${encodeURIComponent(collection.onChainId)}`}
       className="card card-hover group overflow-hidden cursor-pointer"
     >
-      <div className="h-[132px] p-4 flex items-end" style={buildHeroStyle(collection.imageUrl)}>
-        <Tag color={collection.listingStatus === 'listed' ? 'gold' : collection.tradeable ? 'muted' : 'danger'}>
-          {collection.listingStatus === 'listed' ? 'Listed' : collection.tradeable ? 'Held' : 'Non-tradeable'}
-        </Tag>
-      </div>
+      <CollectionStateRibbon collection={collection} />
+      <div className="h-[132px]" style={buildHeroStyle(collection.imageUrl)} />
       <div className="p-4 space-y-3">
         <div>
           <h3 className="text-base font-bold text-foreground">{collection.name}</h3>
           <p className="mt-1 line-clamp-2 text-xs leading-[1.5] text-muted">{collection.description}</p>
         </div>
         <div className="grid gap-2 rounded-lg border border-border bg-card2 p-3 text-xs text-muted">
-          <div className="flex items-center justify-between">
-            <span>Listed price</span>
-            <span className="font-semibold text-gold">
-              {collection.listedPriceAtomic ? formatAtomicAmountForDisplay(collection.listedPriceAtomic) : 'Not listed'}
-            </span>
-          </div>
           <div className="flex items-center justify-between">
             <span>Souls</span>
             <span className="font-semibold text-foreground">{collection.soulCount}</span>
@@ -114,6 +150,24 @@ function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary
         </div>
       </div>
     </Link>
+  )
+}
+
+function SoulCardSkeleton() {
+  return (
+    <div aria-hidden="true" className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="h-[140px] animate-pulse bg-card2" />
+      <div className="space-y-2.5 p-3.5">
+        <div className="flex gap-1.5">
+          <div className="h-4 w-12 animate-pulse rounded-full bg-card2" />
+          <div className="h-4 w-14 animate-pulse rounded-full bg-card2" />
+        </div>
+        <div className="h-4 w-32 animate-pulse rounded bg-card2" />
+        <div className="h-3 w-full animate-pulse rounded bg-card2" />
+        <div className="h-3 w-3/4 animate-pulse rounded bg-card2" />
+        <div className="h-5 w-20 animate-pulse rounded bg-card2" />
+      </div>
+    </div>
   )
 }
 
@@ -130,6 +184,7 @@ function humanPriceToAtomic(value: string): string {
 
 export default function MarketPage() {
   const [activeFilter, setActiveFilter] = useState('all')
+  const [personaFilter, setPersonaFilter] = useState<PersonaFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [marketView, setMarketView] = useState<'souls' | 'collections'>('souls')
@@ -186,6 +241,7 @@ export default function MarketPage() {
     minPrice: humanPriceToAtomic(minPrice),
     maxPrice: humanPriceToAtomic(maxPrice),
     creator: debouncedCreator,
+    persona: personaFilter,
   })
   const { data: collectionsData, isLoading: collectionsLoading } = useCollectionsList({
     page: 1,
@@ -193,7 +249,6 @@ export default function MarketPage() {
   })
 
   const visibleSouls = (soulsData?.items ?? []).filter((soul) => soul.listingStatus === 'listed')
-
   const visibleCollections = collectionsData?.items ?? []
 
   return (
@@ -330,7 +385,18 @@ export default function MarketPage() {
         />
 
         {marketView === 'souls' && (
-          <FilterTabs tabs={filterTabs} activeId={activeFilter} onChange={setActiveFilter} />
+          <>
+            <FilterTabs
+              tabs={[
+                { id: 'all', label: 'All Souls' },
+                { id: 'agents', label: 'Agents' },
+                { id: 'characters', label: 'Characters' },
+              ]}
+              activeId={personaFilter}
+              onChange={(id) => setPersonaFilter(id as PersonaFilter)}
+            />
+            <FilterTabs tabs={filterTabs} activeId={activeFilter} onChange={setActiveFilter} />
+          </>
         )}
       </div>
 
@@ -339,7 +405,7 @@ export default function MarketPage() {
           {soulsLoading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="h-[320px] rounded-xl bg-card animate-pulse" />
+                <SoulCardSkeleton key={index} />
               ))}
             </div>
           ) : visibleSouls.length === 0 ? (
@@ -351,6 +417,7 @@ export default function MarketPage() {
               onAction={() => {
                 setSearchQuery('')
                 setActiveFilter('all')
+                setPersonaFilter('all')
                 setMinPrice('')
                 setMaxPrice('')
                 setCreator('')
@@ -365,8 +432,20 @@ export default function MarketPage() {
                     href={`/souls/${encodeURIComponent(soul.onChainId)}`}
                     className="block cursor-pointer"
                   >
-                    <div className="flex h-[140px] items-center justify-center" style={buildHeroStyle(soul.imageUrl)}>
-                      {!soul.imageUrl && <span className="text-4xl">🤖</span>}
+                    <div
+                      className="relative flex h-[140px] items-center justify-center"
+                      style={soul.imageUrl ? buildHeroStyle(soul.imageUrl) : { backgroundImage: avatarGradientFor(soul.onChainId) }}
+                    >
+                      {!soul.imageUrl && (
+                        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full border border-white/10 bg-[rgba(13,10,30,0.55)] font-display text-[28px] font-extrabold tracking-[-0.02em] text-white backdrop-blur-sm">
+                          {avatarInitial(soul.name)}
+                        </div>
+                      )}
+                      {soul.collectionOnChainId && (
+                        <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full border border-border bg-[rgba(13,10,30,0.72)] px-2 py-[3px] text-[10.5px] font-semibold text-muted backdrop-blur-sm">
+                          from collection ↗
+                        </span>
+                      )}
                     </div>
                     <div className="space-y-2.5 p-3.5">
                       <div className="flex flex-wrap gap-1.5">
@@ -379,7 +458,12 @@ export default function MarketPage() {
                         <p className="mt-1 line-clamp-2 text-xs leading-[1.5] text-muted">{soul.description}</p>
                       </div>
                       {soul.listedPriceAtomic && (
-                        <p className="text-sm font-bold text-gold">{formatAtomicAmountForDisplay(soul.listedPriceAtomic)}</p>
+                        <div>
+                          <p className="font-display text-[16px] font-extrabold leading-none tracking-[-0.01em] text-gold">
+                            {formatAtomicAmountForDisplay(soul.listedPriceAtomic)}
+                          </p>
+                          <p className="mt-1 font-mono text-[10.5px] text-muted">+ network fee at checkout</p>
+                        </div>
                       )}
                     </div>
                   </Link>

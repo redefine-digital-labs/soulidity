@@ -11,7 +11,7 @@ const steps = [
   { label: 'Choose Source' },
   { label: 'Upload File' },
   { label: 'Map Fields' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
@@ -50,7 +50,7 @@ export default function ImportSuccessPage() {
           🚀
         </div>
 
-        <h1 className="mb-2 text-3xl font-bold">Soul Born</h1>
+        <h1 className="mb-2 text-3xl font-bold">✦ Your Soul is Awake</h1>
         <p className="mx-auto mb-10 max-w-[380px] text-sm leading-relaxed text-muted">
           Your imported Soul is permanently anchored on Sui. It exists on-chain forever — immutable, sovereign, and ready to trade.
         </p>

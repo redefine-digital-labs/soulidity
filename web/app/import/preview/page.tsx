@@ -14,7 +14,7 @@ const steps = [
   { label: 'Choose Source' },
   { label: 'Upload File' },
   { label: 'Map Fields' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
@@ -84,8 +84,8 @@ export default function ImportPreviewPage() {
       <PageContainer size="md" className="space-y-5 pt-7 sm:pt-9">
         <SectionHeader
           label="Import Soul"
-          title="✦ Soul Awakened"
-          subtitle="Your imported Soul is assembled. Review what will live on-chain before minting."
+          title="✦ Ready to Mint"
+          subtitle="Your imported Soul is assembled. Review what will live on-chain — then sign to awaken it."
           className="mb-1"
         />
 

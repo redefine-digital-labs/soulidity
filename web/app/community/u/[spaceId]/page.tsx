@@ -92,10 +92,17 @@ function formatAddress(value: string | null | undefined) {
   return `${value.slice(0, 6)}…${value.slice(-4)}`
 }
 
-function buildHeroStyle(imageUrl: string | null | undefined) {
+function buildHeroStyle(imageUrl: string | null | undefined, kind: string | null | undefined) {
   if (!imageUrl) {
+    if (kind === 'agent') {
+      // Soul space: purple↔teal brand gradient — feels like visiting an entity's home
+      return {
+        background: 'linear-gradient(115deg, #7C3AED 0%, #3B2388 42%, #14B8A6 100%)',
+      }
+    }
+    // Trainer space: muted "curator's shelf" pattern
     return {
-      background: 'linear-gradient(135deg, #2E1B6E, #0F5F73)',
+      background: 'radial-gradient(circle at 20% 30%, rgba(168,85,247,0.18), transparent 55%), radial-gradient(circle at 80% 70%, rgba(20,184,166,0.10), transparent 60%), #1A1040',
     }
   }
 
@@ -144,10 +151,15 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
 
   const displayName = profile.displayName || profile.tgName || profile.id
 
+  const isSoulSpace = profile.kind === 'agent'
+
   return (
     <div className="relative z-10 min-h-screen">
-      <div className="h-[120px] sm:h-[180px] relative overflow-hidden" style={buildHeroStyle(null)}>
+      <div className="h-[120px] sm:h-[180px] relative overflow-hidden" style={buildHeroStyle(null, profile.kind)}>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.16),transparent_40%)]" />
+        <div className="absolute bottom-3 right-4 font-mono text-[10.5px] uppercase tracking-[0.15em] text-white/60">
+          {isSoulSpace ? 'Soul · on-chain entity' : 'Trainer · curator'}
+        </div>
       </div>
 
       <div className="max-w-[800px] mx-auto px-6">
@@ -179,18 +191,38 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
         <p className="text-sm text-muted leading-relaxed mb-4">{profile.bio || 'No bio yet.'}</p>
 
         <div className="flex items-center gap-4 sm:gap-6 mb-5 pb-5 border-b border-border flex-wrap">
-          <div className="text-center">
-            <div className="font-bold text-base">{profile.uploadedSouls.length}</div>
-            <div className="text-[11px] text-muted">Souls</div>
-          </div>
-          <div className="text-center">
-            <div className="font-bold text-base text-gold">{profile.exp}</div>
-            <div className="text-[11px] text-muted">EXP</div>
-          </div>
-          <div className="text-center">
-            <div className="font-bold text-base">{profile.posts.length}</div>
-            <div className="text-[11px] text-muted">Posts</div>
-          </div>
+          {/* Soul spaces lead with Karma (EXP) + Grants; Trainer spaces lead with Souls created + Level. */}
+          {isSoulSpace ? (
+            <>
+              <div className="text-center">
+                <div className="font-bold text-base text-gold">⚡ {profile.exp}</div>
+                <div className="text-[11px] text-muted">Karma</div>
+              </div>
+              <div className="text-center">
+                <div className="font-bold text-base text-purple">{profile.posts.length}</div>
+                <div className="text-[11px] text-muted">Posts</div>
+              </div>
+              <div className="text-center">
+                <div className="font-bold text-base">{profile.uploadedSouls.length}</div>
+                <div className="text-[11px] text-muted">Related Souls</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-center">
+                <div className="font-bold text-base text-purple">{profile.uploadedSouls.length}</div>
+                <div className="text-[11px] text-muted">Souls Created</div>
+              </div>
+              <div className="text-center">
+                <div className="font-bold text-base text-gold">{profile.exp}</div>
+                <div className="text-[11px] text-muted">EXP</div>
+              </div>
+              <div className="text-center">
+                <div className="font-bold text-base">{profile.posts.length}</div>
+                <div className="text-[11px] text-muted">Posts</div>
+              </div>
+            </>
+          )}
           <div className="text-center">
             <div className="font-bold text-base">{followData?.followerCount ?? 0}</div>
             <div className="text-[11px] text-muted">Followers</div>
@@ -230,7 +262,7 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
                   href={`/souls/${encodeURIComponent(soul.onChainId)}`}
                   className="bg-card border border-border rounded-xl overflow-hidden hover:border-purple hover:-translate-y-0.5 transition block"
                 >
-                  <div className="h-24 flex items-end p-3" style={buildHeroStyle(soul.previewImages[0] ?? null)}>
+                  <div className="h-24 flex items-end p-3" style={buildHeroStyle(soul.previewImages[0] ?? null, profile.kind)}>
                     <Tag color={soul.listingStatus === 'listed' ? 'gold' : 'muted'}>{soul.listingStatus}</Tag>
                   </div>
                   <div className="p-3">

@@ -73,7 +73,7 @@ export function NavCreateMenu({ className }: NavCreateMenuProps) {
           'border-transparent bg-purple text-white hover:bg-purple-deep',
         )}
       >
-        <span className="px-3.5 text-[13px] font-semibold tracking-[-0.01em]">+ Create Soul</span>
+        <span className="px-3.5 text-[13px] font-semibold tracking-[-0.01em]">+ New</span>
         <span className={cn(
           'flex h-full items-center border-l px-2.5',
           'border-white/20 text-white/80',

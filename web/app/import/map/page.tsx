@@ -20,7 +20,7 @@ const steps = [
   { label: 'Choose Source' },
   { label: 'Upload File' },
   { label: 'Map Fields' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
@@ -212,8 +212,15 @@ export default function ImportMapPage() {
                   placeholder="Describe your Soul — what it does, who it's for, what makes it unique..."
                   value={ctx.manualDescription}
                   onChange={(e) => ctx.setManualDescription(e.target.value)}
-                  className="min-h-[80px] resize-none rounded-xl border-[#f59e0b]/30 bg-card2/90 px-3 py-2.5 placeholder:text-[#5f4f90] focus:border-[#f59e0b]"
+                  maxLength={6000}
+                  className="min-h-[120px] resize-y rounded-xl border-[#f59e0b]/30 bg-card2/90 px-3 py-2.5 placeholder:text-[#5f4f90] focus:border-[#f59e0b]"
                 />
+                <div className="flex items-center justify-between text-[10.5px] text-muted">
+                  <span>Autosaves as you type · recommended 400–2000 characters</span>
+                  <span className={ctx.manualDescription.length > 5800 ? 'font-semibold text-danger' : 'font-mono'}>
+                    {ctx.manualDescription.length.toLocaleString()} / 6,000
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -546,7 +553,7 @@ export default function ImportMapPage() {
               className: 'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
             })}
           >
-            Next: Soul Awakened <span aria-hidden="true">→</span>
+            Next: Preview <span aria-hidden="true">→</span>
           </button>
         </div>
       </PageContainer>

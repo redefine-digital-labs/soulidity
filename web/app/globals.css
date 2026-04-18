@@ -7,7 +7,7 @@
   --bg: #0D0A1E;
   --card: #1A1040;
   --card2: #261558;
-  --border: #2E1B6E;
+  --border: #3B2388;
   --nav-bg: rgba(13, 10, 30, 0.92);
 
   /* Brand */
@@ -47,25 +47,8 @@
   --radius-pill: 9999px;
 }
 
-/* ── Light Theme ─────────────────────────────────── */
-[data-theme="light"] {
-  --bg: #fafafa;
-  --card: #ffffff;
-  --card2: #f3f4f6;
-  --border: #e5e7eb;
-
-  --purple: #7C3AED;
-  --purple-deep: #6D28D9;
-  --gold: #D97706;
-  --gold-light: #F59E0B;
-  --teal: #0D9488;
-
-  --text-primary: #111827;
-  --text-muted: #6B7280;
-
-  --success: #059669;
-  --danger: #DC2626;
-}
+/* Light theme cut per design review X7 — Soulidity is dark-only.
+   Half-shipped light tokens removed to avoid hybrid broken surface. */
 
 /* ── Tailwind v4 Theme ───────────────────────────── */
 @theme inline {

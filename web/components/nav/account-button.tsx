@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useSuiClient } from '@mysten/dapp-kit'
 import { cn } from '@/lib/utils/cn'
 
 interface AccountButtonProps {
-  balance: string
   emoji: string
   userName?: string | null
   walletAddress?: string | null
   profileHref?: string | null
+  suiNetwork: 'mainnet' | 'testnet'
   onDisconnect: () => void
   onNavigate: (href: string) => void
 }
@@ -21,6 +22,30 @@ type DropdownItem = {
 function formatAddress(addr: string) {
   if (addr.length <= 14) return addr
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+}
+
+function formatSui(balanceMist: string) {
+  try {
+    const mist = BigInt(balanceMist)
+    if (mist === 0n) return '0'
+    if (mist < 1_000_000n) return '<0.001'
+    if (mist < 100_000_000_000n) {
+      const sui = Number(mist) / 1_000_000_000
+      if (sui < 1) return sui.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+      return sui.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+    }
+    const whole = mist / 1_000_000_000n
+    const rem = mist % 1_000_000_000n
+    const rounded = rem >= 500_000_000n ? whole + 1n : whole
+    return rounded.toString()
+  } catch {
+    return '—'
+  }
+}
+
+function explorerUrl(addr: string, network: 'mainnet' | 'testnet') {
+  const suffix = network === 'mainnet' ? '' : '?network=testnet'
+  return `https://suivision.xyz/account/${addr}${suffix}`
 }
 
 function CopyIcon({ className }: { className?: string }) {
@@ -40,10 +65,22 @@ function CheckIcon({ className }: { className?: string }) {
   )
 }
 
-export function AccountButton({ balance, emoji, userName, walletAddress, profileHref, onDisconnect, onNavigate }: AccountButtonProps) {
+function ExternalIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M10 3h3v3M13 3l-5.5 5.5M11 9v3.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5H7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  )
+}
+
+export function AccountButton({ emoji, userName, walletAddress, profileHref, suiNetwork, onDisconnect, onNavigate }: AccountButtonProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [suiBalance, setSuiBalance] = useState<{ address: string; mist: string } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const suiClient = useSuiClient()
+  const displayBalanceMist =
+    suiBalance !== null && suiBalance.address === walletAddress ? suiBalance.mist : null
 
   const dropdownItems: DropdownItem[] = [
     { label: 'Profile', href: profileHref ?? null },
@@ -64,6 +101,22 @@ export function AccountButton({ balance, emoji, userName, walletAddress, profile
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
+  useEffect(() => {
+    if (!open || !walletAddress) return
+    let cancelled = false
+    suiClient
+      .getBalance({ owner: walletAddress, coinType: '0x2::sui::SUI' })
+      .then((r) => {
+        if (!cancelled) setSuiBalance({ address: walletAddress, mist: r.totalBalance })
+      })
+      .catch(() => {
+        // leave stale so the next open retries instead of pinning a fake zero
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, walletAddress, suiClient])
+
   const handleCopyAddress = useCallback(() => {
     if (!walletAddress) return
     navigator.clipboard.writeText(walletAddress).then(() => {
@@ -71,6 +124,8 @@ export function AccountButton({ balance, emoji, userName, walletAddress, profile
       setTimeout(() => setCopied(false), 1500)
     })
   }, [walletAddress])
+
+  const networkLabel = suiNetwork === 'mainnet' ? 'Sui Mainnet' : 'Sui Testnet'
 
   return (
     <div ref={ref} className="relative">
@@ -85,7 +140,7 @@ export function AccountButton({ balance, emoji, userName, walletAddress, profile
           {emoji}
         </div>
         <span className="max-w-[88px] truncate text-[13px] font-semibold tracking-[0.01em] sm:max-w-[120px]">
-          {userName || balance || 'Account'}
+          {userName || 'Account'}
         </span>
         <svg
           width="12"
@@ -99,61 +154,89 @@ export function AccountButton({ balance, emoji, userName, walletAddress, profile
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(18rem,calc(100vw-2rem))] min-w-0 rounded-xl border border-border bg-card p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-          {/* Wallet address */}
-          {walletAddress && (
-            <>
-              <button
-                onClick={handleCopyAddress}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left transition hover:bg-purple/10 group"
-                title={walletAddress}
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+          <div className="flex items-center justify-between gap-2 px-3 pt-3">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-teal/50 bg-teal/10 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-teal"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-teal animate-pulse" />
+              {networkLabel}
+            </span>
+            {walletAddress && (
+              <a
+                href={explorerUrl(walletAddress, suiNetwork)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted transition hover:text-purple"
+                title="View on SuiVision"
               >
-                <span className="min-w-0 flex-1 font-mono text-xs text-teal truncate">
-                  {formatAddress(walletAddress)}
-                </span>
-                {copied ? (
-                  <CheckIcon className="h-3.5 w-3.5 shrink-0 text-teal" />
-                ) : (
-                  <CopyIcon className="h-3.5 w-3.5 shrink-0 text-muted group-hover:text-foreground transition-colors" />
-                )}
-              </button>
-              <div className="surface-divider my-1.5" />
-            </>
-          )}
+                Explorer
+                <ExternalIcon className="h-3 w-3" />
+              </a>
+            )}
+          </div>
 
-          {dropdownItems.map((item) => {
-            const disabled = !item.href
-            return (
-              <button
-                key={item.label}
-                type="button"
-                disabled={disabled}
-                onClick={() => {
-                  if (!item.href) return
-                  onNavigate(item.href)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm transition',
-                  disabled
-                    ? 'cursor-not-allowed text-muted/50'
-                    : 'text-muted hover:bg-purple/10 hover:text-foreground',
-                )}
-              >
-                <span className="text-[13px] font-semibold">{item.label}</span>
-              </button>
-            )
-          })}
-          <div className="surface-divider my-1.5" />
-          <button
-            onClick={() => {
-              onDisconnect()
-              setOpen(false)
-            }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm font-semibold text-danger transition hover:bg-danger/10"
-          >
-            Sign Out
-          </button>
+          <div className="p-1.5 pt-2">
+            {walletAddress && (
+              <>
+                <button
+                  onClick={handleCopyAddress}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left transition hover:bg-purple/10 group"
+                  title={walletAddress}
+                >
+                  <span className="min-w-0 flex-1 font-mono text-xs text-teal truncate">
+                    {formatAddress(walletAddress)}
+                  </span>
+                  {copied ? (
+                    <CheckIcon className="h-3.5 w-3.5 shrink-0 text-teal" />
+                  ) : (
+                    <CopyIcon className="h-3.5 w-3.5 shrink-0 text-muted group-hover:text-foreground transition-colors" />
+                  )}
+                </button>
+                <div className="flex items-center justify-between rounded-lg px-3 py-[7px] text-[12px]">
+                  <span className="text-muted">SUI balance</span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {displayBalanceMist === null ? '…' : `${formatSui(displayBalanceMist)} SUI`}
+                  </span>
+                </div>
+                <div className="surface-divider my-1.5" />
+              </>
+            )}
+
+            {dropdownItems.map((item) => {
+              const disabled = !item.href
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!item.href) return
+                    onNavigate(item.href)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm transition',
+                    disabled
+                      ? 'cursor-not-allowed text-muted/50'
+                      : 'text-muted hover:bg-purple/10 hover:text-foreground',
+                  )}
+                >
+                  <span className="text-[13px] font-semibold">{item.label}</span>
+                </button>
+              )
+            })}
+            <div className="surface-divider my-1.5" />
+            <button
+              onClick={() => {
+                onDisconnect()
+                setOpen(false)
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm font-semibold text-danger transition hover:bg-danger/10"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       )}
     </div>

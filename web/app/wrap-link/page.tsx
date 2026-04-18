@@ -20,7 +20,10 @@ export default function WrapLinkPage() {
       <div className="grid grid-cols-1 gap-4">
         <button
           type="button"
-          onClick={() => requireAuth(() => router.push('/wrap-link/personal'))}
+          onClick={() => requireAuth(
+            () => router.push('/wrap-link/personal'),
+            { path: '/wrap-link/personal', label: 'Resuming Personal Join.' },
+          )}
           className="bg-card border border-border rounded-xl p-6 hover:border-purple hover:-translate-y-0.5 transition block group text-left"
         >
           <div className="text-3xl mb-4">🔗</div>

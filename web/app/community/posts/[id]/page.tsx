@@ -2,13 +2,14 @@
 
 import { use, useState } from 'react'
 import Link from 'next/link'
-import { usePrivy } from '@privy-io/react-auth'
+import { useGenericLogin } from '@/lib/hooks/use-generic-login'
 import { PageContainer } from '@/components/layout/page-container'
 import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { usePostDetail, useCreateComment, useVotePost, useAcceptComment } from '@/lib/hooks/use-community'
 import { useAuth } from '@/components/providers/auth-provider'
+import { ReportModal } from '@/components/shared/report-modal'
 
 function formatDate(iso: string) {
   const d = new Date(iso)
@@ -23,12 +24,13 @@ function formatDate(iso: string) {
 export default function PostDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user } = useAuth()
-  const { login } = usePrivy()
+  const login = useGenericLogin()
   const { data: post, isLoading, error } = usePostDetail(id)
   const vote = useVotePost()
   const createComment = useCreateComment()
   const acceptComment = useAcceptComment()
   const [commentText, setCommentText] = useState('')
+  const [showReport, setShowReport] = useState(false)
 
   if (isLoading) {
     return (
@@ -102,20 +104,37 @@ export default function PostDetailPage({ params }: { params: Promise<{ id: strin
         <div className="surface-divider mt-5 pt-4" />
         <div className="flex items-center gap-3 text-sm">
           <button
-            onClick={() => user ? vote.mutate({ postId: id, direction: 1 }) : void login()}
+            onClick={() => user ? vote.mutate({ postId: id, direction: 1 }) : login()}
             className={`rounded-md px-2 py-1 font-semibold transition hover:text-foreground ${post.userVote === 1 ? 'text-teal' : 'text-muted'}`}
           >
             ▲ {post.likeCount > 0 ? post.likeCount : ''}
           </button>
           <button
-            onClick={() => user ? vote.mutate({ postId: id, direction: -1 }) : void login()}
+            onClick={() => user ? vote.mutate({ postId: id, direction: -1 }) : login()}
             className={`rounded-md px-2 py-1 font-semibold transition hover:text-foreground ${post.userVote === -1 ? 'text-danger' : 'text-muted'}`}
           >
             ▼
           </button>
           <span className="text-muted">{post.commentCount} comments</span>
+          {user && !isPostAuthor && (
+            <button
+              type="button"
+              onClick={() => setShowReport(true)}
+              className="ml-auto rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition hover:text-danger"
+            >
+              ⚑ Report
+            </button>
+          )}
         </div>
       </article>
+
+      <ReportModal
+        open={showReport}
+        onClose={() => setShowReport(false)}
+        subjectType="post"
+        subjectId={id}
+        subjectLabel={post.title}
+      />
 
       {/* Comment form */}
       {user && (

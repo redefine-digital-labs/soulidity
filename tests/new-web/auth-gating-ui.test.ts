@@ -11,7 +11,8 @@ describe('web auth gating regression guards', () => {
     const source = readSource('web/app/my-souls/page.tsx')
 
     expect(source).toContain('actionLabel="Sign In"')
-    expect(source).toContain('void login()')
+    expect(source).toContain('const login = useGenericLogin()')
+    expect(source).toContain('onAction={login}')
   })
 
   it('keeps the Soul detail Buy CTA behind requireAuth interception', () => {
@@ -27,7 +28,8 @@ describe('web auth gating regression guards', () => {
 
     expect(source).toContain('label="Sign in to purchase"')
     expect(source).toContain('actionLabel="Sign In"')
-    expect(source).toContain('void login()')
+    expect(source).toContain('const login = useGenericLogin()')
+    expect(source).toContain('onAction={login}')
   })
 
   it('keeps the wrap-link entry behind requireAuth interception', () => {

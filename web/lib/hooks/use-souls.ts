@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import type { MySoulsResponse, SoulAssetDetail, SoulsListResponse } from '@/lib/soulidity/types'
+import type { PersonaFilter } from '@/lib/soulidity/persona'
 
 export type SoulsSortOption = 'newest' | 'price_asc' | 'price_desc' | 'popular'
 
@@ -13,6 +14,7 @@ export interface SoulsListParams {
   minPrice?: string
   maxPrice?: string
   creator?: string
+  persona?: PersonaFilter
 }
 
 export function useSoulsList(params: SoulsListParams) {
@@ -24,6 +26,7 @@ export function useSoulsList(params: SoulsListParams) {
   if (params.minPrice) searchParams.set('minPrice', params.minPrice)
   if (params.maxPrice) searchParams.set('maxPrice', params.maxPrice)
   if (params.creator) searchParams.set('creator', params.creator)
+  if (params.persona && params.persona !== 'all') searchParams.set('persona', params.persona)
 
   return useQuery<SoulsListResponse>({
     queryKey: ['souls', params],

@@ -6,8 +6,9 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { Button } from '@/components/ui/button'
 import { NavCreateMenu } from './nav-create-menu'
-import { NavResourcesMenu } from './nav-resources-menu'
 import { AccountButton } from './account-button'
+import { NotificationBell } from './notification-bell'
+import { AgentModeBadge } from './agent-mode-badge'
 
 interface NavbarProps {
   connected: boolean
@@ -15,39 +16,67 @@ interface NavbarProps {
   onDisconnect?: () => void
   userEmoji?: string | null
   userName?: string | null
+  userKind?: string | null
   walletAddress?: string | null
   profileHref?: string | null
   isAdmin?: boolean
+  suiNetwork?: 'mainnet' | 'testnet' | null
 }
 
 const navLinks = [
   { label: 'Market', href: '/market', auth: false },
   { label: 'Community', href: '/community', auth: false },
   { label: 'My Souls', href: '/my-souls', auth: true },
+  { label: 'Docs', href: '/resources', auth: false },
 ] as const
 
 function SoulidityLogo() {
   return (
-    <Link href="/" className="group flex items-center gap-2.5 select-none">
+    <Link href="/" className="group flex items-center gap-2.5 select-none" aria-label="Soulidity">
       <svg
-        viewBox="0 0 44 50"
-        width="32"
-        height="36"
+        viewBox="0 0 32 32"
+        width="28"
+        height="28"
         xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
         className="shrink-0 transition-transform duration-200 group-hover:-translate-y-px"
       >
-        <path d="M11 22 Q4 8 14 4" stroke="#14B8A6" strokeWidth="3" fill="none" strokeLinecap="round" />
-        <path d="M14 22 Q7 9 17 5" stroke="#7C3AED" strokeWidth="2" fill="none" strokeLinecap="round" />
-        <path d="M33 22 Q40 8 30 4" stroke="#14B8A6" strokeWidth="3" fill="none" strokeLinecap="round" />
-        <path d="M30 22 Q37 9 27 5" stroke="#A855F7" strokeWidth="2" fill="none" strokeLinecap="round" />
-        <circle cx="22" cy="33" r="16" fill="#D6F5F2" stroke="#14B8A6" strokeWidth="2.5" />
-        <path d="M15 31 Q17 28 19 31" stroke="#0F766E" strokeWidth="2" fill="none" strokeLinecap="round" />
-        <path d="M25 31 Q27 28 29 31" stroke="#0F766E" strokeWidth="2" fill="none" strokeLinecap="round" />
-        <path d="M17 37 Q22 42 27 37" stroke="#0F766E" strokeWidth="2" fill="none" strokeLinecap="round" />
-        <circle cx="11" cy="29" r="1.2" fill="#14B8A6" opacity="0.7" />
-        <circle cx="33" cy="28" r="1.2" fill="#A855F7" opacity="0.7" />
+        <defs>
+          <linearGradient id="soulidity-nav-mark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#A855F7" />
+            <stop offset="1" stopColor="#14B8A6" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M16 3 C 9 3, 4 8, 4 15 C 4 21, 8 25, 13 26 L 13 29 L 19 29 L 19 26 C 24 25, 28 21, 28 15 C 28 8, 23 3, 16 3 Z"
+          fill="url(#soulidity-nav-mark)"
+          opacity="0.22"
+        />
+        <path
+          d="M16 6 C 10.5 6, 7 10, 7 15 C 7 19, 9.5 22, 13 23"
+          stroke="url(#soulidity-nav-mark)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          fill="none"
+        />
+        <path
+          d="M16 6 C 21.5 6, 25 10, 25 15 C 25 19, 22.5 22, 19 23"
+          stroke="url(#soulidity-nav-mark)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          fill="none"
+        />
+        <circle cx="16" cy="15" r="3.2" fill="#F59E0B" />
+        <path
+          d="M13 25 L 13 28 L 19 28 L 19 25"
+          stroke="url(#soulidity-nav-mark)"
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          fill="none"
+        />
       </svg>
-      <span className="font-display text-base font-extrabold tracking-[-0.03em] text-foreground sm:text-lg">
+      <span className="font-display text-base font-extrabold tracking-[-0.02em] text-foreground sm:text-lg">
         Soul<span className="text-purple">idity</span>
       </span>
     </Link>
@@ -61,7 +90,7 @@ function navLinkClass(isActive: boolean) {
   )
 }
 
-export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName, walletAddress, profileHref, isAdmin }: NavbarProps) {
+export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, userName, userKind, walletAddress, profileHref, isAdmin, suiNetwork }: NavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -82,7 +111,6 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
             )
           })}
           <NavCreateMenu />
-          <NavResourcesMenu />
           {isAdmin && (
             <Link
               href="/admin"
@@ -94,13 +122,15 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
         </nav>
 
         <div className="flex items-center justify-end gap-2.5">
+          {connected && userKind === 'agent' && <AgentModeBadge />}
+          {connected && <NotificationBell className="hidden md:block" />}
           {connected ? (
             <AccountButton
-              balance=""
               emoji={userEmoji ?? '🌟'}
               userName={userName}
               walletAddress={walletAddress}
               profileHref={profileHref}
+              suiNetwork={suiNetwork ?? 'testnet'}
               onDisconnect={onDisconnect ?? (() => {})}
               onNavigate={(href) => router.push(href)}
             />
@@ -166,7 +196,6 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
                   { href: '/collections/create', label: 'Create Collection' },
                   { href: '/import', label: 'Import Soul' },
                   { href: '/wrap-link', label: 'Expand to Soul' },
-                  { href: '/resources', label: 'Resources' },
                 ].map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
                   return (

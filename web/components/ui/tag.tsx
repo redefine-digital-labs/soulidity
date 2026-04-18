@@ -52,7 +52,7 @@ const Tag = forwardRef<HTMLSpanElement, TagProps>(function Tag(
       ref={ref}
       onClick={onClick}
       className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-[3px] text-[11px] font-semibold tracking-[0.01em]',
+        'inline-flex items-center rounded-full border px-2.5 py-[3px] text-[11.5px] font-semibold tracking-[0.02em]',
         text,
         border,
         bg,

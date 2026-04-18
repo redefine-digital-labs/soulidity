@@ -14,7 +14,7 @@ const steps = [
   { label: 'Choose Source' },
   { label: 'Upload File' },
   { label: 'Map Fields' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]

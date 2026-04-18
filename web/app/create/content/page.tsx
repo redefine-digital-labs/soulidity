@@ -16,7 +16,7 @@ import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 const steps = [
   { label: 'Basic Info' },
   { label: 'Living Content' },
-  { label: 'Soul Awakened' },
+  { label: 'Preview & Confirm' },
   { label: 'Pay Gas' },
   { label: 'On-chain' },
 ]
@@ -602,7 +602,7 @@ export default function CreateContentPage() {
                 'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
             })}
           >
-            Next: Soul Awakened <span aria-hidden="true">→</span>
+            Next: Preview <span aria-hidden="true">→</span>
           </button>
         </div>
       </PageContainer>

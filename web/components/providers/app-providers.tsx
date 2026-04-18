@@ -3,7 +3,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { SuiClientProvider } from '@mysten/dapp-kit'
 import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
-import { ThemeProvider } from './theme-provider'
 import { PrivyProvider } from './privy-provider'
 import { QueryProvider } from './query-provider'
 import { AuthProvider } from './auth-provider'
@@ -30,18 +29,16 @@ export function AppProviders({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <ThemeProvider>
-      <PrivyProvider>
-        <QueryProvider>
-          <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-            <AuthProvider>
-              <ToastProvider>
-                {children}
-              </ToastProvider>
-            </AuthProvider>
-          </SuiClientProvider>
-        </QueryProvider>
-      </PrivyProvider>
-    </ThemeProvider>
+    <PrivyProvider>
+      <QueryProvider>
+        <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
+          <AuthProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </AuthProvider>
+        </SuiClientProvider>
+      </QueryProvider>
+    </PrivyProvider>
   )
 }
