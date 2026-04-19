@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireIdentity, resolveIdentity } from '@web/lib/auth/identity'
+import { resolveMemberSpaceId } from '@web/lib/community/resolve-space'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,9 +9,13 @@ export const dynamic = 'force-dynamic'
 // Returns follow status + counts for a given member
 export async function GET(request: NextRequest) {
   try {
-  const memberId = request.nextUrl.searchParams.get('memberId')
-  if (!memberId) {
+  const rawMemberId = request.nextUrl.searchParams.get('memberId')
+  if (!rawMemberId) {
     return NextResponse.json({ error: 'memberId required' }, { status: 400 })
+  }
+  const memberId = await resolveMemberSpaceId(rawMemberId)
+  if (!memberId) {
+    return NextResponse.json({ isFollowing: false, followerCount: 0, followingCount: 0 })
   }
 
   const [followerCount, followingCount] = await Promise.all([
@@ -49,22 +54,17 @@ export async function POST(request: NextRequest) {
   if (error) return error
 
   const body = await request.json()
-  const targetMemberId: string | undefined = body.targetMemberId
-  if (!targetMemberId || typeof targetMemberId !== 'string') {
+  const rawTargetMemberId: string | undefined = body.targetMemberId
+  if (!rawTargetMemberId || typeof rawTargetMemberId !== 'string') {
     return NextResponse.json({ error: 'targetMemberId required' }, { status: 400 })
+  }
+  const targetMemberId = await resolveMemberSpaceId(rawTargetMemberId)
+  if (!targetMemberId) {
+    return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }
 
   if (targetMemberId === identity!.memberId) {
     return NextResponse.json({ error: 'Cannot follow yourself' }, { status: 400 })
-  }
-
-  // Verify target exists
-  const target = await prisma.member.findUnique({
-    where: { id: targetMemberId },
-    select: { id: true },
-  })
-  if (!target) {
-    return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }
 
   const existing = await prisma.follow.findUnique({

@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE "members"
+  ADD COLUMN IF NOT EXISTS "cover_image" TEXT;
+
+COMMIT;

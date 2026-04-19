@@ -20,6 +20,7 @@ import {
 import { privy } from './privy'
 import { resolveAgentByApiKey } from './resolve-agent'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
+import { allocateUniqueHandle, resolveHandleSeed } from '@web/lib/handle'
 
 export interface Identity {
   accountId: string
@@ -315,6 +316,26 @@ async function ensureSuiWallet(
   }
 }
 
+export async function syncHumanMemberSuiWallet(accountId: string, memberId: string): Promise<string | null> {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { privyDid: true },
+  })
+  if (!account?.privyDid) {
+    return null
+  }
+
+  await ensureSuiWallet(account.privyDid, memberId)
+
+  const wallet = await prisma.walletBinding.findFirst({
+    where: { memberId, chain: 'sui' },
+    orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    select: { address: true },
+  })
+
+  return wallet?.address ?? null
+}
+
 export async function resolvePrivyIdentity(token: string): Promise<Identity | null> {
   let claims: Awaited<ReturnType<typeof privy.verifyAuthToken>>
   try {
@@ -422,11 +443,16 @@ export async function resolvePrivyIdentity(token: string): Promise<Identity | nu
   try {
     const result = await prisma.$transaction(async (tx) => {
       // Check for pending human member to link (TG pre-bound, accountId null)
-      let pendingMember: { id: string } | null = null
+      let pendingMember: {
+        id: string
+        handle: string | null
+        displayName: string | null
+        tgName: string | null
+      } | null = null
       if (tgId) {
         pendingMember = await tx.member.findFirst({
           where: { tgId, kind: 'human', accountId: null },
-          select: { id: true },
+          select: { id: true, handle: true, displayName: true, tgName: true },
         })
       }
 
@@ -442,18 +468,36 @@ export async function resolvePrivyIdentity(token: string): Promise<Identity | nu
 
       const account = await tx.account.create({ data: accountData })
 
+      async function handleExists(candidate: string): Promise<boolean> {
+        const existing = await tx.member.findUnique({ where: { handle: candidate }, select: { id: true } })
+        return !!existing
+      }
+
       let memberId: string
       if (pendingMember) {
+        const handleSeed = resolveHandleSeed({
+          displayName: pendingMember.displayName,
+          tgName: pendingMember.tgName ?? tgName,
+          email,
+        })
+        const update: { accountId: string; handle?: string } = { accountId: account.id }
+        if (!pendingMember.handle) {
+          update.handle = await allocateUniqueHandle(handleSeed, pendingMember.id, handleExists)
+        }
         await tx.member.update({
           where: { id: pendingMember.id },
-          data: { accountId: account.id },
+          data: update,
         })
         memberId = pendingMember.id
       } else {
-        const newMember = await tx.member.create({
+        const provisional = await tx.member.create({
           data: { accountId: account.id, kind: 'human' },
+          select: { id: true },
         })
-        memberId = newMember.id
+        const handleSeed = resolveHandleSeed({ tgName, email })
+        const handle = await allocateUniqueHandle(handleSeed, provisional.id, handleExists)
+        await tx.member.update({ where: { id: provisional.id }, data: { handle } })
+        memberId = provisional.id
       }
 
       return { accountId: account.id, memberId }

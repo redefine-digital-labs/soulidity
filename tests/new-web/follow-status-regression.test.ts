@@ -19,6 +19,14 @@ describe('follow status regression guards', () => {
     expect(useFollowStatusBlock).toContain('headers,')
   })
 
+  it('reads community profile follow stats from the canonical member id', () => {
+    const source = readSource('web/app/community/u/[spaceId]/page.tsx')
+
+    expect(source).toContain('useFollowStatus(profile?.id ?? null)')
+    expect(source).not.toContain('const { data: followData } = useFollowStatus(spaceId)')
+    expect(source).toContain('<FollowButton targetMemberId={profile.id} />')
+  })
+
   it('updates the viewer-scoped follow cache after toggling', () => {
     const source = readSource('web/lib/hooks/use-social.ts')
     const useToggleFollowBlock = source.match(/export function useToggleFollow[\s\S]*?\n}\n\n\/\/ ── Bookmark hooks ──/)?.[0]

@@ -1,12 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
 import { AuthGate } from '@/components/auth/auth-gate'
 import { useAuth, type AuthUser } from '@/components/providers/auth-provider'
+import { Button } from '@/components/ui/button'
+import { CoverImagePicker } from '@/components/ui/cover-image-picker'
 import { useUpdateProfile } from '@/lib/hooks/use-profile'
+
+function formatAddress(value: string | null | undefined) {
+  if (!value) return '—'
+  return `${value.slice(0, 6)}…${value.slice(-4)}`
+}
+
+type WalletStatus = 'idle' | 'syncing' | 'success' | 'error'
 
 function ProfileForm({ user }: { user: AuthUser }) {
   const { status, error, updateProfile } = useUpdateProfile()
+  const { getAuthHeaders, refresh } = useAuth()
 
   const [displayName, setDisplayName] = useState(() => user.displayName ?? user.tgName ?? '')
   const [handle, setHandle] = useState(() => user.handle ?? '')
@@ -14,26 +25,163 @@ function ProfileForm({ user }: { user: AuthUser }) {
   const [emoji, setEmoji] = useState(() => user.avatar ?? '🤖')
   const [twitterUrl, setTwitterUrl] = useState(() => user.twitterUrl ?? '')
   const [websiteUrl, setWebsiteUrl] = useState(() => user.websiteUrl ?? '')
+  const [walletAddress, setWalletAddress] = useState<string | null>(() => user.primarySuiAddress)
+  const [walletStatus, setWalletStatus] = useState<WalletStatus>('idle')
+  const [walletError, setWalletError] = useState<string | null>(null)
+
+  const coverPreviewObjectUrlRef = useRef<string | null>(null)
+  const [coverImageFile, setCoverImageFileRaw] = useState<File | null>(null)
+  const [coverImagePreviewUrl, setCoverImagePreviewUrl] = useState<string | null>(() => user.coverImageUrl ?? null)
+
+  useEffect(() => {
+    return () => {
+      if (coverPreviewObjectUrlRef.current) {
+        URL.revokeObjectURL(coverPreviewObjectUrlRef.current)
+      }
+    }
+  }, [])
+
+  const setCoverImage = useCallback((file: File | null) => {
+    if (coverPreviewObjectUrlRef.current) {
+      URL.revokeObjectURL(coverPreviewObjectUrlRef.current)
+      coverPreviewObjectUrlRef.current = null
+    }
+
+    if (file) {
+      const nextUrl = URL.createObjectURL(file)
+      coverPreviewObjectUrlRef.current = nextUrl
+      setCoverImagePreviewUrl(nextUrl)
+      setCoverImageFileRaw(file)
+      return
+    }
+
+    setCoverImagePreviewUrl(null)
+    setCoverImageFileRaw(null)
+  }, [])
+
+  const uploadCoverImage = useCallback(async () => {
+    if (!coverImageFile) return coverImagePreviewUrl
+
+    const headers = await getAuthHeaders()
+    const formData = new FormData()
+    formData.append('file', coverImageFile)
+
+    const response = await fetch('/api/profile/cover', {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.error || `Cover upload failed: ${response.status}`)
+    }
+
+    const data = await response.json() as { blobUrl: string }
+    return data.blobUrl
+  }, [coverImageFile, coverImagePreviewUrl, getAuthHeaders])
+
+  const handleSyncWallet = useCallback(async () => {
+    setWalletStatus('syncing')
+    setWalletError(null)
+
+    try {
+      const headers = await getAuthHeaders()
+      const response = await fetch('/api/profile/wallet', {
+        method: 'POST',
+        headers,
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error || `Wallet sync failed: ${response.status}`)
+      }
+
+      const data = await response.json() as { primarySuiAddress: string }
+      setWalletAddress(data.primarySuiAddress)
+      setWalletStatus('success')
+      await refresh()
+    } catch (syncError) {
+      setWalletError(syncError instanceof Error ? syncError.message : 'Wallet sync failed')
+      setWalletStatus('error')
+    }
+  }, [getAuthHeaders, refresh])
 
   async function handleSave() {
     try {
-      await updateProfile({
+      const nextCoverImageUrl = await uploadCoverImage()
+      const savedProfile = await updateProfile({
         displayName: displayName.trim() || null,
         avatar: emoji,
         bio: bio.trim() || null,
+        coverImageUrl: nextCoverImageUrl,
         handle: handle.trim() || null,
         twitterUrl: twitterUrl.trim() || null,
         websiteUrl: websiteUrl.trim() || null,
-      })
-    } catch { /* error set in hook */ }
+      }) as { coverImage?: string | null }
+
+      if (coverPreviewObjectUrlRef.current) {
+        URL.revokeObjectURL(coverPreviewObjectUrlRef.current)
+        coverPreviewObjectUrlRef.current = null
+      }
+      setCoverImageFileRaw(null)
+      setCoverImagePreviewUrl(savedProfile.coverImage ?? nextCoverImageUrl ?? null)
+    } catch {
+      /* error set in hook */
+    }
   }
 
   const isSaving = status === 'saving'
+  const isSyncingWallet = walletStatus === 'syncing'
 
   return (
-    <div className="max-w-[540px] mx-auto px-6 py-8 relative z-10">
+    <div id="profile" className="max-w-[640px] mx-auto px-6 py-8 relative z-10">
       <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Settings</p>
-      <h1 className="font-display text-2xl font-bold mb-6">Edit Profile</h1>
+      <h1 className="font-display text-2xl font-bold mb-2">Edit Profile</h1>
+      <p className="text-sm text-muted mb-6">
+        These settings power your public page at <span className="font-mono text-foreground">/community/u/{user.id}</span>.
+      </p>
+
+      <section id="cover" className="mb-8 rounded-xl border border-border bg-card px-5 py-5">
+        <div className="mb-3">
+          <h2 className="text-sm font-bold text-foreground">Profile Cover</h2>
+          <p className="text-xs text-muted mt-1">
+            Update the banner shown on your public profile. PNG, JPEG, and WebP are supported.
+          </p>
+        </div>
+        <CoverImagePicker
+          file={coverImageFile}
+          previewUrl={coverImagePreviewUrl}
+          onChange={setCoverImage}
+          label="Upload profile cover"
+          sublabel="Square crop · exported at 1024×1024 · shown as your public hero"
+          icon="🌌"
+        />
+      </section>
+
+      <section id="wallet" className="mb-8 rounded-xl border border-border bg-card px-5 py-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="text-sm font-bold text-foreground">Sui Wallet</h2>
+            <p className="text-xs text-muted mt-1">
+              Your public profile and Soulidity actions use the wallet provisioned through Privy.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void handleSyncWallet()} disabled={isSyncingWallet}>
+            {isSyncingWallet ? 'Linking…' : walletAddress ? 'Re-sync wallet' : 'Link wallet'}
+          </Button>
+        </div>
+        <div className="mt-4 rounded-lg border border-border bg-card2/60 px-4 py-3">
+          <div className="text-xs uppercase tracking-[0.08em] text-muted mb-1">Primary wallet</div>
+          <div className="font-mono text-sm text-foreground">
+            {walletAddress ? formatAddress(walletAddress) : 'Not linked yet'}
+          </div>
+          {walletError && (
+            <p className="text-xs font-semibold text-danger mt-2">{walletError}</p>
+          )}
+          {walletStatus === 'success' && !walletError && (
+            <p className="text-xs font-semibold text-teal mt-2">Wallet is linked and ready.</p>
+          )}
+        </div>
+      </section>
 
       <div className="flex items-center gap-4 mb-6">
         <div className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-3xl" style={{ background: 'linear-gradient(135deg, var(--purple-deep), var(--teal))' }}>
@@ -116,13 +264,14 @@ function ProfileForm({ user }: { user: AuthUser }) {
         </div>
       )}
 
-      <button
+      <Button
+        full
+        size="lg"
         onClick={() => void handleSave()}
         disabled={isSaving}
-        className={`w-full bg-purple text-white font-bold text-[15px] px-7 py-3 rounded-xl hover:bg-purple-deep transition ${isSaving ? 'opacity-60 cursor-wait' : ''}`}
       >
         {isSaving ? 'Saving…' : 'Save Profile'}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -135,7 +284,7 @@ export default function ProfilePage() {
       icon="🪪"
       label="Sign in to edit your profile"
       sublabel="Profile settings are only available after your Soulidity account is loaded."
-      className="max-w-[540px]"
+      className="max-w-[640px]"
     >
       {user ? <ProfileForm key={user.id} user={user} /> : null}
     </AuthGate>

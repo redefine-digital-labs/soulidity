@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveIdentity } from '@web/lib/auth/identity'
 import { prisma } from '@web/lib/prisma'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { resolveMemberSpaceId } from '@web/lib/community/resolve-space'
 import { serializeSoulPreviewImageList } from '@/lib/soulidity/serialization'
 import { parseCommunityTags } from '@shared/community-tags'
 
@@ -76,7 +77,11 @@ export async function GET(
     )
   }
 
-  const { id } = await params
+  const { id: rawId } = await params
+  const id = await resolveMemberSpaceId(rawId)
+  if (!id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
   const isOwnProfile = identity?.memberId === id
 
   const member = await prisma.member.findUnique({
@@ -85,9 +90,11 @@ export async function GET(
       id: true,
       tgName: true,
       displayName: true,
+      handle: true,
       kind: true,
       avatar: true,
       bio: true,
+      coverImage: true,
       level: true,
       exp: true,
       joinedAt: true,
@@ -139,10 +146,11 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const { walletBindings, authoredSoulAssets, ...rest } = member
+  const { walletBindings, authoredSoulAssets, coverImage, ...rest } = member
 
   return NextResponse.json({
     ...rest,
+    coverImageUrl: coverImage,
     posts: rest.posts.map((post) => ({
       ...post,
       tags: parseCommunityTags(post.tags),

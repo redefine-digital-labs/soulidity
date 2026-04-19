@@ -63,6 +63,7 @@ export function CoverImagePicker({
 }: CoverImagePickerProps) {
   const [pending, setPending] = useState<{ file: File; url: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const hasSelection = Boolean(file || previewUrl)
 
   // Revoke the temporary URL we own for the pending (pre-crop) image.
   useEffect(() => {
@@ -104,7 +105,7 @@ export function CoverImagePicker({
 
   return (
     <>
-      {!file ? (
+      {!hasSelection ? (
         <UploadZone
           icon={icon}
           label={label}
@@ -124,10 +125,14 @@ export function CoverImagePicker({
             />
           )}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-            <div className="text-xs text-muted">
-              {(file.size / 1024).toFixed(1)} KB · 1:1 {describeMime(file.type)} · cropped
-            </div>
+            <div className="truncate text-sm font-semibold text-foreground">{file?.name ?? 'Current cover image'}</div>
+            {file ? (
+              <div className="text-xs text-muted">
+                {(file.size / 1024).toFixed(1)} KB · 1:1 {describeMime(file.type)} · cropped
+              </div>
+            ) : (
+              <div className="text-xs text-muted">Saved profile cover</div>
+            )}
           </div>
           <button
             type="button"
@@ -137,7 +142,7 @@ export function CoverImagePicker({
             }}
             className="shrink-0 rounded-lg border border-purple/25 px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-purple/45 hover:text-foreground"
           >
-            Replace
+            {file ? 'Replace' : 'Clear'}
           </button>
         </div>
       )}

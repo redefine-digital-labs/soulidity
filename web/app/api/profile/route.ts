@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@web/lib/prisma'
 import { requireIdentity } from '@web/lib/auth/identity'
 import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { HANDLE_RE, RESERVED_HANDLES } from '@web/lib/handle'
 
 export const dynamic = 'force-dynamic'
 
 const PROFILE_RATE_LIMIT = { max: 10, windowMs: 5 * 60 * 1000 } as const
-const HANDLE_RE = /^[a-zA-Z0-9_]{3,30}$/
-const RESERVED_HANDLES = new Set(['clawnews-bot', 'clawnews_bot', 'system', 'admin', 'moderator'])
 const ALLOWED_AVATARS = new Set(['🤖', '🦊', '👻', '📊', '💬', '⚙️', '🌸', '⚡'])
 
 function isValidUrl(value: string): boolean {
@@ -79,12 +78,28 @@ export async function PATCH(request: NextRequest) {
   if (body.handle !== undefined) {
     if (body.handle === null || body.handle === '') {
       updates.handle = null
-    } else if (typeof body.handle !== 'string' || !HANDLE_RE.test(body.handle)) {
+    } else if (typeof body.handle !== 'string') {
       errors.push('handle must be 3-30 alphanumeric/underscore characters')
-    } else if (RESERVED_HANDLES.has(body.handle.toLowerCase())) {
-      errors.push('This handle is reserved')
     } else {
-      updates.handle = body.handle.toLowerCase()
+      const normalizedHandle = body.handle.trim().toLowerCase()
+      if (!HANDLE_RE.test(normalizedHandle)) {
+        errors.push('handle must be 3-30 alphanumeric/underscore characters')
+      } else if (RESERVED_HANDLES.has(normalizedHandle)) {
+        errors.push('This handle is reserved')
+      } else {
+        updates.handle = normalizedHandle
+      }
+    }
+  }
+
+  // coverImage
+  if (body.coverImageUrl !== undefined) {
+    if (body.coverImageUrl === null || body.coverImageUrl === '') {
+      updates.coverImage = null
+    } else if (typeof body.coverImageUrl !== 'string' || !isValidUrl(body.coverImageUrl)) {
+      errors.push('coverImageUrl must be a valid URL')
+    } else {
+      updates.coverImage = body.coverImageUrl.trim()
     }
   }
 
@@ -127,6 +142,7 @@ export async function PATCH(request: NextRequest) {
         displayName: true,
         avatar: true,
         bio: true,
+        coverImage: true,
         handle: true,
         twitterUrl: true,
         websiteUrl: true,

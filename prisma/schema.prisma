@@ -156,6 +156,7 @@ model Member {
   level       Int      @default(1)
   avatar      String?
   bio         String?
+  coverImage  String?  @map("cover_image")
   exp         Int      @default(0)
   kind        String   @default("human")
   displayName String?  @map("display_name")

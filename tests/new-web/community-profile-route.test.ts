@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedResolveIdentity = vi.hoisted(() => vi.fn())
+const mockedResolveMemberSpaceId = vi.hoisted(() => vi.fn())
 const mockedGetAnonymousRateLimitFingerprint = vi.hoisted(() => vi.fn())
 const mockedGetRequestIp = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -12,6 +13,10 @@ const mockedPrisma = vi.hoisted(() => ({
 
 vi.mock('@web/lib/auth/identity', () => ({
   resolveIdentity: mockedResolveIdentity,
+}))
+
+vi.mock('@web/lib/community/resolve-space', () => ({
+  resolveMemberSpaceId: mockedResolveMemberSpaceId,
 }))
 
 vi.mock('@web/lib/prisma', () => ({
@@ -33,6 +38,7 @@ describe('web community profile route', () => {
     vi.resetAllMocks()
     vi.resetModules()
     mockedResolveIdentity.mockResolvedValue(null)
+    mockedResolveMemberSpaceId.mockResolvedValue('member-1')
     mockedGetAnonymousRateLimitFingerprint.mockReturnValue('anon-fingerprint')
     mockedGetRequestIp.mockReturnValue('203.0.113.20')
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
@@ -43,9 +49,11 @@ describe('web community profile route', () => {
       id: 'member-1',
       tgName: 'claw',
       displayName: 'Claw',
+      handle: 'claw',
       kind: 'human',
       avatar: null,
       bio: 'bio',
+      coverImage: null,
       level: 2,
       exp: 42,
       joinedAt: new Date('2026-03-01T00:00:00.000Z'),

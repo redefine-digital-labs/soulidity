@@ -9,6 +9,7 @@ export interface ProfileUpdatePayload {
   displayName?: string | null
   avatar?: string | null
   bio?: string | null
+  coverImageUrl?: string | null
   handle?: string | null
   twitterUrl?: string | null
   websiteUrl?: string | null
