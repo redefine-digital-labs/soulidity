@@ -4,6 +4,11 @@ import React, { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 
+vi.mock('@mysten/dapp-kit', () => ({
+  SuiClientProvider: ({ children }: { children: React.ReactNode }) => children,
+  useSuiClient: () => null,
+}))
+
 import { ExtractTab } from '../../desktop/apps/desktop/src/renderer/components/MainWindow/ExtractTab'
 
 function flushPromises() {
