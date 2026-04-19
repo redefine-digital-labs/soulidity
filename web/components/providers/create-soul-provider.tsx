@@ -135,7 +135,6 @@ export function CreateSoulProvider({ children }: { children: React.ReactNode }) 
   const userId = user?.id ?? null
   return (
     <CreateSoulProviderInner
-      key={loading ? 'pending' : (userId ?? 'anonymous')}
       authLoading={loading}
       userId={userId}
     >

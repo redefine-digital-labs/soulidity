@@ -156,7 +156,6 @@ export function ImportSoulProvider({ children }: { children: React.ReactNode }) 
   const userId = user?.id ?? null
   return (
     <ImportSoulProviderInner
-      key={loading ? 'pending' : (userId ?? 'anonymous')}
       authLoading={loading}
       userId={userId}
     >
