@@ -26,6 +26,45 @@ function formatDate(value: string | null | undefined) {
   return new Date(value).toLocaleString()
 }
 
+function formatRelative(value: string | null | undefined) {
+  if (!value) return '—'
+  const then = new Date(value).getTime()
+  if (Number.isNaN(then)) return '—'
+  const diff = Date.now() - then
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`
+  return new Date(value).toLocaleDateString()
+}
+
+function ProvenanceStrip({ soul }: { soul: SoulAssetDetail }) {
+  const grantSummary = soul.activeGrantCount > 0
+    ? { label: `${soul.activeGrantCount} active`, tone: 'text-teal' as const }
+    : { label: 'Unshared', tone: 'text-muted' as const }
+  const updated = soul.updatedAt ?? soul.createdAt
+  const cells = [
+    { label: 'Creator', value: formatAddress(soul.creatorAddress), tone: 'text-foreground' as const, mono: true },
+    { label: 'Soul object', value: formatAddress(soul.onChainId), tone: 'text-teal' as const, mono: true },
+    { label: 'Grants', value: grantSummary.label, tone: grantSummary.tone, mono: false },
+    { label: 'Updated', value: formatRelative(updated), tone: 'text-foreground' as const, mono: false },
+  ]
+  return (
+    <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-card2 p-3 sm:grid-cols-4 sm:gap-3">
+      {cells.map((cell) => (
+        <div key={cell.label} className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted">{cell.label}</div>
+          <div
+            className={`mt-1 truncate text-[13px] font-semibold ${cell.tone}${cell.mono ? ' font-mono' : ''}`}
+          >
+            {cell.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function buildHeroStyle(imageUrl: string | null | undefined) {
   if (!imageUrl) {
     return {
@@ -203,6 +242,8 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               </div>
             </div>
           </div>
+
+          <ProvenanceStrip soul={soul} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="bg-card2 border border-border rounded-xl p-4 space-y-3">

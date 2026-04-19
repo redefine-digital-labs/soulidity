@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
 import { cn } from '@/lib/utils/cn'
+import { useToast } from '@/components/ui/toast'
 
 interface AccountButtonProps {
   emoji: string
@@ -73,12 +74,25 @@ function ExternalIcon({ className }: { className?: string }) {
   )
 }
 
+function DepositIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M8 2.5v8m0 0L5 7.5m3 3 3-3M3 13h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  )
+}
+
 export function AccountButton({ emoji, userName, walletAddress, profileHref, suiNetwork, onDisconnect, onNavigate }: AccountButtonProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Clipboard-API fallback: when writeText() rejects (insecure context, permission
+  // policy, embedded webview), swap the truncated address row for the full selectable
+  // address so the user can long-press / triple-click to copy via OS-native mechanics.
+  const [revealFull, setRevealFull] = useState(false)
   const [suiBalance, setSuiBalance] = useState<{ address: string; mist: string } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const suiClient = useSuiClient()
+  const { showToast } = useToast()
   const displayBalanceMist =
     suiBalance !== null && suiBalance.address === walletAddress ? suiBalance.mist : null
 
@@ -89,17 +103,26 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
     { label: 'Wrap + Link', href: '/wrap-link' },
   ]
 
+  // Centralized close so every close path (outside-click, nav, sign-out, deposit
+  // success, toggle) also resets the reveal-full fallback. Resetting in an effect
+  // keyed on `open` would call setState synchronously inside the effect body and
+  // fail the repo's `react-hooks/set-state-in-effect` lint gate.
+  const closeMenu = useCallback(() => {
+    setOpen(false)
+    setRevealFull(false)
+  }, [])
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
+        closeMenu()
       }
     }
     if (open) {
       document.addEventListener('mousedown', handleClickOutside)
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
+  }, [open, closeMenu])
 
   useEffect(() => {
     if (!open || !walletAddress) return
@@ -117,20 +140,45 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
     }
   }, [open, walletAddress, suiClient])
 
-  const handleCopyAddress = useCallback(() => {
+  const handleCopyAddress = useCallback(async () => {
     if (!walletAddress) return
-    navigator.clipboard.writeText(walletAddress).then(() => {
+    try {
+      // `navigator.clipboard` itself can be undefined in older webviews and
+      // insecure contexts, where `.writeText()` would throw synchronously
+      // before any `.catch()` attaches. `await` routes both that synchronous
+      // TypeError and an async rejection through the same fallback branch.
+      await navigator.clipboard.writeText(walletAddress)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    })
-  }, [walletAddress])
+    } catch {
+      // Clipboard unavailable or rejected. Swap the truncated row for a
+      // selectable full-address block so the user can copy via OS-native
+      // selection.
+      setRevealFull(true)
+      showToast('Could not copy address — long-press the full address below to copy manually.', 'danger')
+    }
+  }, [walletAddress, showToast])
+
+  const handleDeposit = useCallback(async () => {
+    if (!walletAddress) return
+    try {
+      await navigator.clipboard.writeText(walletAddress)
+      showToast('Address copied — send USDC or SUI to this address from any exchange or wallet.', 'success')
+      closeMenu()
+    } catch {
+      // Clipboard access can be blocked (insecure context, permission policy, focus loss).
+      // Reveal the full selectable address so the user can copy it manually.
+      setRevealFull(true)
+      showToast('Could not copy address — long-press the full address below to copy manually.', 'danger')
+    }
+  }, [walletAddress, showToast, closeMenu])
 
   const networkLabel = suiNetwork === 'mainnet' ? 'Sui Mainnet' : 'Sui Testnet'
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? closeMenu() : setOpen(true))}
         className="flex h-9 items-center gap-1.5 rounded-full border border-border bg-card2 px-2 pr-2.5 text-foreground transition-[border-color] hover:border-purple sm:gap-2 sm:px-2.5 sm:pr-3"
       >
         <div
@@ -179,26 +227,50 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
           <div className="p-1.5 pt-2">
             {walletAddress && (
               <>
-                <button
-                  onClick={handleCopyAddress}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left transition hover:bg-purple/10 group"
-                  title={walletAddress}
-                >
-                  <span className="min-w-0 flex-1 font-mono text-xs text-teal truncate">
-                    {formatAddress(walletAddress)}
-                  </span>
-                  {copied ? (
-                    <CheckIcon className="h-3.5 w-3.5 shrink-0 text-teal" />
-                  ) : (
-                    <CopyIcon className="h-3.5 w-3.5 shrink-0 text-muted group-hover:text-foreground transition-colors" />
-                  )}
-                </button>
+                {revealFull ? (
+                  <div className="rounded-lg px-3 py-[9px]">
+                    <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted">
+                      Your address
+                    </div>
+                    <div className="select-all break-all font-mono text-[11px] leading-relaxed text-teal">
+                      {walletAddress}
+                    </div>
+                    <div className="mt-1 text-[10.5px] text-muted">
+                      Long-press to copy on mobile, or triple-click to select on desktop.
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleCopyAddress}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left transition hover:bg-purple/10 group"
+                    title={walletAddress}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-teal">
+                      {formatAddress(walletAddress)}
+                    </span>
+                    {copied ? (
+                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-teal" />
+                    ) : (
+                      <CopyIcon className="h-3.5 w-3.5 shrink-0 text-muted group-hover:text-foreground transition-colors" />
+                    )}
+                  </button>
+                )}
                 <div className="flex items-center justify-between rounded-lg px-3 py-[7px] text-[12px]">
                   <span className="text-muted">SUI balance</span>
                   <span className="font-mono font-semibold text-foreground">
                     {displayBalanceMist === null ? '…' : `${formatSui(displayBalanceMist)} SUI`}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleDeposit}
+                  className="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left transition hover:bg-purple/10 group"
+                  title="Copy this wallet address so you can send USDC or SUI to it"
+                >
+                  <DepositIcon className="h-3.5 w-3.5 shrink-0 text-muted transition-colors group-hover:text-foreground" />
+                  <span className="flex-1 text-[13px] font-semibold text-foreground">Deposit</span>
+                  <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted">USDC · SUI</span>
+                </button>
                 <div className="surface-divider my-1.5" />
               </>
             )}
@@ -213,7 +285,7 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
                   onClick={() => {
                     if (!item.href) return
                     onNavigate(item.href)
-                    setOpen(false)
+                    closeMenu()
                   }}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm transition',
@@ -230,7 +302,7 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
             <button
               onClick={() => {
                 onDisconnect()
-                setOpen(false)
+                closeMenu()
               }}
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-sm font-semibold text-danger transition hover:bg-danger/10"
             >

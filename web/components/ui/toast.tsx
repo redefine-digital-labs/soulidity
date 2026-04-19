@@ -24,84 +24,168 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
-const bgMap: Record<ToastColor, string> = {
-  purple: 'bg-purple',
-  gold: 'bg-gold',
-  teal: 'bg-teal',
-  success: 'bg-success',
-  danger: 'bg-danger',
-  default: 'bg-card2',
+// Semantic left-border stripe per design-review X5:
+//   success = teal, warning = gold, danger = red, default = purple.
+// Body is a dark card so the stripe is the signal, not a full-bleed pill.
+const stripeMap: Record<ToastColor, string> = {
+  success: 'border-l-teal',
+  teal: 'border-l-teal',
+  gold: 'border-l-gold',
+  danger: 'border-l-danger',
+  purple: 'border-l-purple',
+  default: 'border-l-purple',
 }
 
-const textMap: Record<ToastColor, string> = {
-  purple: 'text-white',
-  gold: 'text-[#1A1040]',
-  teal: 'text-[#0D0A1E]',
-  success: 'text-white',
-  danger: 'text-white',
-  default: 'text-[var(--text-primary)]',
+const iconMap: Record<ToastColor, string> = {
+  success: '✓',
+  teal: '✓',
+  gold: '⚑',
+  danger: '✕',
+  purple: '✦',
+  default: '✦',
 }
+
+const iconColorMap: Record<ToastColor, string> = {
+  success: 'text-teal',
+  teal: 'text-teal',
+  gold: 'text-gold',
+  danger: 'text-danger',
+  purple: 'text-purple',
+  default: 'text-purple',
+}
+
+const MAX_TOASTS = 3
+const DISMISS_MS = 6000
 
 let nextId = 0
 
-function ToastItem({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) => void }) {
+function ToastRow({
+  item,
+  paused,
+  onDismiss,
+}: {
+  item: ToastItem
+  paused: boolean
+  onDismiss: (id: number) => void
+}) {
   const [visible, setVisible] = useState(false)
+  const pausedRef = useRef(paused)
+  const remainingRef = useRef(DISMISS_MS)
+  const startedAtRef = useRef<number | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    // Trigger fade-up after mount
+    // Fade-in after mount.
     const showTimer = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(showTimer)
+  }, [])
 
-    const hideTimer = setTimeout(() => {
-      setVisible(false)
-      setTimeout(() => onDismiss(item.id), 300)
-    }, 3000)
-
-    return () => {
-      cancelAnimationFrame(showTimer)
-      clearTimeout(hideTimer)
+  useEffect(() => {
+    function scheduleDismiss(ms: number) {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      startedAtRef.current = Date.now()
+      timerRef.current = setTimeout(() => {
+        setVisible(false)
+        setTimeout(() => onDismiss(item.id), 200)
+      }, ms)
     }
-  }, [item.id, onDismiss])
+
+    if (!paused) {
+      scheduleDismiss(remainingRef.current)
+    } else if (pausedRef.current === false && startedAtRef.current !== null) {
+      // Transition: unpaused → paused. Record how much time is left.
+      const elapsed = Date.now() - startedAtRef.current
+      remainingRef.current = Math.max(0, remainingRef.current - elapsed)
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+    pausedRef.current = paused
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [paused, item.id, onDismiss])
 
   return (
     <div
       role="status"
       aria-live="polite"
       className={cn(
-        'px-5 py-3 rounded-full text-sm font-medium shadow-lg border border-white/10 transition-all duration-300',
-        bgMap[item.color],
-        textMap[item.color],
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3',
+        'pointer-events-auto flex min-w-[260px] max-w-[360px] items-start gap-2.5 overflow-hidden rounded-lg border border-border border-l-2 bg-card px-3.5 py-2.5 text-sm shadow-[0_10px_32px_rgba(0,0,0,0.45)] backdrop-blur-[8px] transition-all duration-200',
+        stripeMap[item.color],
+        visible ? 'translate-x-0 opacity-100' : 'translate-x-3 opacity-0',
       )}
     >
-      {item.message}
+      <span className={cn('mt-0.5 shrink-0 text-base leading-none', iconColorMap[item.color])} aria-hidden="true">
+        {iconMap[item.color]}
+      </span>
+      <span className="flex-1 leading-snug text-foreground">{item.message}</span>
+      <button
+        type="button"
+        onClick={() => onDismiss(item.id)}
+        aria-label="Dismiss"
+        className="shrink-0 rounded text-[11px] font-bold uppercase tracking-[0.08em] text-muted transition hover:text-foreground"
+      >
+        ✕
+      </button>
     </div>
   )
 }
 
 function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
+  // Track hover and focus pause sources independently. Collapsing them into a
+  // single boolean lets a mixed-input sequence resume the timer while one
+  // source is still active (e.g. hover the stack, tab through dismiss, tab
+  // away — onBlur clears the shared flag even though the pointer is still
+  // inside).
+  const [isHovered, setIsHovered] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
+  const paused = isHovered || isFocused
 
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
+  // Reset pause sources once the stack drains, otherwise the next toast inherits
+  // stale paused=true (the container unmounted while hovered/focused, so
+  // mouseLeave/blur never fired) and never schedules its dismiss timer.
+  useEffect(() => {
+    if (toasts.length === 0) {
+      setIsHovered(false)
+      setIsFocused(false)
+    }
+  }, [toasts.length])
+
   const showToast = useCallback((message: string, color: ToastColor = 'default') => {
     const id = ++nextId
-    setToasts((prev) => [...prev, { id, message, color }])
+    setToasts((prev) => {
+      const next = [...prev, { id, message, color }]
+      // Cap the stack — drop oldest entries if we exceed MAX_TOASTS.
+      return next.length > MAX_TOASTS ? next.slice(next.length - MAX_TOASTS) : next
+    })
   }, [])
 
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
 
-      {/* Toast container */}
       {toasts.length > 0 && (
         <div
           aria-label="Notifications"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex flex-col items-center gap-2 pointer-events-none"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={(e) => {
+            // Keep paused while focus is still inside the toast stack (e.g. tabbing
+            // between dismiss buttons). Only resume the countdown when focus
+            // genuinely leaves the container.
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              setIsFocused(false)
+            }
+          }}
+          className="pointer-events-none fixed bottom-5 right-5 z-[300] flex w-auto flex-col items-end gap-2 sm:bottom-6 sm:right-6"
         >
           {toasts.map((item) => (
-            <ToastItem key={item.id} item={item} onDismiss={dismiss} />
+            <ToastRow key={item.id} item={item} paused={paused} onDismiss={dismiss} />
           ))}
         </div>
       )}

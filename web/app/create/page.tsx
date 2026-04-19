@@ -7,7 +7,7 @@ import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { Input, Textarea } from '@/components/ui/input'
 import { buttonStyles } from '@/components/ui/button'
-import { UploadZone } from '@/components/ui/upload-zone'
+import { CoverImagePicker } from '@/components/ui/cover-image-picker'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
 
 const royaltyOptions = [
@@ -98,39 +98,12 @@ export default function CreateSoulPage() {
 
           <div className="space-y-2">
             <FieldLabel label="Preview Image" required error={errors.coverImageFile} />
-            {!ctx.coverImageFile ? (
-              <UploadZone
-                icon="🖼️"
-                label="Click to upload cover image"
-                sublabel="1:1 square recommended · 800×800 min · JPEG, PNG, WebP, GIF · max 10MB"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                onFileSelect={(file) => ctx.setCoverImage(file)}
-                className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
-              />
-            ) : (
-              <div className="card flex items-center gap-4 border-purple/30 bg-card2/75 px-4 py-4">
-                {ctx.coverImagePreviewUrl && (
-                  <img
-                    src={ctx.coverImagePreviewUrl}
-                    alt="Cover preview"
-                    className="h-14 w-14 shrink-0 rounded-xl border border-purple/25 object-cover"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-foreground">{ctx.coverImageFile.name}</div>
-                  <div className="text-xs text-muted">
-                    {(ctx.coverImageFile.size / 1024).toFixed(1)} KB · local preview ready
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => ctx.setCoverImage(null)}
-                  className="shrink-0 rounded-lg border border-purple/25 px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-purple/45 hover:text-foreground"
-                >
-                  Replace
-                </button>
-              </div>
-            )}
+            <CoverImagePicker
+              file={ctx.coverImageFile}
+              previewUrl={ctx.coverImagePreviewUrl}
+              onChange={(file) => ctx.setCoverImage(file)}
+              className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
+            />
           </div>
 
           <div className="space-y-2">

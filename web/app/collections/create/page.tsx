@@ -7,7 +7,7 @@ import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { Input, Textarea } from '@/components/ui/input'
-import { UploadZone } from '@/components/ui/upload-zone'
+import { CoverImagePicker } from '@/components/ui/cover-image-picker'
 import { buttonStyles } from '@/components/ui/button'
 import { parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 import { useCreateCollection, collectionSteps } from '@/components/providers/create-collection-provider'
@@ -102,39 +102,13 @@ export default function CreateCollectionPage() {
             {/* Cover Image */}
             <div className="space-y-2">
               <FieldLabel label="Cover Image" required />
-              {!ctx.coverImageFile ? (
-                <UploadZone
-                  icon="🖼️"
-                  label="Upload cover image"
-                  sublabel="PNG / JPG · Recommended 800x800px"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  onFileSelect={(file) => ctx.setCoverImage(file)}
-                  className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
-                />
-              ) : (
-                <div className="card flex items-center gap-4 border-purple/30 bg-card2/75 px-4 py-4">
-                  {ctx.coverImagePreviewUrl && (
-                    <img
-                      src={ctx.coverImagePreviewUrl}
-                      alt="Cover preview"
-                      className="h-14 w-14 shrink-0 rounded-xl border border-purple/25 object-cover"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-foreground">{ctx.coverImageFile.name}</div>
-                    <div className="text-xs text-muted">
-                      {(ctx.coverImageFile.size / 1024).toFixed(1)} KB
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => ctx.setCoverImage(null)}
-                    className="shrink-0 rounded-lg border border-purple/25 px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-purple/45 hover:text-foreground"
-                  >
-                    Replace
-                  </button>
-                </div>
-              )}
+              <CoverImagePicker
+                file={ctx.coverImageFile}
+                previewUrl={ctx.coverImagePreviewUrl}
+                onChange={(file) => ctx.setCoverImage(file)}
+                label="Upload cover image"
+                className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
+              />
               {errors.coverImage && <p className="text-[11px] font-medium text-danger">{errors.coverImage}</p>}
             </div>
 
