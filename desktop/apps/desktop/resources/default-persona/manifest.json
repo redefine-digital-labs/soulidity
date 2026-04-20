@@ -1,17 +1,17 @@
 {
-  "id": "a7604d57-cb3d-488b-8ac0-c10ee7a1940e",
-  "name": "乌萨奇！！",
-  "description": "到~~~~~！",
+  "id": "76c2765c-edc2-4bd0-b0d9-e47a8095c581",
+  "name": "Walrus",
+  "description": "Chill walrus pet — 7 mood animations",
   "frameCount": 56,
   "frameWidth": 512,
-  "frameHeight": 512,
+  "frameHeight": 541,
   "columns": 8,
   "rows": 7,
   "spriteFile": "sprite.png",
   "author": {
-    "id": "81206b9c-cd45-42ca-aaeb-9e1606fc6a95",
-    "displayName": "うさぎ"
+    "id": "7bc710f6-4287-4c28-9144-166916c2229f",
+    "displayName": "clawnews"
   },
-  "createdAt": "2026-01-27T08:59:21.323Z",
+  "createdAt": "2026-04-20T05:32:05.202150Z",
   "version": "1.0"
 }
