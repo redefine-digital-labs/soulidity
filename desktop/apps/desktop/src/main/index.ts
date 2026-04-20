@@ -91,11 +91,18 @@ function isCursorInPetHitArea(): boolean {
   return dx * dx + dy * dy <= radius * radius
 }
 
+let lastIgnoreMouseState: boolean | null = null
 function syncPetMouseMode(): void {
   if (!ballWin || ballWin.isDestroyed()) return
 
   const shouldStayInteractive = petHoverLock || petContextMenuOpen || isCursorInPetHitArea()
-  ballWin.setIgnoreMouseEvents(!shouldStayInteractive, shouldStayInteractive ? undefined : { forward: true })
+  const ignore = !shouldStayInteractive
+
+  // 只在状态真的变化时调 setIgnoreMouseEvents，避免每 80ms 重复调用触发透明窗合成器重绘
+  if (ignore === lastIgnoreMouseState) return
+  lastIgnoreMouseState = ignore
+
+  ballWin.setIgnoreMouseEvents(ignore, ignore ? { forward: true } : undefined)
 }
 
 // ── 单实例锁 ───────────────────────────────────────────────
@@ -284,6 +291,10 @@ function createBallWindow(): void {
   currentPetSize = petSize
   petHoverLock = false
   petContextMenuOpen = false
+  // Reset per-window cache so the first syncPetMouseMode() on the new BrowserWindow
+  // always issues setIgnoreMouseEvents(), instead of skipping based on a stale value
+  // left over from a previous ballWin instance (e.g. tray "Show Character" after close).
+  lastIgnoreMouseState = null
   const padding = DEFAULT_WINDOW_PADDING
   const winW = petSize + padding * 2
   const winH = petSize + padding * 2 + 30

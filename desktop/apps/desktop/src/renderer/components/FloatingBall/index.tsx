@@ -319,11 +319,11 @@ export function FloatingBall(): React.JSX.Element {
     const overlayHeight = taskPanel
       ? EXPANDED_WINDOW_HEIGHT
       : Math.min(
-        380,
+        520,
         BASE_WINDOW_HEIGHT
           + (toast ? 60 : 0)
           + (showAttentionBubble ? 88 : 0)
-          + (isHovered && activeTasks.length > 0 ? Math.min(120, activeTasks.length * 52) : 0)
+          + (activeTasks.length > 0 ? Math.min(260, activeTasks.length * 78) : 0)
           + (showUpdateBubble ? 48 : 0),
       )
 
@@ -398,9 +398,10 @@ export function FloatingBall(): React.JSX.Element {
     if (!isPettingRef.current) isPettingRef.current = true
     petCountRef.current += 1
 
-    if (petCountRef.current > 5 && petCountRef.current < 15) {
+    // 抬高阈值：普通 hover 不触发宠爱 mood 切换，避免 CSS breath-* 放大缩放产生"虚影"
+    if (petCountRef.current > 60 && petCountRef.current < 150) {
       setMoodFor('happy', 2500)
-    } else if (petCountRef.current >= 15) {
+    } else if (petCountRef.current >= 150) {
       setMoodFor('love', 2800)
     }
   }, [isDragging, setMoodFor])
