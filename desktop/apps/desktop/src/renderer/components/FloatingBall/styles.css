@@ -179,6 +179,25 @@ body,
   gap: 10px;
   max-height: 240px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.task-tooltip__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.task-tooltip__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.task-tooltip__list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+.task-tooltip__list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .task-tooltip__item {
@@ -341,6 +360,26 @@ body,
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.task-panel__output::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.task-panel__output::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.task-panel__output::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+.task-panel__output::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .drop-overlay {
