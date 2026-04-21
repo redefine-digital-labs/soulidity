@@ -341,8 +341,8 @@ Usefulness is what keeps the product from becoming a toy.
 
 Includes:
 
-- Better quick capture
-- Notes and lightweight tasks
+- Safer file handoff
+- File-scoped task review
 - Screenshot and clipboard flows
 - Approval and diff for file changes
 

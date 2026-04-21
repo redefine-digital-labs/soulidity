@@ -49,6 +49,24 @@ function flushPromises() {
   return Promise.resolve()
 }
 
+function createFileDropEvent(filePaths: string[]) {
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', {
+    value: {
+      types: ['Files'],
+      files: filePaths.map((path) => ({ path })),
+    },
+  })
+  return event
+}
+
+function setFieldValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = Object.getPrototypeOf(element)
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value')
+  descriptor?.set?.call(element, value)
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 describe('FloatingBall', () => {
   let container: HTMLDivElement
   let root: Root
@@ -67,6 +85,8 @@ describe('FloatingBall', () => {
       setIgnoreMouseEvents: vi.fn(),
       showContextMenu: vi.fn(),
       resizePetWindow: vi.fn(),
+      getConfig: vi.fn().mockResolvedValue({ petEnhancedMotion: false }),
+      onConfigChanged: vi.fn().mockReturnValue(() => {}),
       moodInteract: vi.fn().mockResolvedValue(undefined),
       moodDragStart: vi.fn().mockResolvedValue(undefined),
       moodDragEnd: vi.fn().mockResolvedValue(undefined),
@@ -136,5 +156,70 @@ describe('FloatingBall', () => {
     })
 
     expect(window.electronAPI.moodInteract).toHaveBeenCalledOnce()
+  })
+
+  it('opens from a dropped file and requires explicit approval before starting a write task', async () => {
+    await act(async () => {
+      root.render(<FloatingBall />)
+      await flushPromises()
+    })
+
+    const rootNode = container.querySelector('.ball-root') as HTMLDivElement | null
+    expect(rootNode).not.toBeNull()
+
+    await act(async () => {
+      rootNode!.dispatchEvent(createFileDropEvent(['/tmp/example.ts']))
+      await flushPromises()
+    })
+
+    expect(container.textContent).toContain('Review Task')
+    expect(container.textContent).not.toContain('Quick Capture')
+
+    const writeButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Write',
+    )
+    expect(writeButton).toBeTruthy()
+
+    await act(async () => {
+      writeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+    })
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null
+    expect(textarea).not.toBeNull()
+    await act(async () => {
+      setFieldValue(textarea!, 'Apply the requested patch and update the related tests.')
+      await flushPromises()
+    })
+
+    const reviewButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Review Write Plan',
+    )
+    expect(reviewButton).toBeTruthy()
+
+    await act(async () => {
+      reviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+    })
+
+    expect(container.textContent).toContain('Write Approval')
+    expect(window.electronAPI.executeTask).not.toHaveBeenCalled()
+
+    const approveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Approve & Run',
+    )
+    expect(approveButton).toBeTruthy()
+
+    await act(async () => {
+      approveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+    })
+
+    expect(window.electronAPI.executeTask).toHaveBeenCalledWith(expect.objectContaining({
+      executionMode: 'write',
+      filePaths: ['/tmp/example.ts'],
+    }))
+    const payload = vi.mocked(window.electronAPI.executeTask).mock.calls[0]?.[0] as Record<string, unknown>
+    expect(payload).not.toHaveProperty('captureId')
   })
 })
