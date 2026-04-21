@@ -13,8 +13,34 @@ Move 合约已升级，4 个 HIGH 级问题全部已修复或非问题，不阻�
 ### 2026-04-21 复核要点
 
 - `new-web/` 已合并回 `web/`，所有上线改动落在 `web/app/`、`web/components/`、`web/next.config.ts`。CLAUDE.md 仍残留 `new-web` 引用，属文档 drift，不阻塞上线。
-- 新增 Desktop（Tauri）客户端，独立发布通道见 `.github/workflows/desktop-release.yml` + `web/app/download/`；Desktop 不在 Vercel 发布链路，仅列作并行工作流。
+- 新增 Desktop（Tauri/electron-builder）客户端，独立发布通道见 `.github/workflows/desktop-release.yml` + `web/app/download/`；Desktop 不在 Vercel 发布链路，仅列作并行工作流。2026-04-21 已完成 Web ↔ Desktop 双向隔离（tag 前缀 `desktop-v*` + Vercel Blob manifest ISR，见下文 #16 / 本轮交付）。
 - 下文各项前的状态标签（✅ 已完成 / 🟡 部分完成 / ⬜ 未开始）反映 2026-04-21 仓库实际状态。
+
+### 2026-04-21 本轮增量（#17 Lint 全绿 一次收口）
+
+- **#17 Web lint 0 errors / 0 warnings** ✅：
+  - **4 个 React hook 错误全部修复**：
+    - `web/lib/hooks/use-wallet-balances.ts`：删除两处渲染期 ref 读写（`currentWalletAddressRef`、`previousWalletAddressRef`、`useLayoutEffect`），staleness 统一由 `requestVersionRef` 判定，`walletChanged` 由 `isCurrentAddress = state.walletAddress === walletAddress` 替代。2 个单测 (`tests/new-web/use-wallet-balances.test.tsx`) 全绿。
+    - `web/components/providers/create-soul-provider.tsx` / `import-soul-provider.tsx`：hydration 改为 React 官方"adjust state on prop change"模式（渲染期比较 `hydratedForUserId !== userId`），不再在 `useEffect` 里同步 setState。3 + 4 个单测 (`create-soul-provider.test.ts` / `publish-provider-hydration.test.tsx`) 全绿。
+  - **2 个 exhaustive-deps 警告修复**：
+    - `web/lib/hooks/use-collection-publish.ts`：`clearRecoveryState` 包 `useCallback`，加入 `useEffect` 依赖数组。
+    - `web/lib/hooks/use-wrap-publish.ts`：`publish` useCallback 补 `suiClient` 依赖。
+  - **3 个 unused eslint-disable 清理**：
+    - `web/lib/hooks/use-privy-sui.ts:11`、`web/app/api/agent/souls/[id]/purchase/route.ts:93`、`web/app/create/gas/page.tsx:173 & 304` 的 `@typescript-eslint/no-explicit-any` disable 注释删除（项目 eslint preset `next/core-web-vitals` 未启用该规则，directives 确属无用）。
+  - **7 处 `<img>` 警告**：全部改用 `next/image` 的 `<Image unoptimized>`，显式 `width` / `height` 与 tailwind `h-N w-N` 对齐；`unoptimized` 规避 Walrus / `blob:` / IPFS 等远程域未登记 `remotePatterns` 的问题，不影响 thumbnail 渲染。涉及文件：`collections/create/preview/page.tsx` × 2、`community/leaderboard/page.tsx`、`wrap-link/personal/{configure,page,preview,success}/page.tsx` × 4。
+- **验证**：`npm --prefix web run lint` exit 0 且无输出（0 errors / 0 warnings）；`npm --prefix web run typecheck` exit 0；`npm test` 145 files / 957 tests 全绿（含 `use-wallet-balances.test.tsx`、`publish-provider-hydration.test.tsx`、`create-soul-provider.test.ts`、`wrap-publish-recovery.test.ts`）。
+- **未引入新依赖**：`next/image` 已在项目里使用；无新增 package。
+
+### 2026-04-21 本轮增量（#16 Web ↔ Desktop 发布隔离 一次收口）
+
+- **#16 Web ↔ Desktop 发布通道互不影响** ✅：
+  - **Web → Desktop 方向**：`.github/workflows/desktop-release.yml` 的触发器由 `tags: ['v*']` 收紧为 `tags: ['desktop-v*']`。Web / 后端历史 phase tag（如 `v0.2.0-phase1a` / `v0.3.0-phase2a`）与未来的 `v*` tag 不再误触发 macOS / Windows 构建，yaml 头部写入 tag 约定备注。
+  - **Desktop → Web 方向**：新增 Vercel Blob **发布 manifest** 机制。`web/scripts/upload-desktop-dmg.ts` 上传 dmg 的同时在固定路径 `desktop/manifest.json` 写入 `{ manifestVersion, version, publishedAt, mac.arm64 }`；`web/app/download/page.tsx` 改为 async Server Component，通过 `fetch(DESKTOP_MANIFEST_URL, { next: { revalidate: 300, tags: ['desktop-manifest'] } })` 读取 manifest → 版本 & dmg URL 均来自 Blob，Desktop 发新版无需 Vercel 重新部署。
+  - **Fallback 链路**：manifest URL 未配置或不可达时，自动回退到旧的 `NEXT_PUBLIC_DESKTOP_MAC_ARM64_URL` / `NEXT_PUBLIC_DESKTOP_VERSION`（可留空 → 按钮显示 "Build coming soon"），不会硬失败。
+  - **env 文档同步**：`.env.example` 新增 `DESKTOP_MANIFEST_URL`，并把两个 `NEXT_PUBLIC_DESKTOP_*` 注释改写为 fallback 语义。
+  - **操作流程**：首次发布后复制 upload 脚本打印的 manifest URL 一次性写入 Vercel env `DESKTOP_MANIFEST_URL`；后续 Desktop release 只需 `pnpm --filter @soulidity/desktop run package:mac` → `npx tsx web/scripts/upload-desktop-dmg.ts <dmg>`，manifest 自动覆盖，/download 在 300s 内自动刷新。
+- **验证**：`npm --prefix web run typecheck` exit 0；`npm --prefix web run lint` 4 errors + 13 warnings 全部位于既有 hooks 文件（`use-wallet-balances.ts`、`import-soul-provider.tsx`、`use-collection-publish.ts`、`use-wrap-publish.ts`、`use-privy-sui.ts`），与本次改动无关。
+- **未引入新依赖**：复用已有 `@vercel/blob`、`next` 内建 ISR 机制。
 
 ### 2026-04-21 本轮交付（#3 SEO + #4 法律页面 一次收口）
 
@@ -88,10 +114,14 @@ Move 合约已升级，4 个 HIGH 级问题全部已修复或非问题，不阻�
 - **文件**: `web/app/layout.tsx` 或 `web/components/providers/app-providers.tsx` 中添加组件
 - **2026-04-21 状态**: `web/package.json` 无 `@vercel/analytics` / `@vercel/speed-insights`，未开始
 
-### 9. 响应式修复 ⬜
+### 9. 响应式修复 ✅（2026-04-21 交付）
 - **文件**: `web/components/layout/grid.tsx`
-- **问题**: `colStyles` 仍硬编码 `grid-cols-2/3/5`，移动端不折叠
-- **修复**: 改为 `grid-cols-1 sm:grid-cols-2 lg:grid-cols-{cols}` 形式（注意 Tailwind JIT 需完整类名，考虑显式映射）
+- **原问题**: `colStyles` 硬编码 `grid-cols-2/3/5`，移动端不折叠
+- **修复**: 显式映射，所有类名字面量以满足 Tailwind JIT：
+  - `cols=2` → `grid-cols-1 sm:grid-cols-2`
+  - `cols=3` → `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`
+  - `cols=5` → `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5`
+- **备注**: 当前仓库无组件引用 `Grid`（前瞻性修复），未来引入时移动端即默认折叠
 
 ### 10. AUTH_SECRET 和 ADMIN_PASSWORD ⬜
 - **问题**: 生产环境需使用随机生成的强密钥，不能沿用 `.env.example` 占位值
@@ -129,6 +159,30 @@ Move 合约已升级，4 个 HIGH 级问题全部已修复或非问题，不阻�
 - ~~T-011~~: **非问题** — 加密状态正确返回，Desktop 不上线
 - **T-004**: 无显式重复上架防护（Sui kiosk 层面已阻止，低风险）— 可 v2 迭代
 
+### 17. Web lint 全绿 ✅（2026-04-21 交付）
+- **目标**：`npm --prefix web run lint` 输出 0 errors / 0 warnings，避免 CI 新接入时红灯。
+- **已完成（全部在既有文件就地改动，无新功能）**：
+  - `web/lib/hooks/use-wallet-balances.ts` — 删除渲染期 `currentWalletAddressRef.current =` 写入与 `previousWalletAddressRef.current !==` 读取；staleness 改由单一 `requestVersionRef` 判定（等价于旧双检，因为 useEffect 每次都会 ++requestVersionRef）；`walletChanged` 由 `isCurrentAddress = state.walletAddress === walletAddress` 代替，`useLayoutEffect` 不再需要。
+  - `web/components/providers/create-soul-provider.tsx` + `import-soul-provider.tsx` — hydration 改为 React 官方"adjust state during render on prop change"模式，新增 `hydratedForUserId` state 作为门卫，`if (!authLoading && hydratedForUserId !== userId) { ... setState(...) }` 在渲染期触发，首轮命中后自终止。
+  - `web/lib/hooks/use-collection-publish.ts` — `clearRecoveryState` 包 `useCallback(..., [])`，加入 `useEffect` 依赖；`useCallback` 加入 react import。
+  - `web/lib/hooks/use-wrap-publish.ts` — `publish` useCallback 依赖补 `suiClient`。
+  - `web/lib/hooks/use-privy-sui.ts` / `web/app/api/agent/souls/[id]/purchase/route.ts` / `web/app/create/gas/page.tsx`（两处）— 删除无用的 `// eslint-disable-next-line @typescript-eslint/no-explicit-any` 注释（`next/core-web-vitals` preset 未启用该规则）。
+  - 7 处 `<img>` → `<Image unoptimized width={N} height={N}>`：`collections/create/preview/page.tsx`（2 处 32/64）、`community/leaderboard/page.tsx`（32）、`wrap-link/personal/{configure,page,preview,success}/page.tsx`（40/48/64/40）。`unoptimized` 直通 blob: / Walrus / IPFS / 任意外部 URL，无需动 `images.remotePatterns`；thumbnail 尺寸下 Next 优化收益接近 0，保持现状 UX。
+- **验证**：lint exit 0、typecheck exit 0、`npm test` 957/957 pass（含 `use-wallet-balances` / `publish-provider-hydration` / `create-soul-provider` / `wrap-publish-recovery` 四条相关单测）。
+- **遗留**：P2 #14（Soul 卡片封面 CSS backgroundImage → `next/image` + `remotePatterns` 配置 Walrus）与本轮无重叠，仍按原计划 v2 迭代。
+
+### 16. Web ↔ Desktop 发布通道互不影响 ✅（2026-04-21 交付）
+- **目标**：Desktop 发布不触发 Web 重部署，Web / 后端 tag 不触发 Desktop 构建，`/download` 指向最新 Tauri release 无需人工更新 env。
+- **已完成**：
+  - `.github/workflows/desktop-release.yml` — tag 触发器收紧为 `desktop-v*`（原 `v*`），文件头写入 tag 约定（Desktop `desktop-vX.Y.Z` / Web 其它前缀）。
+  - `web/scripts/upload-desktop-dmg.ts` — 增加 `desktop/manifest.json` 发布步骤（固定 Blob 路径，`allowOverwrite: true`，`cacheControlMaxAge: 60`）；打印 manifest URL 供一次性写入 Vercel env。
+  - `web/app/download/page.tsx` — 改为 async Server Component + `revalidate = 300`，通过 `DESKTOP_MANIFEST_URL` fetch manifest；manifest 失败时 graceful fallback 到旧 `NEXT_PUBLIC_DESKTOP_*` env，两者都缺则显示 "Build coming soon"。
+  - `.env.example` — 新增 `DESKTOP_MANIFEST_URL`，两个旧 env 注释改为 fallback。
+- **运维约定**（写入 yaml / 脚本 / env 文档三处）：
+  - Desktop 发版打 `desktop-vX.Y.Z` tag，CI 产出 macOS / Windows 资产 + GitHub Release。
+  - 同时运行 `npx tsx web/scripts/upload-desktop-dmg.ts <dmg>` 上传 dmg + manifest。
+  - 首次完成后 **一次性** 把 manifest URL 写入 Vercel Production env `DESKTOP_MANIFEST_URL`，之后每次发版 0 次 Web redeploy。
+
 ---
 
 ## 执行顺序建议（2026-04-21 再更新）
@@ -136,7 +190,7 @@ Move 合约已升级，4 个 HIGH 级问题全部已修复或非问题，不阻�
 ```
 剩余 P0:   #1 Vercel 配置 + #5 Sentry + #6 后端部署方案
           （#2 TS ✅ / #3 SEO ✅ / #4 法律页面 ✅ 已完成）
-剩余 P1:   #7 CSP + #8 Analytics + #9 Grid 响应式 + #10 密钥轮换
+剩余 P1:   #7 CSP + #8 Analytics + #10 密钥轮换（#9 Grid 响应式 ✅ 已完成）
 后续迭代:  P2（Web CI 建议提前一起落）
 ```
 
@@ -149,9 +203,10 @@ Move 合约已升级，4 个 HIGH 级问题全部已修复或非问题，不阻�
 - [ ] Vercel Preview Deploy 成功，主要页面可访问（同时在 Preview URL 用 Twitter Card Validator / OpenGraph.xyz 抽检默认 OG + 任意 `/souls/[id]` 动态 OG）
 - [ ] Sentry 测试错误可在 dashboard 看到
 - [ ] 后端管线在目标环境正常运行（采集→生产→发布）
-- [ ] 移动端市场页面布局正常（Grid 响应式修复后）
+- [x] `Grid` 组件移动端默认折叠至 `grid-cols-1`（2026-04-21：显式映射已落地；市场页若后续接入 `Grid` 即享受折叠，目前实际市场页用自定义类名需另行复核）
 - [ ] 生产环境密钥已轮换（AUTH_SECRET、ADMIN_PASSWORD，及其它在 `.env.example` 标注为 `replace-with-*` 的变量）
-- [ ] Desktop 发布通道与 Web 上线互不影响（`/download` 页面指向最新 Tauri release）
+- [x] Desktop 发布通道与 Web 上线互不影响（2026-04-21：tag 前缀 `desktop-v*` 隔离 GA 触发；`/download` 通过 `DESKTOP_MANIFEST_URL` + ISR 读取 Vercel Blob manifest，Desktop 发新版 0 次 Web redeploy）
+- [x] `npm --prefix web run lint` 0 errors / 0 warnings（2026-04-21：4 个 React hook 错误 + 2 个 exhaustive-deps 警告 + 3 个 unused eslint-disable + 7 个 `<img>` 警告全部修复，`npm test` 957/957 pass，详见 #17）
 
 ## 关键文件清单
 
@@ -171,7 +226,17 @@ Move 合约已升级，4 个 HIGH 级问题全部已修复或非问题，不阻�
 | `web/app/privacy/page.tsx` | 新建 | ✅ 已完成（12 节隐私政策） |
 | `web/components/layout/site-footer.tsx` | 新建 | ✅ 已完成 |
 | `web/components/layout/app-shell.tsx` | 修改（挂 footer） | ✅ 已完成 |
-| `web/components/layout/grid.tsx` | 修改（响应式） | ⬜ 仍硬编码 `grid-cols-3` |
+| `web/components/layout/grid.tsx` | 修改（响应式） | ✅ 已完成（`grid-cols-1 sm:… lg:…` 显式映射，JIT 友好） |
+| `.github/workflows/desktop-release.yml` | 修改（tag 前缀隔离） | ✅ 已完成（`desktop-v*` 触发器，头部写入 tag 约定） |
+| `web/scripts/upload-desktop-dmg.ts` | 修改（发布 manifest） | ✅ 已完成（固定 Blob 路径 `desktop/manifest.json`） |
+| `web/app/download/page.tsx` | 修改（ISR 读 manifest） | ✅ 已完成（async Server Component，`revalidate = 300`，graceful fallback） |
+| `.env.example` | 修改（新增 `DESKTOP_MANIFEST_URL`） | ✅ 已完成 |
+| `web/lib/hooks/use-wallet-balances.ts` | 修改（去除渲染期 ref 读写） | ✅ 已完成（`react-hooks/refs` 2 个 errors 清零） |
+| `web/components/providers/create-soul-provider.tsx` / `import-soul-provider.tsx` | 修改（hydration 改渲染期 prop-change 模式） | ✅ 已完成（`react-hooks/set-state-in-effect` 2 个 errors 清零） |
+| `web/lib/hooks/use-collection-publish.ts` | 修改（`clearRecoveryState` 包 `useCallback` + 加 dep） | ✅ 已完成 |
+| `web/lib/hooks/use-wrap-publish.ts` | 修改（补 `suiClient` dep） | ✅ 已完成 |
+| `web/lib/hooks/use-privy-sui.ts` / `web/app/api/agent/souls/[id]/purchase/route.ts` / `web/app/create/gas/page.tsx` | 修改（删 3 条无用 `@typescript-eslint/no-explicit-any` disable） | ✅ 已完成 |
+| 7 × `<img>` → `<Image unoptimized>` | 修改（`collections/create/preview` × 2、`community/leaderboard`、`wrap-link/personal/{configure,page,preview,success}` × 4） | ✅ 已完成（`@next/next/no-img-element` 7 个 warnings 清零） |
 | `vercel.json` | 新建 | ⬜ |
 | `.github/workflows/web-ci.yml` | 新建（P2，可提前） | ⬜（仅有 `desktop-release.yml`） |
 | `sentry.{client,server,edge}.config.ts` | 新建 | ⬜ |
