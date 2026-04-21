@@ -29,7 +29,7 @@ describe('web collection create regression guards', () => {
   })
 
   it('keeps the collection create route behind an AuthGate layout', () => {
-    const source = readSource('web/app/collections/create/layout.tsx')
+    const source = readSource('web/app/collections/create/_shell.tsx')
 
     expect(source).toContain('<AuthGate')
     expect(source).toContain('label="Sign in to create a Collection"')

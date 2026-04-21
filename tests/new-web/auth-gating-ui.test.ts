@@ -41,9 +41,9 @@ describe('web auth gating regression guards', () => {
 
   it('keeps sell, create, import, and wrap flows behind AuthGate layouts', () => {
     const files = [
-      ['web/app/souls/[id]/sell/layout.tsx', 'Sign in to manage your Soul listing'],
-      ['web/app/create/layout.tsx', 'Sign in to create a Soul'],
-      ['web/app/import/layout.tsx', 'Sign in to import a Soul'],
+      ['web/app/souls/[id]/sell/_shell.tsx', 'Sign in to manage your Soul listing'],
+      ['web/app/create/_shell.tsx', 'Sign in to create a Soul'],
+      ['web/app/import/_shell.tsx', 'Sign in to import a Soul'],
       ['web/app/wrap-link/personal/layout.tsx', 'Sign in to start Personal Join'],
       ['web/app/wrap-link/collection/layout.tsx', 'Sign in to expand a collection'],
     ]
