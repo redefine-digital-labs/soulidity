@@ -24,8 +24,54 @@ export const metadata: Metadata = {
   },
 }
 
-const macArm64Url = process.env.NEXT_PUBLIC_DESKTOP_MAC_ARM64_URL ?? ''
-const desktopVersion = process.env.NEXT_PUBLIC_DESKTOP_VERSION ?? '0.0.4'
+export const revalidate = 300
+
+interface DesktopManifest {
+  manifestVersion: number
+  version: string
+  publishedAt?: string
+  mac?: {
+    arm64?: {
+      url: string
+      fileName?: string
+      sizeBytes?: number
+    }
+  }
+}
+
+interface DesktopRelease {
+  version: string
+  macArm64Url: string
+  source: 'manifest' | 'env' | 'none'
+}
+
+async function loadDesktopRelease(): Promise<DesktopRelease> {
+  const manifestUrl = process.env.DESKTOP_MANIFEST_URL?.trim()
+  if (manifestUrl) {
+    try {
+      const res = await fetch(manifestUrl, {
+        next: { revalidate: 300, tags: ['desktop-manifest'] },
+      })
+      if (res.ok) {
+        const data = (await res.json()) as DesktopManifest
+        const url = data.mac?.arm64?.url?.trim()
+        const version = data.version?.trim()
+        if (url && version) {
+          return { version, macArm64Url: url, source: 'manifest' }
+        }
+      }
+    } catch {
+      // fall through to env fallback
+    }
+  }
+
+  const envUrl = process.env.NEXT_PUBLIC_DESKTOP_MAC_ARM64_URL?.trim() ?? ''
+  const envVersion = process.env.NEXT_PUBLIC_DESKTOP_VERSION?.trim() ?? ''
+  if (envUrl) {
+    return { version: envVersion || '0.0.4', macArm64Url: envUrl, source: 'env' }
+  }
+  return { version: envVersion || '0.0.0', macArm64Url: '', source: 'none' }
+}
 
 const features = [
   {
@@ -52,8 +98,9 @@ const requirements = [
   { label: 'Account', value: 'Privy-linked Soulidity account' },
 ]
 
-export default function DownloadPage() {
-  const hasBuild = macArm64Url.trim().length > 0
+export default async function DownloadPage() {
+  const release = await loadDesktopRelease()
+  const hasBuild = release.macArm64Url.length > 0
 
   return (
     <div className="relative z-10 overflow-hidden">
@@ -68,7 +115,7 @@ export default function DownloadPage() {
 
       <section className="mx-auto flex min-h-[calc(100vh-56px)] max-w-[960px] flex-col px-4 pb-16 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:px-8">
         <p className="mb-5 text-[11px] font-bold uppercase tracking-[0.24em] text-teal">
-          Desktop Companion · v{desktopVersion}
+          Desktop Companion · v{release.version}
         </p>
 
         <h1 className="max-w-[760px] text-[clamp(32px,5vw,56px)] font-extrabold leading-[1.08] tracking-[-0.03em] text-foreground">
@@ -87,7 +134,7 @@ export default function DownloadPage() {
         <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
           {hasBuild ? (
             <a
-              href={macArm64Url}
+              href={release.macArm64Url}
               download
               className={buttonStyles({ variant: 'landing', size: 'lg' })}
             >
@@ -116,15 +163,15 @@ export default function DownloadPage() {
         {hasBuild ? (
           <p className="mt-3 text-xs text-muted">
             Direct link:{' '}
-            <a href={macArm64Url} className="break-all text-purple hover:underline">
-              {macArm64Url}
+            <a href={release.macArm64Url} className="break-all text-purple hover:underline">
+              {release.macArm64Url}
             </a>
           </p>
         ) : (
           <p className="mt-3 text-xs text-muted">
-            The hosted build URL is not configured. Set{' '}
+            The hosted build URL is not configured yet. Publish a Desktop release or set{' '}
             <code className="rounded bg-card2 px-1.5 py-0.5 font-mono text-[11px] text-teal">
-              NEXT_PUBLIC_DESKTOP_MAC_ARM64_URL
+              DESKTOP_MANIFEST_URL
             </code>{' '}
             in Vercel.
           </p>
