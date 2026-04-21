@@ -11,9 +11,9 @@ interface GridProps {
 }
 
 const colStyles: Record<GridCols, string> = {
-  2: 'grid-cols-2',
-  3: 'grid-cols-3',
-  5: 'grid-cols-5',
+  2: 'grid-cols-1 sm:grid-cols-2',
+  3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+  5: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5',
 }
 
 const gapStyles: Record<GridGap, string> = {
