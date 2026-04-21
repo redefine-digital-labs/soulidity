@@ -137,3 +137,16 @@ export type {
   SavedIndexEntry,
   MemoryManifest
 } from './types/memory'
+
+// ─── Improvement Plans ───────────────────────────
+
+export type {
+  ImprovementPriority,
+  ImprovementOwner,
+  ImprovementMilestone,
+  DesktopImprovementPlanV6,
+} from './plans/desktop-improvement-v6'
+
+export {
+  desktopImprovementPlanV6,
+} from './plans/desktop-improvement-v6'
