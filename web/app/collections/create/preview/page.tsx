@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -53,9 +54,12 @@ function SoulThumb({ name, imageFile }: { name: string; imageFile?: File }) {
   }
 
   return (
-    <img
+    <Image
       src={blobUrl}
       alt={name}
+      width={32}
+      height={32}
+      unoptimized
       onError={() => setErroredSrc(blobUrl)}
       className="h-8 w-8 shrink-0 rounded-lg border border-purple/20 object-cover"
     />
@@ -273,9 +277,12 @@ export default function PreviewPage() {
             {/* Header */}
             <div className="flex items-start gap-4">
               {ctx.coverImagePreviewUrl ? (
-                <img
+                <Image
                   src={ctx.coverImagePreviewUrl}
                   alt="Collection cover"
+                  width={64}
+                  height={64}
+                  unoptimized
                   className="h-16 w-16 shrink-0 rounded-full border border-purple/30 object-cover"
                 />
               ) : (

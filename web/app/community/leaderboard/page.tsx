@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
 import { PageContainer } from '@/components/layout/page-container'
@@ -44,9 +45,12 @@ function RankBadge({ rank }: { rank: number }) {
 function Avatar({ avatar, name }: { avatar: string | null; name: string }) {
   if (avatar && /^https?:\/\//.test(avatar)) {
     return (
-      <img
+      <Image
         src={avatar}
         alt={name}
+        width={32}
+        height={32}
+        unoptimized
         className="h-8 w-8 shrink-0 rounded-full object-cover"
       />
     )

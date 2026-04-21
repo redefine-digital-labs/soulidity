@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -26,7 +27,7 @@ function NftCard({ nft, selected, onSelect }: { nft: KioskNft; selected: boolean
       }`}
     >
       {nft.imageUrl ? (
-        <img src={nft.imageUrl} alt={nft.name} className="h-12 w-12 shrink-0 rounded-lg border border-border/50 object-cover" />
+        <Image src={nft.imageUrl} alt={nft.name} width={48} height={48} unoptimized className="h-12 w-12 shrink-0 rounded-lg border border-border/50 object-cover" />
       ) : (
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-lg font-bold text-purple">
           {nft.name.slice(0, 2).toUpperCase()}

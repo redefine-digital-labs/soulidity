@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
 import { buildCreateCollectionTx, buildAddSoulToCollectionTx } from '@/lib/soulidity/tx/collection'
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
@@ -277,14 +277,14 @@ export function useCollectionPublish(draftSignature?: string | null) {
     } catch { /* ignore storage failures */ }
   }
 
-  const clearRecoveryState = () => {
+  const clearRecoveryState = useCallback(() => {
     recoveryRef.current = null
     uploadedImageUrlRef.current = null
     setTxDigest(null)
     setSyncData(null)
     setProgress({ totalSouls: 0, mintedSouls: 0, boundSouls: 0 })
     setRecoveryState(null)
-  }
+  }, [])
 
   // Hydrate recovery state from sessionStorage
   useEffect(() => {
@@ -325,7 +325,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
       mintedSouls: countMintedSouls(recovery.souls),
       boundSouls: countBoundSouls(recovery.souls),
     })
-  }, [draftSignature, user?.id])
+  }, [draftSignature, user?.id, clearRecoveryState])
 
   async function publish(params: CollectionPublishParams) {
     if (!suiWallet) {

@@ -8,7 +8,6 @@ import { publicKeyFromRawBytes } from '@mysten/sui/verify'
 import type { Transaction } from '@mysten/sui/transactions'
 import { blake2b } from '@noble/hashes/blake2.js'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SuiTxResult = any
 
 export function getPrivySuiWallet(privyUser: {

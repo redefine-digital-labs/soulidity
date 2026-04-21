@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -49,7 +50,7 @@ export default function WrapSuccessPage() {
             {nft && (
               <div className="flex items-center gap-3 mb-4">
                 {nft.imageUrl ? (
-                  <img src={nft.imageUrl} alt={nft.name} className="h-10 w-10 shrink-0 rounded-lg border border-border/50 object-cover" />
+                  <Image src={nft.imageUrl} alt={nft.name} width={40} height={40} unoptimized className="h-10 w-10 shrink-0 rounded-lg border border-border/50 object-cover" />
                 ) : (
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-sm font-bold text-purple">
                     {nft.name.slice(0, 2).toUpperCase()}

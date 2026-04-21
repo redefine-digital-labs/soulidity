@@ -275,7 +275,7 @@ export function useWrapPublish() {
       setStatus('error')
       return null
     }
-  }, [suiWallet, txDigest, signAndExecute, getAuthHeaders, user?.id, clearRecovery])
+  }, [suiWallet, txDigest, signAndExecute, getAuthHeaders, user?.id, clearRecovery, suiClient])
 
   return { status, error, txDigest, result, publish, suiWallet }
 }

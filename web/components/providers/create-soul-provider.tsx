@@ -190,6 +190,18 @@ function CreateSoulProviderInner({
   }, [])
   const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(null)
   const [isHydrated, setIsHydrated] = useState(false)
+  // Tracks the userId we've already hydrated for, so we can re-hydrate on
+  // userId change without calling setState inside a useEffect (which React
+  // flags as cascading renders).
+  const [hydratedForUserId, setHydratedForUserId] = useState<string | null | undefined>(undefined)
+
+  // Adjust state during render when auth finishes or userId changes — the
+  // idiomatic React pattern for resetting derived state on prop change.
+  if (!authLoading && hydratedForUserId !== userId) {
+    setHydratedForUserId(userId)
+    setPublishResultRaw(readStoredPublishResult(userId))
+    setIsHydrated(true)
+  }
 
   const setPublishResult = useCallback((result: PublishResult | null) => {
     setPublishResultRaw(result)
@@ -218,15 +230,6 @@ function CreateSoulProviderInner({
     setCoverImageFileRaw(file)
     setUploadResultsRaw(prev => prev ? { ...prev, coverImage: undefined } : prev)
   }, [])
-
-  useEffect(() => {
-    if (authLoading) {
-      return
-    }
-
-    setPublishResultRaw(readStoredPublishResult(userId))
-    setIsHydrated(true)
-  }, [authLoading, userId])
 
   useEffect(() => {
     return () => {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -106,7 +107,7 @@ export default function PreviewSignPage() {
             <div className="rounded-2xl border border-purple/40 bg-card2/55 p-5 space-y-4">
               <div className="flex items-center gap-4">
                 {ctx.selectedNft!.imageUrl ? (
-                  <img src={ctx.selectedNft!.imageUrl} alt={ctx.selectedNft!.name} className="h-16 w-16 shrink-0 rounded-xl border border-purple/30 object-cover" />
+                  <Image src={ctx.selectedNft!.imageUrl} alt={ctx.selectedNft!.name} width={64} height={64} unoptimized className="h-16 w-16 shrink-0 rounded-xl border border-purple/30 object-cover" />
                 ) : (
                   <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-purple/20 text-2xl font-bold text-purple">
                     {ctx.selectedNft!.name.slice(0, 2).toUpperCase()}

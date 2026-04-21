@@ -90,7 +90,7 @@ export async function POST(
     })
     tx.setSender(agentAddress)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cross-package @mysten/sui type mismatch in the merged web runtime
+    // Cross-package @mysten/sui type mismatch in the merged web runtime.
     const txBytes = await tx.build({ client: suiClient as any })
     const txBytesBase64 = Buffer.from(txBytes).toString('base64')
     const txBytesHash = createHash('sha256').update(txBytes).digest('hex')

@@ -204,6 +204,15 @@ function ImportSoulProviderInner({
   // Step 6
   const [importResult, setImportResultRaw] = useState<ImportResult | null>(null)
   const [isHydrated, setIsHydrated] = useState(false)
+  // Tracks the userId we've already hydrated for, so we can re-hydrate on
+  // userId change without setState inside useEffect (React flags as cascading).
+  const [hydratedForUserId, setHydratedForUserId] = useState<string | null | undefined>(undefined)
+
+  if (!authLoading && hydratedForUserId !== userId) {
+    setHydratedForUserId(userId)
+    setImportResultRaw(readStoredImportResult(userId))
+    setIsHydrated(true)
+  }
 
   const setImportResult = useCallback((result: ImportResult | null) => {
     setImportResultRaw(result)
@@ -233,14 +242,6 @@ function ImportSoulProviderInner({
     setUploadResultsRaw((prev) => (prev ? { ...prev, coverImage: undefined } : prev))
   }, [])
 
-  useEffect(() => {
-    if (authLoading) {
-      return
-    }
-
-    setImportResultRaw(readStoredImportResult(userId))
-    setIsHydrated(true)
-  }, [authLoading, userId])
 
   useEffect(() => {
     return () => {

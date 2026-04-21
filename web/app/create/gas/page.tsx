@@ -170,7 +170,6 @@ export default function CreateGasPage() {
 
   // Expose publish + authenticated upload + list for E2E testing
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any
     w.__e2ePublish = (params: PublishParams) => publishRef.current(params)
     w.__e2eUpload = async (fileContent: string, fileName: string, type: 'public' | 'encrypted' = 'encrypted') => {
@@ -301,7 +300,6 @@ export default function CreateGasPage() {
 
       // Expose raw DEK envelopes for E2E byte-level content verification (dev only)
       if (process.env.NODE_ENV === 'development') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(window as any).__e2eLastRawEnvelope = {
           char: results.charFile?.sealDekEnvelope ?? null,
           memory: results.memorySeed?.sealDekEnvelope ?? null,
