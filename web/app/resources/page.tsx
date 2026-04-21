@@ -1,4 +1,26 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+
+const resourcesTitle = 'Documentation'
+const resourcesDescription =
+  'Soulidity documentation — getting started, Soul content format, SoulGrant API, smart contracts, Walrus/Seal integration, and SDK reference.'
+
+export const metadata: Metadata = {
+  title: resourcesTitle,
+  description: resourcesDescription,
+  alternates: { canonical: '/resources' },
+  openGraph: {
+    title: `${resourcesTitle} · Soulidity`,
+    description: resourcesDescription,
+    url: '/resources',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${resourcesTitle} · Soulidity`,
+    description: resourcesDescription,
+  },
+}
 
 const docs = [
   { emoji: '🚀', title: 'Getting Started', desc: 'Connect your wallet, browse Souls, make your first purchase, and understand the ownership model.', href: '/resources/getting-started' },

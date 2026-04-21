@@ -3,10 +3,25 @@ import Link from 'next/link'
 import { buttonStyles } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
 
+const downloadTitle = 'Download Soulidity Desktop'
+const downloadDescription =
+  'The Soulidity Desktop Companion: a floating AI partner that links your Souls, agents, and CLI hooks into one local control surface.'
+
 export const metadata: Metadata = {
-  title: 'Download Soulidity Desktop',
-  description:
-    'The Soulidity Desktop Companion: a floating AI partner that links your Souls, agents, and CLI hooks into one local control surface.',
+  title: downloadTitle,
+  description: downloadDescription,
+  alternates: { canonical: '/download' },
+  openGraph: {
+    title: `${downloadTitle} · Soulidity`,
+    description: downloadDescription,
+    url: '/download',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${downloadTitle} · Soulidity`,
+    description: downloadDescription,
+  },
 }
 
 const macArm64Url = process.env.NEXT_PUBLIC_DESKTOP_MAC_ARM64_URL ?? ''

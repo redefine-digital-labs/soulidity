@@ -4,6 +4,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
 import { Navbar } from '@/components/nav/navbar'
+import { SiteFooter } from '@/components/layout/site-footer'
 import { useToast } from '@/components/ui/toast'
 import { clearPendingAction, readPendingAction } from '@/lib/utils/pending-action'
 import { useGenericLogin } from '@/lib/hooks/use-generic-login'
@@ -73,6 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="relative min-h-[calc(100vh-56px)] overflow-x-clip">
         {children}
       </main>
+      <SiteFooter />
     </div>
   )
 }

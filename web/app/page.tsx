@@ -1,6 +1,28 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { buttonStyles } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
+
+const landingTitle = 'Soulidity — On-chain Soul Ownership'
+const landingDescription =
+  'On-chain ownership infrastructure for digital entities — original characters, AI agents, and everything in between. Mint, grant, and trade Souls on Sui.'
+
+export const metadata: Metadata = {
+  title: { absolute: landingTitle },
+  description: landingDescription,
+  alternates: { canonical: '/' },
+  openGraph: {
+    title: landingTitle,
+    description: landingDescription,
+    url: '/',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: landingTitle,
+    description: landingDescription,
+  },
+}
 
 const stats = [
   { value: '2,418', label: 'Souls on-chain', color: 'text-purple' },

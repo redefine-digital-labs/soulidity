@@ -1,19 +1,15 @@
-'use client'
+import type { Metadata } from 'next'
+import { CreateCollectionShell } from './_shell'
 
-import { AuthGate } from '@/components/auth/auth-gate'
-import { CreateCollectionProvider } from '@/components/providers/create-collection-provider'
+export const metadata: Metadata = {
+  title: 'Create Collection',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
+}
 
 export default function CreateCollectionLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthGate
-      icon="📦"
-      label="Sign in to create a Collection"
-      sublabel="Creating a Collection uses authenticated routes plus a wallet signature before the on-chain mirror can settle."
-      className="max-w-[680px]"
-    >
-      <CreateCollectionProvider>
-        {children}
-      </CreateCollectionProvider>
-    </AuthGate>
-  )
+  return <CreateCollectionShell>{children}</CreateCollectionShell>
 }

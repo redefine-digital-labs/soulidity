@@ -1,19 +1,15 @@
-'use client'
+import type { Metadata } from 'next'
+import { CreateShell } from './_shell'
 
-import { AuthGate } from '@/components/auth/auth-gate'
-import { CreateSoulProvider } from '@/components/providers/create-soul-provider'
+export const metadata: Metadata = {
+  title: 'Create Soul',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
+}
 
 export default function CreateLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthGate
-      icon="✨"
-      label="Sign in to create a Soul"
-      sublabel="Minting a Soul uses authenticated routes and wallet signing across the full create flow."
-      className="max-w-[680px]"
-    >
-      <CreateSoulProvider>
-        {children}
-      </CreateSoulProvider>
-    </AuthGate>
-  )
+  return <CreateShell>{children}</CreateShell>
 }
