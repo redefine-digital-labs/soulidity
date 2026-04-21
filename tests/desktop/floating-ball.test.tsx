@@ -100,6 +100,7 @@ describe('FloatingBall', () => {
       onTaskOutput: vi.fn().mockReturnValue(() => {}),
       onTaskComplete: vi.fn().mockReturnValue(() => {}),
       executeTask: vi.fn().mockResolvedValue({ taskId: 'test-task' }),
+      requestWriteApproval: vi.fn().mockResolvedValue({ ok: true, token: 'approval-token-1' }),
       cancelTask: vi.fn(),
       updaterDownload: vi.fn().mockResolvedValue({ ok: true }),
       updaterInstall: vi.fn().mockResolvedValue(undefined),
@@ -215,11 +216,76 @@ describe('FloatingBall', () => {
       await flushPromises()
     })
 
+    expect(window.electronAPI.requestWriteApproval).toHaveBeenCalledWith({
+      filePaths: ['/tmp/example.ts'],
+      agent: 'codex',
+      instruction: 'Apply the requested patch and update the related tests.',
+    })
+
     expect(window.electronAPI.executeTask).toHaveBeenCalledWith(expect.objectContaining({
       executionMode: 'write',
       filePaths: ['/tmp/example.ts'],
+      approvalToken: 'approval-token-1',
     }))
     const payload = vi.mocked(window.electronAPI.executeTask).mock.calls[0]?.[0] as Record<string, unknown>
     expect(payload).not.toHaveProperty('captureId')
+  })
+
+  it('does not launch the task when the user denies the native write-approval dialog', async () => {
+    vi.mocked(window.electronAPI.requestWriteApproval).mockResolvedValueOnce({
+      ok: false,
+      reason: 'denied',
+    })
+
+    await act(async () => {
+      root.render(<FloatingBall />)
+      await flushPromises()
+    })
+
+    const rootNode = container.querySelector('.ball-root') as HTMLDivElement | null
+    expect(rootNode).not.toBeNull()
+
+    await act(async () => {
+      rootNode!.dispatchEvent(createFileDropEvent(['/tmp/example.ts']))
+      await flushPromises()
+    })
+
+    const writeButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Write',
+    )
+    expect(writeButton).toBeTruthy()
+    await act(async () => {
+      writeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+    })
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null
+    expect(textarea).not.toBeNull()
+    await act(async () => {
+      setFieldValue(textarea!, 'Apply the requested patch and update the related tests.')
+      await flushPromises()
+    })
+
+    const reviewButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Review Write Plan',
+    )
+    await act(async () => {
+      reviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+    })
+
+    const approveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Approve & Run',
+    )
+    await act(async () => {
+      approveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+    })
+
+    expect(window.electronAPI.requestWriteApproval).toHaveBeenCalledTimes(1)
+    expect(window.electronAPI.executeTask).not.toHaveBeenCalled()
+    // Renderer should fall back to the compose phase, not the output phase.
+    expect(container.textContent).not.toContain('Write Approval')
+    expect(container.textContent).toContain('Review Task')
   })
 })
