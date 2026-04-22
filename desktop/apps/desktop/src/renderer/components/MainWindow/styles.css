@@ -327,8 +327,8 @@
 }
 
 .agent-console__body {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   align-items: start;
 }
@@ -336,7 +336,15 @@
 .agent-session-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  width: 100%;
+}
+
+.agent-session-list__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
 }
 
 .agent-session-list__title {
@@ -347,11 +355,29 @@
   letter-spacing: 0.08em;
 }
 
+.agent-session-list__summary {
+  font-size: 11px;
+  color: rgba(240, 240, 240, 0.45);
+}
+
+.agent-session-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .agent-session-row {
   padding: 12px;
   text-align: left;
   cursor: pointer;
   color: inherit;
+  width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.agent-session-row:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(58, 58, 64, 0.62);
 }
 
 .agent-session-row--active {
@@ -387,6 +413,7 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  width: 100%;
 }
 
 .agent-detail-card {

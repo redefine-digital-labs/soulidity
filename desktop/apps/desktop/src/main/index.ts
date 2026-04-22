@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron'
-import { join } from 'path'
+import { join, resolve as resolvePath } from 'path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import Store from 'electron-store'
 import { autoUpdater } from 'electron-updater'
@@ -27,7 +27,16 @@ import {
 import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus, publishAgentStatus } from './status-watcher'
 import { startAgentMonitor, stopAgentMonitor } from './agent-monitor'
 import { generateAgentKeypair, loadAgentKeypair, exportAgentAddress, getSecretStorageStatus } from './agent-wallet'
-import { executeTask, cancelTask, getActiveTaskIds, shutdownAllTasks } from './task-executor'
+import {
+  executeTask,
+  cancelTask,
+  getActiveTaskIds,
+  shutdownAllTasks,
+  createWriteApprovalToken,
+  isSafeSandboxRoot,
+  resolveApprovedSandboxRoot,
+  MAX_APPROVED_INSTRUCTION_LENGTH,
+} from './task-executor'
 import {
   hasCachedSprite, getCachedSprite, cacheSprite, removeCachedSprite,
   pruneCache, getCacheStats, listCachedSprites
@@ -420,6 +429,120 @@ ipcMain.handle('task:execute', (_event, payload) => executeTask(payload))
 ipcMain.on('task:cancel', (_event, taskId: string) => cancelTask(taskId))
 ipcMain.handle('task:list-active', () => getActiveTaskIds())
 
+// Write-mode approval gate. The renderer can freely call `task:execute`,
+// but the main process will only honor `executionMode: 'write'` when the
+// caller presents a token minted here after an OS-level confirmation
+// dialog. The token also pins the allowed file list, so a malicious
+// renderer cannot widen the write scope via cwd/filePaths.
+ipcMain.handle('task:request-write-approval', async (_event, payload: {
+  filePaths: unknown
+  agent?: unknown
+  instruction?: unknown
+}) => {
+  const rawFilePaths = Array.isArray(payload?.filePaths)
+    ? payload.filePaths.filter((p): p is string => typeof p === 'string' && p.length > 0)
+    : []
+  if (rawFilePaths.length === 0) {
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+
+  const agent = typeof payload?.agent === 'string' ? payload.agent : ''
+  if (agent !== 'claude' && agent !== 'codex') {
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+  const instruction = typeof payload?.instruction === 'string' ? payload.instruction : ''
+
+  // Fail closed before opening any dialog if the instruction is too large to
+  // display in full. The approval surfaces must show the exact string the
+  // token will bind; any silent truncation would let a malicious renderer
+  // hide a destructive suffix after a benign-looking preamble.
+  if (instruction.trim().length > MAX_APPROVED_INSTRUCTION_LENGTH) {
+    return { ok: false as const, reason: 'instruction-too-long' as const }
+  }
+
+  // Canonicalize the file list BEFORE showing it to the user. The approval
+  // token later binds the `path.resolve(...)`'d form (see
+  // `normalizeFilePaths` inside `createWriteApprovalToken`), so a raw
+  // renderer-supplied relative path such as `../../private/secret.txt`
+  // would otherwise render verbatim in the dialog while the token
+  // authorized an unrelated absolute target. Dedupe + sort as well so the
+  // displayed list matches exactly what `normalizeFilePaths` produces and
+  // what `executeTask` compares against at launch time.
+  const canonicalFilePaths = Array.from(
+    new Set(rawFilePaths.map((p) => resolvePath(p))),
+  ).sort()
+
+  // Compute the effective write scope the child process will actually
+  // receive. For Codex `--sandbox workspace-write` this is the real trust
+  // surface (not the file list) because the sandbox operates at directory
+  // granularity, so the dialog must name the directory Codex will be
+  // allowed to mutate. Fail closed before opening any dialog if the
+  // resolved sandbox root is unsafe (e.g. `/`, `/Users`) instead of
+  // showing an approval surface whose token mint will be rejected after
+  // the user has already clicked approve.
+  const sandboxRoot = resolveApprovedSandboxRoot(canonicalFilePaths)
+  if (!isSafeSandboxRoot(sandboxRoot)) {
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+
+  const senderWindow = BrowserWindow.fromWebContents(_event.sender)
+  const parentWindow = senderWindow ?? BrowserWindow.getFocusedWindow() ?? mainWin ?? ballWin
+  if (!parentWindow) {
+    return { ok: false as const, reason: 'no-window' as const }
+  }
+
+  const filesSummary = canonicalFilePaths.map((p) => `• ${p}`).join('\n')
+  // Codex runs `codex exec --sandbox workspace-write` from `sandboxRoot`,
+  // so the OS-level write capability the approval grants is the whole
+  // directory tree rooted there, not just the listed files. Claude is
+  // constrained to the file list at the prompt layer, but still runs
+  // with `--dangerously-skip-permissions` (see T-016), so the same root
+  // remains the effective trust surface. Spell it out — the user must
+  // see that they are authorizing directory-level write access.
+  const scopeSummary = agent === 'codex'
+    ? `\n\nCodex will have workspace-write access to the entire directory:\n${sandboxRoot}`
+    : `\n\nClaude will be asked to stay within the files above. Effective write root:\n${sandboxRoot}`
+  // Show the exact instruction that will be bound into the approval token.
+  // Do NOT slice here: the dialog is the last chance for the user to see the
+  // full text they are authorizing. `createWriteApprovalToken` already caps
+  // the length at `MAX_APPROVED_INSTRUCTION_LENGTH` so the detail area cannot
+  // overflow what every supported OS dialog can render.
+  const instructionDetail = instruction.trim()
+
+  const { response } = await dialog.showMessageBox(parentWindow, {
+    type: 'warning',
+    buttons: ['Deny', 'Approve write access'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Allow write access?',
+    message: `Allow ${agent} to modify these files?`,
+    detail: `Files:\n${filesSummary}${scopeSummary}${instructionDetail ? `\n\nInstruction:\n${instructionDetail}` : ''}`,
+    noLink: true,
+  })
+
+  if (response !== 1) {
+    return { ok: false as const, reason: 'denied' as const }
+  }
+
+  const token = createWriteApprovalToken({
+    filePaths: canonicalFilePaths,
+    agent,
+    instruction,
+  })
+  if (!token) {
+    // Either (a) the approved file set does not share a safe sandbox root
+    // (e.g., files span `/Users/...` and `/tmp/...`, collapsing the Codex
+    // workspace-write cwd to `/`), or (b) the instruction exceeds the
+    // displayable cap. Fail closed rather than silently minting a token
+    // whose scope or text might not match what the user saw in the dialog.
+    if (instruction.trim().length > MAX_APPROVED_INSTRUCTION_LENGTH) {
+      return { ok: false as const, reason: 'instruction-too-long' as const }
+    }
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+  return { ok: true as const, token }
+})
+
 // ── IPC: 本地缓存 ──────────────────────────────────────────
 ipcMain.handle('cache:has-sprite', (_event, spriteId: string) => hasCachedSprite(spriteId))
 ipcMain.handle('cache:get-sprite', (_event, spriteId: string) => getCachedSprite(spriteId))
@@ -611,6 +734,7 @@ ipcMain.handle('config:set', (_event, config: Record<string, unknown>) => {
   for (const [key, value] of Object.entries(config)) {
     store.set(key, value)
   }
+  broadcastToAllWindows('config:changed', { ...store.store })
 })
 
 // ── 设备绑定 IPC ──────────────────────────────────────────

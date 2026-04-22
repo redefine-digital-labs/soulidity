@@ -111,6 +111,13 @@ export {
   regenerateExtractSoulDraftContent,
 } from './types/extract-draft'
 
+export type {
+  TaskExecutionMode,
+  TaskWriteApprovalResult,
+  TaskWriteApprovalGrant,
+  TaskWriteApprovalDenied,
+} from './types/task-execution'
+
 // ─── Memory System ───────────────────────────
 
 export type {

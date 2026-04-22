@@ -11,7 +11,7 @@ export async function insertMember(prisma: PrismaClient, tgId: string, tgName: s
 
 export async function getMembers(prisma: PrismaClient): Promise<Array<{ id: string; tg_id: string | null; tg_name: string | null; level: number; joined_at: string }>> {
   const rows = await prisma.member.findMany({ orderBy: { joinedAt: 'desc' } })
-  return rows.map((r) => ({
+  return rows.map((r: (typeof rows)[number]) => ({
     id: r.id,
     tg_id: r.tgId,
     tg_name: r.tgName,

@@ -44,6 +44,7 @@ export function SettingsTab(): React.JSX.Element {
   const [storageStatus, setStorageStatus] = useState<string>('...')
   const [linkState, setLinkState] = useState<LinkState>({ phase: 'restoring' })
   const [unlinking, setUnlinking] = useState(false)
+  const [enhancedMotion, setEnhancedMotion] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const linkSessionNonceRef = useRef(0)
   const linkVerificationInFlightRef = useRef<number | null>(null)
@@ -97,6 +98,11 @@ export function SettingsTab(): React.JSX.Element {
     window.electronAPI.getSecretStorageStatus().then((s) => {
       setStorageStatus(s === 'encrypted' ? 'OS Keychain' : s === 'legacy' ? 'JSON (legacy)' : 'Not found')
     })
+    const configPromise = window.electronAPI.getConfig?.()
+    configPromise?.then((config) => {
+      if (cancelled) return
+      setEnhancedMotion(Boolean(config.petEnhancedMotion))
+    }).catch(() => {})
 
     void window.electronAPI.getDesktopAuthStatus().then(async (status) => {
       if (cancelled) return
@@ -124,11 +130,18 @@ export function SettingsTab(): React.JSX.Element {
       setLinkState({ phase: 'idle' })
     })
 
+    const unsubscribeConfig = window.electronAPI.onConfigChanged?.((config) => {
+      if (!cancelled) {
+        setEnhancedMotion(Boolean(config.petEnhancedMotion))
+      }
+    })
+
     return () => {
       cancelled = true
       linkSessionNonceRef.current += 1
       linkVerificationInFlightRef.current = null
       stopPolling()
+      unsubscribeConfig?.()
     }
   }, [getVerifiedDesktopIdentity, stopPolling])
 
@@ -218,6 +231,16 @@ export function SettingsTab(): React.JSX.Element {
       setUnlinking(false)
     }
   }, [stopPolling])
+
+  const handleToggleEnhancedMotion = useCallback(async () => {
+    const next = !enhancedMotion
+    setEnhancedMotion(next)
+    try {
+      await window.electronAPI.setConfig?.({ petEnhancedMotion: next })
+    } catch {
+      setEnhancedMotion((current) => !current)
+    }
+  }, [enhancedMotion])
 
   const truncateAddress = (addr: string): string => {
     if (addr.length <= 16) return addr
@@ -354,6 +377,31 @@ export function SettingsTab(): React.JSX.Element {
             )}
           </div>
         )}
+      </section>
+
+      <section className="settings-section">
+        <h3 className="settings-section__title">Pet Presence</h3>
+        <div className="settings-field">
+          <span className="settings-field__label">Enhanced Motion</span>
+          <div className="settings-field__input-group">
+            <input
+              type="text"
+              className="settings-field__input"
+              value={enhancedMotion ? 'On' : 'Low disturbance'}
+              readOnly
+            />
+            <button
+              className="settings-field__toggle"
+              onClick={() => { void handleToggleEnhancedMotion() }}
+              title={enhancedMotion ? 'Turn enhanced motion off' : 'Turn enhanced motion on'}
+            >
+              {enhancedMotion ? 'On' : 'Off'}
+            </button>
+          </div>
+        </div>
+        <p className="extract-notice">
+          Low disturbance keeps the pet state visible while muting extra motion. Turn this on only if you want stronger presence feedback.
+        </p>
       </section>
     </div>
   )

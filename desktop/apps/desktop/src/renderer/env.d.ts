@@ -10,6 +10,7 @@ import type {
   SoulProfile,
   ScanProgress,
   SupportedAgentSource,
+  TaskWriteApprovalResult,
 } from '@soulidity/shared'
 
 declare global {
@@ -22,6 +23,7 @@ declare global {
       onNavigateTab: (callback: (detail: { tab?: string }) => void) => () => void
       getConfig: () => Promise<Record<string, unknown>>
       setConfig: (config: Record<string, unknown>) => Promise<void>
+      onConfigChanged: (callback: (config: Record<string, unknown>) => void) => () => void
 
       // ── 悬浮球 ──
       dragStart: () => void
@@ -111,8 +113,20 @@ declare global {
       'shell:open-external': (url: string) => Promise<void>
 
       // ── Task 执行 ──
-      executeTask: (payload: { agent: string; instruction: string; filePaths?: string[]; cwd?: string }) =>
+      executeTask: (payload: {
+        agent: 'claude' | 'codex'
+        instruction: string
+        filePaths?: string[]
+        cwd?: string
+        executionMode?: 'read' | 'write'
+        approvalToken?: string
+      }) =>
         Promise<{ taskId: string; error?: string }>
+      requestWriteApproval: (payload: {
+        filePaths: string[]
+        agent?: 'claude' | 'codex'
+        instruction?: string
+      }) => Promise<TaskWriteApprovalResult>
       cancelTask: (taskId: string) => void
       listActiveTasks: () => Promise<string[]>
       onTaskOutput: (callback: (data: { taskId: string; text: string }) => void) => () => void

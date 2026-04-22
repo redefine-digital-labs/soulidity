@@ -9,6 +9,7 @@ import type {
   SoulProfile,
   ScanProgress,
   SupportedAgentSource,
+  TaskWriteApprovalResult,
 } from '@soulidity/shared'
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -24,6 +25,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getConfig: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('config:get'),
   setConfig: (config: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('config:set', config),
+  onConfigChanged: (callback: (config: Record<string, unknown>) => void): (() => void) => {
+    const listener = (_event: unknown, config: Record<string, unknown>) => callback(config)
+    ipcRenderer.on('config:changed', listener)
+    return () => { ipcRenderer.removeListener('config:changed', listener) }
+  },
 
   // ── 悬浮球拖拽 ──
   dragStart: (): void => { ipcRenderer.send('drag:start') },
@@ -169,8 +175,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('shell:open-external', url),
 
   // ── Task 执行 (Claude / Codex) ──
-  executeTask: (payload: { agent: string; instruction: string; filePaths?: string[]; cwd?: string }):
+  executeTask: (payload: {
+    agent: 'claude' | 'codex'
+    instruction: string
+    filePaths?: string[]
+    cwd?: string
+    executionMode?: 'read' | 'write'
+    approvalToken?: string
+  }):
     Promise<{ taskId: string; error?: string }> => ipcRenderer.invoke('task:execute', payload),
+  requestWriteApproval: (payload: {
+    filePaths: string[]
+    agent?: 'claude' | 'codex'
+    instruction?: string
+  }): Promise<TaskWriteApprovalResult> =>
+    ipcRenderer.invoke('task:request-write-approval', payload),
   cancelTask: (taskId: string): void => { ipcRenderer.send('task:cancel', taskId) },
   listActiveTasks: (): Promise<string[]> => ipcRenderer.invoke('task:list-active'),
   onTaskOutput: (callback: (data: { taskId: string; text: string }) => void): (() => void) => {

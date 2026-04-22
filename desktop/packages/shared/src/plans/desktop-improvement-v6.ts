@@ -44,6 +44,7 @@ export const desktopImprovementPlanV6: DesktopImprovementPlanV6 = {
       dependsOn: [],
       targetFiles: [
         'desktop/apps/desktop/src/renderer/components/MainWindow/SettingsTab.tsx',
+        'desktop/apps/desktop/src/renderer/components/MainWindow/SettingsTab.test.tsx',
         'desktop/apps/desktop/src/main/web-api.ts',
         'tests/desktop/web-api.test.ts',
         'tests/desktop/main-window.test.tsx',
@@ -66,6 +67,7 @@ export const desktopImprovementPlanV6: DesktopImprovementPlanV6 = {
       targetFiles: [
         'desktop/apps/desktop/src/renderer/components/FloatingBall/index.tsx',
         'desktop/apps/desktop/src/renderer/components/FloatingBall/styles.css',
+        'desktop/apps/desktop/src/renderer/components/MainWindow/SettingsTab.tsx',
         'desktop/apps/desktop/src/renderer/hooks/useMood.ts',
         'tests/desktop/floating-ball.test.tsx',
       ],
@@ -78,7 +80,7 @@ export const desktopImprovementPlanV6: DesktopImprovementPlanV6 = {
     {
       id: 'P1-light-task-closure',
       priority: 'P1',
-      summary: 'Quick capture/轻待办/写入审批形成闭环',
+      summary: '文件驱动任务执行与写入审批形成闭环',
       owners: [
         { team: 'desktop-main', role: 'Task flow owner' },
         { team: 'desktop-renderer', role: 'UX owner' },
@@ -86,13 +88,21 @@ export const desktopImprovementPlanV6: DesktopImprovementPlanV6 = {
       dependsOn: ['P0-auth-link-hardening'],
       targetFiles: [
         'desktop/apps/desktop/src/main/task-executor.ts',
+        'desktop/apps/desktop/src/renderer/components/FloatingBall/styles.css',
+        'desktop/apps/desktop/src/renderer/components/FloatingBall/index.tsx',
         'desktop/apps/desktop/src/renderer/components/MainWindow/ExtractTab.tsx',
-        'desktop/packages/backend/src/agent/loop.ts',
-        'tests/desktop/agent-runtime.test.ts',
+        'desktop/apps/desktop/src/renderer/components/MainWindow/styles.css',
+        'desktop/apps/desktop/src/main/index.ts',
+        'desktop/apps/desktop/src/preload/index.ts',
+        'desktop/apps/desktop/src/renderer/env.d.ts',
+        'desktop/packages/shared/src/index.ts',
+        'desktop/packages/shared/src/types/task-execution.ts',
+        'tests/desktop/task-executor.test.ts',
+        'tests/desktop/floating-ball.test.tsx',
       ],
       acceptance: [
-        '写操作默认审批，可拒绝且无副作用',
-        'Quick capture 可创建、检索、归档',
+        '写操作默认先过显式审批，可拒绝且无副作用',
+        '悬浮球只保留文件驱动任务面板，不再暴露 Quick Capture 入口或 inbox 状态',
       ],
       rollback: '审批开关保持后端可控，异常时可退回只读模式。',
     },

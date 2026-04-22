@@ -87,6 +87,7 @@ export function AgentTab(): React.JSX.Element {
   const currentPermissionFilePath = typeof currentPermission?.toolInput?.file_path === 'string'
     ? currentPermission.toolInput.file_path
     : undefined
+  const sessionSummary = `${activeSessions.length} active · ${recentSessions.length} recent`
 
   const handleApprove = async (request: PendingPermission, allowAlways = false): Promise<void> => {
     await window.electronAPI.approveAgentPermission(request.requestId, allowAlways)
@@ -140,30 +141,36 @@ export function AgentTab(): React.JSX.Element {
 
       <section className="settings-section agent-console__body">
         <div className="agent-session-list">
-          <div className="agent-session-list__title">Sessions</div>
+          <div className="agent-session-list__header">
+            <div className="agent-session-list__title">Sessions</div>
+            <div className="agent-session-list__summary">{sessionSummary}</div>
+          </div>
           {sessions.length === 0 && <p className="agent-empty">No active runtime sessions</p>}
-          {sessions.map((session) => {
-            const displayStatus = formatRuntimeStatus(session.status)
-            return (
-              <button
-                key={session.sessionId}
-                type="button"
-                className={`agent-session-row${selectedSessionId === session.sessionId ? ' agent-session-row--active' : ''}`}
-                onClick={() => setSelectedSessionId(session.sessionId)}
-              >
-                <div className="agent-session-row__top">
-                  <span>{formatSourceLabel(session.source)}</span>
-                  <span className={`agent-card__status agent-card__status--${displayStatus}`}>{displayStatus}</span>
-                </div>
-                <div className="agent-session-row__title">
-                  {session.sessionTitle || summarizePath(session.workingDirectory) || session.sessionId}
-                </div>
-                <div className="agent-session-row__meta">
-                  {formatTime(session.lastUpdated)} · {formatDuration(session.startedAt, session.endedAt)}
-                </div>
-              </button>
-            )
-          })}
+          <div className="agent-session-list__items">
+            {sessions.map((session) => {
+              const displayStatus = formatRuntimeStatus(session.status)
+              return (
+                <button
+                  key={session.sessionId}
+                  type="button"
+                  aria-pressed={selectedSessionId === session.sessionId}
+                  className={`agent-session-row${selectedSessionId === session.sessionId ? ' agent-session-row--active' : ''}`}
+                  onClick={() => setSelectedSessionId(session.sessionId)}
+                >
+                  <div className="agent-session-row__top">
+                    <span>{formatSourceLabel(session.source)}</span>
+                    <span className={`agent-card__status agent-card__status--${displayStatus}`}>{displayStatus}</span>
+                  </div>
+                  <div className="agent-session-row__title">
+                    {session.sessionTitle || summarizePath(session.workingDirectory) || session.sessionId}
+                  </div>
+                  <div className="agent-session-row__meta">
+                    {formatTime(session.lastUpdated)} · {formatDuration(session.startedAt, session.endedAt)}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         <div className="agent-session-detail">
