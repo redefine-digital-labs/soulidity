@@ -14,8 +14,19 @@ v6 kiosk rewrite 完成后，new-web 前端（当前仓库目录为 `web/`，Nex
 **v6.2 taxonomy 重构 + upgrade 基建（2026-04-14 ~ 04-15）：**
 - **T-1**: Create 页移除 Category 下拉，仅保留 Tags 自由输入。Prisma `category` 字段保留 `@default("Other")` 但 UI 不再暴露（开发库，无需迁移）
 - **T-2**: 新增 `/api/souls/tags` API，返回 listed Soul 的 top 50 tag cloud
-- **U-1**: `deployment-manifest.json` 新增 `upgradeCapId`；`deployment.ts` 接口新增可选 `upgradeCapId` / `upgradeStateId`
+- **U-1**: `deployment-manifest.json` 新增 `upgradeCapId`；`deployment.ts` 接口新增可为空 `upgradeCapId` / `upgradeStateId`
 - **U-2**: 链上新增 `MarketUpgradeState` 结构体 + 5 error codes + 5 event types；协议测试扩展到 117 项
+
+**v6.3 Sui scanner 审计加固（2026-04-23，全新部署）：** 合约 fresh publish（非 upgrade）；所有 on-chain ID、kiosk 注册、历史 listings / access list / grant 均从零起步，DB 同步重置。
+- **L-4**: `content_access::ENotCreatorOrOwner` → `ENotOwner`（命名与行为对齐；只校验 owner）
+- **L-5**: Seal document id 长度严格 `==`（`seal_policy` / `skills` / `assets`）；统一错误码 `EDocumentIdInvalidLength`。TS SDK 已输出精确字节长度，无客户端变更
+- **L-6**: `content_access::create` 在创建 ContentAccessList 时调用 `grant::assert_valid_scope_mask`；`default_scope_mask` 必须是 `SCOPE_SEAL|MEMORY|SKILLS|ASSETS = 15` 的非零子集。SDK builders 默认兜底 `ALL_ACCESS_SCOPES = 15`
+- **M-2**: `market::purchase_content_access` 增加 `price_atomic > 0` 断言（新错误码 `EContentAccessNotPurchasable = 28`）；免费 access 只能由 owner 走 `content_access::add_access`
+- **M-3**: `purchase_content_access` 增加 `state.access_list_id == object::id(access_list)` 双向校验（新错误码 `EAccessListLinkageMismatch = 29`）
+- **L-1**: 新 `grant::destroy_invalidated_grant`：当 epoch mismatch / 不在 active_grants / 已过期任一条件满足即可销毁。新事件 `SoulGrantDestroyed`，新错误码 `EGrantStillActive = 16`。合约不额外校验 grantee 身份，但 `SoulGrant` 是 owned object；交易 sender 必须拥有/能提供该 grant object，通常由 grantee/Agent 钱包签名触发，storage rebate 归调用者
+- **L-3**: 新 `market::delete_soul_listing` / `delete_collection_listing`：要求 `!is_active`，析构字段并 `object::delete`。新事件 `SoulListingDeleted` / `CollectionListingDeleted`，新错误码 `EListingStillActive = 30`
+- **L-7**: `ContentAccessList` 新增 `default_access_duration_ms: Option<u64>` 字段；mint 三个公开入口的签名在 `content_access_default_scope_mask` 之后新增同名 `Option<u64>` 参数；`record_purchase` 根据 duration 计算 `expires_at_ms = now + duration`；新 `set_content_access_duration` owner-only 函数；`ContentAccessGranted` / `ContentAccessListCreated` 事件扩展 `expires_at_ms` / `default_access_duration_ms`；新事件 `ContentAccessDurationUpdated`
+- Move 协议测试扩展到 **142 项**（124 基线 + 14 新增 + 4 既有重构）全绿
 
 **全自动执行：** 本计划设计为 AI agent 独立可执行，零人工判断。自动化覆盖：
 - **浏览器交互** — Chrome DevTools MCP（snapshot → uid → click/fill/upload）
@@ -23,15 +34,21 @@ v6 kiosk rewrite 完成后，new-web 前端（当前仓库目录为 `web/`，Nex
 - **API + DB 验证** — `curl` / SQL / `npx tsx` 脚本
 - **TX 签名** — Privy embedded wallet 自动签名（所有链上交易）
 
-**唯一人工介入：** 2 次 Privy 邮箱 OTP（执行者仅需输入 6 位验证码，其余全部自动化）
+**唯一人工介入：** Privy 邮箱 OTP（执行者仅需输入 6 位验证码，其余全部自动化；若执行中切换 Seller / Buyer 会话，需要分别完成对应账号的 OTP）
 **测试 Fixture：** `/Users/admin/Documents/example`（单 Soul）+ `/Users/admin/Documents/example-collection`（Collection）
-**总计：92 个测试项（91 项主流程 + 1 项白盒附加验证），14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
+**总计：98 个测试项（98 项全部纳入主流程通过口径），14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
 
-**价格约束（2026-04-15 double-check）：**
+**价格约束（2026-04-15 double-check + v6.3 加固）：**
 - `Soul` 的 listing price 必须严格大于 `0`
 - sell 页面输入 `0` 时不得进入 Authorize
-- 若绕过前端直接上链，`move/soulidity::market` 必须以 `EInvalidPrice` 拒绝
-- 本计划中的上架用例全部使用正数价格；`0` 价不再是合法测试路径
+- 若绕过前端直接上链，`market` 必须以 `EInvalidPrice` 拒绝
+- `market::purchase_content_access` 要求 `price_atomic > 0`（新码 `EContentAccessNotPurchasable = 28`）；免费 access 只能由 owner 调用 `content_access::add_access`
+- 本计划中的上架 / 购买用例全部使用正数价格；`0` 价不再是合法测试路径
+
+**Scope mask 约束（v6.3 加固）：**
+- `ContentAccessList.default_scope_mask` 必须是 `SCOPE_SEAL(1) | SCOPE_MEMORY(2) | SCOPE_SKILLS(4) | SCOPE_ASSETS(8) = 15` 的**非零子集**
+- 本计划中所有 mint 用例传 `ALL_ACCESS_SCOPES = 15` 作为默认值（SDK `publish.ts` / `import.ts` / `personal-join.ts` / desktop `publish.ts` 兜底）
+- 若绕过前端直接上链传 `0` 或包含无效位，`content_access::create` 以 `grant::EEmptyScopeMask` / `EGrantInvalidScopeMask` 拒绝
 
 ---
 
@@ -153,11 +170,11 @@ Agent API 路由在 `web/app/api/agent/` 下，通过 `requireAgentWalletIdentit
 Agent → /api/agent/souls/{id}/access → requireAgentWalletIdentity
   → resolveSoulAccessPayload(soul, agentWalletAddresses)
   → 自动匹配: owner? → seal_approve_owner
-                 activeGrants 含 seal scope? → seal_approve_granted_agent
+                 activeGrants 含对应 scope? → seal_approve_*_granted_agent
   → 返回 SoulAccessResponse
 ```
 
-核心：**Agent 访问 Soul 的前提是 owner 已通过 `useGrant().issueGrant()` 给 agent 钱包地址发放了含 `seal` scope 的 SoulGrant。** 无需额外 allowlist 表。
+核心：**Agent 访问 Soul 的前提是 owner 已通过 `useGrant().issueGrant()` 给 agent 钱包地址发放 SoulGrant；GrantModal 默认发放 `seal|memory|skills|assets = 15`，各 API 再按资源类型校验对应 scope。** 无需额外 allowlist 表。
 
 ### Agent 购买流程（两步签名）
 
@@ -240,10 +257,14 @@ sui client call \
 **运行时变量（Phase -1 动态发现 + 测试流程中捕获）：**
 - `SELLER_ADDR` / `BUYER_ADDR` / `AGENT_ALPHA_ADDR` / `AGENT_BETA_ADDR` — Phase -1.2 DB 查询 + Sui CLI 验证
 - `SELLER_MEMBER_ID` — Phase -1.2 记录（Phase 10.6 Follow 用）
-- `SOUL_A_ID` / `SOUL_A_STATE_OBJ` / `SOUL_B_ID` / `COLLECTION_ID` — 测试流程中捕获
+- `SOUL_A_ID` / `SOUL_A_STATE_OBJ` / `SOUL_B_ID` / `SOUL_B_STATE_OBJ` / `COLLECTION_ID` — 测试流程中捕获
 - `SOUL_A_ACCESS_LIST_OBJ` / `SOUL_B_ACCESS_LIST_OBJ` — Phase 1.6/1.7 DB 查询捕获（ContentAccessList on-chain ID）
+- `SOUL_A_INITIAL_SKILL_NAME` / `SOUL_A_INITIAL_SKILL_VERSION_INDEX` — Phase 1.6 publish sync 响应或 DB 查询捕获（Phase 5.3 使用）
+- `SOUL_B_FOUNDING_MEMORY_TIMESTAMP_KEY` / `SOUL_B_INITIAL_SKILL_NAME` / `SOUL_B_INITIAL_SKILL_VERSION_INDEX` — Phase 1.7 publish sync 响应捕获（Phase 7.12 使用）
+- `COLLECTION_LISTING_OBJ` — Phase 3.5 list + delist collection right 后捕获（Phase 11.0b 使用）
 - `KIOSK_REGISTRY_OBJ` — deployment-manifest.json `kioskRegistryId`（`0x51c3c0b58052cfc55bd531a85ed550669218d67b3fe0a7e498be518972d122e7`）
-- `CAPTURED_RAW_ENVELOPE` — Phase 7.12 可选白盒比对（当前默认无）
+- `CAPTURED_RAW_ENVELOPES_JSON` — Phase 7.12 从 gas 页捕获的 `{char,memory,skills,sprite}` raw DEK envelope JSON
+- `MEMORY_ENTRY_KEY` / `SKILL_NAME` / `SKILL_VERSION_INDEX` — Phase 7.12 访问 memory / skills artifact 时使用，来自 publish/import sync 响应
 
 ---
 
@@ -488,6 +509,15 @@ mkdir -p "$ARTIFACT_DIR"
    - 验证 `access_list_on_chain_id IS NOT NULL`（Move 合约在 mint 时自动创建 ContentAccessList）
    - 记录 `access_list_on_chain_id` 为 **SOUL_A_ACCESS_LIST_OBJ**（Phase 7.5 ContentAccess 测试用）
    - `assets_on_chain_id` 预期为 NULL（当前 wizard 不传 `assetBlobObjectId`）
+8. **DB 捕获初始 Skills 版本：**
+   ```sql
+   SELECT skill_name, version_index
+   FROM soul_skill_version_records
+   WHERE soul_on_chain_id = '$SOUL_A_ID'
+   ORDER BY version_index DESC
+   LIMIT 1;
+   ```
+   记录为 **SOUL_A_INITIAL_SKILL_NAME** / **SOUL_A_INITIAL_SKILL_VERSION_INDEX**（Phase 5.3 Skills grant 正向访问用）
 
 ### Test 1.7: 创建 Soul B — 完整 wizard 流程
 重复 Tests 1.2-1.6 全流程，参数差异:
@@ -697,6 +727,16 @@ evaluate_script(`
 ### Test 3.5: Collection 详情页
 1. `navigate_page` → `http://localhost:3100/collections/${COLLECTION_ID}`
 2. `evaluate_script` 验证 collection 显示 1 个 Soul, floor price, royalty
+3. 打开 Collection action，选择 `List Collection`
+4. 输入 list price `5.00` USDC，签名 `list_collection_right_fixed_price`
+5. DB / API 捕获并记录 **COLLECTION_LISTING_OBJ**
+   ```sql
+   SELECT listing_object_on_chain_id
+   FROM soul_collections
+   WHERE on_chain_id = '$COLLECTION_ID';
+   ```
+6. 打开 Collection action，选择 `Delist Collection`，签名 `cancel_collection_listing`
+7. 验证 DB `listing_object_on_chain_id IS NULL`，链上 `COLLECTION_LISTING_OBJ` 仍存在且 `is_active = false`（供 Test 11.0b 回收）
 
 ### Test 3.6: Collection 子 Soul 低于 Floor Price 时禁止继续上架
 1. 在 collection 详情页刷新 snapshot，定位第一个子 Soul card（链接目标为 `/souls/{id}`）并点击进入
@@ -798,17 +838,13 @@ evaluate_script(`
 11. 刷新 Soul A 详情页验证:
     - Active Grants 区域显示 1 条 grant
     - Grant row 含 Agent Alpha 地址前缀（`$AGENT_ALPHA_ADDR` 前 6 字符）
-    - Grant scopes 含 scope tags
+    - Grant scopes 含 `seal` / `memory` / `skills` / `assets` scope tags
+    - DB mirror 中该 active grant 的 `scope_mask = 15`
 12. `take_screenshot` → `$ARTIFACT_DIR/phase5-grant-issued.png`
 
 ### Test 5.2a: Set Grant Capacity to 2（M-2 修复验证）
 
 > 默认 grant_capacity = 1，只允许 1 个 active grant。调高到 2 以允许未来多 agent 场景。
-
-```bash
-# 通过 Sui CLI 直接调用 set_grant_capacity（Buyer 是 Soul A owner）
-# 需要 Buyer 的 Privy wallet 签名，走前端 TX
-```
 
 1. `navigate_page` → `http://localhost:3100/souls/${SOUL_A_ID}`
 2. `evaluate_script` 验证 "Grant capacity: 1 / 1"（Test 5.2 发放了 1 个 grant）
@@ -817,8 +853,22 @@ evaluate_script(`
    SELECT grant_capacity FROM soul_assets WHERE on_chain_id = '$SOUL_A_ID';
    ```
    验证 `grant_capacity = 1`
-
-> **说明：** `set_grant_capacity` 当前无 UI 入口（GrantModal 未集成）。此项记为 `pending-ui`，待 UI 落地后补充浏览器测试。链上功能已通过 Move 单元测试覆盖（`protocol_tests.move` 32/32 pass）。
+4. **Buyer owner 通过 dev-only E2E helper 调高容量：**
+   ```js
+   await window.__e2eSoulidity.setGrantCapacity({
+     stateObjectId: '$SOUL_A_STATE_OBJ',
+     capacity: 2,
+   })
+   ```
+   验证 TX success，事件 `<pkg>::grant::GrantCapacityUpdated` 中 `old_capacity = 1`、`new_capacity = 2`
+5. **链上 + DB 验证容量已更新：**
+   ```bash
+   sui client object $SOUL_A_STATE_OBJ --json | jq '.data.content.fields.grant_capacity'
+   ```
+   ```sql
+   SELECT grant_capacity FROM soul_assets WHERE on_chain_id = '$SOUL_A_ID';
+   ```
+   两处均为 `2`。
 
 ### Test 5.2b: Verify Grant Capacity Immutable Before Fix
 
@@ -835,7 +885,7 @@ print(f'access_list_id={fields.get(\"access_list_id\",\"?\")}')
 "
 ```
 验证:
-- `grant_capacity` 为 `1`（默认值）
+- `grant_capacity` 为 `2`（Test 5.2a 已通过 owner TX 调整）
 - `access_list_id` 非空（M-1 修复验证 — mint 时自动绑定）
 
 ### Test 5.3: Agent Alpha → Soul A: 200（granted-agent via 当前 `web/` 应用）
@@ -850,6 +900,18 @@ curl -s -w "\n%{http_code}" \
 - `accessPolicy.functionName` = `"seal_approve_granted_agent"`
 - `accessPolicy.soulGrantObjectId` 非空（指向链上 SoulGrant 对象）
 
+同一个 Grant 必须允许 Skills 正向访问：
+```bash
+curl -s -w "\n%{http_code}" \
+  -H "Authorization: Bearer ${E2E_AGENT_ALPHA_API_KEY}" \
+  http://localhost:3100/api/agent/souls/${SOUL_A_ID}/skills/${SOUL_A_INITIAL_SKILL_NAME}/versions/${SOUL_A_INITIAL_SKILL_VERSION_INDEX}/access
+```
+验证:
+- HTTP 200
+- `accessKind` = `"granted-agent"`
+- `accessPolicy.functionName` = `"seal_approve_private_read_granted_agent"`
+- `accessPolicy.soulGrantObjectId` 非空
+
 ### Test 5.4: Agent Beta → Soul A: 403（无 Grant）
 ```bash
 curl -s -w "\n%{http_code}" \
@@ -862,7 +924,7 @@ curl -s -w "\n%{http_code}" \
 1. `navigate_page` → `http://localhost:3100/my-souls`
 2. `click` "Activity" tab
 3. `evaluate_script` 验证至少 1 条 grant record
-4. `evaluate_script` 验证 grant row 含 "active" status tag + "seal"/"memory" scope tags
+4. `evaluate_script` 验证 grant row 含 "active" status tag + `seal` / `memory` / `skills` / `assets` scope tags
 
 ### Test 5.6: Revoke SoulGrant — via GrantModal UI
 1. `navigate_page` → `http://localhost:3100/my-souls`
@@ -883,6 +945,49 @@ curl -s -w "\n%{http_code}" \
   http://localhost:3100/api/agent/souls/${SOUL_A_ID}/access
 ```
 验证 HTTP 403
+
+### Test 5.8: Destroy Invalidated SoulGrant — 回收 storage rebate（v6.3 L-1）
+
+> Test 5.6 revoke 了 Agent Alpha 的 grant，链上 `state.active_grants` 已移除该 slot，但 `SoulGrant` owned object 仍留在 Agent Alpha 的钱包里（epoch 不匹配 + 不在 active_grants）。`grant::destroy_invalidated_grant` 无额外业务身份校验，但 Sui 会在 Move 执行前校验 owned object 输入归属；因此本步骤必须用 Agent Alpha（或当前持有该 grant object 的地址）签名。
+> 本测试验证：合约接受销毁请求，事件 `SoulGrantDestroyed` 触发，对象消失。
+
+1. **通过 Sui CLI 读 Test 5.2 创建的 SoulGrant object id**（可从 Test 5.2 Privy TX digest 的 `objectChanges` 提取；或查询 Agent Alpha 持有的 `soulidity::grant::SoulGrant` 对象列表）：
+   ```bash
+   AGENT_ALPHA_ADDR=<记录的 agent 地址>
+   sui client objects --address $AGENT_ALPHA_ADDR --json 2>&1 | jq -r '
+     .[] | select(.data.type | test("::grant::SoulGrant$"; "i")) | .data.objectId
+   ' | head -1
+   ```
+   记录为 **GRANT_OBJ**。
+
+2. **通过 Sui CLI 调用 destroy_invalidated_grant**（必须切到拥有 `GRANT_OBJ` 的地址；本流程中为 Agent Alpha。不要用 treasury/seller/buyer 这类不拥有该 owned object 的 signer，否则会在 Sui object ownership 校验阶段失败，无法进入 Move 函数）：
+   ```bash
+   sui client switch --address $AGENT_ALPHA_ADDR
+   sui client call \
+     --package $PACKAGE_ID \
+     --module grant \
+     --function destroy_invalidated_grant \
+     --args $GRANT_OBJ $SOUL_A_STATE_OBJ 0x6 \
+     --gas-budget 50000000
+   ```
+
+3. 验证:
+   - TX `effects.status` = success
+   - `events` 含 `<pkg>::grant::SoulGrantDestroyed`，字段 `grant_id == GRANT_OBJ`
+   - 再查 `sui client object $GRANT_OBJ` → 返回 `Object has been deleted`
+   - 负向确认：用不拥有 `GRANT_OBJ` 的 signer 调用应在 Sui owned object 输入校验阶段失败；这不是 `EGrantStillActive`，而是交易输入所有权不满足
+
+4. **DB 验证（mirror 层无状态变化）：**
+   ```sql
+   SELECT status FROM "soul_grant_records"
+   WHERE soul_on_chain_id = '$SOUL_A_ID' AND grantee_address = '$AGENT_ALPHA_ADDR'
+   ORDER BY created_at DESC LIMIT 1;
+   ```
+   - 验证 `status` 保持 Test 5.6 revoke 后的状态（`revoked`）；destroy 不触发新 mirror 更新（合约未 emit 状态变更事件，只 emit destroy 事件）
+
+5. **负向测试：Active grant 不可 destroy（dry-run / Move test 二选一但必须记录）**
+   - 重新 issue 一个 grant（Test 5.2 流程）并立刻 dry-run `destroy_invalidated_grant`，预期 abort `soulidity::grant::EGrantStillActive (16)`
+   - 若 RPC dry-run 无法稳定构造，则运行 `sui move test destroy_invalidated_grant_rejects_active_grant` 并把该测试输出写入结果文档
 
 ---
 
@@ -965,7 +1070,7 @@ curl -s -w "\n%{http_code}" \
 
 ---
 
-## Phase 7: Agent API 功能验证（7 tests: 7.1-7.5 主流程 + 7.11 Seal 解密 + 7.12 白盒附加）
+## Phase 7: Agent API 功能验证（7 tests: 7.1-7.5 主流程 + 7.11 Seal 解密 + 7.12 逐字节比对）
 
 > 全部走当前 `web/` 应用的 Agent API（port 3100），不依赖 legacy web。
 
@@ -1126,21 +1231,57 @@ curl -s -w "\n%{http_code}" \
 ### Test 7.10a: Content Access Purchase — 付款路由验证（H-1 修复）
 
 > **v6.1 关键修复验证：** `purchase_content_access` 现在付款发给 `soul::current_owner(state)`（当前 owner），而非固定 `access_list.creator`。
-> Soul A 由 Seller 创建，Phase 4 卖给 Buyer。购买 content access 时付款应发给 Buyer（当前 owner），非 Seller（creator）。
+> Soul B 由 Seller 创建，Phase 7.3 卖给 Agent Alpha。Seller 再作为非 owner 购买 Soul B 的 content access，付款必须发给 Agent Alpha（当前 owner），非 Seller（creator / buyer）。
 
-1. **确认 Soul A 当前 owner 为 Buyer：**
+1. **确认 Soul B 当前 owner 为 Agent Alpha：**
    ```sql
-   SELECT current_owner_address, creator_address FROM soul_assets WHERE on_chain_id = '$SOUL_A_ID';
+   SELECT current_owner_address, creator_address, access_list_on_chain_id, state_on_chain_id
+   FROM soul_assets WHERE on_chain_id = '$SOUL_B_ID';
    ```
-   验证: `current_owner_address = $BUYER_ADDR`，`creator_address = $SELLER_ADDR`（两者不同）
+   验证: `current_owner_address = $AGENT_ALPHA_ADDR`，`creator_address = $SELLER_ADDR`（两者不同），记录 `SOUL_B_STATE_OBJ` / `SOUL_B_ACCESS_LIST_OBJ`
 
-2. **确认 content access price：**
+2. **Agent Alpha owner 设置 paid access + 短 duration（供 7.10f 继续测生命周期）：**
+   ```bash
+   OWNER_PRIVATE_KEY="$AGENT_ALPHA_PRIVATE_KEY" \
+   ACCESS_LIST_ID="$SOUL_B_ACCESS_LIST_OBJ" \
+   STATE_ID="$SOUL_B_STATE_OBJ" \
+   PRICE_ATOMIC=1000000 \
+   DURATION_MS=2000 \
+   npx tsx web/scripts/e2e-content-access-lifecycle.ts set-initial
+   ```
+   验证:
+   - TX success
+   - 事件 `<pkg>::content_access::ContentAccessPriceUpdated`
+   - 事件 `<pkg>::content_access::ContentAccessDurationUpdated`
+   - 链上对象 `price_atomic = 1000000`，`default_access_duration_ms.vec = [2000]`
+
+3. **Seller（非 owner）购买 Soul B content access：**
+   - 如 Seller USDC 不足，先用 test USDC treasury mint `>= 2 USDC` 到 `$SELLER_ADDR`
+   - Chrome DevTools 切到 Seller 登录会话，打开任意已挂载 AppProviders 的页面
+   - 执行：
+     ```js
+     await window.__e2eSoulidity.purchaseContentAccess({
+       soulObjectId: '$SOUL_B_ID',
+       accessListOnChainId: '$SOUL_B_ACCESS_LIST_OBJ',
+       stateOnChainId: '$SOUL_B_STATE_OBJ',
+       priceAtomic: '1000000',
+       platformFeeBps: 250
+     })
+     ```
+   - 记录 `CONTENT_ACCESS_PURCHASE_DIGEST_1`
+
+4. **验证付款路由 + mirror：**
+   - TX events 含 `<pkg>::market::ContentAccessPurchased`
+   - `buyer == $SELLER_ADDR`
+   - `payment_recipient == $AGENT_ALPHA_ADDR`
+   - `price == 1000000`，`platform_fee == 25000`
+   - `ContentAccessGranted.expires_at_ms` 非空
    ```sql
-   SELECT access_list_on_chain_id FROM soul_assets WHERE on_chain_id = '$SOUL_A_ID';
+   SELECT grantee_address, scope_mask, price_paid_atomic, expires_at_ms, revoked_at
+   FROM content_access_records
+   WHERE soul_on_chain_id = '$SOUL_B_ID' AND grantee_address = '$SELLER_ADDR';
    ```
-   记录 `access_list_on_chain_id` 并通过链上验证 price_atomic
-
-> **说明：** 完整的 USDC 付款路由端到端验证需要第三方用户购买 content access，追踪 USDC 余额变化。当前无第三用户测试账号，此项记为 `pending-e2e`。链上逻辑已通过 Move 单元测试验证。
+   验证 `scope_mask = 15`、`price_paid_atomic = 1000000`、`expires_at_ms IS NOT NULL`、`revoked_at IS NULL`
 
 ### Test 7.10b: Content Access Purchase 报价含平台抽成（I-2 修复）
 
@@ -1173,6 +1314,127 @@ sui client object $KIOSK_REGISTRY_OBJ 2>&1 | head -8
 - `objType` 含 `market::KioskRegistry`
 - `owner` 为 `Shared`
 
+### Test 7.10d: purchase_content_access 拒绝 price=0（v6.3 M-2）
+
+> 前置：Soul A 的 ContentAccessList 在 Test 1.6 / Test 7.10a 时已创建。默认 `price_atomic = 0`（wizard 未暴露价格输入）。
+> 验证合约层保护：即便构造一笔带 `coin::zero<USDC>` 的 tx，`market::purchase_content_access` 也必须以新错误码 `EContentAccessNotPurchasable = 28` 拒绝。
+
+1. **确认 SOUL_A_ACCESS_LIST_OBJ 当前 `price_atomic`（链上 + DB 双查）：**
+   ```bash
+   sui client object $SOUL_A_ACCESS_LIST_OBJ --json 2>&1 | python3 -c "
+   import json, sys
+   d = json.load(sys.stdin)
+   print('price_atomic:', d['data']['content']['fields']['price_atomic'])
+   print('default_scope_mask:', d['data']['content']['fields']['default_scope_mask'])
+   print('default_access_duration_ms:', d['data']['content']['fields']['default_access_duration_ms'])
+   "
+   ```
+   - 预期 `price_atomic = 0`
+   - 预期 `default_scope_mask = 15`（SDK 兜底 `ALL_ACCESS_SCOPES`）
+   - 预期 `default_access_duration_ms = None`
+
+2. **Dry-run `purchase_content_access` with `coin::zero`** — 任一开发账户即可：
+   ```bash
+   sui client call \
+     --package $PACKAGE_ID \
+     --module market \
+     --function purchase_content_access \
+     --args $MARKET_CONFIG_ID $SOUL_A_ACCESS_LIST_OBJ $SOUL_A_STATE_OBJ \
+            $(sui client pay-sui --input-coins ... --amounts 0 ...) 0x6 \
+     --gas-budget 50000000 \
+     --dry-run 2>&1 | grep -E "status|abort"
+   ```
+   - 预期 abort：`MoveAbort(... market ..., 28)` (EContentAccessNotPurchasable)
+
+3. **正向对照**：Test 7.10a 已用 Soul B 的 `price_atomic > 0` 覆盖 paid purchase 主流程；本 test 只聚焦 Soul A 默认免费 access 不可走 paid purchase 的负向断言。
+
+### Test 7.10e: mint 传 scope_mask=0 被 `grant::EEmptyScopeMask` 拒绝（v6.3 L-6）
+
+> 验证合约层 scope mask 校验：绕过 SDK 兜底，直接以 `content_access_default_scope_mask = 0` 发起 mint 必须 abort。
+
+1. **构造 PTB**（用 dev 账户 + `sui client ptb`，或 npx tsx 脚本直接调用 `market::mint_native_in_personal_kiosk` 并手动把 scope_mask 传 0）：
+   ```bash
+   cd /Users/admin/Desktop/nao/clawnews && npx tsx -e "
+   import { Transaction } from '@mysten/sui/transactions';
+   // ... 构造一个最小 mint PTB，scope_mask = 0
+   // dry-run 即可，无需真签名
+   "
+   ```
+2. 验证: abort `soulidity::grant::EEmptyScopeMask` (code 10)
+3. 重复传 `content_access_default_scope_mask = 16`（非 `SCOPE_SEAL|MEMORY|SKILLS|ASSETS` 子集） → 预期 abort `soulidity::grant::EGrantInvalidScopeMask` (code 13)
+
+> **说明：** 正向 E2E 已由 SDK 默认值（`ALL_ACCESS_SCOPES = 15`）在所有其他 Soul 创建用例中覆盖。负向断言必须记录 dry-run abort；若 Walrus Blob owned object 无法稳定复用构造 mint dry-run，则运行 `sui move test mint_with_zero_scope_mask_fails mint_with_invalid_scope_mask_fails` 并把输出写入结果文档。
+
+### Test 7.10f: ContentAccessList duration 生命周期（v6.3 L-7）
+
+> 复用 Test 7.10a 的 Soul B：Agent Alpha owner 已把 `default_access_duration_ms` 设置为 2000ms，Seller 已完成首次购买。
+
+1. **链上核对初始字段：**
+   ```bash
+   sui client object $SOUL_B_ACCESS_LIST_OBJ --json 2>&1 | python3 -c "
+   import json, sys
+   d = json.load(sys.stdin)['data']['content']['fields']
+   print('price_atomic:', d['price_atomic'])
+   print('default_access_duration_ms:', d['default_access_duration_ms'])
+   "
+   ```
+   - `price_atomic = 1000000`
+   - `default_access_duration_ms.vec = [2000]`
+
+2. **DB 验证首次购买写入 expiresAtMs：**
+   ```sql
+   SELECT grantee_address, scope_mask, price_paid_atomic, granted_at_ms, expires_at_ms
+   FROM "content_access_records"
+   WHERE soul_on_chain_id = '$SOUL_B_ID' AND grantee_address = '$SELLER_ADDR';
+   ```
+   - `expires_at_ms` 非 null
+   - `expires_at_ms` 落在 Test 7.10a 购买 TX 前后时间窗口 + 2000ms 内（允许 RPC / mirror 等待带来的秒级漂移）
+
+3. **`has_access` 链上查询：未过期时为 true：**
+   ```bash
+   ACCESS_LIST_ID="$SOUL_B_ACCESS_LIST_OBJ" \
+   GRANTEE_ADDRESS="$SELLER_ADDR" \
+   REQUIRED_SCOPE=15 \
+   npx tsx web/scripts/e2e-content-access-lifecycle.ts inspect-access
+   ```
+   - 输出 `hasAccess: true`
+
+4. **等待过期后再次查询：**
+   ```bash
+   sleep 3
+   ACCESS_LIST_ID="$SOUL_B_ACCESS_LIST_OBJ" \
+   GRANTEE_ADDRESS="$SELLER_ADDR" \
+   REQUIRED_SCOPE=15 \
+   npx tsx web/scripts/e2e-content-access-lifecycle.ts inspect-access
+   ```
+   - 输出 `hasAccess: false`
+
+5. **Agent Alpha owner 更新 duration 为 2 小时：**
+   ```bash
+   OWNER_PRIVATE_KEY="$AGENT_ALPHA_PRIVATE_KEY" \
+   ACCESS_LIST_ID="$SOUL_B_ACCESS_LIST_OBJ" \
+   STATE_ID="$SOUL_B_STATE_OBJ" \
+   DURATION_MS=7200000 \
+   npx tsx web/scripts/e2e-content-access-lifecycle.ts set-duration
+   ```
+   - TX digest + `ContentAccessDurationUpdated` 事件 emit
+   - 链上对象 `default_access_duration_ms.vec = [7200000]`
+   - 既有 Seller entry 不变（测试 "不追溯"）
+
+6. **Seller 续购 → 新 entry 使用 2 小时 duration：**
+   ```js
+   await window.__e2eSoulidity.purchaseContentAccess({
+     soulObjectId: '$SOUL_B_ID',
+     accessListOnChainId: '$SOUL_B_ACCESS_LIST_OBJ',
+     stateOnChainId: '$SOUL_B_STATE_OBJ',
+     priceAtomic: '1000000',
+     platformFeeBps: 250
+   })
+   ```
+   - 记录 `CONTENT_ACCESS_PURCHASE_DIGEST_2`
+   - `ContentAccessGranted.expires_at_ms` 更新
+   - DB 新 `expires_at_ms` 落在续购 TX 前后时间窗口 + 7200000ms 内
+
 ---
 
 ### Test 7.11: Agent Seal Decrypt Soul B
@@ -1188,29 +1450,26 @@ npx tsx web/scripts/e2e-agent-decrypt.ts
 - Seal 调用 `seal_approve_owner`（Agent Alpha 是 owner）
 - 输出 content hash 匹配
 
-### Test 7.12: Seal 加密内容与原始文件逐字节比对（白盒附加验证，不计 E2E 主流程通过口径）
+### Test 7.12: Seal 加密内容与原始文件逐字节比对
 
-前置：Agent Alpha 已购买 Soul B（Test 7.3）并拥有 owner 访问权（Test 7.4）。此项不是黑盒 E2E，而是排查内容打包/加密问题时的白盒比对。
-
-当前仓库状态：
-
-- `CAPTURED_RAW_ENVELOPE` 仍依赖 gas 页额外暴露 `window.__e2eLastRawEnvelope`
-- 该暴露点当前**未落地**
-- 因此本项默认标记为 `optional / pending-impl`，不进入本轮主流程通过口径
+前置：Agent Alpha 已购买 Soul B（Test 7.3）并拥有 owner 访问权（Test 7.4）。创建 / 导入 gas 页在 development 环境暴露 `window.__e2eLastRawEnvelope = { char, memory, skills, sprite }`，测试必须在 mint/import 后立即捕获该 JSON。
 
 ```bash
 SOUL_ID=${SOUL_B_ID} \
 AGENT_API_KEY="${E2E_AGENT_ALPHA_API_KEY}" \
-RAW_ENVELOPE="${CAPTURED_RAW_ENVELOPE}" \
+RAW_ENVELOPES_JSON="${CAPTURED_RAW_ENVELOPES_JSON}" \
+MEMORY_ENTRY_KEY="${SOUL_B_FOUNDING_MEMORY_TIMESTAMP_KEY}" \
+SKILL_NAME="${SOUL_B_INITIAL_SKILL_NAME}" \
+SKILL_VERSION_INDEX="${SOUL_B_INITIAL_SKILL_VERSION_INDEX}" \
 COMPARE_DIR="/Users/admin/Documents/example" \
 npx tsx web/scripts/e2e-agent-verify-content.ts
 ```
 验证:
 - 退出码 0
-- 每个文件（soul.md, memory.md, images.jpeg, skill.zip）显示 `✅ MATCH`
-- 最终输出 "All files match!"
-
-**实现依赖：** gas 页需新增 `window.__e2eLastRawEnvelope` 暴露点（当前未实现）。
+- `char` 对 `/api/agent/souls/{id}/access` 返回的 Walrus blob 解密后与 `soul.md` 逐字节一致
+- `memory` 对 `/api/agent/souls/{id}/memory/{entryKey}/access` 返回的 Walrus blob 解密后与 `memory.md` 逐字节一致
+- `skills` 对 `/api/agent/souls/{id}/skills/{skillName}/versions/{versionIndex}/access` 返回的 Walrus blob 解密后与 `skill.zip` 逐字节一致
+- 最终输出 `OK 3 artifact(s) matched byte-for-byte.`
 
 ---
 
@@ -1257,7 +1516,7 @@ npx tsx web/scripts/e2e-agent-verify-content.ts
    upload_file(selector: cover image upload zone input,
                filePath: '/Users/admin/Documents/example/images.jpeg')
    ```
-7. （可选）上传 Skills Bundle: `/Users/admin/Documents/example/skill.zip`
+7. 上传 Skills Bundle: `/Users/admin/Documents/example/skill.zip`
 8. `click` "Continue" 按钮
 9. `wait_for` URL 含 `/import/preview`
 
@@ -1400,7 +1659,59 @@ curl -s -o /dev/null -w "%{http_code}" \
 
 ---
 
-## Phase 11: Cleanup（1 test）
+## Phase 11: Cleanup（3 tests）
+
+### Test 11.0a: Delete Inactive Soul Listing — 回收 storage rebate（v6.3 L-3）
+
+> Phase 4 Buyer 购买 Soul A → `listing.is_active = false` 但对象仍留在 shared pool。
+> `market::delete_soul_listing(listing, ctx)` 需要 `!is_active`，析构 + 删 UID。任何签名者均可调用（storage rebate 归调用者），前端可以把这一步拼在购买 PTB 后；本测试独立验证。
+
+1. **读 Soul A 的 listing object id**（Phase 2 records 或链上 query）：
+   ```bash
+   # 扫描 MarketConfig 的 shared listing 集合，筛出 SOUL_A_ID 的 inactive listing
+   sui client events --module market --event-type "SoulPurchased" --json | \
+     jq -r '.[] | select(.parsedJson.soul_id == env.SOUL_A_ID) | .parsedJson.listing_id' | head -1
+   ```
+   记录为 **SOUL_A_LISTING_OBJ**。
+
+2. **调用 delete_soul_listing**：
+   ```bash
+   sui client call \
+     --package $PACKAGE_ID \
+     --module market \
+     --function delete_soul_listing \
+     --args $SOUL_A_LISTING_OBJ \
+     --gas-budget 50000000
+   ```
+3. 验证:
+   - TX success
+   - 事件 `<pkg>::market::SoulListingDeleted` emit，字段 `listing_id == SOUL_A_LISTING_OBJ`、`soul_id == $SOUL_A_ID`
+   - `sui client object $SOUL_A_LISTING_OBJ` → `Object has been deleted`
+
+4. **负向断言**：对 Soul B（仍 listed）dry-run `delete_soul_listing` 应 abort `EListingStillActive = 30`；若 Soul B 已在后续测试被下架，则运行 `sui move test delete_active_soul_listing_fails` 并把输出写入结果文档。
+
+### Test 11.0b: Delete Inactive Collection Listing（v6.3 L-3）
+
+> Phase 3.5 已对 Collection right 执行 list + delist，留下 `is_active = false` 的 `COLLECTION_LISTING_OBJ`。
+
+1. **确认 collection listing 已 inactive：**
+   ```bash
+   sui client object $COLLECTION_LISTING_OBJ --json | jq '.data.content.fields.is_active'
+   ```
+   预期 `false`
+2. **调用 delete_collection_listing：**
+   ```bash
+   sui client call \
+     --package $PACKAGE_ID \
+     --module market \
+     --function delete_collection_listing \
+     --args $COLLECTION_LISTING_OBJ \
+     --gas-budget 50000000
+   ```
+3. 验证:
+   - TX success
+   - 事件 `<pkg>::market::CollectionListingDeleted` emit，字段 `listing_id == COLLECTION_LISTING_OBJ`、`collection_id == $COLLECTION_ID`
+   - `sui client object $COLLECTION_LISTING_OBJ` → `Object has been deleted`
 
 ### Test 11.1: 清理
 1. `evaluate_script`: `localStorage.clear(); sessionStorage.clear();`
@@ -1457,6 +1768,7 @@ Test 4.3 (market verify) → Tests 4.3a-4.3c (bookmark add/verify/remove)
 Test 4.5 (purchase Soul A) → buyer owns Soul A → Phase 5+
 Test 5.2 (issue grant via GrantModal) → Tests 5.2a-5.2b (grant capacity + access_list_id验证) → Tests 5.3-5.5
 Test 5.6 (revoke grant via GrantModal) → Test 5.7
+Test 5.8 (destroy_invalidated_grant) ← 依赖 Test 5.6 revoke 后留下的僵尸 grant 对象（v6.3 L-1）
 Phase 6 (skills/memory) ← buyer 仍登录 + owns Soul A
 Phase 6.5 (SoulAssets API) ← buyer 仍登录 + owns Soul A；验证 asset list 空状态和 404 边界
 Test 7.1-7.2 (agent search + detail) → 独立只读
@@ -1466,12 +1778,13 @@ Test 7.6 (access-list empty) → Test 7.7 (DB insert content access)
 Test 7.7 (DB insert) → Test 7.8 (verify grant via API)
 Test 7.9 (DB revoke) → Test 7.10 (verify revoked via API)
 Tests 7.10a-c (v6.1 修复验证) ← H-1 付款路由 + I-2 平台抽成 + M-3 KioskRegistry
+Tests 7.10d-f (v6.3 加固验证) ← M-2 price=0 拒购 + L-6 scope=0/16 mint 拒绝 + L-7 duration 生命周期
 Test 7.11 (agent seal decrypt) ← 需 Seal key server 与网络环境可用
-Test 7.12 (Seal content verify) ← 需 CAPTURED_RAW_ENVELOPE 暴露点落地 + Agent Alpha owns Soul B；默认不计主流程
+Test 7.12 (Seal content verify) ← 需 CAPTURED_RAW_ENVELOPES_JSON + Agent Alpha owns Soul B；计入主流程
 Phase 8 (import, 6 步 wizard) ← buyer 仍登录，创建新 Soul
 Phase 9 (API boundary) → 独立于浏览器状态；Tests 9.7-9.9 验证 asset/content-access 边界
 Phase 10 (page renders + follow) ← 需 SELLER_MEMBER_ID
-Phase 11 (cleanup) → 收尾
+Phase 11 (cleanup) → delete_soul_listing 回收（Test 11.0a，依赖 Phase 4 purchase 后的 inactive listing） → DB 清理（Test 11.1） → 收尾
 ```
 
 ---
@@ -1485,16 +1798,16 @@ Phase 11 (cleanup) → 收尾
 | 2 | 8 | 上架 Soul A ($1) + Soul B ($2) + Market 排序/筛选 |
 | 3 | 6 | Collection 创建（seller session 内）+ floor price guard |
 | 4 | 9 | Buyer 登录 + Bookmark 增删 + 购买 Soul A |
-| 5 | 9 | Grant 发放 / 容量调整 / 验证 / 撤销（via GrantModal UI + set_grant_capacity） |
+| 5 | **10** | **Grant 发放 / 容量调整 / 验证 / 撤销 / destroy_invalidated_grant 回收（v6.3 L-1）** |
 | 6 | 4 | Skills append + Memory panel smoke + 解密 |
 | **6.5** | **4** | **SoulAssets API（asset list 空状态 + 404 边界）** |
-| 7 | 7 | Agent API 主流程 + Seal 解密验证 + 白盒内容比对（7.6/7.7 → 7.11/7.12） |
-| **7.5** | **8** | **ContentAccess API（list + DB grant + verify + DB revoke + verify + 付款路由 + 平台抽成 + KioskRegistry）** |
+| 7 | 7 | Agent API 主流程 + Seal 解密验证 + 逐字节内容比对（7.6/7.7 → 7.11/7.12） |
+| **7.5** | **11** | **ContentAccess API（list + DB grant + verify + DB revoke + verify + 付款路由 + 平台抽成 + KioskRegistry + v6.3 M-2 price=0 拒购 + v6.3 L-6 scope=0 拒绝 + v6.3 L-7 duration 生命周期）** |
 | 8 | 6 | Import 流程（6 步 wizard） |
-| 9 | **9** | API 边界测试（原 6 + 新 3: asset 404/400, content-access 401） |
+| 9 | 9 | API 边界测试（原 6 + 新 3: asset 404/400, content-access 401） |
 | 10 | 6 | 页面渲染冒烟 + Follow/Unfollow |
-| 11 | 1 | Cleanup |
-| **Total** | **92** | **（原 86 + 5 新增 v6.1 + 1 新增 v6.2 Import 步骤拆分）** |
+| 11 | **3** | **Cleanup（delete_soul_listing 回收 + delete_collection_listing 回收 + DB 清理）** |
+| **Total** | **98** | **（原 92 + v6.3 6 项：destroy_invalidated_grant、price=0 拒购、scope=0 拒绝、duration 生命周期、delete_soul_listing、delete_collection_listing）** |
 
 ---
 
@@ -1564,7 +1877,8 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `__e2eGetAuthHeaders` | `() => Promise<Record<string, string>>` | 获取 auth headers | 通用 |
 | `__e2eIssueGrant` | `(params: { stateObjectId, granteeAddress, scopeMask, soulObjectId }) => Promise` | 发放 grant | **已废弃** — Phase 5 改用 GrantModal UI |
 | `__e2eRevokeGrant` | `(params: { stateObjectId, granteeAddress, soulObjectId }) => Promise` | 撤销 grant | **已废弃** — Phase 5 改用 GrantModal UI |
-| `__e2eLastRawEnvelope` | 未实现 | 计划中的 RAW_ENVELOPE 暴露点 | Phase 7.12 白盒附加验证（默认不计主流程） |
+| `__e2eLastRawEnvelope` | 已实现（create/import gas 页） | `{char,memory,skills,sprite}` raw envelope 暴露点 | Phase 7.12 逐字节比对 |
+| `__e2eSoulidity` | 已实现（dev-only AppProviders helper） | content access purchase / price / duration / grant capacity helper | Phase 5.2a + Phase 7.10a/f |
 
 **使用前提：** 从 `/create` 走完 wizard 到 `/create/gas`，保持 CreateSoulProvider context 完整（name + description + coverImageFile + charFile + memoryFile 非空）。
 
@@ -1694,19 +2008,26 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 9. **Collection directory upload 模拟**: Chrome DevTools MCP `upload_file` 无法直接模拟 `webkitdirectory` picker，需通过 `evaluate_script` 构造 File 对象 + DataTransfer + dispatch change event。
 10. **Import 字段映射**: `soul.md` 作为 source file 时，name/description 可能无法自动映射，需手动填写 — 这恰好测试了 manual fallback 路径。
 11. **Memory Panel smoke**: Phase 6.3 改为渲染 smoke test，不做 append 操作。Memory append 需要未来补 `__e2eAppendMemory` helper。
-12. **Seal 内容比对依赖**: Phase 7.12 需要 gas 页暴露 `window.__e2eLastRawEnvelope`（1 行代码改动），且需要 `SOUL_UPLOAD_SECRET` 环境变量。
+12. **Seal 内容比对依赖**: Phase 7.12 需要在 mint/import 后立即读取 gas 页 `window.__e2eLastRawEnvelope`，并需要 `SOUL_UPLOAD_SECRET` 环境变量。
 13. **Follow 测试依赖**: Phase 10.6 需要在 Phase -1.2 记录 `SELLER_MEMBER_ID`。
 14. **Bookmark 时序**: Phase 4.3a-4.3c 必须在 Buyer 登录后、购买前执行（两个 Soul 均 listed 时 market 才有 bookmark 按钮）。
 15. **Admin 面板未覆盖**: 7 个 admin 页面 + 11 个 admin API 路由不在本轮测试范围（无 admin 测试账号）。
 16. **Sui CLI 可用性**: 依赖本地 `sui` >= 1.69.0 + testnet RPC。RPC 超时可重试；若 CLI 未安装则 Phase -1 立即阻塞。验证：`which sui && sui --version`。
 17. **USDC Treasury Cap 归属**: `sui client call` mint USDC 要求 `active-address` 为 treasury owner（`0x76fd52cac79bda80806be6b5ab7f3b1f099a966203cce809254919a7ab755728`）。若当前不是，需先 `sui client switch --address`。
 18. **Agent 地址动态发现前提**: DB 必须已有 agent 的 `wallet_bindings` 记录。若无，需先运行 `npx tsx scripts/e2e-setup-agents.ts`。
-19. **v6.1 合约重新部署**: 安全审计修复后合约 fresh publish（非 upgrade），所有 Object ID 已变更。`deployment-manifest.json` 已更新。旧链上数据（kiosk 注册、listings）不可继承，需从 Phase -1 清空 DB 重新开始。
+19. **v6.3 合约重新部署**: Sui scanner 审计加固后合约 fresh publish（非 upgrade），所有 Object ID 已变更。`deployment-manifest.json` 已更新。旧链上数据（kiosk 注册、listings、access lists、grants）不可继承，需从 Phase -1 清空 DB 重新开始。Phase 11 Cleanup 增加 delete_soul_listing 回收步骤。
 20. **KioskRegistry 新增共享对象**: SDK TX builders 已全部添加 `kioskRegistryId` 参数。若遗漏会导致链上 TX abort。
 21. **Content Access 付款路由变更**: 购买 content access 的 USDC 现发给 `soul::current_owner(state)` 而非固定 creator。这改变了 Soul 转售后的收益模型。Tests 7.10a-c 验证此行为。
-22. **`set_grant_capacity` 无 UI 入口**: GrantModal 当前不支持调整 grant 容量。Tests 5.2a-5.2b 标记为 `pending-ui`，仅做链上状态验证。
+22. **`set_grant_capacity` E2E 入口**: GrantModal 当前不展示容量调整控件；Test 5.2a 使用 dev-only `window.__e2eSoulidity.setGrantCapacity` 由 Buyer owner 钱包签名，并用链上 + DB 双查验证。
 23. **Category → Tags taxonomy 迁移**: Create 页已移除 Category 下拉（v6.2 T-1）。Prisma `category` 字段仍存在并 `@default("Other")`，但 UI 不暴露（开发库，无需迁移）。Test 1.2 不再验证 Category。Market 页无 category filter，Tags 为自由输入。
-24. **`upgradeStateId` 未入 manifest**: `deployment.ts` 接口已声明可选 `upgradeStateId`，但 `deployment-manifest.json` 尚未包含。待 MarketUpgradeState 部署后需更新 manifest 并补充 Test 7.10b 验证项。
+24. **`upgradeStateId` 未入 manifest**: `deployment.ts` 接口已声明可为空 `upgradeStateId`，但 `deployment-manifest.json` 尚未包含。待 MarketUpgradeState 部署后需更新 manifest 并补充 Test 7.10b 验证项。
+25. **v6.3 破坏性签名变更（全新部署）**: 三个 mint 公开入口在 `content_access_default_scope_mask` 之后插入 `Option<u64>` 参数 `content_access_default_duration_ms`。任何绕过 `web/lib/soulidity/tx/` SDK 的直接 PTB 调用需要同步插入；SDK builder 已自动处理。既有调用方无历史数据迁移成本，合约整体 fresh publish。
+26. **v6.3 scope_mask 强校验**: `content_access::create` 调用 `grant::assert_valid_scope_mask`；传 0 或含 `SCOPE_SEAL|MEMORY|SKILLS|ASSETS = 15` 之外的 bit 会 abort。SDK 默认 `ALL_ACCESS_SCOPES = 15` 兜底；Test 1.3 / 1.7 Soul 创建默认通过 SDK 走，均满足；Test 7.10e 专项负向断言。
+27. **v6.3 purchase_content_access 价格约束**: 免费 access 只能由 owner 调 `content_access::add_access`；`market::purchase_content_access` 对 `price_atomic = 0` 抛 `EContentAccessNotPurchasable (28)`。Test 7.10d 负向断言；Test 7.10a 使用 Agent Alpha owner 脚本设置 `price_atomic > 0` 后由 Seller 真人钱包完成 paid purchase。
+28. **v6.3 ContentAccessList.duration**: `default_access_duration_ms: Option<u64>` 决定 `record_purchase` 写入 entry 的 `expires_at_ms`。None = 终身；owner 可通过 `set_content_access_duration` 随时更新，仅影响后续购买。Test 7.10f 使用 `web/scripts/e2e-content-access-lifecycle.ts` 验证 2s 过期、`has_access=false`、以及更新为 2h 后续购 entry 使用新 duration。
+29. **v6.3 SoulGrant 僵尸对象回收**: Test 5.6 revoke 后 SoulGrant 对象在 agent 钱包里仍为 key-only 占用 storage。Test 5.8 通过 `grant::destroy_invalidated_grant` 回收；合约无额外 grantee 身份限制，但 `SoulGrant` 是 owned object，实际交易 sender 必须拥有/能提供该 grant object。本轮实测 treasury signer 失败，Agent Alpha（grant object owner）签名成功。
+30. **v6.3 delete_listing 回收**: Phase 11 Cleanup 新增 Test 11.0a 回收 Phase 4 purchase 后 `is_active=false` 的 SoulListing；Test 11.0b 回收 Phase 3.5 list + delist 后留下的 inactive CollectionListing。
+31. **v6.3 Seal document id 长度严格 `==`**: `seal_policy` / `skills` / `assets` 的 `assert_matching_document_id` 不再允许尾部多余字节。TS SDK `web/lib/services/seal-crypto.ts` + `desktop/.../asset-access.ts` 已输出精确字节长度；现有 `tests/web/seal-crypto.test.ts` 覆盖正向；链上单元测试覆盖尾缀字节负向。本计划不在 API/UI 层面新增断言。
 
 ---
 
@@ -1714,11 +2035,14 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 
 默认验收口径：
 - Phase -1 仅作为环境准备单独记录，不计入通过率
-- 91 项主流程通过（含 Phase 7.11 Seal 解密，Seal 已部署 testnet）
-- 1 项白盒附加验证（Phase 7.12）默认不计入 E2E 主流程通过率
+- 98 项主流程通过（含 Phase 7.11 Seal 解密与 Phase 7.12 逐字节内容比对，Seal 已部署 testnet）
+- Test 7.10a 正向路径必须完成 `price_atomic > 0` 的真人钱包 paid purchase，并验证付款 recipient 为当前 owner
+- Test 7.10e scope mask 负向必须记录 dry-run abort；若 dry-run 环境无法稳定复用 Walrus Blob owned object，则运行对应 Move test 并把输出写入结果文档
+- Test 7.10f duration 生命周期必须通过 `web/scripts/e2e-content-access-lifecycle.ts` + 真人钱包续购完成
 - Phase 5 全部走 GrantModal UI（不依赖 gas 页 `__e2e*` 函数）
+- Phase 5.8 destroy_invalidated_grant 走 `sui client call`，并要求 CLI active address 切到 `GRANT_OBJ` 当前 owner（本流程为 Agent Alpha）
 - Phase 6.3 改为 Memory Panel 渲染 smoke（不需要 `__e2eAppendMemory`）
-- Phase 7.12 Seal 内容比对仅在补出 `__e2eLastRawEnvelope` 后执行
+- Phase 7.12 Seal 内容比对必须执行，且 char / memory / skills 三个 artifact 都要逐字节匹配
 - 截图存档到 `$ARTIFACT_DIR`（默认 `e2e-artifacts/<RUN_DATE>/`）
 - 测试结果更新到 `docs/e2e-test-results-new-web.md`
-- Phase 11 cleanup 完成后 market 恢复空状态，DB 无残留（含 follows + bookmarks 表）
+- Phase 11 cleanup 完成后 market 恢复空状态，DB 无残留（含 follows + bookmarks 表）；Soul A 的 SoulListing 对象被 `delete_soul_listing` 回收（Test 11.0a）

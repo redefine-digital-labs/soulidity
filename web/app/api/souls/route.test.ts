@@ -8,7 +8,7 @@ const mockedCount = vi.hoisted(() => vi.fn())
 const mockedQueryRaw = vi.hoisted(() => vi.fn())
 const mockedToSoulAssetSummaryList = vi.hoisted(() => vi.fn())
 
-vi.mock('@web/lib/prisma', () => ({
+vi.mock('@/lib/prisma', () => ({
   prisma: {
     soulAsset: {
       findMany: mockedFindMany,

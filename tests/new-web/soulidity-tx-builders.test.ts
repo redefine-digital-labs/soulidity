@@ -28,6 +28,27 @@ beforeAll(() => {
 const OBJ = (hex: string) => '0x' + hex.repeat(32)
 const ADDR = OBJ('a1')
 
+function encodeBcsString(value: string) {
+  const utf8 = Buffer.from(value, 'utf8')
+  const lengthBytes: number[] = []
+  let remaining = utf8.length
+
+  do {
+    let byte = remaining & 0x7f
+    remaining >>= 7
+    if (remaining > 0) {
+      byte |= 0x80
+    }
+    lengthBytes.push(byte)
+  } while (remaining > 0)
+
+  return Buffer.concat([Buffer.from(lengthBytes), utf8]).toString('base64')
+}
+
+function getPureInputBytes(tx: Transaction) {
+  return tx.getData().inputs.flatMap((input) => ('Pure' in input ? [input.Pure.bytes] : []))
+}
+
 const VALID_SOUL_PUBLISH_ARGS = {
   name: 'Test Soul',
   description: 'A test soul for unit tests',
@@ -247,9 +268,36 @@ describe('publish.ts — buildPublishSoulTx', () => {
       foundingMemoryBlobObjectId: OBJ('55'),
       skillsBlobObjectId: OBJ('66'),
       skillsVisibility: 'public',
-      metadataRef: 'some-ref',
+      initialSprite: {
+        blobObjectId: OBJ('77'),
+        assetName: 'persona-sprite',
+        visibility: 'private',
+        downloadPolicy: 'owner_only',
+        spriteConfigJson: JSON.stringify({
+          frameWidth: 64,
+          frameHeight: 64,
+          columns: 4,
+          animations: {
+            idle: { frames: [0, 1], fps: 8, loop: true },
+          },
+        }),
+        spriteMoodMapJson: JSON.stringify({ idle: 'idle' }),
+      },
     })
     expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('defaults initial asset name to persona-sprite when an asset blob is present', () => {
+    const tx = buildPublishSoulTx({
+      ...VALID_PARAMS,
+      skillsBlobObjectId: OBJ('66'),
+      initialSkillName: 'skills-v1',
+      assetBlobObjectId: OBJ('77'),
+      assetVisibility: 'private',
+      assetType: 'sprite',
+    })
+
+    expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
   })
 
   it('throws on invalid name', () => {
@@ -259,6 +307,111 @@ describe('publish.ts — buildPublishSoulTx', () => {
   it('throws on invalid royalty', () => {
     expect(() => buildPublishSoulTx({ ...VALID_PARAMS, creatorRoyaltyBps: 3000 }))
       .toThrow('creatorRoyaltyBps must be between 0 and')
+  })
+})
+
+// =========================================================================
+// metadata.ts — metadata object transactions
+// =========================================================================
+import {
+  buildClearActiveSpriteTx,
+  buildClearActiveVoiceTx,
+  buildDeleteMetadataBlobTx,
+  buildSetActiveSpriteTx,
+  buildSetActiveVoiceTx,
+  buildUpsertMetadataBlobTx,
+} from '../../web/lib/soulidity/tx/metadata'
+
+describe('metadata.ts — Soul metadata object transactions', () => {
+  const VALID_PARAMS = {
+    metadataObjectId: OBJ('22'),
+    stateObjectId: OBJ('11'),
+    assetsObjectId: OBJ('44'),
+  }
+
+  it('builds set active sprite tx', () => {
+    const tx = buildSetActiveSpriteTx({
+      ...VALID_PARAMS,
+      assetName: 'persona-sprite',
+      versionIndex: 1,
+      downloadPolicy: 'owner_only',
+    })
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(tx).toBeInstanceOf(Transaction)
+    expect(commands).toEqual(['set_active_sprite'])
+  })
+
+  it('builds clear active sprite tx', () => {
+    const tx = buildClearActiveSpriteTx({
+      ...VALID_PARAMS,
+    })
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(commands).toEqual(['clear_active_sprite'])
+  })
+
+  it('builds set active voice tx', () => {
+    const tx = buildSetActiveVoiceTx({
+      ...VALID_PARAMS,
+      assetName: 'voice-primary',
+      versionIndex: 0,
+      downloadPolicy: 'allowlist',
+    })
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(commands).toEqual(['set_active_voice'])
+  })
+
+  it('builds clear active voice tx', () => {
+    const tx = buildClearActiveVoiceTx({
+      metadataObjectId: VALID_PARAMS.metadataObjectId,
+      stateObjectId: VALID_PARAMS.stateObjectId,
+    })
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(commands).toEqual(['clear_active_voice'])
+  })
+
+  it('builds metadata blob upsert tx and encodes UTF-8 bytes', () => {
+    const tx = buildUpsertMetadataBlobTx({
+      metadataObjectId: VALID_PARAMS.metadataObjectId,
+      stateObjectId: VALID_PARAMS.stateObjectId,
+      key: 'sprite.config.v1',
+      value: '{"fps":12}',
+    })
+
+    expect(getPureInputBytes(tx)).toContain(encodeBcsString('sprite.config.v1'))
+  })
+
+  it('rejects empty metadata blob values', () => {
+    expect(() => buildUpsertMetadataBlobTx({
+      metadataObjectId: VALID_PARAMS.metadataObjectId,
+      stateObjectId: VALID_PARAMS.stateObjectId,
+      key: 'sprite.config.v1',
+      value: '   ',
+    })).toThrow('metadata value is required')
+  })
+
+  it('builds metadata blob delete tx', () => {
+    const tx = buildDeleteMetadataBlobTx({
+      metadataObjectId: VALID_PARAMS.metadataObjectId,
+      stateObjectId: VALID_PARAMS.stateObjectId,
+      key: 'sprite.config.v1',
+    })
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(commands).toEqual(['delete_metadata_blob'])
   })
 })
 
@@ -357,6 +510,83 @@ describe('buy.ts — buildBuyCollectionTx', () => {
   it('throws when paymentCoinObjectIds is empty', () => {
     expect(() => buildBuyCollectionTx({ ...VALID_PARAMS, paymentCoinObjectIds: [] }))
       .toThrow('paymentCoinObjectIds must contain at least one object id')
+  })
+})
+
+// =========================================================================
+// content-access.ts — purchase / owner controls
+// =========================================================================
+import {
+  buildPurchaseContentAccessTx,
+  buildSetContentAccessDurationTx,
+  buildSetContentAccessPriceTx,
+} from '../../web/lib/soulidity/tx/content-access'
+
+describe('content-access.ts — buildPurchaseContentAccessTx', () => {
+  const VALID_PARAMS = {
+    accessListOnChainId: OBJ('61'),
+    stateOnChainId: OBJ('62'),
+  }
+
+  it('keeps the legacy exact payment coin path', () => {
+    const tx = buildPurchaseContentAccessTx({
+      ...VALID_PARAMS,
+      paymentCoinId: OBJ('c1'),
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('supports split payment from selected coin objects', () => {
+    const tx = buildPurchaseContentAccessTx({
+      ...VALID_PARAMS,
+      paymentCoinObjectIds: [OBJ('c1'), OBJ('c2')],
+      totalAtomic: 1_025_000n,
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('rejects split payment without positive totalAtomic', () => {
+    expect(() => buildPurchaseContentAccessTx({
+      ...VALID_PARAMS,
+      paymentCoinObjectIds: [OBJ('c1')],
+      totalAtomic: 0n,
+    })).toThrow('totalAtomic must be positive')
+  })
+
+  it('rejects missing payment inputs', () => {
+    expect(() => buildPurchaseContentAccessTx(VALID_PARAMS))
+      .toThrow('paymentCoinId or paymentCoinObjectIds is required')
+  })
+})
+
+describe('content-access.ts — owner controls', () => {
+  const VALID_PARAMS = {
+    accessListOnChainId: OBJ('61'),
+    stateOnChainId: OBJ('62'),
+  }
+
+  it('builds set content access price tx', () => {
+    const tx = buildSetContentAccessPriceTx({
+      ...VALID_PARAMS,
+      newPriceAtomic: 1_000_000,
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('builds set content access duration tx', () => {
+    const tx = buildSetContentAccessDurationTx({
+      ...VALID_PARAMS,
+      newDurationMs: 3_600_000,
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('builds clear content access duration tx', () => {
+    const tx = buildSetContentAccessDurationTx({
+      ...VALID_PARAMS,
+      newDurationMs: null,
+    })
+    expect(tx).toBeInstanceOf(Transaction)
   })
 })
 
@@ -486,13 +716,14 @@ import {
   buildIssueGrantTx,
   buildRevokeGrantTx,
   buildRevokeGrantScopeTx,
+  buildSetGrantCapacityTx,
 } from '../../web/lib/soulidity/tx/grant'
 
 describe('grant.ts — buildIssueGrantTx', () => {
   const VALID_PARAMS = {
     stateObjectId: OBJ('11'),
     granteeAddress: ADDR,
-    scopeMask: 7,
+    scopeMask: 15,
   }
 
   it('returns a Transaction with valid params (no expiry)', () => {
@@ -576,6 +807,28 @@ describe('grant.ts — buildRevokeGrantScopeTx', () => {
   it('throws on non-integer revokedScopeMask', () => {
     expect(() => buildRevokeGrantScopeTx({ ...VALID_PARAMS, revokedScopeMask: 2.5 }))
       .toThrow('revokedScopeMask must be a positive integer')
+  })
+})
+
+describe('grant.ts — buildSetGrantCapacityTx', () => {
+  const VALID_PARAMS = {
+    stateObjectId: OBJ('11'),
+    capacity: 2,
+  }
+
+  it('returns a Transaction with valid params', () => {
+    const tx = buildSetGrantCapacityTx(VALID_PARAMS)
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('throws on zero capacity', () => {
+    expect(() => buildSetGrantCapacityTx({ ...VALID_PARAMS, capacity: 0 }))
+      .toThrow('capacity must be a positive safe integer')
+  })
+
+  it('throws on non-integer capacity', () => {
+    expect(() => buildSetGrantCapacityTx({ ...VALID_PARAMS, capacity: 1.5 }))
+      .toThrow('capacity must be a positive safe integer')
   })
 })
 
@@ -739,12 +992,24 @@ describe('import.ts — buildImportSoulTx', () => {
   it('returns a Transaction with optional fields', () => {
     const tx = buildImportSoulTx({
       ...VALID_PARAMS,
-      metadataRef: 'meta-ref',
       foundingMemoryBlobObjectId: OBJ('55'),
       skillsBlobObjectId: OBJ('66'),
       skillsVisibility: 'public',
     })
     expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('defaults initial asset name to persona-sprite when an asset blob is present', () => {
+    const tx = buildImportSoulTx({
+      ...VALID_PARAMS,
+      skillsBlobObjectId: OBJ('66'),
+      initialSkillName: 'skills-v1',
+      assetBlobObjectId: OBJ('77'),
+      assetVisibility: 'private',
+      assetType: 'sprite',
+    })
+
+    expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
   })
 
   it('returns a Transaction when creating new kiosk', () => {
@@ -776,6 +1041,10 @@ describe('import.ts — buildImportSoulTx', () => {
 // personal-join.ts — buildPersonalJoinSoulTx
 // =========================================================================
 import { buildPersonalJoinSoulTx } from '../../web/lib/soulidity/tx/personal-join'
+import {
+  buildAppendAssetVersionTx,
+  buildDeleteAssetVersionTx,
+} from '../../web/lib/soulidity/tx/assets'
 
 describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
   const VALID_PARAMS = {
@@ -796,12 +1065,24 @@ describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
   it('returns a Transaction with optional fields', () => {
     const tx = buildPersonalJoinSoulTx({
       ...VALID_PARAMS,
-      metadataRef: 'meta',
       foundingMemoryBlobObjectId: OBJ('55'),
       skillsBlobObjectId: OBJ('66'),
       skillsVisibility: 'public',
     })
     expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('defaults initial asset name to persona-sprite when an asset blob is present', () => {
+    const tx = buildPersonalJoinSoulTx({
+      ...VALID_PARAMS,
+      skillsBlobObjectId: OBJ('66'),
+      initialSkillName: 'skills-v1',
+      assetBlobObjectId: OBJ('77'),
+      assetVisibility: 'private',
+      assetType: 'sprite',
+    })
+
+    expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
   })
 
   it('returns a Transaction when creating new kiosk', () => {
@@ -831,5 +1112,61 @@ describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
   it('propagates validation errors from validateSoulPublishArgs', () => {
     expect(() => buildPersonalJoinSoulTx({ ...VALID_PARAMS, description: '' }))
       .toThrow('Soul description is required')
+  })
+})
+
+describe('assets.ts — asset version transactions', () => {
+  it('builds append asset version tx for owner', () => {
+    const tx = buildAppendAssetVersionTx({
+      stateObjectId: OBJ('11'),
+      assetsObjectId: OBJ('22'),
+      assetName: 'persona-sprite',
+      blobObjectId: OBJ('33'),
+      visibility: 'private',
+      assetType: 'sprite',
+    })
+
+    expect(tx).toBeInstanceOf(Transaction)
+    expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
+  })
+
+  it('builds append asset version tx for granted agent', () => {
+    const tx = buildAppendAssetVersionTx({
+      stateObjectId: OBJ('11'),
+      assetsObjectId: OBJ('22'),
+      assetName: 'persona-sprite',
+      blobObjectId: OBJ('33'),
+      visibility: 'public',
+      assetType: 'sprite',
+      grantObjectId: OBJ('44'),
+    })
+
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('builds delete asset version tx for owner', () => {
+    const tx = buildDeleteAssetVersionTx({
+      stateObjectId: OBJ('11'),
+      metadataObjectId: OBJ('99'),
+      assetsObjectId: OBJ('22'),
+      assetName: 'persona-sprite',
+      versionIndex: 0,
+    })
+
+    expect(tx).toBeInstanceOf(Transaction)
+    expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
+  })
+
+  it('builds delete asset version tx for granted agent', () => {
+    const tx = buildDeleteAssetVersionTx({
+      stateObjectId: OBJ('11'),
+      metadataObjectId: OBJ('99'),
+      assetsObjectId: OBJ('22'),
+      assetName: 'persona-sprite',
+      versionIndex: 1,
+      grantObjectId: OBJ('44'),
+    })
+
+    expect(tx).toBeInstanceOf(Transaction)
   })
 })

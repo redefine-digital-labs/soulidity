@@ -119,4 +119,31 @@ describe('AgentTab', () => {
     expect(container.textContent).toContain('Codex · session-1')
     expect(secondSession?.getAttribute('aria-pressed')).toBe('true')
   })
+
+  it('preserves long tool descriptions for hover while rendering the recent tools list', async () => {
+    const snapshot = createSnapshot()
+    const longToolDescription =
+      '/Users/admin/Desktop/nao/clawnews/desktop/apps/desktop/src/renderer/components/MainWindow/AgentTab.tsx#very-long-read-command-with-no-natural-breakpoints'
+
+    snapshot.sessions['session-2']!.toolHistory = [{
+      tool: 'Read',
+      description: longToolDescription,
+      timestamp: 1_713_700_000_000,
+    }]
+
+    vi.mocked(useAgentRuntime).mockReturnValue({ snapshot })
+
+    root = createRoot(container)
+    await act(async () => {
+      root.render(<AgentTab />)
+      await flushEffects()
+    })
+
+    const toolDescription = Array.from(container.querySelectorAll('.agent-timeline-row__text')).find((node) =>
+      node.textContent === longToolDescription,
+    ) as HTMLSpanElement | undefined
+
+    expect(toolDescription).toBeTruthy()
+    expect(toolDescription?.title).toBe(longToolDescription)
+  })
 })

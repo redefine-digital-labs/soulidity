@@ -109,6 +109,15 @@ describe('SettingsTab desktop auth restore', () => {
     })
   }
 
+  it('does not render the removed key metadata fields', async () => {
+    const api = createElectronApi()
+
+    await renderWithApi(api)
+
+    expect(container.textContent).not.toContain('Created')
+    expect(container.textContent).not.toContain('Key Storage')
+  })
+
   it('restores confirmed state from desktop auth even when metadata is missing', async () => {
     const api = createElectronApi({
       getDesktopAuthStatus: vi.fn().mockResolvedValue({ hasToken: true, accountId: null }),

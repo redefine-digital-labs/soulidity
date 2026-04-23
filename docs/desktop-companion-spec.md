@@ -25,7 +25,7 @@
 
 ### Phase 2 — Soul Integration
 
-1. **Soul Meta 扩展** — `metadata_ref` 指向 JSON，声明形象格式、状态映射、资产引用
+1. **SoulMetadata 扩展** — 独立共享对象 `SoulMetadata` 保存 active sprite / voice binding，扩展 JSON 配置放 `ext` table
 2. **SoulAssets 内容层** — Move 模块，与 Skills 同构（`Table<String, vector<AssetSlot>>`）
 3. **ContentAccessList** — Move 模块，独立于 grant 的内容访问权售卖机制
 4. **账号与内容联动** — Privy 钱包 + 桌面 agent 地址绑定、市场下载、受保护内容访问
@@ -314,7 +314,7 @@ interface AgentKeypairInfo {
 
 ### Module 6 — Soul Metadata 扩展（Phase 2）
 
-Soul 链上 `metadata_ref: Option<String>` 指向 JSON metadata URL（Walrus public blob）。
+Soul 链上不再把 persona metadata 挂在 `Soul` 本体；改为独立共享对象 `SoulMetadata`。
 
 ```typescript
 interface SoulMetadata {
@@ -337,7 +337,7 @@ interface SoulMetadata {
 }
 ```
 
-**桌面端下载流程：** 读 metadata_ref → 解析 persona → publicAssets 直接下载 / protectedAssets 按权限解密下载 → 存入本地。
+**桌面端下载流程：** 读 mirrored `metadataOnChainId + activeSprite* + spriteConfigJson/spriteMoodMapJson` → public 直接下载 active asset version / owner_only 与 allowlist 走链上访问控制 → 存入本地。
 
 ### Module 7 — SoulAssets 内容层（Phase 2）
 
@@ -379,6 +379,9 @@ public struct ContentAccessList has key {
     id: UID,
     soul_id: ID,
     creator: address,
+    price_atomic: u64,
+    default_scope_mask: u64,
+    default_access_duration_ms: Option<u64>,  // None = lifetime
     entries: table::Table<address, ContentAccessEntry>,
     entry_count: u64,
 }
@@ -389,6 +392,13 @@ public struct ContentAccessList has key {
 2. viewer 有 active grant → `seal_approve_*_read_granted_agent`
 3. viewer 在 ContentAccessList → `seal_approve_*_allowlisted`
 4. 均不满足 → 403
+
+**购买约束（2026-04-23 审计后强化）：**
+- `purchase_content_access` 要求 `price_atomic > 0`；免费 access 只能走 owner 直调 `add_access`
+- 要求 `state.access_list_id == object::id(access_list)` 双向匹配
+- `default_scope_mask` 必须是 `SCOPE_SEAL|MEMORY|SKILLS|ASSETS`（1/2/4/8）的非零子集
+- `default_access_duration_ms` 决定 `record_purchase` 写入的 `expires_at_ms`；owner 可通过 `set_content_access_duration` 随时更新，只影响后续购买
+- `has_access` 读取 entry 的 `expires_at_ms` 自动拒绝过期地址
 
 ### Module 9 — 双钱包与 Agent 身份（Phase 2）
 
@@ -442,8 +452,8 @@ public struct ContentAccessList has key {
 ```
 绘制 sprite sheet
   → 上传 Walrus（加密或公开）
-  → 构建 SoulMetadata JSON → 上传 Walrus public blob → 获取 URL
-  → mint Soul (metadata_ref = URL)
+  → 把 sprite.config / sprite.mood_map JSON 直接编码进 mint PTB
+  → mint Soul + share `SoulMetadata`
   → 可选：设定内容访问价格
   → marketplace 展示
 ```

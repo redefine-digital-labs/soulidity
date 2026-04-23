@@ -6,7 +6,7 @@ import { POST } from './route'
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedSyncHumanMemberSuiWallet = vi.hoisted(() => vi.fn())
 
-vi.mock('@web/lib/auth/identity', () => ({
+vi.mock('@/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
   syncHumanMemberSuiWallet: mockedSyncHumanMemberSuiWallet,
 }))

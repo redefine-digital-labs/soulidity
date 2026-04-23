@@ -29,6 +29,58 @@
 
 ---
 
+## Addendum (2026-04-23) — 安全审计后加固
+
+本节记录在 Sui scanner 审计后对 content_access / grant / market / seal 做的行为强化与新增能力。所有改动落地于 `move/soulidity/sources/*.move`，对应 TS SDK / API mirror / Prisma schema 已同步。
+
+**错误码重命名 (L-4)**
+- `content_access::ENotCreatorOrOwner` → `ENotOwner`（实际只校验 owner，命名与行为对齐）。
+
+**Seal document id 长度严格校验 (L-5)**
+- `seal_policy` / `skills` / `assets` 的 `assert_matching_document_id` 从 `id.length() >= min` 改为 `id.length() == exact`。
+- 引入统一错误码 `EDocumentIdInvalidLength`（取代原 `EDocumentIdTooShort`；assets 原用 `EAssetsMismatch` 覆盖 length，已迁至新码）。
+- TS SDK (`web/lib/services/seal-crypto.ts`、`desktop/.../asset-access.ts`) 生成的 document id 已经是 exact length，不需要客户端变更。
+
+**scope_mask 校验 (L-6)**
+- `grant::assert_valid_scope_mask` 升为 `public(package)`；`grant::all_scopes` 同步开放。
+- `content_access::create` 在构造 ContentAccessList 时调用 `grant::assert_valid_scope_mask(default_scope_mask)`。
+- 失败用 `grant::EEmptyScopeMask` (mask=0) 或 `grant::EGrantInvalidScopeMask` (含 `SCOPE_SEAL|MEMORY|SKILLS|ASSETS` 以外位)。
+- TS 端 `publish.ts` / `import.ts` / `personal-join.ts` / desktop `publish.ts` 新增 `ALL_ACCESS_SCOPES = 15` 作为默认值，调用方未指定时回退为全 scope。
+
+**purchase_content_access 保护 (M-2 + M-3)**
+- 新错误码 `market::EContentAccessNotPurchasable = 28`：price_atomic=0 时禁止走 purchase 路径（owner 必须用 `content_access::add_access`）。
+- 新错误码 `market::EAccessListLinkageMismatch = 29`：额外校验 `state.access_list_id == object::id(access_list)`，防御未来 1:N 关系变更。
+
+**Grant 僵尸对象回收 (L-1)**
+- 新 `grant::destroy_invalidated_grant(grant, state, clock, ctx)`：当 epoch 不匹配 / 不在 active_grants / 已过期三种条件任一满足即允许销毁，对调用者无身份限制（storage rebate 谁清理归谁）。
+- 失败用 `grant::EGrantStillActive = 16`，Soul mismatch 复用 `EGrantSoulMismatch`。
+- 新事件 `SoulGrantDestroyed`；TS builder `buildDestroyInvalidatedGrantTx`（`web/lib/soulidity/tx/grant.ts`）。
+
+**挂牌对象回收 (L-3)**
+- 新 `market::delete_soul_listing(listing, ctx)` / `delete_collection_listing(listing, ctx)`：要求 `!is_active`，析构字段并删除 UID。
+- 新错误码 `market::EListingStillActive = 30`。
+- 新事件 `SoulListingDeleted` / `CollectionListingDeleted`。
+- TS builder `buildDeleteSoulListingTx` / `buildDeleteCollectionListingTx`（`web/lib/soulidity/tx/delist.ts`）。
+
+**Access 可过期 (L-7)**
+- `ContentAccessList` 新增字段 `default_access_duration_ms: Option<u64>`；mint 签名 `mint_native/imported/joined_in_personal_kiosk` 追加同名参数（位于 `content_access_default_scope_mask` 之后、`creator_royalty_bps`（或 `origin_ref`）之前）。
+- `record_purchase` 根据 duration 计算 `expires_at_ms = now + duration`，lifetime 行为通过 `None` 保持。
+- 新 `content_access::set_content_access_duration(access_list, state, new_duration_ms, ctx)` 支持 owner 随时更新。
+- `ContentAccessGranted` 事件新增 `expires_at_ms: Option<u64>`；`ContentAccessListCreated` 新增 `default_access_duration_ms: Option<u64>`。
+- `ContentAccessDurationUpdated` 新事件。
+- TS SDK：`buildSetContentAccessDurationTx` (`web/lib/soulidity/tx/content-access.ts`)；event parser (`web/lib/soulidity/events.ts`) 新增 `expiresAtMs` / `defaultAccessDurationMs`；mirror `web/app/api/souls/[id]/access-list/{purchase,add}/route.ts` 将 `expiresAtMs` 写入 `ContentAccessRecord.expiresAtMs`。
+
+**测试覆盖**
+- `move/soulidity/sources/protocol_tests.move` 新增 14 个测试（按 L-5 / L-6 / M-2 / M-3 / L-1 / L-3 / L-7 分组），`sui move test` 总量从 124 → 142 全绿。
+- `tests/new-web/soulidity-tx-builders.test.ts` 继续 105/105 绿；`tests/web/seal-*.test.ts` 18/18 绿。
+
+**破坏性变更**
+- 部署此版本后，任何传 `default_scope_mask=0` 或无效 bit 的历史调用会 abort；调用方须升级或显式传 `ALL_ACCESS_SCOPES (15)`。
+- `EDocumentIdTooShort` 常量不再存在；任何硬编码 error code 的客户端需改为 `EDocumentIdInvalidLength`。
+- mint 签名位置变化：介入底层 PTB 的调用方需要在 `content_access_default_scope_mask` 之后插入 `Option<u64>` 参数。
+
+---
+
 ## Phase 1 — Move 合约
 
 ### Task 1: 新建 `assets.move` — SoulAssets 模块

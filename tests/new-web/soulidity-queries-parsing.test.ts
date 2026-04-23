@@ -32,6 +32,10 @@ import {
   quoteCollectionPurchase,
   OnChainVerificationError,
 } from '../../web/lib/soulidity/queries'
+import {
+  ALL_SOUL_GRANT_SCOPE_MASK,
+  DEFAULT_ISSUE_SCOPE_MASK,
+} from '../../web/lib/soulidity/grant-scopes'
 import type { SoulGrantScope } from '../../web/lib/soulidity/types'
 
 // Fully padded zero address (64 hex digits after 0x)
@@ -149,6 +153,12 @@ describe('sameSuiValue', () => {
 // ---------------------------------------------------------------------------
 
 describe('scopeMaskToScopes', () => {
+  it('keeps the GrantModal default aligned to every grant scope', () => {
+    expect(DEFAULT_ISSUE_SCOPE_MASK).toBe(15)
+    expect(DEFAULT_ISSUE_SCOPE_MASK).toBe(ALL_SOUL_GRANT_SCOPE_MASK)
+    expect(scopeMaskToScopes(DEFAULT_ISSUE_SCOPE_MASK)).toEqual(['seal', 'memory', 'skills', 'assets'])
+  })
+
   it.each<[number, SoulGrantScope[]]>([
     [0, []],
     [1, ['seal']],
