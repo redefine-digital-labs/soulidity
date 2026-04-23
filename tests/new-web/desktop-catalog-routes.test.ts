@@ -120,6 +120,27 @@ describe('GET /api/desktop/catalog/[id]', () => {
     expect(response.status).toBe(200)
     expect(body.sprite.downloadPolicy).toBe('public')
     expect(mockedRequireDesktopIdentity).not.toHaveBeenCalled()
+    expect(mockedFindDesktopPersonaManifestById).toHaveBeenCalledWith(
+      'soul:0xsoul-1',
+      expect.objectContaining({ publicOnly: true }),
+    )
+  })
+
+  it('returns 404 for held dynamic souls on the public catalog path', async () => {
+    mockedFindDesktopPersonaManifestById.mockResolvedValue(null)
+
+    const { GET } = await import('../../web/app/api/desktop/catalog/[id]/route')
+    const response = await GET(
+      new Request('http://localhost/api/desktop/catalog/soul:0xsoul-held'),
+      { params: Promise.resolve({ id: 'soul:0xsoul-held' }) },
+    )
+
+    expect(response.status).toBe(404)
+    expect(mockedFindDesktopPersonaManifestById).toHaveBeenCalledWith(
+      'soul:0xsoul-held',
+      expect.objectContaining({ publicOnly: true }),
+    )
+    expect(mockedRequireDesktopIdentity).not.toHaveBeenCalled()
   })
 
   it('returns 404 for missing sprite metadata', async () => {

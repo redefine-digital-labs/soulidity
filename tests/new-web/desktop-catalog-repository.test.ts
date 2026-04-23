@@ -12,6 +12,7 @@ const mockedPrisma = vi.hoisted(() => ({
   soulAsset: {
     findMany: vi.fn(),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
   },
 }))
 
@@ -251,7 +252,7 @@ describe('findDesktopPersonaManifestById', () => {
   })
 
   it('returns a sprite manifest for dynamic souls', async () => {
-    mockedPrisma.soulAsset.findUnique.mockResolvedValue(makeSoul())
+    mockedPrisma.soulAsset.findFirst.mockResolvedValue(makeSoul())
 
     const { findDesktopPersonaManifestById } = await import('../../web/lib/desktop/repository')
     const result = await findDesktopPersonaManifestById('soul:0xsoul-1')
@@ -266,6 +267,36 @@ describe('findDesktopPersonaManifestById', () => {
         downloadPolicy: 'public',
       },
       files: [],
+    })
+    expect(mockedPrisma.soulAsset.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { onChainId: '0xsoul-1' },
+    }))
+  })
+
+  it('filters dynamic soul fallbacks to listingStatus=listed when publicOnly', async () => {
+    mockedPrisma.soulAsset.findFirst.mockResolvedValue(null)
+
+    const { findDesktopPersonaManifestById } = await import('../../web/lib/desktop/repository')
+    const result = await findDesktopPersonaManifestById('soul:0xsoul-held', { publicOnly: true })
+
+    expect(result).toBeNull()
+    expect(mockedPrisma.soulAsset.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { onChainId: '0xsoul-held', listingStatus: 'listed' },
+    }))
+  })
+
+  it('still resolves held dynamic souls when publicOnly is not set', async () => {
+    mockedPrisma.soulAsset.findFirst.mockResolvedValue(
+      makeSoul({ onChainId: '0xsoul-held', listingStatus: 'held', listedPriceAtomic: null }),
+    )
+
+    const { findDesktopPersonaManifestById } = await import('../../web/lib/desktop/repository')
+    const result = await findDesktopPersonaManifestById('soul:0xsoul-held')
+
+    expect(result).toMatchObject({
+      id: 'soul:0xsoul-held',
+      sourceType: 'soul',
+      listingStatus: 'held',
     })
   })
 })
