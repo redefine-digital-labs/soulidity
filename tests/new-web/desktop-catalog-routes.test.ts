@@ -248,4 +248,102 @@ describe('GET /api/desktop/catalog/[id]', () => {
       viewerAddresses: ['0xwallet123'],
     })
   })
+
+  it('rejects protected sprite manifest when active desktop wallet is not a bound wallet', async () => {
+    mockedFindDesktopPersonaManifestById.mockResolvedValue(makeSoulManifest({
+      spriteDownloadPolicy: 'owner_only',
+      sprite: {
+        downloadPolicy: 'owner_only',
+        assetName: 'persona-sprite',
+        versionIndex: 1,
+        config: { src: 'persona-sprite.png' },
+      },
+    }))
+    mockedRequireDesktopIdentity.mockResolvedValue({ accountId: 'account-123' })
+    mockedPrisma.member.findFirst.mockResolvedValue({ id: 'member-123' })
+    mockedGetMemberSuiWalletAddresses.mockResolvedValue([
+      '0x00000000000000000000000000000000000000000000000000000000000000aa',
+    ])
+
+    const { GET } = await import('../../web/app/api/desktop/catalog/[id]/route')
+    const response = await GET(
+      new Request(
+        'http://localhost/api/desktop/catalog/soul:0xsoul-1?viewer=0x00000000000000000000000000000000000000000000000000000000000000bb',
+      ),
+      { params: Promise.resolve({ id: 'soul:0xsoul-1' }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(mockedResolveSoulAssetVersionAccessPayload).not.toHaveBeenCalled()
+  })
+
+  it('narrows viewerAddresses to the active desktop wallet when it is bound', async () => {
+    mockedFindDesktopPersonaManifestById.mockResolvedValue(makeSoulManifest({
+      spriteDownloadPolicy: 'owner_only',
+      sprite: {
+        downloadPolicy: 'owner_only',
+        assetName: 'persona-sprite',
+        versionIndex: 1,
+        config: { src: 'persona-sprite.png' },
+      },
+    }))
+    mockedRequireDesktopIdentity.mockResolvedValue({ accountId: 'account-123' })
+    mockedPrisma.member.findFirst.mockResolvedValue({ id: 'member-123' })
+    mockedGetMemberSuiWalletAddresses.mockResolvedValue([
+      '0x00000000000000000000000000000000000000000000000000000000000000aa',
+      '0x00000000000000000000000000000000000000000000000000000000000000bb',
+    ])
+    mockedResolveSoulAssetVersionAccessPayload.mockResolvedValue({
+      visibility: 'private',
+      artifact: {
+        walrusBlobUrl: 'https://walrus.test/blob/private-sprite',
+        walrusBlobId: 'private-sprite',
+        blobObjectId: '0xblob',
+      },
+      accessPolicy: {
+        packageId: '0xpackage',
+        stateObjectId: '0xstate',
+        assetsObjectId: '0xassets',
+        assetName: 'persona-sprite',
+        versionIndex: 1,
+        moduleName: 'assets',
+        functionName: 'seal_approve_asset_read_owner',
+        soulGrantObjectId: null,
+        documentIdHex: '0x1234',
+      },
+      seal: {
+        network: 'testnet',
+        threshold: 2,
+        verifyKeyServers: true,
+        serverConfigs: [],
+      },
+      sealSidecar: {
+        encryptedDek: 'AA==',
+        iv: 'AAAAAAAAAAAAAAAA',
+        cipher: 'AES-GCM-256',
+        fileName: 'persona-sprite.png',
+        mimeType: 'image/png',
+        contentHash: '0'.repeat(64),
+      },
+      viewerAddress: '0x00000000000000000000000000000000000000000000000000000000000000bb',
+      accessKind: 'owner',
+      sessionTtlMin: 5,
+    })
+
+    const { GET } = await import('../../web/app/api/desktop/catalog/[id]/route')
+    const response = await GET(
+      new Request(
+        'http://localhost/api/desktop/catalog/soul:0xsoul-1?viewer=0x00000000000000000000000000000000000000000000000000000000000000bb',
+      ),
+      { params: Promise.resolve({ id: 'soul:0xsoul-1' }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedResolveSoulAssetVersionAccessPayload).toHaveBeenCalledWith({
+      soulOnChainId: '0xsoul-1',
+      assetName: 'persona-sprite',
+      versionIndex: 1,
+      viewerAddresses: ['0x00000000000000000000000000000000000000000000000000000000000000bb'],
+    })
+  })
 })
