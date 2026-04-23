@@ -15,6 +15,7 @@ import { Input, Textarea } from '@/components/ui/input'
 import { useImportSoul } from '@/components/providers/import-soul-provider'
 import { MAPPING_OPTIONS, type SoulTargetField } from '@/lib/import/field-mapping'
 import { SOUL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
+import { validatePersonaSpriteDraft } from '@/lib/soulidity/persona-sprite'
 import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
 const steps = [
@@ -69,13 +70,18 @@ export default function ImportMapPage() {
     if (ctx.parsedFields.length === 0) router.replace('/import/upload')
   }, [ctx.parsedFields.length, router])
 
-  function handleNext() {
+  async function handleNext() {
     const nextErrors: Record<string, string> = {}
     if (!ctx.resolvedName.trim()) nextErrors.name = 'Map a field to Soul Name or enter it manually'
     if (!ctx.resolvedDescription.trim()) nextErrors.description = 'Map a field to Description'
     if (!ctx.charFile) nextErrors.charFile = 'Soul Character file is required'
     if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory file (memory.md) is required'
     if (!ctx.coverImageFile) nextErrors.coverImage = 'Cover image is required'
+    const spriteValidation = await validatePersonaSpriteDraft({
+      sheetFile: ctx.spriteSheetFile,
+      configFile: ctx.spriteConfigFile,
+    })
+    if (!spriteValidation.ok) nextErrors.sprite = spriteValidation.error
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
       return
@@ -442,6 +448,115 @@ export default function ImportMapPage() {
           </div>
         </section>
 
+        <section className="rounded-[18px] border border-purple/35 bg-[radial-gradient(circle_at_top_left,rgba(124,58,237,0.18),transparent_38%),linear-gradient(180deg,rgba(24,14,58,0.97),rgba(14,10,35,0.98))] px-3.5 py-3.5 shadow-[0_16px_44px_rgba(6,2,17,0.32)] sm:px-4 sm:py-4">
+          <div className="flex items-center gap-2">
+            <span className="text-purple">🎭</span>
+            <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-foreground">Persona Sprite</h3>
+            <span className="rounded-full border border-purple/35 bg-purple/15 px-2 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] text-purple">
+              Optional
+            </span>
+          </div>
+          <p className="mt-3 text-[11px] leading-5 text-muted">
+            Optional sprite sheet persona contract. Upload both the sheet and config JSON, and the mint step will generate canonical persona metadata automatically.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {!ctx.spriteSheetFile ? (
+              <UploadZone
+                icon="🖼️"
+                label="Upload persona-sprite sheet"
+                sublabel=".png/.jpg/.jpeg/.webp/.gif"
+                accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif"
+                onFileSelect={ctx.setSpriteSheetFile}
+                className="rounded-[14px] border-purple/30 bg-[rgba(20,11,44,0.72)] px-5 py-8 hover:border-purple hover:bg-purple/6"
+              />
+            ) : (
+              <div className="flex items-start gap-3 rounded-[14px] border border-purple/35 bg-[rgba(51,26,94,0.55)] px-3.5 py-3 sm:px-4">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/18 text-success">✓</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold text-purple">{ctx.spriteSheetFile.name}</div>
+                  <div className="mt-1 text-[10px] leading-4 text-muted">
+                    {ctx.spriteVisibility === 'public' ? 'Public sprite sheet contract' : 'Private protected sprite asset'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => ctx.setSpriteSheetFile(null)}
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
+                  aria-label="Remove sprite sheet"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {!ctx.spriteConfigFile ? (
+              <UploadZone
+                icon="🧾"
+                label="Upload sprite config JSON"
+                sublabel="persona-sprite-config.json"
+                accept=".json,application/json"
+                onFileSelect={ctx.setSpriteConfigFile}
+                className="rounded-[14px] border-purple/30 bg-[rgba(20,11,44,0.72)] px-5 py-8 hover:border-purple hover:bg-purple/6"
+              />
+            ) : (
+              <div className="flex items-start gap-3 rounded-[14px] border border-purple/35 bg-[rgba(51,26,94,0.55)] px-3.5 py-3 sm:px-4">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/18 text-success">✓</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold text-purple">{ctx.spriteConfigFile.name}</div>
+                  <div className="mt-1 text-[10px] leading-4 text-muted">
+                    Config is validated locally before mint
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => ctx.setSpriteConfigFile(null)}
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
+                  aria-label="Remove sprite config"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => ctx.setSpriteVisibility('private')}
+              className={cn(
+                'rounded-xl border px-3 py-2 text-left text-xs transition',
+                ctx.spriteVisibility === 'private'
+                  ? 'border-purple bg-purple/15 text-foreground'
+                  : 'border-border bg-card2/30 text-muted hover:border-purple/40',
+              )}
+            >
+              Private
+              <div className="mt-1 text-[10px] leading-4 text-muted">
+                Metadata points to a protected `persona-sprite` asset version.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => ctx.setSpriteVisibility('public')}
+              className={cn(
+                'rounded-xl border px-3 py-2 text-left text-xs transition',
+                ctx.spriteVisibility === 'public'
+                  ? 'border-purple bg-purple/15 text-foreground'
+                  : 'border-border bg-card2/30 text-muted hover:border-purple/40',
+              )}
+            >
+              Public
+              <div className="mt-1 text-[10px] leading-4 text-muted">
+                Metadata points directly to the public Walrus sheet URL.
+              </div>
+            </button>
+          </div>
+
+          {errors.sprite && (
+            <p className="mt-2 text-[11px] font-medium text-danger">{errors.sprite}</p>
+          )}
+        </section>
+
         {/* Cover Image */}
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
@@ -519,7 +634,7 @@ export default function ImportMapPage() {
           </Link>
           <button
             type="button"
-            onClick={handleNext}
+            onClick={() => { void handleNext() }}
             className={buttonStyles({
               variant: 'landing',
               size: 'lg',

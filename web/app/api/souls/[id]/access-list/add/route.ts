@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { prisma } from '@web/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
 import { extractContentAccessGrantedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
@@ -72,6 +72,7 @@ export async function POST(
       return NextResponse.json({ error: 'Transaction granted access to a different Soul' }, { status: 422 })
     }
 
+    const expiresAtMsValue = event.expiresAtMs != null ? BigInt(event.expiresAtMs) : null
     await prisma.contentAccessRecord.upsert({
       where: {
         accessListOnChainId_granteeAddress: {
@@ -83,6 +84,8 @@ export async function POST(
         scopeMask: event.scopeMask,
         pricePaidAtomic: BigInt(event.pricePaidAtomic),
         grantedAtMs: BigInt(Date.now()),
+        expiresAtMs: expiresAtMsValue,
+        ownershipEpochSnapshot: event.ownershipEpochSnapshot,
         revokedAt: null,
       },
       create: {
@@ -92,6 +95,8 @@ export async function POST(
         scopeMask: event.scopeMask,
         pricePaidAtomic: BigInt(event.pricePaidAtomic),
         grantedAtMs: BigInt(Date.now()),
+        expiresAtMs: expiresAtMsValue,
+        ownershipEpochSnapshot: event.ownershipEpochSnapshot,
       },
     })
 

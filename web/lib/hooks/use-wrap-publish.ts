@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
+import {
+  buildPersonaSpriteMoodMap,
+  validatePersonaSpriteDraft,
+  type PersonaSpriteVisibility,
+} from '@/lib/soulidity/persona-sprite'
 import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -19,6 +24,7 @@ interface WrapSyncBody {
   sealSidecar: string | null
   memorySealSidecar: string | null
   skillsSealSidecar: string | null
+  assetsSealSidecar: string | null
 }
 
 interface WrapRecoveryState {
@@ -35,6 +41,9 @@ export interface WrapPublishParams {
   charFile: File
   memoryFile: File
   skillsFile?: File | null
+  spriteSheetFile?: File | null
+  spriteConfigFile?: File | null
+  spriteVisibility?: PersonaSpriteVisibility
   royalty: number
 }
 
@@ -46,6 +55,7 @@ function isWrapSyncBody(value: unknown): value is WrapSyncBody {
     && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'string')
     && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'string')
     && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'string')
+    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'string')
 }
 
 export function sanitizeWrapRecoveryState(raw: string | null, userId: string | null | undefined): WrapRecoveryState | null {
@@ -196,6 +206,32 @@ export function useWrapPublish() {
           skillsUpload = await uploadFile(params.skillsFile, 'encrypted', authHeaders, walletAddress)
         }
 
+        let spriteUpload = null
+        const spriteValidation = await validatePersonaSpriteDraft({
+          sheetFile: params.spriteSheetFile ?? null,
+          configFile: params.spriteConfigFile ?? null,
+        })
+        if (!spriteValidation.ok) {
+          throw new Error(spriteValidation.error)
+        }
+
+        if (params.spriteSheetFile && spriteValidation.config) {
+          const visibility = params.spriteVisibility ?? 'private'
+          spriteUpload = await uploadFile(
+            params.spriteSheetFile,
+            visibility === 'public' ? 'public' : 'encrypted',
+            authHeaders,
+            walletAddress,
+          )
+          if (!spriteUpload.blobObjectId) {
+            throw new Error('Persona sprite upload is missing blobObjectId.')
+          }
+          if (visibility === 'private' && (!spriteUpload.sealDekEnvelope || typeof spriteUpload.sealDekEnvelope !== 'string')) {
+            throw new Error('Persona sprite upload is missing Seal recovery data.')
+          }
+
+        }
+
         // 4. Resolve kiosk + build TX
         setStatus('building')
         const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
@@ -205,6 +241,7 @@ export function useWrapPublish() {
           'Wrapped soul character blob': charUpload.blobObjectId,
           'Wrapped founding memory blob': memUpload.blobObjectId,
           'Wrapped skills blob': skillsUpload?.blobObjectId ?? null,
+          'Wrapped persona sprite blob': spriteUpload?.blobObjectId ?? null,
           'Source NFT': params.nft.objectId,
         })
 
@@ -220,6 +257,21 @@ export function useWrapPublish() {
           foundingMemoryBlobObjectId: memUpload.blobObjectId,
           skillsBlobObjectId: skillsUpload?.blobObjectId ?? null,
           initialSkillName: skillsUpload?.skillName ?? null,
+          initialSprite: spriteUpload && spriteValidation.config
+            ? {
+                blobObjectId: spriteUpload.blobObjectId,
+                assetName: 'persona-sprite',
+                visibility: params.spriteVisibility ?? 'private',
+                downloadPolicy: (params.spriteVisibility ?? 'private') === 'public' ? 'public' : 'owner_only',
+                spriteConfigJson: JSON.stringify({
+                  frameWidth: spriteValidation.config.frameWidth,
+                  frameHeight: spriteValidation.config.frameHeight,
+                  columns: spriteValidation.config.columns,
+                  animations: spriteValidation.config.animations,
+                }),
+                spriteMoodMapJson: JSON.stringify(buildPersonaSpriteMoodMap(spriteValidation.config.animations)),
+              }
+            : null,
           originRef: `sui:${params.nft.objectId}`,
           creatorRoyaltyBps: params.royalty,
         })
@@ -240,6 +292,7 @@ export function useWrapPublish() {
               sealSidecar: typeof charUpload.sealDekEnvelope === 'string' ? charUpload.sealDekEnvelope : null,
               memorySealSidecar: typeof memUpload.sealDekEnvelope === 'string' ? memUpload.sealDekEnvelope : null,
               skillsSealSidecar: typeof skillsUpload?.sealDekEnvelope === 'string' ? skillsUpload.sealDekEnvelope : null,
+              assetsSealSidecar: typeof spriteUpload?.sealDekEnvelope === 'string' ? spriteUpload.sealDekEnvelope : null,
             },
           }),
         }

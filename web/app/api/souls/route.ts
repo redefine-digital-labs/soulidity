@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@/lib/soulidity/repository'
 import type { Prisma } from '@db/prisma-client'
 import { buildAgentTagLikePatterns, parsePersonaFilter } from '@/lib/soulidity/persona'

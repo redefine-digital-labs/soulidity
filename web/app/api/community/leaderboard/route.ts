@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { cached } from '@web/lib/cache'
-import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint, MISSING_CLIENT_IP_ERROR } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { cached } from '@/lib/cache'
+import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint, MISSING_CLIENT_IP_ERROR } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 

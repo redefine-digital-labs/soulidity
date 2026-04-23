@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { sealDekEnvelope } from '@web/lib/services/dek-envelope'
+import { takeRateLimitToken } from '@/lib/rate-limit'
+import { sealDekEnvelope } from '@/lib/services/dek-envelope'
 import {
   FILE_TOO_LARGE_ERROR,
   JSON_METADATA_TOO_LARGE_ERROR,
@@ -14,7 +14,7 @@ import {
 } from '@/lib/soulidity/upload-validation'
 import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 
-import { uploadPublic, getBlobUrl } from '@web/lib/services/walrus'
+import { uploadPublic, getBlobUrl } from '@/lib/services/walrus'
 
 const MAX_UPLOAD_FORMDATA_BYTES = MAX_SOUL_UPLOAD_BYTES + 1_024 * 1_024
 const SOUL_UPLOAD_RATE_LIMIT = {

@@ -345,7 +345,16 @@ model SoulAsset {
   name                  String
   description           String
   imageUrl              String   @map("image_url")
-  metadataRef           String?  @map("metadata_ref")
+  metadataOnChainId     String?  @unique @map("metadata_on_chain_id")
+  activeSpriteAssetName String?  @map("active_sprite_asset_name")
+  activeSpriteVersionIndex Int?  @map("active_sprite_version_index")
+  activeSpriteDownloadPolicy String? @map("active_sprite_download_policy")
+  activeVoiceAssetName  String?  @map("active_voice_asset_name")
+  activeVoiceVersionIndex Int?   @map("active_voice_version_index")
+  activeVoiceDownloadPolicy String? @map("active_voice_download_policy")
+  spriteConfigJson      String?  @map("sprite_config_json")
+  spriteMoodMapJson     String?  @map("sprite_mood_map_json")
+  voiceConfigJson       String?  @map("voice_config_json")
   contentBlobId         String   @map("content_blob_id")
   contentBlobObjectId   String   @map("content_blob_object_id")
   provenanceKind        String   @default("native") @map("provenance_kind")
@@ -582,18 +591,22 @@ model SoulAssetVersionRecord {
 }
 
 model ContentAccessRecord {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  soulOnChainId       String    @map("soul_on_chain_id")
-  soul                SoulAsset @relation("SoulContentAccess", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
-  accessListOnChainId String    @map("access_list_on_chain_id")
-  granteeAddress      String    @map("grantee_address")
-  scopeMask           Int       @map("scope_mask")
-  pricePaidAtomic     BigInt    @map("price_paid_atomic")
-  grantedAtMs         BigInt    @map("granted_at_ms")
-  expiresAtMs         BigInt?   @map("expires_at_ms")
-  revokedAt           DateTime? @map("revoked_at") @db.Timestamptz
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId           String    @map("soul_on_chain_id")
+  soul                    SoulAsset @relation("SoulContentAccess", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  accessListOnChainId     String    @map("access_list_on_chain_id")
+  granteeAddress          String    @map("grantee_address")
+  scopeMask               Int       @map("scope_mask")
+  pricePaidAtomic         BigInt    @map("price_paid_atomic")
+  grantedAtMs             BigInt    @map("granted_at_ms")
+  expiresAtMs             BigInt?   @map("expires_at_ms")
+  // Snapshot of SoulState.ownership_epoch at grant time. Must equal the
+  // current epoch for the entry to grant access; mismatches mean the Soul
+  // was resold and the entry is stale (mirrors SoulGrant.ownership_epoch_snapshot).
+  ownershipEpochSnapshot  Int       @map("ownership_epoch_snapshot")
+  revokedAt               DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([accessListOnChainId, granteeAddress], map: "content_access_unique")
   @@index([soulOnChainId])

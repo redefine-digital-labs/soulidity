@@ -11,6 +11,7 @@ import {
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
 import { normalizeTags } from '@/lib/soulidity/tags'
+import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
@@ -36,7 +37,6 @@ export interface PublishParams {
   description: string
   tags: string[]
   imageUrl: string
-  metadataRef?: string | null
   previewImages: string[]
   readme?: string | null
   protectedBlobObjectId: string
@@ -44,8 +44,29 @@ export interface PublishParams {
   skillsBlobObjectId?: string | null
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
+  initialSprite?: {
+    blobObjectId: string
+    assetName?: string | null
+    versionIndex?: number | null
+    visibility?: 'public' | 'private'
+    downloadPolicy?: SoulDownloadPolicy | null
+    spriteConfigJson: string
+    spriteMoodMapJson?: string | null
+  } | null
+  initialVoice?: {
+    blobObjectId: string
+    assetName: string
+    versionIndex?: number | null
+    visibility?: 'public' | 'private'
+    downloadPolicy?: SoulDownloadPolicy | null
+    voiceConfigJson?: string | null
+  } | null
+  contentAccessPriceAtomic?: number
+  contentAccessDefaultScopeMask?: number
+  contentAccessDefaultDurationMs?: number | null
   skillsSealSidecar?: string | null
   memorySealSidecar?: string | null
+  assetsSealSidecar?: string | null
   creatorRoyaltyBps: number
   sealSidecar?: string | null
 }
@@ -109,6 +130,7 @@ export function usePublish() {
           'Soul character blob': params.protectedBlobObjectId,
           'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
           'Skills blob': params.skillsBlobObjectId ?? null,
+          'Persona sprite blob': params.initialSprite?.blobObjectId ?? null,
         })
         const tx: Transaction = buildPublishSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -116,12 +138,16 @@ export function usePublish() {
           name: params.name,
           description: params.description,
           imageUrl: params.imageUrl,
-          metadataRef: params.metadataRef ?? null,
           protectedBlobObjectId: params.protectedBlobObjectId,
           foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId ?? null,
           skillsBlobObjectId: params.skillsBlobObjectId ?? null,
           initialSkillName: params.initialSkillName ?? null,
           skillsVisibility: params.skillsVisibility ?? 'private',
+          initialSprite: params.initialSprite ?? null,
+          initialVoice: params.initialVoice ?? null,
+          contentAccessPriceAtomic: params.contentAccessPriceAtomic,
+          contentAccessDefaultScopeMask: params.contentAccessDefaultScopeMask,
+          contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
           creatorRoyaltyBps: params.creatorRoyaltyBps,
         })
 
@@ -140,6 +166,7 @@ export function usePublish() {
           sealSidecar: params.sealSidecar ?? null,
           memorySealSidecar: params.memorySealSidecar ?? null,
           skillsSealSidecar: params.skillsSealSidecar ?? null,
+          assetsSealSidecar: params.assetsSealSidecar ?? null,
         }
         recoveryRef.current = attachSoulidityDeploymentSignature({ userId: user?.id ?? '', txDigest: executedDigest, syncBody })
         try { sessionStorage.setItem(MINT_RECOVERY_KEY, JSON.stringify(recoveryRef.current)) } catch {}
@@ -157,6 +184,7 @@ export function usePublish() {
             sealSidecar: params.sealSidecar ?? null,
             memorySealSidecar: params.memorySealSidecar ?? null,
             skillsSealSidecar: params.skillsSealSidecar ?? null,
+            assetsSealSidecar: params.assetsSealSidecar ?? null,
           }
 
       setStatus('syncing')

@@ -60,7 +60,7 @@ export default function WalrusSealPage() {
             <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-3 text-xs leading-6 text-foreground/90">
               <code>{`"soul-skill:" + version_byte(1) + skills_id_bytes(32) + skill_name_bytes + NUL + version_index_be(8) + nonce(16)`}</code>
             </pre>
-            <p className="text-xs text-muted mt-1">Approved by <code>skills::seal_approve_private_read_owner</code> or <code>seal_approve_private_read_granted_agent</code> (requires SCOPE_SKILLS). Public skill versions bypass Seal entirely.</p>
+            <p className="text-xs text-muted mt-1">Approved by <code>skills::seal_approve_private_read_owner</code>, <code>skills::seal_approve_private_read_granted_agent</code>, or <code>content_access::seal_approve_skill_allowlisted</code> (requires SCOPE_SKILLS). Public skill versions bypass Seal entirely.</p>
           </div>
         </div>
       </div>
@@ -103,7 +103,7 @@ export default function WalrusSealPage() {
         <ol className="text-sm text-muted space-y-1.5 list-decimal ml-5">
           <li>Call the access API endpoint — it returns the sidecar, Walrus blob URL, Seal server config, and an approval policy (module + function + required object IDs).</li>
           <li>Create a <code>SessionKey</code> with <code>SessionKey.create</code>, sign the personal message with the viewer wallet.</li>
-          <li>Build the approval transaction bytes matching the policy (owner vs granted-agent path).</li>
+          <li>Build the approval transaction bytes matching the policy (owner, granted-agent, or allowlisted path).</li>
           <li>Fetch the encrypted blob from Walrus.</li>
           <li>Call <code>SealClient.decrypt</code> with the sidecar <code>encryptedDek</code> — the Seal key servers verify the approval TX before releasing key shares.</li>
           <li>AES-GCM decrypt the blob with the recovered DEK + IV.</li>

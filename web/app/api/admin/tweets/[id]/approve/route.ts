@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { buildApprovedTweetUpdate, parseTweetMeta } from '@/lib/admin-tweet-review'
 import OpenAI from 'openai'

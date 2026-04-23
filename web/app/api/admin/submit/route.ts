@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { prisma } from '@web/lib/prisma'
-import { scrapeUrl } from '@web/lib/scraper'
+import { prisma } from '@/lib/prisma'
+import { scrapeUrl } from '@/lib/scraper'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'

@@ -1,8 +1,8 @@
 import type { SealClient, SessionKey } from '@mysten/seal'
 import { Transaction } from '@mysten/sui/transactions'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import type { AccessPolicyDescriptor } from '@web/lib/services/seal'
-import { suiClient } from '@web/lib/sui'
+import type { AccessPolicyDescriptor } from '@/lib/services/seal'
+import { suiClient } from '@/lib/sui'
 
 const AES_GCM_ALGORITHM = 'AES-GCM'
 const AES_GCM_CIPHER_LABEL = 'AES-GCM-256'

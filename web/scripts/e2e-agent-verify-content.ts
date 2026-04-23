@@ -1,30 +1,40 @@
 /**
- * E2E Content Verification: Agent access API → Walrus download → direct AES-GCM decrypt → compare with originals
+ * E2E Content Verification:
+ * Agent access API -> Walrus download -> direct AES-GCM decrypt -> byte compare.
  *
- * Bypasses Seal (sealSidecar was not properly processed at create time) and directly
- * uses the raw DEK envelope to decrypt the Walrus blob, then compares with reference files.
- *
- * Usage:
- *   source .env && \
+ * Preferred multi-artifact usage:
  *   SOUL_ID="0x..." \
  *   AGENT_API_KEY="sk-..." \
- *   RAW_ENVELOPE="base64..." \
- *   COMPARE_DIR="/path/to/originals" \
+ *   RAW_ENVELOPES_JSON='{"char":"...","memory":"...","skills":"..."}' \
+ *   MEMORY_ENTRY_KEY="..." \
+ *   SKILL_NAME="default" \
+ *   SKILL_VERSION_INDEX="0" \
+ *   COMPARE_DIR="/Users/admin/Documents/example" \
  *   npx tsx web/scripts/e2e-agent-verify-content.ts
+ *
+ * Backwards-compatible single-artifact usage:
+ *   RAW_ENVELOPE="..." COMPARE_FILE="soul.md" ...
  */
 
-import { createHash, createDecipheriv } from 'node:crypto'
+import { createDecipheriv, createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
-import { join, extname } from 'node:path'
-import { execSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { extname, join } from 'node:path'
 
 const SOUL_ID = process.env.SOUL_ID!
 const AGENT_API_KEY = process.env.AGENT_API_KEY!
-const RAW_ENVELOPE = process.env.RAW_ENVELOPE!
-const COMPARE_DIR = process.env.COMPARE_DIR!
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100'
+const COMPARE_DIR = process.env.COMPARE_DIR!
+
+type ArtifactKind = 'char' | 'memory' | 'skills' | 'sprite'
+
+type RawEnvelopeMap = Partial<Record<ArtifactKind, string | null>>
+
+const DEFAULT_COMPARE_FILES: Record<ArtifactKind, string> = {
+  char: 'soul.md',
+  memory: 'memory.md',
+  skills: 'skill.zip',
+  sprite: 'sprite.png',
+}
 
 /* ---- inline unsealDekEnvelope ---- */
 
@@ -37,181 +47,182 @@ function getUploadSecret(): Buffer {
 function unsealDekEnvelope(envelope: string) {
   const secret = getUploadSecret()
   const raw = Buffer.from(envelope, 'base64')
-  const IV = 12, TAG = 16
-  const iv = raw.subarray(0, IV)
-  const authTag = raw.subarray(IV, IV + TAG)
-  const ciphertext = raw.subarray(IV + TAG)
+  const ivLength = 12
+  const tagLength = 16
+  const iv = raw.subarray(0, ivLength)
+  const authTag = raw.subarray(ivLength, ivLength + tagLength)
+  const ciphertext = raw.subarray(ivLength + tagLength)
   const decipher = createDecipheriv('aes-256-gcm', secret, iv)
   decipher.setAuthTag(authTag)
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()])
-  const p = JSON.parse(plaintext.toString('utf8'))
+  const payload = JSON.parse(plaintext.toString('utf8'))
   return {
-    dek: new Uint8Array(Buffer.from(p.dek, 'base64')),
-    iv: new Uint8Array(Buffer.from(p.iv, 'base64')),
-    contentHash: p.contentHash as string,
-    mimeType: p.mimeType as string,
-    fileName: p.fileName as string,
+    dek: new Uint8Array(Buffer.from(payload.dek, 'base64')),
+    iv: new Uint8Array(Buffer.from(payload.iv, 'base64')),
+    contentHash: payload.contentHash as string,
+    mimeType: payload.mimeType as string,
+    fileName: payload.fileName as string,
   }
 }
 
 /* ---- AES-GCM decrypt ---- */
 
 async function aesGcmDecrypt(data: Uint8Array, dek: Uint8Array, iv: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', dek as unknown as ArrayBuffer, { name: 'AES-GCM', length: 256 }, false, ['decrypt'])
-  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as unknown as ArrayBuffer }, key, data as unknown as ArrayBuffer))
+  const key = await crypto.subtle.importKey(
+    'raw',
+    dek as unknown as ArrayBuffer,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt'],
+  )
+  return new Uint8Array(
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as unknown as ArrayBuffer }, key, data as unknown as ArrayBuffer),
+  )
 }
 
-/* ---- archive extraction (uses system tar) ---- */
-
-function extractArchive(data: Uint8Array): Map<string, Uint8Array> {
-  const tmp = mkdtempSync(join(tmpdir(), 'soul-verify-'))
-  const archivePath = join(tmp, 'archive.tar.gz')
-  const outDir = join(tmp, 'out')
-  writeFileSync(archivePath, data)
-  execSync(`mkdir -p "${outDir}"`)
-
-  // Try tar.gz first, then plain tar, then zip
+function readJsonEnv<T>(name: string): T | null {
+  const raw = process.env[name]
+  if (!raw?.trim()) return null
   try {
-    execSync(`tar xzf "${archivePath}" -C "${outDir}" 2>/dev/null || tar xf "${archivePath}" -C "${outDir}" 2>/dev/null || (cd "${outDir}" && unzip -o "${archivePath}" 2>/dev/null)`, { stdio: 'pipe' })
-  } catch {
-    // Not an archive — return as single file
-    return new Map()
+    return JSON.parse(raw) as T
+  } catch (error) {
+    throw new Error(`${name} must be valid JSON: ${error instanceof Error ? error.message : String(error)}`)
   }
-
-  const files = new Map<string, Uint8Array>()
-  function walk(dir: string, prefix = '') {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        walk(join(dir, entry.name), entry.name + '/')
-      } else if (entry.isFile()) {
-        const relPath = prefix + entry.name
-        files.set(relPath, new Uint8Array(readFileSync(join(dir, entry.name))))
-      }
-    }
-  }
-  walk(outDir)
-
-  // Clean up
-  execSync(`rm -rf "${tmp}"`)
-  return files
 }
 
-/* ---- main ---- */
+function resolveEnvelopeMap(): RawEnvelopeMap {
+  const map = readJsonEnv<RawEnvelopeMap>('RAW_ENVELOPES_JSON')
+  if (map) return map
 
-async function main() {
-  if (!SOUL_ID || !AGENT_API_KEY || !RAW_ENVELOPE || !COMPARE_DIR) {
-    console.error('Missing env vars: SOUL_ID, AGENT_API_KEY, RAW_ENVELOPE, COMPARE_DIR')
-    process.exit(1)
+  const rawEnvelope = process.env.RAW_ENVELOPE
+  if (!rawEnvelope?.trim()) {
+    throw new Error('RAW_ENVELOPES_JSON or RAW_ENVELOPE is required')
   }
+  return { char: rawEnvelope }
+}
 
-  // Step 1: Verify agent has access via API
-  console.log('--- Step 1: Agent access API ---')
-  const accessRes = await fetch(`${BASE_URL}/api/agent/souls/${encodeURIComponent(SOUL_ID)}/access`, {
+function resolveCompareFiles() {
+  const compareMap = readJsonEnv<Partial<Record<ArtifactKind, string>>>('COMPARE_MAP_JSON') ?? {}
+  if (process.env.COMPARE_FILE?.trim()) {
+    compareMap.char = process.env.COMPARE_FILE.trim()
+  }
+  return compareMap
+}
+
+function requireEnv(name: string) {
+  const value = process.env[name]
+  if (!value?.trim()) throw new Error(`${name} is required`)
+  return value.trim()
+}
+
+function endpointFor(kind: ArtifactKind) {
+  switch (kind) {
+    case 'char':
+      return `/api/agent/souls/${encodeURIComponent(SOUL_ID)}/access`
+    case 'memory':
+      return `/api/agent/souls/${encodeURIComponent(SOUL_ID)}/memory/${encodeURIComponent(requireEnv('MEMORY_ENTRY_KEY'))}/access`
+    case 'skills':
+      return `/api/agent/souls/${encodeURIComponent(SOUL_ID)}/skills/${encodeURIComponent(requireEnv('SKILL_NAME'))}/versions/${encodeURIComponent(requireEnv('SKILL_VERSION_INDEX'))}/access`
+    case 'sprite':
+      return `/api/agent/souls/${encodeURIComponent(SOUL_ID)}/assets/${encodeURIComponent(process.env.ASSET_NAME ?? 'persona-sprite')}/versions/${encodeURIComponent(process.env.ASSET_VERSION_INDEX ?? '0')}/access`
+  }
+}
+
+async function fetchAccessPayload(kind: ArtifactKind) {
+  const accessRes = await fetch(`${BASE_URL}${endpointFor(kind)}`, {
     headers: { Authorization: `Bearer ${AGENT_API_KEY}`, 'x-forwarded-for': '127.0.0.1' },
   })
+  const access = await accessRes.json().catch(() => null)
   if (!accessRes.ok) {
-    const err = await accessRes.json().catch(() => ({}))
-    throw new Error(`Access API failed (${accessRes.status}): ${JSON.stringify(err)}`)
+    throw new Error(`${kind} access API failed (${accessRes.status}): ${JSON.stringify(access)}`)
   }
-  const access = await accessRes.json()
-  console.log(`Access kind: ${access.accessKind}`)
-  console.log(`Blob URL: ${access.artifact.walrusBlobUrl}`)
-  console.log('\u2705 Agent has access')
-
-  // Step 2: Unseal DEK envelope
-  console.log('\n--- Step 2: Unseal DEK envelope ---')
-  const envelope = unsealDekEnvelope(RAW_ENVELOPE)
-  console.log(`DEK: ${envelope.dek.length}B, IV: ${envelope.iv.length}B`)
-  console.log(`Content hash: ${envelope.contentHash}`)
-  console.log(`File: ${envelope.fileName} (${envelope.mimeType})`)
-
-  // Step 3: Download encrypted blob from Walrus
-  console.log('\n--- Step 3: Download encrypted blob ---')
-  const blobRes = await fetch(access.artifact.walrusBlobUrl)
-  if (!blobRes.ok) throw new Error(`Blob download failed: ${blobRes.status}`)
-  const encryptedBytes = new Uint8Array(await blobRes.arrayBuffer())
-  console.log(`Downloaded ${encryptedBytes.length} bytes`)
-
-  // Step 4: AES-GCM decrypt
-  console.log('\n--- Step 4: AES-GCM decrypt ---')
-  const decrypted = await aesGcmDecrypt(encryptedBytes, envelope.dek, envelope.iv)
-  console.log(`Decrypted ${decrypted.length} bytes`)
-
-  // Step 5: Verify content hash
-  console.log('\n--- Step 5: Verify content hash ---')
-  const hash = createHash('sha256').update(decrypted).digest('hex')
-  console.log(`Computed:  ${hash}`)
-  console.log(`Expected: ${envelope.contentHash}`)
-  if (hash !== envelope.contentHash) {
-    console.log('\u274C Content hash MISMATCH!')
-    process.exit(1)
+  if (!access?.artifact?.walrusBlobUrl) {
+    throw new Error(`${kind} access payload did not include artifact.walrusBlobUrl`)
   }
-  console.log('\u2705 Content hash verified')
-
-  // Step 6: Extract archive and compare with originals
-  console.log('\n--- Step 6: Extract and compare with originals ---')
-  let extractedFiles = extractArchive(decrypted)
-  if (extractedFiles.size === 0) {
-    console.log('Content is not an archive, treating as single file')
-    extractedFiles = new Map([[envelope.fileName, decrypted]])
-  }
-
-  console.log(`Extracted ${extractedFiles.size} files:`)
-  for (const [name, data] of extractedFiles) {
-    console.log(`  ${name} (${data.length} bytes)`)
-  }
-
-  // Read originals
-  const originals = new Map<string, Uint8Array>()
-  for (const file of readdirSync(COMPARE_DIR)) {
-    if (file.startsWith('.')) continue
-    const fullPath = join(COMPARE_DIR, file)
-    originals.set(file, new Uint8Array(readFileSync(fullPath)))
-  }
-
-  console.log(`\nOriginal files (${originals.size}):`)
-  for (const [name, data] of originals) {
-    console.log(`  ${name} (${data.length} bytes)`)
-  }
-
-  // Compare
-  console.log('\n--- Comparison ---')
-  let allMatch = true
-
-  for (const [name, originalData] of originals) {
-    const extractedData = extractedFiles.get(name)
-    if (!extractedData) {
-      console.log(`\u274C ${name}: NOT FOUND in decrypted archive`)
-      allMatch = false
-      continue
-    }
-
-    const origHash = createHash('md5').update(originalData).digest('hex')
-    const extHash = createHash('md5').update(extractedData).digest('hex')
-
-    if (origHash === extHash) {
-      console.log(`\u2705 ${name}: MATCH (${originalData.length} bytes, md5=${origHash})`)
-    } else {
-      console.log(`\u274C ${name}: MISMATCH`)
-      console.log(`   Original: ${originalData.length} bytes, md5=${origHash}`)
-      console.log(`   Extracted: ${extractedData.length} bytes, md5=${extHash}`)
-      allMatch = false
-    }
-  }
-
-  // Check for extra files in archive
-  for (const name of extractedFiles.keys()) {
-    if (!originals.has(name)) {
-      console.log(`\u2139\uFE0F  ${name}: extra file in archive (not in originals)`)
-    }
-  }
-
-  if (allMatch) {
-    console.log('\n\u2705 All files match! Agent can access and decrypt Soul data correctly.')
-  } else {
-    console.log('\n\u274C Some files do not match.')
-    process.exit(1)
-  }
+  return access
 }
 
-main().catch((err) => { console.error('Fatal:', err); process.exit(1) })
+function compareBytes(kind: ArtifactKind, decrypted: Uint8Array, comparePath: string) {
+  const original = new Uint8Array(readFileSync(comparePath))
+  const originalHash = createHash('sha256').update(original).digest('hex')
+  const decryptedHash = createHash('sha256').update(decrypted).digest('hex')
+  if (originalHash !== decryptedHash) {
+    throw new Error(
+      `${kind} byte mismatch: original=${original.length}B sha256=${originalHash}, decrypted=${decrypted.length}B sha256=${decryptedHash}`,
+    )
+  }
+  console.log(`OK ${kind}: ${comparePath} (${original.length} bytes, sha256=${originalHash})`)
+}
+
+function findComparePath(kind: ArtifactKind, envelopeFileName: string, compareFile?: string) {
+  const candidates = [
+    compareFile,
+    DEFAULT_COMPARE_FILES[kind],
+    envelopeFileName,
+  ].filter((value): value is string => Boolean(value?.trim()))
+
+  for (const candidate of candidates) {
+    const fullPath = join(COMPARE_DIR, candidate)
+    try {
+      readFileSync(fullPath)
+      return fullPath
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  const files = readdirSync(COMPARE_DIR).filter((file) => !file.startsWith('.'))
+  const matchingExtension = files.find((file) => extname(file) && extname(file) === extname(envelopeFileName))
+  if (matchingExtension) return join(COMPARE_DIR, matchingExtension)
+
+  throw new Error(`${kind} compare file not found in ${COMPARE_DIR}; tried ${candidates.join(', ')}`)
+}
+
+async function verifyArtifact(kind: ArtifactKind, rawEnvelope: string, compareFile?: string) {
+  console.log(`\n--- ${kind} ---`)
+  const access = await fetchAccessPayload(kind)
+  console.log(`accessKind=${access.accessKind ?? access.visibility ?? 'unknown'}`)
+  console.log(`blob=${access.artifact.walrusBlobUrl}`)
+
+  const envelope = unsealDekEnvelope(rawEnvelope)
+  console.log(`envelope file=${envelope.fileName} mime=${envelope.mimeType}`)
+
+  const blobRes = await fetch(access.artifact.walrusBlobUrl)
+  if (!blobRes.ok) throw new Error(`${kind} blob download failed: ${blobRes.status}`)
+  const encryptedBytes = new Uint8Array(await blobRes.arrayBuffer())
+  const decrypted = await aesGcmDecrypt(encryptedBytes, envelope.dek, envelope.iv)
+
+  const contentHash = createHash('sha256').update(decrypted).digest('hex')
+  if (contentHash !== envelope.contentHash) {
+    throw new Error(`${kind} content hash mismatch: computed=${contentHash}, envelope=${envelope.contentHash}`)
+  }
+
+  const comparePath = findComparePath(kind, envelope.fileName, compareFile)
+  compareBytes(kind, decrypted, comparePath)
+}
+
+async function main() {
+  if (!SOUL_ID || !AGENT_API_KEY || !COMPARE_DIR) {
+    throw new Error('Missing env vars: SOUL_ID, AGENT_API_KEY, COMPARE_DIR')
+  }
+
+  const envelopeMap = resolveEnvelopeMap()
+  const compareFiles = resolveCompareFiles()
+  const kinds = (Object.keys(DEFAULT_COMPARE_FILES) as ArtifactKind[])
+    .filter((kind) => typeof envelopeMap[kind] === 'string' && envelopeMap[kind]?.trim())
+
+  if (kinds.length === 0) {
+    throw new Error('No non-empty raw envelopes were provided')
+  }
+
+  for (const kind of kinds) {
+    await verifyArtifact(kind, envelopeMap[kind]!, compareFiles[kind])
+  }
+
+  console.log(`\nOK ${kinds.length} artifact(s) matched byte-for-byte.`)
+}
+
+main().catch((error) => {
+  console.error('Fatal:', error instanceof Error ? error.message : error)
+  process.exit(1)
+})

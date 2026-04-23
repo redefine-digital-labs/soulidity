@@ -106,6 +106,28 @@ function readString(value: unknown, fieldName: string) {
   throw new OnChainVerificationError(`${fieldName} is missing on chain`)
 }
 
+function readOptionalString(value: unknown, fieldName: string): string | null {
+  if (value == null) return null
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null
+    return readOptionalString(value[0], fieldName)
+  }
+  const record = asRecord(value)
+  if (!record) {
+    return typeof value === 'string' ? readString(value, fieldName) : null
+  }
+  if (Array.isArray(record.vec)) {
+    return readOptionalString(record.vec, fieldName)
+  }
+  if (record.value) {
+    return readOptionalString(record.value, fieldName)
+  }
+  if (record.fields) {
+    return readOptionalString(record.fields, fieldName)
+  }
+  return null
+}
+
 function readPackageIdFromType(type: string) {
   const packageId = type.split('::', 1)[0]
   return packageId ? normalizeSuiValue(packageId) : null
@@ -144,6 +166,7 @@ export function extractSoulMintedToKioskEvent(transaction: TransactionLike, pack
     soulId: readObjectId(event.soul_id, 'SoulMintedToKiosk soul_id'),
     stateId: readObjectId(event.state_id, 'SoulMintedToKiosk state_id'),
     memoryId: readObjectId(event.memory_id, 'SoulMintedToKiosk memory_id'),
+    metadataId: readObjectId(event.metadata_id, 'SoulMintedToKiosk metadata_id'),
     kioskId: readObjectId(event.kiosk_id, 'SoulMintedToKiosk kiosk_id'),
     ownerAddress: readAddress(event.owner, 'SoulMintedToKiosk owner'),
     provenanceKind: readNumber(event.provenance_kind, 'SoulMintedToKiosk provenance_kind'),
@@ -191,6 +214,47 @@ export function extractSoulListingCancelledEvent(transaction: TransactionLike, p
     soulId: readObjectId(event.soul_id, 'SoulListingCancelled soul_id'),
     sellerAddress: readAddress(event.seller, 'SoulListingCancelled seller'),
   }
+}
+
+export function extractSoulMetadataMutationEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const candidates = [
+    {
+      type: `${packageId}::metadata::SoulMetadataSpriteUpdated`,
+      label: 'SoulMetadataSpriteUpdated',
+      kind: 'sprite' as const,
+    },
+    {
+      type: `${packageId}::metadata::SoulMetadataVoiceUpdated`,
+      label: 'SoulMetadataVoiceUpdated',
+      kind: 'voice' as const,
+    },
+    {
+      type: `${packageId}::metadata::SoulMetadataBlobUpserted`,
+      label: 'SoulMetadataBlobUpserted',
+      kind: 'blob_upserted' as const,
+    },
+    {
+      type: `${packageId}::metadata::SoulMetadataBlobDeleted`,
+      label: 'SoulMetadataBlobDeleted',
+      kind: 'blob_deleted' as const,
+    },
+  ]
+
+  for (const candidate of candidates) {
+    const event = extractTypedEvent(transaction, candidate.type, trustedPackageIds)
+    if (!event) {
+      continue
+    }
+    return {
+      kind: candidate.kind,
+      soulId: readObjectId(event.soul_id, `${candidate.label} soul_id`),
+      metadataId: readObjectId(event.metadata_id, `${candidate.label} metadata_id`),
+      updaterAddress: readAddress(event.updater, `${candidate.label} updater`),
+      key: 'key' in event ? readOptionalString(event.key, `${candidate.label} key`) : null,
+    }
+  }
+
+  throw new OnChainVerificationError('Soul metadata mutation event is missing from the transaction')
 }
 
 export function extractSoulAddedToCollectionEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
@@ -484,6 +548,10 @@ export function extractContentAccessListCreatedEvent(
     creator: readAddress(event.creator, 'ContentAccessListCreated creator'),
     priceAtomic: readNumber(event.price_atomic, 'ContentAccessListCreated price_atomic'),
     defaultScopeMask: readNumber(event.default_scope_mask, 'ContentAccessListCreated default_scope_mask'),
+    defaultAccessDurationMs: readOptionalNumber(
+      event.default_access_duration_ms,
+      'ContentAccessListCreated default_access_duration_ms',
+    ),
   }
 }
 
@@ -500,6 +568,10 @@ export function tryExtractContentAccessListCreatedEvent(
     creator: readAddress(event.creator, 'ContentAccessListCreated creator'),
     priceAtomic: readNumber(event.price_atomic, 'ContentAccessListCreated price_atomic'),
     defaultScopeMask: readNumber(event.default_scope_mask, 'ContentAccessListCreated default_scope_mask'),
+    defaultAccessDurationMs: readOptionalNumber(
+      event.default_access_duration_ms,
+      'ContentAccessListCreated default_access_duration_ms',
+    ),
   }
 }
 
@@ -518,6 +590,11 @@ export function extractContentAccessGrantedEvent(
     grantee: readAddress(event.grantee, 'ContentAccessGranted grantee'),
     scopeMask: readNumber(event.scope_mask, 'ContentAccessGranted scope_mask'),
     pricePaidAtomic: readNumber(event.price_paid_atomic, 'ContentAccessGranted price_paid_atomic'),
+    expiresAtMs: readOptionalNumber(event.expires_at_ms, 'ContentAccessGranted expires_at_ms'),
+    ownershipEpochSnapshot: readNumber(
+      event.ownership_epoch_snapshot,
+      'ContentAccessGranted ownership_epoch_snapshot',
+    ),
   }
 }
 
@@ -558,6 +635,11 @@ export function extractMatchedContentAccessGrantedEvent(
           grantee,
           scopeMask: readNumber(parsed.scope_mask, 'ContentAccessGranted scope_mask'),
           pricePaidAtomic: readNumber(parsed.price_paid_atomic, 'ContentAccessGranted price_paid_atomic'),
+          expiresAtMs: readOptionalNumber(parsed.expires_at_ms, 'ContentAccessGranted expires_at_ms'),
+          ownershipEpochSnapshot: readNumber(
+            parsed.ownership_epoch_snapshot,
+            'ContentAccessGranted ownership_epoch_snapshot',
+          ),
         }
       }
     } catch {

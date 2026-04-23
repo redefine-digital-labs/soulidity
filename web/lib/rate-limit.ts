@@ -5,7 +5,7 @@ import {
   resetRateLimitBucketsForTests,
   takeRateLimitTokenWithFallback,
   type RateLimitOptions,
-} from '@web/lib/rate-limit-core'
+} from '@/lib/rate-limit-core'
 
 export const MISSING_CLIENT_IP_ERROR = 'Unable to determine client IP'
 

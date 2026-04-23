@@ -34,6 +34,7 @@ export default function SmartContractsPage() {
             <tbody className="text-muted">
               {[
                 ['soul', 'Core Soul + SoulState shared object. Mint, ownership rotation, active grant list.'],
+                ['metadata', 'SoulMetadata shared object. Active sprite/voice bindings + JSON ext blobs for desktop/web presentation.'],
                 ['market', 'Personal-kiosk marketplace. Publish, list, delist, buy, import, personal-join.'],
                 ['grant', 'SoulGrant delegation. Issue, revoke, scope-mask, expiry, invalidation on transfer.'],
                 ['seal_policy', 'Seal approval entry functions for owner and granted-agent access to Soul and Memory blobs.'],
@@ -63,7 +64,6 @@ public struct Soul has key, store {
     name: String,
     description: String,
     image_url: String,
-    metadata_ref: Option<String>,
     protected_blob: Blob,          // Walrus Blob object (Seal-encrypted content)
     provenance_kind: u8,           // 0=native, 1=imported, 2=personal-join
     origin_ref: Option<String>,    // set for personal-join (source NFT type::id)
@@ -82,10 +82,14 @@ public struct SoulState has key {
     grant_capacity: u64,           // max concurrent grants (default 1)
     active_grants: vector<ActiveGrantSlot>,
     memory_id: Option<ID>,         // bound SoulMemory object ID
+    metadata_id: Option<ID>,       // bound SoulMetadata object ID
     skills_id: Option<ID>,         // bound SoulSkills object ID
     collection_id: Option<ID>,     // bound SoulCollection object ID
 }`}</code>
         </pre>
+        <p className="text-xs text-muted">
+          Persona / voice presentation metadata now lives in a separate shared <code>SoulMetadata</code> object. The owner updates active bindings via <code>market::set_active_sprite</code> / <code>set_active_voice</code> and writes JSON config blobs via <code>metadata::upsert_metadata_blob</code>.
+        </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">

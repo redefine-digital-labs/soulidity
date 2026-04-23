@@ -1,12 +1,13 @@
 import { PrismaRuntime } from '@db/prisma-client'
-import { prisma } from '@web/lib/prisma'
-import type { SoulObject, SoulStateObject, SoulMemoryObject } from '@/lib/soulidity/types'
+import { prisma } from '@/lib/prisma'
+import type { SoulMetadataObject, SoulObject, SoulStateObject, SoulMemoryObject } from '@/lib/soulidity/types'
 import type { Prisma } from '@db/prisma-client'
 
 export async function upsertSoulProjection(params: {
   soul: SoulObject
   state: SoulStateObject
   memory: SoulMemoryObject
+  metadata?: SoulMetadataObject | null
   currentKioskCapOnChainId: string
   creatorMemberId?: string | null
   currentOwnerMemberId?: string | null
@@ -51,7 +52,16 @@ export async function upsertSoulProjection(params: {
       name: params.soul.name,
       description: params.soul.description,
       imageUrl: params.soul.imageUrl,
-      metadataRef: params.soul.metadataRef,
+      metadataOnChainId: params.metadata?.objectId ?? params.state.metadataId ?? null,
+      activeSpriteAssetName: params.metadata?.activeSprite?.assetName ?? null,
+      activeSpriteVersionIndex: params.metadata?.activeSprite?.versionIndex ?? null,
+      activeSpriteDownloadPolicy: params.metadata?.activeSprite?.downloadPolicy ?? null,
+      activeVoiceAssetName: params.metadata?.activeVoice?.assetName ?? null,
+      activeVoiceVersionIndex: params.metadata?.activeVoice?.versionIndex ?? null,
+      activeVoiceDownloadPolicy: params.metadata?.activeVoice?.downloadPolicy ?? null,
+      spriteConfigJson: params.metadata?.spriteConfigJson ?? null,
+      spriteMoodMapJson: params.metadata?.spriteMoodMapJson ?? null,
+      voiceConfigJson: params.metadata?.voiceConfigJson ?? null,
       contentBlobId: params.soul.protectedBlobId ?? params.soul.protectedBlobObjectId,
       contentBlobObjectId: params.soul.protectedBlobObjectId,
       provenanceKind: params.soul.provenanceKind,
@@ -84,7 +94,16 @@ export async function upsertSoulProjection(params: {
       name: params.soul.name,
       description: params.soul.description,
       imageUrl: params.soul.imageUrl,
-      metadataRef: params.soul.metadataRef,
+      metadataOnChainId: params.metadata?.objectId ?? params.state.metadataId ?? null,
+      activeSpriteAssetName: params.metadata?.activeSprite?.assetName ?? null,
+      activeSpriteVersionIndex: params.metadata?.activeSprite?.versionIndex ?? null,
+      activeSpriteDownloadPolicy: params.metadata?.activeSprite?.downloadPolicy ?? null,
+      activeVoiceAssetName: params.metadata?.activeVoice?.assetName ?? null,
+      activeVoiceVersionIndex: params.metadata?.activeVoice?.versionIndex ?? null,
+      activeVoiceDownloadPolicy: params.metadata?.activeVoice?.downloadPolicy ?? null,
+      spriteConfigJson: params.metadata?.spriteConfigJson ?? null,
+      spriteMoodMapJson: params.metadata?.spriteMoodMapJson ?? null,
+      voiceConfigJson: params.metadata?.voiceConfigJson ?? null,
       contentBlobId: params.soul.protectedBlobId ?? params.soul.protectedBlobObjectId,
       contentBlobObjectId: params.soul.protectedBlobObjectId,
       provenanceKind: params.soul.provenanceKind,

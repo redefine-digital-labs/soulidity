@@ -133,9 +133,13 @@ description: |
   accessPolicy: {
     packageId, stateObjectId, skillsObjectId,
     skillName, versionIndex,
-    moduleName: "skills",
-    functionName: "seal_approve_private_read_owner" | "seal_approve_private_read_granted_agent",
+    moduleName: "skills" | "content_access",
+    functionName:
+      "seal_approve_private_read_owner"
+      | "seal_approve_private_read_granted_agent"
+      | "seal_approve_skill_allowlisted",
     soulGrantObjectId: string | null,
+    accessListOnChainId?: string,
     documentIdHex: string,
   },
   seal: { ... },

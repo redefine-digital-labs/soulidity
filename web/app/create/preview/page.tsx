@@ -25,13 +25,14 @@ const royaltyLabels: Record<number, string> = {
   1000: 'High · 10%',
 }
 
-type ReviewTone = 'gold' | 'teal' | 'green' | 'orange' | 'muted'
+type ReviewTone = 'gold' | 'teal' | 'green' | 'orange' | 'purple' | 'muted'
 
 const toneStyles: Record<ReviewTone, { border: string; header: string }> = {
   gold: { border: 'border-[#7b5a1e]', header: 'text-[#F59E0B]' },
   teal: { border: 'border-[#165c65]', header: 'text-teal' },
   green: { border: 'border-[#1b6040]', header: 'text-success' },
   orange: { border: 'border-[#7b4a1e]', header: 'text-[#F97316]' },
+  purple: { border: 'border-purple/30', header: 'text-purple' },
   muted: { border: 'border-border', header: 'text-muted' },
 }
 
@@ -187,6 +188,22 @@ export default function CreatePreviewPage() {
               </>
             )}
           </ReviewCard>
+
+          {ctx.spriteSheetFile && ctx.spriteConfigFile && (
+            <ReviewCard tone="purple" icon="🎭" label="Persona Sprite">
+              <p className="text-sm text-foreground font-medium">
+                {ctx.spriteSheetFile.name}
+              </p>
+              <div className="flex items-center gap-1.5 text-[10px] text-success">
+                <span>✍</span>
+                <span>{ctx.spriteConfigFile.name} will mint as canonical persona metadata</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                <span>🔐</span>
+                <span>{ctx.spriteVisibility === 'public' ? 'Public sprite asset' : 'Private sprite asset'} · contract fixed at mint</span>
+              </div>
+            </ReviewCard>
+          )}
         </div>
 
         {/* Live Memory — full width */}
@@ -206,7 +223,7 @@ export default function CreatePreviewPage() {
             Content & Memory Policy
           </div>
           <p className="text-xs text-muted leading-relaxed mb-4">
-            Soul Character is sealed and locked at mint. Founding memory becomes the first encrypted memory entry. Skills bundles stay private by default, and live memory grows through grant-authorized writes on Walrus.
+            Soul Character is sealed and locked at mint. Founding memory becomes the first encrypted memory entry. Skills bundles stay private by default, optional persona sprite metadata is bound at mint, and live memory grows through grant-authorized writes on Walrus.
           </p>
           <div className="space-y-2.5">
             <PolicyItem
@@ -229,6 +246,13 @@ export default function CreatePreviewPage() {
               title="History stays intact"
               description="founding memory remains preserved while later sessions add new entries instead of replacing it"
             />
+            {ctx.spriteSheetFile && ctx.spriteConfigFile && (
+              <PolicyItem
+                allowed
+                title="Persona sprite contract set at mint"
+                description={`${ctx.spriteVisibility === 'public' ? 'metadata exposes a public Walrus sprite sheet URL' : 'metadata points to a protected persona-sprite asset version'}`}
+              />
+            )}
           </div>
         </div>
 

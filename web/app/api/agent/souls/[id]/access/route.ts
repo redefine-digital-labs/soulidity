@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { hasSealSessionConfig } from '@web/lib/services/seal'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { hasSealSessionConfig } from '@/lib/services/seal'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { resolveSoulAccessPayload, SoulAccessDeniedError } from '@/lib/soulidity/access'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'

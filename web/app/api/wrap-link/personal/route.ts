@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
@@ -217,6 +217,7 @@ export async function POST(request: Request) {
     const responseBody = {
       txDigest,
       soulOnChainId: mirrored.onChainId,
+      metadataOnChainId: mirrored.metadataOnChainId ?? minted.metadataId,
       provenanceKind: mirrored.provenanceKind,
       originRef: mirrored.originRef,
       foundingMemoryTimestampKey: foundingMemory?.timestampKey ?? null,

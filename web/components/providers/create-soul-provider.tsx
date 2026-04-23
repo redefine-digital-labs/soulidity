@@ -28,12 +28,18 @@ interface EncryptedUploadResult {
   skillName?: string | null
 }
 
+interface SpriteAssetUploadResult extends PublicUploadResult {
+  sealDekEnvelope?: string | null
+}
+
 export interface UploadResults {
   ownerAddress?: string
   coverImage?: PublicUploadResult
   charFile?: EncryptedUploadResult
   memorySeed?: EncryptedUploadResult
   skillsFile?: EncryptedUploadResult
+  spriteSheet?: SpriteAssetUploadResult
+  spriteMetadata?: PublicUploadResult
 }
 
 export function selectReusableUploadResults(
@@ -52,6 +58,8 @@ export function selectReusableUploadResults(
     charFile: canReuseTxBoundUploads ? existing.charFile : undefined,
     memorySeed: canReuseTxBoundUploads ? existing.memorySeed : undefined,
     skillsFile: canReuseTxBoundUploads ? existing.skillsFile : undefined,
+    spriteSheet: canReuseTxBoundUploads ? existing.spriteSheet : undefined,
+    spriteMetadata: canReuseTxBoundUploads ? existing.spriteMetadata : undefined,
   }
 }
 
@@ -112,6 +120,12 @@ interface CreateSoulContextValue {
   setCharFile: (file: File | null) => void
   skillsFile: File | null
   setSkillsFile: (file: File | null) => void
+  spriteSheetFile: File | null
+  setSpriteSheetFile: (file: File | null) => void
+  spriteConfigFile: File | null
+  setSpriteConfigFile: (file: File | null) => void
+  spriteVisibility: 'public' | 'private'
+  setSpriteVisibility: (visibility: 'public' | 'private') => void
 
   // Upload results (populated during step 4)
   uploadResults: UploadResults | null
@@ -166,6 +180,9 @@ function CreateSoulProviderInner({
   const [memoryFile, setMemoryFileRaw] = useState<File | null>(null)
   const [charFile, setCharFileRaw] = useState<File | null>(null)
   const [skillsFile, setSkillsFileRaw] = useState<File | null>(null)
+  const [spriteSheetFile, setSpriteSheetFileRaw] = useState<File | null>(null)
+  const [spriteConfigFile, setSpriteConfigFileRaw] = useState<File | null>(null)
+  const [spriteVisibility, setSpriteVisibilityRaw] = useState<'public' | 'private'>('private')
 
   // Step 4 results
   const [uploadResults, setUploadResultsRaw] = useState<UploadResults | null>(null)
@@ -182,6 +199,29 @@ function CreateSoulProviderInner({
   const setSkillsFile = useCallback((file: File | null) => {
     setSkillsFileRaw(file)
     setUploadResultsRaw(prev => prev ? { ...prev, skillsFile: undefined } : prev)
+  }, [])
+
+  const setSpriteSheetFile = useCallback((file: File | null) => {
+    setSpriteSheetFileRaw(file)
+    setUploadResultsRaw(prev => prev ? {
+      ...prev,
+      spriteSheet: undefined,
+      spriteMetadata: undefined,
+    } : prev)
+  }, [])
+
+  const setSpriteConfigFile = useCallback((file: File | null) => {
+    setSpriteConfigFileRaw(file)
+    setUploadResultsRaw(prev => prev ? { ...prev, spriteMetadata: undefined } : prev)
+  }, [])
+
+  const setSpriteVisibility = useCallback((visibility: 'public' | 'private') => {
+    setSpriteVisibilityRaw(visibility)
+    setUploadResultsRaw(prev => prev ? {
+      ...prev,
+      spriteSheet: undefined,
+      spriteMetadata: undefined,
+    } : prev)
   }, [])
 
   const setMemoryFile = useCallback((file: File | null) => {
@@ -248,6 +288,9 @@ function CreateSoulProviderInner({
     setMemoryFileRaw(null)
     setCharFileRaw(null)
     setSkillsFileRaw(null)
+    setSpriteSheetFileRaw(null)
+    setSpriteConfigFileRaw(null)
+    setSpriteVisibilityRaw('private')
     setUploadResultsRaw(null)
     setPublishResultRaw(null)
     try {
@@ -266,6 +309,9 @@ function CreateSoulProviderInner({
       memoryFile, setMemoryFile,
       charFile, setCharFile,
       skillsFile, setSkillsFile,
+      spriteSheetFile, setSpriteSheetFile,
+      spriteConfigFile, setSpriteConfigFile,
+      spriteVisibility, setSpriteVisibility,
       uploadResults, setUploadResults,
       publishResult, setPublishResult,
       isHydrated,

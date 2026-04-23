@@ -1,4 +1,4 @@
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import type { AssetVersionObject } from '@/lib/soulidity/types'
 import { toProjectionBigInt } from '@/lib/soulidity/projection-scalars'
 

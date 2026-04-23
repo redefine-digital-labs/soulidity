@@ -65,12 +65,13 @@ export default function WrapLinkPage() {
   sourceObjectId,              // the NFT to wrap
   sourceObjectType,            // full Move type string e.g. "0xabc::nft::MyNFT"
   name, description, imageUrl,
-  metadataRef?,
   protectedBlobObjectId,       // Walrus Blob object already registered on-chain
   foundingMemoryBlobObjectId?, // optional founding memory Blob
   skillsBlobObjectId?,         // optional initial skills Blob
   initialSkillName?,           // defaults to "default"
   skillsVisibility?,           // "public" | "private", defaults to "private"
+  initialSprite?,              // optional active sprite binding + sprite config JSON
+  initialVoice?,               // optional active voice binding + voice config JSON
   originRef,                   // provenance string — typically "type::objectId"
   creatorRoyaltyBps,           // 0–10000
 })`}</code>

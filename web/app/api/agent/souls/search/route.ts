@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@/lib/soulidity/repository'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 

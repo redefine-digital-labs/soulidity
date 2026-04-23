@@ -1,6 +1,7 @@
-import { normalizeWalrusBlobId } from '@web/lib/services/walrus'
-import { suiClient } from '@web/lib/sui'
+import { normalizeWalrusBlobId } from '@/lib/services/walrus'
+import { suiClient } from '@/lib/sui'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
+import { SOUL_GRANT_SCOPE_BITS } from '@/lib/soulidity/grant-scopes'
 import type {
   ActiveGrantSlotObject,
   ResolvedPersonalKiosk,
@@ -8,7 +9,10 @@ import type {
   SoulCollectionRightObject,
   SoulGrantObject,
   SoulGrantScope,
+  SoulDownloadPolicy,
   SoulMemoryObject,
+  SoulMetadataBindingRecord,
+  SoulMetadataObject,
   SoulObject,
   SoulProvenanceKind,
   SoulSkillVisibility,
@@ -509,16 +513,70 @@ function readWriterKind(value: unknown, fieldName: string) {
 }
 
 export function scopeMaskToScopes(scopeMask: number): SoulGrantScope[] {
-  const scopes: SoulGrantScope[] = []
-  if ((scopeMask & 1) === 1) scopes.push('seal')
-  if ((scopeMask & 2) === 2) scopes.push('memory')
-  if ((scopeMask & 4) === 4) scopes.push('skills')
-  if ((scopeMask & 8) === 8) scopes.push('assets')
-  return scopes
+  return SOUL_GRANT_SCOPE_BITS
+    .filter(({ mask }) => (scopeMask & mask) === mask)
+    .map(({ scope }) => scope)
 }
 
 function readSkillVisibility(value: unknown, fieldName: string): SoulSkillVisibility {
   return Boolean(value) ? 'public' : 'private'
+}
+
+function readSoulDownloadPolicy(value: unknown, fieldName: string): SoulDownloadPolicy {
+  const rawValue = readNumber(value, fieldName)
+  if (rawValue === 0) return 'public'
+  if (rawValue === 1) return 'owner_only'
+  if (rawValue === 2) return 'allowlist'
+  throw new OnChainVerificationError(`${fieldName} contains an unknown download policy`)
+}
+
+function readOptionalMetadataBinding(value: unknown, fieldName: string): SoulMetadataBindingRecord | null {
+  const items = readVectorItems(value, fieldName)
+  if (items.length === 0) {
+    return null
+  }
+  const fields = readStructFields(items[0], `${fieldName}[0]`)
+  return {
+    assetName: readString(fields.asset_name, `${fieldName}.asset_name`),
+    versionIndex: readNumber(fields.version_index, `${fieldName}.version_index`),
+    downloadPolicy: readSoulDownloadPolicy(fields.download_policy, `${fieldName}.download_policy`),
+  }
+}
+
+function readUtf8StringFromBytes(value: unknown, fieldName: string): string | null {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (Array.isArray(value)) {
+    if (value.every((item) => Number.isInteger(item) && item >= 0 && item <= 255)) {
+      return new TextDecoder().decode(Uint8Array.from(value as number[]))
+    }
+    if (value.length === 1) {
+      return readUtf8StringFromBytes(value[0], fieldName)
+    }
+    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+  }
+
+  const record = asRecord(value)
+  if (!record) {
+    return null
+  }
+  if (Array.isArray(record.vec)) {
+    return readUtf8StringFromBytes(record.vec, fieldName)
+  }
+  if (Array.isArray(record.contents)) {
+    return readUtf8StringFromBytes(record.contents, fieldName)
+  }
+  if (record.value != null) {
+    return readUtf8StringFromBytes(record.value, fieldName)
+  }
+  if (record.fields != null) {
+    return readUtf8StringFromBytes(record.fields, fieldName)
+  }
+  if (typeof record.bytes === 'string') {
+    return record.bytes
+  }
+  return null
 }
 
 export async function getSoulObject(objectId: string, packageId: string): Promise<SoulObject> {
@@ -539,7 +597,6 @@ export async function getSoulObject(objectId: string, packageId: string): Promis
     name: readString(fields.name, 'Soul name'),
     description: readString(fields.description, 'Soul description'),
     imageUrl: readString(fields.image_url, 'Soul image_url'),
-    metadataRef: readOptionalString(fields.metadata_ref, 'Soul metadata_ref'),
     protectedBlobId: readWalrusBlobId(fields.protected_blob, 'Soul protected_blob'),
     protectedBlobObjectId: readNestedObjectId(fields.protected_blob, 'Soul protected_blob') ?? objectId,
     provenanceKind: readSoulProvenanceKind(fields.provenance_kind, 'Soul provenance_kind'),
@@ -581,10 +638,71 @@ export async function getSoulStateObject(objectId: string, packageId: string): P
     activeGrantCount: activeGrants.length,
     activeGrants,
     memoryId: readNestedObjectId(fields.memory_id, 'SoulState memory_id'),
+    metadataId: readNestedObjectId(fields.metadata_id, 'SoulState metadata_id'),
     skillsId: readNestedObjectId(fields.skills_id, 'SoulState skills_id'),
     assetsId: readNestedObjectId(fields.assets_id, 'SoulState assets_id'),
     accessListId: readNestedObjectId(fields.access_list_id, 'SoulState access_list_id'),
     collectionId: readOptionalString(fields.collection_id, 'SoulState collection_id'),
+  }
+}
+
+const MOVE_STRING_TYPE = '0x1::string::String'
+const SPRITE_CONFIG_METADATA_KEY = 'sprite.config.v1'
+const SPRITE_MOOD_MAP_METADATA_KEY = 'sprite.mood_map.v1'
+const VOICE_CONFIG_METADATA_KEY = 'voice.config.v1'
+
+async function getOptionalMetadataBlobValue(parentId: string, key: string): Promise<string | null> {
+  try {
+    const response = await suiClient.getDynamicFieldObject({
+      parentId,
+      name: {
+        type: MOVE_STRING_TYPE,
+        value: key,
+      },
+    })
+    const content = response.data?.content
+    const fields = content && 'fields' in content ? (content.fields as unknown) : null
+    const record = asRecord(fields)
+    const rawValue = record?.value ?? record?.fields ?? fields
+    return readUtf8StringFromBytes(rawValue, `SoulMetadata ext ${key}`)
+  } catch (error) {
+    if (isDynamicFieldNotFound(error)) {
+      return null
+    }
+    throw error
+  }
+}
+
+export async function getSoulMetadataObject(objectId: string, packageId: string): Promise<SoulMetadataObject> {
+  const response = await suiClient.getObject({
+    id: objectId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = `${normalizePackageId(packageId)}::metadata::SoulMetadata`
+  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
+  const extTableId =
+    readNestedObjectId(fields.ext, 'SoulMetadata ext')
+    ?? readObjectId(fields.ext, 'SoulMetadata ext')
+
+  const [spriteConfigJson, spriteMoodMapJson, voiceConfigJson] = await Promise.all([
+    getOptionalMetadataBlobValue(extTableId, SPRITE_CONFIG_METADATA_KEY),
+    getOptionalMetadataBlobValue(extTableId, SPRITE_MOOD_MAP_METADATA_KEY),
+    getOptionalMetadataBlobValue(extTableId, VOICE_CONFIG_METADATA_KEY),
+  ])
+
+  return {
+    objectId,
+    packageId: resolvedPackageId,
+    soulId: readObjectId(fields.soul_id, 'SoulMetadata soul_id'),
+    activeSprite: readOptionalMetadataBinding(fields.active_sprite, 'SoulMetadata active_sprite'),
+    activeVoice: readOptionalMetadataBinding(fields.active_voice, 'SoulMetadata active_voice'),
+    extTableId,
+    spriteConfigJson,
+    spriteMoodMapJson,
+    voiceConfigJson,
   }
 }
 

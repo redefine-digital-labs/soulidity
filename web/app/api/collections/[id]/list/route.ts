@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { extractCollectionListedEvent, extractCollectionListingCancelledEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { syncCollectionProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'

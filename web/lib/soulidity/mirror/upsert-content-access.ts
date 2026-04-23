@@ -1,4 +1,4 @@
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import { toProjectionBigInt } from '@/lib/soulidity/projection-scalars'
 
 export async function upsertContentAccessProjection(params: {
@@ -9,6 +9,7 @@ export async function upsertContentAccessProjection(params: {
   pricePaidAtomic: number | bigint
   grantedAtMs: number | bigint
   expiresAtMs?: number | bigint | null
+  ownershipEpochSnapshot: number
 }) {
   return prisma.contentAccessRecord.upsert({
     where: {
@@ -22,6 +23,7 @@ export async function upsertContentAccessProjection(params: {
       pricePaidAtomic: toProjectionBigInt(params.pricePaidAtomic, 'ContentAccess pricePaidAtomic'),
       grantedAtMs: toProjectionBigInt(params.grantedAtMs, 'ContentAccess grantedAtMs'),
       expiresAtMs: params.expiresAtMs != null ? toProjectionBigInt(params.expiresAtMs, 'ContentAccess expiresAtMs') : null,
+      ownershipEpochSnapshot: params.ownershipEpochSnapshot,
       revokedAt: null,
     },
     create: {
@@ -32,6 +34,7 @@ export async function upsertContentAccessProjection(params: {
       pricePaidAtomic: toProjectionBigInt(params.pricePaidAtomic, 'ContentAccess pricePaidAtomic'),
       grantedAtMs: toProjectionBigInt(params.grantedAtMs, 'ContentAccess grantedAtMs'),
       expiresAtMs: params.expiresAtMs != null ? toProjectionBigInt(params.expiresAtMs, 'ContentAccess expiresAtMs') : null,
+      ownershipEpochSnapshot: params.ownershipEpochSnapshot,
     },
   })
 }

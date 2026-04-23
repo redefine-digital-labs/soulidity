@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { requireIdentity } from '@web/lib/auth/identity'
+import { prisma } from '@/lib/prisma'
+import { requireIdentity } from '@/lib/auth/identity'
 import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@/lib/soulidity/repository'
 
 export const dynamic = 'force-dynamic'

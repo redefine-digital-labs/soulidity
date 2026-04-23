@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { requireIdentity, resolveIdentity } from '@web/lib/auth/identity'
-import { evaluateAchievements } from '@web/lib/community/achievements'
-import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { requireIdentity, resolveIdentity } from '@/lib/auth/identity'
+import { evaluateAchievements } from '@/lib/community/achievements'
+import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@/lib/rate-limit'
 import { normalizeCommunityTags, parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'

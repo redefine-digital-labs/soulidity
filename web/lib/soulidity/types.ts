@@ -1,13 +1,22 @@
-import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
+import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 
 export type SoulListingStatus = 'held' | 'listed' | 'floor-violation'
 export type SoulGrantStatus = 'active' | 'revoked' | 'expired' | 'superseded' | 'invalidated'
 export type SoulGrantScope = 'seal' | 'memory' | 'skills' | 'assets'
 export type SoulAccessKind = 'owner' | 'granted-agent'
-export type SkillAccessKind = 'owner' | 'granted-agent'
+export type SkillAccessKind = 'owner' | 'granted-agent' | 'allowlisted'
+export type AssetAccessKind = 'owner' | 'granted-agent' | 'allowlisted'
 export type SoulWriterKind = 'founder' | 'owner' | 'granted-agent'
 export type SoulProvenanceKind = 'native' | 'imported' | 'personal-join'
 export type SoulSkillVisibility = 'public' | 'private'
+export type SoulAssetVisibility = 'public' | 'private'
+export type SoulDownloadPolicy = 'public' | 'owner_only' | 'allowlist'
+
+export interface SoulMetadataBindingRecord {
+  assetName: string
+  versionIndex: number
+  downloadPolicy: SoulDownloadPolicy
+}
 
 export interface SoulidityMarketConfig {
   objectId: string
@@ -24,7 +33,6 @@ export interface SoulObject {
   name: string
   description: string
   imageUrl: string
-  metadataRef: string | null
   protectedBlobId: string | null
   protectedBlobObjectId: string
   provenanceKind: SoulProvenanceKind
@@ -52,10 +60,23 @@ export interface SoulStateObject {
   activeGrantCount: number
   activeGrants: ActiveGrantSlotObject[]
   memoryId?: string | null
+  metadataId: string | null
   skillsId: string | null
   assetsId: string | null
   accessListId: string | null
   collectionId: string | null
+}
+
+export interface SoulMetadataObject {
+  objectId: string
+  packageId: string
+  soulId: string
+  activeSprite: SoulMetadataBindingRecord | null
+  activeVoice: SoulMetadataBindingRecord | null
+  extTableId: string
+  spriteConfigJson: string | null
+  spriteMoodMapJson: string | null
+  voiceConfigJson: string | null
 }
 
 export interface SoulListingObject {
@@ -191,7 +212,16 @@ export interface SoulAssetSummary {
   name: string
   description: string
   imageUrl: string
-  metadataRef: string | null
+  metadataOnChainId: string | null
+  activeSpriteAssetName: string | null
+  activeSpriteVersionIndex: number | null
+  activeSpriteDownloadPolicy: SoulDownloadPolicy | null
+  activeVoiceAssetName: string | null
+  activeVoiceVersionIndex: number | null
+  activeVoiceDownloadPolicy: SoulDownloadPolicy | null
+  spriteConfigJson: string | null
+  spriteMoodMapJson: string | null
+  voiceConfigJson: string | null
   contentBlobId: string | null
   contentBlobObjectId: string
   provenanceKind: SoulProvenanceKind
@@ -262,6 +292,27 @@ export interface SoulSkillVersionRecord {
   createdAtMs: number
   createdAt: string
   updatedAt: string
+}
+
+export interface SoulAssetVersionRecord {
+  id: string
+  soulOnChainId: string
+  assetsOnChainId: string
+  assetName: string
+  versionIndex: number
+  visibility: SoulAssetVisibility
+  assetType: AssetType
+  deletedAt: string | null
+  blobObjectId: string
+  blobId: string | null
+  sealSidecar: SealEnvelopeSidecar | null
+  createdAtMs: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SoulAssetVersionsResponse {
+  assets: SoulAssetVersionRecord[]
 }
 
 export interface SoulCollectionAssetSummary {
@@ -415,9 +466,13 @@ export type SkillAccessResponse =
         skillsObjectId: string
         skillName: string
         versionIndex: number
-        moduleName: 'skills'
-        functionName: 'seal_approve_private_read_owner' | 'seal_approve_private_read_granted_agent'
+        moduleName: 'skills' | 'content_access'
+        functionName:
+          | 'seal_approve_private_read_owner'
+          | 'seal_approve_private_read_granted_agent'
+          | 'seal_approve_skill_allowlisted'
         soulGrantObjectId: string | null
+        accessListOnChainId?: string
         documentIdHex: string
       }
       seal: {
@@ -433,6 +488,53 @@ export type SkillAccessResponse =
       sealSidecar: SealEnvelopeSidecar
       viewerAddress: string
       accessKind: SkillAccessKind
+      sessionTtlMin: number
+    }
+
+export type AssetAccessResponse =
+  | {
+      visibility: 'public'
+      artifact: {
+        walrusBlobUrl: string | null
+        walrusBlobId: string | null
+        blobObjectId: string
+      }
+    }
+  | {
+      visibility: 'private'
+      artifact: {
+        walrusBlobUrl: string | null
+        walrusBlobId: string | null
+        blobObjectId: string
+      }
+      accessPolicy: {
+        packageId: string
+        stateObjectId: string
+        assetsObjectId: string
+        assetName: string
+        versionIndex: number
+        moduleName: 'assets' | 'content_access'
+        functionName:
+          | 'seal_approve_asset_read_owner'
+          | 'seal_approve_asset_read_granted_agent'
+          | 'seal_approve_asset_allowlisted'
+        soulGrantObjectId: string | null
+        accessListOnChainId?: string
+        documentIdHex: string
+      }
+      seal: {
+        network: 'testnet' | 'mainnet'
+        threshold: number
+        verifyKeyServers: boolean
+        serverConfigs: Array<{
+          objectId: string
+          weight: number
+          aggregatorUrl?: string
+        }>
+      }
+      sealSidecar: SealEnvelopeSidecar
+      viewerAddress: string
+      accessKind: AssetAccessKind
       sessionTtlMin: number
     }
 

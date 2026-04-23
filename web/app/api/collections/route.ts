@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken, getAnonymousRateLimitFingerprint, getRequestIp } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken, getAnonymousRateLimitFingerprint, getRequestIp } from '@/lib/rate-limit'
 import {
   soulCollectionSummarySelect,
   toSoulCollectionSummaryList,

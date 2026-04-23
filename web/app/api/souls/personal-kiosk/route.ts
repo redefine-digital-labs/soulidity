@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@/lib/soulidity/personal-kiosk'
 import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 

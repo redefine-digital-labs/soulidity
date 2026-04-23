@@ -1,6 +1,6 @@
 import { SealClient, SessionKey } from '@mysten/seal'
 import { Transaction } from '@mysten/sui/transactions'
-import { generateSkillDocumentIdForVersion } from '@web/lib/services/seal-crypto'
+import { generateSkillDocumentIdForVersion } from '@/lib/services/seal-crypto'
 import type { SkillAccessResponse } from '@/lib/soulidity/types'
 
 const AES_GCM_ALGORITHM = 'AES-GCM'
@@ -122,12 +122,14 @@ function parseSkillAccessResponse(payload: unknown): SkillAccessResponse {
     && typeof payload.accessPolicy.skillsObjectId === 'string'
     && typeof payload.accessPolicy.skillName === 'string'
     && typeof payload.accessPolicy.versionIndex === 'number'
-    && payload.accessPolicy.moduleName === 'skills'
+    && (payload.accessPolicy.moduleName === 'skills' || payload.accessPolicy.moduleName === 'content_access')
     && (
       payload.accessPolicy.functionName === 'seal_approve_private_read_owner'
       || payload.accessPolicy.functionName === 'seal_approve_private_read_granted_agent'
+      || payload.accessPolicy.functionName === 'seal_approve_skill_allowlisted'
     )
     && isNullableString(payload.accessPolicy.soulGrantObjectId)
+    && (payload.accessPolicy.accessListOnChainId == null || typeof payload.accessPolicy.accessListOnChainId === 'string')
     && typeof payload.accessPolicy.documentIdHex === 'string'
     && (payload.seal.network === 'testnet' || payload.seal.network === 'mainnet')
     && typeof payload.seal.threshold === 'number'
@@ -140,7 +142,11 @@ function parseSkillAccessResponse(payload: unknown): SkillAccessResponse {
     && typeof payload.sealSidecar.mimeType === 'string'
     && typeof payload.sealSidecar.contentHash === 'string'
     && typeof payload.viewerAddress === 'string'
-    && (payload.accessKind === 'owner' || payload.accessKind === 'granted-agent')
+    && (
+      payload.accessKind === 'owner'
+      || payload.accessKind === 'granted-agent'
+      || payload.accessKind === 'allowlisted'
+    )
     && typeof payload.sessionTtlMin === 'number'
   ) {
     return payload as SkillAccessResponse
@@ -169,26 +175,46 @@ async function buildSkillApprovalTxBytes(params: {
 
   const tx = new Transaction()
   tx.setSender(params.access.viewerAddress)
+  const documentIdBytes = tx.pure.vector(
+    'u8',
+    Array.from(hexToBytes(params.access.accessPolicy.documentIdHex)),
+  )
+
+  let argumentsList = [
+    documentIdBytes,
+    tx.object(params.access.accessPolicy.stateObjectId),
+  ]
+
+  if (params.access.accessPolicy.moduleName === 'content_access') {
+    argumentsList = [
+      ...argumentsList,
+      tx.object(params.access.accessPolicy.accessListOnChainId!),
+    ]
+  }
+
+  argumentsList = [
+    ...argumentsList,
+    tx.object(params.access.accessPolicy.skillsObjectId),
+    tx.pure.string(params.access.accessPolicy.skillName),
+    tx.pure.u64(params.access.accessPolicy.versionIndex),
+  ]
+
+  if (params.access.accessPolicy.functionName === 'seal_approve_private_read_granted_agent') {
+    argumentsList = [
+      ...argumentsList,
+      tx.object(params.access.accessPolicy.soulGrantObjectId!),
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ]
+  } else if (params.access.accessPolicy.functionName === 'seal_approve_skill_allowlisted') {
+    argumentsList = [
+      ...argumentsList,
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ]
+  }
+
   tx.moveCall({
-    target: `${params.access.accessPolicy.packageId}::skills::${params.access.accessPolicy.functionName}`,
-    arguments:
-      params.access.accessPolicy.functionName === 'seal_approve_private_read_granted_agent'
-        ? [
-            tx.pure.vector('u8', Array.from(hexToBytes(params.access.accessPolicy.documentIdHex))),
-            tx.object(params.access.accessPolicy.stateObjectId),
-            tx.object(params.access.accessPolicy.skillsObjectId),
-            tx.pure.string(params.access.accessPolicy.skillName),
-            tx.pure.u64(params.access.accessPolicy.versionIndex),
-            tx.object(params.access.accessPolicy.soulGrantObjectId!),
-            tx.object(SUI_CLOCK_OBJECT_ID),
-          ]
-        : [
-            tx.pure.vector('u8', Array.from(hexToBytes(params.access.accessPolicy.documentIdHex))),
-            tx.object(params.access.accessPolicy.stateObjectId),
-            tx.object(params.access.accessPolicy.skillsObjectId),
-            tx.pure.string(params.access.accessPolicy.skillName),
-            tx.pure.u64(params.access.accessPolicy.versionIndex),
-          ],
+    target: `${params.access.accessPolicy.packageId}::${params.access.accessPolicy.moduleName}::${params.access.accessPolicy.functionName}`,
+    arguments: argumentsList,
   })
 
   // Seal key servers expect BCS-encoded TransactionKind bytes for approval PTBs.

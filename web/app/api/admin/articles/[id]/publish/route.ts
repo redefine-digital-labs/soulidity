@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import { Bot } from 'grammy'
-import { formatArticle } from '@web/lib/formatter'
+import { formatArticle } from '@/lib/formatter'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { syncArticleToPost } from '@shared/sync-article-post'
 

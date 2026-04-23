@@ -1,4 +1,4 @@
-import { materializeWalrusBlobUrls } from '@web/lib/services/walrus'
+import { materializeWalrusBlobUrls } from '@/lib/services/walrus'
 
 type SoulWithPreviewImages = {
   previewImages: string[]

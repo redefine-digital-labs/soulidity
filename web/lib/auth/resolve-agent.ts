@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 
 export interface AgentIdentity {
   agentMemberId: string

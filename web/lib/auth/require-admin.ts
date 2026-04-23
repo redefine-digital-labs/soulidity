@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireIdentity } from '@web/lib/auth/identity'
+import { requireIdentity } from '@/lib/auth/identity'
 
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '')
   .split(',')
@@ -16,7 +16,7 @@ export async function requireAdmin(): Promise<
   }
   const { identity } = result
 
-  const { prisma } = await import('@web/lib/prisma')
+  const { prisma } = await import('@/lib/prisma')
   const account = await prisma.account.findUnique({
     where: { id: identity.accountId },
     select: { email: true },

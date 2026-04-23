@@ -1,5 +1,5 @@
-import { getBlobUrl } from '@web/lib/services/walrus'
-import { getSealRuntimeConfig, getSealSessionTtlMinutes } from '@web/lib/services/seal'
+import { getBlobUrl } from '@/lib/services/walrus'
+import { getSealRuntimeConfig, getSealSessionTtlMinutes } from '@/lib/services/seal'
 import type { SoulAccessResponse } from '@/lib/soulidity/types'
 import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { requireIdentity } from '@web/lib/auth/identity'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
-import { prisma } from '@web/lib/prisma'
+import { requireIdentity } from '@/lib/auth/identity'
+import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
+import { prisma } from '@/lib/prisma'
 import {
   soulAssetSummarySelect,
   soulCollectionSummarySelect,

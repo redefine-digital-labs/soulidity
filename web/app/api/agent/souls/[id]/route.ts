@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 import { quoteSoulPurchase } from '@/lib/soulidity/queries'

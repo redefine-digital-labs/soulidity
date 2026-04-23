@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
-import { resolveIdentity } from '@web/lib/auth/identity'
-import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { isMultipleSuiWalletBindingsError } from '@/lib/auth/sui-wallet-errors'
+import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
+import { resolveIdentity } from '@/lib/auth/identity'
+import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   OnChainVerificationError,
