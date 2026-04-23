@@ -313,13 +313,16 @@ export function AgentTab(): React.JSX.Element {
                 <div className="agent-detail-card">
                   <div className="agent-detail-card__title">Recent Tools</div>
                   {currentSession.toolHistory.length === 0 && <p className="agent-empty">No tool activity yet</p>}
-                  {currentSession.toolHistory.slice().reverse().map((entry, index) => (
-                    <div key={`${entry.tool}-${entry.timestamp}-${index}`} className="agent-timeline-row">
-                      <strong>{entry.tool}</strong>
-                      <span>{entry.description || 'No details'}</span>
-                      <small>{formatTime(entry.timestamp)}</small>
-                    </div>
-                  ))}
+                  {currentSession.toolHistory.slice().reverse().map((entry, index) => {
+                    const description = entry.description || 'No details'
+                    return (
+                      <div key={`${entry.tool}-${entry.timestamp}-${index}`} className="agent-timeline-row">
+                        <strong>{entry.tool}</strong>
+                        <span className="agent-timeline-row__text" title={description}>{description}</span>
+                        <small>{formatTime(entry.timestamp)}</small>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 <div className="agent-detail-card">
@@ -328,7 +331,7 @@ export function AgentTab(): React.JSX.Element {
                   {currentSession.recentMessages.slice().reverse().map((message, index) => (
                     <div key={`${message.role}-${message.timestamp}-${index}`} className="agent-message-row">
                       <strong>{message.role}</strong>
-                      <span>{message.text}</span>
+                      <span className="agent-message-row__text" title={message.text}>{message.text}</span>
                       <small>{formatTime(message.timestamp)}</small>
                     </div>
                   ))}
@@ -338,13 +341,16 @@ export function AgentTab(): React.JSX.Element {
               {recentSessions.length > 0 && (
                 <div className="agent-detail-card">
                   <div className="agent-detail-card__title">Recent Sessions</div>
-                  {recentSessions.slice(0, 5).map((session) => (
-                    <div key={session.sessionId} className="agent-timeline-row">
-                      <strong>{formatSourceLabel(session.source)}</strong>
-                      <span>{session.sessionTitle || session.sessionId}</span>
-                      <small>{formatDuration(session.startedAt, session.endedAt)}</small>
-                    </div>
-                  ))}
+                  {recentSessions.slice(0, 5).map((session) => {
+                    const summary = session.sessionTitle || session.sessionId
+                    return (
+                      <div key={session.sessionId} className="agent-timeline-row">
+                        <strong>{formatSourceLabel(session.source)}</strong>
+                        <span className="agent-timeline-row__text" title={summary}>{summary}</span>
+                        <small>{formatDuration(session.startedAt, session.endedAt)}</small>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </>

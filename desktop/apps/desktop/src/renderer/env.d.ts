@@ -2,12 +2,15 @@ export {}
 
 import type {
   AgentRuntimeSnapshot,
+  CreateLocalExtractDraftInput,
   HookInstallStatus,
   ExtractSoulDraft,
+  ImportOpenClawDraftInput,
+  LocalExtractAgentStatus,
+  OpenClawImportStatus,
   PetAgentEvent,
   PetUpdateStatus,
   SessionScanResult,
-  SoulProfile,
   ScanProgress,
   SupportedAgentSource,
   TaskWriteApprovalResult,
@@ -75,7 +78,13 @@ declare global {
       // ── Desktop auth ──
       getDesktopAuthStatus: () => Promise<{ hasToken: boolean; accountId: string | null }>
       unlinkDesktopDevice: () => Promise<{ ok: true } | { ok: false; error: string }>
-      getDesktopRuntimeConfig: () => Promise<{ privyAppId: string | null; suiNetwork: string }>
+      getDesktopRuntimeConfig: () => Promise<{
+        privyAppId: string | null
+        suiNetwork: string
+        webBaseUrl: string
+        authReady: boolean
+        authBlocker: string | null
+      }>
       getDesktopMe: () => Promise<unknown>
       getDesktopPrivyToken: () => Promise<{ jwt: string; alreadyLinked: boolean }>
 
@@ -83,6 +92,7 @@ declare global {
       'desktop:create-draft:load': () => Promise<ExtractSoulDraft | null>
       'desktop:create-draft:save': (draft: ExtractSoulDraft) => Promise<void>
       'desktop:create-draft:clear': () => Promise<void>
+      'desktop:create-draft:pick-cover-image': () => Promise<{ dataUrl: string; fileName: string; mimeType: string } | null>
 
       // ── Desktop create + mint ──
       'desktop:create:upload': (params: {
@@ -97,16 +107,29 @@ declare global {
 
       // ── Soul download + active persona ──
       soulDownload: (params: { catalogId: string }) => Promise<{ catalogId: string; spriteId: string } | { error: string }>
+      soulFetchManifest: (params: { catalogId: string; viewer?: string | null }) => Promise<unknown>
+      soulCachePersona: (params: {
+        catalogId: string
+        sourceType: 'starter' | 'soul'
+        sourceRef: string
+        version: string
+        spriteBytes: Uint8Array
+        configJson: string
+      }) => Promise<{ catalogId: string; spriteId: string }>
       onDownloadProgress: (callback: (progress: unknown) => void) => () => void
-      soulSetActive: (params: { catalogId: string } | null) => Promise<void>
+      soulSetActive: (params: { catalogId: string; sourceType: string; sourceRef: string } | null) => Promise<void>
       soulGetActive: () => Promise<{ catalogId?: string; spriteConfig?: unknown } | null>
       onPersonaChanged: (callback: (data: unknown) => void) => () => void
       soulFetchCatalog: (params: { page: number; pageSize: number }) => Promise<unknown>
       soulGetMySouls: () => Promise<unknown[]>
 
-      // ── Session extraction + profile analysis ──
+      // ── Session extraction + local create ──
       'extraction:scan-sessions': () => Promise<SessionScanResult[]>
-      'extraction:analyze-profile': (results: SessionScanResult[]) => Promise<SoulProfile>
+      'extraction:get-openclaw-import-status': () => Promise<OpenClawImportStatus>
+      'extraction:get-local-agent-statuses': () => Promise<LocalExtractAgentStatus[]>
+      'extraction:import-openclaw-draft': (input: ImportOpenClawDraftInput) => Promise<ExtractSoulDraft>
+      'extraction:create-local-draft': (input: CreateLocalExtractDraftInput) => Promise<ExtractSoulDraft>
+      'extraction:open-web-create': () => Promise<void>
       'extraction:scan-progress': (callback: (progress: ScanProgress) => void) => () => void
 
       // ── Shell ──

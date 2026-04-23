@@ -8,6 +8,8 @@ SOURCE=""
 EVENT=""
 BLOCKING_TIMEOUT="${SOULIDITY_BLOCKING_TIMEOUT:-86400}"
 
+[ "${SOULIDITY_DISABLE_HOOK_BRIDGE:-}" = "1" ] && exit 0
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)

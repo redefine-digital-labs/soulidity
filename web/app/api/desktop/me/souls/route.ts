@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import { listDesktopCatalogItemsBySourceRefs } from '@/lib/desktop/repository'
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +26,7 @@ export async function GET(request: Request) {
   const ownedSouls = await prisma.soulAsset.findMany({
     where: { currentOwnerMemberId: member.id },
     select: { onChainId: true },
+    orderBy: { createdAt: 'desc' },
   })
 
   if (ownedSouls.length === 0) {

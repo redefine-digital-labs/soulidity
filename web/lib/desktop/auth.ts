@@ -2,8 +2,8 @@ import { createHash, createHmac, randomBytes } from 'node:crypto'
 
 import { NextResponse } from 'next/server'
 
-import { prisma } from '@web/lib/prisma'
-import { resolveIdentity, type Identity } from '@web/lib/auth/identity'
+import { prisma } from '@/lib/prisma'
+import { resolveIdentity, type Identity } from '@/lib/auth/identity'
 
 const TOKEN_PREFIX = 'dtk_'
 const TOKEN_RANDOM_BYTES = 32

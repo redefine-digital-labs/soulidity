@@ -1,12 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AgentRuntimeSnapshot,
+  CreateLocalExtractDraftInput,
   HookInstallStatus,
   ExtractSoulDraft,
+  ImportOpenClawDraftInput,
+  LocalExtractAgentStatus,
+  OpenClawImportStatus,
   PetAgentEvent,
   PetUpdateStatus,
   SessionScanResult,
-  SoulProfile,
   ScanProgress,
   SupportedAgentSource,
   TaskWriteApprovalResult,
@@ -109,7 +112,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('desktop-auth:status'),
   unlinkDesktopDevice: (): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('desktop-auth:unlink'),
-  getDesktopRuntimeConfig: (): Promise<{ privyAppId: string | null; suiNetwork: string }> =>
+  getDesktopRuntimeConfig: (): Promise<{
+    privyAppId: string | null
+    suiNetwork: string
+    webBaseUrl: string
+    authReady: boolean
+    authBlocker: string | null
+  }> =>
     ipcRenderer.invoke('desktop-auth:runtime-config'),
   getDesktopMe: (): Promise<unknown> =>
     ipcRenderer.invoke('desktop-auth:me'),
@@ -123,6 +132,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('desktop:create-draft:save', draft),
   'desktop:create-draft:clear': (): Promise<void> =>
     ipcRenderer.invoke('desktop:create-draft:clear'),
+  'desktop:create-draft:pick-cover-image': (): Promise<{ dataUrl: string; fileName: string; mimeType: string } | null> =>
+    ipcRenderer.invoke('desktop:create-draft:pick-cover-image'),
 
   // ── Desktop create + mint ──
   'desktop:create:upload': (params: {
@@ -140,6 +151,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Soul download + active persona ──
   soulDownload: (params: { catalogId: string }): Promise<{ catalogId: string; spriteId: string } | { error: string }> =>
     ipcRenderer.invoke('soul:download', params),
+  soulFetchManifest: (params: { catalogId: string; viewer?: string | null }): Promise<unknown> =>
+    ipcRenderer.invoke('soul:fetch-manifest', params),
+  soulCachePersona: (params: {
+    catalogId: string
+    sourceType: 'starter' | 'soul'
+    sourceRef: string
+    version: string
+    spriteBytes: Uint8Array
+    configJson: string
+  }): Promise<{ catalogId: string; spriteId: string }> =>
+    ipcRenderer.invoke('soul:cache-persona', params),
   onDownloadProgress: (callback: (progress: unknown) => void): (() => void) => {
     const listener = (_event: unknown, progress: unknown) => callback(progress)
     ipcRenderer.on('soul:download-progress', listener)
@@ -159,11 +181,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   soulGetMySouls: (): Promise<unknown[]> =>
     ipcRenderer.invoke('soul:get-my-souls'),
 
-  // ── Session extraction + profile analysis ──
+  // ── Session extraction + local create ──
   'extraction:scan-sessions': (): Promise<SessionScanResult[]> =>
     ipcRenderer.invoke('extraction:scan-sessions'),
-  'extraction:analyze-profile': (results: SessionScanResult[]): Promise<SoulProfile> =>
-    ipcRenderer.invoke('extraction:analyze-profile', results),
+  'extraction:get-openclaw-import-status': (): Promise<OpenClawImportStatus> =>
+    ipcRenderer.invoke('extraction:get-openclaw-import-status'),
+  'extraction:get-local-agent-statuses': (): Promise<LocalExtractAgentStatus[]> =>
+    ipcRenderer.invoke('extraction:get-local-agent-statuses'),
+  'extraction:import-openclaw-draft': (input: ImportOpenClawDraftInput): Promise<ExtractSoulDraft> =>
+    ipcRenderer.invoke('extraction:import-openclaw-draft', input),
+  'extraction:create-local-draft': (input: CreateLocalExtractDraftInput): Promise<ExtractSoulDraft> =>
+    ipcRenderer.invoke('extraction:create-local-draft', input),
+  'extraction:open-web-create': (): Promise<void> =>
+    ipcRenderer.invoke('extraction:open-web-create'),
   'extraction:scan-progress': (callback: (progress: ScanProgress) => void): (() => void) => {
     const listener = (_event: unknown, progress: ScanProgress) => callback(progress)
     ipcRenderer.on('extraction:scan-progress', listener)

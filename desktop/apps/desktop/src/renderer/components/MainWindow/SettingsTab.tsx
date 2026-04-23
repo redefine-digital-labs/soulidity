@@ -2,8 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 
 interface AgentKeypairInfo {
   address: string
-  publicKey: string
-  createdAt: number
 }
 
 const LINK_VERIFICATION_FAILED_MESSAGE = 'Saved desktop link could not be verified. Unlink this device and link again.'
@@ -41,7 +39,6 @@ function getRestoredIdentity(value: unknown): RestoredIdentity | null {
 export function SettingsTab(): React.JSX.Element {
   const [keypair, setKeypair] = useState<AgentKeypairInfo | null>(null)
   const [copied, setCopied] = useState(false)
-  const [storageStatus, setStorageStatus] = useState<string>('...')
   const [linkState, setLinkState] = useState<LinkState>({ phase: 'restoring' })
   const [unlinking, setUnlinking] = useState(false)
   const [enhancedMotion, setEnhancedMotion] = useState(false)
@@ -94,9 +91,6 @@ export function SettingsTab(): React.JSX.Element {
 
     window.electronAPI.loadAgentKeypair().then((kp) => {
       if (kp) setKeypair(kp as AgentKeypairInfo)
-    })
-    window.electronAPI.getSecretStorageStatus().then((s) => {
-      setStorageStatus(s === 'encrypted' ? 'OS Keychain' : s === 'legacy' ? 'JSON (legacy)' : 'Not found')
     })
     const configPromise = window.electronAPI.getConfig?.()
     configPromise?.then((config) => {
@@ -271,28 +265,6 @@ export function SettingsTab(): React.JSX.Element {
               {copied ? '\u2713' : '\u2398'}
             </button>
           </div>
-        </div>
-
-        {keypair && (
-          <div className="settings-field">
-            <span className="settings-field__label">Created</span>
-            <input
-              type="text"
-              className="settings-field__input"
-              value={new Date(keypair.createdAt).toLocaleDateString()}
-              readOnly
-            />
-          </div>
-        )}
-
-        <div className="settings-field">
-          <span className="settings-field__label">Key Storage</span>
-          <input
-            type="text"
-            className="settings-field__input"
-            value={storageStatus}
-            readOnly
-          />
         </div>
       </section>
 

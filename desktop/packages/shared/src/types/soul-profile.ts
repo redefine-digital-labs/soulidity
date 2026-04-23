@@ -20,6 +20,7 @@ export interface SessionScanResult {
   sessionCount: number
   totalTurns: number
   scanPeriod: { from: number; to: number }  // epoch ms
+  sourceFiles: string[]
   features: SessionFeatures
 }
 

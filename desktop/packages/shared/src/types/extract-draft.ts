@@ -1,4 +1,12 @@
+import type { LocalExtractAgent } from './extract-flow'
 import type { SoulProfile } from './soul-profile'
+
+export interface ExtractDraftCreationSource {
+  kind: 'legacy-profile' | 'openclaw-import' | 'local-agent'
+  label: string
+  agent?: LocalExtractAgent
+  workspacePath?: string | null
+}
 
 export interface ExtractSoulDraftPendingSync {
   txDigest: string
@@ -15,6 +23,7 @@ export interface ExtractSoulDraft {
   createdAt: string
   updatedAt: string
   sourceProfile: SoulProfile
+  creationSource?: ExtractDraftCreationSource
   name: string
   description: string
   tags: string[]
@@ -46,15 +55,24 @@ type RegenerateDraftOptions = {
   nowIso?: string
 }
 
-const DEFAULT_ROYALTY_BPS = 500
-
-function formatList(items: string[]) {
-  if (items.length === 0) {
-    return 'Not enough signal yet.'
-  }
-
-  return items.map((item) => `- ${item}`).join('\n')
+export interface CreateExtractSoulDraftSeed {
+  sourceProfile?: SoulProfile
+  creationSource?: ExtractDraftCreationSource
+  name: string
+  description: string
+  tags: string[]
+  traits: string[]
+  communicationStyle: string
+  expertise: string[]
+  workStyle: string
+  evidence: SoulProfile['evidence']
+  soulMarkdown?: string | null
+  memoryMarkdown?: string | null
+  skillsArchive?: ExtractSoulDraft['skillsArchive']
+  royaltyBps?: number
 }
+
+const DEFAULT_ROYALTY_BPS = 500
 
 function formatPeakHours(hours: number[]) {
   if (hours.length === 0) {
@@ -121,30 +139,38 @@ function buildSoulMarkdown(input: {
   workStyle: string
   evidence: SoulProfile['evidence']
 }) {
+  const primaryAudience = input.expertise.join(', ') || 'the people who rely on it'
+  const primaryTrait = input.traits.join(', ') || 'steady and grounded'
+  const communication = input.communicationStyle || 'direct, calm, and specific'
+  const workStyle = input.workStyle || 'persistent, implementation-first, and clear about tradeoffs'
+
   return [
-    `# ${input.name}`,
+    '# Soul Character',
     '',
-    '## Essence',
-    input.description,
+    '## Core Truths',
+    `- What this Soul is here to do: ${input.description}`,
+    `- Who it serves: ${primaryAudience}`,
+    `- The standard it refuses to compromise: Stay ${primaryTrait} and anchored in real evidence.`,
     '',
-    '## Traits',
-    formatList(input.traits),
+    '## Boundaries',
+    '- Hard constraints: Do not invent signal that is not grounded in the source behavior or workspace files.',
+    '- Topics to avoid: Empty hype, fake certainty, and lore that drifts away from the observed operator.',
+    '- Escalation rules: Surface weak evidence, contradictory signal, or missing context before pretending the profile is settled.',
     '',
-    '## Communication Style',
-    input.communicationStyle || 'Direct and adaptive.',
+    '## Vibe',
+    `- Voice and tone: ${communication}`,
+    `- Social energy: ${primaryTrait}`,
+    `- Default response rhythm: ${workStyle}`,
     '',
-    '## Expertise',
-    formatList(input.expertise),
+    '## Knowledge',
+    `- Native domains: ${input.expertise.join(', ') || 'Still emerging from sparse signal.'}`,
+    `- Sources it trusts: ${input.evidence.topTools.join(', ') || 'Direct observation from the workspace and recent sessions.'}`,
+    `- Knowledge edges to admit clearly: ${input.evidence.primaryLanguages.join(', ') || 'No dominant stack or domain signal yet.'}`,
     '',
-    '## Work Style',
-    input.workStyle || 'Persistent and implementation-first.',
-    '',
-    '## Evidence Snapshot',
-    `- Sessions analyzed: ${input.evidence.sessionCount}`,
-    `- Turns analyzed: ${input.evidence.turnCount}`,
-    `- Frequent tools: ${input.evidence.topTools.join(', ') || 'No dominant tools yet.'}`,
-    `- Primary languages: ${input.evidence.primaryLanguages.join(', ') || 'No language signal yet.'}`,
-    `- Peak hours: ${formatPeakHours(input.evidence.peakHours)}`,
+    '## Continuity',
+    `- Memories worth preserving: ${input.evidence.sessionCount} sessions and ${input.evidence.turnCount} turns of repeated behavior.`,
+    `- What should stay stable across sessions: ${primaryTrait}, ${communication}, and a bias toward concrete execution.`,
+    `- Signals that should trigger a course correction: Tooling shifts (${input.evidence.topTools.join(', ') || 'none yet'}), language shifts (${input.evidence.primaryLanguages.join(', ') || 'none yet'}), or time-pattern drift (${formatPeakHours(input.evidence.peakHours)}).`,
   ].join('\n')
 }
 
@@ -163,21 +189,37 @@ function buildMemoryMarkdown(input: {
     '# Founding Memory',
     '',
     '## Origin Snapshot',
-    `- ${input.name} emerged from ${input.evidence.sessionCount} coding sessions and ${input.evidence.turnCount} turns.`,
-    `- It was distilled as: ${input.description}`,
-    `- Repeated signals suggest a ${traitSummary} operating style.`,
+    `- Where this Soul starts: ${input.name} emerged from ${input.evidence.sessionCount} coding sessions and ${input.evidence.turnCount} turns.`,
+    `- Why it exists now: ${input.description}`,
+    `- The operating context at mint: repeated signal suggests a ${traitSummary} operator with roots in ${expertiseSummary}.`,
     '',
     '## Initial Direction',
-    `- Native domains: ${expertiseSummary}`,
-    `- Working pattern: ${input.workStyle || 'Iterative and concrete.'}`,
-    `- Tooling bias: ${input.evidence.topTools.join(', ') || 'No stable tooling pattern yet.'}`,
-    `- Peak hours to remember: ${formatPeakHours(input.evidence.peakHours)}`,
-    '',
-    '## Constraints To Preserve',
-    '- Stay grounded in observed coding behavior rather than invented lore.',
-    '- Admit uncertainty when the extracted evidence is thin.',
-    '- Prefer concrete implementation steps over abstract persona fluff.',
+    `- Initial mission: ${input.description}`,
+    `- Initial assumptions: native domains include ${expertiseSummary}, and the working pattern is ${input.workStyle || 'iterative and concrete'}.`,
+    `- First constraints to remember: keep faith with ${input.evidence.topTools.join(', ') || 'the observed workspace tools'}, admit uncertainty when signal is thin, and remember the peak rhythm around ${formatPeakHours(input.evidence.peakHours)}.`,
   ].join('\n')
+}
+
+function buildSourceProfile(seed: CreateExtractSoulDraftSeed): SoulProfile {
+  if (seed.sourceProfile) {
+    return seed.sourceProfile
+  }
+
+  return {
+    version: 1,
+    personality: {
+      traits: [...seed.traits],
+      communicationStyle: seed.communicationStyle,
+      expertise: [...seed.expertise],
+      workStyle: seed.workStyle,
+    },
+    evidence: { ...seed.evidence },
+    suggested: {
+      name: seed.name,
+      description: seed.description,
+      tags: [...seed.tags],
+    },
+  }
 }
 
 function applyGeneratedContent(
@@ -218,30 +260,74 @@ export function createExtractSoulDraft(
   profile: SoulProfile,
   options: CreateExtractSoulDraftOptions = {},
 ): ExtractSoulDraft {
-  const nowIso = options.nowIso ?? new Date().toISOString()
-
-  return applyGeneratedContent({
-    version: 1,
-    createdAt: nowIso,
-    updatedAt: nowIso,
+  return createExtractSoulDraftFromSeed({
     sourceProfile: profile,
+    creationSource: {
+      kind: 'legacy-profile',
+      label: 'Extracted from local session signals',
+    },
     name: profile.suggested.name,
     description: profile.suggested.description,
     tags: [...profile.suggested.tags],
-    royaltyBps: DEFAULT_ROYALTY_BPS,
     traits: [...profile.personality.traits],
     communicationStyle: profile.personality.communicationStyle,
     expertise: [...profile.personality.expertise],
     workStyle: profile.personality.workStyle,
     evidence: { ...profile.evidence },
+  }, options)
+}
+
+export function createExtractSoulDraftFromSeed(
+  seed: CreateExtractSoulDraftSeed,
+  options: CreateExtractSoulDraftOptions = {},
+): ExtractSoulDraft {
+  const nowIso = options.nowIso ?? new Date().toISOString()
+  const draft = {
+    version: 1,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    sourceProfile: buildSourceProfile(seed),
+    creationSource: seed.creationSource,
+    name: seed.name,
+    description: seed.description,
+    tags: [...seed.tags],
+    royaltyBps: seed.royaltyBps ?? DEFAULT_ROYALTY_BPS,
+    traits: [...seed.traits],
+    communicationStyle: seed.communicationStyle,
+    expertise: [...seed.expertise],
+    workStyle: seed.workStyle,
+    evidence: { ...seed.evidence },
     coverImageDataUrl: '',
     coverImageFileName: 'extract-cover.svg',
     coverImageMimeType: 'image/svg+xml',
     coverImageGenerated: true,
-    soulMarkdown: '',
-    memoryMarkdown: '',
-    skillsArchive: null,
-  }, { nowIso })
+    soulMarkdown: seed.soulMarkdown?.trim() ?? '',
+    memoryMarkdown: seed.memoryMarkdown?.trim() ?? '',
+    skillsArchive: seed.skillsArchive ?? null,
+  } satisfies ExtractSoulDraft
+
+  if (draft.soulMarkdown && draft.memoryMarkdown) {
+    return refreshExtractSoulDraftCover(draft, { nowIso })
+  }
+
+  return applyGeneratedContent(draft, { nowIso })
+}
+
+export function refreshExtractSoulDraftCover(
+  draft: ExtractSoulDraft,
+  options: RegenerateDraftOptions = {},
+): ExtractSoulDraft {
+  const updatedAt = options.nowIso ?? new Date().toISOString()
+
+  return {
+    ...draft,
+    updatedAt,
+    coverImageDataUrl: draft.coverImageGenerated
+      ? buildCoverImageDataUrl(draft.name, draft.tags)
+      : draft.coverImageDataUrl,
+    coverImageFileName: draft.coverImageGenerated ? 'extract-cover.svg' : draft.coverImageFileName,
+    coverImageMimeType: draft.coverImageGenerated ? 'image/svg+xml' : draft.coverImageMimeType,
+  }
 }
 
 export function regenerateExtractSoulDraftContent(

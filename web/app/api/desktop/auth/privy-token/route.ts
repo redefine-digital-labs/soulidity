@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireDesktopIdentity } from '@web/lib/desktop/auth'
+import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import {
   createDesktopPrivyCustomAuthToken,
   getDesktopPrivyCustomAuthState,

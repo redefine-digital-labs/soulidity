@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@db/prisma-client'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 import { generateDesktopAccessTokenForDeviceSession } from '@/lib/desktop/auth'

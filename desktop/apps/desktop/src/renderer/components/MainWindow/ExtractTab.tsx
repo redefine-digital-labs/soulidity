@@ -5,15 +5,18 @@ import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { PrivyProvider as BasePrivyProvider, useCustomAuth, usePrivy } from '@privy-io/react-auth'
 import type {
+  CreateLocalExtractDraftInput,
   ExtractSoulDraft,
   ExtractSoulDraftPendingSync,
+  ImportOpenClawDraftInput,
+  LocalExtractAgent,
+  LocalExtractAgentStatus,
+  OpenClawImportStatus,
   SessionScanResult,
   ScanProgress,
-  SoulProfile,
 } from '@soulidity/shared'
 import {
-  createExtractSoulDraft,
-  regenerateExtractSoulDraftContent,
+  refreshExtractSoulDraftCover,
 } from '@soulidity/shared'
 import { assertObjectInputsExist } from '../../lib/soulidity/object-inputs'
 import { buildPublishSoulTx } from '../../lib/soulidity/tx/publish'
@@ -36,6 +39,9 @@ type DesktopMeResponse = {
 type RuntimeConfig = {
   privyAppId: string | null
   suiNetwork: string
+  webBaseUrl: string
+  authReady: boolean
+  authBlocker: string | null
 }
 
 type PersonalKioskResponse = {
@@ -88,6 +94,216 @@ function getOptionalElectronMethod<T extends (...args: any[]) => any>(name: stri
   return typeof method === 'function' ? (method as T) : null
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : []
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function asNumberArray(value: unknown): number[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry))
+    : []
+}
+
+function normalizeToolUsageFrequency(value: unknown): Record<string, number> {
+  const record = asRecord(value)
+  if (!record) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(record).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1])),
+  )
+}
+
+function normalizeScanResult(result: SessionScanResult): SessionScanResult {
+  const raw = asRecord(result)
+  const features = asRecord(raw?.features)
+  const scanPeriod = asRecord(raw?.scanPeriod)
+
+  return {
+    agentType:
+      raw?.agentType === 'claude-code' || raw?.agentType === 'opencode'
+        ? raw.agentType
+        : 'codex',
+    coverage: raw?.coverage === 'full' ? 'full' : 'partial',
+    unsupportedMetrics: asStringArray(raw?.unsupportedMetrics),
+    sessionCount: asNumber(raw?.sessionCount),
+    totalTurns: asNumber(raw?.totalTurns),
+    scanPeriod: {
+      from: asNumber(scanPeriod?.from),
+      to: asNumber(scanPeriod?.to),
+    },
+    sourceFiles: asStringArray(raw?.sourceFiles),
+    features: {
+      avgTurnsPerSession: asNumber(features?.avgTurnsPerSession),
+      avgResponseLength: asNumber(features?.avgResponseLength),
+      toolUsageFrequency: normalizeToolUsageFrequency(features?.toolUsageFrequency),
+      topTools: asStringArray(features?.topTools),
+      primaryLanguages: asStringArray(features?.primaryLanguages),
+      avgSessionDurationMs: asNumber(features?.avgSessionDurationMs),
+      peakHours: asNumberArray(features?.peakHours),
+      usesCodeBlocks: typeof features?.usesCodeBlocks === 'boolean' ? features.usesCodeBlocks : false,
+      avgCodeBlocksPerResponse: asNumber(features?.avgCodeBlocksPerResponse),
+    },
+  }
+}
+
+function normalizeCreationSource(value: unknown): ExtractSoulDraft['creationSource'] {
+  const record = asRecord(value)
+  if (!record) {
+    return undefined
+  }
+
+  const kind = record.kind
+  if (kind !== 'legacy-profile' && kind !== 'openclaw-import' && kind !== 'local-agent') {
+    return undefined
+  }
+
+  const agent = record.agent === 'claude' || record.agent === 'codex' ? record.agent : undefined
+  return {
+    kind,
+    label: asString(record.label, 'Create Soul Locally'),
+    agent,
+    workspacePath: typeof record.workspacePath === 'string' ? record.workspacePath : null,
+  }
+}
+
+function normalizeSkillsArchive(value: unknown): ExtractSoulDraft['skillsArchive'] {
+  const record = asRecord(value)
+  if (!record) {
+    return null
+  }
+
+  const fileName = asString(record.fileName)
+  const dataBase64 = asString(record.dataBase64)
+  if (!fileName || !dataBase64) {
+    return null
+  }
+
+  return {
+    fileName,
+    mimeType: asString(record.mimeType, 'application/zip'),
+    dataBase64,
+  }
+}
+
+function normalizePendingSync(value: unknown): ExtractSoulDraft['pendingSync'] {
+  const record = asRecord(value)
+  if (!record) {
+    return null
+  }
+
+  const txDigest = asString(record.txDigest)
+  if (!txDigest) {
+    return null
+  }
+
+  return {
+    txDigest,
+    tags: asStringArray(record.tags),
+    previewImages: asStringArray(record.previewImages),
+    readme: typeof record.readme === 'string' ? record.readme : null,
+    sealSidecar: typeof record.sealSidecar === 'string' ? record.sealSidecar : null,
+    memorySealSidecar: typeof record.memorySealSidecar === 'string' ? record.memorySealSidecar : null,
+    skillsSealSidecar: typeof record.skillsSealSidecar === 'string' ? record.skillsSealSidecar : null,
+  }
+}
+
+function inferCoverGenerated(record: Record<string, unknown>, coverImageFileName: string, coverImageMimeType: string) {
+  if (typeof record.coverImageGenerated === 'boolean') {
+    return record.coverImageGenerated
+  }
+
+  return coverImageFileName === 'extract-cover.svg' || coverImageMimeType === 'image/svg+xml'
+}
+
+function normalizeLoadedDraft(rawDraft: ExtractSoulDraft | null): ExtractSoulDraft | null {
+  const record = asRecord(rawDraft)
+  if (!record) {
+    return null
+  }
+
+  const nowIso = new Date().toISOString()
+  const sourceProfile = asRecord(record.sourceProfile)
+  const personality = asRecord(sourceProfile?.personality)
+  const suggested = asRecord(sourceProfile?.suggested)
+  const sourceProfileEvidence = asRecord(sourceProfile?.evidence)
+  const draftEvidence = asRecord(record.evidence)
+
+  const traits = asStringArray(record.traits)
+  const expertise = asStringArray(record.expertise)
+  const tags = asStringArray(record.tags)
+  const evidence = {
+    sessionCount: asNumber(draftEvidence?.sessionCount ?? sourceProfileEvidence?.sessionCount),
+    turnCount: asNumber(draftEvidence?.turnCount ?? sourceProfileEvidence?.turnCount),
+    topTools: asStringArray(draftEvidence?.topTools ?? sourceProfileEvidence?.topTools),
+    primaryLanguages: asStringArray(draftEvidence?.primaryLanguages ?? sourceProfileEvidence?.primaryLanguages),
+    peakHours: asNumberArray(draftEvidence?.peakHours ?? sourceProfileEvidence?.peakHours),
+  }
+
+  const name = asString(record.name, asString(suggested?.name, 'Untitled Soul'))
+  const description = asString(record.description, asString(suggested?.description))
+  const coverImageFileName = asString(record.coverImageFileName, 'extract-cover.svg')
+  const coverImageMimeType = asString(record.coverImageMimeType, 'image/svg+xml')
+
+  const normalizedDraft = {
+    version: 1,
+    createdAt: asString(record.createdAt, nowIso),
+    updatedAt: asString(record.updatedAt, nowIso),
+    sourceProfile: {
+      version: 1,
+      personality: {
+        traits: traits.length > 0 ? traits : asStringArray(personality?.traits),
+        communicationStyle: asString(record.communicationStyle, asString(personality?.communicationStyle)),
+        expertise: expertise.length > 0 ? expertise : asStringArray(personality?.expertise),
+        workStyle: asString(record.workStyle, asString(personality?.workStyle)),
+      },
+      evidence,
+      suggested: {
+        name,
+        description,
+        tags: tags.length > 0 ? tags : asStringArray(suggested?.tags),
+      },
+    },
+    creationSource: normalizeCreationSource(record.creationSource),
+    name,
+    description,
+    tags: tags.length > 0 ? tags : asStringArray(suggested?.tags),
+    royaltyBps: Math.max(0, Math.min(2500, asNumber(record.royaltyBps, 500))),
+    traits: traits.length > 0 ? traits : asStringArray(personality?.traits),
+    communicationStyle: asString(record.communicationStyle, asString(personality?.communicationStyle)),
+    expertise: expertise.length > 0 ? expertise : asStringArray(personality?.expertise),
+    workStyle: asString(record.workStyle, asString(personality?.workStyle)),
+    evidence,
+    coverImageDataUrl: asString(record.coverImageDataUrl),
+    coverImageFileName,
+    coverImageMimeType,
+    coverImageGenerated: inferCoverGenerated(record, coverImageFileName, coverImageMimeType),
+    soulMarkdown: asString(record.soulMarkdown),
+    memoryMarkdown: asString(record.memoryMarkdown),
+    skillsArchive: normalizeSkillsArchive(record.skillsArchive),
+    pendingSync: normalizePendingSync(record.pendingSync),
+  } satisfies ExtractSoulDraft
+
+  return refreshExtractSoulDraftCover(normalizedDraft, { nowIso: normalizedDraft.updatedAt })
+}
+
 function asIpcError(err: unknown, fallback: string): Error {
   if (err instanceof Error && err.message.trim()) return err
   return new Error(fallback)
@@ -100,22 +316,75 @@ async function ipcScanSessions(): Promise<SessionScanResult[]> {
   )
 
   try {
-    return await invoke()
+    const results = await invoke()
+    return Array.isArray(results) ? results.map(normalizeScanResult) : []
   } catch (err) {
     throw asIpcError(err, 'Scan failed')
   }
 }
 
-async function ipcAnalyzeProfile(results: SessionScanResult[]): Promise<SoulProfile> {
-  const invoke = getElectronMethod<(results: SessionScanResult[]) => Promise<SoulProfile>>(
-    'extraction:analyze-profile',
-    'Analyze IPC not available — is the companion up to date?',
+async function ipcGetOpenClawImportStatus(): Promise<OpenClawImportStatus> {
+  const invoke = getElectronMethod<() => Promise<OpenClawImportStatus>>(
+    'extraction:get-openclaw-import-status',
+    'OpenClaw import IPC not available — is the companion up to date?',
   )
 
   try {
-    return await invoke(results)
+    return await invoke()
   } catch (err) {
-    throw asIpcError(err, 'Profile analysis failed')
+    throw asIpcError(err, 'Failed to inspect OpenClaw workspace')
+  }
+}
+
+async function ipcGetLocalAgentStatuses(): Promise<LocalExtractAgentStatus[]> {
+  const invoke = getElectronMethod<() => Promise<LocalExtractAgentStatus[]>>(
+    'extraction:get-local-agent-statuses',
+    'Local agent status IPC not available — is the companion up to date?',
+  )
+
+  try {
+    return await invoke()
+  } catch (err) {
+    throw asIpcError(err, 'Failed to inspect local agent status')
+  }
+}
+
+async function ipcImportOpenClawDraft(input: ImportOpenClawDraftInput): Promise<ExtractSoulDraft> {
+  const invoke = getElectronMethod<(input: ImportOpenClawDraftInput) => Promise<ExtractSoulDraft>>(
+    'extraction:import-openclaw-draft',
+    'OpenClaw import IPC not available — is the companion up to date?',
+  )
+
+  try {
+    return await invoke(input)
+  } catch (err) {
+    throw asIpcError(err, 'OpenClaw import failed')
+  }
+}
+
+async function ipcCreateLocalDraft(input: CreateLocalExtractDraftInput): Promise<ExtractSoulDraft> {
+  const invoke = getElectronMethod<(input: CreateLocalExtractDraftInput) => Promise<ExtractSoulDraft>>(
+    'extraction:create-local-draft',
+    'Local draft IPC not available — is the companion up to date?',
+  )
+
+  try {
+    return await invoke(input)
+  } catch (err) {
+    throw asIpcError(err, 'Local draft creation failed')
+  }
+}
+
+async function ipcOpenWebCreate(): Promise<void> {
+  const invoke = getElectronMethod<() => Promise<void>>(
+    'extraction:open-web-create',
+    'Open web create IPC not available — is the companion up to date?',
+  )
+
+  try {
+    return await invoke()
+  } catch (err) {
+    throw asIpcError(err, 'Failed to open web create')
   }
 }
 
@@ -160,7 +429,7 @@ async function ipcLoadDraft(): Promise<ExtractSoulDraft | null> {
   if (!invoke) return null
 
   try {
-    return await invoke()
+    return normalizeLoadedDraft(await invoke())
   } catch {
     return null
   }
@@ -178,14 +447,41 @@ async function ipcClearDraft(): Promise<void> {
   await invoke()
 }
 
-async function ipcGetRuntimeConfig(): Promise<RuntimeConfig | null> {
-  const invoke = getOptionalElectronMethod<() => Promise<RuntimeConfig>>('getDesktopRuntimeConfig')
+async function ipcPickCoverImage(): Promise<{ dataUrl: string; fileName: string; mimeType: string } | null> {
+  const invoke = getOptionalElectronMethod<() => Promise<{ dataUrl: string; fileName: string; mimeType: string } | null>>(
+    'desktop:create-draft:pick-cover-image',
+  )
   if (!invoke) return null
 
   try {
     return await invoke()
+  } catch (err) {
+    throw asIpcError(err, 'Failed to select a cover image')
+  }
+}
+
+async function ipcGetRuntimeConfig(): Promise<RuntimeConfig> {
+  const invoke = getOptionalElectronMethod<() => Promise<RuntimeConfig>>('getDesktopRuntimeConfig')
+  if (!invoke) {
+    return {
+      privyAppId: null,
+      suiNetwork: 'testnet',
+      webBaseUrl: '',
+      authReady: false,
+      authBlocker: 'Desktop wallet preflight is unavailable in this build.',
+    }
+  }
+
+  try {
+    return await invoke()
   } catch {
-    return null
+    return {
+      privyAppId: null,
+      suiNetwork: 'testnet',
+      webBaseUrl: '',
+      authReady: false,
+      authBlocker: 'Desktop wallet preflight failed in this build.',
+    }
   }
 }
 
@@ -257,10 +553,6 @@ async function ipcPublish(payload: ExtractSoulDraftPendingSync): Promise<Desktop
   }
 }
 
-function openSettingsTab() {
-  window.dispatchEvent(new CustomEvent('desktop:navigate-tab', { detail: { tab: 'settings' } }))
-}
-
 function parseListInput(value: string) {
   return value
     .split(',')
@@ -275,6 +567,74 @@ function formatListInput(values: string[]) {
 function formatHours(hours: number[]) {
   if (hours.length === 0) return '—'
   return hours.map((hour) => `${hour}:00`).join(', ')
+}
+
+function formatLocalAgentLabel(agent: LocalExtractAgent) {
+  return agent === 'codex' ? 'Codex' : 'Claude'
+}
+
+function summarizeScanResults(results: SessionScanResult[] | null) {
+  if (!results || results.length === 0) {
+    return {
+      sessionCount: 0,
+      turnCount: 0,
+      sourceFileCount: 0,
+      topTools: [] as string[],
+      primaryLanguages: [] as string[],
+      peakHours: [] as number[],
+      agents: [] as string[],
+    }
+  }
+
+  const toolCounts = new Map<string, number>()
+  const languages = new Set<string>()
+  const hourCounts = new Map<number, number>()
+
+  for (const result of results) {
+    for (const [tool, count] of Object.entries(result.features.toolUsageFrequency)) {
+      toolCounts.set(tool, (toolCounts.get(tool) ?? 0) + count)
+    }
+
+    for (const language of result.features.primaryLanguages) {
+      languages.add(language)
+    }
+
+    for (const hour of result.features.peakHours) {
+      hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1)
+    }
+  }
+
+  return {
+    sessionCount: results.reduce((sum, result) => sum + result.sessionCount, 0),
+    turnCount: results.reduce((sum, result) => sum + result.totalTurns, 0),
+    sourceFileCount: results.reduce((sum, result) => sum + result.sourceFiles.length, 0),
+    topTools: [...toolCounts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 5)
+      .map(([tool]) => tool),
+    primaryLanguages: [...languages].slice(0, 5),
+    peakHours: [...hourCounts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 3)
+      .map(([hour]) => hour),
+    agents: results.map((result) => result.agentType),
+  }
+}
+
+function getDraftHeadline(draft: ExtractSoulDraft) {
+  return draft.creationSource?.label ?? 'Create Soul Locally'
+}
+
+function getDraftNotice(draft: ExtractSoulDraft) {
+  if (draft.creationSource?.kind === 'openclaw-import') {
+    return 'SOUL.md and memory.md came directly from your OpenClaw workspace. Edit only what should change before upload.'
+  }
+
+  if (draft.creationSource?.kind === 'local-agent') {
+    return 'This draft was created locally after desktop assembled the source context for a read-only coding agent. Review the copy, adjust it if needed, then continue to upload and mint.'
+  }
+
+  return 'This local draft stays editable all the way through upload and mint.'
 }
 
 function textToBytes(value: string) {
@@ -304,15 +664,6 @@ function dataUrlToBytes(dataUrl: string) {
   return { bytes: textToBytes(decodeURIComponent(payload)), mimeType }
 }
 
-async function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
-    reader.onload = () => resolve(String(reader.result))
-    reader.readAsDataURL(file)
-  })
-}
-
 async function fileToBase64(file: File) {
   const bytes = new Uint8Array(await file.arrayBuffer())
   let binary = ''
@@ -330,6 +681,10 @@ function sameWalletAddress(left: string | null | undefined, right: string | null
   } catch {
     return false
   }
+}
+
+function hasCustomCoverImage(draft: ExtractSoulDraft) {
+  return Boolean(asString(draft.coverImageDataUrl).trim()) && !draft.coverImageGenerated
 }
 
 function getMintStatusLabel(status: MintStatus) {
@@ -388,6 +743,12 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
   )
 
   const handleMint = useCallback(async () => {
+    if (!hasCustomCoverImage(draft)) {
+      setMintStatus('error')
+      setMintError('Upload a cover image before minting from desktop.')
+      return
+    }
+
     if (!ready) {
       setMintStatus('error')
       setMintError('Desktop wallet auth is still loading. Try again in a moment.')
@@ -501,7 +862,6 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
         name: draft.name,
         description: draft.description,
         imageUrl: coverImage.blobUrl,
-        metadataRef: null,
         protectedBlobObjectId: soulFile.blobObjectId,
         foundingMemoryBlobObjectId: memoryFile.blobObjectId,
         skillsBlobObjectId: skillsFile?.blobObjectId ?? null,
@@ -600,7 +960,7 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
         type="button"
         className="link-button"
         onClick={handleMint}
-        disabled={mintStatus !== 'idle' && mintStatus !== 'error' && mintStatus !== 'done'}
+        disabled={!hasCustomCoverImage(draft) || (mintStatus !== 'idle' && mintStatus !== 'error' && mintStatus !== 'done')}
       >
         Mint on Sui
       </button>
@@ -642,6 +1002,7 @@ function DesktopMintProviders({ runtimeConfig, ...props }: MintProvidersProps) {
 
 function DesktopMintPanel(props: DesktopMintPanelProps) {
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null)
+  const [showMintControls, setShowMintControls] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -665,12 +1026,32 @@ function DesktopMintPanel(props: DesktopMintPanelProps) {
     )
   }
 
-  if (!runtimeConfig.privyAppId) {
+  if (!runtimeConfig.authReady || !runtimeConfig.privyAppId) {
     return (
       <section className="settings-section">
-        <p className="link-panel__error">
-          Desktop minting is not configured because `NEXT_PUBLIC_PRIVY_APP_ID` is missing.
+        <h3 className="settings-section__title">Preview & Mint</h3>
+        <p className="extract-status">
+          {runtimeConfig.authBlocker
+            ?? 'Desktop wallet auth is unavailable on this build right now.'}
         </p>
+      </section>
+    )
+  }
+
+  if (!showMintControls) {
+    return (
+      <section className="settings-section">
+        <h3 className="settings-section__title">Preview & Mint</h3>
+        <p className="extract-notice">
+          Desktop mint auth now stays unloaded until you explicitly open it, so reviewing or editing this draft does not trigger the full-window wallet backdrop.
+        </p>
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => setShowMintControls(true)}
+        >
+          Load Desktop Mint
+        </button>
       </section>
     )
   }
@@ -684,18 +1065,22 @@ export function ExtractTab(): React.JSX.Element {
   const [scanProgress, setScanProgress] = useState<ScanProgress[]>([])
   const [isScanning, setIsScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
-  const [profile, setProfile] = useState<SoulProfile | null>(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
-  const [desktopAuth, setDesktopAuth] = useState<DesktopAuthStatus>({ hasToken: true, accountId: null })
+  const [isResolvingSources, setIsResolvingSources] = useState(false)
+  const [sourceResolutionError, setSourceResolutionError] = useState<string | null>(null)
+  const [openClawStatus, setOpenClawStatus] = useState<OpenClawImportStatus | null>(null)
+  const [selectedOpenClawSkillId, setSelectedOpenClawSkillId] = useState('')
+  const [localAgentStatuses, setLocalAgentStatuses] = useState<LocalExtractAgentStatus[]>([])
+  const [activeDraftAction, setActiveDraftAction] = useState<'openclaw' | LocalExtractAgent | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [coverActionError, setCoverActionError] = useState<string | null>(null)
   const [desktopMe, setDesktopMe] = useState<DesktopMeResponse | null>(null)
   const [draft, setDraft] = useState<ExtractSoulDraft | null>(null)
-  const [authGateError, setAuthGateError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<DesktopPublishResponse | null>(null)
 
   const unsubRef = useRef<(() => void) | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasHydratedDraftRef = useRef(false)
+  const scanSummary = useMemo(() => summarizeScanResults(scanResults), [scanResults])
 
   useEffect(() => {
     return () => {
@@ -715,10 +1100,8 @@ export function ExtractTab(): React.JSX.Element {
     ]).then(async ([authStatus, loadedDraft]) => {
       if (cancelled) return
 
-      setDesktopAuth(authStatus)
       if (loadedDraft) {
         setDraft(loadedDraft)
-        setProfile(loadedDraft.sourceProfile)
         setStep('create')
       }
 
@@ -761,17 +1144,58 @@ export function ExtractTab(): React.JSX.Element {
     setDraft((current) => (current ? recipe(current) : current))
   }, [])
 
-  const handleStartScan = useCallback(async () => {
-    if (!desktopAuth.hasToken) {
-      setAuthGateError('Link this desktop in Settings before scanning')
-      return
+  const refreshSourceOptions = useCallback(async () => {
+    setIsResolvingSources(true)
+    setSourceResolutionError(null)
+
+    const [openClawResult, localAgentResult] = await Promise.allSettled([
+      ipcGetOpenClawImportStatus(),
+      ipcGetLocalAgentStatuses(),
+    ])
+
+    if (openClawResult.status === 'fulfilled') {
+      setOpenClawStatus(openClawResult.value)
+      setSelectedOpenClawSkillId((current) => {
+        if (!current) return ''
+        return openClawResult.value.validSkills.some((skill) => skill.id === current) ? current : ''
+      })
+    } else {
+      setOpenClawStatus(null)
     }
 
-    setAuthGateError(null)
+    if (localAgentResult.status === 'fulfilled') {
+      setLocalAgentStatuses(localAgentResult.value)
+    } else {
+      setLocalAgentStatuses([])
+    }
+
+    const errors = [
+      openClawResult.status === 'rejected'
+        ? openClawResult.reason instanceof Error
+          ? openClawResult.reason.message
+          : String(openClawResult.reason)
+        : null,
+      localAgentResult.status === 'rejected'
+        ? localAgentResult.reason instanceof Error
+          ? localAgentResult.reason.message
+          : String(localAgentResult.reason)
+        : null,
+    ].filter(Boolean)
+
+    setSourceResolutionError(errors.length > 0 ? errors.join(' ') : null)
+    setIsResolvingSources(false)
+  }, [])
+
+  const handleStartScan = useCallback(async () => {
     setIsScanning(true)
     setScanError(null)
+    setSourceResolutionError(null)
+    setActionError(null)
     setScanProgress([])
     setScanResults(null)
+    setOpenClawStatus(null)
+    setLocalAgentStatuses([])
+    setSelectedOpenClawSkillId('')
 
     unsubRef.current?.()
     unsubRef.current = ipcOnScanProgress((progress) => {
@@ -790,16 +1214,7 @@ export function ExtractTab(): React.JSX.Element {
       const results = await ipcScanSessions()
       setScanResults(results)
       setStep('review')
-      setIsAnalyzing(true)
-      try {
-        const nextProfile = await ipcAnalyzeProfile(results)
-        setProfile(nextProfile)
-        setDraft(createExtractSoulDraft(nextProfile))
-      } catch (err) {
-        setAnalyzeError(err instanceof Error ? err.message : 'Profile analysis failed')
-      } finally {
-        setIsAnalyzing(false)
-      }
+      await refreshSourceOptions()
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'Scan failed')
     } finally {
@@ -807,59 +1222,93 @@ export function ExtractTab(): React.JSX.Element {
       unsubRef.current?.()
       unsubRef.current = null
     }
-  }, [desktopAuth.hasToken])
+  }, [refreshSourceOptions])
 
-  const handleReanalyze = useCallback(async () => {
+  const handleImportOpenClaw = useCallback(async () => {
     if (!scanResults) return
-    setIsAnalyzing(true)
-    setAnalyzeError(null)
+
+    setActionError(null)
+    setActiveDraftAction('openclaw')
+
     try {
-      const nextProfile = await ipcAnalyzeProfile(scanResults)
-      setProfile(nextProfile)
-      setDraft(createExtractSoulDraft(nextProfile))
+      const nextDraft = await ipcImportOpenClawDraft({
+        scanResults,
+        skillId: selectedOpenClawSkillId || null,
+      })
+      setDraft(nextDraft)
+      setPublishResult(null)
+      setStep('create')
     } catch (err) {
-      setAnalyzeError(err instanceof Error ? err.message : 'Re-analysis failed')
+      setActionError(err instanceof Error ? err.message : 'OpenClaw import failed')
     } finally {
-      setIsAnalyzing(false)
+      setActiveDraftAction(null)
+    }
+  }, [scanResults, selectedOpenClawSkillId])
+
+  const handleCreateWithAgent = useCallback(async (agent: LocalExtractAgent) => {
+    if (!scanResults) return
+
+    setActionError(null)
+    setActiveDraftAction(agent)
+
+    try {
+      const nextDraft = await ipcCreateLocalDraft({ agent, scanResults })
+      setDraft(nextDraft)
+      setPublishResult(null)
+      setStep('create')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Local draft creation failed')
+    } finally {
+      setActiveDraftAction(null)
     }
   }, [scanResults])
 
-  const handleCreateLocally = useCallback(() => {
-    if (!draft && profile) {
-      setDraft(createExtractSoulDraft(profile))
+  const handleOpenWebCreate = useCallback(async () => {
+    setActionError(null)
+    try {
+      await ipcOpenWebCreate()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to open web create')
     }
-    setStep('create')
-  }, [draft, profile])
+  }, [])
 
-  const handleCoverFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const handlePickCoverImage = useCallback(async () => {
+    setCoverActionError(null)
+    try {
+      const result = await ipcPickCoverImage()
+      if (!result) return
 
-    const dataUrl = await fileToDataUrl(file)
-    updateDraft((current) => ({
-      ...current,
-      coverImageDataUrl: dataUrl,
-      coverImageFileName: file.name,
-      coverImageMimeType: file.type || 'application/octet-stream',
-      coverImageGenerated: false,
-      updatedAt: new Date().toISOString(),
-    }))
+      updateDraft((current) => ({
+        ...current,
+        coverImageDataUrl: result.dataUrl,
+        coverImageFileName: result.fileName,
+        coverImageMimeType: result.mimeType || 'application/octet-stream',
+        coverImageGenerated: false,
+        updatedAt: new Date().toISOString(),
+      }))
+    } catch (err) {
+      setCoverActionError(err instanceof Error ? err.message : 'Failed to replace cover image')
+    }
   }, [updateDraft])
 
   const handleSkillsFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    const dataBase64 = await fileToBase64(file)
-    updateDraft((current) => ({
-      ...current,
-      skillsArchive: {
-        fileName: file.name,
-        mimeType: file.type || 'application/zip',
-        dataBase64,
-      },
-      updatedAt: new Date().toISOString(),
-    }))
+    try {
+      const dataBase64 = await fileToBase64(file)
+      updateDraft((current) => ({
+        ...current,
+        skillsArchive: {
+          fileName: file.name,
+          mimeType: file.type || 'application/zip',
+          dataBase64,
+        },
+        updatedAt: new Date().toISOString(),
+      }))
+    } finally {
+      event.target.value = ''
+    }
   }, [updateDraft])
 
   const renderProgressItem = (progress: ScanProgress) => {
@@ -891,7 +1340,7 @@ export function ExtractTab(): React.JSX.Element {
         <section className="settings-section">
           <h3 className="settings-section__title">Extract Your Coding DNA</h3>
           <p className="extract-notice">
-            Only statistical patterns are extracted. No code or conversations leave your machine.
+            Extract scans local session history, checks for an OpenClaw workspace, and then lets you import local files, create with Codex or Claude using desktop-prepared context, or fall back to the web create flow.
           </p>
 
           {!isScanning && !scanResults && (
@@ -909,15 +1358,6 @@ export function ExtractTab(): React.JSX.Element {
             </div>
           )}
 
-          {authGateError && (
-            <div style={{ marginTop: 12 }}>
-              <p className="link-panel__error">{authGateError}</p>
-              <button type="button" className="link-button link-button--secondary" onClick={openSettingsTab}>
-                Open Settings
-              </button>
-            </div>
-          )}
-
           {scanError && (
             <div style={{ marginTop: 12 }}>
               <p className="link-panel__error">{scanError}</p>
@@ -932,90 +1372,196 @@ export function ExtractTab(): React.JSX.Element {
   }
 
   if (step === 'review') {
+    const availableAgents = localAgentStatuses.filter((status) => status.status === 'available')
+    const showWebCreate = !openClawStatus?.ready && availableAgents.length === 0
+
     return (
       <div className="tab-content">
-        {isAnalyzing && (
-          <section className="settings-section">
-            <h3 className="settings-section__title">Analyzing Profile</h3>
-            <p className="extract-status">Running personality extraction...</p>
-          </section>
-        )}
+        <section className="settings-section">
+          <h3 className="settings-section__title">Scan Evidence</h3>
+          <div className="extract-evidence">
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Sessions</span>
+              <span className="extract-evidence__value">{scanSummary.sessionCount}</span>
+            </div>
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Turns</span>
+              <span className="extract-evidence__value">{scanSummary.turnCount}</span>
+            </div>
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Source files</span>
+              <span className="extract-evidence__value">{scanSummary.sourceFileCount}</span>
+            </div>
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Agents</span>
+              <span className="extract-evidence__value">{scanSummary.agents.join(', ') || '—'}</span>
+            </div>
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Top Tools</span>
+              <span className="extract-evidence__value">{scanSummary.topTools.join(', ') || '—'}</span>
+            </div>
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Languages</span>
+              <span className="extract-evidence__value">{scanSummary.primaryLanguages.join(', ') || '—'}</span>
+            </div>
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Peak Hours</span>
+              <span className="extract-evidence__value">{formatHours(scanSummary.peakHours)}</span>
+            </div>
+          </div>
+          {scanSummary.sessionCount === 0 && (
+            <p className="extract-status">No supported session logs were found. OpenClaw import or web create can still continue if available.</p>
+          )}
+        </section>
 
-        {analyzeError && (
-          <section className="settings-section">
-            <p className="link-panel__error">{analyzeError}</p>
-            <button type="button" className="link-button" onClick={handleReanalyze}>
-              Retry Analysis
-            </button>
-          </section>
-        )}
-
-        {profile && !isAnalyzing && (
-          <>
-            <section className="settings-section">
-              <h3 className="settings-section__title">Extracted Signal</h3>
-              <div className="extract-summary__row">
-                <span className="extract-summary__label">Suggested Name</span>
-                <span className="extract-summary__value">{profile.suggested.name}</span>
-              </div>
-              <div className="extract-summary__row">
-                <span className="extract-summary__label">Description</span>
-                <span className="extract-summary__value">{profile.suggested.description}</span>
-              </div>
-              <div className="extract-summary__row">
-                <span className="extract-summary__label">Traits</span>
-                <span className="extract-summary__value">{profile.personality.traits.join(', ') || '—'}</span>
-              </div>
-              <div className="extract-summary__row">
-                <span className="extract-summary__label">Communication</span>
-                <span className="extract-summary__value">{profile.personality.communicationStyle || '—'}</span>
-              </div>
-              <div className="extract-summary__row">
-                <span className="extract-summary__label">Expertise</span>
-                <span className="extract-summary__value">{profile.personality.expertise.join(', ') || '—'}</span>
-              </div>
-              <div className="extract-summary__row">
-                <span className="extract-summary__label">Work Style</span>
-                <span className="extract-summary__value">{profile.personality.workStyle || '—'}</span>
-              </div>
-            </section>
-
-            <section className="settings-section">
-              <h3 className="settings-section__title">Evidence</h3>
+        <section className="settings-section">
+          <h3 className="settings-section__title">OpenClaw Import</h3>
+          {isResolvingSources && !openClawStatus ? (
+            <p className="extract-status">Checking for an OpenClaw workspace...</p>
+          ) : openClawStatus ? (
+            <>
               <div className="extract-evidence">
                 <div className="extract-evidence__row">
-                  <span className="extract-evidence__label">Sessions</span>
-                  <span className="extract-evidence__value">{profile.evidence.sessionCount}</span>
+                  <span className="extract-evidence__label">Workspace</span>
+                  <span className="extract-evidence__value">{openClawStatus.workspacePath ?? 'Not detected'}</span>
                 </div>
                 <div className="extract-evidence__row">
-                  <span className="extract-evidence__label">Turns</span>
-                  <span className="extract-evidence__value">{profile.evidence.turnCount}</span>
+                  <span className="extract-evidence__label">State</span>
+                  <span className="extract-evidence__value">{openClawStatus.ready ? 'Ready to import' : openClawStatus.detected ? 'Partial workspace' : 'Not detected'}</span>
                 </div>
                 <div className="extract-evidence__row">
-                  <span className="extract-evidence__label">Top Tools</span>
-                  <span className="extract-evidence__value">{profile.evidence.topTools.join(', ') || '—'}</span>
+                  <span className="extract-evidence__label">SOUL.md</span>
+                  <span className="extract-evidence__value">{openClawStatus.soulFilePath ?? 'Missing'}</span>
                 </div>
                 <div className="extract-evidence__row">
-                  <span className="extract-evidence__label">Languages</span>
-                  <span className="extract-evidence__value">{profile.evidence.primaryLanguages.join(', ') || '—'}</span>
+                  <span className="extract-evidence__label">memory.md</span>
+                  <span className="extract-evidence__value">{openClawStatus.memoryFilePath ?? 'Missing'}</span>
                 </div>
                 <div className="extract-evidence__row">
-                  <span className="extract-evidence__label">Peak Hours</span>
-                  <span className="extract-evidence__value">{formatHours(profile.evidence.peakHours)}</span>
+                  <span className="extract-evidence__label">Valid skills</span>
+                  <span className="extract-evidence__value">{openClawStatus.validSkills.length}</span>
                 </div>
               </div>
-            </section>
+              <p className="extract-status">{openClawStatus.detail}</p>
 
-            <section className="settings-section" style={{ display: 'flex', gap: 8 }}>
-              <button type="button" className="link-button link-button--secondary" onClick={handleReanalyze} style={{ flex: 1 }}>
-                Re-analyze
-              </button>
-              <button type="button" className="link-button" onClick={handleCreateLocally} style={{ flex: 1 }}>
-                Create Locally
-              </button>
-            </section>
-          </>
+              {openClawStatus.validSkills.length > 1 && (
+                <div className="settings-field">
+                  <span className="settings-field__label">Optional skill bundle</span>
+                  <select
+                    className="settings-field__input"
+                    value={selectedOpenClawSkillId}
+                    onChange={(event) => setSelectedOpenClawSkillId(event.target.value)}
+                  >
+                    <option value="">No skills bundle</option>
+                    {openClawStatus.validSkills.map((skill) => (
+                      <option key={skill.id} value={skill.id}>
+                        {skill.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {openClawStatus.validSkills.length === 1 && (
+                <p className="extract-status">Skills bundle will be attached automatically from {openClawStatus.validSkills[0]?.label}.</p>
+              )}
+            </>
+          ) : (
+            <p className="extract-status">OpenClaw inspection has not run yet.</p>
+          )}
+        </section>
+
+        <section className="settings-section">
+          <h3 className="settings-section__title">Local Agents</h3>
+          <p className="extract-notice">
+            Desktop now prepares the local context before invoking Codex or Claude in read-only mode, so this flow should not trigger per-file permission prompts.
+          </p>
+          {isResolvingSources && localAgentStatuses.length === 0 ? (
+            <p className="extract-status">Checking local Codex and Claude CLI availability...</p>
+          ) : (
+            <div className="extract-option-grid">
+              {localAgentStatuses.map((status) => {
+                const statusLabel =
+                  status.status === 'available' ? 'Ready' :
+                  status.status === 'not-installed' ? 'Not installed' :
+                  status.status === 'not-authenticated' ? 'Needs login' :
+                  'Unavailable'
+                const statusClass =
+                  status.status === 'available' ? 'agent-card__status--completed' :
+                  status.status === 'not-authenticated' ? 'agent-card__status--needs-attention' :
+                  'agent-card__status--error'
+
+                return (
+                  <div key={status.agent} className="agent-card">
+                    <div className="agent-card__header">
+                      <span className="agent-card__type">{formatLocalAgentLabel(status.agent)}</span>
+                      <span className={`agent-card__status ${statusClass}`}>{statusLabel}</span>
+                    </div>
+                    <div className="agent-card__detail" title={status.detail}>{status.detail}</div>
+                  </div>
+                )
+              })}
+
+              {localAgentStatuses.length === 0 && (
+                <p className="extract-status">No local CLI status is available yet.</p>
+              )}
+            </div>
+          )}
+        </section>
+
+        {sourceResolutionError && (
+          <section className="settings-section">
+            <p className="link-panel__error">{sourceResolutionError}</p>
+          </section>
         )}
+
+        {actionError && (
+          <section className="settings-section">
+            <p className="link-panel__error">{actionError}</p>
+          </section>
+        )}
+
+        <section className="settings-section extract-actions">
+          {openClawStatus?.ready && (
+            <button
+              type="button"
+              className="link-button"
+              onClick={handleImportOpenClaw}
+              disabled={activeDraftAction !== null}
+            >
+              {activeDraftAction === 'openclaw' ? 'Importing OpenClaw Files...' : 'Import OpenClaw Files'}
+            </button>
+          )}
+
+          {availableAgents.map((status) => (
+            <button
+              key={status.agent}
+              type="button"
+              className="link-button"
+              onClick={() => { void handleCreateWithAgent(status.agent) }}
+              disabled={activeDraftAction !== null}
+            >
+              {activeDraftAction === status.agent
+                ? `Creating with ${formatLocalAgentLabel(status.agent)}...`
+                : `Create with ${formatLocalAgentLabel(status.agent)}`}
+            </button>
+          ))}
+
+          {showWebCreate && (
+            <button
+              type="button"
+              className="link-button link-button--secondary"
+              onClick={() => { void handleOpenWebCreate() }}
+              disabled={activeDraftAction !== null}
+            >
+              Open Web Create
+            </button>
+          )}
+
+          <button type="button" className="link-button link-button--secondary" onClick={handleStartScan} disabled={isScanning || isResolvingSources || activeDraftAction !== null}>
+            Re-scan
+          </button>
+        </section>
       </div>
     )
   }
@@ -1023,14 +1569,31 @@ export function ExtractTab(): React.JSX.Element {
   return (
     <div className="tab-content">
       <section className="settings-section">
-        <h3 className="settings-section__title">Create Soul Locally</h3>
+        <h3 className="settings-section__title">{draft ? getDraftHeadline(draft) : 'Create Soul Locally'}</h3>
         <p className="extract-notice">
-          The extracted structure seeds a full local draft. Markdown content is editable and only regenerates when you ask for it.
+          {draft ? getDraftNotice(draft) : 'This local draft stays editable before upload and mint.'}
         </p>
       </section>
 
       {draft && (
         <>
+          {draft.creationSource && (
+            <section className="settings-section">
+              <div className="extract-evidence">
+                <div className="extract-evidence__row">
+                  <span className="extract-evidence__label">Source</span>
+                  <span className="extract-evidence__value">{draft.creationSource.label}</span>
+                </div>
+                {draft.creationSource.workspacePath && (
+                  <div className="extract-evidence__row">
+                    <span className="extract-evidence__label">Workspace</span>
+                    <span className="extract-evidence__value">{draft.creationSource.workspacePath}</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <section className="settings-section">
             <h3 className="settings-section__title">Basic Info</h3>
             <div className="settings-field">
@@ -1040,9 +1603,11 @@ export function ExtractTab(): React.JSX.Element {
                 className="settings-field__input"
                 value={draft.name}
                 onChange={(event) => updateDraft((current) => ({
-                  ...current,
-                  name: event.target.value,
-                  updatedAt: new Date().toISOString(),
+                  ...refreshExtractSoulDraftCover({
+                    ...current,
+                    name: event.target.value,
+                    updatedAt: new Date().toISOString(),
+                  }, { nowIso: new Date().toISOString() }),
                 }))}
                 maxLength={100}
               />
@@ -1070,9 +1635,11 @@ export function ExtractTab(): React.JSX.Element {
                 className="settings-field__input"
                 value={formatListInput(draft.tags)}
                 onChange={(event) => updateDraft((current) => ({
-                  ...current,
-                  tags: parseListInput(event.target.value),
-                  updatedAt: new Date().toISOString(),
+                  ...refreshExtractSoulDraftCover({
+                    ...current,
+                    tags: parseListInput(event.target.value),
+                    updatedAt: new Date().toISOString(),
+                  }, { nowIso: new Date().toISOString() }),
                 }))}
               />
             </div>
@@ -1188,20 +1755,38 @@ export function ExtractTab(): React.JSX.Element {
           <section className="settings-section">
             <h3 className="settings-section__title">Cover & Skills</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <img
-                src={draft.coverImageDataUrl}
-                alt={draft.name}
-                style={{
-                  width: '100%',
-                  maxWidth: 240,
-                  borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              />
-              <label className="link-button link-button--secondary" style={{ display: 'inline-flex', width: 'fit-content', cursor: 'pointer' }}>
-                Replace Cover
-                <input type="file" accept="image/*,.svg" style={{ display: 'none' }} onChange={handleCoverFileChange} />
-              </label>
+              {draft.coverImageDataUrl ? (
+                <img
+                  src={draft.coverImageDataUrl}
+                  alt={draft.name}
+                  style={{
+                    width: '100%',
+                    maxWidth: 240,
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                />
+              ) : (
+                <div className="extract-cover-placeholder">
+                  No cover image selected yet.
+                </div>
+              )}
+              <p className={!hasCustomCoverImage(draft) ? 'link-panel__error' : 'extract-status'}>
+                {!hasCustomCoverImage(draft)
+                  ? 'Cover image is required before minting. Replace the generated placeholder with a real cover image.'
+                  : `Cover ready: ${draft.coverImageFileName}`}
+              </p>
+              {coverActionError && (
+                <p className="link-panel__error">{coverActionError}</p>
+              )}
+              <button
+                type="button"
+                className="link-button link-button--secondary"
+                style={{ display: 'inline-flex', width: 'fit-content' }}
+                onClick={() => { void handlePickCoverImage() }}
+              >
+                {hasCustomCoverImage(draft) ? 'Replace Cover' : 'Upload Cover Image'}
+              </button>
               <label className="link-button link-button--secondary" style={{ display: 'inline-flex', width: 'fit-content', cursor: 'pointer' }}>
                 {draft.skillsArchive ? 'Replace skills.zip' : 'Attach skills.zip'}
                 <input type="file" accept=".zip,application/zip" style={{ display: 'none' }} onChange={handleSkillsFileChange} />
@@ -1221,44 +1806,33 @@ export function ExtractTab(): React.JSX.Element {
             >
               Back
             </button>
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => updateDraft((current) => regenerateExtractSoulDraftContent({
-                ...current,
-                updatedAt: new Date().toISOString(),
-              }))}
-              style={{ flex: 1 }}
-            >
-              Regenerate from Extract
-            </button>
           </section>
 
           <DesktopMintPanel
             draft={draft}
-            primarySuiAddress={desktopMe?.profile.primarySuiAddress ?? null}
+            primarySuiAddress={desktopMe?.profile?.primarySuiAddress ?? null}
             onMintSuccess={(result) => {
               setPublishResult(result)
               setDraft(null)
             }}
           />
-
-          {publishResult && (
-            <section className="settings-section">
-              <h3 className="settings-section__title">Last Mint</h3>
-              <div className="extract-evidence">
-                <div className="extract-evidence__row">
-                  <span className="extract-evidence__label">Tx digest</span>
-                  <span className="extract-evidence__value">{publishResult.txDigest}</span>
-                </div>
-                <div className="extract-evidence__row">
-                  <span className="extract-evidence__label">Soul</span>
-                  <span className="extract-evidence__value">{publishResult.soulOnChainId}</span>
-                </div>
-              </div>
-            </section>
-          )}
         </>
+      )}
+
+      {publishResult && (
+        <section className="settings-section">
+          <h3 className="settings-section__title">Last Mint</h3>
+          <div className="extract-evidence">
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Tx digest</span>
+              <span className="extract-evidence__value">{publishResult.txDigest}</span>
+            </div>
+            <div className="extract-evidence__row">
+              <span className="extract-evidence__label">Soul</span>
+              <span className="extract-evidence__value">{publishResult.soulOnChainId}</span>
+            </div>
+          </div>
+        </section>
       )}
     </div>
   )

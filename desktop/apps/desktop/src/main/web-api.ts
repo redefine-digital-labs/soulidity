@@ -1,9 +1,8 @@
 export const DEFAULT_WEB_BASE_URL = 'https://clawnews-mu.vercel.app'
-
 export function getDesktopWebBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
-  const configuredBaseUrl = env['SOULIDITY_WEB_URL']?.trim()
+  const configuredBaseUrl = env['SOULIDITY_WEB_URL']?.trim() || env['NEXT_PUBLIC_BASE_URL']?.trim()
   if (configuredBaseUrl) {
-    return configuredBaseUrl
+    return configuredBaseUrl.replace(/\/+$/, '')
   }
 
   return DEFAULT_WEB_BASE_URL
@@ -68,7 +67,7 @@ function buildUnexpectedResponseMessage(
   if (looksLikeHtml(bodyText)) {
     return `${options.action} failed: ${endpoint} returned HTML (${response.status}) instead of JSON. `
       + `The configured web app is missing this desktop API or points to the wrong deployment. `
-      + `Set SOULIDITY_WEB_URL to a deployed web app that serves ${options.pathname}.`
+      + `Use a deployed web app that serves ${options.pathname}.`
   }
 
   const preview = getBodyPreview(bodyText)

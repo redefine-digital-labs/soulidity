@@ -102,12 +102,26 @@ export type {
 } from './types/soul-profile'
 
 export type {
+  LocalExtractAgent,
+  LocalExtractAgentStatusKind,
+  LocalExtractAgentStatus,
+  OpenClawSkillOption,
+  OpenClawImportStatus,
+  ImportOpenClawDraftInput,
+  CreateLocalExtractDraftInput,
+} from './types/extract-flow'
+
+export type {
   ExtractSoulDraft,
   ExtractSoulDraftPendingSync,
+  ExtractDraftCreationSource,
+  CreateExtractSoulDraftSeed,
 } from './types/extract-draft'
 
 export {
   createExtractSoulDraft,
+  createExtractSoulDraftFromSeed,
+  refreshExtractSoulDraftCover,
   regenerateExtractSoulDraftContent,
 } from './types/extract-draft'
 

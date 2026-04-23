@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireIdentity } from '@web/lib/auth/identity'
+import { requireIdentity } from '@/lib/auth/identity'
 import {
   completeDesktopDeviceSession,
   DesktopDeviceSessionConflictError,

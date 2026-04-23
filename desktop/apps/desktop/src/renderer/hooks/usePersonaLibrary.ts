@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-// ── Types ────────────────────────────────────────────────
+type PersonaSpriteDownloadPolicy = 'public' | 'owner_only' | 'allowlist' | 'missing' | 'invalid'
 
 export interface PersonaItem {
   catalogId: string
@@ -11,10 +11,13 @@ export interface PersonaItem {
   thumbnail: string
   coverImage: string
   downloadMode?: 'direct' | 'authenticated'
-  // Local state
+  listingStatus: 'held' | 'listed' | 'floor-violation' | null
+  listedPriceAtomic: string | null
+  spriteDownloadPolicy: PersonaSpriteDownloadPolicy
   isCached: boolean
   isActive: boolean
-  downloadProgress: number | null // null = not downloading, 0-100 = in progress
+  downloadProgress: number | null
+  downloadError: string | null
 }
 
 interface CacheMeta {
@@ -36,6 +39,9 @@ interface CatalogItem {
   thumbnail: string
   coverImage: string
   downloadMode?: 'direct' | 'authenticated'
+  listingStatus: 'held' | 'listed' | 'floor-violation' | null
+  listedPriceAtomic: string | null
+  spriteDownloadPolicy: PersonaSpriteDownloadPolicy
 }
 
 interface CatalogPage {
@@ -65,9 +71,12 @@ interface LibraryActions {
   refresh: () => Promise<void>
 }
 
-// ── Helpers ──────────────────────────────────────────────
+type ProtectedDownloadResult = { error?: string } | void
 
-/** Safe IPC invoke — returns null if the method doesn't exist yet */
+interface UsePersonaLibraryOptions {
+  downloadProtectedSoul?: (item: PersonaItem) => Promise<ProtectedDownloadResult>
+}
+
 async function safeInvoke<T>(fn: (() => Promise<T>) | undefined): Promise<T | null> {
   if (!fn) return null
   try {
@@ -81,6 +90,12 @@ function spriteIdForCatalog(catalogId: string): string {
   return `catalog-${catalogId}`
 }
 
+function isProtectedSpritePolicy(
+  value: PersonaSpriteDownloadPolicy | null | undefined,
+): value is 'owner_only' | 'allowlist' {
+  return value === 'owner_only' || value === 'allowlist'
+}
+
 const DEFAULT_PERSONA: PersonaItem = {
   catalogId: '__default__',
   sourceType: 'starter',
@@ -89,14 +104,16 @@ const DEFAULT_PERSONA: PersonaItem = {
   description: 'Built-in default persona with 7 mood animations',
   thumbnail: '',
   coverImage: '',
+  listingStatus: null,
+  listedPriceAtomic: null,
+  spriteDownloadPolicy: 'public',
   isCached: true,
   isActive: true,
   downloadProgress: null,
+  downloadError: null,
 }
 
-// ── Hook ─────────────────────────────────────────────────
-
-export function usePersonaLibrary(): LibraryState & LibraryActions {
+export function usePersonaLibrary(options: UsePersonaLibraryOptions = {}): LibraryState & LibraryActions {
   const [state, setState] = useState<LibraryState>({
     activePersona: { ...DEFAULT_PERSONA },
     downloaded: [],
@@ -108,10 +125,8 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
     hasMoreMarketplace: false,
   })
 
-  // Track download progress per catalogId
   const progressMapRef = useRef<Map<string, number>>(new Map())
-
-  // ── Load initial data ──────────────────────────────────
+  const errorMapRef = useRef<Map<string, string>>(new Map())
 
   const loadCachedSprites = useCallback(async (): Promise<CacheMeta[]> => {
     const list = await safeInvoke(() => window.electronAPI.cacheList())
@@ -161,48 +176,45 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
     }
   }, [])
 
-  const buildPersonaItem = useCallback(
-    (
-      item: CatalogItem,
-      cachedIds: Set<string>,
-      activeId: string | null,
-    ): PersonaItem => {
-      const spriteId = spriteIdForCatalog(item.id)
-      return {
-        catalogId: item.id,
-        sourceType: item.sourceType,
-        sourceRef: item.sourceRef,
-        title: item.title,
-        description: item.description,
-        thumbnail: item.thumbnail,
-        coverImage: item.coverImage,
-        downloadMode: item.downloadMode,
-        isCached: cachedIds.has(spriteId),
-        isActive: item.id === activeId,
-        downloadProgress: progressMapRef.current.get(item.id) ?? null,
-      }
-    },
-    [],
-  )
-
-  // ── Full refresh ───────────────────────────────────────
+  const buildPersonaItem = useCallback((
+    item: CatalogItem,
+    cachedIds: Set<string>,
+    activeId: string | null,
+  ): PersonaItem => {
+    const spriteId = spriteIdForCatalog(item.id)
+    return {
+      catalogId: item.id,
+      sourceType: item.sourceType,
+      sourceRef: item.sourceRef,
+      title: item.title,
+      description: item.description,
+      thumbnail: item.thumbnail,
+      coverImage: item.coverImage,
+      downloadMode: item.downloadMode,
+      listingStatus: item.listingStatus,
+      listedPriceAtomic: item.listedPriceAtomic,
+      spriteDownloadPolicy: item.spriteDownloadPolicy,
+      isCached: cachedIds.has(spriteId),
+      isActive: item.id === activeId,
+      downloadProgress: progressMapRef.current.get(item.id) ?? null,
+      downloadError: errorMapRef.current.get(item.id) ?? null,
+    }
+  }, [])
 
   const refresh = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true }))
+    setState((previous) => ({ ...previous, isLoading: true }))
 
     const [cached, activeId, linked, catalogPage, mySoulItems] = await Promise.all([
       loadCachedSprites(),
       loadActiveId(),
       checkLinked(),
       fetchMarketplacePage(1),
-      checkLinked().then(l => (l ? fetchMySouls() : [])),
+      checkLinked().then((isLinked) => (isLinked ? fetchMySouls() : [])),
     ])
 
-    const cachedIds = new Set(cached.map(c => c.spriteId))
+    const cachedIds = new Set(cached.map((entry) => entry.spriteId))
 
-    // Build downloaded list from cache meta — items that exist in cache
-    // We need catalog info for proper display; for now, minimal items from cache
-    const downloadedItems: PersonaItem[] = cached.map(meta => ({
+    const downloadedItems: PersonaItem[] = cached.map((meta) => ({
       catalogId: meta.spriteId.replace(/^catalog-/, ''),
       sourceType: meta.catalogSourceType ?? 'starter',
       sourceRef: meta.catalogSourceRef ?? meta.source,
@@ -210,36 +222,45 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
       description: null,
       thumbnail: '',
       coverImage: '',
+      listingStatus: null,
+      listedPriceAtomic: null,
+      spriteDownloadPolicy: 'public',
       isCached: true,
       isActive: meta.spriteId.replace(/^catalog-/, '') === activeId,
-      downloadProgress: null,
+      downloadProgress: progressMapRef.current.get(meta.spriteId.replace(/^catalog-/, '')) ?? null,
+      downloadError: errorMapRef.current.get(meta.spriteId.replace(/^catalog-/, '')) ?? null,
     }))
 
-    const marketItems = (catalogPage?.items ?? []).map(i =>
-      buildPersonaItem(i, cachedIds, activeId),
-    )
+    const marketplaceItems = (catalogPage?.items ?? []).map((item) => buildPersonaItem(item, cachedIds, activeId))
+    const mySoulPersonas = mySoulItems.map((item) => buildPersonaItem(item, cachedIds, activeId))
 
-    const mySoulPersonas = mySoulItems.map(i =>
-      buildPersonaItem(i, cachedIds, activeId),
-    )
-
-    // Merge marketplace data into downloaded items for richer display
-    const marketMap = new Map(marketItems.map(i => [i.catalogId, i]))
-    const mySoulMap = new Map(mySoulPersonas.map(i => [i.catalogId, i]))
-    const enrichedDownloaded = downloadedItems.map(d => {
-      const richer = marketMap.get(d.catalogId) ?? mySoulMap.get(d.catalogId)
-      if (richer) return { ...richer, isCached: true, isActive: d.isActive }
-      return d
+    const marketMap = new Map(marketplaceItems.map((item) => [item.catalogId, item]))
+    const mySoulMap = new Map(mySoulPersonas.map((item) => [item.catalogId, item]))
+    const enrichedDownloaded = downloadedItems.map((item) => {
+      const richer = marketMap.get(item.catalogId) ?? mySoulMap.get(item.catalogId)
+      if (!richer) {
+        return item
+      }
+      return {
+        ...richer,
+        isCached: true,
+        isActive: item.isActive,
+        downloadProgress: item.downloadProgress,
+        downloadError: item.downloadError,
+      }
     })
 
-    // Determine active persona
     let active: PersonaItem | null = null
     if (activeId) {
-      active =
-        enrichedDownloaded.find(d => d.catalogId === activeId) ??
-        marketItems.find(i => i.catalogId === activeId) ??
-        null
-      if (active) active = { ...active, isActive: true }
+      active = (
+        enrichedDownloaded.find((item) => item.catalogId === activeId)
+        ?? marketplaceItems.find((item) => item.catalogId === activeId)
+        ?? mySoulPersonas.find((item) => item.catalogId === activeId)
+        ?? null
+      )
+      if (active) {
+        active = { ...active, isActive: true }
+      }
     }
     if (!active) {
       active = { ...DEFAULT_PERSONA }
@@ -247,80 +268,123 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
 
     setState({
       activePersona: active,
-      downloaded: enrichedDownloaded.filter(d => !d.isActive),
+      downloaded: enrichedDownloaded.filter((item) => !item.isActive),
       mySouls: mySoulPersonas,
-      marketplace: marketItems,
+      marketplace: marketplaceItems,
       isLinked: linked,
       isLoading: false,
       marketplacePage: catalogPage?.page ?? 1,
       hasMoreMarketplace: catalogPage?.hasMore ?? false,
     })
-  }, [loadCachedSprites, loadActiveId, checkLinked, fetchMarketplacePage, fetchMySouls, buildPersonaItem])
-
-  // ── Mount ──────────────────────────────────────────────
+  }, [buildPersonaItem, checkLinked, fetchMarketplacePage, fetchMySouls, loadActiveId, loadCachedSprites])
 
   useEffect(() => {
-    refresh()
+    void refresh()
   }, [refresh])
 
-  // ── Actions ────────────────────────────────────────────
+  const setItemDownloadState = useCallback((catalogId: string, params: {
+    progress?: number | null
+    error?: string | null
+  }) => {
+    if (params.progress == null) {
+      progressMapRef.current.delete(catalogId)
+    } else {
+      progressMapRef.current.set(catalogId, params.progress)
+    }
+
+    if (!params.error) {
+      errorMapRef.current.delete(catalogId)
+    } else {
+      errorMapRef.current.set(catalogId, params.error)
+    }
+
+    setState((previous) => ({
+      ...previous,
+      marketplace: previous.marketplace.map((item) =>
+        item.catalogId === catalogId
+          ? { ...item, downloadProgress: params.progress ?? null, downloadError: params.error ?? null }
+          : item),
+      mySouls: previous.mySouls.map((item) =>
+        item.catalogId === catalogId
+          ? { ...item, downloadProgress: params.progress ?? null, downloadError: params.error ?? null }
+          : item),
+      downloaded: previous.downloaded.map((item) =>
+        item.catalogId === catalogId
+          ? { ...item, downloadProgress: params.progress ?? null, downloadError: params.error ?? null }
+          : item),
+    }))
+  }, [])
 
   const downloadPersona = useCallback(async (catalogId: string) => {
     const api = window.electronAPI as Record<string, unknown>
-    const downloadFn = api.soulDownload as ((params: { catalogId: string }) => Promise<unknown>) | undefined
+    const downloadFn = api.soulDownload as ((params: { catalogId: string }) => Promise<{ error?: string }>) | undefined
 
-    // Set initial progress
-    progressMapRef.current.set(catalogId, 0)
-    setState(prev => ({
-      ...prev,
-      marketplace: prev.marketplace.map(i =>
-        i.catalogId === catalogId ? { ...i, downloadProgress: 0 } : i,
-      ),
-      mySouls: prev.mySouls.map(i =>
-        i.catalogId === catalogId ? { ...i, downloadProgress: 0 } : i,
-      ),
-    }))
+    const allItems = [...state.marketplace, ...state.mySouls, ...state.downloaded]
+    const item = allItems.find((candidate) => candidate.catalogId === catalogId)
 
-    // Listen for progress events
+    setItemDownloadState(catalogId, { progress: 0, error: null })
+
     const onProgressFn = api.onDownloadProgress as
-      | ((cb: (data: { catalogId: string; progress: number; phase: string }) => void) => () => void)
+      | ((cb: (data: { catalogId: string; progress: number }) => void) => () => void)
       | undefined
 
-    const unsub = onProgressFn?.((data) => {
+    const unsubscribe = onProgressFn?.((data) => {
       if (data.catalogId !== catalogId) return
-      progressMapRef.current.set(catalogId, data.progress)
-      setState(prev => ({
-        ...prev,
-        marketplace: prev.marketplace.map(i =>
-          i.catalogId === catalogId ? { ...i, downloadProgress: data.progress } : i,
-        ),
-        mySouls: prev.mySouls.map(i =>
-          i.catalogId === catalogId ? { ...i, downloadProgress: data.progress } : i,
-        ),
-      }))
+      setItemDownloadState(catalogId, { progress: data.progress, error: null })
     })
 
     try {
-      if (downloadFn) {
-        await downloadFn({ catalogId })
+      let failure: string | null = null
+
+      if (isProtectedSpritePolicy(item?.spriteDownloadPolicy)) {
+        if (!options.downloadProtectedSoul || !item) {
+          failure = 'Protected soul downloads require the desktop wallet session.'
+        } else {
+          const result = await options.downloadProtectedSoul(item)
+          if (result?.error) {
+            failure = result.error
+          }
+        }
+      } else if (item?.spriteDownloadPolicy === 'missing') {
+        failure = 'Sprite metadata is missing for this soul.'
+      } else if (item?.spriteDownloadPolicy === 'invalid') {
+        failure = 'Sprite metadata is invalid for this soul.'
+      } else if (downloadFn) {
+        const result = await downloadFn({ catalogId })
+        if (result?.error) {
+          failure = result.error
+        }
+      } else {
+        failure = 'Desktop downloader is not available.'
       }
-    } catch {
-      // Download failed — reset progress
+
+      if (failure) {
+        setItemDownloadState(catalogId, { progress: null, error: failure })
+      }
+    } catch (error) {
+      setItemDownloadState(catalogId, {
+        progress: null,
+        error: error instanceof Error ? error.message : 'Download failed',
+      })
     } finally {
-      unsub?.()
-      progressMapRef.current.delete(catalogId)
-      // Refresh full state to pick up new cache entries
+      unsubscribe?.()
+      if (!errorMapRef.current.has(catalogId)) {
+        setItemDownloadState(catalogId, { progress: null, error: null })
+      }
       await refresh()
     }
-  }, [refresh])
+  }, [options, refresh, setItemDownloadState, state.downloaded, state.marketplace, state.mySouls])
 
   const activatePersona = useCallback(async (catalogId: string) => {
     const api = window.electronAPI as Record<string, unknown>
-    const fn = api.soulSetActive as ((params: { catalogId: string; sourceType: string; sourceRef: string }) => Promise<void>) | undefined
+    const fn = api.soulSetActive as ((params: {
+      catalogId: string
+      sourceType: string
+      sourceRef: string
+    } | null) => Promise<void>) | undefined
 
-    // Look up sourceType/sourceRef from known items
     const allItems = [...state.marketplace, ...state.mySouls, ...state.downloaded]
-    const item = allItems.find(i => i.catalogId === catalogId)
+    const item = allItems.find((candidate) => candidate.catalogId === catalogId)
 
     try {
       await fn?.({
@@ -329,10 +393,10 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
         sourceRef: item?.sourceRef ?? catalogId,
       })
     } catch {
-      // IPC not registered yet — graceful degradation
+      // graceful degradation when IPC is absent
     }
     await refresh()
-  }, [refresh, state.marketplace, state.mySouls, state.downloaded])
+  }, [refresh, state.downloaded, state.marketplace, state.mySouls])
 
   const resetToDefault = useCallback(async () => {
     const api = window.electronAPI as Record<string, unknown>
@@ -340,7 +404,7 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
     try {
       await fn?.(null)
     } catch {
-      // IPC not registered yet
+      // graceful degradation when IPC is absent
     }
     await refresh()
   }, [refresh])
@@ -350,7 +414,7 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
     try {
       await window.electronAPI.cacheRemoveSprite(spriteId)
     } catch {
-      // Cache removal failed
+      // cache removal failed
     }
     await refresh()
   }, [refresh])
@@ -361,20 +425,17 @@ export function usePersonaLibrary(): LibraryState & LibraryActions {
     if (!catalogPage || catalogPage.items.length === 0) return
 
     const cached = await loadCachedSprites()
-    const cachedIds = new Set(cached.map(c => c.spriteId))
+    const cachedIds = new Set(cached.map((entry) => entry.spriteId))
     const activeId = await loadActiveId()
+    const newItems = catalogPage.items.map((item) => buildPersonaItem(item, cachedIds, activeId))
 
-    const newItems = catalogPage.items.map(i =>
-      buildPersonaItem(i, cachedIds, activeId),
-    )
-
-    setState(prev => ({
-      ...prev,
-      marketplace: [...prev.marketplace, ...newItems],
+    setState((previous) => ({
+      ...previous,
+      marketplace: [...previous.marketplace, ...newItems],
       marketplacePage: catalogPage.page,
       hasMoreMarketplace: catalogPage.hasMore,
     }))
-  }, [state.marketplacePage, fetchMarketplacePage, loadCachedSprites, loadActiveId, buildPersonaItem])
+  }, [buildPersonaItem, fetchMarketplacePage, loadActiveId, loadCachedSprites, state.marketplacePage])
 
   return {
     ...state,
