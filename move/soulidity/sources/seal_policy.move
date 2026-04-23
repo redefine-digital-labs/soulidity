@@ -6,7 +6,7 @@ use soulidity::memory::{Self as memory, SoulMemory};
 use soulidity::soul::{Self as soul, SoulState};
 
 const EIdPrefixMismatch: u64 = 0;
-const EDocumentIdTooShort: u64 = 1;
+const EDocumentIdInvalidLength: u64 = 1;
 const EStateSoulMismatch: u64 = 2;
 const EStateMemoryMismatch: u64 = 3;
 const EMemoryEntryMissing: u64 = 4;
@@ -20,8 +20,8 @@ fun assert_matching_soul_document_id(id: vector<u8>, soul_id: ID) {
     let soul_id_bytes = soul_id.to_bytes();
     let soul_id_len = soul_id_bytes.length();
     assert!(
-        id.length() >= domain_len + 1 + soul_id_len + DOCUMENT_ID_NONCE_BYTES,
-        EDocumentIdTooShort,
+        id.length() == domain_len + 1 + soul_id_len + DOCUMENT_ID_NONCE_BYTES,
+        EDocumentIdInvalidLength,
     );
 
     let mut i = 0;
@@ -46,8 +46,8 @@ fun assert_matching_memory_document_id(id: vector<u8>, memory_id: ID, timestamp_
     let memory_id_bytes = memory_id.to_bytes();
     let memory_id_len = memory_id_bytes.length();
     assert!(
-        id.length() >= domain_len + 1 + memory_id_len + 8 + DOCUMENT_ID_NONCE_BYTES,
-        EDocumentIdTooShort,
+        id.length() == domain_len + 1 + memory_id_len + 8 + DOCUMENT_ID_NONCE_BYTES,
+        EDocumentIdInvalidLength,
     );
 
     let mut i = 0;

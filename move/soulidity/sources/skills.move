@@ -9,7 +9,7 @@ use soulidity::grant::{Self as grant, SoulGrant};
 use soulidity::soul::{Self as soul, SoulState};
 use walrus::blob::{Self as blob, Blob};
 
-const EDocumentIdTooShort: u64 = 0;
+const EDocumentIdInvalidLength: u64 = 0;
 const EDocumentIdPrefixMismatch: u64 = 1;
 const ESkillsStateMismatch: u64 = 2;
 const ESkillSlotMissing: u64 = 3;
@@ -314,8 +314,8 @@ fun assert_matching_document_id(
     let skill_name_bytes = string::as_bytes(&skill_name);
     let skill_name_len = skill_name_bytes.length();
     assert!(
-        id.length() >= domain_len + 1 + skills_id_len + skill_name_len + 1 + 8 + DOCUMENT_ID_NONCE_BYTES,
-        EDocumentIdTooShort,
+        id.length() == domain_len + 1 + skills_id_len + skill_name_len + 1 + 8 + DOCUMENT_ID_NONCE_BYTES,
+        EDocumentIdInvalidLength,
     );
 
     let mut i = 0;

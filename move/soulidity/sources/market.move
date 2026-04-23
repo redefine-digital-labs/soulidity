@@ -1,5 +1,6 @@
 module soulidity::market;
 
+use std::string;
 use kiosk::kiosk_lock_rule;
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
@@ -9,6 +10,7 @@ use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRi
 use soulidity::content_access;
 use soulidity::grant;
 use soulidity::memory;
+use soulidity::metadata::{Self as metadata, AssetBinding, SoulMetadata};
 use soulidity::skills;
 use soulidity::soul::{Self as soul, Soul, SoulState};
 use sui::clock::Clock;
@@ -51,6 +53,17 @@ const EUpgradesImmutable: u64 = 22;
 const EUpgradeAlreadyPending: u64 = 23;
 const EUpgradeNotPending: u64 = 24;
 const ESourceAlreadyJoined: u64 = 25;
+const EInvalidMetadataBinding: u64 = 26;
+const EMetadataAssetsMissing: u64 = 27;
+const EContentAccessNotPurchasable: u64 = 28;
+const EAccessListLinkageMismatch: u64 = 29;
+const EListingStillActive: u64 = 30;
+const EOldKioskNotEmpty: u64 = 31;
+const EOldKioskMismatch: u64 = 32;
+const ERebindSameKiosk: u64 = 33;
+
+const ASSET_TYPE_SPRITE: u8 = 0;
+const ASSET_TYPE_AUDIO: u8 = 2;
 
 public struct MARKET has drop {}
 
@@ -154,6 +167,14 @@ public struct PersonalKioskRegistrationUpdated has copy, drop {
     owner: address,
 }
 
+public struct PersonalKioskRebound has copy, drop {
+    owner: address,
+    old_kiosk_id: ID,
+    old_kiosk_cap_id: ID,
+    new_kiosk_id: ID,
+    new_kiosk_cap_id: ID,
+}
+
 public struct MarketUpgradeStateInitialized has copy, drop {
     upgrade_state_id: ID,
 }
@@ -189,6 +210,7 @@ public struct SoulMintedToKiosk has copy, drop {
     soul_id: ID,
     state_id: ID,
     memory_id: ID,
+    metadata_id: ID,
     kiosk_id: ID,
     owner: address,
     provenance_kind: u8,
@@ -259,6 +281,20 @@ public struct ContentAccessPurchased has copy, drop {
     price: u64,
     platform_fee: u64,
     payment_recipient: address,
+}
+
+public struct SoulListingDeleted has copy, drop {
+    listing_id: ID,
+    soul_id: ID,
+    seller: address,
+    deleted_by: address,
+}
+
+public struct CollectionListingDeleted has copy, drop {
+    listing_id: ID,
+    collection_id: ID,
+    seller: address,
+    deleted_by: address,
 }
 
 fun init(otw: MARKET, ctx: &mut TxContext) {
@@ -556,7 +592,7 @@ public fun register_existing_personal_kiosk(
     assert!(!config.paused, EMarketPaused);
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
     let kiosk_cap_id = object::id(personal_kiosk_cap);
-    upsert_personal_kiosk_registration(registry, ctx.sender(), kiosk_id, kiosk_cap_id);
+    insert_or_assert_personal_kiosk_registration(registry, ctx.sender(), kiosk_id, kiosk_cap_id);
 }
 
 public fun ensure_personal_kiosk_registered(
@@ -569,7 +605,55 @@ public fun ensure_personal_kiosk_registered(
     let owner = ctx.sender();
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
     let kiosk_cap_id = object::id(personal_kiosk_cap);
-    upsert_personal_kiosk_registration(registry, owner, kiosk_id, kiosk_cap_id);
+    insert_or_assert_personal_kiosk_registration(registry, owner, kiosk_id, kiosk_cap_id);
+}
+
+/// Swap the caller's registered personal kiosk to a fresh one.
+///
+/// This is the ONLY public path that may change which `(kiosk_id, kiosk_cap_id)`
+/// is recorded under `PersonalKioskOwnerKey { owner }`. The caller must:
+///   1. Already have an existing registration (otherwise use
+///      `register_existing_personal_kiosk` or `init_personal_kiosk`).
+///   2. Pass the currently-registered `old_kiosk` as proof; it must match the
+///      on-chain registration.
+///   3. Ensure the old kiosk holds zero items — any Soul still locked there
+///      would be orphaned (list/buy assert `state.current_kiosk_id ==
+///      object::id(kiosk_obj)` AND the registry pointer, so once the pointer
+///      moves off the old kiosk those Souls can no longer be operated on).
+public fun rebind_primary_kiosk(
+    config: &MarketConfig,
+    registry: &mut KioskRegistry,
+    old_kiosk: &Kiosk,
+    new_personal_kiosk_cap: &PersonalKioskCap,
+    ctx: &TxContext,
+) {
+    assert!(!config.paused, EMarketPaused);
+    let owner = ctx.sender();
+    let old_kiosk_id = object::id(old_kiosk);
+    let new_kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(new_personal_kiosk_cap));
+    let new_kiosk_cap_id = object::id(new_personal_kiosk_cap);
+    assert!(old_kiosk_id != new_kiosk_id, ERebindSameKiosk);
+    assert!(kiosk::item_count(old_kiosk) == 0, EOldKioskNotEmpty);
+
+    let key = PersonalKioskOwnerKey { owner };
+    assert!(df::exists_(&registry.id, key), EPersonalKioskNotInitialized);
+    let registration = df::borrow_mut<PersonalKioskOwnerKey, PersonalKioskRegistration>(
+        &mut registry.id,
+        key,
+    );
+    assert!(registration.kiosk_id == old_kiosk_id, EOldKioskMismatch);
+    let old_kiosk_cap_id = registration.kiosk_cap_id;
+
+    registration.kiosk_id = new_kiosk_id;
+    registration.kiosk_cap_id = new_kiosk_cap_id;
+
+    event::emit(PersonalKioskRebound {
+        owner,
+        old_kiosk_id,
+        old_kiosk_cap_id,
+        new_kiosk_id,
+        new_kiosk_cap_id,
+    });
 }
 
 public fun reuse_personal_kiosk(
@@ -597,7 +681,6 @@ public fun mint_native_in_personal_kiosk(
     name: std::string::String,
     description: std::string::String,
     image_url: std::string::String,
-    metadata_ref: Option<std::string::String>,
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
@@ -607,8 +690,18 @@ public fun mint_native_in_personal_kiosk(
     initial_asset_name: std::string::String,
     asset_public: bool,
     asset_type: u8,
+    initial_sprite_asset_name: Option<std::string::String>,
+    initial_sprite_version_index: Option<u64>,
+    initial_sprite_download_policy: Option<u8>,
+    initial_sprite_config: Option<vector<u8>>,
+    initial_sprite_mood_map: Option<vector<u8>>,
+    initial_voice_asset_name: Option<std::string::String>,
+    initial_voice_version_index: Option<u64>,
+    initial_voice_download_policy: Option<u8>,
+    initial_voice_config: Option<vector<u8>>,
     content_access_price_atomic: u64,
     content_access_default_scope_mask: u64,
+    content_access_default_duration_ms: Option<u64>,
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -622,7 +715,6 @@ public fun mint_native_in_personal_kiosk(
         name,
         description,
         image_url,
-        metadata_ref,
         protected_blob,
         founding_memory_blob,
         skills_blob,
@@ -632,8 +724,18 @@ public fun mint_native_in_personal_kiosk(
         initial_asset_name,
         asset_public,
         asset_type,
+        initial_sprite_asset_name,
+        initial_sprite_version_index,
+        initial_sprite_download_policy,
+        initial_sprite_config,
+        initial_sprite_mood_map,
+        initial_voice_asset_name,
+        initial_voice_version_index,
+        initial_voice_download_policy,
+        initial_voice_config,
         content_access_price_atomic,
         content_access_default_scope_mask,
+        content_access_default_duration_ms,
         creator_royalty_bps,
         soul::provenance_native(),
         option::none(),
@@ -651,7 +753,6 @@ public fun mint_imported_in_personal_kiosk(
     name: std::string::String,
     description: std::string::String,
     image_url: std::string::String,
-    metadata_ref: Option<std::string::String>,
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
@@ -661,8 +762,18 @@ public fun mint_imported_in_personal_kiosk(
     initial_asset_name: std::string::String,
     asset_public: bool,
     asset_type: u8,
+    initial_sprite_asset_name: Option<std::string::String>,
+    initial_sprite_version_index: Option<u64>,
+    initial_sprite_download_policy: Option<u8>,
+    initial_sprite_config: Option<vector<u8>>,
+    initial_sprite_mood_map: Option<vector<u8>>,
+    initial_voice_asset_name: Option<std::string::String>,
+    initial_voice_version_index: Option<u64>,
+    initial_voice_download_policy: Option<u8>,
+    initial_voice_config: Option<vector<u8>>,
     content_access_price_atomic: u64,
     content_access_default_scope_mask: u64,
+    content_access_default_duration_ms: Option<u64>,
     origin_ref: std::string::String,
     creator_royalty_bps: u16,
     clock: &Clock,
@@ -677,7 +788,6 @@ public fun mint_imported_in_personal_kiosk(
         name,
         description,
         image_url,
-        metadata_ref,
         protected_blob,
         founding_memory_blob,
         skills_blob,
@@ -687,8 +797,18 @@ public fun mint_imported_in_personal_kiosk(
         initial_asset_name,
         asset_public,
         asset_type,
+        initial_sprite_asset_name,
+        initial_sprite_version_index,
+        initial_sprite_download_policy,
+        initial_sprite_config,
+        initial_sprite_mood_map,
+        initial_voice_asset_name,
+        initial_voice_version_index,
+        initial_voice_download_policy,
+        initial_voice_config,
         content_access_price_atomic,
         content_access_default_scope_mask,
+        content_access_default_duration_ms,
         creator_royalty_bps,
         soul::provenance_imported(),
         option::some(origin_ref),
@@ -707,7 +827,6 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     name: std::string::String,
     description: std::string::String,
     image_url: std::string::String,
-    metadata_ref: Option<std::string::String>,
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
@@ -717,8 +836,18 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     initial_asset_name: std::string::String,
     asset_public: bool,
     asset_type: u8,
+    initial_sprite_asset_name: Option<std::string::String>,
+    initial_sprite_version_index: Option<u64>,
+    initial_sprite_download_policy: Option<u8>,
+    initial_sprite_config: Option<vector<u8>>,
+    initial_sprite_mood_map: Option<vector<u8>>,
+    initial_voice_asset_name: Option<std::string::String>,
+    initial_voice_version_index: Option<u64>,
+    initial_voice_download_policy: Option<u8>,
+    initial_voice_config: Option<vector<u8>>,
     content_access_price_atomic: u64,
     content_access_default_scope_mask: u64,
+    content_access_default_duration_ms: Option<u64>,
     origin_ref: std::string::String,
     creator_royalty_bps: u16,
     clock: &Clock,
@@ -737,7 +866,6 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
         name,
         description,
         image_url,
-        metadata_ref,
         protected_blob,
         founding_memory_blob,
         skills_blob,
@@ -747,8 +875,18 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
         initial_asset_name,
         asset_public,
         asset_type,
+        initial_sprite_asset_name,
+        initial_sprite_version_index,
+        initial_sprite_download_policy,
+        initial_sprite_config,
+        initial_sprite_mood_map,
+        initial_voice_asset_name,
+        initial_voice_version_index,
+        initial_voice_download_policy,
+        initial_voice_config,
         content_access_price_atomic,
         content_access_default_scope_mask,
+        content_access_default_duration_ms,
         creator_royalty_bps,
         soul::provenance_personal_join(),
         option::some(origin_ref),
@@ -806,6 +944,50 @@ public fun create_collection_in_personal_kiosk(
     });
 
     collection_id
+}
+
+public fun set_active_sprite(
+    metadata_obj: &mut SoulMetadata,
+    state: &SoulState,
+    assets_book: &assets::SoulAssets,
+    asset_name: std::string::String,
+    version_index: u64,
+    download_policy: u8,
+    ctx: &TxContext,
+) {
+    let binding = metadata::new_asset_binding(asset_name, version_index, download_policy);
+    assert_binding_matches_assets(&binding, assets_book, ASSET_TYPE_SPRITE);
+    metadata::set_active_sprite(metadata_obj, state, option::some(binding), ctx);
+}
+
+public fun clear_active_sprite(
+    metadata_obj: &mut SoulMetadata,
+    state: &SoulState,
+    ctx: &TxContext,
+) {
+    metadata::clear_active_sprite(metadata_obj, state, ctx);
+}
+
+public fun set_active_voice(
+    metadata_obj: &mut SoulMetadata,
+    state: &SoulState,
+    assets_book: &assets::SoulAssets,
+    asset_name: std::string::String,
+    version_index: u64,
+    download_policy: u8,
+    ctx: &TxContext,
+) {
+    let binding = metadata::new_asset_binding(asset_name, version_index, download_policy);
+    assert_binding_matches_assets(&binding, assets_book, ASSET_TYPE_AUDIO);
+    metadata::set_active_voice(metadata_obj, state, option::some(binding), ctx);
+}
+
+public fun clear_active_voice(
+    metadata_obj: &mut SoulMetadata,
+    state: &SoulState,
+    ctx: &TxContext,
+) {
+    metadata::clear_active_voice(metadata_obj, state, ctx);
 }
 
 #[allow(lint(share_owned))]
@@ -1132,8 +1314,13 @@ public fun purchase_content_access(
 ) {
     assert!(!config.paused, EMarketPaused);
     assert!(content_access::soul_id(access_list) == soul::soul_id(state), EAccessListStateMismatch);
+    assert!(
+        soul::access_list_id(state).contains(&object::id(access_list)),
+        EAccessListLinkageMismatch,
+    );
 
     let price = content_access::price_atomic(access_list);
+    assert!(price > 0, EContentAccessNotPurchasable);
     let (platform_fee, _, total) = quote_content_access_purchase(config, price);
     assert!(payment.value() == total, EIncorrectPaymentAmount);
 
@@ -1146,7 +1333,7 @@ public fun purchase_content_access(
     transfer::public_transfer(owner_payment, payment_recipient);
 
     let buyer = ctx.sender();
-    content_access::record_purchase(access_list, buyer, price, clock);
+    content_access::record_purchase(access_list, state, buyer, price, clock);
 
     event::emit(ContentAccessPurchased {
         soul_id: soul::soul_id(state),
@@ -1155,6 +1342,59 @@ public fun purchase_content_access(
         price,
         platform_fee,
         payment_recipient,
+    });
+}
+
+/// Reclaim storage for a fully-settled `SoulListing` (cancelled or purchased).
+/// Any caller may invoke this — invalidated listings carry no value and
+/// leaving them shared indefinitely only wastes on-chain storage rebate.
+public fun delete_soul_listing(listing: SoulListing, ctx: &TxContext) {
+    assert!(!listing.is_active, EListingStillActive);
+    let listing_id = object::id(&listing);
+    let SoulListing {
+        id,
+        soul_id,
+        state_id: _,
+        seller,
+        seller_kiosk_id: _,
+        price: _,
+        creator: _,
+        creator_royalty_bps: _,
+        collection_id: _,
+        purchase_cap,
+        is_active: _,
+    } = listing;
+    purchase_cap.destroy_none();
+    id.delete();
+    event::emit(SoulListingDeleted {
+        listing_id,
+        soul_id,
+        seller,
+        deleted_by: ctx.sender(),
+    });
+}
+
+/// Reclaim storage for a fully-settled `CollectionListing`.
+public fun delete_collection_listing(listing: CollectionListing, ctx: &TxContext) {
+    assert!(!listing.is_active, EListingStillActive);
+    let listing_id = object::id(&listing);
+    let CollectionListing {
+        id,
+        collection_id,
+        right_id: _,
+        seller,
+        seller_kiosk_id: _,
+        price: _,
+        purchase_cap,
+        is_active: _,
+    } = listing;
+    purchase_cap.destroy_none();
+    id.delete();
+    event::emit(CollectionListingDeleted {
+        listing_id,
+        collection_id,
+        seller,
+        deleted_by: ctx.sender(),
     });
 }
 
@@ -1167,7 +1407,6 @@ fun mint_soul_in_personal_kiosk_impl(
     name: std::string::String,
     description: std::string::String,
     image_url: std::string::String,
-    metadata_ref: Option<std::string::String>,
     protected_blob: Blob,
     founding_memory_blob: Option<Blob>,
     skills_blob: Option<Blob>,
@@ -1177,8 +1416,18 @@ fun mint_soul_in_personal_kiosk_impl(
     initial_asset_name: std::string::String,
     asset_public: bool,
     asset_type: u8,
+    initial_sprite_asset_name: Option<std::string::String>,
+    initial_sprite_version_index: Option<u64>,
+    initial_sprite_download_policy: Option<u8>,
+    initial_sprite_config: Option<vector<u8>>,
+    initial_sprite_mood_map: Option<vector<u8>>,
+    initial_voice_asset_name: Option<std::string::String>,
+    initial_voice_version_index: Option<u64>,
+    initial_voice_download_policy: Option<u8>,
+    initial_voice_config: Option<vector<u8>>,
     content_access_price_atomic: u64,
     content_access_default_scope_mask: u64,
+    content_access_default_duration_ms: Option<u64>,
     creator_royalty_bps: u16,
     provenance_kind: u8,
     origin_ref: Option<std::string::String>,
@@ -1196,7 +1445,6 @@ fun mint_soul_in_personal_kiosk_impl(
         name,
         description,
         image_url,
-        metadata_ref,
         protected_blob,
         owner,
         creator_royalty_bps,
@@ -1217,6 +1465,9 @@ fun mint_soul_in_personal_kiosk_impl(
         ctx,
     );
     let state_id = object::id(&state);
+    let mut metadata_obj = metadata::create(soul_id, ctx);
+    let metadata_id = object::id(&metadata_obj);
+    soul::set_metadata_id(&mut state, metadata_id);
     let mut founding_memory_blob = founding_memory_blob;
     if (founding_memory_blob.is_some()) {
         let blob = option::extract(&mut founding_memory_blob);
@@ -1241,6 +1492,17 @@ fun mint_soul_in_personal_kiosk_impl(
     };
     skills_blob.destroy_none();
 
+    let mut initial_sprite_binding = resolve_initial_binding(
+        initial_sprite_asset_name,
+        initial_sprite_version_index,
+        initial_sprite_download_policy,
+    );
+    let mut initial_voice_binding = resolve_initial_binding(
+        initial_voice_asset_name,
+        initial_voice_version_index,
+        initial_voice_download_policy,
+    );
+
     // Create SoulAssets if asset_blob provided
     let mut asset_blob = asset_blob;
     if (asset_blob.is_some()) {
@@ -1255,10 +1517,28 @@ fun mint_soul_in_personal_kiosk_impl(
             clock,
             ctx,
         );
+
+        if (initial_sprite_binding.is_some()) {
+            let sprite_binding = option::extract(&mut initial_sprite_binding);
+            assert_binding_matches_assets(&sprite_binding, &assets_book, ASSET_TYPE_SPRITE);
+            metadata::set_active_sprite(&mut metadata_obj, &state, option::some(sprite_binding), ctx);
+        };
+
+        if (initial_voice_binding.is_some()) {
+            let voice_binding = option::extract(&mut initial_voice_binding);
+            assert_binding_matches_assets(&voice_binding, &assets_book, ASSET_TYPE_AUDIO);
+            metadata::set_active_voice(&mut metadata_obj, &state, option::some(voice_binding), ctx);
+        };
+
         soul::set_assets_id(&mut state, object::id(&assets_book));
         assets::share_assets(assets_book);
+    } else {
+        assert!(initial_sprite_binding.is_none(), EMetadataAssetsMissing);
+        assert!(initial_voice_binding.is_none(), EMetadataAssetsMissing);
     };
     asset_blob.destroy_none();
+    initial_sprite_binding.destroy_none();
+    initial_voice_binding.destroy_none();
 
     // Create ContentAccessList and bind to state (M-1 fix)
     let access_list = content_access::create(
@@ -1266,10 +1546,20 @@ fun mint_soul_in_personal_kiosk_impl(
         ctx.sender(),
         content_access_price_atomic,
         content_access_default_scope_mask,
+        content_access_default_duration_ms,
         ctx,
     );
     soul::set_access_list_id(&mut state, object::id(&access_list));
     content_access::share_access_list(access_list);
+    upsert_initial_metadata_blobs(
+        &mut metadata_obj,
+        &state,
+        initial_sprite_config,
+        initial_sprite_mood_map,
+        initial_voice_config,
+        ctx,
+    );
+    metadata::share_metadata(metadata_obj);
 
     kiosk::lock<Soul>(
         kiosk_obj,
@@ -1284,12 +1574,107 @@ fun mint_soul_in_personal_kiosk_impl(
         soul_id,
         state_id,
         memory_id,
+        metadata_id,
         kiosk_id,
         owner,
         provenance_kind,
     });
 
     soul_id
+}
+
+fun resolve_initial_binding(
+    asset_name: Option<std::string::String>,
+    version_index: Option<u64>,
+    download_policy: Option<u8>,
+): Option<AssetBinding> {
+    let has_asset_name = asset_name.is_some();
+    let has_version_index = version_index.is_some();
+    let has_download_policy = download_policy.is_some();
+
+    if (!has_asset_name && !has_version_index && !has_download_policy) {
+        asset_name.destroy_none();
+        version_index.destroy_none();
+        download_policy.destroy_none();
+        return option::none()
+    };
+
+    assert!(has_asset_name && has_version_index && has_download_policy, EInvalidMetadataBinding);
+    option::some(metadata::new_asset_binding(
+        option::destroy_some(asset_name),
+        option::destroy_some(version_index),
+        option::destroy_some(download_policy),
+    ))
+}
+
+fun assert_binding_matches_assets(
+    binding: &AssetBinding,
+    assets_book: &assets::SoulAssets,
+    expected_asset_type: u8,
+) {
+    let asset_name = *metadata::asset_name(binding);
+    let version_index = metadata::version_index(binding);
+    let download_policy = metadata::download_policy(binding);
+
+    assert!(!assets::version_is_deleted(assets_book, copy asset_name, version_index), EInvalidMetadataBinding);
+    assert!(assets::version_asset_type(assets_book, copy asset_name, version_index) == expected_asset_type, EInvalidMetadataBinding);
+
+    if (download_policy == metadata::download_policy_public()) {
+        assert!(assets::version_is_public(assets_book, asset_name, version_index), EInvalidMetadataBinding);
+    } else {
+        assert!(!assets::version_is_public(assets_book, asset_name, version_index), EInvalidMetadataBinding);
+    };
+}
+
+fun upsert_initial_metadata_blobs(
+    metadata_obj: &mut SoulMetadata,
+    state: &SoulState,
+    initial_sprite_config: Option<vector<u8>>,
+    initial_sprite_mood_map: Option<vector<u8>>,
+    initial_voice_config: Option<vector<u8>>,
+    ctx: &TxContext,
+) {
+    upsert_initial_metadata_blob_if_some(
+        metadata_obj,
+        state,
+        string::utf8(b"sprite.config.v1"),
+        initial_sprite_config,
+        ctx,
+    );
+    upsert_initial_metadata_blob_if_some(
+        metadata_obj,
+        state,
+        string::utf8(b"sprite.mood_map.v1"),
+        initial_sprite_mood_map,
+        ctx,
+    );
+    upsert_initial_metadata_blob_if_some(
+        metadata_obj,
+        state,
+        string::utf8(b"voice.config.v1"),
+        initial_voice_config,
+        ctx,
+    );
+}
+
+fun upsert_initial_metadata_blob_if_some(
+    metadata_obj: &mut SoulMetadata,
+    state: &SoulState,
+    key: std::string::String,
+    blob: Option<vector<u8>>,
+    ctx: &TxContext,
+) {
+    if (blob.is_some()) {
+        metadata::upsert_metadata_blob(
+            metadata_obj,
+            state,
+            key,
+            option::destroy_some(blob),
+            ctx,
+        );
+    } else {
+        blob.destroy_none();
+    };
 }
 
 fun create_soul_listing(
@@ -1489,34 +1874,41 @@ fun register_personal_kiosk(
     );
 }
 
-fun upsert_personal_kiosk_registration(
+/// Insert-or-assert: first registration inserts and emits
+/// `PersonalKioskRegistrationUpdated`; subsequent calls must present the
+/// same `(kiosk_id, kiosk_cap_id)` and become no-ops. Changing the
+/// registration target is NOT allowed here — use `rebind_primary_kiosk`
+/// instead, which also enforces that the old kiosk is empty so Souls
+/// locked inside are not orphaned.
+fun insert_or_assert_personal_kiosk_registration(
     registry: &mut KioskRegistry,
     owner: address,
     kiosk_id: ID,
     kiosk_cap_id: ID,
 ) {
-    if (df::exists_(&registry.id, PersonalKioskOwnerKey { owner })) {
-        let registration = df::borrow_mut<PersonalKioskOwnerKey, PersonalKioskRegistration>(
-            &mut registry.id,
-            PersonalKioskOwnerKey { owner },
+    let key = PersonalKioskOwnerKey { owner };
+    if (df::exists_(&registry.id, key)) {
+        let existing = df::borrow<PersonalKioskOwnerKey, PersonalKioskRegistration>(
+            &registry.id,
+            key,
         );
-        registration.kiosk_id = kiosk_id;
-        registration.kiosk_cap_id = kiosk_cap_id;
+        assert!(existing.kiosk_id == kiosk_id, EPersonalKioskMismatch);
+        assert!(existing.kiosk_cap_id == kiosk_cap_id, EPersonalKioskMismatch);
     } else {
         df::add(
             &mut registry.id,
-            PersonalKioskOwnerKey { owner },
+            key,
             PersonalKioskRegistration {
                 kiosk_id,
                 kiosk_cap_id,
             },
         );
+        event::emit(PersonalKioskRegistrationUpdated {
+            kiosk_id,
+            kiosk_cap_id,
+            owner,
+        });
     };
-    event::emit(PersonalKioskRegistrationUpdated {
-        kiosk_id,
-        kiosk_cap_id,
-        owner,
-    });
 }
 
 fun borrow_personal_kiosk_registration(

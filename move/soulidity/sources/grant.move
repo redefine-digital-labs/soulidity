@@ -19,6 +19,7 @@ const EGrantScopeWouldRemoveAll: u64 = 12;
 const EGrantInvalidScopeMask: u64 = 13;
 const EGrantCapacityTooLow: u64 = 14;
 const EGrantCapacityTooHigh: u64 = 15;
+const EGrantStillActive: u64 = 16;
 
 const MAX_GRANT_CAPACITY: u64 = 10_000;
 
@@ -79,6 +80,13 @@ public struct GrantCapacityUpdated has copy, drop {
     soul_id: ID,
     old_capacity: u64,
     new_capacity: u64,
+}
+
+public struct SoulGrantDestroyed has copy, drop {
+    grant_id: ID,
+    soul_id: ID,
+    grantee: address,
+    destroyed_by: address,
 }
 
 public fun soul_id(self: &SoulGrant): ID {
@@ -275,6 +283,47 @@ public fun set_grant_capacity(
     });
 }
 
+/// Reclaim storage for a SoulGrant that is no longer valid. A grant is
+/// considered invalidated when: (1) the Soul has changed owner since the
+/// grant was issued (epoch snapshot mismatch), or (2) the grant has been
+/// revoked / superseded and is no longer in `state.active_grants`, or
+/// (3) the expiry time has passed. This function does not enforce grantee
+/// identity, but `SoulGrant` is an owned object, so the transaction sender
+/// must still own/provide the grant object for Sui input validation to pass.
+public fun destroy_invalidated_grant(
+    grant: SoulGrant,
+    state: &SoulState,
+    clock: &Clock,
+    ctx: &TxContext,
+) {
+    assert!(grant.soul_id == soul::soul_id(state), EGrantSoulMismatch);
+
+    let grant_id = object::id(&grant);
+    let epoch_mismatch = grant.ownership_epoch_snapshot != soul::ownership_epoch(state);
+    let not_in_active = soul::active_grant_index_by_id(state, grant_id).is_none();
+    let expired = grant.expires_at_ms.is_some()
+        && clock.timestamp_ms() > *grant.expires_at_ms.borrow();
+    assert!(epoch_mismatch || not_in_active || expired, EGrantStillActive);
+
+    let SoulGrant {
+        id,
+        soul_id,
+        grantee,
+        issued_by: _,
+        ownership_epoch_snapshot: _,
+        scope_mask: _,
+        expires_at_ms: _,
+    } = grant;
+    id.delete();
+
+    event::emit(SoulGrantDestroyed {
+        grant_id,
+        soul_id,
+        grantee,
+        destroyed_by: ctx.sender(),
+    });
+}
+
 public(package) fun invalidate_all_for_owner_rotation(
     state: &mut SoulState,
     new_owner: address,
@@ -339,12 +388,12 @@ fun cleanup_expired_impl(state: &mut SoulState, clock: &Clock) {
     };
 }
 
-fun assert_valid_scope_mask(scope_mask: u64) {
+public(package) fun assert_valid_scope_mask(scope_mask: u64) {
     assert!(scope_mask != 0, EEmptyScopeMask);
     assert!((scope_mask & all_scopes()) == scope_mask, EGrantInvalidScopeMask);
 }
 
-fun all_scopes(): u64 {
+public(package) fun all_scopes(): u64 {
     SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS | SCOPE_ASSETS
 }
 

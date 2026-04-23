@@ -15,8 +15,10 @@ const ECollectionAlreadyBound: u64 = 2;
 const EInvalidOwner: u64 = 3;
 const ESkillsAlreadyBound: u64 = 4;
 const EMemoryAlreadyBound: u64 = 5;
+const EMetadataAlreadyBound: u64 = 6;
 const EAssetsAlreadyBound: u64 = 12;
 const EAccessListAlreadyBound: u64 = 13;
+const ESoulStateMismatch: u64 = 14;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
@@ -29,7 +31,6 @@ public struct Soul has key, store {
     name: String,
     description: String,
     image_url: String,
-    metadata_ref: Option<String>,
     protected_blob: Blob,
     provenance_kind: u8,
     origin_ref: Option<String>,
@@ -54,6 +55,7 @@ public struct SoulState has key {
     grant_capacity: u64,
     active_grants: vector<ActiveGrantSlot>,
     memory_id: Option<ID>,
+    metadata_id: Option<ID>,
     skills_id: Option<ID>,
     assets_id: Option<ID>,
     collection_id: Option<ID>,
@@ -63,6 +65,7 @@ public struct SoulState has key {
 public struct SoulCreated has copy, drop {
     soul_id: ID,
     state_id: ID,
+    metadata_id: ID,
     creator: address,
     owner: address,
     provenance_kind: u8,
@@ -97,10 +100,6 @@ public fun description(self: &Soul): &String {
 
 public fun image_url(self: &Soul): &String {
     &self.image_url
-}
-
-public fun metadata_ref(self: &Soul): &Option<String> {
-    &self.metadata_ref
 }
 
 public fun provenance_kind(self: &Soul): u8 {
@@ -159,6 +158,10 @@ public fun memory_id(self: &SoulState): &Option<ID> {
     &self.memory_id
 }
 
+public fun metadata_id(self: &SoulState): &Option<ID> {
+    &self.metadata_id
+}
+
 public fun skills_id(self: &SoulState): &Option<ID> {
     &self.skills_id
 }
@@ -195,7 +198,6 @@ public(package) fun mint(
     name: String,
     description: String,
     image_url: String,
-    metadata_ref: Option<String>,
     protected_blob: Blob,
     creator: address,
     creator_royalty_bps: u16,
@@ -210,7 +212,6 @@ public(package) fun mint(
         name,
         description,
         image_url,
-        metadata_ref,
         protected_blob,
         provenance_kind,
         origin_ref,
@@ -241,6 +242,7 @@ public(package) fun create_state(
         grant_capacity: DEFAULT_GRANT_CAPACITY,
         active_grants: vector[],
         memory_id,
+        metadata_id: option::none(),
         skills_id: option::none(),
         assets_id: option::none(),
         collection_id: option::none(),
@@ -249,9 +251,11 @@ public(package) fun create_state(
 }
 
 public(package) fun emit_created(state: &SoulState, provenance_kind: u8) {
+    let metadata_id = *state.metadata_id.borrow();
     event::emit(SoulCreated {
         soul_id: state.soul_id,
         state_id: object::id(state),
+        metadata_id,
         creator: state.creator,
         owner: state.current_owner,
         provenance_kind,
@@ -274,6 +278,10 @@ public(package) fun assert_owner(state: &SoulState, owner: address) {
     assert!(state.current_owner == owner, ENotSoulOwner);
 }
 
+public(package) fun assert_matches_state(self: &Soul, state: &SoulState) {
+    assert!(object::id(self) == state.soul_id, ESoulStateMismatch);
+}
+
 public(package) fun bind_collection(state: &mut SoulState, collection_id: ID) {
     assert!(state.collection_id.is_none(), ECollectionAlreadyBound);
     state.collection_id = option::some(collection_id);
@@ -282,6 +290,11 @@ public(package) fun bind_collection(state: &mut SoulState, collection_id: ID) {
 public(package) fun set_memory_id(state: &mut SoulState, memory_id: ID) {
     assert!(state.memory_id.is_none(), EMemoryAlreadyBound);
     state.memory_id = option::some(memory_id);
+}
+
+public(package) fun set_metadata_id(state: &mut SoulState, metadata_id: ID) {
+    assert!(state.metadata_id.is_none(), EMetadataAlreadyBound);
+    state.metadata_id = option::some(metadata_id);
 }
 
 public(package) fun set_skills_id(state: &mut SoulState, skills_id: ID) {
@@ -415,7 +428,6 @@ public fun destroy_for_testing(self: Soul): Blob {
         name: _,
         description: _,
         image_url: _,
-        metadata_ref: _,
         protected_blob,
         provenance_kind: _,
         origin_ref: _,
@@ -438,6 +450,7 @@ public fun destroy_state_for_testing(self: SoulState) {
         grant_capacity: _,
         active_grants: _,
         memory_id: _,
+        metadata_id: _,
         skills_id: _,
         assets_id: _,
         collection_id: _,
