@@ -1170,3 +1170,41 @@ describe('assets.ts — asset version transactions', () => {
     expect(tx).toBeInstanceOf(Transaction)
   })
 })
+
+// =========================================================================
+// kiosk-management.ts — buildRebindPrimaryKioskTx
+// =========================================================================
+import { buildRebindPrimaryKioskTx } from '../../web/lib/soulidity/tx/kiosk-management'
+
+describe('kiosk-management.ts — buildRebindPrimaryKioskTx', () => {
+  const VALID_PARAMS = {
+    oldKioskId: OBJ('22'),
+    newKioskCapOnChainId: OBJ('33'),
+  }
+
+  it('emits exactly one rebind_primary_kiosk call', () => {
+    const tx = buildRebindPrimaryKioskTx(VALID_PARAMS)
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(commands).toEqual(['rebind_primary_kiosk'])
+  })
+
+  it('throws on empty oldKioskId', () => {
+    expect(() => buildRebindPrimaryKioskTx({ ...VALID_PARAMS, oldKioskId: '' }))
+      .toThrow('oldKioskId is required')
+  })
+
+  it('throws on empty newKioskCapOnChainId', () => {
+    expect(() => buildRebindPrimaryKioskTx({ ...VALID_PARAMS, newKioskCapOnChainId: '' }))
+      .toThrow('newKioskCapOnChainId is required')
+  })
+
+  it('throws when old and new references collide', () => {
+    expect(() => buildRebindPrimaryKioskTx({
+      oldKioskId: OBJ('22'),
+      newKioskCapOnChainId: OBJ('22'),
+    })).toThrow('oldKioskId and newKioskCapOnChainId must differ')
+  })
+})

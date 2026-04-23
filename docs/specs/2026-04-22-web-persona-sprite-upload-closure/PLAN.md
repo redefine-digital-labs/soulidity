@@ -1,5 +1,7 @@
 # Plan
 
+**Status (2026-04-23)**: Superseded by `docs/specs/2026-04-23-soulidity-onchain-metadata/PLAN.md`. The `metadataRef` steps below are historical pre-hard-cut context.
+
 1. Add shared sprite primitives
    - parse sprite config JSON
    - derive canonical moodMap from animation names

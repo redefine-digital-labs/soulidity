@@ -1,5 +1,7 @@
 # Web Persona Sprite Upload Closure
 
+**Status (2026-04-23)**: Superseded by `docs/specs/2026-04-23-soulidity-onchain-metadata/`. This spec describes the pre-hard-cut mint-time `metadataRef` rail. Current runtime truth is the on-chain `SoulMetadata` object plus active asset bindings; do not use this file as the current contract reference.
+
 ## Goal
 
 把 web 端所有 Soul 入口补齐到同一个 canonical `persona-sprite` contract：

@@ -28,6 +28,11 @@ v6 kiosk rewrite 完成后，new-web 前端（当前仓库目录为 `web/`，Nex
 - **L-7**: `ContentAccessList` 新增 `default_access_duration_ms: Option<u64>` 字段；mint 三个公开入口的签名在 `content_access_default_scope_mask` 之后新增同名 `Option<u64>` 参数；`record_purchase` 根据 duration 计算 `expires_at_ms = now + duration`；新 `set_content_access_duration` owner-only 函数；`ContentAccessGranted` / `ContentAccessListCreated` 事件扩展 `expires_at_ms` / `default_access_duration_ms`；新事件 `ContentAccessDurationUpdated`
 - Move 协议测试扩展到 **142 项**（124 基线 + 14 新增 + 4 既有重构）全绿
 
+**v6.4 Sui scanner 审计后续加固（2026-04-23，同一部署）：** 原包 upgrade，on-chain object ID 不变，DB 在开发环境直接加列（migration `20260423130000_content_access_epoch_snapshot`）。
+- **audit-M1 (kiosk rebind)**: `market::upsert_personal_kiosk_registration` 重命名为 `insert_or_assert_personal_kiosk_registration`；`register_existing_personal_kiosk` / `ensure_personal_kiosk_registered` 调用后变为 **insert-or-assert**，不同 cap 的再注册 abort `EPersonalKioskMismatch`。新 `market::rebind_primary_kiosk(config, registry, old_kiosk, new_cap, ctx)`：要求 caller 已注册 + 传入 `old_kiosk` 匹配当前注册 + `kiosk::item_count(old_kiosk) == 0`，否则分别 abort `EPersonalKioskNotInitialized` / `EOldKioskMismatch` / `EOldKioskNotEmpty`；old 与 new 相同 abort `ERebindSameKiosk`。新错误码 `EOldKioskNotEmpty = 31` / `EOldKioskMismatch = 32` / `ERebindSameKiosk = 33`；新事件 `PersonalKioskRebound`。SDK 新增 `web/lib/soulidity/tx/kiosk-management.ts::buildRebindPrimaryKioskTx`（前端入口暂未暴露，仅 SDK 就绪）
+- **audit-M2 (content access epoch)**: `ContentAccessEntry` 新增 `ownership_epoch_snapshot: u64` 字段，`has_access` 签名扩 `state: &SoulState` 参数并新增 epoch 比对（失配视为无效 access）。`record_purchase` / `add_access` 在 renewal 分支把 "stale-epoch 条目" 视同可覆盖（前买家转售后可在新 owner 下重新付费）。`seal_approve_skill_allowlisted` / `seal_approve_asset_allowlisted` 透传 `state`。`ContentAccessGranted` 事件扩展 `ownership_epoch_snapshot`。Prisma `ContentAccessRecord` 加 `ownershipEpochSnapshot Int`；mirror / add+purchase route / access 查询（`asset-version-access.ts` + agent route）同步过滤 `ownershipEpochSnapshot = state.ownershipEpoch`，stale 条目 403 拦截在 Seal 之前
+- Move 协议测试扩展到 **149 项**（142 基线 + 2 条 M-2 回归 + 5 条 M-1 rebind）全绿。vitest soulidity 套件（events / mirror-upsert / access / sync-helpers / tx-builders / events-asset-delete）221 项全绿
+
 **全自动执行：** 本计划设计为 AI agent 独立可执行，零人工判断。自动化覆盖：
 - **浏览器交互** — Chrome DevTools MCP（snapshot → uid → click/fill/upload）
 - **链上状态发现 + USDC mint** — `sui client` CLI（balance / objects / call）
@@ -36,7 +41,7 @@ v6 kiosk rewrite 完成后，new-web 前端（当前仓库目录为 `web/`，Nex
 
 **唯一人工介入：** Privy 邮箱 OTP（执行者仅需输入 6 位验证码，其余全部自动化；若执行中切换 Seller / Buyer 会话，需要分别完成对应账号的 OTP）
 **测试 Fixture：** `/Users/admin/Documents/example`（单 Soul）+ `/Users/admin/Documents/example-collection`（Collection）
-**总计：98 个测试项（98 项全部纳入主流程通过口径），14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
+**总计：100 个测试项（100 项全部纳入主流程通过口径；v6.4 追加 Test 7.10g + 7.10h），14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
 
 **价格约束（2026-04-15 double-check + v6.3 加固）：**
 - `Soul` 的 listing price 必须严格大于 `0`
@@ -1185,14 +1190,17 @@ curl -s -w "\n%{http_code}" \
 > **说明：** `POST /api/souls/{id}/access-list/add` 需要 `requireHumanWalletIdentity`（Privy session cookie），无法从 CLI 调用。使用 DB 直接插入模拟链上 `add_access` TX 成功后的 mirror 写入，足以验证 API 读取路由和过滤逻辑。
 
 ```sql
+-- v6.4 audit-M2: ownership_epoch_snapshot 为 NOT NULL；此处模拟 Soul A 仍在初始 owner 手中（epoch=0）。
+-- 若前置 Phase 4 已转售过 Soul A，应改用当前链上 state.ownership_epoch 的值。
 INSERT INTO "content_access_records"
-  (soul_on_chain_id, access_list_on_chain_id, grantee_address, scope_mask, price_paid_atomic, granted_at_ms)
+  (soul_on_chain_id, access_list_on_chain_id, grantee_address, scope_mask, price_paid_atomic, granted_at_ms, ownership_epoch_snapshot)
 VALUES
-  ('$SOUL_A_ID', '$SOUL_A_ACCESS_LIST_OBJ', '$AGENT_ALPHA_ADDR', 12, 0, EXTRACT(EPOCH FROM NOW()) * 1000);
+  ('$SOUL_A_ID', '$SOUL_A_ACCESS_LIST_OBJ', '$AGENT_ALPHA_ADDR', 12, 0, EXTRACT(EPOCH FROM NOW()) * 1000, 0);
 ```
 
 - `scope_mask = 12` = SCOPE_SKILLS(4) | SCOPE_ASSETS(8)
 - `price_paid_atomic = 0`（owner 免费授权）
+- `ownership_epoch_snapshot = 0`（首次所有权，等于当前 SoulState.ownership_epoch）
 
 验证: 插入成功，affected rows = 1
 
@@ -1277,11 +1285,12 @@ curl -s -w "\n%{http_code}" \
    - `price == 1000000`，`platform_fee == 25000`
    - `ContentAccessGranted.expires_at_ms` 非空
    ```sql
-   SELECT grantee_address, scope_mask, price_paid_atomic, expires_at_ms, revoked_at
+   SELECT grantee_address, scope_mask, price_paid_atomic, expires_at_ms, revoked_at,
+          ownership_epoch_snapshot
    FROM content_access_records
    WHERE soul_on_chain_id = '$SOUL_B_ID' AND grantee_address = '$SELLER_ADDR';
    ```
-   验证 `scope_mask = 15`、`price_paid_atomic = 1000000`、`expires_at_ms IS NOT NULL`、`revoked_at IS NULL`
+   验证 `scope_mask = 15`、`price_paid_atomic = 1000000`、`expires_at_ms IS NOT NULL`、`revoked_at IS NULL`、`ownership_epoch_snapshot` 等于 `SoulState.ownership_epoch`（Test 7.3 已把 Soul B 卖给 Agent Alpha，epoch 应为 1；若后续再次转售则为当时 epoch）
 
 ### Test 7.10b: Content Access Purchase 报价含平台抽成（I-2 修复）
 
@@ -1434,6 +1443,126 @@ sui client object $KIOSK_REGISTRY_OBJ 2>&1 | head -8
    - 记录 `CONTENT_ACCESS_PURCHASE_DIGEST_2`
    - `ContentAccessGranted.expires_at_ms` 更新
    - DB 新 `expires_at_ms` 落在续购 TX 前后时间窗口 + 7200000ms 内
+
+### Test 7.10g: Content access 跨所有权转让自动失效（v6.4 audit-M2）
+
+> 验证 ownership_epoch_snapshot 语义：前 owner 下的已付 subscriber 在 Soul 转售后 `has_access` 立即翻 false，且 stale entry 可被 re-purchase 覆盖。
+> 前置：Test 7.10a / 7.10f 已让 Seller 在 Agent Alpha 名下拥有 Soul B 的有效 content access。
+
+1. **Agent Alpha 把 Soul B 列出并卖给 Buyer**（复用 Phase 4 的 `list_soul_fixed_price` + `buy_soul_fixed_price` 路径，打开 `window.__e2eSoulidity` 调用或走 Market UI）：
+   - 记录 `SOUL_B_RESALE_DIGEST`
+   - TX event `SoulPurchased`：`buyer == $BUYER_ADDR`，`seller == $AGENT_ALPHA_ADDR`
+
+2. **验证 SoulState epoch 递增：**
+   ```bash
+   sui client object $SOUL_B_STATE_OBJ --json 2>&1 | python3 -c "
+   import json, sys
+   d = json.load(sys.stdin)['data']['content']['fields']
+   print('ownership_epoch:', d['ownership_epoch'])
+   print('current_owner:', d['current_owner'])
+   "
+   ```
+   - `ownership_epoch` 相较 Test 7.10a 时点 +1
+   - `current_owner == $BUYER_ADDR`
+
+3. **`has_access` 链上查询 Seller（原 subscriber）立即失效：**
+   ```bash
+   ACCESS_LIST_ID="$SOUL_B_ACCESS_LIST_OBJ" \
+   STATE_ID="$SOUL_B_STATE_OBJ" \
+   GRANTEE_ADDRESS="$SELLER_ADDR" \
+   REQUIRED_SCOPE=15 \
+   npx tsx web/scripts/e2e-content-access-lifecycle.ts inspect-access
+   ```
+   - 输出 `hasAccess: false`（尽管 entry 未过期，epoch 失配直接拒绝）
+
+4. **验证 DB stale 条目仍保留但 API 查询拒绝：**
+   ```sql
+   SELECT grantee_address, ownership_epoch_snapshot, revoked_at
+   FROM "content_access_records"
+   WHERE soul_on_chain_id = '$SOUL_B_ID' AND grantee_address = '$SELLER_ADDR';
+   ```
+   - 记录存在，`revoked_at IS NULL`，但 `ownership_epoch_snapshot` 仍为转售前值（审计行保留）
+   - `GET /api/souls/${SOUL_B_ID}/access/...` 对该 viewer 返回 403（`asset-version-access.ts` 按 `ownershipEpochSnapshot = state.ownershipEpoch` 过滤）
+
+5. **Seller 在新 owner 下 re-purchase 覆盖 stale entry：**
+   ```js
+   await window.__e2eSoulidity.purchaseContentAccess({
+     soulObjectId: '$SOUL_B_ID',
+     accessListOnChainId: '$SOUL_B_ACCESS_LIST_OBJ',
+     stateOnChainId: '$SOUL_B_STATE_OBJ',
+     priceAtomic: '1000000',
+     platformFeeBps: 250
+   })
+   ```
+   - TX 成功，**不** abort `EAlreadyHasAccess`（合约把 stale-epoch 条目视为可覆盖）
+   - 事件 `ContentAccessGranted.ownership_epoch_snapshot` 等于新 epoch
+   - DB 上同一行被覆盖：`ownership_epoch_snapshot` 刷新到新值，`price_paid_atomic` 更新
+   - 再次 `inspect-access` 输出 `hasAccess: true`
+
+### Test 7.10h: KioskRegistry insert-or-assert + rebind（v6.4 audit-M1）
+
+> 验证 registry 语义：同 cap 重注册幂等；不同 cap 再注册 abort；`rebind_primary_kiosk` 在旧 kiosk 非空时 abort、在空时成功。
+> 全部由 dev 账户独立完成（不借 Seller / Buyer 真人钱包），`PersonalKioskCap` 是 `key`-only soul-bound，只能转给调用者自身。
+
+1. **首次注册（baseline）：** dev 账户 `sui client call … init_personal_kiosk` →
+   - 记录 `DEV_KIOSK_A_ID` + `DEV_KIOSK_A_CAP_ID`
+   - 事件含 `PersonalKioskRegistrationUpdated`
+
+2. **幂等分支：再次调 `ensure_personal_kiosk_registered` 传同一把 cap → no-op：**
+   ```bash
+   sui client call --package $PACKAGE_ID --module market \
+     --function ensure_personal_kiosk_registered \
+     --args $MARKET_CONFIG_ID $KIOSK_REGISTRY_OBJ $DEV_KIOSK_A_CAP_ID \
+     --gas-budget 20000000 2>&1 | grep -E "Status|event"
+   ```
+   - TX success，**不**新增 `PersonalKioskRegistrationUpdated` 事件（insert-or-assert 的匹配分支）
+
+3. **不同 cap 再注册 → abort `EPersonalKioskMismatch`：** dev 账户先构造第二把 cap：
+   ```bash
+   sui client ptb \
+     --move-call 0x2::kiosk::new \
+     --assign kiosk_and_cap \
+     --move-call $KIOSK_PKG::personal_kiosk::new kiosk_and_cap.0 kiosk_and_cap.1 \
+     --assign pk_cap \
+     --move-call 0x2::transfer::public_share_object "<0x2::kiosk::Kiosk>" kiosk_and_cap.0 \
+     --move-call $KIOSK_PKG::personal_kiosk::transfer_to_sender pk_cap \
+     --gas-budget 50000000
+   ```
+   记录 `DEV_KIOSK_B_CAP_ID`，然后：
+   ```bash
+   sui client call --package $PACKAGE_ID --module market \
+     --function register_existing_personal_kiosk \
+     --args $MARKET_CONFIG_ID $KIOSK_REGISTRY_OBJ $DEV_KIOSK_B_CAP_ID \
+     --gas-budget 20000000 --dry-run 2>&1 | grep -E "abort"
+   ```
+   - 预期 abort：`MoveAbort(... market ..., EPersonalKioskMismatch)`
+
+4. **`rebind_primary_kiosk` 旧 kiosk 非空时 abort `EOldKioskNotEmpty`：** 先让 DEV_KIOSK_A 装一件任意物（例如把一个测试用 Soul / CollectionRight lock 进去；最简方便做法是用 dev 账户跑一次 `mint_native_in_personal_kiosk`，把 Soul lock 到 DEV_KIOSK_A）。然后：
+   ```bash
+   DEV_KIOSK_B_ID=$(sui client object $DEV_KIOSK_B_CAP_ID --json 2>&1 | python3 -c "
+   import json, sys
+   d = json.load(sys.stdin)['data']['content']['fields']['cap']['fields']
+   print(d['for'])
+   ")
+   sui client call --package $PACKAGE_ID --module market \
+     --function rebind_primary_kiosk \
+     --args $MARKET_CONFIG_ID $KIOSK_REGISTRY_OBJ $DEV_KIOSK_A_ID $DEV_KIOSK_B_CAP_ID \
+     --gas-budget 20000000 --dry-run 2>&1 | grep -E "abort"
+   ```
+   - 预期 abort：`MoveAbort(... market ..., EOldKioskNotEmpty = 31)`
+
+5. **正向：旧 kiosk 为空时 rebind 成功。** 用一个全新的 dev 账户（或把 DEV_KIOSK_A 里的 Soul 先 sell/delist 清空，更简单的是换账户做一次空流程）重复 step 1 得到空 kiosk `DEV_KIOSK_C_ID` + cap，然后新建第四把 cap `DEV_KIOSK_D_CAP_ID`（同 step 3 手法），再：
+   ```bash
+   sui client call --package $PACKAGE_ID --module market \
+     --function rebind_primary_kiosk \
+     --args $MARKET_CONFIG_ID $KIOSK_REGISTRY_OBJ $DEV_KIOSK_C_ID $DEV_KIOSK_D_CAP_ID \
+     --gas-budget 20000000 2>&1 | grep -E "Status|event"
+   ```
+   - TX success
+   - 事件含 `PersonalKioskRebound { owner, old_kiosk_id, old_kiosk_cap_id, new_kiosk_id, new_kiosk_cap_id }`
+   - 再次 `sui client object $KIOSK_REGISTRY_OBJ --json` 确认 dev 账户对应的 `PersonalKioskRegistration.kiosk_id` 已从 C 改为 D，`kiosk_cap_id` 改为 DEV_KIOSK_D_CAP_ID
+
+> **说明：** 本 test 聚焦合约语义保障（幂等、防 mismatch 覆盖、空 kiosk 才能 rebind），以保护 Seller / Buyer 的 Soul 不因重复注册被孤儿化。SDK `buildRebindPrimaryKioskTx` 已就绪；前端 UI 暂无入口，E2E 仅覆盖合约面。
 
 ---
 
@@ -2028,6 +2157,8 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 29. **v6.3 SoulGrant 僵尸对象回收**: Test 5.6 revoke 后 SoulGrant 对象在 agent 钱包里仍为 key-only 占用 storage。Test 5.8 通过 `grant::destroy_invalidated_grant` 回收；合约无额外 grantee 身份限制，但 `SoulGrant` 是 owned object，实际交易 sender 必须拥有/能提供该 grant object。本轮实测 treasury signer 失败，Agent Alpha（grant object owner）签名成功。
 30. **v6.3 delete_listing 回收**: Phase 11 Cleanup 新增 Test 11.0a 回收 Phase 4 purchase 后 `is_active=false` 的 SoulListing；Test 11.0b 回收 Phase 3.5 list + delist 后留下的 inactive CollectionListing。
 31. **v6.3 Seal document id 长度严格 `==`**: `seal_policy` / `skills` / `assets` 的 `assert_matching_document_id` 不再允许尾部多余字节。TS SDK `web/lib/services/seal-crypto.ts` + `desktop/.../asset-access.ts` 已输出精确字节长度；现有 `tests/web/seal-crypto.test.ts` 覆盖正向；链上单元测试覆盖尾缀字节负向。本计划不在 API/UI 层面新增断言。
+32. **v6.4 KioskRegistry 语义（audit-M1）**: `register_existing_personal_kiosk` / `ensure_personal_kiosk_registered` 由原 upsert 改为 insert-or-assert——首次注册 emit `PersonalKioskRegistrationUpdated`，重复同 cap 无事件 no-op，不同 cap 再注册 abort `EPersonalKioskMismatch`。切换 kiosk 唯一合法路径是 `market::rebind_primary_kiosk`，合约硬性要求 old kiosk 空（`kiosk::item_count == 0`）避免孤立 Soul。Test 7.10h 覆盖幂等 / 非空旧 kiosk abort / 正向 rebind；前端 UI 暂不暴露 rebind 入口，SDK `buildRebindPrimaryKioskTx` 仅供运维 / 测试脚本。
+33. **v6.4 ContentAccess epoch 软失效（audit-M2）**: `ContentAccessEntry.ownership_epoch_snapshot` 与 `SoulState.ownership_epoch` 必须相等才视为有效；`has_access` 签名新增 `&SoulState` 参数并做 epoch 比对。Soul 转售后旧 subscriber 的 `has_access` 立即翻 false（即便 entry 未过期），stale 条目保留作审计记录，可由原 grantee 在新 owner 下重新付费走 `record_purchase` 覆盖。`ContentAccessGranted` 事件扩展 `ownership_epoch_snapshot`；Prisma / mirror / API 全链路同步 `ownershipEpochSnapshot` 并在 `asset-version-access.ts` + agent access route 中做 SQL filter（stale 直接 403，不触发 Seal round-trip）。Test 7.10g 覆盖跨转让 has_access 翻转 + re-purchase 覆盖 stale；Test 7.7 的 SQL fixture 已补上 `ownership_epoch_snapshot` 列。
 
 ---
 
@@ -2035,7 +2166,7 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 
 默认验收口径：
 - Phase -1 仅作为环境准备单独记录，不计入通过率
-- 98 项主流程通过（含 Phase 7.11 Seal 解密与 Phase 7.12 逐字节内容比对，Seal 已部署 testnet）
+- 100 项主流程通过（含 Phase 7.11 Seal 解密与 Phase 7.12 逐字节内容比对，Seal 已部署 testnet；v6.4 追加 Test 7.10g content access 跨转让失效 + Test 7.10h KioskRegistry rebind）
 - Test 7.10a 正向路径必须完成 `price_atomic > 0` 的真人钱包 paid purchase，并验证付款 recipient 为当前 owner
 - Test 7.10e scope mask 负向必须记录 dry-run abort；若 dry-run 环境无法稳定复用 Walrus Blob owned object，则运行对应 Move test 并把输出写入结果文档
 - Test 7.10f duration 生命周期必须通过 `web/scripts/e2e-content-access-lifecycle.ts` + 真人钱包续购完成

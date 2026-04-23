@@ -372,7 +372,7 @@ public struct SoulAssets has key {
 
 ### Module 8 — ContentAccessList（Phase 2）
 
-独立于 grant 体系，不随 Soul 所有权转移失效。
+独立于 grant 体系，但每条 entry 都绑定创建时的 Soul ownership epoch。Soul 转手后，旧 entry 保留用于审计，但访问判定自动失效；买家需要在新 owner epoch 下重新购买或由新 owner 重新授权。
 
 ```move
 public struct ContentAccessList has key {
@@ -384,6 +384,14 @@ public struct ContentAccessList has key {
     default_access_duration_ms: Option<u64>,  // None = lifetime
     entries: table::Table<address, ContentAccessEntry>,
     entry_count: u64,
+}
+
+public struct ContentAccessEntry has store {
+    scope_mask: u64,
+    price_paid_atomic: u64,
+    granted_at_ms: u64,
+    expires_at_ms: Option<u64>,
+    ownership_epoch_snapshot: u64,
 }
 ```
 
@@ -398,7 +406,7 @@ public struct ContentAccessList has key {
 - 要求 `state.access_list_id == object::id(access_list)` 双向匹配
 - `default_scope_mask` 必须是 `SCOPE_SEAL|MEMORY|SKILLS|ASSETS`（1/2/4/8）的非零子集
 - `default_access_duration_ms` 决定 `record_purchase` 写入的 `expires_at_ms`；owner 可通过 `set_content_access_duration` 随时更新，只影响后续购买
-- `has_access` 读取 entry 的 `expires_at_ms` 自动拒绝过期地址
+- `has_access` 同时校验 `expires_at_ms` 与 `ownership_epoch_snapshot == SoulState.ownership_epoch`；过期或旧 owner epoch 的地址都返回无权限
 
 ### Module 9 — 双钱包与 Agent 身份（Phase 2）
 
@@ -487,7 +495,7 @@ public struct ContentAccessList has key {
 - Desktop-Claw Electron workspace 为基础扩展，不保留 Tauri
 - Move 新增模块不修改现有 Soul/SoulState 核心字段（除 `assets_id: Option<ID>`）
 - SoulAssets 与 Skills 同构，复用 event parsing、mirror、repository 模式
-- ContentAccessList 独立于 grant 体系，不受 ownership_epoch 影响
+- ContentAccessList 独立于 grant 体系，但 entry 受 `ownership_epoch_snapshot` 约束；Soul 转手后旧 access row 保留但不再授权
 - 适配器脚本保持极简（单文件 Node.js，零依赖）
 - Soul 抽取只提取统计和风格特征，不上传原始对话内容
 - 所有链上操作 DB 同步走 post-TX direct write 模式
@@ -624,10 +632,9 @@ public struct ContentAccessList has key {
 - [x] API routes：assets, access-list, human + agent access
 - [x] Seal crypto：`generateAssetDocumentIdForVersion`
 - [x] Move protocol tests：SoulAssets + ContentAccessList
+- [x] Soul metadata parsing + desktop catalog / bundle / download flow
 
 ### Phase 2 — Desktop Consumption Still Pending
-
-- [ ] Soul metadata parsing + desktop download flow
 - [ ] 账号绑定（desktop agent → web account）
 - [ ] Soul extraction：local session scanner
 - [ ] Soul extraction：profile analyzer

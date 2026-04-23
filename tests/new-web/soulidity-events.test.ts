@@ -84,6 +84,7 @@ describe('extractSoulMintedToKioskEvent', () => {
       soul_id: addr('1'),
       state_id: addr('2'),
       memory_id: addr('3'),
+      metadata_id: addr('6'),
       kiosk_id: addr('4'),
       owner: addr('5'),
       provenance_kind: 0,
@@ -93,6 +94,7 @@ describe('extractSoulMintedToKioskEvent', () => {
       soulId: addr('1'),
       stateId: addr('2'),
       memoryId: addr('3'),
+      metadataId: addr('6'),
       kioskId: addr('4'),
       ownerAddress: addr('5'),
       provenanceKind: 0,
@@ -104,12 +106,14 @@ describe('extractSoulMintedToKioskEvent', () => {
       soul_id: { id: addr('1') },
       state_id: { id: addr('2') },
       memory_id: { id: addr('3') },
+      metadata_id: { id: addr('6') },
       kiosk_id: { id: addr('4') },
       owner: addr('5'),
       provenance_kind: '1',
     })
     const result = extractSoulMintedToKioskEvent(tx, PKG)
     expect(result.soulId).toBe(addr('1'))
+    expect(result.metadataId).toBe(addr('6'))
     expect(result.provenanceKind).toBe(1)
   })
 

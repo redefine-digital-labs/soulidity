@@ -1,5 +1,7 @@
 # Plan
 
+**Status (2026-04-23)**: Superseded by `docs/specs/2026-04-23-soulidity-onchain-metadata/PLAN.md`. Use the newer plan for current tx builder, projection, and desktop consumer work.
+
 1. Normalize metadata
    - add canonical `moodMap` normalization
    - validate `publicAssets` / `protectedAssets`

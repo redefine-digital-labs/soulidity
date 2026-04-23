@@ -47,9 +47,15 @@
 - 失败用 `grant::EEmptyScopeMask` (mask=0) 或 `grant::EGrantInvalidScopeMask` (含 `SCOPE_SEAL|MEMORY|SKILLS|ASSETS` 以外位)。
 - TS 端 `publish.ts` / `import.ts` / `personal-join.ts` / desktop `publish.ts` 新增 `ALL_ACCESS_SCOPES = 15` 作为默认值，调用方未指定时回退为全 scope。
 
-**purchase_content_access 保护 (M-2 + M-3)**
+**purchase_content_access 链接 / 价格保护 (M-2 + M-3)**
 - 新错误码 `market::EContentAccessNotPurchasable = 28`：price_atomic=0 时禁止走 purchase 路径（owner 必须用 `content_access::add_access`）。
 - 新错误码 `market::EAccessListLinkageMismatch = 29`：额外校验 `state.access_list_id == object::id(access_list)`，防御未来 1:N 关系变更。
+
+**ContentAccess ownership epoch pinning (M-2 follow-up)**
+- `ContentAccessEntry` 新增 `ownership_epoch_snapshot`，由 `record_purchase` / `add_access` 写入当前 `SoulState.ownership_epoch`。
+- `has_access` / `seal_approve_*_allowlisted` 必须接收并校验 `SoulState`；entry epoch 与当前 epoch 不一致时返回无权限。
+- Soul 转手后旧 access row 保留用于审计，但不再授权；同一地址可在新 owner epoch 下重新购买并覆盖旧 snapshot。
+- 详细收口记录见 `docs/plans/2026-04-23-content-access-epoch-snapshot.md`。
 
 **Grant 僵尸对象回收 (L-1)**
 - 新 `grant::destroy_invalidated_grant(grant, state, clock, ctx)`：当 epoch 不匹配 / 不在 active_grants / 已过期三种条件任一满足即允许销毁，对调用者无身份限制（storage rebate 谁清理归谁）。
@@ -71,7 +77,7 @@
 - TS SDK：`buildSetContentAccessDurationTx` (`web/lib/soulidity/tx/content-access.ts`)；event parser (`web/lib/soulidity/events.ts`) 新增 `expiresAtMs` / `defaultAccessDurationMs`；mirror `web/app/api/souls/[id]/access-list/{purchase,add}/route.ts` 将 `expiresAtMs` 写入 `ContentAccessRecord.expiresAtMs`。
 
 **测试覆盖**
-- `move/soulidity/sources/protocol_tests.move` 新增 14 个测试（按 L-5 / L-6 / M-2 / M-3 / L-1 / L-3 / L-7 分组），`sui move test` 总量从 124 → 142 全绿。
+- `move/soulidity/sources/protocol_tests.move` 新增 14 个测试（按 L-5 / L-6 / M-2 / M-3 / L-1 / L-3 / L-7 分组），后续 ownership epoch snapshot 回归把 `sui move test` 总量推进到 149/149 全绿。
 - `tests/new-web/soulidity-tx-builders.test.ts` 继续 105/105 绿；`tests/web/seal-*.test.ts` 18/18 绿。
 
 **破坏性变更**
@@ -567,7 +573,9 @@ git commit -m "feat(move): add assets_id to SoulState and SCOPE_ASSETS to grant"
 
 **文件:** 新建 `move/soulidity/sources/content_access.move`
 
-独立于 grant 体系。不随 Soul 所有权转移失效。按 address 索引 O(1) 查找。
+独立于 grant 体系；每条 entry 记录 `ownership_epoch_snapshot`，Soul 转手后旧 row 保留但不再授权。按 address 索引 O(1) 查找。
+
+> Note: 下方代码骨架保留为最初实施计划的历史草图。当前实现以本文件 2026-04-23 addendum 和 `docs/plans/2026-04-23-content-access-epoch-snapshot.md` 为准。
 
 - [ ] **Step 1: 创建完整模块**
 

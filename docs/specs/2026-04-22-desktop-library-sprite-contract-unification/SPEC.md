@@ -1,5 +1,7 @@
 # Desktop Library Sprite Contract Unification
 
+**Status (2026-04-23)**: Superseded by the on-chain `SoulMetadata` hard cut in `docs/specs/2026-04-23-soulidity-onchain-metadata/`. The stable product decision remains metadata-driven desktop download policy, but the current source of truth is the mirrored on-chain metadata object rather than an external metadata JSON rail.
+
 ## Goal
 
 统一 desktop library 的 soul sprite contract：
