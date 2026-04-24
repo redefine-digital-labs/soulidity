@@ -535,6 +535,21 @@ function readSoulDownloadPolicy(value: unknown, fieldName: string): SoulDownload
 }
 
 function readOptionalMetadataBinding(value: unknown, fieldName: string): SoulMetadataBindingRecord | null {
+  const directRecord = asRecord(value)
+  const directFields = directRecord ? asRecord(directRecord.fields) ?? directRecord : null
+  if (
+    directFields
+    && 'asset_name' in directFields
+    && 'version_index' in directFields
+    && 'download_policy' in directFields
+  ) {
+    return {
+      assetName: readString(directFields.asset_name, `${fieldName}.asset_name`),
+      versionIndex: readNumber(directFields.version_index, `${fieldName}.version_index`),
+      downloadPolicy: readSoulDownloadPolicy(directFields.download_policy, `${fieldName}.download_policy`),
+    }
+  }
+
   const items = readVectorItems(value, fieldName)
   if (items.length === 0) {
     return null

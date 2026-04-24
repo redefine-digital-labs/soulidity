@@ -313,6 +313,7 @@ export interface SoulAssetVersionRecord {
 
 export interface SoulAssetVersionsResponse {
   assets: SoulAssetVersionRecord[]
+  nextVersionIndexes?: Record<string, number>
 }
 
 export interface SoulCollectionAssetSummary {

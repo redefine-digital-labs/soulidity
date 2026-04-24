@@ -29,13 +29,25 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const soul = await prisma.soulAsset.findFirst({ where, select: { onChainId: true } })
   if (!soul) return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
 
-  const versions = await prisma.soulAssetVersionRecord.findMany({
-    where: { soulOnChainId: soul.onChainId, deletedAt: null },
-    orderBy: [{ assetName: 'asc' }, { versionIndex: 'desc' }],
-  })
+  const [versions, versionIndexes] = await Promise.all([
+    prisma.soulAssetVersionRecord.findMany({
+      where: { soulOnChainId: soul.onChainId, deletedAt: null },
+      orderBy: [{ assetName: 'asc' }, { versionIndex: 'desc' }],
+    }),
+    prisma.soulAssetVersionRecord.findMany({
+      where: { soulOnChainId: soul.onChainId },
+      select: { assetName: true, versionIndex: true },
+    }),
+  ])
+
+  const nextVersionIndexes = versionIndexes.reduce<Record<string, number>>((acc, row) => {
+    acc[row.assetName] = Math.max(acc[row.assetName] ?? 0, row.versionIndex + 1)
+    return acc
+  }, {})
 
   return NextResponse.json({
     assets: versions.map((v) => ({ ...v, createdAtMs: Number(v.createdAtMs) })),
+    nextVersionIndexes,
   })
 }
 
