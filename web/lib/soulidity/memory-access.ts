@@ -1,6 +1,6 @@
-import { getBlobUrl } from '@web/lib/services/walrus'
-import { getSealSessionTtlMinutes, getSealRuntimeConfig } from '@web/lib/services/seal'
-import { generateMemoryDocumentId } from '@web/lib/services/seal-crypto'
+import { getBlobUrl } from '@/lib/services/walrus'
+import { getSealSessionTtlMinutes, getSealRuntimeConfig } from '@/lib/services/seal'
+import { generateMemoryDocumentId } from '@/lib/services/seal-crypto'
 import type { MemoryAccessResponse, SoulAssetDetail, SoulMemoryEntryRecord } from '@/lib/soulidity/types'
 import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
 

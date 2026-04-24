@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { resolveIdentity } from '@web/lib/auth/identity'
-import { prisma } from '@web/lib/prisma'
-import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
-import { resolveMemberSpaceId } from '@web/lib/community/resolve-space'
+import { resolveIdentity } from '@/lib/auth/identity'
+import { prisma } from '@/lib/prisma'
+import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
+import { resolveMemberSpaceId } from '@/lib/community/resolve-space'
 import { serializeSoulPreviewImageList } from '@/lib/soulidity/serialization'
 import { parseCommunityTags } from '@shared/community-tags'
 

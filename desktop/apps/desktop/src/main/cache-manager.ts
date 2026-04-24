@@ -1,28 +1,35 @@
 /**
  * CacheManager — local sprite/persona asset caching.
  *
- * Stores downloaded sprites from the Soul marketplace in userData/cache/.
- * Provides cache, get, check, prune, and size operations.
+ * Stores downloaded sprites from the desktop catalog in userData/cache/.
+ * Canonical files are `persona-sprite.png` and `persona-sprite-config.json`.
+ * Legacy `sprite.png` / `sprite-config.json` are still readable and are
+ * migrated to canonical names on the next successful read.
  */
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { app } from 'electron'
 
+const CANONICAL_SPRITE_FILE_NAME = 'persona-sprite.png'
+const CANONICAL_CONFIG_FILE_NAME = 'persona-sprite-config.json'
+const LEGACY_SPRITE_FILE_NAME = 'sprite.png'
+const LEGACY_CONFIG_FILE_NAME = 'sprite-config.json'
+
 interface CacheMeta {
   spriteId: string
-  source: string // e.g. 'soul-marketplace', 'community', 'local'
+  source: string
   version: string
-  downloadedAt: number // epoch ms
-  size: number // total bytes
+  downloadedAt: number
+  size: number
   catalogSourceType?: 'starter' | 'soul'
   catalogSourceRef?: string
 }
 
 interface CachedSprite {
   meta: CacheMeta
-  spritePath: string // absolute path to sprite.png
-  configPath: string // absolute path to sprite-config.json
+  spritePath: string
+  configPath: string
   thumbnailPath: string | null
 }
 
@@ -31,7 +38,6 @@ function getCacheDir(): string {
 }
 
 function getSpriteDir(spriteId: string): string {
-  // Sanitize spriteId to prevent directory traversal
   const safe = spriteId.replace(/[^a-zA-Z0-9_-]/g, '_')
   return path.join(getCacheDir(), 'sprites', safe)
 }
@@ -41,35 +47,62 @@ function getThumbnailPath(spriteId: string): string {
   return path.join(getCacheDir(), 'thumbnails', `${safe}.png`)
 }
 
+function migrateLegacyFile(dir: string, legacyName: string, canonicalName: string) {
+  const canonicalPath = path.join(dir, canonicalName)
+  const legacyPath = path.join(dir, legacyName)
+
+  if (fs.existsSync(canonicalPath)) {
+    return canonicalPath
+  }
+
+  if (!fs.existsSync(legacyPath)) {
+    return null
+  }
+
+  try {
+    fs.renameSync(legacyPath, canonicalPath)
+    return canonicalPath
+  } catch {
+    return legacyPath
+  }
+}
+
+function resolveCachedAssetPaths(dir: string) {
+  const spritePath = migrateLegacyFile(dir, LEGACY_SPRITE_FILE_NAME, CANONICAL_SPRITE_FILE_NAME)
+  const configPath = migrateLegacyFile(dir, LEGACY_CONFIG_FILE_NAME, CANONICAL_CONFIG_FILE_NAME)
+
+  if (!spritePath || !configPath) {
+    return null
+  }
+
+  return { spritePath, configPath }
+}
+
 export function hasCachedSprite(spriteId: string): boolean {
   const dir = getSpriteDir(spriteId)
-  return (
-    fs.existsSync(path.join(dir, 'meta.json'))
-    && fs.existsSync(path.join(dir, 'sprite.png'))
-    && fs.existsSync(path.join(dir, 'sprite-config.json'))
-  )
+  return fs.existsSync(path.join(dir, 'meta.json')) && resolveCachedAssetPaths(dir) !== null
 }
 
 export function getCachedSprite(spriteId: string): CachedSprite | null {
   const dir = getSpriteDir(spriteId)
   const metaPath = path.join(dir, 'meta.json')
 
-  if (!fs.existsSync(metaPath)) return null
+  if (!fs.existsSync(metaPath)) {
+    return null
+  }
 
   try {
     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as CacheMeta
-    const spritePath = path.join(dir, 'sprite.png')
-    const configPath = path.join(dir, 'sprite-config.json')
-    const thumbPath = getThumbnailPath(spriteId)
-
-    if (!fs.existsSync(spritePath) || !fs.existsSync(configPath)) {
+    const assets = resolveCachedAssetPaths(dir)
+    if (!assets) {
       return null
     }
 
+    const thumbPath = getThumbnailPath(spriteId)
     return {
       meta,
-      spritePath,
-      configPath,
+      spritePath: assets.spritePath,
+      configPath: assets.configPath,
       thumbnailPath: fs.existsSync(thumbPath) ? thumbPath : null,
     }
   } catch {
@@ -88,12 +121,12 @@ export function cacheSprite(
   let totalSize = 0
 
   if (files.sprite) {
-    fs.writeFileSync(path.join(dir, 'sprite.png'), files.sprite)
+    fs.writeFileSync(path.join(dir, CANONICAL_SPRITE_FILE_NAME), files.sprite)
     totalSize += files.sprite.length
   }
 
   if (files.config) {
-    fs.writeFileSync(path.join(dir, 'sprite-config.json'), files.config, 'utf-8')
+    fs.writeFileSync(path.join(dir, CANONICAL_CONFIG_FILE_NAME), files.config, 'utf-8')
     totalSize += Buffer.byteLength(files.config)
   }
 
@@ -148,7 +181,6 @@ export function pruneCache(maxAgeMs: number): number {
         pruned++
       }
     } catch {
-      // No valid meta — remove orphan directory
       fs.rmSync(path.join(spritesDir, entry.name), { recursive: true, force: true })
       pruned++
     }
@@ -173,7 +205,7 @@ export function getCacheStats(): { totalSprites: number; totalBytes: number } {
       totalSprites++
       totalBytes += meta.size
     } catch {
-      totalSprites++ // count even without valid meta
+      totalSprites++
     }
   }
 

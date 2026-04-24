@@ -8,7 +8,7 @@ import {
   type SealCompatibleClient,
 } from '@mysten/seal'
 import type { Signer } from '@mysten/sui/cryptography'
-import { suiClient } from '@web/lib/sui'
+import { suiClient } from '@/lib/sui'
 
 const DEFAULT_TESTNET_SEAL_SERVER_CONFIGS: KeyServerConfig[] = [
   {

@@ -1,26 +1,26 @@
 import { NextResponse } from 'next/server'
 
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import {
   buildChallengeMessage,
   getTrustedAppDomain,
   normalizeSuiWalletAddress,
-} from '@web/lib/auth/challenge'
-import { isUuid } from '@web/lib/is-uuid'
-import { getRequestHeaders } from '@web/lib/request-headers'
-import { getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
-import { verifyPersonalMessageSignature } from '@web/lib/sui-verify'
+} from '@/lib/auth/challenge'
+import { isUuid } from '@/lib/is-uuid'
+import { getRequestHeaders } from '@/lib/request-headers'
+import { getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
+import { verifyPersonalMessageSignature } from '@/lib/sui-verify'
 import {
   getSuiWalletSyncCacheEntry,
   SUI_WALLET_SYNC_IN_FLIGHT_TIMEOUT_MS,
   setSuiWalletSyncCacheEntry,
   SUI_WALLET_SYNC_TTL_MS,
-} from '@web/lib/auth/sui-wallet-sync-cache'
+} from '@/lib/auth/sui-wallet-sync-cache'
 
 import { privy } from './privy'
 import { resolveAgentByApiKey } from './resolve-agent'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
-import { allocateUniqueHandle, resolveHandleSeed } from '@web/lib/handle'
+import { allocateUniqueHandle, resolveHandleSeed } from '@/lib/handle'
 
 export interface Identity {
   accountId: string

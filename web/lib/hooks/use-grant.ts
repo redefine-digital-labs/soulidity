@@ -2,11 +2,10 @@
 
 import { useState } from 'react'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
+import { DEFAULT_ISSUE_SCOPE_MASK } from '@/lib/soulidity/grant-scopes'
 import { buildIssueGrantTx, buildRevokeGrantScopeTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
-
-const DEFAULT_ISSUE_SCOPE_MASK = 1 | 2
 
 /** Minimal soul shape required by the grant hook. */
 export interface GrantableSoul {

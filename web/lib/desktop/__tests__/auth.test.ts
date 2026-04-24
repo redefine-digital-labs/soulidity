@@ -7,7 +7,7 @@ const DESKTOP_TOKEN_PREFIX = 'dtk_'
 // ── Mock prisma ────────────────────────────────────────────
 const mockFindUnique = vi.fn()
 
-vi.mock('@web/lib/prisma', () => ({
+vi.mock('@/lib/prisma', () => ({
   prisma: {
     desktopProfile: {
       findUnique: (...args: unknown[]) => mockFindUnique(...args),

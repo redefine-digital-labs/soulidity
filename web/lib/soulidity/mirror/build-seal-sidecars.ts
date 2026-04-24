@@ -1,12 +1,12 @@
-import { unsealDekEnvelope } from '@web/lib/services/dek-envelope'
-import { createSealClient, getSealRuntimeConfig } from '@web/lib/services/seal'
+import { unsealDekEnvelope } from '@/lib/services/dek-envelope'
+import { createSealClient, getSealRuntimeConfig } from '@/lib/services/seal'
 import {
   createAssetVersionSealEnvelopeSidecar,
   createMemoryEntrySealEnvelopeSidecar,
   createSealEnvelopeSidecar,
   createSkillVersionSealEnvelopeSidecar,
   type SealEnvelopeSidecar,
-} from '@web/lib/services/seal-crypto'
+} from '@/lib/services/seal-crypto'
 import { getSoulStateObject } from '@/lib/soulidity/queries'
 
 export class SealSidecarSyncConfigError extends Error {}

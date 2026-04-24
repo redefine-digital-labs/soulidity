@@ -10,6 +10,7 @@ import { Tag } from '@/components/ui/tag'
 import { Button, buttonStyles } from '@/components/ui/button'
 import { SkillsPanel } from '@/components/souls/skills-panel'
 import { MemoryPanel } from '@/components/souls/memory-panel'
+import { PersonaAssetPanel } from '@/components/souls/persona-asset-panel'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
 import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
@@ -261,6 +262,10 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                 <span className="font-mono text-xs text-teal">{formatAddress(soul.memoryOnChainId)}</span>
               </div>
               <div className="flex justify-between text-sm">
+                <span className="text-muted">Metadata object</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.metadataOnChainId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
                 <span className="text-muted">Content blob</span>
                 <span className="font-mono text-xs text-teal">{formatAddress(soul.contentBlobObjectId)}</span>
               </div>
@@ -347,6 +352,8 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               <p className="text-sm text-muted">No active SoulGrant is attached to this Soul.</p>
             )}
           </div>
+
+          {soul.isOwner && <PersonaAssetPanel soul={soul} />}
 
           <SkillsPanel soul={soul} />
 

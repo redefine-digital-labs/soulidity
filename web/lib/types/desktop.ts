@@ -1,4 +1,32 @@
+import type { AssetAccessResponse, SoulListingStatus } from '@/lib/soulidity/types'
+
 export type DesktopCatalogSourceType = 'starter' | 'soul'
+export type DesktopSpriteDownloadPolicy = 'public' | 'owner_only' | 'allowlist' | 'missing' | 'invalid'
+
+export interface DesktopSpriteSheetConfig {
+  src: string
+  frameWidth: number
+  frameHeight: number
+  columns: number
+  animations: Record<string, {
+    frames: number[]
+    fps: number
+    loop: boolean
+  }>
+}
+
+export interface DesktopSpriteManifest {
+  assetName: string | null
+  versionIndex: number | null
+  fileName: string
+  configFileName: string
+  downloadPolicy: DesktopSpriteDownloadPolicy
+  config: DesktopSpriteSheetConfig | null
+  publicUrl?: string | null
+  privateAccess?: Extract<AssetAccessResponse, { visibility: 'private' }> | null
+  metadataOnChainId?: string | null
+  error?: string | null
+}
 
 export interface DesktopCatalogItem {
   id: string
@@ -8,6 +36,9 @@ export interface DesktopCatalogItem {
   description: string | null
   coverImage: string
   thumbnail: string
+  listingStatus: SoulListingStatus | null
+  listedPriceAtomic: string | null
+  spriteDownloadPolicy: DesktopSpriteDownloadPolicy
   updatedAt: string
 }
 
@@ -21,6 +52,7 @@ export interface DesktopPersonaManifest extends DesktopCatalogItem {
   version: string
   checksum: string
   files: DesktopPersonaManifestFile[]
+  sprite: DesktopSpriteManifest | null
   /** Soul route ID for access APIs (= onChainId for soul entries) */
   routeId?: string
   /** On-chain soul ID */

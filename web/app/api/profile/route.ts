@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { requireIdentity } from '@web/lib/auth/identity'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { HANDLE_RE, RESERVED_HANDLES } from '@web/lib/handle'
+import { prisma } from '@/lib/prisma'
+import { requireIdentity } from '@/lib/auth/identity'
+import { takeRateLimitToken } from '@/lib/rate-limit'
+import { HANDLE_RE, RESERVED_HANDLES } from '@/lib/handle'
 
 export const dynamic = 'force-dynamic'
 

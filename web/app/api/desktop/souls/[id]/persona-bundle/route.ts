@@ -17,9 +17,9 @@ import { NextResponse } from 'next/server'
 
 import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import { findDesktopPersonaManifestById } from '@/lib/desktop/repository'
-import { resolveDesktopSoulAccess } from '@/lib/soulidity/asset-access'
-import { prisma } from '@web/lib/prisma'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
+import { resolveDesktopSoulAccess } from '@/lib/soulidity/desktop-asset-access'
+import { prisma } from '@/lib/prisma'
+import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
 
 export const dynamic = 'force-dynamic'
 

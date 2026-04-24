@@ -72,6 +72,16 @@ describe('mirror sync regression guards', () => {
     })
   })
 
+  describe('publish route: metadataOnChainId fallback from mint event', () => {
+    it('patches metadataOnChainId when chain projection missed metadata_id', () => {
+      const source = readSource('web/app/api/souls/publish/route.ts')
+
+      expect(source).toContain('if (minted.metadataId && !mirrored.metadataOnChainId)')
+      expect(source).toContain('data: { metadataOnChainId: minted.metadataId }')
+      expect(source).toContain('mirrored.metadataOnChainId = minted.metadataId')
+    })
+  })
+
   // -------------------------------------------------------------------------
   // Bug 2: Collection add-soul mirror silent failure → granular diagnostics
   // -------------------------------------------------------------------------

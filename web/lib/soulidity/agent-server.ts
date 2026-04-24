@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { resolveAgentByApiKey, type AgentIdentity } from '@web/lib/auth/resolve-agent'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
-import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { resolveAgentByApiKey, type AgentIdentity } from '@/lib/auth/resolve-agent'
+import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
+import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
 
 const FAILED_AGENT_AUTH_LIMIT = { max: 60, windowMs: 60 * 1000 } as const
 

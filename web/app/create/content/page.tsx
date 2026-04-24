@@ -11,6 +11,7 @@ import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hi
 import { cn } from '@/lib/utils/cn'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
 import { SOUL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
+import { validatePersonaSpriteDraft } from '@/lib/soulidity/persona-sprite'
 import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
 const steps = [
@@ -403,10 +404,15 @@ export default function CreateContentPage() {
     ctx.setSkillsFile(file)
   }
 
-  function handleNext() {
+  async function handleNext() {
     const nextErrors: Record<string, string> = {}
     if (!ctx.charFile) nextErrors.charFile = 'Soul Character file is required'
     if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory file (memory.md) is required'
+    const spriteValidation = await validatePersonaSpriteDraft({
+      sheetFile: ctx.spriteSheetFile,
+      configFile: ctx.spriteConfigFile,
+    })
+    if (!spriteValidation.ok) nextErrors.sprite = spriteValidation.error
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
       return
@@ -567,6 +573,103 @@ export default function CreateContentPage() {
               />
             )}
           </ContentCard>
+
+          <ContentCard
+            tone="teal"
+            title="Persona Sprite"
+            badge={<RequirementBadge tone="teal">Optional</RequirementBadge>}
+            icon={<LayerIcon className="h-4.5 w-4.5" />}
+            meta={
+              <>
+                <span>sprite sheet + config</span>
+                <span className="opacity-45">•</span>
+                <span>canonical persona metadata</span>
+                <span className="opacity-45">•</span>
+                <span>{ctx.spriteVisibility === 'public' ? 'public asset' : 'private asset'}</span>
+                <span className="opacity-45">•</span>
+                <span>mint-time only</span>
+              </>
+            }
+            description="Optional persona sprite contract for desktop/runtime rendering. Upload both the sprite sheet and its config JSON in the same mint, and Soulidity will generate canonical persona metadata automatically."
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              {!ctx.spriteSheetFile ? (
+                <UploadTarget
+                  tone="teal"
+                  icon={<LayerIcon className="h-8 w-8" />}
+                  label="Upload persona-sprite sheet"
+                  subtitle=".png/.jpg/.jpeg/.webp/.gif"
+                  accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif"
+                  onSelect={ctx.setSpriteSheetFile}
+                />
+              ) : (
+                <UploadStatus
+                  tone="teal"
+                  title={`${ctx.spriteSheetFile.name} ready as sprite sheet`}
+                  subtitle={`${ctx.spriteVisibility === 'public' ? 'Public download contract' : 'Private asset contract'} · ${formatFileSize(ctx.spriteSheetFile)}`}
+                  onClear={() => ctx.setSpriteSheetFile(null)}
+                />
+              )}
+
+              {!ctx.spriteConfigFile ? (
+                <UploadTarget
+                  tone="teal"
+                  icon={<DocumentIcon className="h-8 w-8" />}
+                  label="Upload sprite config JSON"
+                  subtitle="persona-sprite-config.json"
+                  accept=".json,application/json"
+                  onSelect={ctx.setSpriteConfigFile}
+                />
+              ) : (
+                <UploadStatus
+                  tone="teal"
+                  title={`${ctx.spriteConfigFile.name} ready as sprite config`}
+                  subtitle="Validated locally before mint · JSON only"
+                  onClear={() => ctx.setSpriteConfigFile(null)}
+                />
+              )}
+            </div>
+
+            <div className="mt-3 rounded-[14px] border border-[#1d6f78] bg-[rgba(9,34,38,0.52)] px-3.5 py-3 sm:px-4">
+              <div className="text-[11px] font-semibold text-[#8ceae0]">Sprite visibility</div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => ctx.setSpriteVisibility('private')}
+                  className={cn(
+                    'rounded-xl border px-3 py-2 text-left text-xs transition',
+                    ctx.spriteVisibility === 'private'
+                      ? 'border-[#42c9bd] bg-[#0f3238] text-[#8ceae0]'
+                      : 'border-[#1b636d] bg-transparent text-muted hover:border-[#42c9bd]',
+                  )}
+                >
+                  Private
+                  <div className="mt-1 text-[10px] leading-4 text-muted">
+                    Store the sheet as a protected Soul asset. Desktop resolves it through owner/grant access.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => ctx.setSpriteVisibility('public')}
+                  className={cn(
+                    'rounded-xl border px-3 py-2 text-left text-xs transition',
+                    ctx.spriteVisibility === 'public'
+                      ? 'border-[#42c9bd] bg-[#0f3238] text-[#8ceae0]'
+                      : 'border-[#1b636d] bg-transparent text-muted hover:border-[#42c9bd]',
+                  )}
+                >
+                  Public
+                  <div className="mt-1 text-[10px] leading-4 text-muted">
+                    Metadata points directly to the Walrus sheet URL. Anyone can fetch the sprite from metadata.
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {errors.sprite && (
+              <p className="mt-2 text-[11px] font-medium text-danger">{errors.sprite}</p>
+            )}
+          </ContentCard>
         </div>
 
         <div className="rounded-[12px] border border-purple/30 bg-purple/10 px-4 py-3">
@@ -593,7 +696,7 @@ export default function CreateContentPage() {
           </Link>
           <button
             type="button"
-            onClick={handleNext}
+            onClick={() => { void handleNext() }}
             className={buttonStyles({
               variant: 'landing',
               size: 'lg',

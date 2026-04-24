@@ -70,6 +70,9 @@ export default function PreviewSignPage() {
       charFile: ctx.charFile!,
       memoryFile: ctx.memoryFile!,
       skillsFile: ctx.skillsFile,
+      spriteSheetFile: ctx.spriteSheetFile,
+      spriteConfigFile: ctx.spriteConfigFile,
+      spriteVisibility: ctx.spriteVisibility,
       royalty: ctx.royalty,
     })
   }
@@ -130,6 +133,12 @@ export default function PreviewSignPage() {
                     <span className="text-foreground">Memory</span>
                     <span className="text-teal font-semibold">{ctx.memoryFile!.name} · ✓</span>
                   </div>
+                  {ctx.spriteSheetFile && ctx.spriteConfigFile && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-foreground">Persona Sprite</span>
+                      <span className="text-teal font-semibold">{ctx.spriteSheetFile.name} · {ctx.spriteVisibility === 'public' ? 'public' : 'private'}</span>
+                    </div>
+                  )}
                   {ctx.skillsFile && (
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-foreground">Skills & Docs</span>
@@ -165,6 +174,12 @@ export default function PreviewSignPage() {
                 <span className="text-muted">Character Storage</span>
                 <span className="text-foreground">Walrus (Seal encrypted)</span>
               </div>
+              {ctx.spriteSheetFile && ctx.spriteConfigFile && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted">Persona Sprite</span>
+                  <span className="text-foreground">{ctx.spriteVisibility === 'public' ? 'Public on-chain binding' : 'Protected asset binding'}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted">Provenance</span>
                 <span className="text-foreground">personal-join</span>
@@ -182,7 +197,10 @@ export default function PreviewSignPage() {
             <ul className="text-[11px] text-muted leading-5 space-y-0.5">
               <li>1. A Soul layer is registered on Sui and linked to your NFT.</li>
               <li>2. Soul Character is stored on Walrus under Seal encryption.</li>
-              <li>3. Your NFT now appears as a Soul on Soulidity.</li>
+              {ctx.spriteSheetFile && ctx.spriteConfigFile && (
+                <li>3. SoulMetadata is linked to a {ctx.spriteVisibility} persona sprite binding.</li>
+              )}
+              <li>{ctx.spriteSheetFile && ctx.spriteConfigFile ? '4' : '3'}. Your NFT now appears as a Soul on Soulidity.</li>
             </ul>
           </div>
 

@@ -1,4 +1,4 @@
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import type { SoulCollectionObject, SoulCollectionRightObject } from '@/lib/soulidity/types'
 
 export async function upsertCollectionProjection(params: {

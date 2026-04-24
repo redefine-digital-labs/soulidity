@@ -52,6 +52,43 @@ export function buildRevokeGrantTx(params: {
   return tx
 }
 
+export function buildDestroyInvalidatedGrantTx(params: {
+  stateObjectId: string
+  grantObjectId: string
+}) {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::grant::destroy_invalidated_grant`,
+    arguments: [
+      tx.object(params.grantObjectId),
+      tx.object(params.stateObjectId),
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ],
+  })
+  return tx
+}
+
+export function buildSetGrantCapacityTx(params: {
+  stateObjectId: string
+  capacity: number
+}) {
+  if (!Number.isSafeInteger(params.capacity) || params.capacity <= 0) {
+    throw new Error('capacity must be a positive safe integer')
+  }
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::grant::set_grant_capacity`,
+    arguments: [
+      tx.object(params.stateObjectId),
+      tx.pure.u64(params.capacity),
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ],
+  })
+  return tx
+}
+
 export function buildRevokeGrantScopeTx(params: {
   stateObjectId: string
   granteeAddress: string

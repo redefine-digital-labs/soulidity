@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
 import { buildCreateCollectionTx, buildAddSoulToCollectionTx } from '@/lib/soulidity/tx/collection'
+import {
+  buildPersonaSpriteMoodMap,
+  validatePersonaSpriteDraft,
+  type PersonaSpriteVisibility,
+} from '@/lib/soulidity/persona-sprite'
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -25,6 +30,11 @@ interface SoulUploadRecovery {
   skillsBlobObjectId: string | null
   initialSkillName: string | null
   skillsSealDekEnvelope: string | null
+  assetBlobObjectId: string | null
+  assetVisibility: PersonaSpriteVisibility | null
+  assetsSealDekEnvelope: string | null
+  spriteConfigJson: string | null
+  spriteMoodMapJson: string | null
   imageUrl: string
 }
 
@@ -44,6 +54,7 @@ interface CollectionRecoveryMeta {
   description: string
   extraRoyaltyBps: number
   tradeable: boolean
+  spriteVisibility: PersonaSpriteVisibility
 }
 
 interface RecoveryState {
@@ -99,6 +110,7 @@ export interface CollectionPublishParams {
   description: string
   extraRoyaltyBps: number
   tradeable: boolean
+  spriteVisibility?: PersonaSpriteVisibility
   /** Floor price in atomic USDC — minimum listing price for souls in this collection */
   floorPriceAtomic?: string | null
   /** Batch souls to mint and bind to the new collection */
@@ -152,13 +164,14 @@ function buildRecoverySouls(paramsSouls: BatchSoulToMint[] | undefined, existing
 
 export function buildCollectionDraftSignature(params: Pick<
   CollectionPublishParams,
-  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'floorPriceAtomic' | 'souls'
+  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'spriteVisibility' | 'floorPriceAtomic' | 'souls'
 >) {
   return JSON.stringify({
     name: params.name.trim(),
     description: params.description.trim(),
     extraRoyaltyBps: params.extraRoyaltyBps,
     tradeable: params.tradeable,
+    spriteVisibility: params.spriteVisibility ?? 'private',
     floorPriceAtomic: params.floorPriceAtomic ?? null,
     souls: (params.souls ?? []).map((soul) => ({
       name: soul.name.trim(),
@@ -364,6 +377,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
           description: params.description,
           extraRoyaltyBps: params.extraRoyaltyBps,
           tradeable: params.tradeable,
+          spriteVisibility: params.spriteVisibility ?? 'private',
         },
         souls: buildRecoverySouls(params.souls, baseRecovery.souls),
       }
@@ -450,6 +464,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
                 soulState.uploads.protectedBlobObjectId,
                 soulState.uploads.foundingMemoryBlobObjectId,
                 soulState.uploads.skillsBlobObjectId,
+                soulState.uploads.assetBlobObjectId,
               ]
             : []
         ))))
@@ -460,6 +475,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
               missingRecoveredObjectIds.has(soulState.uploads.protectedBlobObjectId)
               || missingRecoveredObjectIds.has(soulState.uploads.foundingMemoryBlobObjectId)
               || (soulState.uploads.skillsBlobObjectId && missingRecoveredObjectIds.has(soulState.uploads.skillsBlobObjectId))
+              || (soulState.uploads.assetBlobObjectId && missingRecoveredObjectIds.has(soulState.uploads.assetBlobObjectId))
             ) {
               soulState.uploads = null
             }
@@ -516,6 +532,45 @@ export function useCollectionPublish(draftSignature?: string | null) {
             skillsSealDekEnvelope = skillsUpload.sealDekEnvelope
           }
 
+          let assetBlobObjectId: string | null = null
+          let assetVisibility: PersonaSpriteVisibility | null = null
+          let assetsSealDekEnvelope: string | null = null
+          let spriteConfigJson: string | null = null
+          let spriteMoodMapJson: string | null = null
+          const spriteValidation = await validatePersonaSpriteDraft({
+            sheetFile: folder?.spriteSheetFile ?? null,
+            configFile: folder?.spriteConfigFile ?? null,
+          })
+          if (!spriteValidation.ok) {
+            throw new Error(`Soul "${soul.name}" has invalid persona sprite files: ${spriteValidation.error}`)
+          }
+          if (folder?.spriteSheetFile && spriteValidation.config) {
+            const visibility = params.spriteVisibility ?? 'private'
+            const spriteUpload = await uploadFile(
+              folder.spriteSheetFile,
+              visibility === 'public' ? 'public' : 'encrypted',
+              authHeaders,
+              walletAddress,
+            )
+            if (!spriteUpload.blobObjectId) {
+              throw new Error(`Persona sprite upload for Soul "${soul.name}" is missing blobObjectId.`)
+            }
+            if (visibility === 'private' && (typeof spriteUpload.sealDekEnvelope !== 'string' || !spriteUpload.sealDekEnvelope.trim())) {
+              throw new Error(`Persona sprite upload for Soul "${soul.name}" is missing Seal recovery data.`)
+            }
+
+            assetBlobObjectId = spriteUpload.blobObjectId
+            assetVisibility = visibility
+            assetsSealDekEnvelope = typeof spriteUpload.sealDekEnvelope === 'string' ? spriteUpload.sealDekEnvelope : null
+            spriteConfigJson = JSON.stringify({
+              frameWidth: spriteValidation.config.frameWidth,
+              frameHeight: spriteValidation.config.frameHeight,
+              columns: spriteValidation.config.columns,
+              animations: spriteValidation.config.animations,
+            })
+            spriteMoodMapJson = JSON.stringify(buildPersonaSpriteMoodMap(spriteValidation.config.animations))
+          }
+
           // Image — from folder's image file, fallback to collection cover URL
           let resolvedImageUrl = fallbackImageUrl
           if (folder?.imageFile) {
@@ -531,6 +586,11 @@ export function useCollectionPublish(draftSignature?: string | null) {
             skillsBlobObjectId,
             initialSkillName,
             skillsSealDekEnvelope,
+            assetBlobObjectId,
+            assetVisibility,
+            assetsSealDekEnvelope,
+            spriteConfigJson,
+            spriteMoodMapJson,
             imageUrl: resolvedImageUrl,
           }
           setRecoveryState({ ...recovery, souls: [...recovery.souls] })
@@ -562,6 +622,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
               'Soul character blob': soulState.uploads.protectedBlobObjectId,
               'Founding memory blob': soulState.uploads.foundingMemoryBlobObjectId,
               'Skills blob': soulState.uploads.skillsBlobObjectId,
+              'Persona sprite blob': soulState.uploads.assetBlobObjectId,
             })
             const mintTx = buildPublishSoulTx({
               currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -574,6 +635,16 @@ export function useCollectionPublish(draftSignature?: string | null) {
               skillsBlobObjectId: soulState.uploads.skillsBlobObjectId,
               initialSkillName: soulState.uploads.initialSkillName,
               skillsVisibility: 'private',
+              initialSprite: soulState.uploads.assetBlobObjectId && soulState.uploads.spriteConfigJson
+                ? {
+                    blobObjectId: soulState.uploads.assetBlobObjectId,
+                    assetName: 'persona-sprite',
+                    visibility: soulState.uploads.assetVisibility ?? 'private',
+                    downloadPolicy: (soulState.uploads.assetVisibility ?? 'private') === 'public' ? 'public' : 'owner_only',
+                    spriteConfigJson: soulState.uploads.spriteConfigJson,
+                    spriteMoodMapJson: soulState.uploads.spriteMoodMapJson,
+                  }
+                : null,
               creatorRoyaltyBps: soul.creatorRoyaltyBps,
             })
             const mintResult = await signAndExecute(mintTx)
@@ -596,6 +667,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
               sealSidecar: soulState.uploads.sealDekEnvelope,
               memorySealSidecar: soulState.uploads.memorySealDekEnvelope,
               skillsSealSidecar: soulState.uploads.skillsSealDekEnvelope,
+              assetsSealSidecar: soulState.uploads.assetsSealDekEnvelope,
             }),
           })
           if (!publishRes.ok) {

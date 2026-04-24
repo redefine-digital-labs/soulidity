@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { extractMemoryEntryAppendedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'

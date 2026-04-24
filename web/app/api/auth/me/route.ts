@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@lib/prisma'
-import { resolveIdentity } from '@lib/auth/identity'
+import { prisma } from '@/lib/prisma'
+import { resolveIdentity } from '@/lib/auth/identity'
 
 export const dynamic = 'force-dynamic'
 

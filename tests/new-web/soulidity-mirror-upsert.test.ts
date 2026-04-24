@@ -39,7 +39,6 @@ function makeSoulObject(overrides?: Partial<SoulObject>): SoulObject {
     name: 'Test Soul',
     description: 'A test soul',
     imageUrl: 'https://example.com/soul.png',
-    metadataRef: 'meta-ref',
     protectedBlobId: 'blob-id-123',
     protectedBlobObjectId: '0xblobobj',
     provenanceKind: 'native',
@@ -61,6 +60,7 @@ function makeSoulStateObject(overrides?: Partial<SoulStateObject>): SoulStateObj
     grantCapacity: 3,
     activeGrantCount: 0,
     activeGrants: [],
+    metadataId: '0xmetadata',
     skillsId: '0xskills',
     collectionId: null,
     ...overrides,
@@ -336,7 +336,7 @@ describe('upsertSoulProjection', () => {
       expect(section.name).toBe('Test Soul')
       expect(section.description).toBe('A test soul')
       expect(section.imageUrl).toBe('https://example.com/soul.png')
-      expect(section.metadataRef).toBe('meta-ref')
+      expect(section.metadataOnChainId).toBe('0xmetadata')
       expect(section.provenanceKind).toBe('native')
       expect(section.originRef).toBeNull()
       expect(section.collectionOnChainId).toBe('0xcol')

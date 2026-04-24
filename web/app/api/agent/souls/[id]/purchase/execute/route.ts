@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { TransactionDataBuilder } from '@mysten/sui/transactions'
-import { prisma } from '@web/lib/prisma'
-import { suiClient } from '@web/lib/sui'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { suiClient } from '@/lib/sui'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { extractSoulPurchasedEvent } from '@/lib/soulidity/events'
 import {

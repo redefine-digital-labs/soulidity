@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { extractSoulAddedToCollectionEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'

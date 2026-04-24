@@ -24,6 +24,7 @@ describe('sanitizeWrapRecoveryState', () => {
         sealSidecar: 'char-envelope',
         memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
+        assetsSealSidecar: null,
       },
     })), 'member-1')).toEqual(expect.objectContaining({
       userId: 'member-1',
@@ -34,6 +35,7 @@ describe('sanitizeWrapRecoveryState', () => {
         sealSidecar: 'char-envelope',
         memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
+        assetsSealSidecar: null,
       },
     }))
   })
@@ -48,6 +50,7 @@ describe('sanitizeWrapRecoveryState', () => {
         sealSidecar: 'char-envelope',
         memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
+        assetsSealSidecar: null,
       },
     })), 'member-1')).toBeNull()
 
@@ -62,6 +65,7 @@ describe('sanitizeWrapRecoveryState', () => {
         sealSidecar: 'char-envelope',
         memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
+        assetsSealSidecar: null,
       },
     }), 'member-1')).toBeNull()
 
@@ -74,6 +78,7 @@ describe('sanitizeWrapRecoveryState', () => {
         sealSidecar: 'char-envelope',
         memorySealSidecar: 'memory-envelope',
         skillsSealSidecar: null,
+        assetsSealSidecar: null,
       },
     })), 'member-1')).toBeNull()
   })

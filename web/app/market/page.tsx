@@ -14,7 +14,6 @@ import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
-import type { PersonaFilter } from '@/lib/soulidity/persona'
 import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@/lib/soulidity/types'
 
 // Tag colors removed — tags now use uniform 'muted' styling
@@ -184,7 +183,6 @@ function humanPriceToAtomic(value: string): string {
 
 export default function MarketPage() {
   const [activeFilter, setActiveFilter] = useState('all')
-  const [personaFilter, setPersonaFilter] = useState<PersonaFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [marketView, setMarketView] = useState<'souls' | 'collections'>('souls')
@@ -241,7 +239,6 @@ export default function MarketPage() {
     minPrice: humanPriceToAtomic(minPrice),
     maxPrice: humanPriceToAtomic(maxPrice),
     creator: debouncedCreator,
-    persona: personaFilter,
   })
   const { data: collectionsData, isLoading: collectionsLoading } = useCollectionsList({
     page: 1,
@@ -377,7 +374,7 @@ export default function MarketPage() {
 
         <FilterTabs
           tabs={[
-            { id: 'souls', label: 'Individual Souls' },
+            { id: 'souls', label: 'Souls' },
             { id: 'collections', label: '+ Collections' },
           ]}
           activeId={marketView}
@@ -385,18 +382,7 @@ export default function MarketPage() {
         />
 
         {marketView === 'souls' && (
-          <>
-            <FilterTabs
-              tabs={[
-                { id: 'all', label: 'All Souls' },
-                { id: 'agents', label: 'Agents' },
-                { id: 'characters', label: 'Characters' },
-              ]}
-              activeId={personaFilter}
-              onChange={(id) => setPersonaFilter(id as PersonaFilter)}
-            />
-            <FilterTabs tabs={filterTabs} activeId={activeFilter} onChange={setActiveFilter} />
-          </>
+          <FilterTabs tabs={filterTabs} activeId={activeFilter} onChange={setActiveFilter} />
         )}
       </div>
 
@@ -417,7 +403,6 @@ export default function MarketPage() {
               onAction={() => {
                 setSearchQuery('')
                 setActiveFilter('all')
-                setPersonaFilter('all')
                 setMinPrice('')
                 setMaxPrice('')
                 setCreator('')

@@ -6,6 +6,7 @@ use sui::dynamic_object_field as dof;
 use sui::event;
 use sui::table;
 use soulidity::grant::{Self as grant, SoulGrant};
+use soulidity::metadata::{Self as metadata, SoulMetadata};
 use soulidity::soul::{Self as soul, SoulState};
 use walrus::blob::{Self as blob, Blob};
 
@@ -14,6 +15,7 @@ const EAssetNotFound: u64 = 2;
 const EVersionOutOfBounds: u64 = 3;
 const EAssetVersionDeleted: u64 = 4;
 const EEmptyAssetName: u64 = 5;
+const EDocumentIdInvalidLength: u64 = 6;
 
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
@@ -176,13 +178,16 @@ public fun append_version_as_granted_agent(
 
 public fun delete_version_as_owner(
     assets: &mut SoulAssets,
+    metadata_obj: &SoulMetadata,
     state: &SoulState,
     asset_name: String,
     version_index: u64,
     ctx: &TxContext,
 ) {
     assert_assets_matches_state(assets, state);
+    metadata::assert_matches_state(metadata_obj, state);
     soul::assert_owner(state, ctx.sender());
+    metadata::assert_asset_version_not_active(metadata_obj, copy asset_name, version_index);
     let slot = borrow_slot_mut(assets, copy asset_name, version_index);
     assert!(!slot.deleted, EAssetVersionDeleted);
     slot.deleted = true;
@@ -197,6 +202,7 @@ public fun delete_version_as_owner(
 
 public fun delete_version_as_granted_agent(
     assets: &mut SoulAssets,
+    metadata_obj: &SoulMetadata,
     state: &SoulState,
     asset_name: String,
     version_index: u64,
@@ -205,7 +211,9 @@ public fun delete_version_as_granted_agent(
     ctx: &TxContext,
 ) {
     assert_assets_matches_state(assets, state);
+    metadata::assert_matches_state(metadata_obj, state);
     grant::assert_active_with_scope(state, soul_grant, grant::scope_assets(), clock, ctx);
+    metadata::assert_asset_version_not_active(metadata_obj, copy asset_name, version_index);
     let slot = borrow_slot_mut(assets, copy asset_name, version_index);
     assert!(!slot.deleted, EAssetVersionDeleted);
     slot.deleted = true;
@@ -342,8 +350,8 @@ fun assert_matching_document_id(
     let assets_id_bytes = expected_assets_id.to_bytes();
     let assets_id_len = assets_id_bytes.length();
     assert!(
-        id.length() >= domain_len + 1 + assets_id_len + asset_name_len + 1 + 8 + DOCUMENT_ID_NONCE_BYTES,
-        EAssetsMismatch,
+        id.length() == domain_len + 1 + assets_id_len + asset_name_len + 1 + 8 + DOCUMENT_ID_NONCE_BYTES,
+        EDocumentIdInvalidLength,
     );
 
     let mut i = 0;

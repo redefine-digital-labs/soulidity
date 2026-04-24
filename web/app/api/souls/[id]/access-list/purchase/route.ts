@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { prisma } from '@web/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
 import { extractMatchedContentAccessGrantedEvent, extractContentAccessPurchasedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
@@ -82,6 +82,7 @@ export async function POST(
       purchaseEvent.buyer,
     )
 
+    const expiresAtMsValue = grantEvent.expiresAtMs != null ? BigInt(grantEvent.expiresAtMs) : null
     await prisma.contentAccessRecord.upsert({
       where: {
         accessListOnChainId_granteeAddress: {
@@ -93,6 +94,8 @@ export async function POST(
         scopeMask: grantEvent.scopeMask,
         pricePaidAtomic: purchaseEvent.priceAtomic,
         grantedAtMs: BigInt(Date.now()),
+        expiresAtMs: expiresAtMsValue,
+        ownershipEpochSnapshot: grantEvent.ownershipEpochSnapshot,
         revokedAt: null,
       },
       create: {
@@ -102,6 +105,8 @@ export async function POST(
         scopeMask: grantEvent.scopeMask,
         pricePaidAtomic: purchaseEvent.priceAtomic,
         grantedAtMs: BigInt(Date.now()),
+        expiresAtMs: expiresAtMsValue,
+        ownershipEpochSnapshot: grantEvent.ownershipEpochSnapshot,
       },
     })
 

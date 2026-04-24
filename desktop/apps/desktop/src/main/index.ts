@@ -1,5 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray, type OpenDialogOptions } from 'electron'
+import { basename, extname, join, resolve as resolvePath } from 'path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import Store from 'electron-store'
 import { autoUpdater } from 'electron-updater'
@@ -7,27 +7,38 @@ import {
   bootServices, shutdownServices, sealDay,
   prepareBuiltinPersonaTemplates, getPersonaDir,
   moodService,
-  analyzeSoulProfile,
 } from '@soulidity/backend'
 import {
   CLI_TERMINAL_GRACE_MS,
+  type CreateLocalExtractDraftInput,
   createAgentStatusSignature,
   deriveAggregateStatus,
   derivePetAgentEvents,
+  type ImportOpenClawDraftInput,
+  type LocalExtractAgentStatus,
+  type OpenClawImportStatus,
   toAgentStatusFile,
   type AgentStatusFile,
   type AgentRuntimeSnapshot,
   type ExtractSoulDraft,
   type MoodSnapshot,
   type PetUpdateStatus,
-  type SessionScanResult,
   type ScanProgress,
   type SupportedAgentSource,
 } from '@soulidity/shared'
 import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus, publishAgentStatus } from './status-watcher'
 import { startAgentMonitor, stopAgentMonitor } from './agent-monitor'
 import { generateAgentKeypair, loadAgentKeypair, exportAgentAddress, getSecretStorageStatus } from './agent-wallet'
-import { executeTask, cancelTask, getActiveTaskIds, shutdownAllTasks } from './task-executor'
+import {
+  executeTask,
+  cancelTask,
+  getActiveTaskIds,
+  shutdownAllTasks,
+  createWriteApprovalToken,
+  isSafeSandboxRoot,
+  resolveApprovedSandboxRoot,
+  MAX_APPROVED_INSTRUCTION_LENGTH,
+} from './task-executor'
 import {
   hasCachedSprite, getCachedSprite, cacheSprite, removeCachedSprite,
   pruneCache, getCacheStats, listCachedSprites
@@ -36,6 +47,8 @@ import { downloadSoulPersona } from './soul-downloader'
 import { storeDesktopToken, loadDesktopToken, clearDesktopToken, getDesktopAuthStatus } from './desktop-auth-store'
 import { clearExtractSoulDraft, loadExtractSoulDraft, saveExtractSoulDraft } from './extract-draft-store'
 import { scanSessions } from './soul-extraction/session-scanner'
+import { createLocalExtractDraft, getLocalExtractAgentStatuses } from './soul-extraction/local-draft-generator'
+import { getOpenClawImportStatus, importOpenClawDraft } from './soul-extraction/openclaw-import'
 import { buildUpdateErrorStatus, isMissingLatestReleaseAssetError, toUpdateErrorMessage } from './update-errors'
 import { getDesktopWebBaseUrl, readDesktopJsonResponse } from './web-api'
 import { validateOpenExternalUrl } from './external-url'
@@ -420,6 +433,120 @@ ipcMain.handle('task:execute', (_event, payload) => executeTask(payload))
 ipcMain.on('task:cancel', (_event, taskId: string) => cancelTask(taskId))
 ipcMain.handle('task:list-active', () => getActiveTaskIds())
 
+// Write-mode approval gate. The renderer can freely call `task:execute`,
+// but the main process will only honor `executionMode: 'write'` when the
+// caller presents a token minted here after an OS-level confirmation
+// dialog. The token also pins the allowed file list, so a malicious
+// renderer cannot widen the write scope via cwd/filePaths.
+ipcMain.handle('task:request-write-approval', async (_event, payload: {
+  filePaths: unknown
+  agent?: unknown
+  instruction?: unknown
+}) => {
+  const rawFilePaths = Array.isArray(payload?.filePaths)
+    ? payload.filePaths.filter((p): p is string => typeof p === 'string' && p.length > 0)
+    : []
+  if (rawFilePaths.length === 0) {
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+
+  const agent = typeof payload?.agent === 'string' ? payload.agent : ''
+  if (agent !== 'claude' && agent !== 'codex') {
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+  const instruction = typeof payload?.instruction === 'string' ? payload.instruction : ''
+
+  // Fail closed before opening any dialog if the instruction is too large to
+  // display in full. The approval surfaces must show the exact string the
+  // token will bind; any silent truncation would let a malicious renderer
+  // hide a destructive suffix after a benign-looking preamble.
+  if (instruction.trim().length > MAX_APPROVED_INSTRUCTION_LENGTH) {
+    return { ok: false as const, reason: 'instruction-too-long' as const }
+  }
+
+  // Canonicalize the file list BEFORE showing it to the user. The approval
+  // token later binds the `path.resolve(...)`'d form (see
+  // `normalizeFilePaths` inside `createWriteApprovalToken`), so a raw
+  // renderer-supplied relative path such as `../../private/secret.txt`
+  // would otherwise render verbatim in the dialog while the token
+  // authorized an unrelated absolute target. Dedupe + sort as well so the
+  // displayed list matches exactly what `normalizeFilePaths` produces and
+  // what `executeTask` compares against at launch time.
+  const canonicalFilePaths = Array.from(
+    new Set(rawFilePaths.map((p) => resolvePath(p))),
+  ).sort()
+
+  // Compute the effective write scope the child process will actually
+  // receive. For Codex `--sandbox workspace-write` this is the real trust
+  // surface (not the file list) because the sandbox operates at directory
+  // granularity, so the dialog must name the directory Codex will be
+  // allowed to mutate. Fail closed before opening any dialog if the
+  // resolved sandbox root is unsafe (e.g. `/`, `/Users`) instead of
+  // showing an approval surface whose token mint will be rejected after
+  // the user has already clicked approve.
+  const sandboxRoot = resolveApprovedSandboxRoot(canonicalFilePaths)
+  if (!isSafeSandboxRoot(sandboxRoot)) {
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+
+  const senderWindow = BrowserWindow.fromWebContents(_event.sender)
+  const parentWindow = senderWindow ?? BrowserWindow.getFocusedWindow() ?? mainWin ?? ballWin
+  if (!parentWindow) {
+    return { ok: false as const, reason: 'no-window' as const }
+  }
+
+  const filesSummary = canonicalFilePaths.map((p) => `• ${p}`).join('\n')
+  // Codex runs `codex exec --sandbox workspace-write` from `sandboxRoot`,
+  // so the OS-level write capability the approval grants is the whole
+  // directory tree rooted there, not just the listed files. Claude is
+  // constrained to the file list at the prompt layer, but still runs
+  // with `--dangerously-skip-permissions` (see T-016), so the same root
+  // remains the effective trust surface. Spell it out — the user must
+  // see that they are authorizing directory-level write access.
+  const scopeSummary = agent === 'codex'
+    ? `\n\nCodex will have workspace-write access to the entire directory:\n${sandboxRoot}`
+    : `\n\nClaude will be asked to stay within the files above. Effective write root:\n${sandboxRoot}`
+  // Show the exact instruction that will be bound into the approval token.
+  // Do NOT slice here: the dialog is the last chance for the user to see the
+  // full text they are authorizing. `createWriteApprovalToken` already caps
+  // the length at `MAX_APPROVED_INSTRUCTION_LENGTH` so the detail area cannot
+  // overflow what every supported OS dialog can render.
+  const instructionDetail = instruction.trim()
+
+  const { response } = await dialog.showMessageBox(parentWindow, {
+    type: 'warning',
+    buttons: ['Deny', 'Approve write access'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Allow write access?',
+    message: `Allow ${agent} to modify these files?`,
+    detail: `Files:\n${filesSummary}${scopeSummary}${instructionDetail ? `\n\nInstruction:\n${instructionDetail}` : ''}`,
+    noLink: true,
+  })
+
+  if (response !== 1) {
+    return { ok: false as const, reason: 'denied' as const }
+  }
+
+  const token = createWriteApprovalToken({
+    filePaths: canonicalFilePaths,
+    agent,
+    instruction,
+  })
+  if (!token) {
+    // Either (a) the approved file set does not share a safe sandbox root
+    // (e.g., files span `/Users/...` and `/tmp/...`, collapsing the Codex
+    // workspace-write cwd to `/`), or (b) the instruction exceeds the
+    // displayable cap. Fail closed rather than silently minting a token
+    // whose scope or text might not match what the user saw in the dialog.
+    if (instruction.trim().length > MAX_APPROVED_INSTRUCTION_LENGTH) {
+      return { ok: false as const, reason: 'instruction-too-long' as const }
+    }
+    return { ok: false as const, reason: 'invalid-paths' as const }
+  }
+  return { ok: true as const, token }
+})
+
 // ── IPC: 本地缓存 ──────────────────────────────────────────
 ipcMain.handle('cache:has-sprite', (_event, spriteId: string) => hasCachedSprite(spriteId))
 ipcMain.handle('cache:get-sprite', (_event, spriteId: string) => getCachedSprite(spriteId))
@@ -611,10 +738,107 @@ ipcMain.handle('config:set', (_event, config: Record<string, unknown>) => {
   for (const [key, value] of Object.entries(config)) {
     store.set(key, value)
   }
+  broadcastToAllWindows('config:changed', { ...store.store })
 })
 
 // ── 设备绑定 IPC ──────────────────────────────────────────
 const WEB_BASE_URL = getDesktopWebBaseUrl()
+
+function getLocalDesktopRuntimeConfig() {
+  return {
+    privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim() || null,
+    suiNetwork: process.env.NEXT_PUBLIC_SUI_NETWORK?.trim() || 'testnet',
+  }
+}
+
+type RemoteDesktopRuntimeConfig = {
+  privyAppId: string | null
+  suiNetwork: string
+  desktopWalletAuthReady: boolean
+  walletAuthMessage: string | null
+}
+
+type DesktopRuntimeConfigResponse = {
+  privyAppId: string | null
+  suiNetwork: string
+  webBaseUrl: string
+  authReady: boolean
+  authBlocker: string | null
+}
+
+const DESKTOP_COVER_MIME_MAP: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+}
+
+function inferDesktopCoverMimeType(filePath: string) {
+  return DESKTOP_COVER_MIME_MAP[extname(filePath).toLowerCase()] ?? null
+}
+
+function bytesToDataUrl(bytes: Buffer, mimeType: string) {
+  return `data:${mimeType};base64,${bytes.toString('base64')}`
+}
+
+async function fetchDesktopRuntimeConfigFromWeb(): Promise<{
+  config: RemoteDesktopRuntimeConfig | null
+  error: string | null
+}> {
+  const pathname = '/api/desktop/runtime-config'
+
+  try {
+    const response = await fetch(`${WEB_BASE_URL}${pathname}`)
+    const config = await readJsonOrThrow<RemoteDesktopRuntimeConfig>(
+      response,
+      'Fetch desktop runtime config',
+      pathname,
+    )
+    return {
+      config,
+      error: null,
+    }
+  } catch (error) {
+    return {
+      config: null,
+      error: error instanceof Error ? error.message : 'Failed to fetch desktop runtime config.',
+    }
+  }
+}
+
+function buildDesktopRuntimeConfigResponse(
+  localConfig: ReturnType<typeof getLocalDesktopRuntimeConfig>,
+  remoteRuntimeConfig: RemoteDesktopRuntimeConfig | null,
+  remoteError: string | null,
+): DesktopRuntimeConfigResponse {
+  const privyAppId = remoteRuntimeConfig?.privyAppId || localConfig.privyAppId || null
+  const suiNetwork = remoteRuntimeConfig?.suiNetwork?.trim() || localConfig.suiNetwork
+
+  if (privyAppId && remoteRuntimeConfig?.desktopWalletAuthReady) {
+    return {
+      privyAppId,
+      suiNetwork,
+      webBaseUrl: WEB_BASE_URL,
+      authReady: true,
+      authBlocker: null,
+    }
+  }
+
+  const authBlocker = remoteError
+    ?? remoteRuntimeConfig?.walletAuthMessage
+    ?? (privyAppId
+      ? 'Desktop wallet auth is still blocked by the connected web deployment.'
+      : 'This desktop build does not include wallet auth config yet, and the connected web deployment is not ready either.')
+
+  return {
+    privyAppId,
+    suiNetwork,
+    webBaseUrl: WEB_BASE_URL,
+    authReady: false,
+    authBlocker,
+  }
+}
 
 function getRequiredDesktopToken() {
   const token = loadDesktopToken()
@@ -648,7 +872,7 @@ async function fetchDesktopJson<T>(pathname: string, init: RequestInit = {}, act
 
 ipcMain.handle('device:start-link', async (_event, agentAddress: string) => {
   const pathname = '/api/desktop/device/start'
-  const res = await fetch(`${WEB_BASE_URL}/api/desktop/device/start`, {
+  const res = await fetch(`${WEB_BASE_URL}${pathname}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agentAddress }),
   })
@@ -662,7 +886,7 @@ ipcMain.handle('device:start-link', async (_event, agentAddress: string) => {
 
 ipcMain.handle('device:poll', async (_event, deviceCode: string) => {
   const pathname = '/api/desktop/device/poll'
-  const res = await fetch(`${WEB_BASE_URL}/api/desktop/device/poll`, {
+  const res = await fetch(`${WEB_BASE_URL}${pathname}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceCode }),
   })
@@ -703,10 +927,11 @@ ipcMain.handle('desktop-auth:unlink', () => {
     }
   }
 })
-ipcMain.handle('desktop-auth:runtime-config', () => ({
-  privyAppId: process.env['NEXT_PUBLIC_PRIVY_APP_ID'] ?? null,
-  suiNetwork: process.env['NEXT_PUBLIC_SUI_NETWORK'] ?? 'testnet',
-}))
+ipcMain.handle('desktop-auth:runtime-config', async () => {
+  const localConfig = getLocalDesktopRuntimeConfig()
+  const remoteRuntimeConfig = await fetchDesktopRuntimeConfigFromWeb()
+  return buildDesktopRuntimeConfigResponse(localConfig, remoteRuntimeConfig.config, remoteRuntimeConfig.error)
+})
 ipcMain.handle('desktop-auth:me', async () => {
   return fetchDesktopJson('/api/desktop/me', {}, 'Fetch desktop profile')
 })
@@ -723,6 +948,39 @@ ipcMain.handle('desktop:create-draft:save', (_event, draft: ExtractSoulDraft) =>
 })
 ipcMain.handle('desktop:create-draft:clear', () => {
   clearExtractSoulDraft()
+})
+ipcMain.handle('desktop:create-draft:pick-cover-image', async () => {
+  const ownerWindow = BrowserWindow.getFocusedWindow() ?? mainWin ?? BrowserWindow.getAllWindows()[0] ?? undefined
+  const dialogOptions: OpenDialogOptions = {
+    title: 'Choose Cover Image',
+    properties: ['openFile'],
+    filters: [
+      {
+        name: 'Images',
+        extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'],
+      },
+    ],
+  }
+  const result = ownerWindow
+    ? await dialog.showOpenDialog(ownerWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions)
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+
+  const filePath = result.filePaths[0]
+  const mimeType = inferDesktopCoverMimeType(filePath)
+  if (!mimeType) {
+    throw new Error('Cover image must be PNG, JPEG, WebP, or SVG.')
+  }
+
+  const bytes = readFileSync(filePath)
+  return {
+    dataUrl: bytesToDataUrl(bytes, mimeType),
+    fileName: basename(filePath),
+    mimeType,
+  }
 })
 
 // ── Desktop Create + Mint Proxy ──────────────────────────
@@ -773,6 +1031,50 @@ ipcMain.handle('soul:download', async (_event, params: { catalogId: string }) =>
       onProgress: (progress) => broadcastToAllWindows('soul:download-progress', progress),
     },
   )
+})
+
+ipcMain.handle('soul:fetch-manifest', async (_event, params: { catalogId: string; viewer?: string | null }) => {
+  const token = loadDesktopToken()
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const trimmedViewer = typeof params.viewer === 'string' ? params.viewer.trim() : ''
+  const suffix = trimmedViewer ? `?viewer=${encodeURIComponent(trimmedViewer)}` : ''
+
+  return fetchDesktopJson(
+    `/api/desktop/catalog/${encodeURIComponent(params.catalogId)}${suffix}`,
+    { headers },
+    'Fetch desktop persona manifest',
+  )
+})
+
+ipcMain.handle('soul:cache-persona', async (_event, params: {
+  catalogId: string
+  sourceType: 'starter' | 'soul'
+  sourceRef: string
+  version: string
+  spriteBytes: Uint8Array
+  configJson: string
+}) => {
+  const spriteId = `catalog-${params.catalogId}`
+  cacheSprite(
+    spriteId,
+    {
+      sprite: Buffer.from(params.spriteBytes),
+      config: params.configJson,
+    },
+    {
+      spriteId,
+      source: 'desktop-catalog',
+      version: params.version,
+      catalogSourceType: params.sourceType,
+      catalogSourceRef: params.sourceRef,
+    },
+  )
+
+  return { catalogId: params.catalogId, spriteId }
 })
 
 ipcMain.handle('soul:set-active', async (_event, params: { catalogId: string; sourceType: string; sourceRef: string } | null) => {
@@ -858,7 +1160,7 @@ ipcMain.handle('soul:get-my-souls', async () => {
   if (!token) return []
   const pathname = '/api/desktop/me/souls'
   try {
-    const res = await fetch(`${WEB_BASE_URL}/api/desktop/me/souls`, {
+    const res = await fetch(`${WEB_BASE_URL}${pathname}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return []
@@ -869,15 +1171,31 @@ ipcMain.handle('soul:get-my-souls', async () => {
   }
 })
 
-// ── Session Extraction + Profile Analysis ────────────────
+// ── Session Extraction + Local Create ────────────────────
 ipcMain.handle('extraction:scan-sessions', async () => {
   return scanSessions({
     onProgress: (progress: ScanProgress) => broadcastToAllWindows('extraction:scan-progress', progress),
   })
 })
 
-ipcMain.handle('extraction:analyze-profile', async (_event, results: SessionScanResult[]) => {
-  return analyzeSoulProfile(results)
+ipcMain.handle('extraction:get-openclaw-import-status', async (): Promise<OpenClawImportStatus> => {
+  return getOpenClawImportStatus()
+})
+
+ipcMain.handle('extraction:get-local-agent-statuses', async (): Promise<LocalExtractAgentStatus[]> => {
+  return getLocalExtractAgentStatuses()
+})
+
+ipcMain.handle('extraction:import-openclaw-draft', async (_event, input: ImportOpenClawDraftInput) => {
+  return importOpenClawDraft(input)
+})
+
+ipcMain.handle('extraction:create-local-draft', async (_event, input: CreateLocalExtractDraftInput) => {
+  return createLocalExtractDraft(input)
+})
+
+ipcMain.handle('extraction:open-web-create', async () => {
+  await shell.openExternal(validateOpenExternalUrl(new URL('/create', WEB_BASE_URL).toString()))
 })
 
 // ── Shell ─────────────────────────────────────────────────

@@ -72,6 +72,6 @@ describe('desktop web api response parser', () => {
       action: 'Start desktop link',
       baseUrl: DEFAULT_WEB_BASE_URL,
       pathname: '/api/desktop/device/start',
-    })).rejects.toThrow('SOULIDITY_WEB_URL')
+    })).rejects.toThrow('Use a deployed web app')
   })
 })

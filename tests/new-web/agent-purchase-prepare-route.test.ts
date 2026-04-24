@@ -6,6 +6,7 @@ const STATE_ID = `0x${'3'.repeat(64)}`
 const KIOSK_ID = `0x${'4'.repeat(64)}`
 const LISTING_ID = `0x${'5'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
+const STORED_EXPIRES_AT = new Date('2026-04-24T10:00:00.000Z')
 
 const mockedRequireAgentWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -19,6 +20,7 @@ const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulPreparedPurchase: {
     create: vi.fn(),
+    findUnique: vi.fn(),
   },
 }))
 
@@ -110,7 +112,11 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     mockedResolveOwnedPersonalKiosk.mockResolvedValue({ status: 'missing' })
     tx.build.mockResolvedValue(Uint8Array.from([1, 2, 3]))
     mockedBuildBuySoulTx.mockReturnValue(tx)
-    mockedPrisma.soulPreparedPurchase.create.mockResolvedValue({ id: PREPARED_PURCHASE_ID })
+    mockedPrisma.soulPreparedPurchase.create.mockResolvedValue({
+      id: PREPARED_PURCHASE_ID,
+      expiresAt: STORED_EXPIRES_AT,
+    })
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValue(null)
   })
 
   async function callRoute() {
@@ -129,5 +135,53 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     expect(tx.setSender).not.toHaveBeenCalled()
     expect(mockedPrisma.soulPreparedPurchase.create).not.toHaveBeenCalled()
     await expect(response.json()).resolves.toEqual({ error: 'Soul is not listed for sale' })
+  })
+
+  it('returns an existing prepared purchase when retrying the same tx bytes', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      onChainId: SOUL_ID,
+      listingStatus: 'listed',
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '2000000',
+      creatorRoyaltyBps: 500,
+      collection: null,
+      collectionOnChainId: null,
+      currentKioskId: KIOSK_ID,
+      stateOnChainId: STATE_ID,
+    })
+    mockedQuoteSoulPurchase.mockReturnValueOnce({
+      platformFeeAtomic: '50000',
+      creatorRoyaltyAtomic: '100000',
+      totalAtomic: '2150000',
+    })
+    mockedSelectCoinObjectIdsForAmountAcrossPages.mockResolvedValueOnce(['0xcoin'])
+    mockedPrisma.soulPreparedPurchase.create.mockRejectedValueOnce({ code: 'P2002' })
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      expiresAt: STORED_EXPIRES_AT,
+    })
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+      txBytes: Buffer.from([1, 2, 3]).toString('base64'),
+      context: {
+        soulOnChainId: SOUL_ID,
+        listingObjectId: LISTING_ID,
+        totalAtomic: '2150000',
+        agentAddress: AGENT_ADDRESS,
+        expiresAt: STORED_EXPIRES_AT.toISOString(),
+      },
+    })
+    expect(mockedPrisma.soulPreparedPurchase.findUnique).toHaveBeenCalledWith({
+      where: {
+        agentMemberId_txBytesHash: {
+          agentMemberId: 'agent-member-1',
+          txBytesHash: expect.any(String),
+        },
+      },
+    })
   })
 })

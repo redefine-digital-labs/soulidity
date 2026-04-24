@@ -21,6 +21,9 @@ interface ScanAgentConfig {
   filePatterns: string[]
 }
 
+const DIRECTORY_YIELD_INTERVAL = 25
+const PARSE_YIELD_INTERVAL = 1
+
 const SCAN_CONFIGS: readonly ScanAgentConfig[] = [
   {
     agentType: 'claude-code',
@@ -45,7 +48,7 @@ const SCAN_CONFIGS: readonly ScanAgentConfig[] = [
 // ── File discovery ──
 
 /** Recursively find files matching given extension patterns */
-function discoverFiles(basePaths: string[], filePatterns: string[]): string[] {
+async function discoverFiles(basePaths: string[], filePatterns: string[]): Promise<string[]> {
   const extensions = filePatterns
     .map((p) => { const m = p.match(/\*\.(\w+)$/); return m ? `.${m[1]}` : null })
     .filter((e): e is string => e !== null)
@@ -54,31 +57,43 @@ function discoverFiles(basePaths: string[], filePatterns: string[]): string[] {
 
   for (const basePath of basePaths) {
     if (!fs.existsSync(basePath)) continue
-    walkDir(basePath, extensions, results, 0)
+    await walkDir(basePath, extensions, results, 0)
   }
 
   return results
 }
 
 /** Walk directory tree up to 4 levels deep, collecting matching files */
-function walkDir(dir: string, extensions: string[], results: string[], depth: number): void {
+async function walkDir(dir: string, extensions: string[], results: string[], depth: number): Promise<void> {
   if (depth > 4) return // Prevent runaway recursion
 
   let entries: fs.Dirent[]
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true })
+    entries = await fs.promises.readdir(dir, { withFileTypes: true })
   } catch {
     return
   }
 
+  let processedEntries = 0
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      walkDir(fullPath, extensions, results, depth + 1)
+      await walkDir(fullPath, extensions, results, depth + 1)
     } else if (entry.isFile() && extensions.some((ext) => entry.name.endsWith(ext))) {
       results.push(fullPath)
     }
+
+    processedEntries += 1
+    if (processedEntries % DIRECTORY_YIELD_INTERVAL === 0) {
+      await yieldToEventLoop()
+    }
   }
+}
+
+function yieldToEventLoop() {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve)
+  })
 }
 
 // ── Aggregation ──
@@ -201,7 +216,7 @@ export async function scanSessions(
 
     let files: string[]
     try {
-      files = discoverFiles(config.logPaths, config.filePatterns)
+      files = await discoverFiles(config.logPaths, config.filePatterns)
     } catch (err) {
       onProgress?.({
         agentType: config.agentType,
@@ -229,6 +244,10 @@ export async function scanSessions(
     const parser = createParser(config.agentType)
 
     for (const file of files) {
+      if (filesParsed % PARSE_YIELD_INTERVAL === 0) {
+        await yieldToEventLoop()
+      }
+
       const nextFilesParsed = filesParsed + 1
 
       try {
@@ -300,6 +319,7 @@ export async function scanSessions(
       sessionCount: dedupedSessions.length,
       totalTurns,
       scanPeriod: { from, to },
+      sourceFiles: [...files],
       features,
     })
 

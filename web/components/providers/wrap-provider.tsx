@@ -22,6 +22,12 @@ interface WrapContextValue {
   setMemoryFile: (file: File | null) => void
   skillsFile: File | null
   setSkillsFile: (file: File | null) => void
+  spriteSheetFile: File | null
+  setSpriteSheetFile: (file: File | null) => void
+  spriteConfigFile: File | null
+  setSpriteConfigFile: (file: File | null) => void
+  spriteVisibility: 'public' | 'private'
+  setSpriteVisibility: (visibility: 'public' | 'private') => void
   royalty: number
   setRoyalty: (v: number) => void
 
@@ -46,6 +52,9 @@ export function WrapProvider({ children }: { children: React.ReactNode }) {
   const [charFile, setCharFile] = useState<File | null>(null)
   const [memoryFile, setMemoryFile] = useState<File | null>(null)
   const [skillsFile, setSkillsFile] = useState<File | null>(null)
+  const [spriteSheetFile, setSpriteSheetFile] = useState<File | null>(null)
+  const [spriteConfigFile, setSpriteConfigFile] = useState<File | null>(null)
+  const [spriteVisibility, setSpriteVisibility] = useState<'public' | 'private'>('private')
   const [royalty, setRoyalty] = useState(500)
   const [publishResult, setPublishResult] = useState<WrapPublishResult | null>(null)
 
@@ -54,6 +63,9 @@ export function WrapProvider({ children }: { children: React.ReactNode }) {
     setCharFile(null)
     setMemoryFile(null)
     setSkillsFile(null)
+    setSpriteSheetFile(null)
+    setSpriteConfigFile(null)
+    setSpriteVisibility('private')
     setRoyalty(500)
     setPublishResult(null)
   }, [])
@@ -64,6 +76,9 @@ export function WrapProvider({ children }: { children: React.ReactNode }) {
       charFile, setCharFile,
       memoryFile, setMemoryFile,
       skillsFile, setSkillsFile,
+      spriteSheetFile, setSpriteSheetFile,
+      spriteConfigFile, setSpriteConfigFile,
+      spriteVisibility, setSpriteVisibility,
       royalty, setRoyalty,
       publishResult, setPublishResult,
       reset,

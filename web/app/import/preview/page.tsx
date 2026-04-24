@@ -165,6 +165,22 @@ export default function ImportPreviewPage() {
               <span>Encrypted at mint · preserved after mint</span>
             </div>
           </ReviewCard>
+
+          {ctx.spriteSheetFile && ctx.spriteConfigFile && (
+            <ReviewCard tone="purple" icon="🎭" label="Persona Sprite">
+              <p className="text-sm font-medium text-foreground">
+                {ctx.spriteSheetFile.name}
+              </p>
+              <div className="flex items-center gap-1.5 text-[10px] text-success">
+                <span>✍</span>
+                <span>{ctx.spriteConfigFile.name} becomes canonical persona metadata</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                <span>🔐</span>
+                <span>{ctx.spriteVisibility === 'public' ? 'Public sprite asset' : 'Protected persona-sprite asset'} · fixed at mint</span>
+              </div>
+            </ReviewCard>
+          )}
         </div>
 
         {/* Skills & Docs (if uploaded) */}
@@ -190,7 +206,7 @@ export default function ImportPreviewPage() {
             Content & Memory Policy
           </div>
           <p className="mb-4 text-xs leading-relaxed text-muted">
-            Imported provenance stays visible, while the new Soul content follows the same sealed character, encrypted founding memory, and private-by-default skills model as native minting. Live memory grows later through grant-authorized writes on Walrus.
+            Imported provenance stays visible, while the new Soul content follows the same sealed character, encrypted founding memory, private-by-default skills model, and optional mint-time persona sprite contract as native minting. Live memory grows later through grant-authorized writes on Walrus.
           </p>
           <div className="space-y-2.5">
             {[
@@ -199,6 +215,15 @@ export default function ImportPreviewPage() {
               { allowed: true, title: 'Grant-gated write', desc: 'only the owner or an active grant can add live memory or manage private skill bundles' },
               { allowed: true, title: 'Revocable access', desc: 'revoke a grant anytime; Seal approvals stop resolving immediately' },
               { allowed: true, title: 'History stays intact', desc: 'founding memory remains preserved while later sessions add new entries instead of replacing it' },
+              ...(ctx.spriteSheetFile && ctx.spriteConfigFile
+                ? [{
+                    allowed: true,
+                    title: 'Persona sprite contract set at mint',
+                    desc: ctx.spriteVisibility === 'public'
+                      ? 'metadata exposes a public Walrus sprite sheet URL'
+                      : 'metadata points to a protected persona-sprite asset version',
+                  }]
+                : []),
             ].map((item) => (
               <div key={item.title} className="flex items-start gap-2">
                 <span className={cn('mt-0.5 shrink-0', item.allowed ? 'text-success' : 'text-danger')}>

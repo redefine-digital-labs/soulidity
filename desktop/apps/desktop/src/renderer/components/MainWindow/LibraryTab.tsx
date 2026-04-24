@@ -1,19 +1,196 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { SuiClientProvider } from '@mysten/dapp-kit'
+import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { PrivyProvider as BasePrivyProvider } from '@privy-io/react-auth'
 import { usePersonaLibrary, type PersonaItem } from '../../hooks/usePersonaLibrary'
+import {
+  loadDecryptedPrivateAssetVersion,
+  parsePrivateAssetAccess,
+} from '../../lib/soulidity/asset-access'
+import { usePrivySuiSign } from '../../lib/hooks/use-privy-sui'
 
-// ── PersonaCard (inline) ─────────────────────────────────
+type CardSection = 'downloaded' | 'owned' | 'marketplace'
+
+type RuntimeConfig = {
+  privyAppId: string | null
+  suiNetwork: string
+  authReady: boolean
+  authBlocker: string | null
+}
+
+type DesktopMeResponse = {
+  profile: {
+    accountId: string
+    primarySuiAddress: string | null
+  }
+}
+
+async function ipcGetDesktopMe(): Promise<DesktopMeResponse | null> {
+  const api = window.electronAPI
+  if (!api?.getDesktopMe) return null
+
+  try {
+    return (await api.getDesktopMe()) as DesktopMeResponse | null
+  } catch {
+    return null
+  }
+}
+
+function sameWalletAddress(left: string | null | undefined, right: string | null | undefined) {
+  if (!left || !right) return false
+
+  try {
+    return normalizeSuiAddress(left) === normalizeSuiAddress(right)
+  } catch {
+    return false
+  }
+}
+
+type SuiNetwork = 'mainnet' | 'testnet'
+type ProtectedSpriteDownloadPolicy = 'owner_only' | 'allowlist'
+
+type PrivateManifestPayload = {
+  version: string
+  sourceType: 'starter' | 'soul'
+  sourceRef: string
+  sprite: {
+    downloadPolicy: ProtectedSpriteDownloadPolicy
+    config: {
+      src: string
+      frameWidth: number
+      frameHeight: number
+      columns: number
+      animations: Record<string, {
+        frames: number[]
+        fps: number
+        loop: boolean
+      }>
+    }
+    privateAccess: unknown
+  }
+}
+
+const suiNetworks = {
+  testnet: { url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' as const },
+  mainnet: { url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' as const },
+} as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isSpriteConfig(value: unknown): value is NonNullable<PrivateManifestPayload['sprite']>['config'] {
+  return (
+    isRecord(value)
+    && typeof value.src === 'string'
+    && typeof value.frameWidth === 'number'
+    && typeof value.frameHeight === 'number'
+    && typeof value.columns === 'number'
+    && isRecord(value.animations)
+  )
+}
+
+function isProtectedSpritePolicy(value: unknown): value is ProtectedSpriteDownloadPolicy {
+  return value === 'owner_only' || value === 'allowlist'
+}
+
+function parsePrivateManifest(payload: unknown): PrivateManifestPayload {
+  if (
+    !isRecord(payload)
+    || typeof payload.version !== 'string'
+    || (payload.sourceType !== 'starter' && payload.sourceType !== 'soul')
+    || typeof payload.sourceRef !== 'string'
+    || !isRecord(payload.sprite)
+    || !isProtectedSpritePolicy(payload.sprite.downloadPolicy)
+    || !isSpriteConfig(payload.sprite.config)
+  ) {
+    throw new Error('Desktop soul manifest is invalid')
+  }
+
+  return payload as PrivateManifestPayload
+}
+
+function formatListedPrice(value: string | null) {
+  if (!value) return null
+
+  const atomic = BigInt(value)
+  const whole = atomic / 1_000_000n
+  const fractional = (atomic % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '')
+  return fractional ? `${whole.toString()}.${fractional} USDC` : `${whole.toString()} USDC`
+}
+
+function getDownloadDisabledState(
+  persona: PersonaItem,
+  section: CardSection,
+  ownerOnlyReady: boolean,
+  walletMismatch: boolean,
+) {
+  if (persona.isCached) {
+    return { disabled: false, label: 'Download', hint: null as string | null }
+  }
+
+  if (persona.spriteDownloadPolicy === 'missing') {
+    return { disabled: true, label: 'Sprite Missing', hint: 'This soul has no valid sprite metadata yet.' }
+  }
+
+  if (persona.spriteDownloadPolicy === 'invalid') {
+    return { disabled: true, label: 'Sprite Invalid', hint: 'The sprite metadata exists but does not match the desktop contract.' }
+  }
+
+  if (isProtectedSpritePolicy(persona.spriteDownloadPolicy)) {
+    const label = persona.spriteDownloadPolicy === 'allowlist' ? 'Allowlist' : 'Owner Only'
+    const protectedHint = persona.spriteDownloadPolicy === 'allowlist'
+      ? 'Allowlist-protected sprite. The desktop wallet will decrypt it locally.'
+      : 'Owner-only sprite. The desktop wallet will decrypt it locally.'
+    if (section === 'marketplace') {
+      return {
+        disabled: true,
+        label,
+        hint: 'Protected sprites must be downloaded from My Souls with desktop wallet auth.',
+      }
+    }
+    if (!ownerOnlyReady) {
+      return { disabled: true, label: 'Wallet Required', hint: 'Desktop wallet auth must be ready before private sprite download.' }
+    }
+    if (walletMismatch) {
+      return {
+        disabled: true,
+        label: 'Wallet Mismatch',
+        hint: 'The connected desktop wallet does not match the bound Sui wallet for this account.',
+      }
+    }
+    return { disabled: false, label: 'Download', hint: protectedHint }
+  }
+
+  if (persona.sourceType === 'soul') {
+    return { disabled: false, label: 'Download', hint: 'Public sprite download.' }
+  }
+
+  return { disabled: false, label: 'Download', hint: null }
+}
 
 function PersonaCard({
   persona,
+  section,
+  ownerOnlyReady,
+  walletMismatch,
   onDownload,
   onActivate,
   onRemove,
 }: {
   persona: PersonaItem
+  section: CardSection
+  ownerOnlyReady: boolean
+  walletMismatch: boolean
   onDownload?: () => void
   onActivate?: () => void
   onRemove?: () => void
 }): React.JSX.Element {
+  const downloadState = getDownloadDisabledState(persona, section, ownerOnlyReady, walletMismatch)
+  const listedPrice = formatListedPrice(persona.listedPriceAtomic)
+
   return (
     <div className={`persona-card ${persona.isActive ? 'persona-card--active' : ''}`}>
       <div className="persona-card__thumb-wrap">
@@ -38,9 +215,21 @@ function PersonaCard({
           {persona.sourceType === 'soul' && (
             <span className="persona-card__badge persona-card__badge--soul">Soul</span>
           )}
+          {persona.listingStatus === 'listed' && (
+            <span className="persona-card__badge persona-card__badge--listed">Listed</span>
+          )}
         </div>
+        {listedPrice && (
+          <div className="persona-card__price">{listedPrice}</div>
+        )}
         {persona.description && (
           <div className="persona-card__desc">{persona.description}</div>
+        )}
+        {persona.downloadError && (
+          <div className="persona-card__status persona-card__status--error">{persona.downloadError}</div>
+        )}
+        {!persona.downloadError && downloadState.hint && (
+          <div className="persona-card__status">{downloadState.hint}</div>
         )}
       </div>
 
@@ -60,8 +249,13 @@ function PersonaCard({
             Activate
           </button>
         ) : !persona.isCached && onDownload ? (
-          <button className="persona-card__btn" onClick={onDownload}>
-            Download
+          <button
+            className="persona-card__btn"
+            onClick={onDownload}
+            disabled={downloadState.disabled}
+            title={downloadState.hint ?? downloadState.label}
+          >
+            {downloadState.label}
           </button>
         ) : null}
 
@@ -78,9 +272,15 @@ function PersonaCard({
   )
 }
 
-// ── LibraryTab ───────────────────────────────────────────
-
-export function LibraryTab(): React.JSX.Element {
+function LibraryTabInner({
+  ownerOnlyDownloadReady,
+  walletMismatch,
+  downloadProtectedSoul,
+}: {
+  ownerOnlyDownloadReady: boolean
+  walletMismatch: boolean
+  downloadProtectedSoul?: (item: PersonaItem) => Promise<{ error?: string } | void>
+}) {
   const {
     activePersona,
     downloaded,
@@ -95,20 +295,22 @@ export function LibraryTab(): React.JSX.Element {
     removePersona,
     loadMoreMarketplace,
     refresh,
-  } = usePersonaLibrary()
+  } = usePersonaLibrary({
+    downloadProtectedSoul,
+  })
 
   const handleDownload = useCallback(
-    (catalogId: string) => () => downloadPersona(catalogId),
+    (catalogId: string) => () => void downloadPersona(catalogId),
     [downloadPersona],
   )
 
   const handleActivate = useCallback(
-    (catalogId: string) => () => activatePersona(catalogId),
+    (catalogId: string) => () => void activatePersona(catalogId),
     [activatePersona],
   )
 
   const handleRemove = useCallback(
-    (catalogId: string) => () => removePersona(catalogId),
+    (catalogId: string) => () => void removePersona(catalogId),
     [removePersona],
   )
 
@@ -122,7 +324,6 @@ export function LibraryTab(): React.JSX.Element {
 
   return (
     <div className="tab-content">
-      {/* ── Active Persona ──────────────────────────────── */}
       <section className="settings-section">
         <h3 className="settings-section__title">Active Persona</h3>
 
@@ -165,37 +366,48 @@ export function LibraryTab(): React.JSX.Element {
         )}
       </section>
 
-      {/* ── Downloaded ──────────────────────────────────── */}
+      {ownerOnlyDownloadReady && walletMismatch && (
+        <div className="persona-card__status persona-card__status--error" style={{ marginBottom: 12 }}>
+          The connected desktop wallet does not match the bound Sui wallet for this account. Protected sprite
+          downloads are disabled until the wallets match.
+        </div>
+      )}
+
       {downloaded.length > 0 && (
         <section className="settings-section">
           <h3 className="settings-section__title">Downloaded</h3>
           <div className="persona-grid">
-            {downloaded.map(p => (
+            {downloaded.map((persona) => (
               <PersonaCard
-                key={p.catalogId}
-                persona={p}
-                onActivate={handleActivate(p.catalogId)}
-                onRemove={handleRemove(p.catalogId)}
+                key={persona.catalogId}
+                persona={persona}
+                section="downloaded"
+                ownerOnlyReady={ownerOnlyDownloadReady}
+                walletMismatch={walletMismatch}
+                onActivate={handleActivate(persona.catalogId)}
+                onRemove={handleRemove(persona.catalogId)}
               />
             ))}
           </div>
         </section>
       )}
 
-      {/* ── My Souls ───────────────────────────────────── */}
       <section className="settings-section">
         <h3 className="settings-section__title">My Souls</h3>
 
         {isLinked ? (
           mySouls.length > 0 ? (
             <div className="persona-grid">
-              {mySouls.map(p => (
+              {mySouls.map((persona) => (
                 <PersonaCard
-                  key={p.catalogId}
-                  persona={p}
-                  onDownload={handleDownload(p.catalogId)}
-                  onActivate={handleActivate(p.catalogId)}
-                  onRemove={handleRemove(p.catalogId)}
+                  key={persona.catalogId}
+                  persona={persona}
+                  section="owned"
+                  ownerOnlyReady={ownerOnlyDownloadReady}
+                  walletMismatch={walletMismatch}
+                  onDownload={handleDownload(persona.catalogId)}
+                  onActivate={handleActivate(persona.catalogId)}
+                  onRemove={handleRemove(persona.catalogId)}
                 />
               ))}
             </div>
@@ -211,7 +423,6 @@ export function LibraryTab(): React.JSX.Element {
         )}
       </section>
 
-      {/* ── Browse Marketplace ─────────────────────────── */}
       <section className="settings-section">
         <div className="settings-section__title-row">
           <h3 className="settings-section__title">Browse Marketplace</h3>
@@ -223,13 +434,16 @@ export function LibraryTab(): React.JSX.Element {
         {marketplace.length > 0 ? (
           <>
             <div className="persona-grid">
-              {marketplace.map(p => (
+              {marketplace.map((persona) => (
                 <PersonaCard
-                  key={p.catalogId}
-                  persona={p}
-                  onDownload={handleDownload(p.catalogId)}
-                  onActivate={handleActivate(p.catalogId)}
-                  onRemove={handleRemove(p.catalogId)}
+                  key={persona.catalogId}
+                  persona={persona}
+                  section="marketplace"
+                  ownerOnlyReady={false}
+                  walletMismatch={walletMismatch}
+                  onDownload={handleDownload(persona.catalogId)}
+                  onActivate={handleActivate(persona.catalogId)}
+                  onRemove={handleRemove(persona.catalogId)}
                 />
               ))}
             </div>
@@ -251,4 +465,153 @@ export function LibraryTab(): React.JSX.Element {
       </section>
     </div>
   )
+}
+
+function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: string | null }) {
+  const { signPersonalMessage, suiClient, suiWallet } = usePrivySuiSign()
+
+  const walletMismatch = useMemo(
+    () => Boolean(primarySuiAddress && suiWallet?.address && !sameWalletAddress(primarySuiAddress, suiWallet.address)),
+    [primarySuiAddress, suiWallet?.address],
+  )
+
+  const downloadProtectedSoul = useCallback(async (item: PersonaItem) => {
+    if (!suiWallet?.address) {
+      return { error: 'No Sui wallet is available for this desktop session.' }
+    }
+
+    if (walletMismatch) {
+      return {
+        error: 'The connected desktop wallet does not match the bound Sui wallet for this account.',
+      }
+    }
+
+    const fetchManifest = window.electronAPI.soulFetchManifest
+    const cachePersona = window.electronAPI.soulCachePersona
+    if (!fetchManifest || !cachePersona) {
+      return { error: 'Desktop sprite IPC is not available.' }
+    }
+
+    try {
+      const manifestPayload = await fetchManifest({
+        catalogId: item.catalogId,
+        viewer: suiWallet.address,
+      })
+      const manifest = parsePrivateManifest(manifestPayload)
+      const privateAccess = parsePrivateAssetAccess(manifest.sprite.privateAccess)
+      const decrypted = await loadDecryptedPrivateAssetVersion({
+        access: privateAccess,
+        signPersonalMessage,
+        suiClient,
+      })
+
+      await cachePersona({
+        catalogId: item.catalogId,
+        sourceType: manifest.sourceType,
+        sourceRef: manifest.sourceRef,
+        version: manifest.version,
+        spriteBytes: decrypted.bytes,
+        configJson: JSON.stringify(manifest.sprite.config),
+      })
+
+      return {}
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Failed to decrypt protected sprite',
+      }
+    }
+  }, [signPersonalMessage, suiClient, suiWallet?.address, walletMismatch])
+
+  return (
+    <LibraryTabInner
+      ownerOnlyDownloadReady
+      walletMismatch={walletMismatch}
+      downloadProtectedSoul={downloadProtectedSoul}
+    />
+  )
+}
+
+function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | null }) {
+  const ownerOnlyEnabled = Boolean(runtimeConfig?.authReady && runtimeConfig?.privyAppId)
+  const [queryClient] = useState(() => new QueryClient())
+  const [primarySuiAddress, setPrimarySuiAddress] = useState<string | null>(null)
+  const getCustomAccessToken = useCallback(async () => {
+    const token = await window.electronAPI.getDesktopPrivyToken()
+    return token.jwt
+  }, [])
+
+  useEffect(() => {
+    if (!ownerOnlyEnabled) return
+
+    let cancelled = false
+    void ipcGetDesktopMe().then((me) => {
+      if (!cancelled) {
+        setPrimarySuiAddress(me?.profile?.primarySuiAddress ?? null)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [ownerOnlyEnabled])
+
+  if (!ownerOnlyEnabled || !runtimeConfig?.privyAppId) {
+    return <LibraryTabInner ownerOnlyDownloadReady={false} walletMismatch={false} />
+  }
+
+  const network = runtimeConfig.suiNetwork as SuiNetwork
+  const defaultNetwork: SuiNetwork = network in suiNetworks ? network : 'testnet'
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
+        <BasePrivyProvider
+          appId={runtimeConfig.privyAppId}
+          config={{
+            customAuth: {
+              enabled: true,
+              getCustomAccessToken,
+              isLoading: false,
+            },
+            appearance: {
+              showWalletLoginFirst: false,
+            },
+          }}
+        >
+          <LibraryTabWalletInner primarySuiAddress={primarySuiAddress} />
+        </BasePrivyProvider>
+      </SuiClientProvider>
+    </QueryClientProvider>
+  )
+}
+
+export function LibraryTab(): React.JSX.Element {
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void window.electronAPI.getDesktopRuntimeConfig()
+      .then((nextConfig) => {
+        if (!cancelled) {
+          setRuntimeConfig(nextConfig)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRuntimeConfig({
+            privyAppId: null,
+            suiNetwork: 'testnet',
+            authReady: false,
+            authBlocker: 'Failed to load desktop wallet configuration.',
+          })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return <LibraryTabContent runtimeConfig={runtimeConfig} />
 }

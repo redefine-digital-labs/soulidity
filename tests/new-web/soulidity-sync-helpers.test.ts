@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockedGetSoulObject = vi.hoisted(() => vi.fn())
 const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
 const mockedGetSoulMemoryObject = vi.hoisted(() => vi.fn())
+const mockedGetSoulMetadataObject = vi.hoisted(() => vi.fn())
 const mockedGetSoulSkillsObject = vi.hoisted(() => vi.fn())
 const mockedGetSkillVersionObject = vi.hoisted(() => vi.fn())
 const mockedGetRegisteredPersonalKiosk = vi.hoisted(() => vi.fn())
@@ -13,6 +14,7 @@ vi.mock('@/lib/soulidity/queries', () => ({
   getSoulObject: mockedGetSoulObject,
   getSoulStateObject: mockedGetSoulStateObject,
   getSoulMemoryObject: mockedGetSoulMemoryObject,
+  getSoulMetadataObject: mockedGetSoulMetadataObject,
   getSoulSkillsObject: mockedGetSoulSkillsObject,
   getSkillVersionObject: mockedGetSkillVersionObject,
   getRegisteredPersonalKiosk: mockedGetRegisteredPersonalKiosk,
@@ -69,7 +71,6 @@ describe('syncSoulProjectionFromChain', () => {
       name: 'Soul',
       description: 'desc',
       imageUrl: 'https://example.com/soul.png',
-      metadataRef: null,
       provenanceKind: 'native',
       originRef: null,
       creatorAddress: '0xcreator',
@@ -80,6 +81,7 @@ describe('syncSoulProjectionFromChain', () => {
       currentKioskId: '0xkiosk',
       creatorRoyaltyBps: 500,
       memoryId: '0xmemory',
+      metadataId: null,
       collectionId: null,
       grantCapacity: 3,
       activeGrantCount: 1,

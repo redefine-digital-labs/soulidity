@@ -1,11 +1,13 @@
 import type { Prisma } from '@db/prisma-client'
-import type { SealEnvelopeSidecar } from '@web/lib/services/seal-crypto'
-import type { AssetVersionObject, SkillVersionObject } from '@/lib/soulidity/types'
+import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import type { AssetVersionObject, SkillVersionObject, SoulMetadataObject } from '@/lib/soulidity/types'
 import {
+  OnChainVerificationError,
   getRegisteredPersonalKiosk,
   getSoulCollectionObject,
   getSoulCollectionRightObject,
   getSoulGrantObject,
+  getSoulMetadataObject,
   getSoulMemoryObject,
   getSoulObject,
   getSoulStateObject,
@@ -40,6 +42,47 @@ export async function syncSoulProjectionFromChain(params: {
     getSoulStateObject(params.stateObjectId, params.packageId),
     getSoulMemoryObject(params.memoryObjectId, params.packageId),
   ])
+  // Resolve SoulMetadata with the same lag tolerance as kiosk-cap resolution:
+  // the metadata object is created in the same TX as the SoulState, but RPC
+  // indexing for the new shared object can lag a few hundred ms behind the
+  // state read. Retry briefly, and if the object still is not visible fall
+  // through with `metadata = null` so the upsert still mirrors
+  // `metadataOnChainId` from `state.metadataId` and a later sync (the asset
+  // /metadata routes call `syncSoulProjectionFromChain` again on every write)
+  // backfills the binding/config detail fields. Without this retry, a freshly
+  // minted/imported/wrapped Soul whose metadata object indexes a beat late
+  // would 500 the post-TX sync and leave the Soul unmirrored.
+  let metadata: SoulMetadataObject | null = null
+  if (state.metadataId) {
+    const MAX_METADATA_RESOLVE_ATTEMPTS = 4
+    const METADATA_RESOLVE_DELAY_MS = 1500
+    for (let attempt = 1; attempt <= MAX_METADATA_RESOLVE_ATTEMPTS; attempt++) {
+      try {
+        metadata = await getSoulMetadataObject(state.metadataId, params.packageId)
+        break
+      } catch (error) {
+        // Indexing-lag and "shape not yet readable" both surface as
+        // OnChainVerificationError from `expectMoveObject`. Anything else
+        // (network failure, programmer error) bubbles up immediately.
+        if (!(error instanceof OnChainVerificationError)) {
+          throw error
+        }
+        if (attempt < MAX_METADATA_RESOLVE_ATTEMPTS) {
+          console.warn(
+            `[syncSoulProjection] SoulMetadata ${state.metadataId} not yet indexed ` +
+            `(attempt ${attempt}/${MAX_METADATA_RESOLVE_ATTEMPTS}): ${error.message}. Retrying...`,
+          )
+          await new Promise(resolve => setTimeout(resolve, METADATA_RESOLVE_DELAY_MS))
+        } else {
+          console.warn(
+            `[syncSoulProjection] SoulMetadata ${state.metadataId} still not readable after ` +
+            `${MAX_METADATA_RESOLVE_ATTEMPTS} attempts (${error.message}). Persisting metadataOnChainId ` +
+            `only; binding/config fields will backfill on the next sync.`,
+          )
+        }
+      }
+    }
+  }
 
   // Resolve kiosk cap ID: caller-provided → registry lookup → owned-object scan (with retry)
   let kioskCapOnChainId = params.currentKioskCapOnChainId ?? null
@@ -94,6 +137,7 @@ export async function syncSoulProjectionFromChain(params: {
     soul,
     state,
     memory,
+    metadata,
     currentKioskCapOnChainId: kioskCapOnChainId,
     creatorMemberId: params.creatorMemberId ?? null,
     currentOwnerMemberId: params.currentOwnerMemberId ?? null,
@@ -220,6 +264,7 @@ export async function syncContentAccessProjectionFromChain(params: {
   pricePaidAtomic: number | bigint
   grantedAtMs: number | bigint
   expiresAtMs?: number | bigint | null
+  ownershipEpochSnapshot: number
 }) {
   return upsertContentAccessProjection(params)
 }

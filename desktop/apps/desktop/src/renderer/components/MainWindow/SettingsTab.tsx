@@ -2,8 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 
 interface AgentKeypairInfo {
   address: string
-  publicKey: string
-  createdAt: number
 }
 
 const LINK_VERIFICATION_FAILED_MESSAGE = 'Saved desktop link could not be verified. Unlink this device and link again.'
@@ -41,9 +39,9 @@ function getRestoredIdentity(value: unknown): RestoredIdentity | null {
 export function SettingsTab(): React.JSX.Element {
   const [keypair, setKeypair] = useState<AgentKeypairInfo | null>(null)
   const [copied, setCopied] = useState(false)
-  const [storageStatus, setStorageStatus] = useState<string>('...')
   const [linkState, setLinkState] = useState<LinkState>({ phase: 'restoring' })
   const [unlinking, setUnlinking] = useState(false)
+  const [enhancedMotion, setEnhancedMotion] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const linkSessionNonceRef = useRef(0)
   const linkVerificationInFlightRef = useRef<number | null>(null)
@@ -94,9 +92,11 @@ export function SettingsTab(): React.JSX.Element {
     window.electronAPI.loadAgentKeypair().then((kp) => {
       if (kp) setKeypair(kp as AgentKeypairInfo)
     })
-    window.electronAPI.getSecretStorageStatus().then((s) => {
-      setStorageStatus(s === 'encrypted' ? 'OS Keychain' : s === 'legacy' ? 'JSON (legacy)' : 'Not found')
-    })
+    const configPromise = window.electronAPI.getConfig?.()
+    configPromise?.then((config) => {
+      if (cancelled) return
+      setEnhancedMotion(Boolean(config.petEnhancedMotion))
+    }).catch(() => {})
 
     void window.electronAPI.getDesktopAuthStatus().then(async (status) => {
       if (cancelled) return
@@ -124,11 +124,18 @@ export function SettingsTab(): React.JSX.Element {
       setLinkState({ phase: 'idle' })
     })
 
+    const unsubscribeConfig = window.electronAPI.onConfigChanged?.((config) => {
+      if (!cancelled) {
+        setEnhancedMotion(Boolean(config.petEnhancedMotion))
+      }
+    })
+
     return () => {
       cancelled = true
       linkSessionNonceRef.current += 1
       linkVerificationInFlightRef.current = null
       stopPolling()
+      unsubscribeConfig?.()
     }
   }, [getVerifiedDesktopIdentity, stopPolling])
 
@@ -219,6 +226,16 @@ export function SettingsTab(): React.JSX.Element {
     }
   }, [stopPolling])
 
+  const handleToggleEnhancedMotion = useCallback(async () => {
+    const next = !enhancedMotion
+    setEnhancedMotion(next)
+    try {
+      await window.electronAPI.setConfig?.({ petEnhancedMotion: next })
+    } catch {
+      setEnhancedMotion((current) => !current)
+    }
+  }, [enhancedMotion])
+
   const truncateAddress = (addr: string): string => {
     if (addr.length <= 16) return addr
     return `${addr.slice(0, 10)}...${addr.slice(-6)}`
@@ -248,28 +265,6 @@ export function SettingsTab(): React.JSX.Element {
               {copied ? '\u2713' : '\u2398'}
             </button>
           </div>
-        </div>
-
-        {keypair && (
-          <div className="settings-field">
-            <span className="settings-field__label">Created</span>
-            <input
-              type="text"
-              className="settings-field__input"
-              value={new Date(keypair.createdAt).toLocaleDateString()}
-              readOnly
-            />
-          </div>
-        )}
-
-        <div className="settings-field">
-          <span className="settings-field__label">Key Storage</span>
-          <input
-            type="text"
-            className="settings-field__input"
-            value={storageStatus}
-            readOnly
-          />
         </div>
       </section>
 
@@ -354,6 +349,31 @@ export function SettingsTab(): React.JSX.Element {
             )}
           </div>
         )}
+      </section>
+
+      <section className="settings-section">
+        <h3 className="settings-section__title">Pet Presence</h3>
+        <div className="settings-field">
+          <span className="settings-field__label">Enhanced Motion</span>
+          <div className="settings-field__input-group">
+            <input
+              type="text"
+              className="settings-field__input"
+              value={enhancedMotion ? 'On' : 'Low disturbance'}
+              readOnly
+            />
+            <button
+              className="settings-field__toggle"
+              onClick={() => { void handleToggleEnhancedMotion() }}
+              title={enhancedMotion ? 'Turn enhanced motion off' : 'Turn enhanced motion on'}
+            >
+              {enhancedMotion ? 'On' : 'Off'}
+            </button>
+          </div>
+        </div>
+        <p className="extract-notice">
+          Low disturbance keeps the pet state visible while muting extra motion. Turn this on only if you want stronger presence feedback.
+        </p>
       </section>
     </div>
   )

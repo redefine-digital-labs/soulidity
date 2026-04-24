@@ -13,6 +13,7 @@ import { buttonStyles } from '@/components/ui/button'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 import { useKioskNfts } from '@/lib/hooks/use-kiosk-nfts'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { validatePersonaSpriteDraft } from '@/lib/soulidity/persona-sprite'
 import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
 function FileUploadCard({
@@ -101,10 +102,15 @@ export default function ConfigurePage() {
 
   if (!ctx.selectedNft || (nfts && !selectedNftAvailable)) return null
 
-  function handleNext() {
+  async function handleNext() {
     const nextErrors: Record<string, string> = {}
     if (!ctx.charFile) nextErrors.charFile = 'Soul Character file is required'
     if (!ctx.memoryFile) nextErrors.memoryFile = 'Memory file (memory.md) is required'
+    const spriteValidation = await validatePersonaSpriteDraft({
+      sheetFile: ctx.spriteSheetFile,
+      configFile: ctx.spriteConfigFile,
+    })
+    if (!spriteValidation.ok) nextErrors.sprite = spriteValidation.error
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
       return
@@ -197,6 +203,64 @@ export default function ConfigurePage() {
             {(!ctx.skillsFile || skillBundleError) && (
               <SkillBundleFormatHint error={skillBundleError} />
             )}
+
+            <FileUploadCard
+              label="Persona Sprite Sheet"
+              file={ctx.spriteSheetFile}
+              accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif"
+              acceptLabel=".png/.jpg/.jpeg/.webp/.gif"
+              onSelect={ctx.setSpriteSheetFile}
+              onClear={() => ctx.setSpriteSheetFile(null)}
+              tone="teal"
+            />
+
+            <FileUploadCard
+              label="Persona Sprite Config"
+              file={ctx.spriteConfigFile}
+              accept=".json,application/json"
+              acceptLabel="persona-sprite-config.json"
+              onSelect={ctx.setSpriteConfigFile}
+              onClear={() => ctx.setSpriteConfigFile(null)}
+              tone="violet"
+            />
+
+            <div className="rounded-xl border border-purple/30 bg-card2/60 px-4 py-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-bold text-purple">Sprite Visibility</span>
+                <Tag color="muted">Optional</Tag>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => ctx.setSpriteVisibility('private')}
+                  className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
+                    ctx.spriteVisibility === 'private'
+                      ? 'border-purple bg-purple/15 text-foreground'
+                      : 'border-border bg-card/40 text-muted hover:border-purple/40'
+                  }`}
+                >
+                  Private
+                  <div className="mt-1 text-[10px] leading-4 text-muted">
+                    Metadata points to a protected `persona-sprite` asset version.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => ctx.setSpriteVisibility('public')}
+                  className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
+                    ctx.spriteVisibility === 'public'
+                      ? 'border-purple bg-purple/15 text-foreground'
+                      : 'border-border bg-card/40 text-muted hover:border-purple/40'
+                  }`}
+                >
+                  Public
+                  <div className="mt-1 text-[10px] leading-4 text-muted">
+                    Metadata points directly to the public Walrus sheet URL.
+                  </div>
+                </button>
+              </div>
+              {errors.sprite && <p className="mt-3 text-[11px] font-medium text-danger">{errors.sprite}</p>}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -212,7 +276,7 @@ export default function ConfigurePage() {
             </Link>
             <button
               type="button"
-              onClick={handleNext}
+              onClick={() => { void handleNext() }}
               className={buttonStyles({
                 variant: 'landing',
                 size: 'lg',

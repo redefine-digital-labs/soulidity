@@ -1,4 +1,4 @@
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 
 /**
  * Evaluate and auto-award achievements for a member.

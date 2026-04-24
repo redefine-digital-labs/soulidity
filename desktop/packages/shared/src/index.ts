@@ -102,14 +102,35 @@ export type {
 } from './types/soul-profile'
 
 export type {
+  LocalExtractAgent,
+  LocalExtractAgentStatusKind,
+  LocalExtractAgentStatus,
+  OpenClawSkillOption,
+  OpenClawImportStatus,
+  ImportOpenClawDraftInput,
+  CreateLocalExtractDraftInput,
+} from './types/extract-flow'
+
+export type {
   ExtractSoulDraft,
   ExtractSoulDraftPendingSync,
+  ExtractDraftCreationSource,
+  CreateExtractSoulDraftSeed,
 } from './types/extract-draft'
 
 export {
   createExtractSoulDraft,
+  createExtractSoulDraftFromSeed,
+  refreshExtractSoulDraftCover,
   regenerateExtractSoulDraftContent,
 } from './types/extract-draft'
+
+export type {
+  TaskExecutionMode,
+  TaskWriteApprovalResult,
+  TaskWriteApprovalGrant,
+  TaskWriteApprovalDenied,
+} from './types/task-execution'
 
 // ─── Memory System ───────────────────────────
 
@@ -137,3 +158,16 @@ export type {
   SavedIndexEntry,
   MemoryManifest
 } from './types/memory'
+
+// ─── Improvement Plans ───────────────────────────
+
+export type {
+  ImprovementPriority,
+  ImprovementOwner,
+  ImprovementMilestone,
+  DesktopImprovementPlanV6,
+} from './plans/desktop-improvement-v6'
+
+export {
+  desktopImprovementPlanV6,
+} from './plans/desktop-improvement-v6'

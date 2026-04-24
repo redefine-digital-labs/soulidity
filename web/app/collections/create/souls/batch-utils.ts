@@ -4,6 +4,7 @@ import {
   BATCH_TEMPLATE_HEADERS,
   normalizeBatchTemplateRows,
 } from '@/lib/collections/batch-template'
+import { validatePersonaSpriteDraft } from '@/lib/soulidity/persona-sprite'
 
 const TEMPLATE_COLUMNS = [
   { width: 20 },
@@ -187,7 +188,7 @@ function isTemplateFile(name: string) {
  * Expected folder structure:
  *   root/
  *     template.xlsx
- *     1/ soul.md, memory.md, [image.*], [skills.zip]
+ *     1/ soul.md, memory.md, [image.*], [skills.zip], [persona-sprite.*], [persona-sprite-config.json|sprite-config.json]
  *     2/ soul.md, memory.md, ...
  */
 export async function processFolderUpload(
@@ -229,6 +230,16 @@ export async function processFolderUpload(
         entry.memoryFile = withMime(file)
       } else if (fileName === 'skills.zip') {
         entry.skillsFile = withMime(file)
+      } else if (
+        fileName === 'persona-sprite-config.json'
+        || fileName === 'sprite-config.json'
+      ) {
+        entry.spriteConfigFile = withMime(file)
+      } else if (
+        fileName.startsWith('persona-sprite.')
+        && IMAGE_EXTS.has(extOf(fileName))
+      ) {
+        entry.spriteSheetFile = withMime(file)
       } else if (!entry.imageFile && IMAGE_EXTS.has(extOf(fileName))) {
         entry.imageFile = withMime(file)
       }
@@ -270,11 +281,21 @@ export async function processFolderUpload(
       continue
     }
 
+    const spriteValidation = await validatePersonaSpriteDraft({
+      sheetFile: entry.spriteSheetFile ?? null,
+      configFile: entry.spriteConfigFile ?? null,
+    })
+    if (!spriteValidation.ok) {
+      folderErrors.push(`Subfolder ${num}/: ${spriteValidation.error} (for Soul "${souls[i].name}")`)
+    }
+
     soulFolders.set(num, {
       characterFile: entry.characterFile,
       memoryFile: entry.memoryFile,
       imageFile: entry.imageFile,
       skillsFile: entry.skillsFile,
+      spriteSheetFile: entry.spriteSheetFile,
+      spriteConfigFile: entry.spriteConfigFile,
     })
   }
 

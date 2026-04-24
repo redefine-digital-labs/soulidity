@@ -25,6 +25,9 @@ type MockElectronApi = Pick<
   Window['electronAPI'],
   | 'loadAgentKeypair'
   | 'getSecretStorageStatus'
+  | 'getConfig'
+  | 'setConfig'
+  | 'onConfigChanged'
   | 'getDesktopAuthStatus'
   | 'getDesktopMe'
   | 'unlinkDesktopDevice'
@@ -41,6 +44,9 @@ function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectr
       createdAt: Date.parse('2026-04-17T09:30:00Z'),
     }),
     getSecretStorageStatus: vi.fn().mockResolvedValue('encrypted'),
+    getConfig: vi.fn().mockResolvedValue({ petEnhancedMotion: false }),
+    setConfig: vi.fn().mockResolvedValue(undefined),
+    onConfigChanged: vi.fn().mockReturnValue(() => {}),
     getDesktopAuthStatus: vi.fn().mockResolvedValue({ hasToken: false, accountId: null }),
     getDesktopMe: vi.fn().mockResolvedValue({
       profile: {
@@ -102,6 +108,15 @@ describe('SettingsTab desktop auth restore', () => {
       await flushEffects()
     })
   }
+
+  it('does not render the removed key metadata fields', async () => {
+    const api = createElectronApi()
+
+    await renderWithApi(api)
+
+    expect(container.textContent).not.toContain('Created')
+    expect(container.textContent).not.toContain('Key Storage')
+  })
 
   it('restores confirmed state from desktop auth even when metadata is missing', async () => {
     const api = createElectronApi({
@@ -386,5 +401,27 @@ describe('SettingsTab desktop auth restore', () => {
 
     expect(container.textContent).toContain('Link to Web Account')
     expect(container.textContent).not.toContain('Linked to Sui wallet')
+  })
+
+  it('persists the enhanced motion toggle through desktop config', async () => {
+    const api = createElectronApi({
+      getConfig: vi.fn().mockResolvedValue({ petEnhancedMotion: false }),
+      setConfig: vi.fn().mockResolvedValue(undefined),
+    })
+
+    await renderWithApi(api)
+
+    expect(container.textContent).toContain('Low disturbance')
+    const toggleButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Off',
+    )
+    expect(toggleButton).not.toBeNull()
+
+    await act(async () => {
+      toggleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushEffects()
+    })
+
+    expect(api.setConfig).toHaveBeenCalledWith({ petEnhancedMotion: true })
   })
 })

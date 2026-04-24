@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { resolveIdentity } from '@web/lib/auth/identity'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
-import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { resolveIdentity } from '@/lib/auth/identity'
+import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
+import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   findSoulCollectionDetailByRouteId,

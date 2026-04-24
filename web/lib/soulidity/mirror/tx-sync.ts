@@ -1,4 +1,4 @@
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 
 export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'publish',
@@ -8,6 +8,8 @@ export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'grant:issue',
   'grant:revoke',
   'grant:revoke-scope',
+  'grant:capacity',
+  'metadata:update',
   'skills:append',
   'skills:delete',
   'assets:append',

@@ -73,4 +73,16 @@ describe('MainWindow', () => {
     expect(container.querySelector('[data-testid="settings-tab"]')).toBeNull()
     expect(container.querySelector('[data-testid="extract-tab"]')).not.toBeNull()
   })
+
+  it('renders Extract before Agent in the tab strip', async () => {
+    await act(async () => {
+      root.render(<MainWindow />)
+      await flushPromises()
+    })
+
+    const tabLabels = Array.from(container.querySelectorAll('.main-window__tabs button'))
+      .map((button) => button.textContent)
+
+    expect(tabLabels).toEqual(['Settings', 'Library', 'Extract', 'Agent', 'Hooks'])
+  })
 })

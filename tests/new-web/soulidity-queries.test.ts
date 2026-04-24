@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedGetObject = vi.hoisted(() => vi.fn())
 const mockedGetOwnedObjects = vi.hoisted(() => vi.fn())
+const mockedGetDynamicFieldObject = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/sui', () => ({
   suiClient: {
     getObject: mockedGetObject,
     getOwnedObjects: mockedGetOwnedObjects,
+    getDynamicFieldObject: mockedGetDynamicFieldObject,
   },
 }))
 
@@ -129,6 +131,61 @@ describe('Soulidity queries', () => {
         showContent: true,
         showType: true,
       },
+    })
+  })
+
+  it('parses SoulMetadata active sprite returned as a direct struct', async () => {
+    mockedGetObject.mockResolvedValue({
+      data: {
+        objectId: '0x5',
+        type: '0x42::metadata::SoulMetadata',
+        content: {
+          dataType: 'moveObject',
+          type: '0x42::metadata::SoulMetadata',
+          fields: {
+            soul_id: '0x6',
+            active_sprite: {
+              asset_name: 'persona-sprite',
+              version_index: '1',
+              download_policy: 0,
+            },
+            active_voice: null,
+            ext: {
+              fields: {
+                id: { id: '0x8' },
+                size: '2',
+              },
+            },
+          },
+        },
+      },
+    })
+    mockedGetDynamicFieldObject.mockImplementation(async ({ name }: { name: { value: string } }) => {
+      if (name.value === 'sprite.config.v1') {
+        return { data: { content: { fields: { value: '{"fps":12}' } } } }
+      }
+      if (name.value === 'sprite.mood_map.v1') {
+        return { data: { content: { fields: { value: '{"idle":"idle"}' } } } }
+      }
+      return { data: { content: null } }
+    })
+
+    const { getSoulMetadataObject } = await import('../../web/lib/soulidity/queries')
+
+    await expect(getSoulMetadataObject('0x5', '0x42')).resolves.toMatchObject({
+      objectId: '0x5',
+      packageId: '0x0000000000000000000000000000000000000000000000000000000000000042',
+      soulId: '0x0000000000000000000000000000000000000000000000000000000000000006',
+      activeSprite: {
+        assetName: 'persona-sprite',
+        versionIndex: 1,
+        downloadPolicy: 'public',
+      },
+      activeVoice: null,
+      extTableId: '0x0000000000000000000000000000000000000000000000000000000000000008',
+      spriteConfigJson: '{"fps":12}',
+      spriteMoodMapJson: '{"idle":"idle"}',
+      voiceConfigJson: null,
     })
   })
 })

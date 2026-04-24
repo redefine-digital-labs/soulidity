@@ -15,4 +15,10 @@ describe('MainWindow styles', () => {
     expect(css).toMatch(/\.main-window__tab\s*\{[\s\S]*?-webkit-app-region:\s*no-drag;/)
     expect(css).toMatch(/\.main-window__body\s*\{[\s\S]*?-webkit-app-region:\s*no-drag;/)
   })
+
+  it('stacks the agent sessions pane above the detail pane', () => {
+    expect(css).toMatch(/\.agent-console__body\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/)
+    expect(css).toMatch(/\.agent-session-list__items\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/)
+    expect(css).toMatch(/\.agent-session-detail\s*\{[\s\S]*?width:\s*100%;/)
+  })
 })

@@ -31,6 +31,7 @@ export default function ApiSdkPage() {
             ['GET', '/api/souls/tags', 'List popular soul tags with counts.'],
             ['GET', '/api/souls/[id]', 'Get soul detail by on-chain object ID or DB slug.'],
             ['POST', '/api/souls/publish', 'Mirror a publish TX. Body: txDigest + Seal envelope(s). Returns soul + state mirror.'],
+            ['POST', '/api/souls/[id]/metadata', 'Mirror a SoulMetadata binding/blob mutation TX and refresh the mirrored metadata projection.'],
             ['POST', '/api/souls/upload', 'Upload content files to Walrus and return blob object IDs + sealed DEK envelopes.'],
             ['GET', '/api/souls/personal-kiosk', 'Resolve the personal kiosk for the authenticated user\'s wallet.'],
             ['POST', '/api/souls/[id]/grant', 'Mirror a grant issue/revoke TX. See SoulGrant API docs.'],
@@ -102,6 +103,7 @@ Authorization: Bearer snk_...`}</code>
                 ['personal-kiosk.ts', 'resolvePersonalKiosk — on-chain kiosk lookup for a wallet address.'],
                 ['tx/publish.ts', 'buildPublishSoulTx — native mint PTB builder.'],
                 ['tx/personal-join.ts', 'buildPersonalJoinSoulTx — wrap+link PTB builder.'],
+                ['tx/metadata.ts', 'buildSetActiveSpriteTx, buildClearActiveSpriteTx, buildSetActiveVoiceTx, buildUpsertMetadataBlobTx — owner SoulMetadata maintenance PTBs.'],
                 ['tx/grant.ts', 'buildIssueSoulGrantTx, buildRevokeSoulGrantTx.'],
                 ['tx/buy.ts', 'buildBuySoulTx — purchase + kiosk transfer PTB.'],
                 ['tx/memory.ts', 'buildAppendMemoryTx — append memory entry PTB.'],
@@ -141,7 +143,7 @@ interface SoulStateObject {
   ownershipEpoch, grantCapacity,
   activeGrantCount,
   activeGrants: ActiveGrantSlotObject[],
-  memoryId, skillsId, collectionId,
+  memoryId, metadataId, skillsId, collectionId,
 }
 
 interface ActiveGrantSlotObject {

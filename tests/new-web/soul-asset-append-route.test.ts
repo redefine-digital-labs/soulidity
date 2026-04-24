@@ -26,6 +26,10 @@ const mockedSyncSoulProjectionFromChain = vi.hoisted(() => vi.fn())
 const mockedBuildSyncSealSidecars = vi.hoisted(() => vi.fn())
 const mockedUpsertAssetVersionProjection = vi.hoisted(() => vi.fn())
 const mockedParseRequiredTxDigest = vi.hoisted(() => vi.fn())
+const mockedPrisma = vi.hoisted(() => ({
+  soulAsset: { findFirst: vi.fn() },
+  soulAssetVersionRecord: { findMany: vi.fn() },
+}))
 
 vi.mock('@/lib/soulidity/server', () => ({
   requireHumanWalletIdentity: mockedRequireHumanWalletIdentity,
@@ -79,10 +83,7 @@ vi.mock('@/lib/soulidity/request', () => ({
 }))
 
 vi.mock('@web/lib/prisma', () => ({
-  prisma: {
-    soulAsset: { findFirst: vi.fn() },
-    soulAssetVersionRecord: { findMany: vi.fn() },
-  },
+  prisma: mockedPrisma,
 }))
 
 
@@ -109,6 +110,63 @@ function makeRequest(body: Record<string, unknown> = { txDigest: TX_DIGEST }) {
     body: JSON.stringify(body),
   })
 }
+
+describe('GET /api/souls/[id]/assets', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  async function callRoute() {
+    const { GET } = await import('../../web/app/api/souls/[id]/assets/route.ts')
+    return GET(new Request(`http://localhost/api/souls/${SOUL_ID}/assets`) as any, {
+      params: Promise.resolve({ id: SOUL_ID }),
+    })
+  }
+
+  it('returns nextVersionIndexes from all mirrored versions including soft-deleted rows', async () => {
+    const now = new Date('2026-04-24T00:00:00.000Z')
+    mockedPrisma.soulAsset.findFirst.mockResolvedValueOnce({ onChainId: SOUL_ID })
+    mockedPrisma.soulAssetVersionRecord.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'asset-version-1',
+          soulOnChainId: SOUL_ID,
+          assetsOnChainId: ASSETS_ID,
+          assetName: 'persona-sprite',
+          versionIndex: 1,
+          visibility: 'public',
+          assetType: 'sprite',
+          deletedAt: null,
+          blobObjectId: BLOB_OBJECT_ID,
+          blobId: BLOB_ID,
+          sealSidecar: null,
+          createdAtMs: BigInt(1700000000000),
+          createdAt: now,
+          updatedAt: now,
+        },
+      ])
+      .mockResolvedValueOnce([
+        { assetName: 'persona-sprite', versionIndex: 0 },
+        { assetName: 'persona-sprite', versionIndex: 1 },
+      ])
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      assets: [expect.objectContaining({ assetName: 'persona-sprite', versionIndex: 1 })],
+      nextVersionIndexes: { 'persona-sprite': 2 },
+    })
+    expect(mockedPrisma.soulAssetVersionRecord.findMany).toHaveBeenNthCalledWith(1, {
+      where: { soulOnChainId: SOUL_ID, deletedAt: null },
+      orderBy: [{ assetName: 'asc' }, { versionIndex: 'desc' }],
+    })
+    expect(mockedPrisma.soulAssetVersionRecord.findMany).toHaveBeenNthCalledWith(2, {
+      where: { soulOnChainId: SOUL_ID },
+      select: { assetName: true, versionIndex: true },
+    })
+  })
+})
 
 describe('POST /api/souls/[id]/assets (append)', () => {
   beforeEach(() => {

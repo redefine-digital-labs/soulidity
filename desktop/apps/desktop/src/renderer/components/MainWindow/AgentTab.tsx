@@ -87,6 +87,7 @@ export function AgentTab(): React.JSX.Element {
   const currentPermissionFilePath = typeof currentPermission?.toolInput?.file_path === 'string'
     ? currentPermission.toolInput.file_path
     : undefined
+  const sessionSummary = `${activeSessions.length} active · ${recentSessions.length} recent`
 
   const handleApprove = async (request: PendingPermission, allowAlways = false): Promise<void> => {
     await window.electronAPI.approveAgentPermission(request.requestId, allowAlways)
@@ -140,30 +141,36 @@ export function AgentTab(): React.JSX.Element {
 
       <section className="settings-section agent-console__body">
         <div className="agent-session-list">
-          <div className="agent-session-list__title">Sessions</div>
+          <div className="agent-session-list__header">
+            <div className="agent-session-list__title">Sessions</div>
+            <div className="agent-session-list__summary">{sessionSummary}</div>
+          </div>
           {sessions.length === 0 && <p className="agent-empty">No active runtime sessions</p>}
-          {sessions.map((session) => {
-            const displayStatus = formatRuntimeStatus(session.status)
-            return (
-              <button
-                key={session.sessionId}
-                type="button"
-                className={`agent-session-row${selectedSessionId === session.sessionId ? ' agent-session-row--active' : ''}`}
-                onClick={() => setSelectedSessionId(session.sessionId)}
-              >
-                <div className="agent-session-row__top">
-                  <span>{formatSourceLabel(session.source)}</span>
-                  <span className={`agent-card__status agent-card__status--${displayStatus}`}>{displayStatus}</span>
-                </div>
-                <div className="agent-session-row__title">
-                  {session.sessionTitle || summarizePath(session.workingDirectory) || session.sessionId}
-                </div>
-                <div className="agent-session-row__meta">
-                  {formatTime(session.lastUpdated)} · {formatDuration(session.startedAt, session.endedAt)}
-                </div>
-              </button>
-            )
-          })}
+          <div className="agent-session-list__items">
+            {sessions.map((session) => {
+              const displayStatus = formatRuntimeStatus(session.status)
+              return (
+                <button
+                  key={session.sessionId}
+                  type="button"
+                  aria-pressed={selectedSessionId === session.sessionId}
+                  className={`agent-session-row${selectedSessionId === session.sessionId ? ' agent-session-row--active' : ''}`}
+                  onClick={() => setSelectedSessionId(session.sessionId)}
+                >
+                  <div className="agent-session-row__top">
+                    <span>{formatSourceLabel(session.source)}</span>
+                    <span className={`agent-card__status agent-card__status--${displayStatus}`}>{displayStatus}</span>
+                  </div>
+                  <div className="agent-session-row__title">
+                    {session.sessionTitle || summarizePath(session.workingDirectory) || session.sessionId}
+                  </div>
+                  <div className="agent-session-row__meta">
+                    {formatTime(session.lastUpdated)} · {formatDuration(session.startedAt, session.endedAt)}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         <div className="agent-session-detail">
@@ -306,13 +313,16 @@ export function AgentTab(): React.JSX.Element {
                 <div className="agent-detail-card">
                   <div className="agent-detail-card__title">Recent Tools</div>
                   {currentSession.toolHistory.length === 0 && <p className="agent-empty">No tool activity yet</p>}
-                  {currentSession.toolHistory.slice().reverse().map((entry, index) => (
-                    <div key={`${entry.tool}-${entry.timestamp}-${index}`} className="agent-timeline-row">
-                      <strong>{entry.tool}</strong>
-                      <span>{entry.description || 'No details'}</span>
-                      <small>{formatTime(entry.timestamp)}</small>
-                    </div>
-                  ))}
+                  {currentSession.toolHistory.slice().reverse().map((entry, index) => {
+                    const description = entry.description || 'No details'
+                    return (
+                      <div key={`${entry.tool}-${entry.timestamp}-${index}`} className="agent-timeline-row">
+                        <strong>{entry.tool}</strong>
+                        <span className="agent-timeline-row__text" title={description}>{description}</span>
+                        <small>{formatTime(entry.timestamp)}</small>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 <div className="agent-detail-card">
@@ -321,7 +331,7 @@ export function AgentTab(): React.JSX.Element {
                   {currentSession.recentMessages.slice().reverse().map((message, index) => (
                     <div key={`${message.role}-${message.timestamp}-${index}`} className="agent-message-row">
                       <strong>{message.role}</strong>
-                      <span>{message.text}</span>
+                      <span className="agent-message-row__text" title={message.text}>{message.text}</span>
                       <small>{formatTime(message.timestamp)}</small>
                     </div>
                   ))}
@@ -331,13 +341,16 @@ export function AgentTab(): React.JSX.Element {
               {recentSessions.length > 0 && (
                 <div className="agent-detail-card">
                   <div className="agent-detail-card__title">Recent Sessions</div>
-                  {recentSessions.slice(0, 5).map((session) => (
-                    <div key={session.sessionId} className="agent-timeline-row">
-                      <strong>{formatSourceLabel(session.source)}</strong>
-                      <span>{session.sessionTitle || session.sessionId}</span>
-                      <small>{formatDuration(session.startedAt, session.endedAt)}</small>
-                    </div>
-                  ))}
+                  {recentSessions.slice(0, 5).map((session) => {
+                    const summary = session.sessionTitle || session.sessionId
+                    return (
+                      <div key={session.sessionId} className="agent-timeline-row">
+                        <strong>{formatSourceLabel(session.source)}</strong>
+                        <span className="agent-timeline-row__text" title={summary}>{summary}</span>
+                        <small>{formatDuration(session.startedAt, session.endedAt)}</small>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </>

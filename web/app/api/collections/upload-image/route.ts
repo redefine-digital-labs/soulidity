@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireIdentity } from '@web/lib/auth/identity'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
-import { uploadPublic, getBlobUrl } from '@web/lib/services/walrus'
+import { requireIdentity } from '@/lib/auth/identity'
+import { takeRateLimitToken } from '@/lib/rate-limit'
+import { uploadPublic, getBlobUrl } from '@/lib/services/walrus'
 
 export const dynamic = 'force-dynamic'
 

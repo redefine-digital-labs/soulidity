@@ -9,6 +9,7 @@ import {
   type PetAgentEvent,
   type PetTaskSummary,
   type PetUpdateStatus,
+  type TaskExecutionMode,
 } from '@soulidity/shared'
 import { useMood } from '../../hooks/useMood'
 import './styles.css'
@@ -26,10 +27,11 @@ interface ToastState {
 }
 
 interface TaskPanelState {
-  phase: 'compose' | 'output'
+  phase: 'compose' | 'approval' | 'output'
   files: string[]
   agent: TaskAgent
   instruction: string
+  executionMode: TaskExecutionMode
   output: string
   running: boolean
   taskId?: string
@@ -76,6 +78,23 @@ function formatAgentLabel(agent: string): string {
   return agent
 }
 
+function formatMoodLabel(mood: Mood): string {
+  switch (mood) {
+    case 'working': return 'Working'
+    case 'sleepy': return 'Sleepy'
+    case 'snoring': return 'Sleeping'
+    case 'happy': return 'Happy'
+    case 'love': return 'Affectionate'
+    case 'excited': return 'Excited'
+    case 'celebrate': return 'Celebrating'
+    case 'angry': return 'Frustrated'
+    case 'surprised': return 'Alert'
+    case 'shy': return 'Shy'
+    case 'dragging': return 'Moving'
+    default: return 'Idle'
+  }
+}
+
 function buildFallbackTask(files: string[], agent: TaskAgent, instruction: string, taskId: string): PetTaskSummary {
   return {
     agent,
@@ -120,6 +139,21 @@ function extractFilePaths(dataTransfer: DataTransfer): string[] {
     .filter((filePath): filePath is string => Boolean(filePath))
 }
 
+function createTaskPanelState(
+  files: string[],
+  previous: TaskPanelState | null,
+): TaskPanelState {
+  return {
+    phase: 'compose',
+    files,
+    agent: previous?.agent ?? 'codex',
+    instruction: previous?.phase === 'compose' ? previous.instruction : '',
+    executionMode: previous?.executionMode ?? 'read',
+    output: '',
+    running: false,
+  }
+}
+
 export function FloatingBall(): React.JSX.Element {
   const { mood: backendMood } = useMood()
   const { config: spriteConfig } = useActivePersona()
@@ -135,6 +169,7 @@ export function FloatingBall(): React.JSX.Element {
   const [isDropTargetActive, setIsDropTargetActive] = useState(false)
   const [taskPanel, setTaskPanel] = useState<TaskPanelState | null>(null)
   const [localTasks, setLocalTasks] = useState<Record<string, PetTaskSummary>>({})
+  const [enhancedMotion, setEnhancedMotion] = useState(false)
 
   const ballRef = useRef<HTMLDivElement>(null)
   const toastIdRef = useRef(0)
@@ -194,6 +229,18 @@ export function FloatingBall(): React.JSX.Element {
   const effectiveMood: Mood = isDragging
     ? 'dragging'
     : transientMood ?? (activeTasks.length > 0 ? 'working' : backendMood)
+  const presenceLabel = topAttention
+    ? 'Needs attention'
+    : activeTasks.length > 0
+      ? 'Working'
+      : updateStatus.state === 'available'
+        ? `Update ${updateStatus.version ?? 'ready'}`.trim()
+        : updateStatus.state === 'downloaded'
+          ? 'Ready to install'
+          : effectiveMood !== 'idle'
+            ? formatMoodLabel(effectiveMood)
+            : null
+  const showPresenceLabel = !enhancedMotion && Boolean(presenceLabel) && !taskPanel
 
   useEffect(() => {
     return () => {
@@ -230,6 +277,11 @@ export function FloatingBall(): React.JSX.Element {
 
   useEffect(() => {
     let disposed = false
+
+    const configPromise = window.electronAPI.getConfig?.()
+    configPromise?.then((config) => {
+      if (!disposed) setEnhancedMotion(Boolean(config.petEnhancedMotion))
+    }).catch(() => {})
 
     window.electronAPI.getCurrentAgentStatus()
       .then((file) => {
@@ -297,6 +349,10 @@ export function FloatingBall(): React.JSX.Element {
       }
     })
 
+    const unsubscribeConfig = window.electronAPI.onConfigChanged?.((config) => {
+      setEnhancedMotion(Boolean(config.petEnhancedMotion))
+    })
+
     return () => {
       disposed = true
       unsubscribeStatus?.()
@@ -304,6 +360,7 @@ export function FloatingBall(): React.JSX.Element {
       unsubscribeUpdate?.()
       unsubscribeOutput?.()
       unsubscribeComplete?.()
+      unsubscribeConfig?.()
     }
   }, [setMoodFor, showToast])
 
@@ -348,7 +405,7 @@ export function FloatingBall(): React.JSX.Element {
   }, [topPermission])
 
   useEffect(() => {
-    if (taskPanel || transientMood || isDragging) return
+    if (!enhancedMotion || taskPanel || transientMood || isDragging) return
 
     const randomTimer = setInterval(() => {
       const rand = Math.random()
@@ -366,7 +423,7 @@ export function FloatingBall(): React.JSX.Element {
       clearInterval(randomTimer)
       clearInterval(snoringTimer)
     }
-  }, [isDragging, setMoodFor, taskPanel, transientMood])
+  }, [enhancedMotion, isDragging, setMoodFor, taskPanel, transientMood])
 
   const dragStyle: React.CSSProperties | undefined = isDragging
     ? {
@@ -550,14 +607,7 @@ export function FloatingBall(): React.JSX.Element {
       return
     }
 
-    setTaskPanel({
-      phase: 'compose',
-      files: filePaths,
-      agent: taskPanel?.agent ?? 'codex',
-      instruction: taskPanel?.phase === 'compose' ? taskPanel.instruction : '',
-      output: '',
-      running: false,
-    })
+    setTaskPanel((current) => createTaskPanelState(filePaths, current))
     setMoodFor('surprised', 1200)
   }, [setMoodFor, showToast, taskPanel])
 
@@ -568,6 +618,10 @@ export function FloatingBall(): React.JSX.Element {
 
   const handleAgentChange = useCallback((agent: TaskAgent) => {
     setTaskPanel((current) => current ? { ...current, agent } : current)
+  }, [])
+
+  const handleExecutionModeChange = useCallback((executionMode: TaskExecutionMode) => {
+    setTaskPanel((current) => current ? { ...current, executionMode } : current)
   }, [])
 
   const handleClosePanel = useCallback(() => {
@@ -581,23 +635,25 @@ export function FloatingBall(): React.JSX.Element {
     showToast('info', '正在取消任务...')
   }, [showToast, taskPanel])
 
-  const handleSubmitTask = useCallback(async () => {
+  const runTask = useCallback(async (approvalToken?: string) => {
     if (!taskPanel) return
     const instruction = taskPanel.instruction.trim()
-    if (!instruction) {
-      showToast('attention', '先写清楚你要它处理什么。')
-      return
-    }
 
     const result = await window.electronAPI.executeTask({
       agent: taskPanel.agent,
       instruction,
       filePaths: taskPanel.files,
+      executionMode: taskPanel.executionMode,
+      approvalToken,
     })
 
     if (result.error) {
       showToast('error', result.error)
-      setTaskPanel((current) => current ? { ...current, error: result.error } : current)
+      setTaskPanel((current) => current ? {
+        ...current,
+        phase: 'compose',
+        error: result.error,
+      } : current)
       return
     }
 
@@ -613,7 +669,55 @@ export function FloatingBall(): React.JSX.Element {
       error: undefined,
     } : current)
     setMoodFor('working', 1400)
-  }, [setMoodFor, showToast, taskPanel])
+  }, [setMoodFor, taskPanel, showToast])
+
+  const handleSubmitTask = useCallback(async () => {
+    if (!taskPanel) return
+    const instruction = taskPanel.instruction.trim()
+    if (!instruction) {
+      showToast('attention', '先写清楚你要它处理什么。')
+      return
+    }
+    if (taskPanel.executionMode === 'write') {
+      setTaskPanel((current) => current ? { ...current, phase: 'approval', error: undefined } : current)
+      return
+    }
+    await runTask()
+  }, [runTask, showToast, taskPanel])
+
+  const handleBackToCompose = useCallback(() => {
+    setTaskPanel((current) => current ? { ...current, phase: 'compose' } : current)
+  }, [])
+
+  const handleApproveWriteTask = useCallback(async () => {
+    if (!taskPanel) return
+    if (taskPanel.files.length === 0) {
+      showToast('error', '写入模式需要至少一个目标文件。')
+      return
+    }
+    const approval = await window.electronAPI.requestWriteApproval({
+      filePaths: taskPanel.files,
+      agent: taskPanel.agent,
+      // Send the same canonical (trimmed) form that `runTask` later hands to
+      // `executeTask`. Without this, a stray trailing newline in the textarea
+      // mints a token whose stored instruction no longer matches the launch
+      // instruction, and the main process rejects the approved task.
+      instruction: taskPanel.instruction.trim(),
+    })
+    if (!approval.ok) {
+      const reason = approval.reason === 'denied'
+        ? '已拒绝写入授权。'
+        : approval.reason === 'invalid-paths'
+          ? '授权请求缺少有效文件路径。'
+          : approval.reason === 'instruction-too-long'
+            ? '任务指令过长，请精简到 4000 字符以内再申请授权。'
+            : '无法弹出授权窗口，稍后再试。'
+      showToast('info', reason)
+      setTaskPanel((current) => current ? { ...current, phase: 'compose' } : current)
+      return
+    }
+    await runTask(approval.token)
+  }, [runTask, showToast, taskPanel])
 
   const handleUpdateBubbleClick = useCallback(async () => {
     if (updateStatus.state === 'available') {
@@ -637,7 +741,7 @@ export function FloatingBall(): React.JSX.Element {
 
   return (
     <div
-      className={`ball-root${taskPanel ? ' ball-root--expanded' : ''}`}
+      className={`ball-root${taskPanel ? ' ball-root--expanded' : ''}${enhancedMotion ? '' : ' ball-root--reduced-effects'}`}
       onMouseEnter={handleRootMouseEnter}
       onMouseLeave={handleRootMouseLeave}
       onDragEnter={handleDragEnter}
@@ -716,10 +820,16 @@ export function FloatingBall(): React.JSX.Element {
             <div className="task-panel__header">
               <div>
                 <div className="task-panel__title">
-                  {taskPanel.phase === 'compose' ? '投递任务' : taskPanel.running ? '任务执行中' : '任务输出'}
+                  {taskPanel.phase === 'compose'
+                    ? 'Review Task'
+                    : taskPanel.phase === 'approval'
+                      ? 'Write Approval'
+                      : taskPanel.running
+                        ? '任务执行中'
+                        : '任务输出'}
                 </div>
                 <div className="task-panel__subtitle">
-                  {taskPanel.files.length} 个文件
+                  {taskPanel.files.length > 0 ? `${taskPanel.files.length} 个文件` : '拖入文件后开始'}
                 </div>
               </div>
               <button
@@ -730,11 +840,13 @@ export function FloatingBall(): React.JSX.Element {
               </button>
             </div>
 
-            <div className="task-panel__files">
-              {taskPanel.files.map((filePath) => (
-                <span key={filePath} className="task-panel__file-chip">{basename(filePath)}</span>
-              ))}
-            </div>
+            {taskPanel.files.length > 0 && (
+              <div className="task-panel__files">
+                {taskPanel.files.map((filePath) => (
+                  <span key={filePath} className="task-panel__file-chip">{basename(filePath)}</span>
+                ))}
+              </div>
+            )}
 
             {taskPanel.phase === 'compose' && (
               <>
@@ -750,10 +862,27 @@ export function FloatingBall(): React.JSX.Element {
                   ))}
                 </div>
 
+                <div className="task-panel__modes">
+                  {(['read', 'write'] as TaskExecutionMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      className={`task-panel__mode ${taskPanel.executionMode === mode ? 'task-panel__mode--active' : ''}`}
+                      onClick={() => handleExecutionModeChange(mode)}
+                    >
+                      {mode === 'read' ? 'Read Only' : 'Write'}
+                    </button>
+                  ))}
+                </div>
+                <div className="task-panel__hint">
+                  {taskPanel.executionMode === 'read'
+                    ? 'Read-only 模式会把 Codex 跑在只读沙箱里，并限制 Claude 只用 Bash/Read。'
+                    : 'Write 模式默认先走一次明确审批，再允许 agent 修改文件。'}
+                </div>
+
                 <textarea
                   ref={instructionRef}
                   className="task-panel__textarea"
-                  placeholder="告诉它要做什么，例如：比较这些文件里的交互差异并给出修复方案。"
+                  placeholder="基于这些文件交代任务。例如：比较这些文件里的交互差异并给出修复方案。"
                   value={taskPanel.instruction}
                   onChange={handleInstructionChange}
                 />
@@ -764,7 +893,42 @@ export function FloatingBall(): React.JSX.Element {
 
                 <div className="task-panel__actions">
                   <button className="task-panel__primary" onClick={handleSubmitTask}>
-                    开始执行
+                    {taskPanel.executionMode === 'write' ? 'Review Write Plan' : 'Run Now'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {taskPanel.phase === 'approval' && (
+              <>
+                <div className="task-panel__approval">
+                  <div className="task-panel__approval-title">You are about to allow write access</div>
+                  <div className="task-panel__approval-copy">
+                    这一步还没有启动任何 agent。拒绝后不会产生文件副作用。
+                  </div>
+                  {/*
+                    Render the exact instruction the main process will bind into
+                    the approval token. Do not summarize — the user must see
+                    every character they are authorizing, otherwise a malicious
+                    renderer could hide a destructive suffix after a benign
+                    first line. Long text scrolls inside the pre block.
+                  */}
+                  <pre className="task-panel__approval-instruction">
+                    {taskPanel.instruction.trim()}
+                  </pre>
+                  <div className="task-panel__approval-copy">
+                    Agent: {formatAgentLabel(taskPanel.agent)} · Scope: {taskPanel.files.length > 0 ? `${taskPanel.files.length} file(s)` : 'workspace'}
+                  </div>
+                </div>
+                <div className="task-panel__actions">
+                  <button className="task-panel__ghost" onClick={handleBackToCompose}>
+                    Back
+                  </button>
+                  <button className="task-panel__ghost" onClick={handleClosePanel}>
+                    Deny
+                  </button>
+                  <button className="task-panel__primary" onClick={() => { void handleApproveWriteTask() }}>
+                    Approve & Run
                   </button>
                 </div>
               </>
@@ -802,6 +966,7 @@ export function FloatingBall(): React.JSX.Element {
           ref={ballRef}
           className="ball"
           data-mood={effectiveMood}
+          data-enhanced-motion={enhancedMotion ? 'true' : 'false'}
           style={dragStyle}
           onMouseDown={handleMouseDown}
           onMouseMove={handleBallMouseMove}
@@ -816,6 +981,9 @@ export function FloatingBall(): React.JSX.Element {
             idlePause
           />
         </div>
+        {showPresenceLabel && presenceLabel && (
+          <div className="presence-label">{presenceLabel}</div>
+        )}
       </div>
     </div>
   )

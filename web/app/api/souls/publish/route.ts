@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
@@ -166,6 +166,13 @@ export async function POST(request: Request) {
       })
       mirrored.accessListOnChainId = contentAccessList.accessListId
     }
+    if (minted.metadataId && !mirrored.metadataOnChainId) {
+      await prisma.soulAsset.update({
+        where: { onChainId: mirrored.onChainId },
+        data: { metadataOnChainId: minted.metadataId },
+      })
+      mirrored.metadataOnChainId = minted.metadataId
+    }
 
     if (foundingMemory) {
       const memoryBlobId = await resolveWalrusBlobId(foundingMemory.blobObjectId)
@@ -229,6 +236,7 @@ export async function POST(request: Request) {
       soulOnChainId: mirrored.onChainId,
       stateOnChainId: mirrored.stateOnChainId,
       memoryOnChainId: mirrored.memoryOnChainId,
+      metadataOnChainId: mirrored.metadataOnChainId ?? minted.metadataId,
       foundingMemoryTimestampKey: foundingMemory?.timestampKey ?? null,
       skillsOnChainId: initialSkill?.skillsId ?? null,
       initialSkillName: initialSkill?.skillName ?? null,

@@ -13,7 +13,8 @@
     "build:backend": "pnpm --filter @soulidity/backend run build",
     "build:shared": "pnpm --filter @soulidity/shared run build",
     "build:skills": "node ../../scripts/build-skills.mjs && tsc -p ../../packages/backend/src/agent/skills/tsconfig.scripts.json",
-    "typecheck": "pnpm run build:shared && pnpm run build:backend && tsc -p ../../packages/backend/tsconfig.json --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "pnpm run build:shared && pnpm run build:backend && tsc -p ../../packages/backend/tsconfig.json --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "e2e": "playwright test"
   },
   "build": {
     "appId": "com.soulidity.desktop",
@@ -81,6 +82,7 @@
   },
   "dependencies": {
     "@mysten/dapp-kit": "^1.0.4",
+    "@mysten/seal": "^1.1.1",
     "@mysten/sui": "^2.15.0",
     "@noble/hashes": "^1.8.0",
     "@privy-io/react-auth": "^3.21.3",
@@ -92,6 +94,7 @@
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.47.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",

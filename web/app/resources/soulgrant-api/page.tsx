@@ -7,7 +7,7 @@ export default function SoulGrantApiPage() {
         <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">SoulGrant — Authorization API</h1>
         <p className="text-sm text-muted">
-          SoulGrant is the on-chain access delegation system for Soulidity. It lets the Soul owner authorize AI agents or other wallets to read Seal-protected content, append memory entries, or publish new skill versions — without transferring ownership.
+          SoulGrant is the on-chain access delegation system for Soulidity. It lets the Soul owner authorize AI agents or other wallets to read Seal-protected content, append memory entries, publish skill versions, or manage private asset versions — without transferring ownership.
         </p>
       </div>
 
@@ -46,16 +46,21 @@ export default function SoulGrantApiPage() {
                 <td className="py-2 pr-4 font-mono text-xs">2</td>
                 <td className="py-2 text-xs">Read encrypted memory entries and append new ones</td>
               </tr>
-              <tr>
+              <tr className="border-b border-border/30">
                 <td className="py-2 pr-4 font-mono text-xs">SCOPE_SKILLS</td>
                 <td className="py-2 pr-4 font-mono text-xs">4</td>
                 <td className="py-2 text-xs">Read private skill versions and publish new ones</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4 font-mono text-xs">SCOPE_ASSETS</td>
+                <td className="py-2 pr-4 font-mono text-xs">8</td>
+                <td className="py-2 text-xs">Read private asset versions and publish new ones</td>
               </tr>
             </tbody>
           </table>
         </div>
         <p className="text-xs text-muted">
-          To grant all three scopes, use <code>scope_mask = 7</code> (1 | 2 | 4). The Move module rejects a mask of 0 and any bits outside 1–4.
+          To grant all four scopes, use <code>scope_mask = 15</code> (1 | 2 | 4 | 8). The Move module rejects a mask of 0 and any bits outside these four scope bits.
         </p>
       </div>
 

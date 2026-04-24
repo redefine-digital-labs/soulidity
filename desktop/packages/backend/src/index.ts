@@ -12,7 +12,6 @@ export { moodService } from './memory/mood-service'
 export { greetingService } from './memory/greeting-service'
 export { memoryService } from './memory/memory-service'
 export { initDataDir, copyInitialTemplates, getPersonaDir, prepareBuiltinPersonaTemplates } from './paths'
-export { analyzeSoulProfile } from './analysis/profile-analyzer'
 
 // ── 生命周期 ──
 

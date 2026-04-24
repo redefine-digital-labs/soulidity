@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { buildSoulRouteWhere } from '@web/lib/soulidity/repository'
+import { prisma } from '@/lib/prisma'
+import { buildSoulRouteWhere } from '@/lib/soulidity/repository'
 
 export const dynamic = 'force-dynamic'
 

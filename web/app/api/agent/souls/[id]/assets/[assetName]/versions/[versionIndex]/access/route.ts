@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getBlobUrl } from '@web/lib/services/walrus'
-import { generateAssetDocumentIdForVersion } from '@web/lib/services/seal-crypto'
-import { getSealRuntimeConfig, getSealSessionTtlMinutes, hasSealSessionConfig } from '@web/lib/services/seal'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { getBlobUrl } from '@/lib/services/walrus'
+import { generateAssetDocumentIdForVersion } from '@/lib/services/seal-crypto'
+import { getSealRuntimeConfig, getSealSessionTtlMinutes, hasSealSessionConfig } from '@/lib/services/seal'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
@@ -126,7 +126,7 @@ export async function GET(
     })
   }
 
-  // 2. Active grant with skills scope (Move contract checks SCOPE_SKILLS=4 in grant)
+  // 2. Active grant with assets scope (Move contract checks SCOPE_ASSETS=8 in grant)
   const activeAssetsSlot = state.activeGrants.find((slot) =>
     slot.scopes.includes('assets')
       && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
@@ -167,11 +167,15 @@ export async function GET(
   }
 
   // 3. ContentAccessList check (SCOPE_ASSETS = 8)
+  //    Epoch-pinned: only entries under the current SoulState.ownership_epoch
+  //    are valid (matches on-chain has_access; a stale entry would be rejected
+  //    by the Seal server's seal_approve call anyway).
   if (soul.accessListOnChainId) {
     const accessMatch = await prisma.contentAccessRecord.findFirst({
       where: {
         soulOnChainId: soul.onChainId,
         granteeAddress: { in: viewerAddresses },
+        ownershipEpochSnapshot: state.ownershipEpoch,
         revokedAt: null,
       },
     })

@@ -27,7 +27,10 @@ function formatRoyalty(bps: number) {
   return pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(1)}%`
 }
 
-function isSoulReady(s: BatchSoulEntry, folder?: SoulFolderFiles) {
+function isSoulReady(s: BatchSoulEntry, folder?: SoulFolderFiles, recovered?: boolean) {
+  if (recovered) {
+    return true
+  }
   return !!(s.name && s.description && folder?.characterFile && folder?.memoryFile)
 }
 
@@ -68,8 +71,18 @@ function SoulThumb({ name, imageFile }: { name: string; imageFile?: File }) {
 
 // ── Soul row ──
 
-function SoulRow({ soul, folder, index }: { soul: BatchSoulEntry; folder?: SoulFolderFiles; index: number }) {
-  const ready = isSoulReady(soul, folder)
+function SoulRow({
+  soul,
+  folder,
+  index,
+  recovered,
+}: {
+  soul: BatchSoulEntry
+  folder?: SoulFolderFiles
+  index: number
+  recovered?: boolean
+}) {
+  const ready = isSoulReady(soul, folder, recovered)
 
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-card2/40 px-4 py-3">
@@ -97,6 +110,12 @@ function SoulRow({ soul, folder, index }: { soul: BatchSoulEntry; folder?: SoulF
             <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
             <circle cx="5.5" cy="5.5" r="1.25" stroke="currentColor" strokeWidth="1" />
             <path d="M2 11l3-3 2 2 3-3 4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <span title="Persona sprite" className={folder?.spriteSheetFile && folder?.spriteConfigFile ? 'text-teal' : 'text-muted/40'}>
+          <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4">
+            <path d="M3 5.25h10M3 8h10M3 10.75h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M4.25 3.5v9M8 3.5v9M11.75 3.5v9" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.7" />
           </svg>
         </span>
 
@@ -175,6 +194,7 @@ export default function PreviewPage() {
         description: ctx.description,
         extraRoyaltyBps: ctx.extraRoyaltyBps,
         tradeable: ctx.tradeable,
+        spriteVisibility: ctx.spriteVisibility,
         floorPriceAtomic: ctx.floorPrice ? parseDisplayAmountToAtomic(ctx.floorPrice).toString() : null,
         souls: ctx.batchSouls.map((s) => ({
           name: s.name,
@@ -248,6 +268,7 @@ export default function PreviewPage() {
       description: ctx.description,
       extraRoyaltyBps: ctx.extraRoyaltyBps,
       tradeable: ctx.tradeable,
+      spriteVisibility: ctx.spriteVisibility,
       floorPriceAtomic,
       soulFolders: ctx.soulFolders.size > 0 ? ctx.soulFolders : undefined,
       souls: ctx.batchSouls.map((s) => ({
@@ -318,7 +339,13 @@ export default function PreviewPage() {
                 </p>
                 <div className="space-y-2">
                   {ctx.batchSouls.map((soul, i) => (
-                    <SoulRow key={i} soul={soul} folder={ctx.soulFolders.get(i + 1)} index={i} />
+                    <SoulRow
+                      key={i}
+                      soul={soul}
+                      folder={ctx.soulFolders.get(i + 1)}
+                      index={i}
+                      recovered={ctx.hasRecoveryTx && ctx.soulFolders.size === 0}
+                    />
                   ))}
                 </div>
               </div>
@@ -356,6 +383,15 @@ export default function PreviewPage() {
               <SettingRow
                 label="Memory Policy"
                 value="Grant-gated writes · founding memory locked · history preserved"
+                bold
+              />
+              <SettingRow
+                label="Persona Sprite"
+                value={ctx.hasRecoveryTx && ctx.soulFolders.size === 0
+                  ? 'Resume from persisted recovery'
+                  : Array.from(ctx.soulFolders.values()).some((folder) => folder.spriteSheetFile && folder.spriteConfigFile)
+                    ? `${ctx.spriteVisibility === 'public' ? 'Public' : 'Private'} when provided`
+                    : 'Not included'}
                 bold
               />
               <SettingRow label="Estimated Gas" value="~0.032 SUI" bold />

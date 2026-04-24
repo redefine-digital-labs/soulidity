@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "test": "npm run prisma:generate && vitest run",
+    "test": "npm run validate:v6-plan && npm run prisma:generate && vitest run",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "typecheck:root": "npm run prisma:generate && tsc -p tsconfig.json --noEmit",
@@ -17,7 +17,9 @@
     "produce": "tsx src/producer/run.ts",
     "publish": "tsx src/publisher/run.ts",
     "seed:achievements": "tsx src/db/seed-achievements.ts",
-    "scan:skills": "tsx src/collector/scan-skills.ts"
+    "scan:skills": "tsx src/collector/scan-skills.ts",
+    "sync:v6-plan": "tsx scripts/export-v6-plan-json.ts",
+    "validate:v6-plan": "tsx scripts/export-v6-plan-json.ts --check && node scripts/validate-v6-plan.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.7.0",

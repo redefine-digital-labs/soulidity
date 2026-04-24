@@ -11,6 +11,7 @@ import {
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
 import { normalizeTags } from '@/lib/soulidity/tags'
+import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
 
 const IMPORT_RECOVERY_KEY = 'soul-import-recovery'
 
@@ -35,7 +36,6 @@ export interface ImportParams {
   description: string
   tags: string[]
   imageUrl: string
-  metadataRef?: string | null
   previewImages: string[]
   readme?: string | null
   protectedBlobObjectId: string
@@ -43,11 +43,32 @@ export interface ImportParams {
   skillsBlobObjectId?: string | null
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
+  initialSprite?: {
+    blobObjectId: string
+    assetName?: string | null
+    versionIndex?: number | null
+    visibility?: 'public' | 'private'
+    downloadPolicy?: SoulDownloadPolicy | null
+    spriteConfigJson: string
+    spriteMoodMapJson?: string | null
+  } | null
+  initialVoice?: {
+    blobObjectId: string
+    assetName: string
+    versionIndex?: number | null
+    visibility?: 'public' | 'private'
+    downloadPolicy?: SoulDownloadPolicy | null
+    voiceConfigJson?: string | null
+  } | null
+  contentAccessPriceAtomic?: number
+  contentAccessDefaultScopeMask?: number
+  contentAccessDefaultDurationMs?: number | null
   originRef: string
   creatorRoyaltyBps: number
   sealSidecar?: string | null
   memorySealSidecar?: string | null
   skillsSealSidecar?: string | null
+  assetsSealSidecar?: string | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -108,6 +129,7 @@ export function useImport() {
           'Soul character blob': params.protectedBlobObjectId,
           'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
           'Skills blob': params.skillsBlobObjectId ?? null,
+          'Persona sprite blob': params.initialSprite?.blobObjectId ?? null,
         })
         const tx: Transaction = buildImportSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -115,12 +137,16 @@ export function useImport() {
           name: params.name,
           description: params.description,
           imageUrl: params.imageUrl,
-          metadataRef: params.metadataRef ?? null,
           protectedBlobObjectId: params.protectedBlobObjectId,
           foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId ?? null,
           skillsBlobObjectId: params.skillsBlobObjectId ?? null,
           initialSkillName: params.initialSkillName ?? null,
           skillsVisibility: params.skillsVisibility ?? 'private',
+          initialSprite: params.initialSprite ?? null,
+          initialVoice: params.initialVoice ?? null,
+          contentAccessPriceAtomic: params.contentAccessPriceAtomic,
+          contentAccessDefaultScopeMask: params.contentAccessDefaultScopeMask,
+          contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
           originRef: params.originRef,
           creatorRoyaltyBps: params.creatorRoyaltyBps,
         })
@@ -140,6 +166,7 @@ export function useImport() {
           sealSidecar: params.sealSidecar ?? null,
           memorySealSidecar: params.memorySealSidecar ?? null,
           skillsSealSidecar: params.skillsSealSidecar ?? null,
+          assetsSealSidecar: params.assetsSealSidecar ?? null,
         }
         recoveryRef.current = attachSoulidityDeploymentSignature({ userId: user?.id ?? '', txDigest: executedDigest, syncBody })
         try { sessionStorage.setItem(IMPORT_RECOVERY_KEY, JSON.stringify(recoveryRef.current)) } catch {}
@@ -156,6 +183,7 @@ export function useImport() {
             sealSidecar: params.sealSidecar ?? null,
             memorySealSidecar: params.memorySealSidecar ?? null,
             skillsSealSidecar: params.skillsSealSidecar ?? null,
+            assetsSealSidecar: params.assetsSealSidecar ?? null,
           }
 
       setStatus('syncing')

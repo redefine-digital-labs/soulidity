@@ -1,4 +1,4 @@
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 
 const SUI_WALLET_BINDING_ORDER = [
   { isPrimary: 'desc' as const },

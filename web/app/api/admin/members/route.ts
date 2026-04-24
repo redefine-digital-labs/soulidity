@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'

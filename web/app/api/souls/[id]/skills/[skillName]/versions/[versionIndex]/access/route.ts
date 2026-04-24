@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getBlobUrl } from '@web/lib/services/walrus'
-import { generateSkillDocumentIdForVersion } from '@web/lib/services/seal-crypto'
-import { getSealRuntimeConfig, getSealSessionTtlMinutes, hasCredentialedSealServerConfigs, hasSealSessionConfig } from '@web/lib/services/seal'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { getBlobUrl } from '@/lib/services/walrus'
+import { generateSkillDocumentIdForVersion } from '@/lib/services/seal-crypto'
+import { getSealRuntimeConfig, getSealSessionTtlMinutes, hasCredentialedSealServerConfigs, hasSealSessionConfig } from '@/lib/services/seal'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { SOUL_GRANT_SCOPE_SKILLS } from '@/lib/soulidity/grant-scopes'
 import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
 import { requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
@@ -97,6 +98,7 @@ export async function GET(
   const viewerAddresses = auth.walletAddresses
     .map((address) => normalizeSuiValue(address))
     .filter((value): value is string => value != null)
+  const documentIdHex = generateSkillDocumentIdForVersion(soul.skillsOnChainId, version.skillName, version.versionIndex)
 
   const ownerMatch = viewerAddresses.find((address) => sameSuiValue(address, state.currentOwnerAddress))
   if (ownerMatch) {
@@ -116,7 +118,7 @@ export async function GET(
         moduleName: 'skills',
         functionName: 'seal_approve_private_read_owner',
         soulGrantObjectId: null,
-        documentIdHex: generateSkillDocumentIdForVersion(soul.skillsOnChainId, version.skillName, version.versionIndex),
+        documentIdHex,
       },
       seal: getSealRuntimeConfig(),
       sealSidecar: version.sealSidecar,
@@ -130,44 +132,90 @@ export async function GET(
     slot.scopes.includes('skills')
       && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
   )
-  if (!activeSkillsSlot) {
-    return NextResponse.json({ error: 'Only the owner or an active skills grant can access this version' }, { status: 403 })
+  if (activeSkillsSlot) {
+    const grant = await getSoulGrantObject(activeSkillsSlot.grantId, resolvedPackageId)
+    const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
+    if (!viewerMatch) {
+      return NextResponse.json({ error: 'The active skills grant does not belong to this wallet' }, { status: 403 })
+    }
+    if (grant.expiresAtMs != null && grant.expiresAtMs < Date.now()) {
+      return NextResponse.json({ error: 'The active skills grant has expired' }, { status: 403 })
+    }
+    if (!grant.scopes.includes('skills')) {
+      return NextResponse.json({ error: 'The active grant does not allow skills access' }, { status: 403 })
+    }
+
+    return NextResponse.json({
+      visibility: 'private',
+      artifact: {
+        walrusBlobUrl: version.blobId ? getBlobUrl(version.blobId) : null,
+        walrusBlobId: version.blobId,
+        blobObjectId: version.blobObjectId,
+      },
+      accessPolicy: {
+        packageId: resolvedPackageId,
+        stateObjectId: soul.stateOnChainId,
+        skillsObjectId: soul.skillsOnChainId,
+        skillName: version.skillName,
+        versionIndex: version.versionIndex,
+        moduleName: 'skills',
+        functionName: 'seal_approve_private_read_granted_agent',
+        soulGrantObjectId: grant.objectId,
+        documentIdHex,
+      },
+      seal: getSealRuntimeConfig(),
+      sealSidecar: version.sealSidecar,
+      viewerAddress: viewerMatch,
+      accessKind: 'granted-agent',
+      sessionTtlMin: getSealSessionTtlMinutes(),
+    })
   }
 
-  const grant = await getSoulGrantObject(activeSkillsSlot.grantId, resolvedPackageId)
-  const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
-  if (!viewerMatch) {
-    return NextResponse.json({ error: 'The active skills grant does not belong to this wallet' }, { status: 403 })
-  }
-  if (grant.expiresAtMs != null && grant.expiresAtMs < Date.now()) {
-    return NextResponse.json({ error: 'The active skills grant has expired' }, { status: 403 })
-  }
-  if (!grant.scopes.includes('skills')) {
-    return NextResponse.json({ error: 'The active grant does not allow skills access' }, { status: 403 })
+  if (soul.accessListOnChainId) {
+    const accessMatch = await prisma.contentAccessRecord.findFirst({
+      where: {
+        soulOnChainId: soul.onChainId,
+        granteeAddress: { in: viewerAddresses },
+        ownershipEpochSnapshot: state.ownershipEpoch,
+        revokedAt: null,
+      },
+    })
+    if (accessMatch && (accessMatch.scopeMask & SOUL_GRANT_SCOPE_SKILLS) === SOUL_GRANT_SCOPE_SKILLS) {
+      const viewerMatch = viewerAddresses.find((address) =>
+        address.toLowerCase() === accessMatch.granteeAddress.toLowerCase(),
+      )
+      if (viewerMatch) {
+        return NextResponse.json({
+          visibility: 'private',
+          artifact: {
+            walrusBlobUrl: version.blobId ? getBlobUrl(version.blobId) : null,
+            walrusBlobId: version.blobId,
+            blobObjectId: version.blobObjectId,
+          },
+          accessPolicy: {
+            packageId: resolvedPackageId,
+            stateObjectId: soul.stateOnChainId,
+            accessListOnChainId: soul.accessListOnChainId,
+            skillsObjectId: soul.skillsOnChainId,
+            skillName: version.skillName,
+            versionIndex: version.versionIndex,
+            moduleName: 'content_access',
+            functionName: 'seal_approve_skill_allowlisted',
+            soulGrantObjectId: null,
+            documentIdHex,
+          },
+          seal: getSealRuntimeConfig(),
+          sealSidecar: version.sealSidecar,
+          viewerAddress: viewerMatch,
+          accessKind: 'allowlisted',
+          sessionTtlMin: getSealSessionTtlMinutes(),
+        })
+      }
+    }
   }
 
-  return NextResponse.json({
-    visibility: 'private',
-    artifact: {
-      walrusBlobUrl: version.blobId ? getBlobUrl(version.blobId) : null,
-      walrusBlobId: version.blobId,
-      blobObjectId: version.blobObjectId,
-    },
-    accessPolicy: {
-      packageId: resolvedPackageId,
-      stateObjectId: soul.stateOnChainId,
-      skillsObjectId: soul.skillsOnChainId,
-      skillName: version.skillName,
-      versionIndex: version.versionIndex,
-      moduleName: 'skills',
-      functionName: 'seal_approve_private_read_granted_agent',
-      soulGrantObjectId: grant.objectId,
-      documentIdHex: generateSkillDocumentIdForVersion(soul.skillsOnChainId, version.skillName, version.versionIndex),
-    },
-    seal: getSealRuntimeConfig(),
-    sealSidecar: version.sealSidecar,
-    viewerAddress: viewerMatch,
-    accessKind: 'granted-agent',
-    sessionTtlMin: getSealSessionTtlMinutes(),
-  })
+  return NextResponse.json(
+    { error: 'Only the owner, an active skills grant, or an allowlisted address can access this version' },
+    { status: 403 },
+  )
 }

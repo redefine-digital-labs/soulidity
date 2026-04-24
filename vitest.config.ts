@@ -36,6 +36,14 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    exclude: ['**/node_modules/**', '**/dist/**', '.worktrees/**'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '.worktrees/**',
+      // Playwright specs live alongside vitest files but use the Electron
+      // driver from @playwright/test; they are invoked via `playwright test`
+      // from the desktop workspace instead.
+      'desktop/apps/desktop/e2e/**',
+    ],
   },
 })

@@ -13,7 +13,13 @@ export function toProjectionBigInt(value: number | bigint, fieldName: string): b
   return BigInt(value)
 }
 
-export function toProjectionNumber(value: bigint, fieldName: string): number {
+export function toProjectionNumber(value: number | bigint, fieldName: string): number {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`${fieldName} exceeds the supported JSON-safe integer range`)
+    }
+    return value
+  }
   if (value < 0n || value > MAX_SAFE_BIGINT) {
     throw new Error(`${fieldName} exceeds the supported JSON-safe integer range`)
   }

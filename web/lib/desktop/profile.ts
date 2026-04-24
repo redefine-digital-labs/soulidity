@@ -1,5 +1,5 @@
 import type { Prisma } from '@db/prisma-client'
-import { prisma } from '@web/lib/prisma'
+import { prisma } from '@/lib/prisma'
 import { findDesktopPersonaManifestBySource } from '@/lib/desktop/repository'
 import type {
   DesktopCatalogSourceType,

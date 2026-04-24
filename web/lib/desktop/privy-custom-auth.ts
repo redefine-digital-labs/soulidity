@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { importPKCS8, SignJWT } from 'jose'
 
-import { privy } from '@web/lib/auth/privy'
-import { prisma } from '@web/lib/prisma'
+import { privy } from '@/lib/auth/privy'
+import { prisma } from '@/lib/prisma'
 
 const DESKTOP_PRIVY_TOKEN_TTL_SECONDS = 5 * 60
 const DESKTOP_PRIVY_TOKEN_ISSUER = process.env.PRIVY_CUSTOM_AUTH_ISSUER?.trim() || 'soulidity-desktop'

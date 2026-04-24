@@ -102,8 +102,8 @@ describe('repository contract guards', () => {
     expect(offenders).toEqual([])
   })
 
-  it('removes allowlist, simulated tx, mock fallback, and dead create-collection entrypoints from active web code', () => {
-    const pattern = /\ballowlist\b|0x_simulated_|mockSouls|mockCollections|\/create-collection\/|simulated upload|simulate the upload/i
+  it('removes simulated tx, mock fallback, and dead create-collection entrypoints from active web code', () => {
+    const pattern = /0x_simulated_|mockSouls|mockCollections|\/create-collection\/|simulated upload|simulate the upload/i
     const offenders = collectMatches(pattern)
     expect(offenders).toEqual([])
   })

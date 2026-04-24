@@ -1,8 +1,28 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@/lib/soulidity/metadata'
 import { buildBuyerKioskArgs, finishBuyerKioskArgs, validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
 
-import type { AssetType } from '@/lib/soulidity/types'
+import type { AssetType, SoulDownloadPolicy } from '@/lib/soulidity/types'
+
+type InitialSpriteInput = {
+  blobObjectId: string
+  assetName?: string | null
+  versionIndex?: number | null
+  visibility?: 'public' | 'private'
+  downloadPolicy?: SoulDownloadPolicy | null
+  spriteConfigJson: string
+  spriteMoodMapJson?: string | null
+}
+
+type InitialVoiceInput = {
+  blobObjectId: string
+  assetName: string
+  versionIndex?: number | null
+  visibility?: 'public' | 'private'
+  downloadPolicy?: SoulDownloadPolicy | null
+  voiceConfigJson?: string | null
+}
 
 type PublishTxParams = {
   currentKioskId?: string | null
@@ -10,23 +30,27 @@ type PublishTxParams = {
   name: string
   description: string
   imageUrl: string
-  metadataRef?: string | null
   protectedBlobObjectId: string
   foundingMemoryBlobObjectId?: string | null
   skillsBlobObjectId?: string | null
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
+  initialSprite?: InitialSpriteInput | null
+  initialVoice?: InitialVoiceInput | null
   assetBlobObjectId?: string | null
   initialAssetName?: string | null
   assetVisibility?: 'public' | 'private'
   assetType?: AssetType
   contentAccessPriceAtomic?: number
   contentAccessDefaultScopeMask?: number
+  contentAccessDefaultDurationMs?: number | null
   creatorRoyaltyBps: number
 }
 
 const SUI_CLOCK_OBJECT_ID = '0x6'
 const WALRUS_BLOB_TYPE = '0xd84704c17fc870b8764832c535aa6b11f21a95cd6f5bb38a9b07d2cf42220c66::blob::Blob'
+// SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS | SCOPE_ASSETS (mirrors Move grant::all_scopes)
+const ALL_ACCESS_SCOPES = 15
 
 function buildFoundingMemoryArg(tx: Transaction, blobObjectId?: string | null) {
   return tx.object.option({
@@ -58,6 +82,85 @@ function assetTypeToU8(assetType?: AssetType): number {
   }
 }
 
+function downloadPolicyToU8(policy: SoulDownloadPolicy): number {
+  switch (policy) {
+    case 'public': return 0
+    case 'owner_only': return 1
+    case 'allowlist': return 2
+  }
+}
+
+function utf8Bytes(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+  return Array.from(new TextEncoder().encode(value))
+}
+
+function resolveLegacySprite(params: Pick<PublishTxParams, 'assetBlobObjectId' | 'initialAssetName' | 'assetVisibility' | 'assetType'>): InitialSpriteInput | null {
+  return null
+}
+
+function resolveLegacyVoice(params: Pick<PublishTxParams, 'assetBlobObjectId' | 'initialAssetName' | 'assetVisibility' | 'assetType'>): InitialVoiceInput | null {
+  return null
+}
+
+function resolveInitialSprite(params: PublishTxParams) {
+  return params.initialSprite ?? resolveLegacySprite(params)
+}
+
+function resolveInitialVoice(params: PublishTxParams) {
+  return params.initialVoice ?? resolveLegacyVoice(params)
+}
+
+function resolveAssetBlobObjectId(params: PublishTxParams) {
+  return resolveInitialSprite(params)?.blobObjectId
+    ?? resolveInitialVoice(params)?.blobObjectId
+    ?? params.assetBlobObjectId
+    ?? null
+}
+
+function resolveAssetName(params: PublishTxParams) {
+  const initialSprite = resolveInitialSprite(params)
+  if (initialSprite?.assetName) {
+    return initialSprite.assetName
+  }
+  const initialVoice = resolveInitialVoice(params)
+  if (initialVoice?.assetName) {
+    return initialVoice.assetName
+  }
+  if (params.initialAssetName) {
+    return params.initialAssetName
+  }
+  if (resolveAssetBlobObjectId(params) && resolveAssetType(params) === 'sprite') {
+    return CANONICAL_PERSONA_SPRITE_ASSET_NAME
+  }
+  return 'default'
+}
+
+function resolveAssetVisibility(params: PublishTxParams) {
+  return resolveInitialSprite(params)?.visibility
+    ?? resolveInitialVoice(params)?.visibility
+    ?? params.assetVisibility
+    ?? 'private'
+}
+
+function resolveAssetType(params: PublishTxParams): AssetType | undefined {
+  if (resolveInitialSprite(params)) return 'sprite'
+  if (resolveInitialVoice(params)) return 'audio'
+  return params.assetType
+}
+
+function resolveDownloadPolicy(
+  policy: SoulDownloadPolicy | null | undefined,
+  visibility: 'public' | 'private' | null | undefined,
+): SoulDownloadPolicy {
+  if (policy) {
+    return policy
+  }
+  return visibility === 'public' ? 'public' : 'owner_only'
+}
+
 export function buildPublishSoulTx(params: PublishTxParams) {
   validateSoulPublishArgs(params)
 
@@ -70,6 +173,9 @@ export function buildPublishSoulTx(params: PublishTxParams) {
     buyerKioskId: params.currentKioskId,
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
+  const initialSprite = resolveInitialSprite(params)
+  const initialVoice = resolveInitialVoice(params)
+
   tx.moveCall({
     target: `${packageId}::market::mint_native_in_personal_kiosk`,
     arguments: [
@@ -81,18 +187,27 @@ export function buildPublishSoulTx(params: PublishTxParams) {
       tx.pure.string(params.name),
       tx.pure.string(params.description),
       tx.pure.string(params.imageUrl),
-      tx.pure.option('string', params.metadataRef ?? null),
       tx.object(params.protectedBlobObjectId),
       buildFoundingMemoryArg(tx, params.foundingMemoryBlobObjectId),
       buildSkillsArg(tx, params.skillsBlobObjectId),
       tx.pure.string(params.initialSkillName || 'default'),
       tx.pure.bool((params.skillsVisibility ?? 'private') === 'public'),
-      buildAssetArg(tx, params.assetBlobObjectId),
-      tx.pure.string(params.initialAssetName || 'default'),
-      tx.pure.bool((params.assetVisibility ?? 'private') === 'public'),
-      tx.pure.u8(assetTypeToU8(params.assetType)),
+      buildAssetArg(tx, resolveAssetBlobObjectId(params)),
+      tx.pure.string(resolveAssetName(params)),
+      tx.pure.bool(resolveAssetVisibility(params) === 'public'),
+      tx.pure.u8(assetTypeToU8(resolveAssetType(params))),
+      tx.pure.option('string', initialSprite?.assetName ?? null),
+      tx.pure.option('u64', initialSprite?.versionIndex ?? (initialSprite ? 0 : null)),
+      tx.pure.option('u8', initialSprite ? downloadPolicyToU8(resolveDownloadPolicy(initialSprite.downloadPolicy, initialSprite.visibility)) : null),
+      tx.pure.option('vector<u8>', initialSprite ? utf8Bytes(initialSprite.spriteConfigJson) : null),
+      tx.pure.option('vector<u8>', initialSprite ? utf8Bytes(initialSprite.spriteMoodMapJson ?? null) : null),
+      tx.pure.option('string', initialVoice?.assetName ?? null),
+      tx.pure.option('u64', initialVoice?.versionIndex ?? (initialVoice ? 0 : null)),
+      tx.pure.option('u8', initialVoice ? downloadPolicyToU8(resolveDownloadPolicy(initialVoice.downloadPolicy, initialVoice.visibility)) : null),
+      tx.pure.option('vector<u8>', initialVoice ? utf8Bytes(initialVoice.voiceConfigJson ?? null) : null),
       tx.pure.u64(params.contentAccessPriceAtomic ?? 0),
-      tx.pure.u64(params.contentAccessDefaultScopeMask ?? 0),
+      tx.pure.u64(params.contentAccessDefaultScopeMask ?? ALL_ACCESS_SCOPES),
+      tx.pure.option('u64', params.contentAccessDefaultDurationMs ?? null),
       tx.pure.u16(params.creatorRoyaltyBps),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],

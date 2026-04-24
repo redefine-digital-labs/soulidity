@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { requireIdentity } from '@web/lib/auth/identity'
-import { prisma } from '@web/lib/prisma'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { requireIdentity } from '@/lib/auth/identity'
+import { prisma } from '@/lib/prisma'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 
 // Moderation report intake. Until a moderation queue ships, the handler
 // validates the payload and logs to server stdout so operators can triage.

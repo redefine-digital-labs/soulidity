@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { prisma } from '@web/lib/prisma'
-import { suiClient } from '@web/lib/sui'
-import { takeRateLimitToken } from '@web/lib/rate-limit'
+import { prisma } from '@/lib/prisma'
+import { suiClient } from '@/lib/sui'
+import { takeRateLimitToken } from '@/lib/rate-limit'
 import { selectCoinObjectIdsForAmountAcrossPages } from '@/lib/soulidity/coin-selection'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
@@ -96,22 +96,64 @@ export async function POST(
     const txBytesHash = createHash('sha256').update(txBytes).digest('hex')
     const expiresAt = new Date(Date.now() + PREPARED_PURCHASE_TTL_MS)
 
-    const prepared = await prisma.soulPreparedPurchase.create({
-      data: {
-        agentMemberId: auth.agent.agentMemberId,
-        soulOnChainId: soul.onChainId,
-        listingObjectId: soul.listingObjectOnChainId,
-        sellerKioskId: soul.currentKioskId,
-        agentAddress,
-        priceAtomic: soul.listedPriceAtomic,
-        platformFeeAtomic: quote.platformFeeAtomic,
-        creatorRoyaltyAtomic: quote.creatorRoyaltyAtomic,
-        totalAtomic: quote.totalAtomic,
-        txBytesBase64,
-        txBytesHash,
-        expiresAt,
-      },
-    })
+    const preparedData = {
+      agentMemberId: auth.agent.agentMemberId,
+      soulOnChainId: soul.onChainId,
+      listingObjectId: soul.listingObjectOnChainId,
+      sellerKioskId: soul.currentKioskId,
+      agentAddress,
+      priceAtomic: soul.listedPriceAtomic,
+      platformFeeAtomic: quote.platformFeeAtomic,
+      creatorRoyaltyAtomic: quote.creatorRoyaltyAtomic,
+      totalAtomic: quote.totalAtomic,
+      txBytesBase64,
+      txBytesHash,
+      expiresAt,
+    }
+    let prepared
+    try {
+      prepared = await prisma.soulPreparedPurchase.create({
+        data: preparedData,
+      })
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'P2002') {
+        throw error
+      }
+
+      const existing = await prisma.soulPreparedPurchase.findUnique({
+        where: {
+          agentMemberId_txBytesHash: {
+            agentMemberId: auth.agent.agentMemberId,
+            txBytesHash,
+          },
+        },
+      })
+      if (!existing) {
+        throw error
+      }
+
+      const isTerminal = existing.executedAt !== null || existing.resultStatusCode !== null
+      const isExpired = new Date() > existing.expiresAt
+
+      if (!isTerminal && isExpired) {
+        prepared = await prisma.soulPreparedPurchase.update({
+          where: { id: existing.id },
+          data: {
+            listingObjectId: preparedData.listingObjectId,
+            sellerKioskId: preparedData.sellerKioskId,
+            agentAddress: preparedData.agentAddress,
+            priceAtomic: preparedData.priceAtomic,
+            platformFeeAtomic: preparedData.platformFeeAtomic,
+            creatorRoyaltyAtomic: preparedData.creatorRoyaltyAtomic,
+            totalAtomic: preparedData.totalAtomic,
+            txBytesBase64: preparedData.txBytesBase64,
+            expiresAt: preparedData.expiresAt,
+          },
+        })
+      } else {
+        prepared = existing
+      }
+    }
 
     return NextResponse.json({
       preparedPurchaseId: prepared.id,
@@ -125,7 +167,7 @@ export async function POST(
         creatorRoyaltyAtomic: quote.creatorRoyaltyAtomic.toString(),
         totalAtomic: quote.totalAtomic.toString(),
         agentAddress,
-        expiresAt: expiresAt.toISOString(),
+        expiresAt: prepared.expiresAt.toISOString(),
       },
     })
   } catch (error) {

@@ -11,12 +11,12 @@ type TabId = 'settings' | 'library' | 'agent' | 'extract' | 'hooks'
 const TABS: { id: TabId; label: string }[] = [
   { id: 'settings', label: 'Settings' },
   { id: 'library', label: 'Library' },
-  { id: 'agent', label: 'Agent' },
   { id: 'extract', label: 'Extract' },
+  { id: 'agent', label: 'Agent' },
   { id: 'hooks', label: 'Hooks' },
 ]
 
-const TAB_IDS: readonly TabId[] = ['settings', 'library', 'agent', 'extract', 'hooks']
+const TAB_IDS: readonly TabId[] = ['settings', 'library', 'extract', 'agent', 'hooks']
 
 function isTabId(value: unknown): value is TabId {
   return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
@@ -77,8 +77,8 @@ export function MainWindow(): React.JSX.Element {
       <div className="main-window__body">
         {activeTab === 'settings' && <SettingsTab />}
         {activeTab === 'library' && <LibraryTab />}
-        {activeTab === 'agent' && <AgentTab />}
         {activeTab === 'extract' && <ExtractTab />}
+        {activeTab === 'agent' && <AgentTab />}
         {activeTab === 'hooks' && <HooksTab />}
       </div>
     </div>

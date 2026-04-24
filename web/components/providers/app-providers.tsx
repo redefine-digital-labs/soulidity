@@ -6,6 +6,7 @@ import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { PrivyProvider } from './privy-provider'
 import { QueryProvider } from './query-provider'
 import { AuthProvider } from './auth-provider'
+import { E2EWalletHelpers } from './e2e-wallet-helpers'
 import { ToastProvider } from '@/components/ui/toast'
 import { syncSoulidityDeploymentSession } from '@/lib/soulidity/client-session'
 
@@ -34,6 +35,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
           <AuthProvider>
             <ToastProvider>
+              <E2EWalletHelpers />
               {children}
             </ToastProvider>
           </AuthProvider>

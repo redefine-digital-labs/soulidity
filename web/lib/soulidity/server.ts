@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { requireIdentity } from '@web/lib/auth/identity'
-import { getMemberSuiWalletAddresses } from '@web/lib/auth/sui-wallet'
-import { isMultipleSuiWalletBindingsError } from '@web/lib/auth/sui-wallet-errors'
-import { requireDesktopIdentity } from '@web/lib/desktop/auth'
-import { prisma } from '@web/lib/prisma'
+import { requireIdentity } from '@/lib/auth/identity'
+import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
+import { isMultipleSuiWalletBindingsError } from '@/lib/auth/sui-wallet-errors'
+import { requireDesktopIdentity } from '@/lib/desktop/auth'
+import { prisma } from '@/lib/prisma'
 import { sameSuiValue } from '@/lib/soulidity/queries'
 
 export async function requireHumanWalletIdentity() {

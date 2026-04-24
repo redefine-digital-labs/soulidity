@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireIdentity, syncHumanMemberSuiWallet } from '@web/lib/auth/identity'
+import { requireIdentity, syncHumanMemberSuiWallet } from '@/lib/auth/identity'
 
 export const dynamic = 'force-dynamic'
 

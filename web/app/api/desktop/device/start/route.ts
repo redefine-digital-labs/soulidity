@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { startDesktopDeviceSession } from '@/lib/desktop/device-session'
-import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@web/lib/rate-limit'
-import { normalizeSuiWalletAddress } from '@web/lib/auth/challenge'
+import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@/lib/rate-limit'
+import { normalizeSuiWalletAddress } from '@/lib/auth/challenge'
 
 export const dynamic = 'force-dynamic'
 

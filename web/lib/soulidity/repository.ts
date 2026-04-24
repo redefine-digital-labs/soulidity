@@ -1,6 +1,6 @@
 import type { Prisma } from '@db/prisma-client'
-import { prisma } from '@web/lib/prisma'
-import { isUuid } from '@web/lib/is-uuid'
+import { prisma } from '@/lib/prisma'
+import { isUuid } from '@/lib/is-uuid'
 import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
 import { encodeSkillVersionCursor, parseSkillVersionCursor } from '@/lib/soulidity/skill-version-pagination'
 import type {
@@ -77,7 +77,16 @@ export const soulAssetSummarySelect = {
   name: true,
   description: true,
   imageUrl: true,
-  metadataRef: true,
+  metadataOnChainId: true,
+  activeSpriteAssetName: true,
+  activeSpriteVersionIndex: true,
+  activeSpriteDownloadPolicy: true,
+  activeVoiceAssetName: true,
+  activeVoiceVersionIndex: true,
+  activeVoiceDownloadPolicy: true,
+  spriteConfigJson: true,
+  spriteMoodMapJson: true,
+  voiceConfigJson: true,
   contentBlobId: true,
   contentBlobObjectId: true,
   provenanceKind: true,
@@ -181,6 +190,28 @@ export const soulAssetDetailSelect = {
   sealSidecar: true,
   collection: {
     select: soulCollectionSummarySelect,
+  },
+  assetVersions: {
+    select: {
+      id: true,
+      soulOnChainId: true,
+      assetsOnChainId: true,
+      assetName: true,
+      versionIndex: true,
+      visibility: true,
+      assetType: true,
+      deletedAt: true,
+      blobObjectId: true,
+      blobId: true,
+      sealSidecar: true,
+      createdAtMs: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: [
+      { assetName: 'asc' as const },
+      { versionIndex: 'desc' as const },
+    ] as Prisma.SoulAssetVersionRecordOrderByWithRelationInput[],
   },
   grantRecords: {
     select: soulGrantRecordSelect,
@@ -341,7 +372,32 @@ export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSum
     name: record.name,
     description: record.description,
     imageUrl: record.imageUrl,
-    metadataRef: record.metadataRef,
+    metadataOnChainId: record.metadataOnChainId,
+    activeSpriteAssetName: record.activeSpriteAssetName,
+    activeSpriteVersionIndex: record.activeSpriteVersionIndex == null
+      ? null
+      : toProjectionNumber(record.activeSpriteVersionIndex, 'SoulAsset.activeSpriteVersionIndex'),
+    activeSpriteDownloadPolicy: record.activeSpriteDownloadPolicy === 'public'
+      ? 'public'
+      : record.activeSpriteDownloadPolicy === 'owner_only'
+        ? 'owner_only'
+        : record.activeSpriteDownloadPolicy === 'allowlist'
+          ? 'allowlist'
+          : null,
+    activeVoiceAssetName: record.activeVoiceAssetName,
+    activeVoiceVersionIndex: record.activeVoiceVersionIndex == null
+      ? null
+      : toProjectionNumber(record.activeVoiceVersionIndex, 'SoulAsset.activeVoiceVersionIndex'),
+    activeVoiceDownloadPolicy: record.activeVoiceDownloadPolicy === 'public'
+      ? 'public'
+      : record.activeVoiceDownloadPolicy === 'owner_only'
+        ? 'owner_only'
+        : record.activeVoiceDownloadPolicy === 'allowlist'
+          ? 'allowlist'
+          : null,
+    spriteConfigJson: record.spriteConfigJson,
+    spriteMoodMapJson: record.spriteMoodMapJson,
+    voiceConfigJson: record.voiceConfigJson,
     contentBlobId: record.contentBlobId,
     contentBlobObjectId: record.contentBlobObjectId,
     provenanceKind: record.provenanceKind === 'imported'
