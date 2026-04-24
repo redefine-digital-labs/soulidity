@@ -144,7 +144,17 @@ export function E2EWalletHelpers() {
       setGrantCapacity: async (params: { stateObjectId: string; capacity: number }) => {
         const tx = buildSetGrantCapacityTx(params)
         const result = await signAndExecuteRef.current(tx)
-        return { digest: result.digest, effects: result.effects, events: result.events }
+        const authHeaders = await getAuthHeadersRef.current()
+        const syncRes = await fetch(`/api/souls/${encodeURIComponent(params.stateObjectId)}/grant-capacity`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ txDigest: result.digest }),
+        })
+        const syncBody = await syncRes.json().catch(() => null)
+        if (!syncRes.ok) {
+          throw new Error(syncBody?.error || `Grant capacity sync failed: ${syncRes.status}`)
+        }
+        return { digest: result.digest, sync: syncBody, effects: result.effects, events: result.events }
       },
     } satisfies NonNullable<Window['__e2eSoulidity']>
 

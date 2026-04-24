@@ -166,6 +166,13 @@ export async function POST(request: Request) {
       })
       mirrored.accessListOnChainId = contentAccessList.accessListId
     }
+    if (minted.metadataId && !mirrored.metadataOnChainId) {
+      await prisma.soulAsset.update({
+        where: { onChainId: mirrored.onChainId },
+        data: { metadataOnChainId: minted.metadataId },
+      })
+      mirrored.metadataOnChainId = minted.metadataId
+    }
 
     if (foundingMemory) {
       const memoryBlobId = await resolveWalrusBlobId(foundingMemory.blobObjectId)

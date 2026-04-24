@@ -1,13 +1,13 @@
 {
   "testnet": {
-    "packageId": "0x3b1a75da1c0842ede46f4a49732f6ab73a69cb5c592cb4317bd62cd8aba68375",
-    "marketConfigId": "0x7cabf11842963901655af12c562a45c694cb0567aae856cce6ae8141da05a1ca",
-    "kioskRegistryId": "0x355648aa6adcbf060e373d6b2faf8d4299c5411d1a40993a55df75c322fa0ff5",
-    "soulTransferPolicyId": "0x2c1a1e8489c11f6935eb9ce1c7322320ecfd10f7a257519bc5265a23141f832d",
-    "collectionTransferPolicyId": "0xb02e587d82541275860b82dbefa2f7eab365abdf13be66222462dc9817a94612",
+    "packageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "marketConfigId": "0x252255abd42007f0a2b3fad596c7b0705f19979436ed043fb24f2047050827fe",
+    "kioskRegistryId": "0xec8c87496f40c640411f8b4b0ee76d5b171de4fcf5aa49062ba7db4c1a15e30c",
+    "soulTransferPolicyId": "0x5e5711e21db5e445c03a59154bcb1fd889efc111cd42180f28c7a3adbe9ae92f",
+    "collectionTransferPolicyId": "0x97bf30a371ab12bd3184357cb69dd0ec8c1503ab730390166c4279173a8851db",
     "paymentCoinType": "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC",
-    "publishTxDigest": "HPaXUgLZSHSSbmdD6f1AqBUMP6g983cZwCPsHsyn6vpR",
-    "upgradeCapId": "0xf6e28b39ac5d01fafcd5ea11d4df692d6b41444b44f355eb1dacce39b05b4b2f",
-    "upgradeStateId": "0xd06dc63eb2676d2e02af0f3f12054edf3a52fbb154adef32165d94b8bfce4405"
+    "publishTxDigest": "HKenfarHCL6jnrqS2CosAkVNc7zBTTVXfpby5RB62i7r",
+    "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b",
+    "upgradeStateId": "0x616117e725110550e03490bf189e0c5a9a01c2383e819eff2092b58560355f2c"
   }
 }

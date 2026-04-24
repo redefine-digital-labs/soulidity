@@ -261,6 +261,10 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                 <span className="font-mono text-xs text-teal">{formatAddress(soul.memoryOnChainId)}</span>
               </div>
               <div className="flex justify-between text-sm">
+                <span className="text-muted">Metadata object</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.metadataOnChainId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
                 <span className="text-muted">Content blob</span>
                 <span className="font-mono text-xs text-teal">{formatAddress(soul.contentBlobObjectId)}</span>
               </div>

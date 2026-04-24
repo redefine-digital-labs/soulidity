@@ -259,6 +259,10 @@ function readNestedObjectId(value: unknown, fieldName: string, depth = 0): strin
     throw new OnChainVerificationError(`${fieldName} nesting exceeds the supported depth`)
   }
 
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return readObjectId(value, fieldName)
+  }
+
   const record = asRecord(value)
   if (!record) return null
   // Check `for` before `id` — KioskOwnerCap has both `for` (target kiosk ID)
