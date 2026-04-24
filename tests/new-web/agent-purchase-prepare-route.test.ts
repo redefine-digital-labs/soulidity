@@ -6,6 +6,7 @@ const STATE_ID = `0x${'3'.repeat(64)}`
 const KIOSK_ID = `0x${'4'.repeat(64)}`
 const LISTING_ID = `0x${'5'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
+const STORED_EXPIRES_AT = new Date('2026-04-24T10:00:00.000Z')
 
 const mockedRequireAgentWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
@@ -111,7 +112,10 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     mockedResolveOwnedPersonalKiosk.mockResolvedValue({ status: 'missing' })
     tx.build.mockResolvedValue(Uint8Array.from([1, 2, 3]))
     mockedBuildBuySoulTx.mockReturnValue(tx)
-    mockedPrisma.soulPreparedPurchase.create.mockResolvedValue({ id: PREPARED_PURCHASE_ID })
+    mockedPrisma.soulPreparedPurchase.create.mockResolvedValue({
+      id: PREPARED_PURCHASE_ID,
+      expiresAt: STORED_EXPIRES_AT,
+    })
     mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValue(null)
   })
 
@@ -152,7 +156,10 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     })
     mockedSelectCoinObjectIdsForAmountAcrossPages.mockResolvedValueOnce(['0xcoin'])
     mockedPrisma.soulPreparedPurchase.create.mockRejectedValueOnce({ code: 'P2002' })
-    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({ id: PREPARED_PURCHASE_ID })
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({
+      id: PREPARED_PURCHASE_ID,
+      expiresAt: STORED_EXPIRES_AT,
+    })
 
     const response = await callRoute()
 
@@ -165,6 +172,7 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
         listingObjectId: LISTING_ID,
         totalAtomic: '2150000',
         agentAddress: AGENT_ADDRESS,
+        expiresAt: STORED_EXPIRES_AT.toISOString(),
       },
     })
     expect(mockedPrisma.soulPreparedPurchase.findUnique).toHaveBeenCalledWith({
