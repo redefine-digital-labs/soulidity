@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest'
 // Testing observable behavior: for > id-string > id-nested > fields > vec patterns.
 function readNestedObjectId(value: unknown, depth = 0): string | null {
   if (depth > 10) return null
+  if (typeof value === 'string' && value.length > 0) return value
   const record = value as Record<string, unknown> | null
   if (!record || typeof record !== 'object') return null
   if ('for' in record) return record.for as string
@@ -39,6 +40,10 @@ describe('readNestedObjectId priority', () => {
     // Option<ID> Some is typically { id: "0x..." }
     const optionSome = { id: '0xskills_object_id' }
     expect(readNestedObjectId(optionSome)).toBe('0xskills_object_id')
+  })
+
+  it('handles direct ID strings returned by Sui RPC for Option<ID>', () => {
+    expect(readNestedObjectId('0xmetadata_object_id')).toBe('0xmetadata_object_id')
   })
 
   it('handles Option<ID> None (vec empty)', () => {

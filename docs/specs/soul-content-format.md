@@ -25,7 +25,7 @@ Every Soul can ship three user-authored artifacts:
 | --- | --- | --- | --- |
 | `soul.md` | OpenClaw-style five-section markdown | encrypted by default | Soul-level Seal document (`soul-seal:`) |
 | `memory.md` | founding memory markdown | encrypted by default | memory-level Seal document (`soul-memory:`) |
-| `skills.zip` | ZIP bundle with `SKILL.md` frontmatter `name` | encrypted by default | skill-level Seal document (`soul-skill:`) |
+| `skill.zip` | ZIP bundle with `SKILL.md` frontmatter `name` | encrypted by default | skill-level Seal document (`soul-skill:`) |
 
 Only explicit public skill uploads remain as an advanced path. Default UX for create, import, personal-join, collection publish, and skill append is private.
 
@@ -102,7 +102,7 @@ struct SoulSkills has key {
 
 Contract details:
 
-- `skillName` comes from `skills.zip` -> `SKILL.md` frontmatter `name`
+- `skillName` comes from `skill.zip` -> `SKILL.md` frontmatter `name`
 - `versionIndex` is the vector index for that `skillName`
 - External identity is `(skillsOnChainId, skillName, versionIndex)`
 - Delete is soft delete on the slot

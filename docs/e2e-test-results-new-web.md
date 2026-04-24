@@ -1,104 +1,102 @@
-# E2E Test Results — new-web Soulidity Marketplace
+# E2E Test Results - new-web Soulidity Marketplace
 
-**Date:** 2026-04-08
-**Environment:** Testnet, localhost:3100 (new-web dev server)
-**Package ID:** `0x93e7b3852b5f1615e2bf2714546efc5d54e3dd500de85b76215b31591f4e6e37`
+**Date:** 2026-04-24
+**Environment:** Sui Testnet, `http://localhost:3100`
+**Test Data:** `/Users/admin/Documents/example`, `/Users/admin/Documents/example-collection`
+**Accounts:** seller `ithinco@gmail.com`, buyer `tenxhunter@gmail.com`
+**Status:** PASS - all planned phases completed and cleaned up.
 
-## Test Variables
+## Deployment
+
+| Item | Value |
+| --- | --- |
+| Package ID | `0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205` |
+| MarketConfig | `0x252255abd42007f0a2b3fad596c7b0705f19979436ed043fb24f2047050827fe` |
+| KioskRegistry | `0xec8c87496f40c640411f8b4b0ee76d5b171de4fcf5aa49062ba7db4c1a15e30c` |
+| Soul TransferPolicy | `0x5e5711e21db5e445c03a59154bcb1fd889efc111cd42180f28c7a3adbe9ae92f` |
+| Collection TransferPolicy | `0x97bf30a371ab12bd3184357cb69dd0ec8c1503ab730390166c4279173a8851db` |
+| Publish TX | `HKenfarHCL6jnrqS2CosAkVNc7zBTTVXfpby5RB62i7r` |
+
+## Primary Objects
 
 | Variable | Value |
-|----------|-------|
-| SOUL_A_ID | `0x5ed262aaecbb68033133a30df2c3d3e671190cfb1c3cdbd3a5fef1698ba90a25` |
-| SOUL_B_ID | `0x4f7aab58dc36c9d28c2767f415d709736158aeb159c05deea96dbf4d3db0aca5` |
-| SOUL_A_STATE_OBJ | `0xdf17344f7955002f72732374a571bfd09645cabbdac10398c632e63ced117f14` |
-| Seller | ithinco@gmail.com (0x858d...eb82) |
-| Buyer | tenxhunter@gmail.com (0xb9ed...614c) |
-| Agent Alpha | 0x3b82...8610 |
-| Agent Beta | 0x7ef4...8790 |
+| --- | --- |
+| SOUL_A_ID | `0xb064155ba5802cfab0696a617187faf24fe2f138e65d134a100b34f130dae269` |
+| SOUL_B_ID | `0x985bd293db831fd8bb60ea701563ff8e696d9a6bf7e46074ad8aafa5a3908ab3` |
+| COLLECTION_ID | `0x696d16f967700d4fc418d1058c1b5793efc688338cf775f5d0d93a6558d7188b` |
+| IMPORTED_SOUL_ID | `0x1022e706e3d34b4047fd31f538fc1c92d0e35b297819f7994137697fce71e455` |
+| Agent Alpha | `0x3b82a2209ab7f937d29c12105fe501a63f4223a7f5c128842d25686e66a68610` |
+| Agent Beta | `0x7ef4e29eba6968cd8f255d3533116fd593a71dfb6d23f6e7b03271603c238790` |
 
 ## Results Summary
 
-| Phase | Tests | Pass | Fail | Deferred | Status |
-|-------|-------|------|------|----------|--------|
-| -1 Environment | 6 | 6 | 0 | 0 | DONE |
-| 0 Pre-flight | 3 | 3 | 0 | 0 | DONE |
-| 1 Create Soul A & B | 12 | 12 | 0 | 0 | DONE |
-| 2 List Soul A & B | 6 | 6 | 0 | 0 | DONE |
-| 3 Collection | 5 | 3 | 1 | 1 | DONE (mirror sync fail on launch) |
-| 4 Buy Soul A | 6 | 6 | 0 | 0 | DONE |
-| 5 Grant System | 7 | 7 | 0 | 0 | DONE |
-| 6 Skills & Memory | 4 | 1 | 0 | 3 | DONE (gated by missing skillsOnChainId) |
-| 7 Agent API | 6 | 5 | 0 | 1 | DONE (Seal decrypt deferred) |
-| 8 Import | 5 | 5 | 0 | 0 | DONE |
-| 9 API Boundary | 6 | 6 | 0 | 0 | DONE |
-| 10 Page Smoke | 3 | 3 | 0 | 0 | DONE |
-| 11 Cleanup | 1 | 1 | 0 | 0 | DONE |
-| **Total** | **64** | **58** | **1** | **5** | |
+| Phase | Scope | Status |
+| --- | --- | --- |
+| -1 | Environment, DB cleanup, Sui CLI, account and agent setup | PASS |
+| 0 | Market empty state, landing page, deployment smoke | PASS |
+| 1 | Seller login, create Soul A and Soul B with metadata mirror | PASS |
+| 2 | List Soul A and Soul B, market filters | PASS |
+| 3 | Collection create, add child Soul, list/delist, floor guard | PASS |
+| 4 | Buyer login, bookmark, buy Soul A | PASS |
+| 5 | Grant issue/access/revoke, grant capacity, destroy invalidated grant | PASS |
+| 6 | Append private skill version and verify assets API boundaries | PASS |
+| 7 | Agent search/detail/prepare/purchase/decrypt/access matrix | PASS |
+| 7.5/7.10 | Content access pricing, expiry, quote, resale epoch invalidation, kiosk registry guards | PASS |
+| 8 | Import wizard with `soul.md`, `memory.md`, `skill.zip`, cover image | PASS |
+| 9 | API boundary and hardening checks | PASS |
+| 10 | Community/resources/wrap-link/leaderboard/stats/profile follow smoke | PASS |
+| 11 | Delete inactive listing objects, DB cleanup, market empty state | PASS |
 
-## Bugs Found & Fixed
+## Fixes Applied During Run
 
-### Bug 1: Move contract not published (commit 82f8425)
-- **Symptom:** `mint_native_in_personal_kiosk` TX failed with "Incorrect number of arguments"
-- **Root cause:** Local Move source added `initial_skill_name` parameter but contract wasn't published to testnet
-- **Fix:** Published new contract package `0x93e7b3...`, updated .env with new package/config IDs
+1. `readNestedObjectId` now accepts direct non-empty string `Option<ID>` values, fixing metadata and related object extraction.
+2. Publish sync now backfills `metadataOnChainId` when the mint TX produced metadata but the mirror response did not include it.
+3. Added `/api/souls/[id]/grant-capacity` and mirror route tracking for `grant:capacity`, so owner grant-capacity changes persist in DB.
+4. Agent purchase preparation is idempotent for duplicate `(agentMemberId, txBytesHash)` retries.
+5. Content-format copy/spec now use `skill.zip`, matching the actual fixture and import/create UX contract.
 
-### Bug 2: `readNestedObjectId` extracts wrong kiosk ID
-- **File:** `new-web/lib/soulidity/queries.ts:260`
-- **Symptom:** "No Soulidity personal kiosk found for this wallet" on sell page
-- **Root cause:** `readNestedObjectId` checked `id` field before `for` field. For `KioskOwnerCap`, `id` is the cap's UID while `for` is the actual kiosk ID. The extracted ID pointed to a wrapped object that doesn't exist as top-level, causing `filterExistingPersonalKiosks` to filter ALL kiosks out.
-- **Fix:** Moved `for` check before `id` check in `readNestedObjectId`
+## Verification
 
-### Bug 3: `useListSoul` resolves wrong kiosk for listing
-- **File:** `new-web/lib/hooks/use-list-soul.ts`
-- **Symptom:** `EPersonalKioskMismatch` (abort code 14) when listing a Soul
-- **Root cause:** The sell hook resolved the seller's "generic" personal kiosk via API, but used a different kiosk than the one holding the Soul. With multiple kiosks, the resolved one didn't match.
-- **Fix:** Use `soul.currentKioskId` / `soul.currentKioskCapOnChainId` (the Soul's own kiosk) instead of resolving via `/api/souls/personal-kiosk`
+| Check | Result |
+| --- | --- |
+| `sui move test --path move/soulidity` | 149 passed before fresh deploy |
+| `npm run test -- tests/new-web/soul-grant-capacity-route.test.ts tests/new-web/mirror-sync-regression.test.ts tests/new-web/read-nested-object-id.test.ts tests/new-web/soulidity-mirror-upsert.test.ts` | 50 passed |
+| `npm run test -- tests/new-web/agent-purchase-prepare-route.test.ts tests/new-web/soul-grant-capacity-route.test.ts` | 4 passed |
+| `npm run test -- tests/new-web/soulidity-deployment.test.ts` | passed |
+| `sui move test --path move/soulidity delete_active_soul_listing_fails` | passed |
+| Phase 9 API boundary | all 9 expected HTTP statuses passed |
+| Phase 11 DB cleanup | target tables all zero |
 
-### Bug 4: Hardcoded USDC coin type in agent purchase route
-- **File:** `new-web/app/api/agent/souls/[id]/purchase/route.ts:18`
-- **Symptom:** "Insufficient USDC balance for purchase" despite sufficient balance
-- **Root cause:** `PAYMENT_COIN_TYPE` was hardcoded to `0xa1ec...::usdc::USDC` but actual testnet USDC is `0x79d8...::usdc::USDC`
-- **Fix:** Changed to `getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')`
+## Cleanup Evidence
 
-### Bug 5: E2E scripts only accept mnemonic, not suiprivkey
-- **Files:** `new-web/scripts/e2e-agent-purchase.ts`, `new-web/scripts/e2e-agent-decrypt.ts`
-- **Symptom:** Scripts fail if `AGENT_MNEMONIC` not set
-- **Fix:** Added `AGENT_PRIVATE_KEY` (suiprivkey format) as alternative input, using `decodeSuiPrivateKey` + `Ed25519Keypair.fromSecretKey`
+| Item | Result |
+| --- | --- |
+| Soul A inactive listing delete TX | `DLe2H4im2Q6deQvbBn13VG8cRfyAnBL1eERSFH4ag5zd` |
+| Collection inactive listing delete TX | `73VY9nNrmpz1ViWVTHPDumLmEnitpibP1coPZDYJiy2x` |
+| Deleted listing object checks | both return object-not-found |
+| DB target tables | `soul_*`, `content_access_records`, `bookmarks`, `follows` all zero |
+| Final market page | shows `No live Soul listings` |
 
-## Remaining Gaps
+## Key Artifacts
 
-- **Phase 3.4 (Collection Launch mirror):** On-chain TX succeeded but `mirror add-soul transaction` failed. Bug: collection mirror sync route issue.
-- **Phase 6.2 (Skills append):** Gated — `skillsOnChainId` is null in DB after mint (publish mirror bug, skills root not captured).
-- **Phase 6.3 (Memory append):** Gated — `__e2eAppendMemory` helper not yet implemented.
-- **Phase 6.4 (Owner decrypt skills):** Gated — depends on skillsOnChainId being non-null.
-- **Phase 7.6 (Agent Seal Decrypt):** Requires Seal key server network access and `@mysten/seal` SDK.
-
-## New Bug Discovered
-
-### Bug 6: `skillsOnChainId` not mirrored during publish
-- **Location:** Publish mirror sync (post-TX API route)
-- **Symptom:** After minting a Soul with skill.zip, `SoulAsset.skillsOnChainId` is null in DB, but skill version records exist
-- **Impact:** Skills panel shows "no root", Decrypt and Append both fail
-- **Root cause:** The mint TX creates a SoulSkills object on-chain but the mirror sync doesn't extract and save its object ID
-
-### Bug 7: Collection add-soul mirror sync fails
-- **Location:** Collection publish flow mirror sync
-- **Symptom:** "Failed to mirror add-soul transaction" after successful on-chain TX
-- **Impact:** Collection created on-chain but DB state incomplete
-
-## Screenshots
+Artifacts are under `e2e-artifacts/2026-04-24/`.
 
 | File | Description |
-|------|-------------|
-| `phase0-market-empty.png` | Market empty state before any souls |
-| `phase1-seller-login.png` | Seller logged in |
-| `phase1-soul-a-published.png` | Soul A published success |
-| `phase1-seller-done.png` | My Souls with 2 souls owned |
-| `phase2-soul-a-listed.png` | Soul A listed at 1 USDC |
-| `phase2-market-listed.png` | Market showing 2 listed souls |
-| `phase3-collection-created.png` | Collection launch (mirror sync fail) |
-| `phase4-buyer-login.png` | Buyer logged in |
-| `phase4-soul-a-purchased.png` | Soul A purchase success |
+| --- | --- |
+| `phase0-market-empty.png` | Market empty state before run |
+| `phase1-soul-a-published.png` | Soul A publish success |
+| `phase1-soul-b-published.png` | Soul B publish success |
+| `phase2-market-listed.png` | Market with live listings |
+| `phase3-collection-created.png` | Collection created |
+| `phase4-soul-a-purchased.png` | Buyer purchase success |
 | `phase5-grant-issued.png` | Grant issued to Agent Alpha |
-| `phase8-import-done.png` | Import Soul success |
-| `phase11-cleanup.png` | Market restored to empty state |
+| `phase6-skill-version-appended.png` | Skill version append success |
+| `phase7-agent-access-matrix.json` | Agent access matrix |
+| `phase7-agent-alpha-decrypt-soul-b.log` | Agent decrypt proof |
+| `phase7_10g-seller-repurchase-after-resale-tx.json` | Resale epoch repurchase proof |
+| `phase8-import-preview.png` | Import preview |
+| `phase8-import-done.png` | Import on-chain success |
+| `phase9-api-boundary.json` | API boundary status matrix |
+| `phase10-follow-toggle.png` | Follow/unfollow smoke |
+| `phase11-db-cleanup.json` | DB cleanup counts |
+| `phase11-cleanup.png` | Final empty market |

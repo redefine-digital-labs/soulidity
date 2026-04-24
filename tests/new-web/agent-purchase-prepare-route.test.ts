@@ -19,6 +19,7 @@ const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulPreparedPurchase: {
     create: vi.fn(),
+    findUnique: vi.fn(),
   },
 }))
 
@@ -111,6 +112,7 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     tx.build.mockResolvedValue(Uint8Array.from([1, 2, 3]))
     mockedBuildBuySoulTx.mockReturnValue(tx)
     mockedPrisma.soulPreparedPurchase.create.mockResolvedValue({ id: PREPARED_PURCHASE_ID })
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValue(null)
   })
 
   async function callRoute() {
@@ -129,5 +131,49 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     expect(tx.setSender).not.toHaveBeenCalled()
     expect(mockedPrisma.soulPreparedPurchase.create).not.toHaveBeenCalled()
     await expect(response.json()).resolves.toEqual({ error: 'Soul is not listed for sale' })
+  })
+
+  it('returns an existing prepared purchase when retrying the same tx bytes', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      onChainId: SOUL_ID,
+      listingStatus: 'listed',
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '2000000',
+      creatorRoyaltyBps: 500,
+      collection: null,
+      collectionOnChainId: null,
+      currentKioskId: KIOSK_ID,
+      stateOnChainId: STATE_ID,
+    })
+    mockedQuoteSoulPurchase.mockReturnValueOnce({
+      platformFeeAtomic: '50000',
+      creatorRoyaltyAtomic: '100000',
+      totalAtomic: '2150000',
+    })
+    mockedSelectCoinObjectIdsForAmountAcrossPages.mockResolvedValueOnce(['0xcoin'])
+    mockedPrisma.soulPreparedPurchase.create.mockRejectedValueOnce({ code: 'P2002' })
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce({ id: PREPARED_PURCHASE_ID })
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      preparedPurchaseId: PREPARED_PURCHASE_ID,
+      txBytes: Buffer.from([1, 2, 3]).toString('base64'),
+      context: {
+        soulOnChainId: SOUL_ID,
+        listingObjectId: LISTING_ID,
+        totalAtomic: '2150000',
+        agentAddress: AGENT_ADDRESS,
+      },
+    })
+    expect(mockedPrisma.soulPreparedPurchase.findUnique).toHaveBeenCalledWith({
+      where: {
+        agentMemberId_txBytesHash: {
+          agentMemberId: 'agent-member-1',
+          txBytesHash: expect.any(String),
+        },
+      },
+    })
   })
 })
