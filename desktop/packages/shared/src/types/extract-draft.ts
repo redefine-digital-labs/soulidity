@@ -143,9 +143,10 @@ function buildSoulMarkdown(input: {
   const primaryTrait = input.traits.join(', ') || 'steady and grounded'
   const communication = input.communicationStyle || 'direct, calm, and specific'
   const workStyle = input.workStyle || 'persistent, implementation-first, and clear about tradeoffs'
+  const heading = input.name.trim() ? `# ${input.name.trim()}` : '# Soul Character'
 
   return [
-    '# Soul Character',
+    heading,
     '',
     '## Core Truths',
     `- What this Soul is here to do: ${input.description}`,
