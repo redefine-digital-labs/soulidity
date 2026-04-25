@@ -16,6 +16,7 @@ const mockedPrisma = vi.hoisted(() => ({
     create: vi.fn(),
     deleteMany: vi.fn(),
     findMany: vi.fn(),
+    findUnique: vi.fn(),
   },
 }))
 
@@ -86,6 +87,7 @@ describe('sprite Vercel Blob upload routes', () => {
     mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValue([])
     mockedPrisma.soulSpriteUploadBinding.deleteMany.mockResolvedValue({ count: 0 })
     mockedPrisma.soulSpriteUploadBinding.create.mockResolvedValue({})
+    mockedPrisma.soulSpriteUploadBinding.findUnique.mockResolvedValue(null)
     mockedPrisma.$transaction.mockImplementation(async (callback) => callback({
       soulSpriteUploadBinding: {
         findUnique: vi.fn().mockResolvedValue({
@@ -146,6 +148,63 @@ describe('sprite Vercel Blob upload routes', () => {
         contentType: 'image/png',
       }),
     })
+  })
+
+  it('deletes the orphan blob when a duplicate-nonce callback collides with an existing binding', async () => {
+    const SECOND_BLOB_URL = 'https://store.public.blob.vercel-storage.com/souls/sprite/sheet-second.png'
+    const { PrismaClientKnownRequestError } = await import('@db/prisma-client').then((m) => m.PrismaRuntime)
+    const conflictError = new PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['nonce'] },
+    })
+    mockedPrisma.soulSpriteUploadBinding.create.mockRejectedValueOnce(conflictError)
+    mockedPrisma.soulSpriteUploadBinding.findUnique.mockResolvedValueOnce({
+      blobUrl: BLOB_URL,
+    })
+
+    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
+    await recordSpriteUploadBinding({
+      memberId: MEMBER_ID,
+      nonce: UPLOAD_NONCE,
+      blobUrl: SECOND_BLOB_URL,
+      pathname: 'souls/sprite/sheet-second.png',
+      contentType: 'image/png',
+    }, {
+      deleteBlob: mockedBlobDelete,
+    })
+
+    expect(mockedPrisma.soulSpriteUploadBinding.findUnique).toHaveBeenCalledWith({
+      where: { nonce: UPLOAD_NONCE },
+      select: { blobUrl: true },
+    })
+    expect(mockedBlobDelete).toHaveBeenCalledWith(SECOND_BLOB_URL)
+  })
+
+  it('keeps the no-op when the same nonce + blobUrl callback fires twice', async () => {
+    const { PrismaClientKnownRequestError } = await import('@db/prisma-client').then((m) => m.PrismaRuntime)
+    const conflictError = new PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['nonce'] },
+    })
+    mockedPrisma.soulSpriteUploadBinding.create.mockRejectedValueOnce(conflictError)
+    mockedPrisma.soulSpriteUploadBinding.findUnique.mockResolvedValueOnce({
+      blobUrl: BLOB_URL,
+    })
+
+    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
+    await recordSpriteUploadBinding({
+      memberId: MEMBER_ID,
+      nonce: UPLOAD_NONCE,
+      blobUrl: BLOB_URL,
+      pathname: 'souls/sprite/sheet.png',
+      contentType: 'image/png',
+    }, {
+      deleteBlob: mockedBlobDelete,
+    })
+
+    expect(mockedBlobDelete).not.toHaveBeenCalled()
   })
 
   it('deletes expired unconsumed staging blobs before pruning binding rows', async () => {
