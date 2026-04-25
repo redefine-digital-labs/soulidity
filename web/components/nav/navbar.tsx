@@ -27,8 +27,9 @@ const navLinks = [
   { label: 'Market', href: '/market', auth: false },
   { label: 'Community', href: '/community', auth: false },
   { label: 'My Souls', href: '/my-souls', auth: true },
-  { label: 'Docs', href: '/resources', auth: false },
 ] as const
+
+const docsLink = { label: 'Docs', href: '/resources', auth: false } as const
 
 function SoulidityLogo() {
   return (
@@ -111,6 +112,12 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
             )
           })}
           <NavCreateMenu />
+          <Link
+            href={docsLink.href}
+            className={navLinkClass(pathname === docsLink.href || pathname.startsWith(docsLink.href + '/'))}
+          >
+            {docsLink.label}
+          </Link>
           {isAdmin && (
             <Link
               href="/admin"
@@ -214,6 +221,19 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
                   </Link>
                   )
                 })}
+
+                <Link
+                  href={docsLink.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    'rounded-xl px-3.5 py-2.5 text-sm font-medium transition',
+                    pathname === docsLink.href || pathname.startsWith(docsLink.href + '/')
+                      ? 'bg-purple/12 text-white'
+                      : 'text-muted hover:bg-white/[0.05] hover:text-foreground',
+                  )}
+                >
+                  {docsLink.label}
+                </Link>
 
                 {isAdmin && (
                   <>
