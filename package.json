@@ -19,7 +19,8 @@
     "seed:achievements": "tsx src/db/seed-achievements.ts",
     "scan:skills": "tsx src/collector/scan-skills.ts",
     "sync:v6-plan": "tsx scripts/export-v6-plan-json.ts",
-    "validate:v6-plan": "tsx scripts/export-v6-plan-json.ts --check && node scripts/validate-v6-plan.mjs"
+    "validate:v6-plan": "tsx scripts/export-v6-plan-json.ts --check && node scripts/validate-v6-plan.mjs",
+    "e2e:public-sprite": "tsx web/scripts/e2e-public-sprite-anonymous.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.7.0",
