@@ -180,6 +180,7 @@ model Member {
   issuedSoulGrants       SoulGrantRecord[]     @relation("SoulGrantIssuer")
   receivedSoulGrants     SoulGrantRecord[]     @relation("SoulGrantGrantee")
   preparedSoulPurchases SoulPreparedPurchase[] @relation("SoulPreparedPurchaseAgentMember")
+  spriteUploadBindings SoulSpriteUploadBinding[]
   following    Follow[] @relation("follower")
   followers    Follow[] @relation("following")
   bookmarks    Bookmark[]
@@ -534,6 +535,24 @@ model SoulPreparedPurchase {
   @@index([executionTxDigest])
   @@unique([agentMemberId, txBytesHash])
   @@map("soul_prepared_purchases")
+}
+
+model SoulSpriteUploadBinding {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nonce       String    @unique
+  memberId    String    @map("member_id") @db.Uuid
+  member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  blobUrl     String    @unique @map("blob_url")
+  pathname    String
+  contentType String    @map("content_type")
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([memberId, nonce])
+  @@index([expiresAt])
+  @@map("soul_sprite_upload_bindings")
 }
 
 // ============================================================

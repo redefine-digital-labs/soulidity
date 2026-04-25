@@ -1,0 +1,149 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { del } from '@vercel/blob'
+import { runSoulUploadPipeline, type SoulUploadPipelineResult } from '@/lib/soulidity/soul-upload-pipeline'
+import { MAX_SOUL_UPLOAD_BYTES } from '@/lib/soulidity/upload-validation'
+import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
+import { takeRateLimitToken } from '@/lib/rate-limit'
+import {
+  SPRITE_UPLOAD_WRITE_RATE_LIMIT,
+  consumeSpriteUploadBinding,
+} from '@/lib/soulidity/sprite-upload-binding'
+
+const VERCEL_BLOB_HOST_SUFFIX = '.public.blob.vercel-storage.com'
+
+interface FromBlobRequestBody {
+  vercelBlobUrl?: unknown
+  uploadNonce?: unknown
+  type?: unknown
+  sendObjectTo?: unknown
+  fileName?: unknown
+  fileType?: unknown
+}
+
+function isVercelBlobUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' && parsed.hostname.endsWith(VERCEL_BLOB_HOST_SUFFIX)
+  } catch {
+    return false
+  }
+}
+
+async function safeDelete(blobUrl: string) {
+  try {
+    await del(blobUrl)
+  } catch (error) {
+    console.error('[upload/from-blob] failed to delete temp Vercel Blob', blobUrl, error)
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireSoulCreateWalletIdentity(req)
+  if ('error' in auth) {
+    return auth.error
+  }
+
+  let body: FromBlobRequestBody
+  try {
+    body = (await req.json()) as FromBlobRequestBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const blobUrl = typeof body.vercelBlobUrl === 'string' ? body.vercelBlobUrl.trim() : ''
+  if (!blobUrl || !isVercelBlobUrl(blobUrl)) {
+    return NextResponse.json({ error: 'vercelBlobUrl must be a Vercel Blob URL' }, { status: 400 })
+  }
+  const uploadNonce = typeof body.uploadNonce === 'string' ? body.uploadNonce.trim() : ''
+  const type = body.type
+  if (type !== 'public') {
+    return NextResponse.json({ error: 'Blob staging is only allowed for public sprite uploads' }, { status: 400 })
+  }
+  const consumedBinding = await consumeSpriteUploadBinding({
+    memberId: auth.identity.memberId,
+    nonce: uploadNonce,
+    blobUrl,
+  })
+  if (!consumedBinding.ok) {
+    if (consumedBinding.cleanupBlobUrl) {
+      await safeDelete(consumedBinding.cleanupBlobUrl)
+    }
+    return NextResponse.json({ error: consumedBinding.error }, { status: consumedBinding.status })
+  }
+  const rateLimit = await takeRateLimitToken(
+    `soul-upload:${auth.identity.memberId}`,
+    SPRITE_UPLOAD_WRITE_RATE_LIMIT,
+  )
+  if (rateLimit.limited) {
+    await safeDelete(blobUrl)
+    return NextResponse.json(
+      { error: 'Upload rate limit exceeded' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    )
+  }
+  const fileType = consumedBinding.binding.contentType
+  const fileName = typeof body.fileName === 'string' ? body.fileName : 'sprite'
+  const sendObjectTo = typeof body.sendObjectTo === 'string' ? body.sendObjectTo : null
+
+  let buffer: Buffer
+  try {
+    const fetchRes = await fetch(blobUrl)
+    if (!fetchRes.ok) {
+      await safeDelete(blobUrl)
+      return NextResponse.json(
+        { error: `Failed to fetch uploaded blob (${fetchRes.status})` },
+        { status: 502 },
+      )
+    }
+    const contentLengthHeader = fetchRes.headers.get('content-length')
+    const advertisedLength = contentLengthHeader ? Number(contentLengthHeader) : null
+    if (advertisedLength != null && Number.isFinite(advertisedLength) && advertisedLength > MAX_SOUL_UPLOAD_BYTES) {
+      await safeDelete(blobUrl)
+      return NextResponse.json({ error: 'File exceeds 50 MB limit' }, { status: 413 })
+    }
+    const arrayBuffer = await fetchRes.arrayBuffer()
+    buffer = Buffer.from(arrayBuffer)
+  } catch (error) {
+    await safeDelete(blobUrl)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to fetch uploaded blob' },
+      { status: 502 },
+    )
+  }
+
+  let result: SoulUploadPipelineResult | null = null
+  let finalizeErrorResponse: NextResponse | null = null
+  try {
+    result = await runSoulUploadPipeline({
+      buffer,
+      fileName,
+      fileType,
+      type: 'public',
+      sendObjectTo,
+      memberWalletAddress: auth.primarySuiAddress,
+    })
+  } catch (error) {
+    console.error('[upload/from-blob] failed to finalize sprite upload', {
+      nonce: consumedBinding.binding.nonce,
+      pathname: consumedBinding.binding.pathname,
+      error,
+    })
+    const message = error instanceof Error ? error.message : 'Failed to upload sprite payload'
+    finalizeErrorResponse = NextResponse.json({ error: message }, { status: 502 })
+  } finally {
+    // Whether the pipeline succeeded, rejected the bytes, or threw while
+    // writing to Walrus, the Vercel Blob copy is only a temp staging artifact.
+    await safeDelete(blobUrl)
+  }
+  if (finalizeErrorResponse) {
+    return finalizeErrorResponse
+  }
+  if (!result) {
+    return NextResponse.json({ error: 'Failed to upload sprite payload' }, { status: 502 })
+  }
+
+  if (result.ok === false) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
+  }
+  return NextResponse.json(result.payload)
+}
