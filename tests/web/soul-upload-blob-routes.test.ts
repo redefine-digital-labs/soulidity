@@ -15,6 +15,7 @@ const mockedPrisma = vi.hoisted(() => ({
   soulSpriteUploadBinding: {
     create: vi.fn(),
     deleteMany: vi.fn(),
+    findMany: vi.fn(),
   },
 }))
 
@@ -81,6 +82,8 @@ describe('sprite Vercel Blob upload routes', () => {
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedBlobDelete.mockResolvedValue(undefined)
     vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValue([])
     mockedPrisma.soulSpriteUploadBinding.deleteMany.mockResolvedValue({ count: 0 })
     mockedPrisma.soulSpriteUploadBinding.create.mockResolvedValue({})
     mockedPrisma.$transaction.mockImplementation(async (callback) => callback({
@@ -131,6 +134,8 @@ describe('sprite Vercel Blob upload routes', () => {
       blobUrl: BLOB_URL,
       pathname: 'souls/sprite/sheet.png',
       contentType: 'image/png',
+    }, {
+      deleteBlob: mockedBlobDelete,
     })
     expect(mockedPrisma.soulSpriteUploadBinding.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -140,6 +145,29 @@ describe('sprite Vercel Blob upload routes', () => {
         pathname: 'souls/sprite/sheet.png',
         contentType: 'image/png',
       }),
+    })
+  })
+
+  it('deletes expired unconsumed staging blobs before pruning binding rows', async () => {
+    const expiredBlobUrl = 'https://store.public.blob.vercel-storage.com/souls/sprite/expired.png'
+    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+      { id: 'binding-1', blobUrl: expiredBlobUrl },
+    ])
+
+    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
+    await recordSpriteUploadBinding({
+      memberId: MEMBER_ID,
+      nonce: UPLOAD_NONCE,
+      blobUrl: BLOB_URL,
+      pathname: 'souls/sprite/sheet.png',
+      contentType: 'image/png',
+    }, {
+      deleteBlob: mockedBlobDelete,
+    })
+
+    expect(mockedBlobDelete).toHaveBeenCalledWith(expiredBlobUrl)
+    expect(mockedPrisma.soulSpriteUploadBinding.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['binding-1'] } },
     })
   })
 
@@ -219,6 +247,7 @@ describe('sprite Vercel Blob upload routes', () => {
 
     expect(response.status, JSON.stringify(await response.clone().json())).toBe(409)
     await expect(response.json()).resolves.toEqual({ error: 'Upload binding is not ready' })
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(mockedBlobDelete).not.toHaveBeenCalled()
     expect(mockedRunSoulUploadPipeline).not.toHaveBeenCalled()
