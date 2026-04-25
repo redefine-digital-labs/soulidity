@@ -11,6 +11,7 @@ import { buildDeleteAssetVersionTx } from '@/lib/soulidity/tx/assets'
 import { buildClearActiveSpriteTx } from '@/lib/soulidity/tx/metadata'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildPersonaSpriteMoodMap, parsePersonaSpriteConfig } from '@/lib/soulidity/persona-sprite'
+import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
@@ -26,22 +27,6 @@ const SPRITE_ASSET_NAME = 'persona-sprite'
 const SPRITE_CONFIG_KEY = 'sprite.config.v1'
 const SPRITE_MOOD_MAP_KEY = 'sprite.mood_map.v1'
 const SPRITE_APPEND_RECOVERY_KEY_PREFIX = 'soul-sprite-append-recovery:'
-const PRIVATE_SPRITE_LEGACY_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
-
-// Vercel Blob's `allowedContentTypes` (see `/api/souls/upload/sprite-token`)
-// only accepts these sprite MIME values, but some browsers and OS integrations
-// leave `File.type` blank for an otherwise valid sprite sheet. The server-side
-// pipeline already accepts an empty MIME and validates by byte signature, so
-// for the public direct-upload path we infer a known sprite MIME from the file
-// extension before calling Vercel Blob's `clientUpload`.
-function inferPublicSpriteContentType(file: File): string {
-  if (file.type) return file.type
-  const lowerName = file.name.toLowerCase()
-  if (lowerName.endsWith('.png')) return 'image/png'
-  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg'
-  if (lowerName.endsWith('.webp')) return 'image/webp'
-  return 'application/octet-stream'
-}
 
 type PendingAssetAction = 'append' | 'delete' | 'clear' | 'recovering' | null
 
@@ -226,76 +211,20 @@ export function useAssets(soul: SoulAssetDetail | null) {
   async function uploadAssetFile(file: File, visibility: 'public' | 'private'): Promise<AppendUploadResult> {
     if (!suiWallet) throw new Error('Bind a Sui wallet before uploading sprite assets')
     const authHeaders = await getAuthHeaders()
-    const uploadType = visibility === 'public' ? 'public' : 'encrypted'
-
-    if (visibility === 'private') {
-      if (file.size > PRIVATE_SPRITE_LEGACY_UPLOAD_MAX_BYTES) {
-        throw new Error('Private sprite uploads are limited to 4 MB until encrypted direct upload is available.')
-      }
-      const formData = new FormData()
-      formData.set('file', file)
-      formData.set('type', uploadType)
-      formData.set('sendObjectTo', suiWallet.address)
-      const response = await fetch('/api/souls/upload', { method: 'POST', headers: authHeaders, body: formData })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(
-          payload && typeof payload === 'object' && typeof payload.error === 'string'
-            ? payload.error
-            : 'Failed to upload sprite payload',
-        )
-      }
-      const uploaded = payload as AppendUploadResult
-      if (!uploaded.blobObjectId) throw new Error('Upload response is missing blobObjectId')
-      return uploaded
-    }
-
-    // Step 1: client direct-upload to Vercel Blob. This bypasses Vercel
-    // serverless functions' 4.5 MB inbound body limit, which would otherwise
-    // reject typical sprite sheets (~8 MB) with an HTML 413 before our API
-    // route ever runs.
-    const { upload: clientUpload } = await import('@vercel/blob/client')
-    const uploadNonce = crypto.randomUUID()
-    const uploaded = await clientUpload(`souls/sprite/${file.name || 'sprite'}`, file, {
-      access: 'public',
-      handleUploadUrl: '/api/souls/upload/sprite-token',
-      contentType: inferPublicSpriteContentType(file),
-      clientPayload: JSON.stringify({ kind: 'persona-sprite', nonce: uploadNonce }),
-      headers: authHeaders,
+    const uploaded = await uploadSoulPayload({
+      file,
+      uploadType: visibility === 'public' ? 'public' : 'encrypted',
+      kind: 'persona-sprite',
+      authHeaders,
+      sendObjectTo: suiWallet.address,
     })
-
-    // Step 2: server finalizes — pulls bytes from Vercel Blob, runs the same
-    // validation / (optional) AES-GCM encryption pipeline as /api/souls/upload,
-    // uploads to Walrus, deletes the temp Vercel Blob, returns the Walrus
-    // blobObjectId used in the on-chain TX.
-    let payload: unknown = null
-    let response: Response | null = null
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      response = await fetch('/api/souls/upload/from-blob', {
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vercelBlobUrl: uploaded.url,
-          uploadNonce,
-          type: uploadType,
-          sendObjectTo: suiWallet.address,
-          fileName: file.name,
-          fileType: file.type,
-        }),
-      })
-      payload = await response.json().catch(() => null)
-      if (response.ok || response.status !== 409) break
-      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+    return {
+      blobId: uploaded.blobId,
+      blobObjectId: uploaded.blobObjectId,
+      contentHash: uploaded.contentHash,
+      blobUrl: uploaded.blobUrl,
+      sealDekEnvelope: uploaded.sealDekEnvelope ?? null,
     }
-    if (!response?.ok) {
-      const errorMessage = payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
-        ? (payload as { error: string }).error
-        : 'Failed to upload sprite payload'
-      throw new Error(errorMessage)
-    }
-    const finalized = payload as AppendUploadResult
-    if (!finalized.blobObjectId) throw new Error('Upload response is missing blobObjectId')
-    return finalized
   }
 
   async function appendAndActivateSprite(params: {

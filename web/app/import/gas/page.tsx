@@ -16,6 +16,7 @@ import {
 } from '@/lib/hooks/use-wallet-balances'
 import { useImport } from '@/lib/hooks/use-import'
 import { useAuth } from '@/components/providers/auth-provider'
+import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -79,22 +80,62 @@ function withMime(file: File): File {
   return new File([file], file.name, { type: expected })
 }
 
+interface UploadedPublicResult {
+  blobId: string
+  blobObjectId: string
+  contentHash: string
+  blobUrl: string
+}
+
+interface UploadedEncryptedResult extends UploadedPublicResult {
+  sealDekEnvelope: string
+  skillName?: string | null
+}
+
+async function uploadFile(
+  file: File,
+  type: 'public',
+  headers: Record<string, string>,
+  sendObjectTo?: string,
+): Promise<UploadedPublicResult>
+async function uploadFile(
+  file: File,
+  type: 'encrypted',
+  headers: Record<string, string>,
+  sendObjectTo?: string,
+): Promise<UploadedEncryptedResult>
 async function uploadFile(
   file: File,
   type: 'public' | 'encrypted',
   headers: Record<string, string>,
   sendObjectTo?: string,
-) {
-  const formData = new FormData()
-  formData.append('file', withMime(file))
-  formData.append('type', type)
-  if (sendObjectTo) formData.append('sendObjectTo', sendObjectTo)
-  const res = await fetch('/api/souls/upload', { method: 'POST', headers, body: formData })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Upload failed: ${res.status}`)
+): Promise<UploadedPublicResult | UploadedEncryptedResult> {
+  const result = await uploadSoulPayload({
+    file: withMime(file),
+    uploadType: type,
+    kind: 'soul-content',
+    authHeaders: headers,
+    sendObjectTo: sendObjectTo ?? null,
+  })
+  if (type === 'encrypted') {
+    if (!result.sealDekEnvelope) {
+      throw new Error('Encrypted upload response is missing sealDekEnvelope')
+    }
+    return {
+      blobId: result.blobId,
+      blobObjectId: result.blobObjectId,
+      contentHash: result.contentHash,
+      blobUrl: result.blobUrl,
+      sealDekEnvelope: result.sealDekEnvelope,
+      skillName: result.skillName ?? null,
+    }
   }
-  return res.json()
+  return {
+    blobId: result.blobId,
+    blobObjectId: result.blobObjectId,
+    contentHash: result.contentHash,
+    blobUrl: result.blobUrl,
+  }
 }
 
 function truncateHash(hash: string, len = 16) {
@@ -223,12 +264,9 @@ export default function ImportGasPage() {
 
       if (ctx.spriteSheetFile && spriteValidation.config && !results.spriteSheet) {
         setUploadPhase('uploading-sprite')
-        results.spriteSheet = await uploadFile(
-          ctx.spriteSheetFile,
-          ctx.spriteVisibility === 'public' ? 'public' : 'encrypted',
-          authHeaders,
-          walletAddress,
-        )
+        results.spriteSheet = ctx.spriteVisibility === 'public'
+          ? await uploadFile(ctx.spriteSheetFile, 'public', authHeaders, walletAddress)
+          : await uploadFile(ctx.spriteSheetFile, 'encrypted', authHeaders, walletAddress)
       }
 
       ctx.setUploadResults(results)

@@ -10,6 +10,7 @@ import {
 import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
+import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import type { KioskNft } from '@/lib/hooks/use-kiosk-nfts'
 import type { WrapPublishResult } from '@/components/providers/wrap-provider'
 import {
@@ -117,16 +118,13 @@ async function uploadFile(
   headers: Record<string, string>,
   sendObjectTo?: string,
 ) {
-  const formData = new FormData()
-  formData.append('file', withMime(file))
-  formData.append('type', type)
-  if (sendObjectTo) formData.append('sendObjectTo', sendObjectTo)
-  const res = await fetch('/api/souls/upload', { method: 'POST', headers, body: formData })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Upload failed: ${res.status}`)
-  }
-  return res.json()
+  return uploadSoulPayload({
+    file: withMime(file),
+    uploadType: type,
+    kind: 'soul-content',
+    authHeaders: headers,
+    sendObjectTo: sendObjectTo ?? null,
+  })
 }
 
 export function useWrapPublish() {

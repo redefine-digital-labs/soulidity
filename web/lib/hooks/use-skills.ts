@@ -9,6 +9,7 @@ import { fetchSkillAccess, loadDecryptedPrivateSkillVersion } from '@/lib/soulid
 import { buildAppendSkillVersionTx, buildDeleteSkillVersionTx } from '@/lib/soulidity/tx/skills'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
+import { uploadSoulPayload } from '@/lib/upload/client-upload'
 
 type PendingSkillAction = 'append' | 'delete' | 'read' | null
 
@@ -91,24 +92,19 @@ export function useSkills(soul: SoulAssetDetail | null) {
 
   async function uploadSkillFile(file: File, visibility: 'public' | 'private') {
     const authHeaders = await getAuthHeaders()
-    const formData = new FormData()
-    formData.set('file', file)
-    formData.set('type', visibility === 'public' ? 'public' : 'encrypted')
-    const response = await fetch('/api/souls/upload', {
-      method: 'POST',
-      headers: authHeaders,
-      body: formData,
+    const result = await uploadSoulPayload({
+      file,
+      uploadType: visibility === 'public' ? 'public' : 'encrypted',
+      kind: 'soul-content',
+      authHeaders,
+      sendObjectTo: suiWallet?.address ?? null,
     })
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) {
-      throw new Error(
-        payload && typeof payload === 'object' && typeof payload.error === 'string'
-          ? payload.error
-          : 'Failed to upload skill payload',
-      )
+    const uploaded: UploadedSkillPayload = {
+      blobId: result.blobId,
+      blobObjectId: result.blobObjectId,
+      sealDekEnvelope: result.sealDekEnvelope ?? null,
+      skillName: result.skillName ?? null,
     }
-
-    const uploaded = payload as UploadedSkillPayload
     if (!uploaded.blobObjectId) {
       throw new Error('Uploaded skill payload is missing blobObjectId')
     }

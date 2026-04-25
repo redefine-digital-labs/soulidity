@@ -11,6 +11,7 @@ import {
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
 import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
 import { useAuth } from '@/components/providers/auth-provider'
+import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import type { SoulFolderMap } from '@/components/providers/create-collection-provider'
 import {
   attachSoulidityDeploymentSignature,
@@ -241,16 +242,13 @@ async function uploadFile(
   headers: Record<string, string>,
   sendObjectTo?: string,
 ) {
-  const formData = new FormData()
-  formData.append('file', withMime(file))
-  formData.append('type', type)
-  if (sendObjectTo) formData.append('sendObjectTo', sendObjectTo)
-  const res = await fetch('/api/souls/upload', { method: 'POST', headers, body: formData })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Upload failed: ${res.status}`)
-  }
-  return res.json()
+  return uploadSoulPayload({
+    file: withMime(file),
+    uploadType: type,
+    kind: 'soul-content',
+    authHeaders: headers,
+    sendObjectTo: sendObjectTo ?? null,
+  })
 }
 
 /** Fallback: auto-generate character file from soul metadata (when no folder files) */

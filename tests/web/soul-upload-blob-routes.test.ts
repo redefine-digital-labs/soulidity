@@ -12,7 +12,7 @@ const mockedBlobDelete = vi.hoisted(() => vi.fn())
 const mockedHandleUpload = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
-  soulSpriteUploadBinding: {
+  soulUploadBinding: {
     create: vi.fn(),
     deleteMany: vi.fn(),
     findMany: vi.fn(),
@@ -69,7 +69,28 @@ function makeJsonRequest(path: string, body: Record<string, unknown>) {
   })
 }
 
-describe('sprite Vercel Blob upload routes', () => {
+function makeMockBinding(overrides: Partial<{
+  kind: 'persona-sprite' | 'soul-content'
+  uploadType: 'public' | 'encrypted'
+  contentType: string
+  pathname: string
+  expiresAt: Date
+  consumedAt: Date | null
+}> = {}) {
+  return {
+    nonce: UPLOAD_NONCE,
+    memberId: MEMBER_ID,
+    blobUrl: BLOB_URL,
+    pathname: overrides.pathname ?? 'souls/sprite/sheet.png',
+    contentType: overrides.contentType ?? 'image/png',
+    kind: overrides.kind ?? 'persona-sprite',
+    uploadType: overrides.uploadType ?? 'public',
+    expiresAt: overrides.expiresAt ?? new Date(Date.now() + 60_000),
+    consumedAt: overrides.consumedAt ?? null,
+  }
+}
+
+describe('soul Vercel Blob upload routes', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
@@ -84,21 +105,13 @@ describe('sprite Vercel Blob upload routes', () => {
     mockedBlobDelete.mockResolvedValue(undefined)
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValue([])
-    mockedPrisma.soulSpriteUploadBinding.deleteMany.mockResolvedValue({ count: 0 })
-    mockedPrisma.soulSpriteUploadBinding.create.mockResolvedValue({})
-    mockedPrisma.soulSpriteUploadBinding.findUnique.mockResolvedValue(null)
+    mockedPrisma.soulUploadBinding.findMany.mockResolvedValue([])
+    mockedPrisma.soulUploadBinding.deleteMany.mockResolvedValue({ count: 0 })
+    mockedPrisma.soulUploadBinding.create.mockResolvedValue({})
+    mockedPrisma.soulUploadBinding.findUnique.mockResolvedValue(null)
     mockedPrisma.$transaction.mockImplementation(async (callback) => callback({
-      soulSpriteUploadBinding: {
-        findUnique: vi.fn().mockResolvedValue({
-          nonce: UPLOAD_NONCE,
-          memberId: MEMBER_ID,
-          blobUrl: BLOB_URL,
-          pathname: 'souls/sprite/sheet.png',
-          contentType: 'image/png',
-          expiresAt: new Date(Date.now() + 60_000),
-          consumedAt: null,
-        }),
+      soulUploadBinding: {
+        findUnique: vi.fn().mockResolvedValue(makeMockBinding()),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }))
@@ -116,36 +129,42 @@ describe('sprite Vercel Blob upload routes', () => {
 
   it('records a one-shot binding from a signed upload-completed token payload', async () => {
     const {
-      parseSpriteUploadTokenPayload,
-      recordSpriteUploadBinding,
-    } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
-    const parsed = parseSpriteUploadTokenPayload(JSON.stringify({
+      parseSoulUploadTokenPayload,
+      recordSoulUploadBinding,
+    } = await import('../../web/lib/soulidity/soul-upload-binding.ts')
+    const parsed = parseSoulUploadTokenPayload(JSON.stringify({
       kind: 'persona-sprite',
+      uploadType: 'public',
       memberId: MEMBER_ID,
       nonce: UPLOAD_NONCE,
     }))
 
     expect(parsed).toEqual({
       kind: 'persona-sprite',
+      uploadType: 'public',
       memberId: MEMBER_ID,
       nonce: UPLOAD_NONCE,
     })
-    await recordSpriteUploadBinding({
+    await recordSoulUploadBinding({
       memberId: parsed!.memberId,
       nonce: parsed!.nonce,
       blobUrl: BLOB_URL,
       pathname: 'souls/sprite/sheet.png',
       contentType: 'image/png',
+      kind: parsed!.kind,
+      uploadType: parsed!.uploadType,
     }, {
       deleteBlob: mockedBlobDelete,
     })
-    expect(mockedPrisma.soulSpriteUploadBinding.create).toHaveBeenCalledWith({
+    expect(mockedPrisma.soulUploadBinding.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         memberId: MEMBER_ID,
         nonce: UPLOAD_NONCE,
         blobUrl: BLOB_URL,
         pathname: 'souls/sprite/sheet.png',
         contentType: 'image/png',
+        kind: 'persona-sprite',
+        uploadType: 'public',
       }),
     })
   })
@@ -158,23 +177,25 @@ describe('sprite Vercel Blob upload routes', () => {
       clientVersion: 'test',
       meta: { target: ['nonce'] },
     })
-    mockedPrisma.soulSpriteUploadBinding.create.mockRejectedValueOnce(conflictError)
-    mockedPrisma.soulSpriteUploadBinding.findUnique.mockResolvedValueOnce({
+    mockedPrisma.soulUploadBinding.create.mockRejectedValueOnce(conflictError)
+    mockedPrisma.soulUploadBinding.findUnique.mockResolvedValueOnce({
       blobUrl: BLOB_URL,
     })
 
-    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
-    await recordSpriteUploadBinding({
+    const { recordSoulUploadBinding } = await import('../../web/lib/soulidity/soul-upload-binding.ts')
+    await recordSoulUploadBinding({
       memberId: MEMBER_ID,
       nonce: UPLOAD_NONCE,
       blobUrl: SECOND_BLOB_URL,
       pathname: 'souls/sprite/sheet-second.png',
       contentType: 'image/png',
+      kind: 'persona-sprite',
+      uploadType: 'public',
     }, {
       deleteBlob: mockedBlobDelete,
     })
 
-    expect(mockedPrisma.soulSpriteUploadBinding.findUnique).toHaveBeenCalledWith({
+    expect(mockedPrisma.soulUploadBinding.findUnique).toHaveBeenCalledWith({
       where: { nonce: UPLOAD_NONCE },
       select: { blobUrl: true },
     })
@@ -188,18 +209,20 @@ describe('sprite Vercel Blob upload routes', () => {
       clientVersion: 'test',
       meta: { target: ['nonce'] },
     })
-    mockedPrisma.soulSpriteUploadBinding.create.mockRejectedValueOnce(conflictError)
-    mockedPrisma.soulSpriteUploadBinding.findUnique.mockResolvedValueOnce({
+    mockedPrisma.soulUploadBinding.create.mockRejectedValueOnce(conflictError)
+    mockedPrisma.soulUploadBinding.findUnique.mockResolvedValueOnce({
       blobUrl: BLOB_URL,
     })
 
-    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
-    await recordSpriteUploadBinding({
+    const { recordSoulUploadBinding } = await import('../../web/lib/soulidity/soul-upload-binding.ts')
+    await recordSoulUploadBinding({
       memberId: MEMBER_ID,
       nonce: UPLOAD_NONCE,
       blobUrl: BLOB_URL,
       pathname: 'souls/sprite/sheet.png',
       contentType: 'image/png',
+      kind: 'persona-sprite',
+      uploadType: 'public',
     }, {
       deleteBlob: mockedBlobDelete,
     })
@@ -209,42 +232,46 @@ describe('sprite Vercel Blob upload routes', () => {
 
   it('deletes expired unconsumed staging blobs before pruning binding rows', async () => {
     const expiredBlobUrl = 'https://store.public.blob.vercel-storage.com/souls/sprite/expired.png'
-    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+    mockedPrisma.soulUploadBinding.findMany.mockResolvedValueOnce([
       { id: 'binding-1', blobUrl: expiredBlobUrl },
     ])
 
-    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
-    await recordSpriteUploadBinding({
+    const { recordSoulUploadBinding } = await import('../../web/lib/soulidity/soul-upload-binding.ts')
+    await recordSoulUploadBinding({
       memberId: MEMBER_ID,
       nonce: UPLOAD_NONCE,
       blobUrl: BLOB_URL,
       pathname: 'souls/sprite/sheet.png',
       contentType: 'image/png',
+      kind: 'persona-sprite',
+      uploadType: 'public',
     }, {
       deleteBlob: mockedBlobDelete,
     })
 
     expect(mockedBlobDelete).toHaveBeenCalledWith(expiredBlobUrl)
-    expect(mockedPrisma.soulSpriteUploadBinding.deleteMany).toHaveBeenCalledWith({
+    expect(mockedPrisma.soulUploadBinding.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ['binding-1'] } },
     })
   })
 
   it('keeps the binding row when the expired blob deletion fails', async () => {
     const expiredBlobUrl = 'https://store.public.blob.vercel-storage.com/souls/sprite/expired-fail.png'
-    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+    mockedPrisma.soulUploadBinding.findMany.mockResolvedValueOnce([
       { id: 'binding-stuck', blobUrl: expiredBlobUrl },
     ])
 
     const failingDelete = vi.fn().mockRejectedValueOnce(new Error('blob store transient outage'))
 
-    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
-    await recordSpriteUploadBinding({
+    const { recordSoulUploadBinding } = await import('../../web/lib/soulidity/soul-upload-binding.ts')
+    await recordSoulUploadBinding({
       memberId: MEMBER_ID,
       nonce: UPLOAD_NONCE,
       blobUrl: BLOB_URL,
       pathname: 'souls/sprite/sheet.png',
       contentType: 'image/png',
+      kind: 'persona-sprite',
+      uploadType: 'public',
     }, {
       deleteBlob: failingDelete,
     })
@@ -252,7 +279,7 @@ describe('sprite Vercel Blob upload routes', () => {
     expect(failingDelete).toHaveBeenCalledWith(expiredBlobUrl)
     // The unconsumed-prune deleteMany must NOT include the failed-delete binding,
     // so a later pass can retry and we never lose retry state for the orphan blob.
-    const unconsumedDeleteCall = mockedPrisma.soulSpriteUploadBinding.deleteMany.mock.calls.find((args: any[]) => {
+    const unconsumedDeleteCall = mockedPrisma.soulUploadBinding.deleteMany.mock.calls.find((args: any[]) => {
       const where = args[0]?.where
       return where && where.id && Array.isArray(where.id.in)
     })
@@ -261,16 +288,16 @@ describe('sprite Vercel Blob upload routes', () => {
 
   it('retries blob cleanup for expired consumed rows that previously failed', async () => {
     const stuckBlobUrl = 'https://store.public.blob.vercel-storage.com/souls/sprite/consumed-stuck.png'
-    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+    mockedPrisma.soulUploadBinding.findMany.mockResolvedValueOnce([
       { id: 'consumed-stuck', blobUrl: stuckBlobUrl },
     ])
 
     const flakyDelete = vi.fn().mockRejectedValueOnce(new Error('transient blob outage'))
-    const { pruneExpiredSpriteUploadBindings } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
-    await pruneExpiredSpriteUploadBindings(flakyDelete)
+    const { pruneExpiredSoulUploadBindings } = await import('../../web/lib/soulidity/soul-upload-binding.ts')
+    await pruneExpiredSoulUploadBindings(flakyDelete)
 
     expect(flakyDelete).toHaveBeenCalledWith(stuckBlobUrl)
-    const reapCallAfterFailure = mockedPrisma.soulSpriteUploadBinding.deleteMany.mock.calls.find((args: any[]) => {
+    const reapCallAfterFailure = mockedPrisma.soulUploadBinding.deleteMany.mock.calls.find((args: any[]) => {
       const where = args[0]?.where
       return Array.isArray(where?.id?.in) && where.id.in.includes('consumed-stuck')
     })
@@ -279,14 +306,14 @@ describe('sprite Vercel Blob upload routes', () => {
     // Simulate a later prune pass: the row is still present because the
     // previous deletion failed, and the blob store has recovered. The retry
     // succeeds and the row is finally reaped.
-    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+    mockedPrisma.soulUploadBinding.findMany.mockResolvedValueOnce([
       { id: 'consumed-stuck', blobUrl: stuckBlobUrl },
     ])
     const recoveredDelete = vi.fn().mockResolvedValueOnce(undefined)
-    await pruneExpiredSpriteUploadBindings(recoveredDelete)
+    await pruneExpiredSoulUploadBindings(recoveredDelete)
 
     expect(recoveredDelete).toHaveBeenCalledWith(stuckBlobUrl)
-    expect(mockedPrisma.soulSpriteUploadBinding.deleteMany).toHaveBeenLastCalledWith({
+    expect(mockedPrisma.soulUploadBinding.deleteMany).toHaveBeenLastCalledWith({
       where: { id: { in: ['consumed-stuck'] } },
     })
   })
@@ -303,7 +330,8 @@ describe('sprite Vercel Blob upload routes', () => {
     const response = await POST(makeJsonRequest('/api/souls/upload/from-blob', {
       vercelBlobUrl: BLOB_URL,
       uploadNonce: UPLOAD_NONCE,
-      type: 'public',
+      kind: 'persona-sprite',
+      uploadType: 'public',
       sendObjectTo: PRIMARY_WALLET,
       fileName: 'sheet.png',
       fileType: 'application/zip',
@@ -336,7 +364,8 @@ describe('sprite Vercel Blob upload routes', () => {
     const response = await POST(makeJsonRequest('/api/souls/upload/from-blob', {
       vercelBlobUrl: BLOB_URL,
       uploadNonce: UPLOAD_NONCE,
-      type: 'public',
+      kind: 'persona-sprite',
+      uploadType: 'public',
       sendObjectTo: PRIMARY_WALLET,
       fileName: 'sheet.png',
     }) as any)
@@ -349,7 +378,7 @@ describe('sprite Vercel Blob upload routes', () => {
 
   it('does not fetch or delete foreign blobs without a matching binding', async () => {
     mockedPrisma.$transaction.mockImplementationOnce(async (callback) => callback({
-      soulSpriteUploadBinding: {
+      soulUploadBinding: {
         findUnique: vi.fn().mockResolvedValue(null),
         updateMany: vi.fn(),
       },
@@ -361,7 +390,8 @@ describe('sprite Vercel Blob upload routes', () => {
     const response = await POST(makeJsonRequest('/api/souls/upload/from-blob', {
       vercelBlobUrl: BLOB_URL,
       uploadNonce: UPLOAD_NONCE,
-      type: 'public',
+      kind: 'persona-sprite',
+      uploadType: 'public',
       sendObjectTo: PRIMARY_WALLET,
     }) as any)
 
@@ -373,20 +403,26 @@ describe('sprite Vercel Blob upload routes', () => {
     expect(mockedRunSoulUploadPipeline).not.toHaveBeenCalled()
   })
 
-  it('rejects encrypted finalize attempts so private uploads cannot use public Blob staging', async () => {
+  it('rejects mismatched kind/uploadType so a public binding cannot be reused for an encrypted finalize', async () => {
+    // The binding stored in transaction mock is { kind: 'persona-sprite', uploadType: 'public' }.
+    // A finalize request that asks for 'encrypted' must be rejected with 400 + cleanupBlobUrl.
+    // (The actual Vercel Blob `del` call inside `safeDelete` is best-effort and
+    // its failure is swallowed; deletion behavior is covered by the prune tests
+    // above which inject `deleteBlob` directly.)
     const { POST } = await import('../../web/app/api/souls/upload/from-blob/route.ts')
     const response = await POST(makeJsonRequest('/api/souls/upload/from-blob', {
       vercelBlobUrl: BLOB_URL,
       uploadNonce: UPLOAD_NONCE,
-      type: 'encrypted',
+      kind: 'persona-sprite',
+      uploadType: 'encrypted',
       sendObjectTo: PRIMARY_WALLET,
     }) as any)
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
-      error: 'Blob staging is only allowed for public sprite uploads',
+      error: 'Upload binding kind/type does not match this finalize request',
     })
-    expect(mockedPrisma.$transaction).not.toHaveBeenCalled()
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
     expect(mockedRunSoulUploadPipeline).not.toHaveBeenCalled()
   })
 })

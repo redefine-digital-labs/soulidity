@@ -5,16 +5,21 @@ import { MAX_SOUL_UPLOAD_BYTES } from '@/lib/soulidity/upload-validation'
 import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
-  SPRITE_UPLOAD_WRITE_RATE_LIMIT,
-  consumeSpriteUploadBinding,
-} from '@/lib/soulidity/sprite-upload-binding'
+  SOUL_UPLOAD_WRITE_RATE_LIMIT,
+  consumeSoulUploadBinding,
+  isSoulUploadKind,
+  isSoulUploadType,
+  type SoulUploadKind,
+  type SoulUploadType,
+} from '@/lib/soulidity/soul-upload-binding'
 
 const VERCEL_BLOB_HOST_SUFFIX = '.public.blob.vercel-storage.com'
 
 interface FromBlobRequestBody {
   vercelBlobUrl?: unknown
   uploadNonce?: unknown
-  type?: unknown
+  kind?: unknown
+  uploadType?: unknown
   sendObjectTo?: unknown
   fileName?: unknown
   fileType?: unknown
@@ -55,24 +60,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'vercelBlobUrl must be a Vercel Blob URL' }, { status: 400 })
   }
   const uploadNonce = typeof body.uploadNonce === 'string' ? body.uploadNonce.trim() : ''
-  const type = body.type
-  if (type !== 'public') {
-    return NextResponse.json({ error: 'Blob staging is only allowed for public sprite uploads' }, { status: 400 })
+  if (!isSoulUploadKind(body.kind)) {
+    return NextResponse.json({ error: 'kind is invalid' }, { status: 400 })
   }
-  const consumedBinding = await consumeSpriteUploadBinding({
+  if (!isSoulUploadType(body.uploadType)) {
+    return NextResponse.json({ error: 'uploadType is invalid' }, { status: 400 })
+  }
+  const kind: SoulUploadKind = body.kind
+  const uploadType: SoulUploadType = body.uploadType
+
+  const consumed = await consumeSoulUploadBinding({
     memberId: auth.identity.memberId,
     nonce: uploadNonce,
     blobUrl,
+    expectedKind: kind,
+    expectedUploadType: uploadType,
   })
-  if (!consumedBinding.ok) {
-    if (consumedBinding.cleanupBlobUrl) {
-      await safeDelete(consumedBinding.cleanupBlobUrl)
+  if (!consumed.ok) {
+    if (consumed.cleanupBlobUrl) {
+      await safeDelete(consumed.cleanupBlobUrl)
     }
-    return NextResponse.json({ error: consumedBinding.error }, { status: consumedBinding.status })
+    return NextResponse.json({ error: consumed.error }, { status: consumed.status })
   }
+
   const rateLimit = await takeRateLimitToken(
     `soul-upload:${auth.identity.memberId}`,
-    SPRITE_UPLOAD_WRITE_RATE_LIMIT,
+    SOUL_UPLOAD_WRITE_RATE_LIMIT,
   )
   if (rateLimit.limited) {
     await safeDelete(blobUrl)
@@ -81,8 +94,9 @@ export async function POST(req: NextRequest) {
       { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
     )
   }
-  const fileType = consumedBinding.binding.contentType
-  const fileName = typeof body.fileName === 'string' ? body.fileName : 'sprite'
+
+  const fileType = consumed.binding.contentType
+  const fileName = typeof body.fileName === 'string' ? body.fileName : 'soul-upload'
   const sendObjectTo = typeof body.sendObjectTo === 'string' ? body.sendObjectTo : null
 
   let buffer: Buffer
@@ -118,17 +132,19 @@ export async function POST(req: NextRequest) {
       buffer,
       fileName,
       fileType,
-      type: 'public',
+      type: uploadType,
       sendObjectTo,
       memberWalletAddress: auth.primarySuiAddress,
     })
   } catch (error) {
-    console.error('[upload/from-blob] failed to finalize sprite upload', {
-      nonce: consumedBinding.binding.nonce,
-      pathname: consumedBinding.binding.pathname,
+    console.error('[upload/from-blob] failed to finalize upload', {
+      kind,
+      uploadType,
+      nonce: consumed.binding.nonce,
+      pathname: consumed.binding.pathname,
       error,
     })
-    const message = error instanceof Error ? error.message : 'Failed to upload sprite payload'
+    const message = error instanceof Error ? error.message : 'Failed to upload payload'
     finalizeErrorResponse = NextResponse.json({ error: message }, { status: 502 })
   } finally {
     // Whether the pipeline succeeded, rejected the bytes, or threw while
@@ -139,7 +155,7 @@ export async function POST(req: NextRequest) {
     return finalizeErrorResponse
   }
   if (!result) {
-    return NextResponse.json({ error: 'Failed to upload sprite payload' }, { status: 502 })
+    return NextResponse.json({ error: 'Failed to upload payload' }, { status: 502 })
   }
 
   if (result.ok === false) {
