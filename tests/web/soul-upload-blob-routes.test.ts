@@ -259,6 +259,38 @@ describe('sprite Vercel Blob upload routes', () => {
     expect(unconsumedDeleteCall).toBeUndefined()
   })
 
+  it('retries blob cleanup for expired consumed rows that previously failed', async () => {
+    const stuckBlobUrl = 'https://store.public.blob.vercel-storage.com/souls/sprite/consumed-stuck.png'
+    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+      { id: 'consumed-stuck', blobUrl: stuckBlobUrl },
+    ])
+
+    const flakyDelete = vi.fn().mockRejectedValueOnce(new Error('transient blob outage'))
+    const { pruneExpiredSpriteUploadBindings } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
+    await pruneExpiredSpriteUploadBindings(flakyDelete)
+
+    expect(flakyDelete).toHaveBeenCalledWith(stuckBlobUrl)
+    const reapCallAfterFailure = mockedPrisma.soulSpriteUploadBinding.deleteMany.mock.calls.find((args: any[]) => {
+      const where = args[0]?.where
+      return Array.isArray(where?.id?.in) && where.id.in.includes('consumed-stuck')
+    })
+    expect(reapCallAfterFailure).toBeUndefined()
+
+    // Simulate a later prune pass: the row is still present because the
+    // previous deletion failed, and the blob store has recovered. The retry
+    // succeeds and the row is finally reaped.
+    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+      { id: 'consumed-stuck', blobUrl: stuckBlobUrl },
+    ])
+    const recoveredDelete = vi.fn().mockResolvedValueOnce(undefined)
+    await pruneExpiredSpriteUploadBindings(recoveredDelete)
+
+    expect(recoveredDelete).toHaveBeenCalledWith(stuckBlobUrl)
+    expect(mockedPrisma.soulSpriteUploadBinding.deleteMany).toHaveBeenLastCalledWith({
+      where: { id: { in: ['consumed-stuck'] } },
+    })
+  })
+
   it('consumes the binding and rate-limits the actual Walrus write in from-blob', async () => {
     const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
