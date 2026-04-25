@@ -230,6 +230,35 @@ describe('sprite Vercel Blob upload routes', () => {
     })
   })
 
+  it('keeps the binding row when the expired blob deletion fails', async () => {
+    const expiredBlobUrl = 'https://store.public.blob.vercel-storage.com/souls/sprite/expired-fail.png'
+    mockedPrisma.soulSpriteUploadBinding.findMany.mockResolvedValueOnce([
+      { id: 'binding-stuck', blobUrl: expiredBlobUrl },
+    ])
+
+    const failingDelete = vi.fn().mockRejectedValueOnce(new Error('blob store transient outage'))
+
+    const { recordSpriteUploadBinding } = await import('../../web/lib/soulidity/sprite-upload-binding.ts')
+    await recordSpriteUploadBinding({
+      memberId: MEMBER_ID,
+      nonce: UPLOAD_NONCE,
+      blobUrl: BLOB_URL,
+      pathname: 'souls/sprite/sheet.png',
+      contentType: 'image/png',
+    }, {
+      deleteBlob: failingDelete,
+    })
+
+    expect(failingDelete).toHaveBeenCalledWith(expiredBlobUrl)
+    // The unconsumed-prune deleteMany must NOT include the failed-delete binding,
+    // so a later pass can retry and we never lose retry state for the orphan blob.
+    const unconsumedDeleteCall = mockedPrisma.soulSpriteUploadBinding.deleteMany.mock.calls.find((args: any[]) => {
+      const where = args[0]?.where
+      return where && where.id && Array.isArray(where.id.in)
+    })
+    expect(unconsumedDeleteCall).toBeUndefined()
+  })
+
   it('consumes the binding and rate-limits the actual Walrus write in from-blob', async () => {
     const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
