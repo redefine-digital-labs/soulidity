@@ -175,6 +175,30 @@ describe('sprite Vercel Blob upload routes', () => {
     }))
   })
 
+  it('returns structured JSON when Walrus finalize throws', async () => {
+    const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-length': String(pngBytes.byteLength) }),
+      arrayBuffer: async () => pngBytes.buffer,
+    }))
+    mockedRunSoulUploadPipeline.mockRejectedValueOnce(new Error('Walrus publisher is not configured'))
+
+    const { POST } = await import('../../web/app/api/souls/upload/from-blob/route.ts')
+    const response = await POST(makeJsonRequest('/api/souls/upload/from-blob', {
+      vercelBlobUrl: BLOB_URL,
+      uploadNonce: UPLOAD_NONCE,
+      type: 'public',
+      sendObjectTo: PRIMARY_WALLET,
+      fileName: 'sheet.png',
+    }) as any)
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Walrus publisher is not configured',
+    })
+  })
+
   it('does not fetch or delete foreign blobs without a matching binding', async () => {
     mockedPrisma.$transaction.mockImplementationOnce(async (callback) => callback({
       soulSpriteUploadBinding: {
