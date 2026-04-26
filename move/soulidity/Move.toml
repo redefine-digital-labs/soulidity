@@ -14,9 +14,8 @@ subdir = "kiosk"
 rev = "main"
 override = true
 
-# Circle's stablecoin-sui Move.toml ships `usdc = "0x0"` placeholder, so we
-# substitute the mainnet-deployed USDC type address (Circle's lock has
-# [env.mainnet] info but we add addr_subst to make the binding explicit).
+# Circle's stablecoin-sui Move.toml ships `usdc = "0x0"` placeholder, so
+# we addr_subst the mainnet-deployed USDC type address.
 [dependencies.usdc]
 git = "https://github.com/circlefin/stablecoin-sui.git"
 subdir = "packages/usdc"

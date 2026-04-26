@@ -14,12 +14,12 @@ use soulidity::content_access::{Self as content_access, ContentAccessList};
 use soulidity::seal_policy;
 use soulidity::soul::{Self as soul, Soul, SoulState};
 use sui::clock::{Self as clock, Clock};
-use sui::coin::{Self as coin, TreasuryCap};
+use sui::coin::{Self as coin};
 use sui::kiosk::{Self as kiosk, Kiosk};
 use sui::package::{Self as package};
 use sui::test_scenario::{Self as ts};
 use sui::transfer_policy::TransferPolicy;
-use usdc::usdc::{Self as test_usdc, USDC};
+use usdc::usdc::USDC;
 use walrus::{blob, encoding, system, test_utils};
 
 const BLOB_ROOT_HASH_A: u256 = 0xABC;
@@ -280,7 +280,6 @@ fun init_protocol_for_testing(scenario: &mut ts::Scenario, admin: address) {
         soul::init_for_testing(admin, ts::ctx(scenario));
         collection::init_for_testing(admin, ts::ctx(scenario));
         market::init_for_testing(admin, ts::ctx(scenario));
-        test_usdc::init_for_testing(admin, ts::ctx(scenario));
         let clock_obj = clock::create_for_testing(ts::ctx(scenario));
         clock::share_for_testing(clock_obj);
     };
@@ -307,9 +306,8 @@ fun mint_usdc_to_recipient(
 ) {
     ts::next_tx(scenario, admin);
     {
-        let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(scenario);
-        test_usdc::mint(&mut treasury_cap, amount, recipient, ts::ctx(scenario));
-        transfer::public_transfer(treasury_cap, admin);
+        let usdc_coin = coin::mint_for_testing<USDC>(amount, ts::ctx(scenario));
+        transfer::public_transfer(usdc_coin, recipient);
     };
 }
 
@@ -1403,14 +1401,11 @@ fun stale_grant_cannot_be_used_after_soul_sale() {
 
     ts::next_tx(&mut scenario, admin);
     {
-        let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
-        test_usdc::mint(
-            &mut treasury_cap,
+        let usdc_coin = coin::mint_for_testing<USDC>(
             soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0),
-            buyer,
             ts::ctx(&mut scenario),
         );
-        transfer::public_transfer(treasury_cap, admin);
+        transfer::public_transfer(usdc_coin, buyer);
     };
 
     ts::next_tx(&mut scenario, buyer);
@@ -1607,14 +1602,11 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
     ts::next_tx(&mut scenario, admin);
     {
-        let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
-        test_usdc::mint(
-            &mut treasury_cap,
+        let usdc_coin = coin::mint_for_testing<USDC>(
             collection_purchase_total(COLLECTION_PRICE),
-            holder,
             ts::ctx(&mut scenario),
         );
-        transfer::public_transfer(treasury_cap, admin);
+        transfer::public_transfer(usdc_coin, holder);
     };
 
     ts::next_tx(&mut scenario, holder);
@@ -1693,14 +1685,11 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
     ts::next_tx(&mut scenario, admin);
     {
-        let mut treasury_cap: TreasuryCap<USDC> = ts::take_from_sender(&scenario);
-        test_usdc::mint(
-            &mut treasury_cap,
+        let usdc_coin = coin::mint_for_testing<USDC>(
             soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, COLLECTION_ROYALTY_BPS),
-            buyer,
             ts::ctx(&mut scenario),
         );
-        transfer::public_transfer(treasury_cap, admin);
+        transfer::public_transfer(usdc_coin, buyer);
     };
 
     ts::next_tx(&mut scenario, buyer);
