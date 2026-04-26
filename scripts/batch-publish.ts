@@ -29,8 +29,9 @@ import { fileURLToPath } from 'node:url'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { Transaction } from '@mysten/sui/transactions'
-import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { zipSync } from 'fflate'
+
+import { loadKeypairFromEnv } from './lib/keypair.ts'
 
 type SuiClient = SuiJsonRpcClient
 
@@ -132,35 +133,6 @@ function getDeployment(): SoulidityDeployment {
     throw new Error(`No Soulidity deployment found for network: ${network}`)
   }
   return deployment
-}
-
-function getKeypair(): Ed25519Keypair {
-  const raw = process.env.BATCH_SIGNER_SECRET_KEY?.trim()
-  if (!raw) {
-    throw new Error('BATCH_SIGNER_SECRET_KEY is required')
-  }
-
-  // Try Sui bech32 format first (suiprivkey1...)
-  if (raw.startsWith('suiprivkey')) {
-    const { secretKey } = decodeSuiPrivateKey(raw)
-    return Ed25519Keypair.fromSecretKey(secretKey)
-  }
-
-  // Try base64
-  try {
-    const bytes = Buffer.from(raw, 'base64')
-    if (bytes.length === 32 || bytes.length === 64) {
-      return Ed25519Keypair.fromSecretKey(bytes.slice(0, 32))
-    }
-  } catch { /* ignore */ }
-
-  // Try hex
-  const hexBytes = Buffer.from(raw, 'hex')
-  if (hexBytes.length === 32 || hexBytes.length === 64) {
-    return Ed25519Keypair.fromSecretKey(hexBytes.slice(0, 32))
-  }
-
-  throw new Error('BATCH_SIGNER_SECRET_KEY must be a valid Sui private key (bech32, base64, or hex)')
 }
 
 function getApiConfig() {
@@ -883,7 +855,7 @@ async function main() {
   const rows = parseCSV(TEMPLATE_CSV)
   const network = getNetwork()
   const deployment = getDeployment()
-  const keypair = getKeypair()
+  const keypair = loadKeypairFromEnv('BATCH_SIGNER_SECRET_KEY')
   const signerAddress = keypair.getPublicKey().toSuiAddress()
   const client = getSuiClient()
 
