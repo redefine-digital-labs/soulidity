@@ -4,12 +4,19 @@ edition = "2024.beta"
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.70.2", override = true }
-Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "mainnet-contracts/walrus", rev = "mainnet-v1.46.1" }
-Kiosk = { local = "../vendor/kiosk", override = true }
+
+# Official MystenLabs/apps kiosk extensions. Their Move.lock at this rev
+# includes [env.mainnet].original-published-id = 0x434b5bd8... so sui CLI
+# resolves type identity correctly without addr_subst.
+[dependencies.Kiosk]
+git = "https://github.com/MystenLabs/apps.git"
+subdir = "kiosk"
+rev = "main"
+override = true
 
 # Circle's stablecoin-sui Move.toml ships `usdc = "0x0"` placeholder, so we
-# substitute the mainnet-deployed USDC type address here instead of binding
-# it in our [addresses] section (which would error as a duplicate).
+# substitute the mainnet-deployed USDC type address (Circle's lock has
+# [env.mainnet] info but we add addr_subst to make the binding explicit).
 [dependencies.usdc]
 git = "https://github.com/circlefin/stablecoin-sui.git"
 subdir = "packages/usdc"
@@ -17,6 +24,20 @@ rev = "release-2024-11-22T170906"
 
 [dependencies.usdc.addr_subst]
 usdc = "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7"
+
+# Walrus mainnet-contracts/walrus/Move.lock at this rev doesn't carry
+# [env.mainnet].published-id, so sui CLI auto-resolves the package address
+# from the on-chain upgrade chain (currently the v2 upgraded address
+# 0xfa65cb2d...). addr_subst pins both walrus and its WAL token dep so
+# the named addresses bind explicitly.
+[dependencies.Walrus]
+git = "https://github.com/MystenLabs/walrus.git"
+subdir = "mainnet-contracts/walrus"
+rev = "mainnet-v1.46.1"
+
+[dependencies.Walrus.addr_subst]
+walrus = "0xfa65cb2d62f4d39e60346fb7d501c12538ca2bbc646eaa37ece2aec5f897814e"
+wal = "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59"
 
 [addresses]
 soulidity = "0x0"

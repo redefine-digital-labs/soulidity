@@ -5,10 +5,10 @@
 version = 4
 
 [pinned.mainnet.Kiosk]
-source = { local = "../vendor/kiosk" }
+source = { git = "https://github.com/MystenLabs/apps.git", subdir = "kiosk", rev = "7a07937149c0af057be8f6747e60d0f1acd88fde" }
 use_environment = "mainnet"
-manifest_digest = "D6AB3EAEDD8A065E191FD243F6555B3AC75BD1313AB120EEA8FA8C14F8ABEA28"
-deps = { MoveStdlib = "MoveStdlib", Sui = "Sui" }
+manifest_digest = "BA49968BFF7C4A4D9F013B59535CF8B89D935A7C6D63C121606B1FE844829B72"
+deps = { Sui = "Sui" }
 
 [pinned.mainnet.MoveStdlib]
 source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "6d4ec0b0621dd9555753c9ecd5be021b25a0d267" }
@@ -61,7 +61,7 @@ deps = { Sui = "Sui_1", WAL = "WAL" }
 [pinned.mainnet.soulidity]
 source = { root = true }
 use_environment = "mainnet"
-manifest_digest = "A256274EFA3A020F90EF464DC274DC511B83220D1878FD3CFCAAB66BB60D8E93"
+manifest_digest = "B6D5A1A578F1F93262C528C21CA9E01E62E9BD0D62BB0BE6B8CACC2CDCBF13D9"
 deps = { Kiosk = "Kiosk", Sui = "Sui", Walrus = "Walrus", usdc = "usdc" }
 
 [pinned.mainnet.stablecoin]
