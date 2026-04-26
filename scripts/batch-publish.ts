@@ -19,7 +19,7 @@
  *   --only N   Process only Soul index N
  */
 
-import 'dotenv/config'
+import './lib/dotenv'
 
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'

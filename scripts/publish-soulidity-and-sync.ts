@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import './lib/dotenv'
 
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
