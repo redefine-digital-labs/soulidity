@@ -113,7 +113,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unlinkDesktopDevice: (): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('desktop-auth:unlink'),
   getDesktopRuntimeConfig: (): Promise<{
-    privyAppId: string | null
     suiNetwork: string
     webBaseUrl: string
     authReady: boolean
@@ -122,8 +121,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('desktop-auth:runtime-config'),
   getDesktopMe: (): Promise<unknown> =>
     ipcRenderer.invoke('desktop-auth:me'),
-  getDesktopPrivyToken: (): Promise<{ jwt: string; alreadyLinked: boolean }> =>
-    ipcRenderer.invoke('desktop-auth:get-privy-token'),
+
+  // ── User wallet (Sui keypair held in main via safeStorage) ──
+  walletGetInfo: (): Promise<{ address: string; publicKey: string; createdAt: number } | null> =>
+    ipcRenderer.invoke('wallet:get-info'),
+  walletGenerate: (): Promise<{ address: string; publicKey: string; createdAt: number }> =>
+    ipcRenderer.invoke('wallet:generate'),
+  walletImport: (secretKeyInput: string): Promise<{ address: string; publicKey: string; createdAt: number }> =>
+    ipcRenderer.invoke('wallet:import', secretKeyInput),
+  walletReset: (): Promise<void> =>
+    ipcRenderer.invoke('wallet:reset'),
+  walletSignMessage: (message: Uint8Array): Promise<{ signature: string }> =>
+    ipcRenderer.invoke('wallet:sign-message', message),
+  walletSignTransaction: (rawBytes: Uint8Array): Promise<{ signature: string }> =>
+    ipcRenderer.invoke('wallet:sign-transaction', rawBytes),
 
   // ── Desktop create draft ──
   'desktop:create-draft:load': (): Promise<ExtractSoulDraft | null> =>

@@ -9,7 +9,7 @@ import {
   buildSetContentAccessPriceTx,
 } from '@/lib/soulidity/tx/content-access'
 import { buildSetGrantCapacityTx } from '@/lib/soulidity/tx/grant'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
 type E2EContentAccessPurchaseParams = {
@@ -73,7 +73,7 @@ function resolveTotalAtomic(params: E2EContentAccessPurchaseParams) {
 
 export function E2EWalletHelpers() {
   const { getAuthHeaders } = useAuth()
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const getAuthHeadersRef = useRef(getAuthHeaders)
   const signAndExecuteRef = useRef(signAndExecute)
   const suiClientRef = useRef(suiClient)

@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildUpdateListingPriceTx } from '@/lib/soulidity/tx/update-price'
@@ -43,7 +43,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
   const [price, setPrice] = useState('')
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
   const { showToast } = useToast()
@@ -185,7 +185,7 @@ interface DelistModalProps {
 export function DelistModal({ soul, open, onClose }: DelistModalProps) {
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
   const { showToast } = useToast()

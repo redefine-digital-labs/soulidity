@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
 import { prisma } from '@/lib/prisma'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 
@@ -58,7 +58,7 @@ async function resolveSubject(
 }
 
 export async function POST(req: NextRequest) {
-  const { error: authError, identity } = await requireIdentity()
+  const { error: authError, identity } = await requireMutationIdentity(req)
   if (authError) return authError
 
   const { limited, retryAfterSeconds } = await takeRateLimitToken(

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Transaction } from '@mysten/sui/transactions'
 
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildDeleteAssetVersionTx } from '@/lib/soulidity/tx/assets'
@@ -121,7 +121,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
   const [pending, setPending] = useState<PendingAssetAction>(null)
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders, user } = useAuth()
   const pendingRecoveryRef = useRef<Record<string, boolean>>({})
 

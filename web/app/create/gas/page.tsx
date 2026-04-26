@@ -12,7 +12,7 @@ import { useToast } from '@/components/ui/toast'
 import { usePublish, type PublishParams } from '@/lib/hooks/use-publish'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -163,7 +163,7 @@ export default function CreateGasPage() {
   const { status, error, txDigest, publishData, publish, suiWallet } = usePublish()
   const { getAuthHeaders, user } = useAuth()
   const { showToast } = useToast()
-  const { signAndExecute } = usePrivySuiSign()
+  const { signAndExecute } = useWalletSign()
   const publishRef = useRef(publish)
   const getAuthHeadersRef = useRef(getAuthHeaders)
   const signAndExecuteRef = useRef(signAndExecute)

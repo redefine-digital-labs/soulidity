@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
 import {
   completeDesktopDeviceSession,
   DesktopDeviceSessionConflictError,
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'userCode is required' }, { status: 400 })
   }
 
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) {
     return error
   }

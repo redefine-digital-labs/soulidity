@@ -13,7 +13,7 @@ import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 import { useKioskNfts, type KioskNft } from '@/lib/hooks/use-kiosk-nfts'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 
 function NftCard({ nft, selected, onSelect }: { nft: KioskNft; selected: boolean; onSelect: () => void }) {
   return (
@@ -45,7 +45,7 @@ function NftCard({ nft, selected, onSelect }: { nft: KioskNft; selected: boolean
 export default function SelectNftPage() {
   const router = useRouter()
   const ctx = useWrap()
-  const { suiWallet } = usePrivySuiSign()
+  const { suiWallet } = useWalletSign()
   const { data: nfts, isLoading } = useKioskNfts(suiWallet?.address)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')

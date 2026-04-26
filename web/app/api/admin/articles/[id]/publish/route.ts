@@ -7,8 +7,8 @@ import { syncArticleToPost } from '@shared/sync-article-post'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdmin()
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { error } = await requireAdmin({ mutation: request })
   if (error) return error
 
   const { id } = await params

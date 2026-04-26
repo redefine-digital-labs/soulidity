@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +11,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   const { limited, retryAfterSeconds } = await takeRateLimitToken(

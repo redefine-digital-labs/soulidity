@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireIdentity, resolveIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity, resolveIdentity } from '@/lib/auth/identity'
 import { evaluateAchievements } from '@/lib/community/achievements'
 import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@/lib/rate-limit'
 import { normalizeCommunityTags, parseCommunityTags } from '@shared/community-tags'
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   const body = await request.json()

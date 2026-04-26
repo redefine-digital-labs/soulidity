@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { usePrivy } from '@privy-io/react-auth'
-import { useGenericLogin } from '@/lib/hooks/use-generic-login'
+import { useLogin } from '@/lib/hooks/use-login'
 import { useMySouls } from '@/lib/hooks/use-souls'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useBookmarks } from '@/lib/hooks/use-social'
@@ -372,8 +371,7 @@ export default function MySoulsPage() {
   const [activeGrantsOnly, setActiveGrantsOnly] = useState(false)
   const [grantStatusFilter, setGrantStatusFilter] = useState<GrantStatusFilter>('all')
   const { user, loading, getAuthHeaders } = useAuth()
-  const { ready } = usePrivy()
-  const login = useGenericLogin()
+  const login = useLogin()
   const { data: myData, isLoading } = useMySouls(user?.id ?? null, getAuthHeaders)
   const { data: bookmarksData, isLoading: bookmarksLoading } = useBookmarks()
 
@@ -381,7 +379,7 @@ export default function MySoulsPage() {
   const listingsCount = (myData?.owned.filter((s) => s.listingStatus === 'listed' || s.listingStatus === 'floor-violation').length ?? 0)
     + (myData?.collections.filter((c) => c.listingStatus === 'listed').length ?? 0)
 
-  if (loading || !ready) {
+  if (loading) {
     return (
       <PageContainer>
         <div className="h-8 w-32 rounded bg-card2 animate-pulse mb-6" />

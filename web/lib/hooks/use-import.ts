@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Transaction } from '@mysten/sui/transactions'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildImportSoulTx } from '@/lib/soulidity/tx/import'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import {
   attachSoulidityDeploymentSignature,
@@ -87,7 +87,7 @@ export function useImport() {
   const [error, setError] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const [importData, setImportData] = useState<ImportSyncResponse | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders, user } = useAuth()
   const recoveryRef = useRef<ImportRecoveryState | null>(null)
 

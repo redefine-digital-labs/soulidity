@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SuiClientProvider } from '@mysten/dapp-kit'
 import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import { PrivyProvider as BasePrivyProvider, useCustomAuth, usePrivy } from '@privy-io/react-auth'
 import type {
   CreateLocalExtractDraftInput,
   ExtractSoulDraft,
@@ -20,7 +19,7 @@ import {
 } from '@soulidity/shared'
 import { assertObjectInputsExist } from '../../lib/soulidity/object-inputs'
 import { buildPublishSoulTx } from '../../lib/soulidity/tx/publish'
-import { usePrivySuiSign } from '../../lib/hooks/use-privy-sui'
+import { useDesktopWallet } from '../../lib/hooks/use-desktop-wallet'
 
 type Step = 'scan' | 'review' | 'create'
 
@@ -37,7 +36,6 @@ type DesktopMeResponse = {
 }
 
 type RuntimeConfig = {
-  privyAppId: string | null
   suiNetwork: string
   webBaseUrl: string
   authReady: boolean
@@ -464,7 +462,6 @@ async function ipcGetRuntimeConfig(): Promise<RuntimeConfig> {
   const invoke = getOptionalElectronMethod<() => Promise<RuntimeConfig>>('getDesktopRuntimeConfig')
   if (!invoke) {
     return {
-      privyAppId: null,
       suiNetwork: 'testnet',
       webBaseUrl: '',
       authReady: false,
@@ -476,25 +473,11 @@ async function ipcGetRuntimeConfig(): Promise<RuntimeConfig> {
     return await invoke()
   } catch {
     return {
-      privyAppId: null,
       suiNetwork: 'testnet',
       webBaseUrl: '',
       authReady: false,
       authBlocker: 'Desktop wallet preflight failed in this build.',
     }
-  }
-}
-
-async function ipcGetPrivyToken(): Promise<{ jwt: string; alreadyLinked: boolean }> {
-  const invoke = getElectronMethod<() => Promise<{ jwt: string; alreadyLinked: boolean }>>(
-    'getDesktopPrivyToken',
-    'Desktop Privy auth IPC is not available',
-  )
-
-  try {
-    return await invoke()
-  } catch (err) {
-    throw asIpcError(err, 'Failed to fetch desktop wallet auth token')
   }
 }
 
@@ -730,9 +713,7 @@ const suiNetworks = {
 type SuiNetwork = keyof typeof suiNetworks
 
 function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: DesktopMintPanelProps) {
-  const { ready, authenticated } = usePrivy()
-  const { status: customAuthStatus } = useCustomAuth()
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useDesktopWallet()
   const [mintStatus, setMintStatus] = useState<MintStatus>('idle')
   const [mintError, setMintError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<DesktopPublishResponse | null>(null)
@@ -749,18 +730,6 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
       return
     }
 
-    if (!ready) {
-      setMintStatus('error')
-      setMintError('Desktop wallet auth is still loading. Try again in a moment.')
-      return
-    }
-
-    if (!authenticated) {
-      setMintStatus('error')
-      setMintError('Desktop wallet auth is not ready yet. Re-link this desktop if the problem persists.')
-      return
-    }
-
     if (!primarySuiAddress) {
       setMintStatus('error')
       setMintError('Bind a primary Sui wallet before minting from desktop.')
@@ -769,13 +738,13 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
 
     if (!suiWallet?.address) {
       setMintStatus('error')
-      setMintError('No Sui wallet is available for this desktop session.')
+      setMintError('No desktop Sui wallet is available. Generate or import one in Settings.')
       return
     }
 
     if (walletMismatch) {
       setMintStatus('error')
-      setMintError('The connected desktop wallet does not match the bound Sui wallet for this account.')
+      setMintError('The desktop wallet does not match the bound Sui wallet for this account.')
       return
     }
 
@@ -897,7 +866,7 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
       setMintStatus('error')
       setMintError(err instanceof Error ? err.message : 'Mint failed')
     }
-  }, [authenticated, draft, onMintSuccess, primarySuiAddress, ready, signAndExecute, suiClient, suiWallet?.address, walletMismatch])
+  }, [draft, onMintSuccess, primarySuiAddress, signAndExecute, suiClient, suiWallet?.address, walletMismatch])
 
   return (
     <section className="settings-section">
@@ -918,9 +887,7 @@ function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: Desk
         <div className="extract-evidence__row">
           <span className="extract-evidence__label">Auth state</span>
           <span className="extract-evidence__value">
-            {customAuthStatus.status === 'error'
-              ? customAuthStatus.error?.message || 'error'
-              : customAuthStatus.status}
+            {suiWallet ? 'wallet ready' : 'no wallet bound'}
           </span>
         </div>
       </div>
@@ -972,29 +939,11 @@ function DesktopMintProviders({ runtimeConfig, ...props }: MintProvidersProps) {
   const [queryClient] = useState(() => new QueryClient())
   const network = runtimeConfig.suiNetwork as SuiNetwork
   const defaultNetwork: SuiNetwork = network in suiNetworks ? network : 'testnet'
-  const getCustomAccessToken = useCallback(async () => {
-    const token = await ipcGetPrivyToken()
-    return token.jwt
-  }, [])
 
   return (
     <QueryClientProvider client={queryClient}>
       <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-        <BasePrivyProvider
-          appId={runtimeConfig.privyAppId!}
-          config={{
-            customAuth: {
-              enabled: true,
-              getCustomAccessToken,
-              isLoading: false,
-            },
-            appearance: {
-              showWalletLoginFirst: false,
-            },
-          }}
-        >
-          <DesktopMintPanelInner {...props} />
-        </BasePrivyProvider>
+        <DesktopMintPanelInner {...props} />
       </SuiClientProvider>
     </QueryClientProvider>
   )
@@ -1026,7 +975,7 @@ function DesktopMintPanel(props: DesktopMintPanelProps) {
     )
   }
 
-  if (!runtimeConfig.authReady || !runtimeConfig.privyAppId) {
+  if (!runtimeConfig.authReady) {
     return (
       <section className="settings-section">
         <h3 className="settings-section__title">Preview & Mint</h3>

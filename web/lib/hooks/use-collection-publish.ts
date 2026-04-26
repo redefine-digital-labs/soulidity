@@ -9,7 +9,7 @@ import {
   type PersonaSpriteVisibility,
 } from '@/lib/soulidity/persona-sprite'
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import type { SoulFolderMap } from '@/components/providers/create-collection-provider'
@@ -272,7 +272,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const [syncData, setSyncData] = useState<CollectionSyncResponse | null>(null)
   const [progress, setProgress] = useState<CollectionPublishProgress>({ totalSouls: 0, mintedSouls: 0, boundSouls: 0 })
-  const { suiWallet, signAndExecute } = usePrivySuiSign()
+  const { suiWallet, signAndExecute } = useWalletSign()
   const { getAuthHeaders, user } = useAuth()
   const recoveryRef = useRef<RecoveryState | null>(null)
   const uploadedImageUrlRef = useRef<string | null>(null)

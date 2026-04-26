@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   let parsedClientPayload: ReturnType<typeof parseSoulUploadClientPayload> = null
   let tokenPayload: string | null = null
   if (body?.type === 'blob.generate-client-token') {
-    const auth = await requireSoulCreateWalletIdentity(req)
+    const auth = await requireSoulCreateWalletIdentity(req, { mutation: true })
     if ('error' in auth) {
       return auth.error
     }

@@ -132,13 +132,13 @@ model Publication {
 }
 
 model Account {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  privyDid  String?  @unique @map("privy_did")
-  tgId      String?  @unique @map("tg_id")
-  tgName    String?  @map("tg_name")
-  email     String?  @unique
-  avatar    String?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletAddress String?  @unique @map("wallet_address")
+  tgId          String?  @unique @map("tg_id")
+  tgName        String?  @map("tg_name")
+  email         String?  @unique
+  avatar        String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   members               Member[]
   desktopDeviceSessions DesktopDeviceSession[]

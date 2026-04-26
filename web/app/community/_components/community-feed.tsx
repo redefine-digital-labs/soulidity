@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useGenericLogin } from '@/lib/hooks/use-generic-login'
+import { useLogin } from '@/lib/hooks/use-login'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { FilterTabs } from '@/components/nav/filter-tabs'
@@ -60,7 +60,7 @@ const channelColors: Record<string, 'gold' | 'teal' | 'purple' | 'muted'> = {
 
 function PostCard({ post }: { post: CommunityPost }) {
   const { user } = useAuth()
-  const login = useGenericLogin()
+  const login = useLogin()
   const vote = useVotePost()
   const author = post.member
   const displayName = author.displayName || author.tgName || 'Anon'

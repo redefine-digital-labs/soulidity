@@ -12,7 +12,7 @@ import { buildListCollectionTx } from '@/lib/soulidity/tx/list'
 import { buildDelistCollectionTx } from '@/lib/soulidity/tx/delist'
 import { buildUpdateCollectionListingPriceTx } from '@/lib/soulidity/tx/update-collection-price'
 import { selectCoinObjectIdsForAmountAcrossPages } from '@/lib/soulidity/coin-selection'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
 export type CreateCollectionStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -72,7 +72,7 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
   const [error, setError] = useState<string | null>(null)
   const [createStatus, setCreateStatus] = useState<CreateCollectionStatus>('idle')
   const [txDigest, setTxDigest] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
 
   async function buyCollection() {
@@ -266,7 +266,7 @@ export type CollectionListingStatus = 'idle' | 'signing' | 'syncing'
 export function useCollectionListing(collection: { onChainId: string; rightOnChainId: string; listingObjectOnChainId: string | null } | null) {
   const [status, setStatus] = useState<CollectionListingStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
 
   async function list(priceAtomic: bigint) {

@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string; commentId: string }> }
 ) {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   const { id, commentId } = await params

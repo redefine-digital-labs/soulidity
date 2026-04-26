@@ -7,7 +7,7 @@ import type { SoulAssetDetail, SoulSkillVersionRecord, SoulSkillVersionsPageResp
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { fetchSkillAccess, loadDecryptedPrivateSkillVersion } from '@/lib/soulidity/skill-access'
 import { buildAppendSkillVersionTx, buildDeleteSkillVersionTx } from '@/lib/soulidity/tx/skills'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
 
@@ -46,7 +46,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
   const [pending, setPending] = useState<PendingSkillAction>(null)
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
-  const { suiWallet, signAndExecute, signPersonalMessage, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, signPersonalMessage, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
   const skillVersionsQuery = useInfiniteQuery<SoulSkillVersionsPageResponse>({
     queryKey: ['soul-skill-versions', soul?.onChainId ?? null],

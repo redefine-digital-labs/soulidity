@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { DEFAULT_ISSUE_SCOPE_MASK } from '@/lib/soulidity/grant-scopes'
 import { buildIssueGrantTx, buildRevokeGrantScopeTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
 /** Minimal soul shape required by the grant hook. */
@@ -17,7 +17,7 @@ export interface GrantableSoul {
 export function useGrant(soul: GrantableSoul | null) {
   const [pending, setPending] = useState<'issue' | 'revoke' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
 
   async function issueGrant(granteeAddress: string, expiresAtMs?: number | null, scopeMask = DEFAULT_ISSUE_SCOPE_MASK) {

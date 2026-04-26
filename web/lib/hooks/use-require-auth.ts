@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback } from 'react'
-import { usePrivy } from '@privy-io/react-auth'
 import { useAuth } from '@/components/providers/auth-provider'
 import { savePendingAction } from '@/lib/utils/pending-action'
 
@@ -11,11 +10,10 @@ interface RequireAuthPending {
 }
 
 export function useRequireAuth() {
-  const { user, loading } = useAuth()
-  const { login, ready } = usePrivy()
+  const { user, loading, login } = useAuth()
 
   const requireAuth = useCallback((callback?: () => void, pending?: RequireAuthPending) => {
-    if (loading || !ready) return
+    if (loading) return
 
     if (user) {
       callback?.()
@@ -26,12 +24,12 @@ export function useRequireAuth() {
       savePendingAction(pending)
     }
 
-    void login()
-  }, [loading, login, ready, user])
+    login()
+  }, [loading, login, user])
 
   return {
     user,
-    loading: loading || !ready,
+    loading,
     login,
     requireAuth,
     isAuthenticated: !!user,
