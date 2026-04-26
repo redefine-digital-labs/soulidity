@@ -16,6 +16,7 @@ const mockedPrisma = vi.hoisted(() => ({
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
+  requireMutationIdentity: mockedRequireIdentity,
 }))
 
 vi.mock('@web/lib/rate-limit', () => ({

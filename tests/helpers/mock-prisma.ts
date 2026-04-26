@@ -165,7 +165,7 @@ export function createMockPrisma() {
     collectorState: createModel(store.collectorStates, {}, ['source']),
     article: createModel(store.articles, { status: 'draft' }),
     publication: createModel(store.publications),
-    account: createModel(store.accounts, {}, ['privyDid', 'tgId', 'email']),
+    account: createModel(store.accounts, {}, ['walletAddress', 'tgId', 'email']),
     member: createModel(store.members, { level: 1 }),
     company: createModel(store.companies, { mentionCount: 0 }),
     articleCompany: createModel(store.articleCompanies),

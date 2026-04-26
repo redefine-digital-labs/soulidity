@@ -85,7 +85,6 @@
     "@mysten/seal": "^1.1.1",
     "@mysten/sui": "^2.15.0",
     "@noble/hashes": "^1.8.0",
-    "@privy-io/react-auth": "^3.21.3",
     "@soulidity/backend": "workspace:*",
     "@soulidity/shared": "workspace:*",
     "@tanstack/react-query": "^5.99.0",

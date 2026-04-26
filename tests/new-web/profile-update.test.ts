@@ -10,6 +10,7 @@ const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
+  requireMutationIdentity: mockedRequireIdentity,
 }))
 vi.mock('@web/lib/prisma', () => ({ prisma: mockedPrisma }))
 vi.mock('@web/lib/rate-limit', () => ({
