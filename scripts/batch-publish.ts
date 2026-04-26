@@ -31,7 +31,7 @@ import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { Transaction } from '@mysten/sui/transactions'
 import { zipSync } from 'fflate'
 
-import { loadKeypairFromEnv } from './lib/keypair.ts'
+import { loadKeypairFromEnv } from './lib/keypair'
 
 type SuiClient = SuiJsonRpcClient
 
