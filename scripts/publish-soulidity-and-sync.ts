@@ -542,15 +542,18 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
     publishTx.setGasBudget(gasBudget)
 
     if (args.dryRun) {
-      const inspect = await client.devInspectTransactionBlock({
-        sender: deployerAddr,
-        transactionBlock: publishTx,
-      })
+      // devInspect doesn't support `publish`; use dryRunTransactionBlock,
+      // which simulates a real signed TX (including publish dispatch and
+      // verifier) without committing on-chain.
+      const txBytes = await publishTx.build({ client })
+      const dryRun = await client.dryRunTransactionBlock({ transactionBlock: txBytes })
       console.log(JSON.stringify({
         network,
         dryRun: true,
-        devInspectStatus: inspect.effects?.status,
-        gasUsed: inspect.effects?.gasUsed,
+        status: dryRun.effects?.status,
+        gasUsed: dryRun.effects?.gasUsed,
+        objectChanges: dryRun.objectChanges?.length ?? 0,
+        events: dryRun.events?.length ?? 0,
       }, null, 2))
       return
     }
@@ -696,15 +699,14 @@ async function runResumeCapTransferFlow(args: ParsedArgs, network: 'mainnet' | '
 
   if (args.dryRunTransferOnly) {
     const tx = buildCapTransferPtb(deployment, args.transferCapsTo, args.trackUpgradeCap, deployerAddr)
-    const inspect = await client.devInspectTransactionBlock({
-      sender: deployerAddr,
-      transactionBlock: tx,
-    })
+    tx.setGasBudget(args.gasBudget ? BigInt(args.gasBudget) : DEFAULT_TRANSFER_GAS_BUDGET)
+    const txBytes = await tx.build({ client })
+    const dryRun = await client.dryRunTransactionBlock({ transactionBlock: txBytes })
     console.log(JSON.stringify({
       network,
       dryRunTransferOnly: true,
-      status: inspect.effects?.status,
-      gasUsed: inspect.effects?.gasUsed,
+      status: dryRun.effects?.status,
+      gasUsed: dryRun.effects?.gasUsed,
     }, null, 2))
     return
   }
