@@ -3,10 +3,20 @@ name = "soulidity"
 edition = "2024.beta"
 
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
-usdc = { local = "../test_usdc" }
-Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/walrus", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.70.2", override = true }
+Walrus = { git = "https://github.com/MystenLabs/walrus.git", subdir = "mainnet-contracts/walrus", rev = "mainnet-v1.46.1" }
 Kiosk = { local = "../vendor/kiosk", override = true }
+
+# Circle's stablecoin-sui Move.toml ships `usdc = "0x0"` placeholder, so we
+# substitute the mainnet-deployed USDC type address here instead of binding
+# it in our [addresses] section (which would error as a duplicate).
+[dependencies.usdc]
+git = "https://github.com/circlefin/stablecoin-sui.git"
+subdir = "packages/usdc"
+rev = "release-2024-11-22T170906"
+
+[dependencies.usdc.addr_subst]
+usdc = "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7"
 
 [addresses]
 soulidity = "0x0"

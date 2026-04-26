@@ -21,6 +21,17 @@ const deploymentManifest: Record<string, SoulidityDeployment> = {
     publishTxDigest: 'AoYgjLGdDbwAi3y46AnbiqpZ1xj6woTWdWvszKmxc1ET',
     upgradeCapId: '0x7fd33aedd3f2679c681f8c4d9a3e61aa464fb01c31a5719ed2c626e34538883b',
   },
+  // Seeded for release/mainnet-v1; populate after first mainnet publish from
+  // web/lib/soulidity/deployment-manifest.json. Desktop intentionally inlines
+  // the manifest instead of reading the JSON file.
+  mainnet: {
+    packageId: '',
+    marketConfigId: '',
+    kioskRegistryId: '',
+    soulTransferPolicyId: '',
+    collectionTransferPolicyId: '',
+    paymentCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+  },
 }
 
 export class MissingSoulidityDeploymentError extends Error {

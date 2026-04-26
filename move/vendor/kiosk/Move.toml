@@ -4,8 +4,10 @@ version = "0.0.1"
 edition = "legacy"
 
 [dependencies]
-MoveStdlib = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736", override = true }
+MoveStdlib = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "mainnet-v1.70.2", override = true }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.70.2", override = true }
 
 [addresses]
-kiosk = "0xc9f6a531d5f4e11ef38dd782c9ab5403fb3c011595384c429285952ff6b31839"
+# Mainnet original-published-id (currently latest = v4 at 0xdfb4f1d4e43e0c3ad834dcd369f0d39005c872e118c9dc1c5da9765bb93ee5f3)
+# Source: MystenLabs/apps/kiosk/Move.lock — env.mainnet.original-published-id
+kiosk = "0x434b5bd8f6a7b05fede0ff46c6e511d71ea326ed38056e3bcd681d2d7c2a7879"
