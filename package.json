@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "dev": "tsx src/main.ts",
     "test": "npm run validate:v6-plan && npm run prisma:generate && vitest run",
     "test:watch": "vitest",
@@ -23,6 +24,7 @@
     "e2e:public-sprite": "tsx web/scripts/e2e-public-sprite-anonymous.ts"
   },
   "dependencies": {
+    "@mysten/sui": "^2.15.0",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "dotenv": "^17.4.2",

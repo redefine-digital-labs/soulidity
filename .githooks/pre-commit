@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Block accidental commits of real Sui private keys.
+# Matches bech32-format keys (suiprivkey1 + 30+ alphanumeric chars).
+# Placeholders like "suiprivkey1..." in .env.example pass through unharmed.
+set -e
+
+if git diff --cached --diff-filter=ACMRT | \
+   grep -E '^\+.*(MAINNET_DEPLOYER_PRIV_KEY|BATCH_SIGNER_SECRET_KEY)=suiprivkey1[a-z0-9]{30,}' >/dev/null; then
+  cat >&2 <<'MSG'
+ERROR: Real Sui private key value detected in staged changes.
+       Do NOT commit private keys. .env and .env.local are gitignored — keep secrets there.
+       Placeholders in .env.example are fine (e.g. MAINNET_DEPLOYER_PRIV_KEY=suiprivkey1...).
+       Bypass only if you are certain this is a false positive: git commit --no-verify
+MSG
+  exit 1
+fi
