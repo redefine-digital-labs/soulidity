@@ -21,16 +21,19 @@ const deploymentManifest: Record<string, SoulidityDeployment> = {
     publishTxDigest: 'AoYgjLGdDbwAi3y46AnbiqpZ1xj6woTWdWvszKmxc1ET',
     upgradeCapId: '0x7fd33aedd3f2679c681f8c4d9a3e61aa464fb01c31a5719ed2c626e34538883b',
   },
-  // Seeded for release/mainnet-v1; populate after first mainnet publish from
-  // web/lib/soulidity/deployment-manifest.json. Desktop intentionally inlines
-  // the manifest instead of reading the JSON file.
+  // Mainnet first publish: 2026-04-26. Desktop intentionally inlines the
+  // manifest instead of reading the JSON file. Keep in sync with
+  // web/lib/soulidity/deployment-manifest.json.mainnet.
   mainnet: {
-    packageId: '',
-    marketConfigId: '',
-    kioskRegistryId: '',
-    soulTransferPolicyId: '',
-    collectionTransferPolicyId: '',
+    packageId: '0x994eeb7f0a9b4519feb2a1346ca4786e4bf8435b706a7fc2b1a4eb2fbbc9db2f',
+    marketConfigId: '0xa0a09fa8b905cfb9ca3b53bc88dd167f4d6f9b4bffaf7b542099bbd4021e6ce5',
+    kioskRegistryId: '0x30dabdeb7e432dc4683c6819a6d1b748350c2909045b82336c300cc5df2fd906',
+    soulTransferPolicyId: '0x90d61e4786eb5ff6002cd666d706e55c57ff6a000c3eac32de4be5909af799fb',
+    collectionTransferPolicyId: '0xb45dfdf630d6f4f694622154cf4f3b57d0977ffeb49eb38e406fb6a7a0a07039',
     paymentCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+    publishTxDigest: 'CnH9DvyWeEeUq6TiEEj45Qw2ytWjQiRSPU6kbebyrJSu',
+    upgradeCapId: '0x2044e2404ef11f00044e71ec1237734f11da2ad432a2930b8dd63ce26332d65a',
+    upgradeStateId: '0xbe31ce205de53e2e9acdf59a2b7c455a6e5bc9ca7e0df6dc245b46b7b24ed6ce',
   },
 }
 
