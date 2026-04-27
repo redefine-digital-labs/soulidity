@@ -1,0 +1,30 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignore": [
+    "desktop/**",
+    "generated/prisma/**"
+  ],
+  "ignoreDependencies": [
+    "@prisma/client",
+    "@types/node-fetch",
+    "@types/xml2js"
+  ],
+  "entry": [
+    "src/{collector,producer,publisher}/run.ts",
+    "scripts/**/*.{ts,mts,mjs}",
+    "web/scripts/**/*.{ts,mts,mjs}",
+    "web/app/**/{page,layout,route,error,loading,not-found,opengraph-image,twitter-image,icon,apple-icon,sitemap,robots,manifest}.{ts,tsx}",
+    "web/proxy.ts",
+    "web/next.config.{ts,mjs,js}",
+    "web/lib/soulidity/asset-access.ts",
+    "tests/**/*.test.{ts,tsx}",
+    "web/**/*.test.{ts,tsx}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "web/**/*.{ts,tsx}",
+    "scripts/**/*.{ts,mts,mjs}",
+    "tests/**/*.{ts,tsx}",
+    "prisma/migrations/**/*.{ts,mjs}"
+  ]
+}

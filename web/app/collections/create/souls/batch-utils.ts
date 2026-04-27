@@ -124,14 +124,15 @@ export async function downloadTemplate(format: 'xlsx' | 'csv') {
   }
 
   const { default: writeExcelFile } = await import('write-excel-file/browser')
-  await writeExcelFile([
+  const result = await writeExcelFile([
     [...BATCH_TEMPLATE_HEADERS],
     [...BATCH_TEMPLATE_EXAMPLE_ROW],
   ], {
     columns: TEMPLATE_COLUMNS,
     sheet: 'Souls',
-    fileName: 'soul-collection-template.xlsx',
   })
+  const blob = await result.toBlob()
+  triggerBrowserDownload(blob, 'soul-collection-template.xlsx')
 }
 
 export async function parseTemplateFile(
