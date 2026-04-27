@@ -1,16 +1,29 @@
 import { NextResponse } from 'next/server'
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireIdentity, requireMutationIdentity } from '@/lib/auth/identity'
 import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
 import { isMultipleSuiWalletBindingsError } from '@/lib/auth/sui-wallet-errors'
 import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import { prisma } from '@/lib/prisma'
 import { sameSuiValue } from '@/lib/soulidity/queries'
 
-export async function requireHumanWalletIdentity() {
-  const { error, identity } = await requireIdentity()
-  if (error) {
-    return { error }
+export interface RequireHumanWalletIdentityOptions {
+  /**
+   * Pass the incoming `Request` to enforce CSRF protection on mutating routes
+   * that authenticate via the browser session cookie. Header-based auth
+   * (`Authorization: Bearer sk-*` / agent wallet sig) bypasses CSRF either way.
+   * Read-only routes can omit this and use the no-arg form.
+   */
+  mutation?: Request
+}
+
+export async function requireHumanWalletIdentity(options: RequireHumanWalletIdentityOptions = {}) {
+  const result = options.mutation
+    ? await requireMutationIdentity(options.mutation)
+    : await requireIdentity()
+  if (result.error) {
+    return { error: result.error }
   }
+  const { identity } = result
 
   if (identity.kind !== 'human') {
     return {
@@ -53,8 +66,20 @@ async function resolveHumanMemberIdForAccount(accountId: string) {
   return member?.id ?? null
 }
 
-export async function requireSoulCreateWalletIdentity(request: Request) {
-  const auth = await requireDesktopIdentity(request)
+export interface RequireSoulCreateWalletIdentityOptions {
+  /**
+   * Set true on POST/PUT/PATCH/DELETE routes so cookie-based browser
+   * sessions must include a CSRF token. Desktop bearer tokens (`dtk_*`)
+   * bypass CSRF either way.
+   */
+  mutation?: boolean
+}
+
+export async function requireSoulCreateWalletIdentity(
+  request: Request,
+  options: RequireSoulCreateWalletIdentityOptions = {},
+) {
+  const auth = await requireDesktopIdentity(request, { mutation: options.mutation })
   if (auth.error) {
     return { error: auth.error }
   }

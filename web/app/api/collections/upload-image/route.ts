@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import { uploadPublic, getBlobUrl } from '@/lib/services/walrus'
 
@@ -18,7 +18,7 @@ const UPLOAD_RATE_LIMIT = {
 } as const
 
 export async function POST(request: NextRequest) {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   if (identity.kind !== 'human') {

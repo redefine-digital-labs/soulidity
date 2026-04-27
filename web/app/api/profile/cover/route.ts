@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import { getBlobUrl, uploadPublic } from '@/lib/services/walrus'
 import { validateSoulUploadSignature } from '@/lib/soulidity/upload-validation'
@@ -12,7 +12,7 @@ const PROFILE_COVER_MAX_BYTES = 5 * 1024 * 1024
 const PROFILE_COVER_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 export async function POST(request: NextRequest) {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   if (identity.kind !== 'human') {

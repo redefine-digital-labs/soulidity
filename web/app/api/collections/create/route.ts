@@ -16,7 +16,7 @@ const COLLECTION_CREATE_RATE_LIMIT = {
 } as const
 
 export async function POST(request: Request) {
-  const auth = await requireHumanWalletIdentity()
+  const auth = await requireHumanWalletIdentity({ mutation: request })
   if ('error' in auth) {
     return auth.error
   }

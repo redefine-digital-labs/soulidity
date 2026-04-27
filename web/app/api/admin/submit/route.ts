@@ -94,7 +94,7 @@ const llmClient = new OpenAI({
 export async function POST(req: NextRequest) {
   let rawItemId: string | undefined
   try {
-    const { error: authError } = await requireAdmin()
+    const { error: authError } = await requireAdmin({ mutation: req })
     if (authError) return authError
 
     const body = await req.json()

@@ -8,7 +8,7 @@ import {
   type PersonaSpriteVisibility,
 } from '@/lib/soulidity/persona-sprite'
 import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import type { KioskNft } from '@/lib/hooks/use-kiosk-nfts'
@@ -132,7 +132,7 @@ export function useWrapPublish() {
   const [error, setError] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const [result, setResult] = useState<WrapPublishResult | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders, user } = useAuth()
   const recoveryRef = useRef<WrapRecoveryState | null>(null)
 

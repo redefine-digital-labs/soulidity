@@ -29,6 +29,7 @@ import {
 import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus, publishAgentStatus } from './status-watcher'
 import { startAgentMonitor, stopAgentMonitor } from './agent-monitor'
 import { generateAgentKeypair, loadAgentKeypair, exportAgentAddress, getSecretStorageStatus } from './agent-wallet'
+import { registerWalletIpc } from './auth/wallet-ipc'
 import {
   executeTask,
   cancelTask,
@@ -741,25 +742,25 @@ ipcMain.handle('config:set', (_event, config: Record<string, unknown>) => {
   broadcastToAllWindows('config:changed', { ...store.store })
 })
 
+// ── User wallet IPC ─────────────────────────────────────
+registerWalletIpc()
+
 // ── 设备绑定 IPC ──────────────────────────────────────────
 const WEB_BASE_URL = getDesktopWebBaseUrl()
 
 function getLocalDesktopRuntimeConfig() {
   return {
-    privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim() || null,
     suiNetwork: process.env.NEXT_PUBLIC_SUI_NETWORK?.trim() || 'testnet',
   }
 }
 
 type RemoteDesktopRuntimeConfig = {
-  privyAppId: string | null
   suiNetwork: string
   desktopWalletAuthReady: boolean
   walletAuthMessage: string | null
 }
 
 type DesktopRuntimeConfigResponse = {
-  privyAppId: string | null
   suiNetwork: string
   webBaseUrl: string
   authReady: boolean
@@ -812,12 +813,10 @@ function buildDesktopRuntimeConfigResponse(
   remoteRuntimeConfig: RemoteDesktopRuntimeConfig | null,
   remoteError: string | null,
 ): DesktopRuntimeConfigResponse {
-  const privyAppId = remoteRuntimeConfig?.privyAppId || localConfig.privyAppId || null
   const suiNetwork = remoteRuntimeConfig?.suiNetwork?.trim() || localConfig.suiNetwork
 
-  if (privyAppId && remoteRuntimeConfig?.desktopWalletAuthReady) {
+  if (remoteRuntimeConfig?.desktopWalletAuthReady) {
     return {
-      privyAppId,
       suiNetwork,
       webBaseUrl: WEB_BASE_URL,
       authReady: true,
@@ -827,12 +826,9 @@ function buildDesktopRuntimeConfigResponse(
 
   const authBlocker = remoteError
     ?? remoteRuntimeConfig?.walletAuthMessage
-    ?? (privyAppId
-      ? 'Desktop wallet auth is still blocked by the connected web deployment.'
-      : 'This desktop build does not include wallet auth config yet, and the connected web deployment is not ready either.')
+    ?? 'The connected web deployment is not ready for desktop wallet auth yet.'
 
   return {
-    privyAppId,
     suiNetwork,
     webBaseUrl: WEB_BASE_URL,
     authReady: false,
@@ -934,11 +930,6 @@ ipcMain.handle('desktop-auth:runtime-config', async () => {
 })
 ipcMain.handle('desktop-auth:me', async () => {
   return fetchDesktopJson('/api/desktop/me', {}, 'Fetch desktop profile')
-})
-ipcMain.handle('desktop-auth:get-privy-token', async () => {
-  return fetchDesktopJson<{ jwt: string; alreadyLinked: boolean }>('/api/desktop/auth/privy-token', {
-    method: 'POST',
-  }, 'Fetch desktop Privy token')
 })
 
 // ── Extract Draft Persistence ────────────────────────────

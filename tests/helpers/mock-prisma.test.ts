@@ -7,7 +7,7 @@ describe('createMockPrisma', () => {
 
     await prisma.account.create({
       data: {
-        privyDid: 'did:privy:123',
+        walletAddress: '0xabc',
         email: 'user@example.com',
       },
     })

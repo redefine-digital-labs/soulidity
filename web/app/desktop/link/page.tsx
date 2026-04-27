@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { useLinkJwtAccount } from '@privy-io/react-auth'
 import { AuthGate } from '@/components/auth/auth-gate'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -19,7 +18,6 @@ function DesktopLinkForm() {
   const [code, setCode] = useState('')
   const [status, setStatus] = useState<LinkStatus>('idle')
   const [message, setMessage] = useState('')
-  const { linkWithCustomJwt } = useLinkJwtAccount()
   const { getAuthHeaders } = useAuth()
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -41,23 +39,6 @@ function DesktopLinkForm() {
       const data = await res.json()
 
       if (data.status === 'confirmed') {
-        const privyTokenResponse = await fetch('/api/desktop/auth/privy-token', {
-          method: 'POST',
-          headers: authHeaders,
-        })
-        const privyTokenBody = await privyTokenResponse.json().catch(() => ({}))
-        if (!privyTokenResponse.ok) {
-          throw new Error(
-            typeof privyTokenBody.error === 'string'
-              ? privyTokenBody.error
-              : 'Desktop linked, but wallet auth setup failed.',
-          )
-        }
-
-        if (!privyTokenBody.alreadyLinked && typeof privyTokenBody.jwt === 'string') {
-          await linkWithCustomJwt(privyTokenBody.jwt)
-        }
-
         setStatus('confirmed')
         setMessage('Device linked successfully!')
       } else if (data.status === 'expired') {
@@ -74,7 +55,7 @@ function DesktopLinkForm() {
       setStatus('error')
       setMessage(error instanceof Error ? error.message : 'Network error. Please try again.')
     }
-  }, [code, linkWithCustomJwt, getAuthHeaders])
+  }, [code, getAuthHeaders])
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">

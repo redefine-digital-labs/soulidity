@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server'
 
+import {
+  buildCsrfClearCookie,
+  buildSessionClearCookie,
+} from '@/lib/auth/session'
+
+export const dynamic = 'force-dynamic'
+
 export async function POST() {
-  // Privy handles logout client-side. This endpoint exists for compatibility.
-  return NextResponse.json({ ok: true })
+  const response = NextResponse.json({ ok: true })
+  response.headers.append('Set-Cookie', buildSessionClearCookie())
+  response.headers.append('Set-Cookie', buildCsrfClearCookie())
+  return response
 }

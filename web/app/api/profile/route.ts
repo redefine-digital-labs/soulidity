@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import { HANDLE_RE, RESERVED_HANDLES } from '@/lib/handle'
 
@@ -19,7 +19,7 @@ function isValidUrl(value: string): boolean {
 }
 
 export async function PATCH(request: NextRequest) {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   if (identity.kind !== 'human') {

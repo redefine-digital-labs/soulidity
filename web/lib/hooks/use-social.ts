@@ -42,8 +42,8 @@ export function useToggleFollow() {
 
   return useMutation({
     mutationFn: async (targetMemberId: string) => {
+      if (!user) throw new Error('请先登录')
       const headers = await getAuthHeaders()
-      if (!headers.Authorization) throw new Error('请先登录')
       const res = await fetch('/api/community/follow', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -84,8 +84,8 @@ export function useToggleBookmark() {
 
   return useMutation({
     mutationFn: async (soulId: string) => {
+      if (!user) throw new Error('请先登录')
       const headers = await getAuthHeaders()
-      if (!headers.Authorization) throw new Error('请先登录')
       const res = await fetch('/api/souls/bookmark', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },

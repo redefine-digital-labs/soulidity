@@ -33,7 +33,7 @@ function parseContentLength(rawValue: string | null): number | null {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireSoulCreateWalletIdentity(req)
+  const auth = await requireSoulCreateWalletIdentity(req, { mutation: true })
   if ('error' in auth) {
     return auth.error
   }

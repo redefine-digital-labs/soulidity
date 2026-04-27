@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { cn } from '@/lib/utils/cn'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
-import { useGenericLogin } from '@/lib/hooks/use-generic-login'
+import { useLogin } from '@/lib/hooks/use-login'
 
 interface AuthGateProps {
   children: ReactNode
@@ -22,7 +22,7 @@ export function AuthGate({
   className,
 }: AuthGateProps) {
   const { isAuthenticated, loading } = useRequireAuth()
-  const login = useGenericLogin()
+  const login = useLogin()
 
   if (loading) {
     return (

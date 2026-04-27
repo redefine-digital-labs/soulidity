@@ -82,6 +82,42 @@ export interface UploadSoulPayloadParams {
 export async function uploadSoulPayload(params: UploadSoulPayloadParams): Promise<SoulUploadResult> {
   const { file, uploadType, kind, authHeaders, sendObjectTo, pathnamePrefix } = params
 
+  // Dev + E2E short-circuit: Vercel Blob's `onUploadCompleted` callback is a
+  // server-to-server POST that cannot reach `localhost`, so the binding row is
+  // never written and `/from-blob` 409s indefinitely. Route the small fixture
+  // uploads through the legacy `/api/souls/upload` endpoint instead — it
+  // performs the same auth + rate-limit + validation + Walrus upload inline
+  // and returns the same `SoulUploadResult` shape.
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1'
+  ) {
+    void kind
+    void pathnamePrefix
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('type', uploadType)
+    if (sendObjectTo) formData.append('sendObjectTo', sendObjectTo)
+    const res = await fetch('/api/souls/upload', {
+      method: 'POST',
+      headers: authHeaders,
+      body: formData,
+    })
+    const payload = (await res.json().catch(() => null)) as Partial<SoulUploadResult> | { error?: string } | null
+    if (!res.ok) {
+      const message =
+        payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
+          ? (payload as { error: string }).error
+          : 'Failed to upload payload'
+      throw new Error(message)
+    }
+    const finalized = payload as SoulUploadResult
+    if (!finalized.blobObjectId) {
+      throw new Error('Upload response is missing blobObjectId')
+    }
+    return finalized
+  }
+
   // Step 1: client direct-upload to Vercel Blob, bypassing the 4.5 MB
   // serverless function inbound body limit.
   const { upload: clientUpload } = await import('@vercel/blob/client')

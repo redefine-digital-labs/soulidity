@@ -35,7 +35,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error: authError } = await requireAdmin()
+  const { error: authError } = await requireAdmin({ mutation: req })
   if (authError) return authError
 
   const { id } = await params

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireIdentity } from '@/lib/auth/identity'
+import { requireIdentity, requireMutationIdentity } from '@/lib/auth/identity'
 import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@/lib/soulidity/repository'
 
 export const dynamic = 'force-dynamic'
@@ -31,7 +31,7 @@ export async function GET(_request: NextRequest) {
 // Body: { soulId: string }
 // Toggles bookmark. Returns { bookmarked: boolean }
 export async function POST(request: NextRequest) {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   const body = await request.json()

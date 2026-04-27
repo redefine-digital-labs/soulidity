@@ -2,8 +2,7 @@
 
 import { use, useEffect } from 'react'
 import Link from 'next/link'
-import { usePrivy } from '@privy-io/react-auth'
-import { useGenericLogin } from '@/lib/hooks/use-generic-login'
+import { useLogin } from '@/lib/hooks/use-login'
 import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { TxPending } from '@/components/ui/tx-pending'
@@ -20,8 +19,7 @@ function formatAddress(value: string | null | undefined) {
 export default function BuyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user, loading, getAuthHeaders } = useAuth()
-  const { ready } = usePrivy()
-  const login = useGenericLogin()
+  const login = useLogin()
   const { data: soul, isLoading, error: loadError } = useSoulDetail(id, getAuthHeaders, user?.id)
   const { status, error, purchase, txDigest } = usePurchase(soul ?? null)
   const { showToast } = useToast()
@@ -45,7 +43,7 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
     syncing: '⟳ Syncing…',
   }
 
-  if (loading || !ready || isLoading) {
+  if (loading || isLoading) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-8">
         <div className="h-4 w-36 rounded bg-card2 animate-pulse mb-6" />

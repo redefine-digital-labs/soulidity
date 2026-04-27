@@ -79,14 +79,20 @@ declare global {
       getDesktopAuthStatus: () => Promise<{ hasToken: boolean; accountId: string | null }>
       unlinkDesktopDevice: () => Promise<{ ok: true } | { ok: false; error: string }>
       getDesktopRuntimeConfig: () => Promise<{
-        privyAppId: string | null
         suiNetwork: string
         webBaseUrl: string
         authReady: boolean
         authBlocker: string | null
       }>
       getDesktopMe: () => Promise<unknown>
-      getDesktopPrivyToken: () => Promise<{ jwt: string; alreadyLinked: boolean }>
+
+      // ── User wallet (Sui keypair held in main via safeStorage) ──
+      walletGetInfo: () => Promise<{ address: string; publicKey: string; createdAt: number } | null>
+      walletGenerate: () => Promise<{ address: string; publicKey: string; createdAt: number }>
+      walletImport: (secretKeyInput: string) => Promise<{ address: string; publicKey: string; createdAt: number }>
+      walletReset: () => Promise<void>
+      walletSignMessage: (message: Uint8Array) => Promise<{ signature: string }>
+      walletSignTransaction: (rawBytes: Uint8Array) => Promise<{ signature: string }>
 
       // ── Desktop create draft ──
       'desktop:create-draft:load': () => Promise<ExtractSoulDraft | null>

@@ -5,10 +5,10 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 export const dynamic = 'force-dynamic'
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error } = await requireAdmin()
+  const { error } = await requireAdmin({ mutation: req })
   if (error) return error
 
   const { id } = await params

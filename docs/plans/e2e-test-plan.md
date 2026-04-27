@@ -76,13 +76,38 @@
 
 5. **Move 协议测试基线**：`protocol_tests.move` 149 项全绿；web vitest soulidity 套件（events / mirror / access / sync-helpers / tx-builders / events-asset-delete）221 项全绿。
 
-**全自动执行：** 本计划设计为 AI agent 独立可执行，零人工判断。自动化覆盖：
-- **浏览器交互** — Chrome DevTools MCP（snapshot → uid → click/fill/upload）
-- **链上状态发现 + USDC mint** — `sui client` CLI（balance / objects / call）
-- **API + DB 验证** — `curl` / SQL / `npx tsx` 脚本
-- **TX 签名** — Privy embedded wallet 自动签名（所有链上交易）
+**本基线的运行时 / 协议外架构变化（2026-04-26 HEAD）**
 
-**唯一人工介入：** Privy 邮箱 OTP（执行者仅需输入 6 位验证码，其余全部自动化；若执行中切换 Seller / Buyer 会话，需要分别完成对应账号的 OTP）
+6. **Privy 完全下线，Sui 钱包签名 + Session Cookie + CSRF（commit 19ca835）**
+   - 浏览器登录：dapp-kit `ConnectModal` → 选钱包 → `POST /api/auth/wallet-challenge { address }` 拿 nonce + 5min 过期 message → `useSignPersonalMessage` 签 → `POST /api/auth/wallet-login { address, signature, nonce }` 写 `session` + `csrf-token` cookies。
+   - **E2E 自动化前置（W0，当前执行阻塞）**：当前仓库只有真实 dapp-kit wallet bridge，尚未包含 `web/components/providers/e2e-wallet-stub.tsx` 或 `<E2EWalletStub />` 挂载。执行本计划前必须先落地 dev-only Wallet Standard 测试桩：`localStorage.setItem('__E2E_PRIVATE_KEY', <bech32>)` + reload → 桩自动注册到 dapp-kit → ConnectModal 列出 "E2E Test Wallet" → 桩接管 sign-message / sign-transaction，0 popup。切换角色 = 改 localStorage + reload。
+   - 浏览器 API 鉴权：cookie `session`（HS256 JWT，AUTH_SECRET 签，30d，HttpOnly + SameSite=Lax + Secure(prod)） + header `x-csrf-token`（双提交，cookie `csrf-token` 64 hex）。所有调用 `web/lib/auth/identity.ts::requireMutationIdentity(request)` / `requireHumanWalletIdentity({ mutation })` 的 cookie-auth 写路由强制 CSRF + 同源 Origin/Referer；header-based agent 路径不变（仍 `Authorization: Bearer sk-...`）。
+   - Env：移除 `NEXT_PUBLIC_PRIVY_APP_ID` / `PRIVY_APP_SECRET` / `PRIVY_CUSTOM_AUTH_*`；`AUTH_SECRET` 签 human session JWT，desktop token 仍可按 `web/lib/desktop/auth.ts` 回退到 `SOUL_UPLOAD_SECRET`。
+   - DB：`accounts.privy_did` 删除，新增去规范化列 `accounts.wallet_address` + 表 `WalletChallenge`。`wallet_bindings` 不变。
+   - Hook：`usePrivySuiSign` → `useWalletSign`（`web/lib/hooks/use-wallet-sign.ts`）；`useGenericLogin` → `useLogin`（`web/lib/hooks/use-login.ts`）。
+
+7. **Soul / sprite / skills 上传统一走 Vercel Blob direct-upload（commits dfb0fa5、a2f8a27、dee2233）**
+   - 新路由：`POST /api/souls/upload/token`（presigned token，`@vercel/blob/client::handleUpload`）+ `POST /api/souls/upload/from-blob`（服务端拉 staging blob → `runSoulUploadPipeline` → 加密上传 Walrus → 删除 staging blob，409 race 自动重试 5 次）。
+   - 客户端入口：`web/lib/upload/client-upload.ts::uploadSoulPayload`。Phase 1 / 3 / 6 / 8 所有 Soul / sprite / skills / wrap / collection 大文件都走它。
+   - Persona Asset Panel：`web/components/souls/persona-asset-panel.tsx`（owner-only sprite 版本管理：append + activate + delete + clear，一笔 PTB = `assets::append_version` + `metadata::upsert_metadata_blob` + `metadata::set_active_sprite`）。
+   - Collection publish cover 也走 `uploadSoulPayload(..., 'public')`；legacy `/api/collections/upload-image` 仍存在，但不是 Phase 3 publish 主路径。
+
+8. **新 mirror 路由 `POST /api/souls/[id]/grant-capacity`（commit 107ab0d）**
+   - 接 `txDigest` → 链上读 `GrantCapacityUpdated` 事件 → upsert `soul_assets.grantCapacity` / `activeGrantCount`。`window.__e2eSoulidity.setGrantCapacity` 已在内部调用此路由（`e2e-wallet-helpers.tsx:148`），Phase 5.2a 不需要再单独 cURL。
+
+9. **匿名 sprite 公共下载 E2E（commit 08e2d73）**
+   - 脚本 `web/scripts/e2e-public-sprite-anonymous.ts`：未登录 / 错 Bearer 也能下载 public sprite + 字节比对。Phase 9.10 固化。
+
+10. **Nav 顺序（commit 5f4f85c）**
+    - `web/components/nav/navbar.tsx`：Docs 挪到 `+ New` 菜单之后（与 Admin 同列）。无功能影响。
+
+**全自动执行：** 本计划设计为 AI agent 独立可执行，零人工判断（除 Phase -1.3 一次性 SUI 转账）。自动化覆盖：
+- **浏览器交互** — Chrome DevTools MCP（snapshot → uid → click/fill/upload）
+- **链上状态发现 + USDC mint** — `sui client` CLI（balance / objects / call / mint）
+- **API + DB 验证** — `curl` / SQL / `npx tsx` 脚本
+- **TX 签名** — W0 完成后由 E2E Wallet Stub 接管浏览器钱包签名（dev-only Wallet Standard 实现，0 popup）；Agent 侧 TX 由 `web/scripts/e2e-agent-purchase.ts` 通过 `AGENT_PRIVATE_KEY="$E2E_AGENT_*_PRIVATE_KEY"` 在 Node 直接签
+
+**手动介入预设：1 次（仅 SUI gas 补给）。** Phase -1.3 由 AI 列出 4 个测试地址的"缺多少 SUI"清单并暂停；用户从自有钱包转入后回告"已转完"，AI 继续。USDC 由 AI 自动 mint（`sui client switch` 到 Treasury Owner → `sui client call ... mint`），无需用户介入。W0 完成后，测试运行时（Phase 0 onwards）0 介入：钱包签名由 dev-only `e2e-wallet-stub.tsx`（Wallet Standard 实现）接管，切角色靠 `localStorage['__E2E_PRIVATE_KEY']`。
 **测试 Fixture：** `/Users/admin/Documents/example`（单 Soul）+ `/Users/admin/Documents/example-collection`（Collection）。当前 fixture 不含 persona sprite / voice；Phase 1 默认 sprite 与 voice 留空（均为 Option，可全空），Phase 1.8 仅断言 `metadataOnChainId` 非空 + `activeSprite* / activeVoice*` 为 null。
 **总计：95 个测试项，14 个 Phase（0-11，含 Phase 6.5 / 7.5；Phase -1 为环境准备，不计入总数）**
 
@@ -98,18 +123,17 @@
 
 ### 全自动执行原则
 
-本计划的设计目标是**零人工判断执行**。除 Privy OTP 外，所有步骤均可由 AI agent 独立完成：
+本计划的设计目标是**零人工判断执行**。除 Phase -1.3 一次性 SUI gas 转账外，所有步骤均可由 AI agent 独立完成：
 
 | 操作类型 | 自动化方式 | 人工介入 |
 |----------|-----------|---------|
 | 浏览器交互 | Chrome DevTools MCP（snapshot → uid → click/fill/upload） | 无 |
 | 链上状态发现 | `sui client balance` / `sui client objects` / `sui client gas` | 无 |
-| 测试 USDC 补给 | `sui client call --module usdc --function mint`（testnet 发布包） | 无 |
-| SUI Gas 补给 | `sui client faucet`（testnet） | 无 |
-| TX 签名 | Privy embedded wallet 自动签名 | 无 |
+| 测试 USDC 补给 | `sui client switch` Treasury Owner + `sui client call ... mint` | 无 |
+| SUI Gas 补给 | AI 列清单暂停等用户从自有钱包转账 | **Phase -1.3 一次性** |
+| TX 签名 | W0 完成后由 e2e-wallet-stub 接管浏览器签名；Agent Node 脚本用 `AGENT_PRIVATE_KEY` 本地签名 | 无 |
 | Agent API 调用 | `curl` + `npx tsx` 脚本 | 无 |
 | DB 验证 | SQL 查询 | 无 |
-| Privy 登录 OTP | `wait_for` 暂停 120s | **用户输入 6 位验证码** |
 
 **失败自动处理：** 每步有明确 pass/fail 判据；失败时自动 `take_screenshot` 存档后继续或中止。
 
@@ -245,14 +269,16 @@ Step 2: POST /api/agent/souls/{id}/purchase/execute
 
 ## 测试账号
 
-### 角色定义（地址通过 Sui CLI 动态发现，不硬编码）
+### 角色定义（钱包 = 本地 Ed25519 keypair env，浏览器侧由 W0 e2e-wallet-stub 注入）
 
-| 角色 | 认证方式 | 钱包发现方式 |
-|------|---------|------------|
-| Seller | Privy 邮箱 `$E2E_SELLER_EMAIL` | DB `wallet_bindings` → `sui client balance` 验证 |
-| Buyer | Privy 邮箱 `$E2E_BUYER_EMAIL` | DB `wallet_bindings` → `sui client balance` 验证 |
-| Agent Alpha | API key `$E2E_AGENT_ALPHA_API_KEY` | DB `wallet_bindings` → `sui client balance` 验证 |
-| Agent Beta | API key `$E2E_AGENT_BETA_API_KEY` | DB `wallet_bindings` → `sui client balance` 验证 |
+| 角色 | 浏览器登录 | API 调用 |
+|------|-----------|---------|
+| Seller | stub（`localStorage['__E2E_PRIVATE_KEY'] = $E2E_SELLER_PRIVATE_KEY`） → ConnectModal 选 "E2E Test Wallet" | session cookie + `x-csrf-token` |
+| Buyer | 同上，切 `$E2E_BUYER_PRIVATE_KEY` + reload | session cookie + `x-csrf-token` |
+| Agent Alpha | 不进浏览器 | `Authorization: Bearer $E2E_AGENT_ALPHA_API_KEY` |
+| Agent Beta | 不进浏览器 | `Authorization: Bearer $E2E_AGENT_BETA_API_KEY` |
+
+> Agent 购买 / 解密脚本当前读取通用 env：`AGENT_PRIVATE_KEY`（或 `AGENT_MNEMONIC`）+ `AGENT_API_KEY`。本计划统一用 `AGENT_PRIVATE_KEY="$E2E_AGENT_ALPHA_PRIVATE_KEY"` / `AGENT_PRIVATE_KEY="$E2E_AGENT_BETA_PRIVATE_KEY"` 映射，避免继续依赖 mnemonic。
 
 ### Sui CLI 速查（地址发现 + 余额检查 + USDC mint）
 
@@ -265,7 +291,7 @@ Step 2: POST /api/agent/souls/{id}/purchase/execute
 | `sui client balance --coin-type "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC" <addr>` | USDC 余额 |
 | `sui client gas <addr>` | SUI gas coin 列表 |
 | `sui client objects <addr>` | 所有拥有的对象（含 kiosk、Soul 等） |
-| `sui client faucet --address <addr>` | 为地址申请 testnet SUI gas |
+| `sui client switch --address <addr>` | 切换 active address（USDC mint 前切到 Treasury Owner） |
 
 ### USDC 测试网包（自动 mint 用）
 
@@ -289,12 +315,32 @@ sui client call \
 ```
 
 **敏感变量（仅本地 shell / direnv 注入，不写入仓库）：**
-- `E2E_SELLER_EMAIL`
-- `E2E_BUYER_EMAIL`
-- `E2E_AGENT_ALPHA_API_KEY`
+- `E2E_SELLER_PRIVATE_KEY`（Sui Ed25519，bech32 / base64 / hex 任一格式；由 `scripts/lib/keypair.ts::loadKeypairFromEnv` 解析）
+- `E2E_BUYER_PRIVATE_KEY`
+- `E2E_AGENT_ALPHA_PRIVATE_KEY`（Agent Alpha 本地签购买 TX 用）
+- `E2E_AGENT_ALPHA_API_KEY`（`sk-…`，Agent API auth）
+- `E2E_AGENT_BETA_PRIVATE_KEY`
 - `E2E_AGENT_BETA_API_KEY`
-- `E2E_AGENT_ALPHA_MNEMONIC`
 - `SOUL_UPLOAD_SECRET`（Phase 7.12 Seal 内容比对用）
+- `AUTH_SECRET`（本计划要求显式设置；签 session JWT，≥32 字节随机）
+
+### 钱包地址自动派生
+
+```bash
+node --input-type=module - <<'NODE'
+const pairs = [
+  ['SELLER_ADDR', 'E2E_SELLER_PRIVATE_KEY'],
+  ['BUYER_ADDR', 'E2E_BUYER_PRIVATE_KEY'],
+  ['AGENT_ALPHA_ADDR', 'E2E_AGENT_ALPHA_PRIVATE_KEY'],
+  ['AGENT_BETA_ADDR', 'E2E_AGENT_BETA_PRIVATE_KEY'],
+]
+for (const [out, env] of pairs) {
+  console.log(`export ${out}=$(npx tsx -e "import { loadKeypairFromEnv } from './scripts/lib/keypair'; console.log(loadKeypairFromEnv('${env}').toSuiAddress())")`)
+}
+NODE
+```
+
+执行输出中的 `export ...`，得到 **SELLER_ADDR / BUYER_ADDR / AGENT_ALPHA_ADDR / AGENT_BETA_ADDR**。
 
 **运行时变量（Phase -1 动态发现 + 测试流程中捕获）：**
 - `SELLER_ADDR` / `BUYER_ADDR` / `AGENT_ALPHA_ADDR` / `AGENT_BETA_ADDR` — Phase -1.2 DB 查询 + Sui CLI 验证
@@ -308,6 +354,28 @@ sui client call \
 - `COLLECTION_LISTING_OBJ` — Phase 3.5 list + delist collection right 后捕获（Phase 11.0b 使用）
 - `CAPTURED_RAW_ENVELOPES_JSON` — Phase 1.6/1.7 mint/import gas 页在发布成功时立即捕获的 `{char,memory,skills,sprite}` raw DEK envelope JSON，Phase 7.12 复用
 - `MEMORY_ENTRY_KEY` / `SKILL_NAME` / `SKILL_VERSION_INDEX` — Phase 7.12 访问 memory / skills artifact 时使用，来自 publish/import sync 响应
+
+---
+
+## Phase W0: 执行前阻塞项（一次性代码前置）
+
+> 这两项不是测试步骤；它们是让本计划真正"0 popup / 0 OTP / 0 真扩展依赖"可执行的代码前置。**2026-04-27 已落地**：W0.1 stub 在 `web/components/providers/e2e-wallet-stub.tsx`、双门控（`NODE_ENV=development` + `NEXT_PUBLIC_E2E_TEST_MODE=1`）挂在 `app-providers.tsx` 的 dev 分支；W0.2 `scripts/e2e-setup-agents.ts` 重写为从 `E2E_AGENT_*_PRIVATE_KEY` / `E2E_AGENT_*_API_KEY` env 派生 + 幂等 create-or-update。两条都在第 7 / 9 节"已知约束"中固化条目（34 / 35）。本节保留为历史记录与执行口径参考。
+
+### W0.1 dev-only Wallet Standard Stub
+
+必须新增 `web/components/providers/e2e-wallet-stub.tsx` 并在 `web/components/providers/app-providers.tsx` 的 development 环境中挂载。验收：
+- 未设置 `localStorage['__E2E_PRIVATE_KEY']` 时不注册任何测试钱包。
+- 设置 `__E2E_PRIVATE_KEY` 为 bech32 / base64 / hex Ed25519 私钥并 reload 后，dapp-kit ConnectModal 中出现 `E2E Test Wallet`。
+- 该钱包支持 `standard:connect`、personal message signing、transaction signing；返回签名的 sender 必须等于由私钥派生出的地址。
+- `NODE_ENV !== 'development'` 时该组件不得进入生产 bundle，也不得暴露测试私钥读取逻辑。
+
+### W0.2 Agent Setup 脚本 env-driven
+
+当前 `scripts/e2e-setup-agents.ts` 只查历史地址前缀 `0x3b82...` / `0x7ef4...`，再写入脚本内硬编码 API key 的 hash。若本轮 `$E2E_AGENT_*_PRIVATE_KEY` 派生出的地址或 `$E2E_AGENT_*_API_KEY` 与历史固定值不一致，必须先把脚本改成 create-or-update：
+- 从 `E2E_AGENT_ALPHA_PRIVATE_KEY` / `E2E_AGENT_BETA_PRIVATE_KEY` 派生地址。
+- 从 `E2E_AGENT_ALPHA_API_KEY` / `E2E_AGENT_BETA_API_KEY` 计算 SHA-256 hash。
+- 为每个 agent 确保存在 `Account`、`Member(kind='agent', agentStatus='active', apiKeyHash=...)`、`WalletBinding(chain='sui', address=...)`。
+- 重跑脚本幂等，且输出 wallet 必须等于 `$AGENT_ALPHA_ADDR` / `$AGENT_BETA_ADDR`。
 
 ---
 
@@ -340,8 +408,11 @@ NODE
 - `move/soulidity/Published.toml` 的 `published-at` / `original-id` / `upgrade-capability` 与 manifest 的 `packageId` / `upgradeCapId` 一致
 - `UPGRADE_STATE_ID` 仅来自 `deployment-manifest.json`；`Published.toml` 不记录该 shared object
 
-### -1.1 清空 DB Soul 数据
-```sql
+### -1.1 DB Soulidity 数据 reset（保留账号 / 钱包 / API key）
+
+```bash
+cd /Users/admin/Desktop/nao/clawnews
+psql "$DATABASE_URL" <<'SQL'
 DELETE FROM "soul_grant_records";
 DELETE FROM "soul_skill_version_records";
 DELETE FROM "soul_memory_entries";
@@ -353,33 +424,26 @@ DELETE FROM "soul_collection_assets";
 DELETE FROM "soul_assets";
 DELETE FROM "follows";
 DELETE FROM "bookmarks";
+SQL
 ```
-不清 members / wallet_bindings / agents。
 
-### -1.2 动态发现测试账号地址（Sui CLI 全自动）
+不要在当前脚本状态下跑 `prisma migrate reset`：`scripts/e2e-setup-agents.ts` 目前只会给已存在的 Agent Alpha / Beta wallet binding 写入 API key hash，不会从空库重建 agent member / wallet binding。若需要全库 reset，先完成 W0.2，把该脚本改成 env-driven create-or-update。
 
-**Step 1 — DB 查询发现钱包地址：**
-```sql
--- 人类账号（Seller + Buyer）
-SELECT m.id, m.kind, m.email, wb.address
-FROM members m
-JOIN wallet_bindings wb ON wb.member_id = m.id
-WHERE m.email IN ($E2E_SELLER_EMAIL, $E2E_BUYER_EMAIL)
-  AND wb.chain = 'sui';
+### -1.2 钱包派生 + 账号初始化（全自动）
 
--- Agent 账号
-SELECT m.id, m.kind, m.agent_status, wb.address
-FROM members m
-JOIN wallet_bindings wb ON wb.member_id = m.id
-WHERE m.kind = 'agent' AND m.agent_status = 'active'
-  AND m.api_key_hash IS NOT NULL AND wb.chain = 'sui';
+**Step 1 — 从 env keypair 派生 4 个地址：**
+
+执行"测试账号"段中的派生 bash，把 `SELLER_ADDR / BUYER_ADDR / AGENT_ALPHA_ADDR / AGENT_BETA_ADDR` 全部 `export` 到当前 shell。
+
+**Step 2 — 校验 / 刷新 Agent 账号（Seller / Buyer 由首次浏览器登录自动建账）：**
+
+```bash
+npx tsx scripts/e2e-setup-agents.ts
 ```
-记录 4 个运行时变量：**SELLER_ADDR**、**BUYER_ADDR**、**AGENT_ALPHA_ADDR**、**AGENT_BETA_ADDR**
-记录 Seller 的 `member.id` 作为 **SELLER_MEMBER_ID**（Phase 10.6 Follow 测试用）。
 
-> 若 DB 中无 agent 记录，需先运行 `npx tsx scripts/e2e-setup-agents.ts` 创建。
+当前脚本按既有 Agent 钱包前缀 `0x3b82...` / `0x7ef4...` 查 `wallet_bindings`，再给对应 `members` 写脚本内硬编码 API key 的 hash。通过标准：脚本输出的 Alpha / Beta wallet 必须分别等于 `$AGENT_ALPHA_ADDR` / `$AGENT_BETA_ADDR`，且本轮 `E2E_AGENT_*_API_KEY` 必须就是脚本硬编码值；若不一致或查不到，停止并完成 W0.2（env-driven agent setup），不要继续用错配的 API key / 私钥组合跑 E2E。
 
-**Step 2 — Sui CLI 链上验证地址存在：**
+**Step 3 — Sui CLI 链上验证 4 地址可达：**
 ```bash
 sui client balance $SELLER_ADDR
 sui client balance $BUYER_ADDR
@@ -388,24 +452,63 @@ sui client balance $AGENT_BETA_ADDR
 ```
 4 个地址均应返回余额信息（即使为 0 也说明地址在链上存在）。
 
-### -1.3 验证 + 自动补给钱包余额（Sui CLI 全自动）
+**Step 4 — 记录 SELLER_MEMBER_ID（Phase 10.6 Follow 用）：**
+
+> Seller 的 `members` 行只有在 Test 1.1 完成首次登录后才存在。本步暂留 `SELLER_MEMBER_ID=` 占位；Test 1.1 之后回填：
+>
+> ```sql
+> SELECT m.id FROM members m
+> JOIN wallet_bindings wb ON wb.member_id = m.id
+> WHERE wb.address = '$SELLER_ADDR' AND wb.chain = 'sui';
+> ```
+
+### -1.3 钱包余额检查 + SUI 人工补给 + USDC 自动 mint
 
 **最低余额要求：**
 
 | 角色 | SUI Gas | Test USDC | 用途 |
 |------|---------|-----------|------|
-| Seller | ≥0.1 SUI | — | Create/List/Grant TX gas |
-| Buyer | ≥0.1 SUI | ≥5 USDC | 购买 Soul A ($1) + gas |
-| Agent Alpha | ≥0.1 SUI | ≥5 USDC | Agent 购买 Soul B ($2) + gas |
-| Agent Beta | ≥0.1 SUI | — | 仅 403 验证，无购买 |
+| Seller | ≥0.5 SUI | — | Create / List / Grant / SetGrantCapacity / SetContentAccessPrice 等 TX gas |
+| Buyer | ≥0.5 SUI | ≥10 USDC | 购买 Soul A ($1) + Phase 7.10a content access purchase + gas |
+| Agent Alpha | ≥0.3 SUI | ≥10 USDC | Agent 购买 Soul B ($2) + Phase 7.10g re-purchase + gas |
+| Agent Beta | ≥0.1 SUI | — | 仅 403 验证 + gas 备用 |
 
-**USDC 余额不足时 — 自动 mint（全自动，无需人工）：**
-
-> 前提：`sui client active-address` 必须为 Treasury Cap owner。
-> 若不是：`sui client switch --address 0x76fd52cac79bda80806be6b5ab7f3b1f099a966203cce809254919a7ab755728`
+**Step 1 — 检查 4 地址当前余额：**
 
 ```bash
-# 为 Buyer mint 10 USDC（10,000,000 atomic units）
+USDC_TYPE="0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC"
+for var in SELLER_ADDR BUYER_ADDR AGENT_ALPHA_ADDR AGENT_BETA_ADDR; do
+  ADDR=${!var}
+  echo "=== $var = $ADDR ==="
+  sui client balance "$ADDR" 2>&1 | head -20
+  sui client balance --coin-type "$USDC_TYPE" "$ADDR" 2>&1 | head -5
+done
+```
+
+**Step 2 — SUI 不足时，AI 列清单暂停等用户转账（**手动介入唯一一次**）：**
+
+AI 根据 Step 1 输出对照"最低余额要求"，生成清单形如：
+
+```
+请从你的 wallet 给以下测试地址转 SUI（testnet）：
+- BUYER_ADDR (0xabc...) : 缺 0.3 SUI
+- AGENT_ALPHA_ADDR (0xdef...) : 缺 0.2 SUI
+- (其余地址余额充足)
+
+转完后回复"已转完"继续。
+```
+
+用户从自有钱包转账后回告"已转完"。AI 重跑 Step 1 校验 SUI ≥ 最低要求；不达标则回 Step 2 重列清单。
+
+> 不再使用 `sui client faucet`：testnet faucet 频率限制 + 失败率高，让用户用自有钱包转更可靠。
+
+**Step 3 — USDC 不足时，AI 自动 mint（无需用户介入）：**
+
+```bash
+# 切到 Treasury Owner（一次性，后续 mint 不需要再 switch）
+sui client switch --address 0x76fd52cac79bda80806be6b5ab7f3b1f099a966203cce809254919a7ab755728
+
+# 给 Buyer mint 10 USDC（10,000,000 atomic units）
 sui client call \
   --package 0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325 \
   --module usdc --function mint \
@@ -413,7 +516,7 @@ sui client call \
          10000000 $BUYER_ADDR \
   --gas-budget 10000000
 
-# 为 Agent Alpha mint 10 USDC
+# 给 Agent Alpha mint 10 USDC
 sui client call \
   --package 0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325 \
   --module usdc --function mint \
@@ -422,19 +525,14 @@ sui client call \
   --gas-budget 10000000
 ```
 
-**SUI Gas 不足时 — testnet faucet（全自动）：**
-```bash
-sui client faucet --address $SELLER_ADDR
-sui client faucet --address $BUYER_ADDR
-sui client faucet --address $AGENT_ALPHA_ADDR
-sui client faucet --address $AGENT_BETA_ADDR
-```
+> 前置：`sui keytool list` 中必须存在 Treasury Owner（`0x76fd…5728`）的私钥。如果不在 keystore，AI 报错并要求用户一次性 import；之后所有 USDC mint 都自动。
 
-**Mint 后验证：**
+**Step 4 — Mint 后验证：**
 ```bash
-sui client balance --coin-type "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC" $BUYER_ADDR
-sui client balance --coin-type "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC" $AGENT_ALPHA_ADDR
+sui client balance --coin-type "$USDC_TYPE" $BUYER_ADDR
+sui client balance --coin-type "$USDC_TYPE" $AGENT_ALPHA_ADDR
 ```
+均应 ≥ 最低要求。
 
 ### -1.4 验证测试 Fixture
 
@@ -451,9 +549,15 @@ ls -la /Users/admin/Documents/example/soul.md \
        /Users/admin/Documents/example-collection/1/skill.zip
 ```
 
-### -1.5 确认 Dev Server 运行
+### -1.5 确认 Dev Server 运行 + Env 完整性
 - 当前前端：`curl http://localhost:3100/market`（确认 HTML 含 "Soulidity"）
 - Agent API 已迁移到当前 `web/` 应用（port 3100），**不再需要 legacy web (port 3000)**
+- Env 必填校验：
+  - `AUTH_SECRET`（≥32 字节随机；虽然 dev 有 fallback，本计划要求显式设置，避免 session secret 漂移）
+  - `BLOB_READ_WRITE_TOKEN`（Vercel Blob 上传 token；缺失则 Phase 1 / 6 / 8 上传 500）
+  - `NODE_ENV=development`（W0 e2e-wallet-stub 仅在 dev 编译进 bundle）
+- W0 Stub 自检：`evaluate_script` 在任意页面运行 `(navigator.wallets ?? []).some(w => w.name === 'E2E Test Wallet')`，没设 `__E2E_PRIVATE_KEY` 前应为 `false`；设了 + reload 后应为 `true`
+- 严禁出现 `NEXT_PUBLIC_PRIVY_APP_ID` / `PRIVY_APP_SECRET` / `PRIVY_CUSTOM_AUTH_*`（CI 有 ripgrep no-residue guard）
 
 ### -1.6 清空浏览器状态
 `evaluate_script`: `localStorage.clear(); sessionStorage.clear();`
@@ -481,7 +585,7 @@ mkdir -p "$ARTIFACT_DIR"
 2. `wait_for` text "Soul Market"
 3. `evaluate_script` 验证搜索框 `input[placeholder="Search souls..."]` 存在
 4. `evaluate_script` 验证页面含 "No live Soul listings"
-5. `evaluate_script` 验证 navbar 有 "Login" 按钮
+5. `evaluate_script` 验证 navbar 有 "Login" 按钮（dapp-kit ConnectModal 触发器）
 
 ### Test 0.3: 截图存档
 `take_screenshot` → `$ARTIFACT_DIR/phase0-market-empty.png`
@@ -490,13 +594,32 @@ mkdir -p "$ARTIFACT_DIR"
 
 ## Phase 1: Seller 登录 + 创建 Soul A & B（12 tests）
 
-### Test 1.1: Seller 登录（手动 OTP #1）
+### Test 1.1: Seller 登录（W0 stub 钱包，0 popup 0 OTP）
+
+> 前置：W0 已实现 `web/components/providers/e2e-wallet-stub.tsx` 并在 `app-providers.tsx` development 分支挂载。当前仓库未完成 W0 时，本测试必须阻塞，不允许退回真实浏览器扩展或手动 popup。
+
 1. `navigate_page` → `http://localhost:3100/market`
-2. `click` navbar "Login" 按钮（selector: `button:has-text("Login")`，desktop 视口下在 navbar 右侧）
-3. Privy 邮箱 modal 弹出 — 在 Privy iframe 中 `fill` 本地注入的 seller 邮箱 `$E2E_SELLER_EMAIL` 并提交
-4. **暂停等用户输入 OTP** — `wait_for` AccountButton 出现（selector: navbar 中 `.rounded-full.border.border-border.bg-card2` 按钮），timeout 120s
-5. `evaluate_script` 确认 "Login" 按钮不存在
-6. `take_screenshot` → `$ARTIFACT_DIR/phase1-seller-login.png`
+2. `evaluate_script`:
+   ```js
+   localStorage.setItem('__E2E_PRIVATE_KEY', '<bech32 of $E2E_SELLER_PRIVATE_KEY，driver 注入>');
+   location.reload();
+   ```
+3. `wait_for` 页面加载完成
+4. `evaluate_script` 自检 stub 已注册：
+   ```js
+   const wallets = navigator.wallets ?? [];
+   wallets.some(w => w.name === 'E2E Test Wallet')
+   ```
+   返回 `true`
+5. `take_snapshot` 找 navbar "Login" 按钮 uid → `click`
+6. `wait_for` text "Connect a Sui Wallet"（dapp-kit ConnectModal）
+7. `take_snapshot` 找 "E2E Test Wallet" 条目 uid → `click`
+8. dapp-kit 调 stub 的 `standard:connect` → wallet-auth-bridge 自动调 `/api/auth/wallet-challenge` → stub 签 nonce → `/api/auth/wallet-login` 写 `session` + `csrf-token` cookies
+9. `wait_for` AccountButton 出现（snapshot 中 `0x...` 缩略地址或头像按钮）
+10. `evaluate_script` 验证 `document.cookie.includes('csrf-token=')` 为 `true`
+11. `evaluate_script` 验证 `(await fetch('/api/auth/me').then(r => r.json())).user.primarySuiAddress === '$SELLER_ADDR'`
+12. `take_screenshot` → `$ARTIFACT_DIR/phase1-seller-login.png`
+13. **回填 SELLER_MEMBER_ID**：执行 Phase -1.2 Step 4 SQL，记录到运行时变量
 
 ### Test 1.2: 创建向导 Step 1 — Basic Info
 1. `navigate_page` → `http://localhost:3100/create`
@@ -558,12 +681,12 @@ mkdir -p "$ARTIFACT_DIR"
 2. `wait_for` text "Step 4" 或 "Transaction Preview"
 3. Gas 页守卫: `missingStep1` → redirect `/create`，`missingStep2` → redirect `/create/content`。必须从 wizard 顺序走到，保持 CreateSoulProvider context。
 
-> **注意**: Gas 页 `handleDeploy()` 内部完成全流程：upload cover(public) → char(encrypted) → memory(encrypted) → skills(encrypted) → buildPublishSoulTx → signAndExecute → POST `/api/souls/publish` mirror 同步。Privy embedded wallet 自动签名，无需手动介入。
+> **注意**: Gas 页 `handleDeploy()` 内部完成全流程：upload cover(public) → char(encrypted) → memory(encrypted) → skills(encrypted) → buildPublishSoulTx → signAndExecute → POST `/api/souls/publish` mirror 同步。e2e-wallet-stub 接管签名（内存 keypair，0 popup），无需手动介入。所有上传走 Vercel Blob direct-upload（`uploadSoulPayload` → `/api/souls/upload/token` → `/api/souls/upload/from-blob`）；服务端拉 staging blob 后加密上传 Walrus，409 race 自动重试 5 次。
 
 ### Test 1.6: Deploy Soul A — Sign & Deploy
 1. `click` "✓ Sign & Deploy" 按钮（`button:has-text("Sign & Deploy")`）
 2. `wait_for` `[data-testid="publish-status"]` 出现，跟踪状态变化: uploading → building → signing → syncing
-3. Privy embedded wallet 自动签名
+3. e2e-wallet-stub 接管签名（内存 keypair，0 popup）
 4. `wait_for` URL 变为 `/create/success`（status=done 时自动 redirect），timeout 90s
 5. `wait_for` text "Soul Born"（success 页标题）
 6. 从 success 页提取 **SOUL_A_ID**（Soul Object ID 行）:
@@ -669,7 +792,7 @@ mkdir -p "$ARTIFACT_DIR"
 3. `wait_for` text "Authorize listing"
 4. `evaluate_script` 验证 Wallet Request 卡片显示: Soul name, Ask price "1.00 USDC", Creator royalty
 5. `click` "✓ Sign & List" 按钮（`button:has-text("Sign & List")`）
-6. Privy embedded wallet 自动签名 `list_fixed_price` TX
+6. e2e-wallet-stub 接管签名（内存 keypair，0 popup） `list_fixed_price` TX
 7. `wait_for` URL 变为 `/sell/success`，timeout 60s
 
 ### Test 2.3: List Soul A — Success
@@ -798,7 +921,7 @@ evaluate_script(`
 3. `evaluate_script` 验证 collection name "E2E Collection Alpha", floor "5 USDC", royalty "5%"
 4. `evaluate_script` 验证 1 个 Soul row 含 "Ready" tag
 5. `click` "Sign & Launch →" 按钮（`button:has-text("Sign & Launch")`）
-6. Privy 自动签名（多笔 TX: create collection → upload files → mint soul → bind soul）
+6. e2e-wallet-stub 自动签名（多笔 TX: create collection → upload files → mint soul → bind soul）
 7. `wait_for` URL 含 `/collections/create/success`，timeout 120s（多笔 TX）
 
 ### Test 3.4: Collection Success
@@ -833,17 +956,21 @@ evaluate_script(`
 ## Phase 4: Buyer 登录 + 购买（9 tests）
 
 ### Test 4.1: Seller 登出
-1. `click` navbar AccountButton（`.rounded-full.border.border-border.bg-card2` 按钮）
+1. `take_snapshot` 找 navbar AccountButton uid（`.rounded-full.border.border-border.bg-card2` 按钮）→ `click`
 2. `wait_for` dropdown 出现（含 "Sign Out" 文字）
-3. `click` "Sign Out"（`button:has-text("Sign Out")`，红色 `text-danger`）
-4. `wait_for` "Login" 按钮重新出现
+3. `take_snapshot` 找 "Sign Out" uid（`button:has-text("Sign Out")`，红色 `text-danger`）→ `click`
+4. AuthProvider 自动 `POST /api/auth/logout` 带 `x-csrf-token` + disconnect dapp-kit wallet
+5. `wait_for` "Login" 按钮重新出现
+6. `evaluate_script` 验证 `document.cookie` 中 `session` 与 `csrf-token` 已清空（Max-Age=0）
 
-### Test 4.2: Buyer 登录（手动 OTP #2）
-1. `click` "Login"
-2. Privy modal 填本地注入的 buyer 邮箱 `$E2E_BUYER_EMAIL`
-3. **暂停等用户输入 OTP** — timeout 120s
-4. `wait_for` AccountButton 出现
-5. `take_screenshot` → `$ARTIFACT_DIR/phase4-buyer-login.png`
+### Test 4.2: Buyer 登录（stub 切角色）
+1. `evaluate_script`:
+   ```js
+   localStorage.setItem('__E2E_PRIVATE_KEY', '<bech32 of $E2E_BUYER_PRIVATE_KEY>');
+   location.reload();
+   ```
+2. 重复 Test 1.1 步骤 4–11（断言 `primarySuiAddress === '$BUYER_ADDR'`）
+3. `take_screenshot` → `$ARTIFACT_DIR/phase4-buyer-login.png`
 
 ### Test 4.3: Market 显示 2 个 Listed Soul
 1. `navigate_page` → `http://localhost:3100/market`
@@ -882,7 +1009,7 @@ evaluate_script(`
 ### Test 4.5: 执行购买 Soul A
 1. `click` "Buy for ..." 按钮（`button:has-text("Buy for")`）
 2. `wait_for` 按钮文字变为 "⟳ Building TX…" / "⟳ Signing…" / "⟳ Syncing…"
-3. Privy embedded wallet 自动签名 `purchase()` TX
+3. e2e-wallet-stub 接管签名（内存 keypair，0 popup） `purchase()` TX
 4. `wait_for` text "Soul acquired"（success 状态），timeout 60s
 5. `evaluate_script` 验证 success 卡片: Soul name + 支付金额 + TX digest
 6. `evaluate_script` 验证 "View in My Souls" 链接（`a[href="/my-souls"]`）
@@ -915,7 +1042,7 @@ evaluate_script(`
 6. `evaluate_script` 验证 Current Grant 显示 "No agent authorized"
 7. `fill` agent address input（`input[placeholder="0x_agent_address_or_ocl_id"]`）: `$AGENT_ALPHA_ADDR`（Phase -1.2 动态发现的完整地址）
 8. `click` "Authorize Agent →"（`button:has-text("Authorize Agent")`）
-9. Privy 自动签名 `issue_grant` TX
+9. e2e-wallet-stub 自动签名 `issue_grant` TX
 10. `wait_for` modal 关闭（Toast "Agent authorized successfully" 出现）
 11. 刷新 Soul A 详情页验证:
     - Active Grants 区域显示 1 条 grant
@@ -944,6 +1071,9 @@ evaluate_script(`
    ```
    验证 TX success，事件 `<pkg>::grant::GrantCapacityUpdated` 中 `old_capacity = 1`、`new_capacity = 2`
 5. **链上 + DB 验证容量已更新：**
+
+   > `__e2eSoulidity.setGrantCapacity` 内部已自动 POST `/api/souls/${stateObjectId}/grant-capacity` 完成 mirror（`e2e-wallet-helpers.tsx:148-156`），所以这里 DB 断言可以紧跟 step 4 之后无需额外 sync 调用。
+
    ```bash
    sui client object $SOUL_A_STATE_OBJ --json | jq '.data.content.fields.grant_capacity'
    ```
@@ -1015,7 +1145,7 @@ curl -s -w "\n%{http_code}" \
 4. `wait_for` "Agent Authorized" 文本（active grant 状态指示器，绿色圆点）
 5. `evaluate_script` 验证 grantee 地址前缀（`$AGENT_ALPHA_ADDR` 前 6 字符）显示
 6. `click` "Revoke" 按钮（`button:has-text("Revoke")`，danger variant）
-7. Privy 自动签名
+7. e2e-wallet-stub 自动签名
 8. `wait_for` modal 关闭（Toast "Grant revoked"）
 9. 刷新 Soul A 详情页 → 验证 "No active SoulGrant is attached to this Soul."
 10. `take_screenshot`
@@ -1033,7 +1163,7 @@ curl -s -w "\n%{http_code}" \
 > Test 5.6 revoke 了 Agent Alpha 的 grant，链上 `state.active_grants` 已移除该 slot，但 `SoulGrant` owned object 仍留在 Agent Alpha 的钱包里（epoch 不匹配 + 不在 active_grants）。`grant::destroy_invalidated_grant` 无额外业务身份校验，但 Sui 会在 Move 执行前校验 owned object 输入归属；因此本步骤必须用 Agent Alpha（或当前持有该 grant object 的地址）签名。
 > 本测试验证：合约接受销毁请求，事件 `SoulGrantDestroyed` 触发，对象消失。
 
-1. **通过 Sui CLI 读 Test 5.2 创建的 SoulGrant object id**（可从 Test 5.2 Privy TX digest 的 `objectChanges` 提取；或查询 Agent Alpha 持有的 `soulidity::grant::SoulGrant` 对象列表）：
+1. **通过 Sui CLI 读 Test 5.2 创建的 SoulGrant object id**（可从 Test 5.2 stub 钱包 TX digest 的 `objectChanges` 提取；或查询 Agent Alpha 持有的 `soulidity::grant::SoulGrant` 对象列表）：
    ```bash
    AGENT_ALPHA_ADDR=<记录的 agent 地址>
    sui client objects --address $AGENT_ALPHA_ADDR --json 2>&1 | jq -r '
@@ -1091,13 +1221,15 @@ curl -s -w "\n%{http_code}" \
    ```
    > Selector 需运行时通过 `evaluate_script` 定位 SkillsPanel 内的隐藏 file input 并打标签。
 2. `click` "Append Version" 按钮
-3. Privy 自动签名 `append_version_as_owner()` TX
+3. e2e-wallet-stub 自动签名 `append_version_as_owner()` TX
 4. `wait_for` 新 skill version row 出现
 5. `evaluate_script` 验证 version row 含 "private" tag + blob 地址
 
+> Skills 大文件 (>2 MB) 走 `uploadSoulPayload` → `/api/souls/upload/token` → `/api/souls/upload/from-blob`；客户端 hook (`use-skills.ts`) 接口不变，仅 server log 中可见 `from-blob` 路由调用。
+
 ### Test 6.3: Owner Decrypt Skills Version
 1. 在 skill version row 点击 "Decrypt" 按钮
-2. Privy 签名 Seal personal message
+2. e2e-wallet-stub 自动签 Seal personal message
 3. `wait_for` 按钮从 loading 恢复
 4. `list_console_messages` 验证无 error
 
@@ -1184,12 +1316,12 @@ curl -s -w "\n%{http_code}" \
 验证 HTTP 200 + 捕获 `preparedPurchaseId` 和 `txBytes`（base64）
 
 **Step 2 — 签名执行：**
-使用 Agent Alpha 的 Ed25519 keypair（从 `AGENT_MNEMONIC` 派生）对 `txBytes` 签名:
+使用 Agent Alpha 的 Ed25519 keypair（通过 `AGENT_PRIVATE_KEY` 注入）对 `txBytes` 签名:
 ```bash
 cd /Users/admin/Desktop/nao/clawnews && \
 SOUL_ID=${SOUL_B_ID} \
 AGENT_API_KEY="${E2E_AGENT_ALPHA_API_KEY}" \
-AGENT_MNEMONIC="${E2E_AGENT_ALPHA_MNEMONIC}" \
+AGENT_PRIVATE_KEY="${E2E_AGENT_ALPHA_PRIVATE_KEY}" \
 BASE_URL=http://localhost:3100 \
 npx tsx web/scripts/e2e-agent-purchase.ts
 ```
@@ -1244,7 +1376,7 @@ curl -s -o /dev/null -w "%{http_code}" \
 ```bash
 SOUL_ID=${SOUL_B_ID} \
 AGENT_API_KEY="${E2E_AGENT_ALPHA_API_KEY}" \
-AGENT_MNEMONIC="${E2E_AGENT_ALPHA_MNEMONIC}" \
+AGENT_PRIVATE_KEY="${E2E_AGENT_ALPHA_PRIVATE_KEY}" \
 BASE_URL=http://localhost:3100 \
 npx tsx web/scripts/e2e-agent-decrypt.ts
 ```
@@ -1278,7 +1410,7 @@ npx tsx web/scripts/e2e-agent-verify-content.ts
 
 ## Phase 7.5: ContentAccess API + Registry 全链上验证（9 tests）
 
-> **执行原则：** ContentAccess mirror 路由 `add` / `purchase` / `revoke` 均 `requireHumanWalletIdentity` + `parseRequiredTxDigest` + `assertTransactionSender`，从链上事件 upsert DB。DB 直写模拟不再有效 —— 本 Phase 所有写入类断言走真实链上 TX（Privy 钱包经 `window.__e2eSoulidity.purchaseContentAccess`；owner-only 路径的负向断言走 Move test 固化）。
+> **执行原则：** ContentAccess mirror 路由 `add` / `purchase` / `revoke` 均 `requireHumanWalletIdentity` + `parseRequiredTxDigest` + `assertTransactionSender`，从链上事件 upsert DB。DB 直写模拟不再有效 —— 本 Phase 所有写入类断言走真实链上 TX（stub 钱包经 `window.__e2eSoulidity.purchaseContentAccess`；owner-only 路径的负向断言走 Move test 固化）。
 > 前提：Agent Alpha owns Soul B（Test 7.3），Buyer owns Soul A（Phase 4）。两个 Soul 均有 `accessListOnChainId`（Phase 1.6/1.7 捕获）。
 
 ### Test 7.6: Content Access List — 初始空状态
@@ -1306,7 +1438,7 @@ curl -s -w "\n%{http_code}" \
 
 2. **Agent Alpha owner 设置 paid access + 短 duration（供 7.10f 继续测生命周期）：**
    ```bash
-   OWNER_MNEMONIC="$E2E_AGENT_ALPHA_MNEMONIC" \
+   OWNER_PRIVATE_KEY="$E2E_AGENT_ALPHA_PRIVATE_KEY" \
    ACCESS_LIST_ID="$SOUL_B_ACCESS_LIST_OBJ" \
    STATE_ID="$SOUL_B_STATE_OBJ" \
    PRICE_ATOMIC=1000000 \
@@ -1366,7 +1498,7 @@ for (const k of [
 ]) console.log(k + '=' + getRequiredSoulidityEnv(k))
 "
 ```
-必须与 Context 表格完全一致（packageId `0x3b1a75da…` 等）。任何不匹配立即阻塞。
+必须与 Context 表格完全一致（当前 packageId 前缀 `0x0b79af1f…`）。任何不匹配立即阻塞。
 
 **链上 `quote_content_access_purchase` dev-inspect：**
 ```bash
@@ -1472,7 +1604,7 @@ cd /Users/admin/Desktop/nao/clawnews/move/soulidity && \
 
 5. **Agent Alpha owner 更新 duration 为 2 小时：**
    ```bash
-   OWNER_MNEMONIC="$E2E_AGENT_ALPHA_MNEMONIC" \
+   OWNER_PRIVATE_KEY="$E2E_AGENT_ALPHA_PRIVATE_KEY" \
    ACCESS_LIST_ID="$SOUL_B_ACCESS_LIST_OBJ" \
    STATE_ID="$SOUL_B_STATE_OBJ" \
    DURATION_MS=7200000 \
@@ -1501,28 +1633,28 @@ cd /Users/admin/Desktop/nao/clawnews/move/soulidity && \
 > 验证 ownership_epoch_snapshot 语义：前 owner 下的已付 subscriber 在 Soul 转售后 `has_access` 立即翻 false，且 stale entry 可被 re-purchase 覆盖。
 > 前置：Test 7.10a / 7.10f 已让 Seller 在 Agent Alpha 名下拥有 Soul B 的有效 content access。
 
-1. **Agent Alpha 本地签名把 Soul B 重新上架**（不能用 `window.__e2eSoulidity`：该 helper 只签当前 Privy 钱包，且不提供 list helper）：
+1. **Agent Alpha 本地签名把 Soul B 重新上架**（不能用 `window.__e2eSoulidity`：该 helper 只签当前浏览器内 stub 钱包，且不提供 list helper）：
    ```sql
    SELECT current_owner_address, current_kiosk_id, current_kiosk_cap_on_chain_id, state_on_chain_id
    FROM soul_assets WHERE on_chain_id = '$SOUL_B_ID';
    ```
    验证 `current_owner_address = $AGENT_ALPHA_ADDR`，记录 `SOUL_B_AGENT_KIOSK_ID` / `SOUL_B_AGENT_KIOSK_CAP_ID`。
    ```bash
-   AGENT_MNEMONIC="$E2E_AGENT_ALPHA_MNEMONIC" \
+   AGENT_PRIVATE_KEY="$E2E_AGENT_ALPHA_PRIVATE_KEY" \
    SOUL_B_AGENT_KIOSK_ID="$SOUL_B_AGENT_KIOSK_ID" \
    SOUL_B_AGENT_KIOSK_CAP_ID="$SOUL_B_AGENT_KIOSK_CAP_ID" \
    PRICE_ATOMIC=1000000 \
    npx tsx -e "
-   import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
    import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
    import { Transaction } from '@mysten/sui/transactions'
+   import { loadKeypairFromEnv } from './scripts/lib/keypair'
    const required = (name) => {
      const value = process.env[name]
      if (!value) throw new Error(name + ' is required')
      return value
    }
    const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' })
-   const keypair = Ed25519Keypair.deriveKeypair(required('AGENT_MNEMONIC'))
+   const keypair = loadKeypairFromEnv('AGENT_PRIVATE_KEY')
    const sender = keypair.toSuiAddress()
    const tx = new Transaction()
    tx.setSender(sender)
@@ -1559,7 +1691,7 @@ cd /Users/admin/Desktop/nao/clawnews/move/soulidity && \
    ```
    - TX success，事件含 `SoulListed`
    - DB / repository sync 后 `SOUL_B_ID.listingStatus = listed`
-2. **Buyer 购买 Soul B**：Chrome DevTools 切回 Buyer 登录会话（若当前浏览器已切到 Seller 且 Buyer session 不在当前 context，按 Test 4.2 重新登录 Buyer 并记录额外 OTP），打开 `/souls/${SOUL_B_ID}/buy`，按 Test 4.4-4.5 购买：
+2. **Buyer 购买 Soul B**：Chrome DevTools 切回 Buyer 登录会话（若当前浏览器已切到 Seller，按 Test 4.2 模板：`evaluate_script` 改 `localStorage['__E2E_PRIVATE_KEY'] = $E2E_BUYER_PRIVATE_KEY` + reload + 重走 stub Login），打开 `/souls/${SOUL_B_ID}/buy`，按 Test 4.4-4.5 购买：
    - 记录 `SOUL_B_RESALE_DIGEST`
    - TX event `SoulPurchased`：`buyer == $BUYER_ADDR`，`seller == $AGENT_ALPHA_ADDR`
 
@@ -1592,7 +1724,7 @@ cd /Users/admin/Desktop/nao/clawnews/move/soulidity && \
    WHERE soul_on_chain_id = '$SOUL_B_ID' AND grantee_address = '$SELLER_ADDR';
    ```
    - 记录存在，`revoked_at IS NULL`，但 `ownership_epoch_snapshot` 仍为转售前值（审计行保留）
-   - 在 Seller Privy session 中调用 skills allowlist 读路径返回 403（该路由按 `ownershipEpochSnapshot = state.ownershipEpoch` 过滤 stale 条目）：
+   - 在 Seller session（stub 切回 `$E2E_SELLER_PRIVATE_KEY` + reload）中调用 skills allowlist 读路径返回 403（该路由按 `ownershipEpochSnapshot = state.ownershipEpoch` 过滤 stale 条目）：
      ```js
      const headers = await window.__e2eSoulidity.getAuthHeaders()
      const res = await fetch(`/api/souls/${SOUL_B_ID}/skills/${SOUL_B_INITIAL_SKILL_NAME}/versions/${SOUL_B_INITIAL_SKILL_VERSION_INDEX}/access`, { headers })
@@ -1739,7 +1871,7 @@ cd /Users/admin/Desktop/nao/clawnews/move/soulidity && \
 ### Test 8.5: Import Step 5 — Pay Gas & Deploy（`/import/gas`）
 1. `wait_for` text "Pay Gas"
 2. `click` "Sign & Deploy" 按钮（`button:has-text("Sign & Deploy")`）
-3. Privy 自动签名
+3. e2e-wallet-stub 自动签名
 4. `wait_for` URL 含 `/import/success`，timeout 90s
 
 ### Test 8.6: Import Step 6 — On-chain Success（`/import/success`）
@@ -1821,6 +1953,30 @@ curl -s -o /dev/null -w "%{http_code}" \
   http://localhost:3100/api/souls/${SOUL_A_ID}/access-list/purchase
 ```
 验证 HTTP 401（`requireHumanWalletIdentity` 拒绝无认证请求）
+
+### Test 9.10: Anonymous Public Sprite Download → 200 + 字节比对（补充测试，不计入 95）
+
+> 固化 commit 08e2d73。
+>
+> **前置：** 先用 `web/scripts/e2e-sprite-lifecycle.ts` 给 SOUL_A 上传一个 public sprite（`OWNER_PRIVATE_KEY=$E2E_BUYER_PRIVATE_KEY`，因为 Phase 4 之后 Buyer 是 SOUL_A 的 owner），记录 `assetName` / `versionIndex` / 源 PNG 路径：
+>
+> ```bash
+> SOUL_ID=$SOUL_A_ID \
+> OWNER_PRIVATE_KEY=$E2E_BUYER_PRIVATE_KEY \
+> ASSETS_DIR=/Users/admin/Desktop/nao/clawnews/desktop/data/assets/wusaqi \
+> npx tsx web/scripts/e2e-sprite-lifecycle.ts append --visibility public
+> ```
+
+```bash
+SOUL_ID=$SOUL_A_ID \
+COMPARE_DIR=/Users/admin/Desktop/nao/clawnews/desktop/data/assets/wusaqi \
+ASSET_NAME=persona-sprite \
+ASSET_VERSION_INDEX=0 \
+BASE_URL=http://localhost:3100 \
+npx tsx web/scripts/e2e-public-sprite-anonymous.ts
+```
+
+验证：脚本退出 0，stdout 含字节比对成功提示（具体字串以脚本实现为准；脚本同时用 anonymous + bogus Bearer 两次访问 agent assets/access 路由，确认 public 短路在 auth 校验之前）。
 
 ---
 
@@ -1948,21 +2104,23 @@ curl -s -o /dev/null -w "%{http_code}" \
 
 ---
 
-## 手动介入点（仅 OTP，其余全自动）
+## 手动介入点（仅 1 项：环境前置 SUI 转账）
 
-> **全自动声明：** 本计划除 Privy OTP 输入外，所有操作均由 AI agent 独立完成，无需人工判断或干预。基线路径预期 2 次 OTP；若 Phase 7.10a / 7.10g 需要在同一浏览器 context 中重新切换 Seller / Buyer，Privy 可能要求额外 OTP，记录为 session re-auth，不视为功能失败。
+> **环境前置 1 次（Phase -1.3）：** AI 派生 4 个测试地址 + 链上查余额 → 列出"缺多少 SUI"清单后暂停；用户从自有 wallet 转入后回告"已转完"，AI 继续。
+>
+> **USDC 完全自动**：AI `sui client switch` 到 Treasury Owner 后调 `sui client call ... mint`。前置一次性 import Treasury Owner 私钥后永远自动。
+>
+> **测试运行时 0 介入（Phase 0 onwards）：** W0 完成后，dev-only `e2e-wallet-stub.tsx` 接管全部浏览器钱包签名，**0 popup、0 OTP、0 真扩展依赖**。切角色 = `evaluate_script` 改 `localStorage['__E2E_PRIVATE_KEY']` + reload。Agent 侧 TX 由 `web/scripts/e2e-agent-purchase.ts` 通过 `AGENT_PRIVATE_KEY="$E2E_AGENT_*_PRIVATE_KEY"` 在 Node 直接签。
 
-1. **Test 1.1** — Seller Privy OTP（`$E2E_SELLER_EMAIL`）→ 用户输入 6 位验证码
-2. **Test 4.2** — Buyer Privy OTP（`$E2E_BUYER_EMAIL`）→ 用户输入 6 位验证码
-
-**以下操作全部自动化，无需人工介入：**
-- Privy embedded wallet TX 签名（所有 Phase 的链上交易）
-- `sui client` 链上状态查询 / USDC mint / `destroy_invalidated_grant` / rebind / delete listing（Phase -1、5.8、7.10h、11.0a-b）
+**全自动覆盖：**
+- Stub 钱包 sign-message + sign-transaction（内存 keypair，无 popup，所有 Phase 的链上交易）
+- USDC mint（Treasury Owner active address + `sui client call`）
+- `sui client` 链上状态查询 / `destroy_invalidated_grant` / rebind / delete listing（Phase -1、5.8、7.10h、11.0a-b）
 - `sui move test` 负向断言执行（Phase 5.8 step 5、7.10d、7.10e、11.0a step 4）
-- Chrome DevTools MCP 浏览器操作（Phase 0-8、10-11）
+- Chrome DevTools MCP 浏览器操作（含 ConnectModal 选 stub）（Phase 0-8、10-11）
 - Agent API `curl` 调用（Phase 6.5、7、7.5、9）
-- DB SQL 验证与 DB 清理（Phase -1、1.6/1.7、11.1）
-- `npx tsx` E2E 脚本（Phase 7.3、7.10a/f/g、7.11、7.12）
+- DB SQL 验证与 DB reset（Phase -1、1.6/1.7、11.1）
+- `npx tsx` E2E 脚本（Phase 7.3、7.10a/f/g、7.11、7.12、9.10）
 - 截图存档（全 Phase）
 
 ---
@@ -1987,7 +2145,7 @@ Phase 6 (skills append + decrypt) ← Buyer 仍登录 + owns Soul A；Memory app
 Phase 6.5 (SoulAssets API) ← Buyer 仍登录 + owns Soul A；验证 asset list 空状态和 404 边界
 Test 7.1-7.2 (agent search + detail) → 独立只读
 Test 7.3 (agent purchase Soul B) → Tests 7.4-7.5 → Tests 7.11-7.12（必须在 7.10g 转售前执行，保证 Agent Alpha 仍 owns Soul B）
-Phase 7.5 (ContentAccess API) ← SOUL_B_ACCESS_LIST_OBJ + AGENT_ALPHA_ADDR 已知；写路径一律走链上 TX（Privy via `window.__e2eSoulidity` 或 Move test 固化）
+Phase 7.5 (ContentAccess API) ← SOUL_B_ACCESS_LIST_OBJ + AGENT_ALPHA_ADDR 已知；写路径一律走链上 TX（stub-signed via `window.__e2eSoulidity` 或 Move test 固化）
 Test 7.6 (access-list empty for A + B) 直接覆盖 baseline；Test 7.10a 通过 Agent Alpha owner + Seller 钱包完成付款路由 + 平台抽成 + epoch mirror 联合验证
 Tests 7.10b-c（quote 平台抽成 + KioskRegistry manifest 一致性） → 运行环境断言
 Tests 7.10d-e（price=0 拒购 + scope_mask 负向） → Move test 固化执行
@@ -2032,6 +2190,8 @@ Phase 11 (cleanup) → delete_soul_listing 回收（Test 11.0a，依赖 Phase 4 
 |------|----------|------|
 | Login | `button:has-text("Login")` | Navbar |
 | AccountButton | `.rounded-full.border.border-border.bg-card2` | Navbar |
+| ConnectModal | dapp-kit dialog 标题 "Connect a Sui Wallet" | Login 触发 |
+| E2E Test Wallet (stub) | ConnectModal 中 name="E2E Test Wallet" 的钱包条目 | 任意页面登录场景 |
 | Sign Out | `button:has-text("Sign Out")` (text-danger) | AccountButton dropdown |
 | Search 框 | `input[placeholder="Search souls..."]` | /market |
 | Sort 下拉 | `select` (值: newest/price_asc/price_desc/popular) | /market |
@@ -2087,11 +2247,12 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `__e2ePublish` | `(params: PublishParams) => Promise` | 触发 mint TX | Phase 1 create 流程 |
 | `__e2eUpload` | `(fileContent: string, fileName: string, type?: 'public'\|'encrypted') => Promise<UploadResult>` | Walrus 文件上传 | Phase 1 create 流程 |
 | `__e2eListSoul` | `(params: { currentKioskId, currentKioskCapOnChainId, stateObjectId, soulObjectId, priceAtomic }) => Promise` | 上架 | Phase 2 list 流程 |
-| `__e2eGetAuthHeaders` | `() => Promise<Record<string, string>>` | 获取 auth headers | 通用 |
+| `__e2eGetAuthHeaders` | `() => Promise<Record<string, string>>` | 获取 `{ 'x-csrf-token': csrf }`（cookie `session` 由浏览器自动携带） | 通用 |
 | `__e2eIssueGrant` | `(params: { stateObjectId, granteeAddress, scopeMask, soulObjectId }) => Promise` | 发放 grant | **已废弃** — Phase 5 改用 GrantModal UI |
 | `__e2eRevokeGrant` | `(params: { stateObjectId, granteeAddress, soulObjectId }) => Promise` | 撤销 grant | **已废弃** — Phase 5 改用 GrantModal UI |
 | `__e2eLastRawEnvelope` | 已实现（create/import gas 页） | `{char,memory,skills,sprite}` raw envelope 暴露点 | Phase 7.12 逐字节比对 |
-| `__e2eSoulidity` | 已实现（dev-only AppProviders helper） | content access purchase / price / duration / grant capacity helper | Phase 5.2a + Phase 7.10a/f/g |
+| `__e2eSoulidity` | 已实现（dev-only AppProviders helper） | content access purchase / price / duration / grant capacity helper；`setGrantCapacity` 已内部 POST `/api/souls/[id]/grant-capacity` mirror（无需测试侧再单独 cURL） | Phase 5.2a + Phase 7.10a/f/g |
+| `E2EWalletStub` | W0 待新增的 dev-only Wallet Standard 钱包桩（`web/components/providers/e2e-wallet-stub.tsx`） | 通过 `localStorage['__E2E_PRIVATE_KEY']` 注入 keypair → ConnectModal 自动列出 → 0 popup 签所有 message / TX | Phase 0 onwards 全部登录与签名 |
 
 **使用前提：** 从 `/create` 走完 wizard 到 `/create/gas`，保持 CreateSoulProvider context 完整（name + description + coverImageFile + charFile + memoryFile 非空）。
 
@@ -2130,23 +2291,33 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/app/resources/stats/page.tsx` | Protocol Stats — Phase 10.5 |
 | `web/app/community/leaderboard/page.tsx` | Leaderboard — Phase 10.4 |
 | `web/app/community/u/[spaceId]/page.tsx` | Community Profile + Follow — Phase 10.6 |
-| `web/components/nav/navbar.tsx` | 导航栏 + Login |
-| `web/components/nav/account-button.tsx` | 账户下拉 + Sign Out |
-| `web/components/providers/auth-provider.tsx` | Privy auth context |
+| `web/components/nav/navbar.tsx` | 导航栏（Login + Docs 在 + New 菜单之后） |
+| `web/components/nav/account-button.tsx` | 账户下拉 + Sign Out（带 CSRF） |
+| `web/components/providers/auth-provider.tsx` | Sui wallet auth context（session + CSRF） |
+| `web/components/providers/wallet-login-modal.tsx` | dapp-kit ConnectModal mount |
+| `web/components/providers/wallet-auth-bridge.tsx` | 钱包 connect 后自动 challenge → login |
+| `web/components/providers/e2e-wallet-helpers.tsx` | `window.__e2eSoulidity` dev-only helper |
+| `web/components/providers/e2e-wallet-stub.tsx` | **W0 待新增**：dev-only Wallet Standard 测试桩 |
+| `web/components/providers/app-providers.tsx` | **W0 待修改**：development 分支挂 `<E2EWalletStub />` |
 | `web/components/souls/grant-modal.tsx` | GrantModal UI — Phase 5.2, 5.6 |
 | `web/components/souls/memory-panel.tsx` | Memory Panel — Phase 1.8, 6.3 |
+| `web/components/souls/persona-asset-panel.tsx` | Persona Sprite 管理面板（owner-only，append + activate + delete + clear） |
 
 ### 前端 Hooks
 | 文件 | 用途 |
 |------|------|
+| `web/lib/hooks/use-wallet-sign.ts` | 钱包签名（替换 `usePrivySuiSign`）— 所有签名场景 |
+| `web/lib/hooks/use-login.ts` | 登录入口（替换 `useGenericLogin`）— Phase 0/1/4 |
 | `web/lib/hooks/use-publish.ts` | Publish hook — Phase 1.6-1.7 |
 | `web/lib/hooks/use-purchase.ts` | Purchase hook — Phase 4.5 |
 | `web/lib/hooks/use-list-soul.ts` | List hook — Phase 2.2, 2.5 |
 | `web/lib/hooks/use-grant.ts` | Grant hook — Phase 5.2, 5.6（via GrantModal） |
 | `web/lib/hooks/use-skills.ts` | Skills hook — Phase 6 |
+| `web/lib/hooks/use-assets.ts` | Persona sprite assets hook — `persona-asset-panel.tsx` |
 | `web/lib/hooks/use-social.ts` | Bookmark/Follow hooks — Phase 4.3a-c, 10.6 |
 | `web/lib/hooks/use-collection-publish.ts` | Collection publish — Phase 3.3 |
 | `web/lib/hooks/use-import.ts` | Import hook — Phase 8.4 |
+| `web/lib/upload/client-upload.ts` | `uploadSoulPayload` — Vercel Blob direct-upload 客户端入口 |
 | `web/components/souls/skills-panel.tsx` | Skills 面板 UI — Phase 6 |
 
 ### Agent API（已实现 ✅）
@@ -2168,12 +2339,17 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 |------|------|
 | `web/app/api/souls/tags/route.ts` | Tag cloud API（top 50 tags by count）— 替代 Category 分类 |
 
-### E2E 脚本（已实现 ✅）
+### E2E 脚本（已实现 / W0 标注）
 | 文件 | 用途 |
 |------|------|
 | `web/scripts/e2e-agent-purchase.ts` | Agent 购买（prepare → local sign → execute → verify access） |
 | `web/scripts/e2e-agent-decrypt.ts` | Agent Seal 解密（SHA-256 hash 校验） — Phase 7.11 |
 | `web/scripts/e2e-agent-verify-content.ts` | Seal 内容逐字节比对（SHA-256 + byte compare） — Phase 7.12 |
+| `web/scripts/e2e-content-access-lifecycle.ts` | ContentAccess duration 生命周期 — Phase 7.10f |
+| `web/scripts/e2e-sprite-lifecycle.ts` | Sprite append / activate / delete / clear lifecycle helper — Phase 9.10 前置 |
+| `web/scripts/e2e-public-sprite-anonymous.ts` | 匿名 public sprite 下载 + 字节比对 — Phase 9.10 |
+| `scripts/lib/keypair.ts` | `loadKeypairFromEnv` — bech32 / base64 / hex 解析（Phase -1.2 用） |
+| `scripts/e2e-setup-agents.ts` | 当前只刷新历史固定 Agent Alpha / Beta wallet binding 的 API key hash；W0.2 后应变为 env-driven create-or-update |
 
 ### Soulidity SDK
 | 文件 | 用途 |
@@ -2191,14 +2367,28 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/lib/soulidity/content-templates.ts` | soul.md / memory.md / skill.md 模板 |
 | `web/lib/soulidity/object-inputs.ts` | On-chain object input helpers |
 
-### Legacy Auth（通过 `@web/*` alias 引用）
+### Auth + 上传 API
 | 文件 | 用途 |
 |------|------|
+| `web/app/api/auth/wallet-challenge/route.ts` | 发 nonce + sign-in message（rate limit 30/60s） |
+| `web/app/api/auth/wallet-login/route.ts` | 校验签名 → 写 `session` + `csrf-token` cookies；同源 + rate limit 20/60s |
+| `web/app/api/auth/me/route.ts` | 当前用户信息（GET，无需 CSRF） |
+| `web/app/api/auth/logout/route.ts` | 清 cookies（带 CSRF 校验） |
+| `web/app/api/souls/upload/token/route.ts` | Vercel Blob presigned token（`@vercel/blob/client::handleUpload`） |
+| `web/app/api/souls/upload/from-blob/route.ts` | 服务端拉 staging blob → Walrus；409 race 自动重试 5 次 |
+| `web/app/api/souls/[id]/grant-capacity/route.ts` | 链上 `GrantCapacityUpdated` 事件 mirror |
+| `web/lib/auth/identity.ts` | `requireMutationIdentity` / `requireIdentity`；session cookie + agent API key identity resolver |
+| `web/lib/soulidity/server.ts` | `requireHumanWalletIdentity` / `requireSoulCreateWalletIdentity`；Soulidity human wallet guard |
+| `web/lib/auth/session.ts` | HS256 JWT session（AUTH_SECRET 签，30d，HttpOnly + SameSite=Lax + Secure(prod)） |
+| `web/lib/auth/csrf.ts` | 双提交 CSRF + 同源 Origin/Referer |
+| `web/lib/auth/wallet-challenge.ts` | challenge 入库 / 校验 |
+| `web/lib/auth/wallet-login.ts` | 签名验证 + 登录组合逻辑 |
+| `web/lib/auth/sui-wallet.ts` | `getMemberPrimarySuiWalletAddress` 等钱包查询 |
 | `web/lib/auth/resolve-agent.ts` | `resolveAgentByApiKey` — API key SHA-256 → AgentIdentity |
-| `web/lib/auth/sui-wallet.ts` | `getMemberSuiWalletAddresses` — Agent 钱包解析 |
 | `web/lib/rate-limit.ts` | `takeRateLimitToken` — IP/member rate limiting |
 | `web/lib/sui.ts` | `suiClient` — Sui RPC 客户端 |
 | `web/lib/prisma.ts` | `prisma` — 共享 Prisma 客户端 |
+| `web/lib/upload/client-upload.ts` | `uploadSoulPayload` — Vercel Blob direct-upload 客户端入口 |
 
 ### Collection 批量处理
 | 文件 | 用途 |
@@ -2217,13 +2407,13 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 1. **Fresh publish 清账**：Phase -1 必须把 `soul_*` / `content_access_records` / `soul_prepared_purchases` / `soul_tx_syncs` / `follows` / `bookmarks` 全部清空；旧链上 object 一律不可继承（package / kiosk registry / listings / access list / grant 均从 fresh publish 重建）。
 2. **Sui CLI 前置**：`which sui && sui --version`，要求 >= 1.69.0 + testnet RPC 可达；任一不满足则 Phase -1 阻塞。
 3. **USDC Treasury**：`sui client call` mint USDC 前必须 `sui client switch --address 0x76fd52cac79bda80806be6b5ab7f3b1f099a966203cce809254919a7ab755728`（treasury owner）。
-4. **Agent 钱包前置**：DB 必须有 `members.kind='agent' + agent_status='active' + api_key_hash IS NOT NULL` 的 Alpha / Beta 两条记录及其 `wallet_bindings`；缺失则 Phase -1 执行 `npx tsx scripts/e2e-setup-agents.ts` 生成后再继续。
+4. **Agent 钱包前置**：DB 必须有 `members.kind='agent' + agent_status='active' + api_key_hash IS NOT NULL` 的 Alpha / Beta 两条记录及其 `wallet_bindings`。当前脚本只能刷新历史固定 agent + 固定 API key；若 `$AGENT_ALPHA_ADDR` / `$AGENT_BETA_ADDR` 或 `E2E_AGENT_*_API_KEY` 与脚本硬编码值不一致，先完成 W0.2。Agent keypair 调用 Node 脚本时通过 `AGENT_PRIVATE_KEY="$E2E_AGENT_*_PRIVATE_KEY"` 注入。
 5. **Agent API 基础设施**：`web/app/api/agent/*` 路由与 `web/lib/soulidity/agent-server.ts::requireAgentWalletIdentity` 已全部落地，复用 `@web/lib/auth/resolve-agent` / `getMemberSuiWalletAddresses`；`web/lib/soulidity/coin-selection.ts` 已独立拆分。
 
 ### 工作流与时序
 
 6. **Create/Import wizard 状态链**：CreateSoulProvider / ImportSoulProvider 用 React context 维护跨页状态；gas 页有 `missingStep1` / `missingStep2` 守卫。测试必须按 Step 1 → 2 → 3 → gas 顺序走，不得跳步直达 gas。
-7. **Privy iframe selector**：Privy 注入自有 iframe，内部 selector 在最新 snapshot 中动态查询，不得复用旧 uid。
+7. **Wallet 扩展不进入测试链路**：dapp-kit `ConnectModal` 是普通 React dialog；在 dev 模式下 `e2e-wallet-stub` 注册一个 Wallet Standard 钱包到 modal，无任何浏览器扩展依赖。Stub 内部用 `localStorage['__E2E_PRIVATE_KEY']` 重建 Ed25519 keypair；切角色靠 `evaluate_script` 改 localStorage + reload。
 8. **Rate limit**：dev 环境使用内存 rate limiter；本计划自动化流量处在阈值内。
 9. **Agent 购买两步签名 TTL**：prepare → execute 之间必须在 10 分钟内完成，否则 `/api/agent/souls/{id}/purchase/execute` 返回 410。
 10. **Collection directory upload**：Chrome DevTools MCP `upload_file` 不支持 `webkitdirectory` picker；Phase 3.2 使用 `evaluate_script` 构造 File + DataTransfer + dispatch change event，此为唯一执行路径。
@@ -2243,7 +2433,7 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 21. **Scope mask 硬约束**：`ContentAccessList.default_scope_mask ∈ {非零子集 of 15}`；SDK builder 默认 `ALL_ACCESS_SCOPES = 15`。绕过 SDK 传 0 或非法 bit 由 `grant::assert_valid_scope_mask` abort（Test 7.10e 由 `protocol_tests.move` 固化）。
 22. **Price=0 免费 access 只能 owner `add_access`**：`market::purchase_content_access` 拒绝 `price_atomic = 0`（`EContentAccessNotPurchasable = 28`）。Test 7.10d 由 `protocol_tests.move::purchase_content_access_with_zero_price_fails` 固化。
 23. **ContentAccessList.duration**：`default_access_duration_ms: Option<u64>` 决定新购买 entry 的 `expires_at_ms = now + duration`；`None = 终身`；`set_content_access_duration` 只影响后续购买、不追溯既有 entry。Test 7.10f 走 `web/scripts/e2e-content-access-lifecycle.ts` + `window.__e2eSoulidity.purchaseContentAccess` 完成。
-24. **Grant capacity 调整**：默认 `grant_capacity = 1`；`grant::set_grant_capacity(state, capacity, clock, ctx)` 要求 `capacity >= active_grant_count` + `capacity <= MAX_GRANT_CAPACITY`。GrantModal 不暴露此控件；Test 5.2a 通过 `window.__e2eSoulidity.setGrantCapacity` 由 Buyer owner Privy 钱包签名完成。
+24. **Grant capacity 调整**：默认 `grant_capacity = 1`；`grant::set_grant_capacity(state, capacity, clock, ctx)` 要求 `capacity >= active_grant_count` + `capacity <= MAX_GRANT_CAPACITY`。GrantModal 不暴露此控件；Test 5.2a 通过 `window.__e2eSoulidity.setGrantCapacity` 由 Buyer owner stub 钱包签名完成；helper 内部已自动 POST `/api/souls/[id]/grant-capacity` 同步 mirror（无需测试侧再单独 cURL）。
 25. **SoulGrant 僵尸回收**：Test 5.6 revoke 后 `SoulGrant` owned object 仍留在 grantee 钱包；`grant::destroy_invalidated_grant` 无额外身份校验，但 Sui 在 Move 执行前做 owned-object 归属校验，sender 必须持有该对象。Test 5.8 切到 Agent Alpha 地址签名；Active grant 负向断言由 `protocol_tests.move::destroy_invalidated_grant_rejects_active_grant` 固化。
 26. **Listing 回收**：`market::delete_soul_listing` / `delete_collection_listing` 要求 `!is_active`。Test 11.0a / 11.0b 正向回收；负向 `EListingStillActive = 30` 由 `protocol_tests.move::delete_active_soul_listing_fails` 固化。
 27. **KioskRegistry insert-or-assert + rebind 全矩阵**：`register_existing_personal_kiosk` / `ensure_personal_kiosk_registered` 语义为 insert-or-assert，同 cap 幂等、不同 cap abort `EPersonalKioskMismatch`。换 kiosk 唯一合法路径 `market::rebind_primary_kiosk`，要求旧 kiosk `item_count == 0`（`EOldKioskNotEmpty = 31` / `EOldKioskMismatch = 32` / `ERebindSameKiosk = 33`）。Test 7.10h 由 dev 账户 `sui client call` 覆盖；`buildRebindPrimaryKioskTx` 不对终端用户暴露（无 `window.__e2eSoulidity` helper，设计如此）。
@@ -2252,6 +2442,18 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 30. **Category → Tags taxonomy**：Create 页无 Category 下拉，Market 页无 category filter，仅 Tags 自由输入 + `/api/souls/tags`（top 50 tag cloud）。Prisma `soul_assets.category` 仍保留 `@default("Other")` 但全程不暴露。Phase 1.2 / 2.7-2.8 / 10 不涉及 Category 断言。
 31. **ContentAccess API 写路径全链上**：`/api/souls/[id]/access-list/add|purchase|revoke` 强制 `requireHumanWalletIdentity` + `parseRequiredTxDigest` + `assertTransactionSender`，从链上事件 upsert DB。本计划所有 content-access 写入均经 `window.__e2eSoulidity.purchaseContentAccess` 或 Move test 完成，不使用 SQL 直写模拟。
 
+32. **CSRF + Same-Origin 强约束**：所有走 cookie auth 的 mutating 路由（以 `web/lib/auth/identity.ts::requireMutationIdentity` / `requireHumanWalletIdentity({ mutation })` 为真值）要求 `x-csrf-token` header 与 session 内 `csrfHash` 匹配，并且 Origin/Referer 与请求 host 同源。E2E `curl` 调用必须同时传 `Cookie: session=...; csrf-token=...` + `x-csrf-token: ...` 两份。`/api/auth/wallet-login` 与 `/api/auth/logout` 还要 `Origin: http://localhost:3100`。Agent API 路径走 `Authorization: Bearer sk-...` 不受影响。
+
+33. **Vercel Blob 上传链路**：`POST /api/souls/upload/token` 使用 `BLOB_READ_WRITE_TOKEN` env 与 `@vercel/blob/client::handleUpload`；token 生成需要 caller 通过 `requireMutationIdentity`（即浏览器 cookie + CSRF）。Phase 1 / 3 / 6 / 8 大文件全部经此路径；服务端 `from-blob` 路由会在成功 / 失败两种路径都删除 Vercel staging blob，409 race 自动重试 5 次。Collection publish cover 也走 `uploadSoulPayload(..., 'public')`；legacy `/api/collections/upload-image` 仍存在，但不是本计划主路径。
+
+   **dev-only 短路（2026-04-27 新增）**：Vercel Blob 的 `onUploadCompleted` 是服务端到服务端回调，无法回到 `localhost:3100`，导致 from-blob 永远 409。`web/lib/upload/client-upload.ts` 在 `NODE_ENV === 'development' && NEXT_PUBLIC_E2E_TEST_MODE === '1'` 时短路到 legacy `/api/souls/upload`（同样的 auth + 校验 + Walrus 路径，仅去掉 Blob 中转）。生产构建不进入此分支。Fixture 文件最大 5.6 KB，远低于 legacy 路径的 4.5 MB serverless 入站限制；如未来引入 >4 MB 的 fixture，需要 (a) 给本机起 localtunnel/cloudflared 提供 `VERCEL_BLOB_CALLBACK_URL`，或 (b) 在 from-blob 中加 dev 模式 lazy-binding fallback。
+
+34. **e2e-wallet-stub 前置（W0，2026-04-27 已落地）**：`web/components/providers/e2e-wallet-stub.tsx` 已挂在 `app-providers.tsx` development 分支（双门控：`NODE_ENV === 'development'` AND `NEXT_PUBLIC_E2E_TEST_MODE === '1'`）。该桩通过 `localStorage['__E2E_PRIVATE_KEY']` 重建 Ed25519 keypair，注册到 dapp-kit `getWallets()`（经 `wallet-standard:app-ready` handshake）。未设 `NEXT_PUBLIC_E2E_TEST_MODE=1` 或非 dev 环境时不进入 bundle/不挂载，普通开发会话即便 localStorage 残留 `__E2E_PRIVATE_KEY` 也不会激活。Phase -1.5 自检：`evaluate_script` 在任意页面运行 `(navigator.wallets ?? []).some(w => w.name === 'E2E Test Wallet')`，未设 `__E2E_PRIVATE_KEY` 前应为 `false`，设了 + reload 后应为 `true`。
+
+35. **`scripts/e2e-setup-agents.ts` env-driven（W0.2，2026-04-27 已重写）**：从 `E2E_AGENT_ALPHA_PRIVATE_KEY` / `E2E_AGENT_ALPHA_API_KEY` / `E2E_AGENT_BETA_PRIVATE_KEY` / `E2E_AGENT_BETA_API_KEY` 派生地址 + 计算 SHA-256，幂等 `findOrCreate` `Account` / `Member(kind='agent', agentStatus='active')` / `WalletBinding(chain='sui')`。两次连续运行得到相同 member ID 与 hash。脚本入口 `import './lib/dotenv'` 自动加载 `.env` + `.env.local`。
+
+36. **`web/next.config.ts` 加载 `.env.local`（2026-04-27 新增）**：原本只 `dotenv.config({ path: '../.env' })`，现追加 `dotenv.config({ path: '../.env.local', override: true })`。E2E 用的 `NEXT_PUBLIC_E2E_TEST_MODE=1` + `E2E_*` 私钥都放在 `.env.local`，dev server 起来时一并注入。
+
 ---
 
 ## 验证标准
@@ -2259,13 +2461,16 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 默认验收口径：
 - Phase -1 仅作为环境准备单独记录，不计入通过率
 - 95 项主流程全部通过（Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 6.5 + 7 + 7.5 + 8 + 9 + 10 + 11 = 3+12+8+6+9+10+3+4+7+9+6+9+6+3）
-- Test 7.10a 必须完成 `price_atomic > 0` 的真人 Privy 钱包 paid purchase（Seller 签名，付款 recipient 为 Agent Alpha owner），并在 DB 镜像中看到 `ownershipEpochSnapshot` 与 `SoulState.ownership_epoch` 一致
+- Test 7.10a 必须完成 `price_atomic > 0` 的 e2e-wallet-stub（内存 keypair）paid purchase（Seller 签名，付款 recipient 为 Agent Alpha owner），并在 DB 镜像中看到 `ownershipEpochSnapshot` 与 `SoulState.ownership_epoch` 一致
 - Tests 7.10d / 7.10e / 5.8 step 5 / 11.0a step 4 的负向断言全部走 `sui move test` 固化路径，输出对应 test name + `[ PASS ]` / `[ PASS    ]` + `Test result: OK`；abort code 以 `protocol_tests.move` 中的 `#[expected_failure(abort_code = ...)]` 注解为准
-- Test 7.10f duration 生命周期通过 `web/scripts/e2e-content-access-lifecycle.ts` + `window.__e2eSoulidity.purchaseContentAccess` 真人钱包续购完成
+- Test 7.10f duration 生命周期通过 `web/scripts/e2e-content-access-lifecycle.ts` + `window.__e2eSoulidity.purchaseContentAccess`（stub 钱包续购）完成
 - Test 7.10g epoch 跨转让 + re-purchase 覆盖必须同时验证：转售后 `has_access = false` + DB stale 行保留但 API 403 + re-purchase 成功后 entry 覆盖
 - Test 7.10h KioskRegistry rebind 全矩阵必须覆盖：同 cap 幂等（no-op）/ 不同 cap abort / 非空旧 kiosk abort / 正向 rebind
-- Phase 5.2 / 5.6 grant 发放 & 撤销全部走 GrantModal UI；Phase 5.2a 容量调整走 `window.__e2eSoulidity.setGrantCapacity`；Phase 5.8 destroy_invalidated_grant 走 `sui client call`（CLI active-address 必须为 `GRANT_OBJ` 持有者，本流程为 Agent Alpha）
+- Phase 5.2 / 5.6 grant 发放 & 撤销全部走 GrantModal UI；Phase 5.2a 容量调整走 `window.__e2eSoulidity.setGrantCapacity`（helper 内部已 mirror）；Phase 5.8 destroy_invalidated_grant 走 `sui client call`（CLI active-address 必须为 `GRANT_OBJ` 持有者，本流程为 Agent Alpha）
 - Phase 7.11 / 7.12 Seal 链路必须跑通：Phase 7.11 `e2e-agent-decrypt.ts` 退出 0 + content hash 匹配；Phase 7.12 `e2e-agent-verify-content.ts` 输出 `OK 3 artifact(s) matched byte-for-byte.`（char / memory / skills 三个 artifact 全匹配）
 - 截图存档到 `$ARTIFACT_DIR`（默认 `e2e-artifacts/<RUN_DATE>/`）
 - 测试结果更新到 `docs/e2e-test-results-new-web.md`
 - Phase 11 cleanup 完成后：market 恢复空状态；DB `soul_*` / `content_access_records` / `follows` / `bookmarks` 均为空；Soul A 的 SoulListing 与 Collection 的 CollectionListing 对象均 `Object has been deleted`
+- 所有 mutating cURL 必须同时携带 `Cookie: session=...; csrf-token=...` + `x-csrf-token` header；缺任一返回 403（环境失败，非业务失败）
+- W0 必须先完成：Phase -1.5 要确认 `NODE_ENV=development` 且 `e2e-wallet-stub.tsx` 已挂载（否则 Test 1.1 会卡在 ConnectModal，不能算业务失败）
+- 补充测试 Test 9.10（匿名 sprite 下载）独立运行，不计入 95 项主流程通过率

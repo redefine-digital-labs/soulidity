@@ -13,20 +13,18 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('@mysten/dapp-kit', () => ({
   SuiClientProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useSuiClient: () => ({}),
 }))
 
 vi.mock('@mysten/sui/jsonRpc', () => ({
   getJsonRpcFullnodeUrl: () => 'https://rpc.test',
 }))
 
-vi.mock('@privy-io/react-auth', () => ({
-  PrivyProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}))
-
-vi.mock('../../lib/hooks/use-privy-sui', () => ({
-  usePrivySuiSign: () => ({
-    suiWallet: { address: '0xwallet123' },
+vi.mock('../../lib/hooks/use-desktop-wallet', () => ({
+  useDesktopWallet: () => ({
+    suiWallet: { address: '0xwallet123', publicKey: 'pk', createdAt: 0 },
     signPersonalMessage: vi.fn().mockResolvedValue('0xsig'),
+    signAndExecute: vi.fn(),
     suiClient: {},
   }),
 }))
@@ -50,7 +48,6 @@ type MockElectronApi = Pick<
   | 'onDownloadProgress'
   | 'cacheRemoveSprite'
   | 'soulSetActive'
-  | 'getDesktopPrivyToken'
   | 'soulFetchManifest'
   | 'soulCachePersona'
 >
@@ -62,7 +59,6 @@ function flushEffects() {
 function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectronApi {
   return {
     getDesktopRuntimeConfig: vi.fn().mockResolvedValue({
-      privyAppId: null,
       suiNetwork: 'testnet',
       authReady: false,
       authBlocker: null,
@@ -81,7 +77,6 @@ function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectr
     onDownloadProgress: vi.fn().mockReturnValue(() => {}),
     cacheRemoveSprite: vi.fn().mockResolvedValue(true),
     soulSetActive: vi.fn().mockResolvedValue(undefined),
-    getDesktopPrivyToken: vi.fn().mockResolvedValue({ jwt: 'jwt', alreadyLinked: true }),
     soulFetchManifest: vi.fn().mockResolvedValue(null),
     soulCachePersona: vi.fn().mockResolvedValue({ catalogId: 'noop', spriteId: 'noop' }),
     ...overrides,
@@ -139,7 +134,6 @@ describe('LibraryTab', () => {
   it('keeps My Souls cards visible but disables invalid or marketplace-restricted downloads', async () => {
     const api = createElectronApi({
       getDesktopRuntimeConfig: vi.fn().mockResolvedValue({
-        privyAppId: 'privy-app',
         suiNetwork: 'testnet',
         authReady: true,
         authBlocker: null,

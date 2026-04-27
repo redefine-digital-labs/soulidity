@@ -24,7 +24,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const auth = await requireHumanWalletIdentity()
+  const auth = await requireHumanWalletIdentity({ mutation: request })
   if ('error' in auth) {
     return auth.error
   }

@@ -27,7 +27,6 @@ function defineEnv(values: Record<string, string>) {
 loadDesktopBuildEnv()
 
 const sharedEnvDefines = defineEnv({
-  NEXT_PUBLIC_PRIVY_APP_ID: process.env.NEXT_PUBLIC_PRIVY_APP_ID || '',
   NEXT_PUBLIC_SUI_NETWORK: process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet',
   NEXT_PUBLIC_KIOSK_PACKAGE_ID: process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID || '0x2',
   NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL || '',

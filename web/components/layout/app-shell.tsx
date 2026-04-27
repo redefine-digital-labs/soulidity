@@ -7,7 +7,7 @@ import { Navbar } from '@/components/nav/navbar'
 import { SiteFooter } from '@/components/layout/site-footer'
 import { useToast } from '@/components/ui/toast'
 import { clearPendingAction, readPendingAction } from '@/lib/utils/pending-action'
-import { useGenericLogin } from '@/lib/hooks/use-generic-login'
+import { useLogin } from '@/lib/hooks/use-login'
 
 function PendingActionReplay() {
   const { user, loading } = useAuth()
@@ -26,7 +26,7 @@ function PendingActionReplay() {
     // Replay on first observation of a signed-in user (initial mount after
     // auth-flow remount, or in-tab signed-out → signed-in transition) whenever
     // a fresh pending action is present. Hijack by unrelated sign-ins is
-    // prevented upstream: useGenericLogin clears the entry before login, and
+    // prevented upstream: useLogin clears the entry before login, and
     // TTL in readPendingAction drops stale entries.
     if (previousId === null) {
       const action = readPendingAction()
@@ -43,7 +43,7 @@ function PendingActionReplay() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
-  const handleGenericLogin = useGenericLogin()
+  const handleGenericLogin = useLogin()
 
   return (
     <div className="relative min-h-screen">

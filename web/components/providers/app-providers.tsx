@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, type ReactNode } from 'react'
-import { SuiClientProvider } from '@mysten/dapp-kit'
+import { SuiClientProvider, WalletProvider } from '@mysten/dapp-kit'
 import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
-import { PrivyProvider } from './privy-provider'
+import '@mysten/dapp-kit/dist/index.css'
 import { QueryProvider } from './query-provider'
 import { AuthProvider } from './auth-provider'
+import { WalletAuthBridge } from './wallet-auth-bridge'
+import { WalletLoginModal } from './wallet-login-modal'
 import { E2EWalletHelpers } from './e2e-wallet-helpers'
+import { E2EWalletStub } from './e2e-wallet-stub'
 import { ToastProvider } from '@/components/ui/toast'
 import { syncSoulidityDeploymentSession } from '@/lib/soulidity/client-session'
 
@@ -30,17 +33,23 @@ export function AppProviders({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <PrivyProvider>
-      <QueryProvider>
-        <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
+    <QueryProvider>
+      {process.env.NODE_ENV === 'development' &&
+      process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1' ? (
+        <E2EWalletStub />
+      ) : null}
+      <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
+        <WalletProvider autoConnect>
           <AuthProvider>
+            <WalletAuthBridge />
             <ToastProvider>
               <E2EWalletHelpers />
+              <WalletLoginModal />
               {children}
             </ToastProvider>
           </AuthProvider>
-        </SuiClientProvider>
-      </QueryProvider>
-    </PrivyProvider>
+        </WalletProvider>
+      </SuiClientProvider>
+    </QueryProvider>
   )
 }

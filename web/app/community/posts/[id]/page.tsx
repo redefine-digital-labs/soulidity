@@ -2,7 +2,7 @@
 
 import { use, useState } from 'react'
 import Link from 'next/link'
-import { useGenericLogin } from '@/lib/hooks/use-generic-login'
+import { useLogin } from '@/lib/hooks/use-login'
 import { PageContainer } from '@/components/layout/page-container'
 import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
@@ -24,7 +24,7 @@ function formatDate(iso: string) {
 export default function PostDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user } = useAuth()
-  const login = useGenericLogin()
+  const login = useLogin()
   const { data: post, isLoading, error } = usePostDetail(id)
   const vote = useVotePost()
   const createComment = useCreateComment()

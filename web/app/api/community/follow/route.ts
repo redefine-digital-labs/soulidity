@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireIdentity, resolveIdentity } from '@/lib/auth/identity'
+import { requireMutationIdentity, resolveIdentity } from '@/lib/auth/identity'
 import { resolveMemberSpaceId } from '@/lib/community/resolve-space'
 
 export const dynamic = 'force-dynamic'
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 // Toggles follow state. Returns { following: boolean, followerCount: number }
 export async function POST(request: NextRequest) {
   try {
-  const { error, identity } = await requireIdentity()
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   const body = await request.json()

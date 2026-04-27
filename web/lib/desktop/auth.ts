@@ -3,7 +3,11 @@ import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
-import { resolveIdentity, type Identity } from '@/lib/auth/identity'
+import {
+  requireIdentity,
+  requireMutationIdentity,
+  type Identity,
+} from '@/lib/auth/identity'
 
 const TOKEN_PREFIX = 'dtk_'
 const TOKEN_RANDOM_BYTES = 32
@@ -83,8 +87,20 @@ export async function verifyDesktopAccessToken(
 
 // ── Route-level auth middleware ────────────────────────────
 
+export interface RequireDesktopIdentityOptions {
+  /**
+   * For mutating routes (POST/PUT/PATCH/DELETE), set to true so that browser
+   * session cookies must be paired with a matching CSRF token + same-origin
+   * Origin/Referer. Read-only routes (GET/HEAD) can leave this false.
+   *
+   * The desktop bearer token (`dtk_*`) bypasses CSRF either way.
+   */
+  mutation?: boolean
+}
+
 export async function requireDesktopIdentity(
   request: Request,
+  options: RequireDesktopIdentityOptions = {},
 ): Promise<{ error?: NextResponse; accountId?: string; identity?: Identity }> {
   const authHeader = request.headers.get('authorization')
 
@@ -105,12 +121,11 @@ export async function requireDesktopIdentity(
     }
   }
 
-  // Fallback: standard human identity (Privy / wallet / API key)
-  const identity = await resolveIdentity({ allowCookieFallback: false })
-  if (!identity) {
-    return {
-      error: NextResponse.json({ error: '请先登录' }, { status: 401 }),
-    }
+  const { error, identity } = options.mutation
+    ? await requireMutationIdentity(request)
+    : await requireIdentity()
+  if (error) {
+    return { error }
   }
 
   if (identity.kind !== 'human') {

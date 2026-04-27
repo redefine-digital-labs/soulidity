@@ -44,7 +44,7 @@ function writerKindToString(kind: number): SoulWriterKind {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireHumanWalletIdentity()
+  const auth = await requireHumanWalletIdentity({ mutation: request })
   if ('error' in auth) {
     return auth.error
   }

@@ -34,6 +34,10 @@ type MockElectronApi = Pick<
   | 'deviceStartLink'
   | 'deviceGetLinkUrl'
   | 'devicePoll'
+  | 'walletGetInfo'
+  | 'walletGenerate'
+  | 'walletImport'
+  | 'walletReset'
 >
 
 function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectronApi {
@@ -59,6 +63,10 @@ function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectr
     deviceStartLink: vi.fn(),
     deviceGetLinkUrl: vi.fn(),
     devicePoll: vi.fn(),
+    walletGetInfo: vi.fn().mockResolvedValue(null),
+    walletGenerate: vi.fn(),
+    walletImport: vi.fn(),
+    walletReset: vi.fn(),
     ...overrides,
   }
 }
@@ -401,6 +409,127 @@ describe('SettingsTab desktop auth restore', () => {
 
     expect(container.textContent).toContain('Link to Web Account')
     expect(container.textContent).not.toContain('Linked to Sui wallet')
+  })
+
+  it('exposes Generate / Import controls when no desktop Sui wallet exists', async () => {
+    const api = createElectronApi({
+      walletGetInfo: vi.fn().mockResolvedValue(null),
+    })
+
+    await renderWithApi(api)
+
+    expect(api.walletGetInfo).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Desktop Sui Wallet')
+    expect(container.textContent).toContain('No desktop Sui wallet is configured yet.')
+    expect(findButton(container, 'Generate Sui Wallet')).not.toBeNull()
+    expect(findButton(container, 'Import Existing Key')).not.toBeNull()
+  })
+
+  it('renders the existing desktop Sui wallet address with a reset control', async () => {
+    const api = createElectronApi({
+      walletGetInfo: vi.fn().mockResolvedValue({
+        address: '0x2222222222222222222222222222222222222222222222222222222222222222',
+        publicKey: 'pk',
+        createdAt: Date.parse('2026-04-17T09:30:00Z'),
+      }),
+    })
+
+    await renderWithApi(api)
+
+    const desktopAddrInput = container.querySelector(
+      'input[title="0x2222222222222222222222222222222222222222222222222222222222222222"]',
+    )
+    expect(desktopAddrInput).not.toBeNull()
+    expect(findButton(container, 'Reset Desktop Sui Wallet')).not.toBeNull()
+    expect(container.textContent).not.toContain('No desktop Sui wallet is configured yet.')
+  })
+
+  it('warns when the desktop Sui wallet does not match the linked primary Sui address', async () => {
+    const api = createElectronApi({
+      getDesktopAuthStatus: vi.fn().mockResolvedValue({ hasToken: true, accountId: 'acct_cuid_1234' }),
+      getDesktopMe: vi.fn().mockResolvedValue({
+        profile: {
+          accountId: 'acct_cuid_1234',
+          primarySuiAddress: '0x1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        activePersona: null,
+      }),
+      walletGetInfo: vi.fn().mockResolvedValue({
+        address: '0x2222222222222222222222222222222222222222222222222222222222222222',
+        publicKey: 'pk',
+        createdAt: Date.parse('2026-04-17T09:30:00Z'),
+      }),
+    })
+
+    await renderWithApi(api)
+
+    expect(container.textContent).toContain('Linked to Sui wallet')
+    expect(container.textContent).toContain('does not match the bound primary Sui wallet')
+  })
+
+  it('replaces the panel with the freshly generated wallet after Generate Sui Wallet succeeds', async () => {
+    const generated = {
+      address: '0x3333333333333333333333333333333333333333333333333333333333333333',
+      publicKey: 'pk-gen',
+      createdAt: Date.parse('2026-04-17T09:30:00Z'),
+    }
+    const api = createElectronApi({
+      walletGetInfo: vi.fn().mockResolvedValue(null),
+      walletGenerate: vi.fn().mockResolvedValue(generated),
+    })
+
+    await renderWithApi(api)
+
+    const generateButton = findButton(container, 'Generate Sui Wallet')
+    expect(generateButton).not.toBeNull()
+    await act(async () => {
+      generateButton?.click()
+      await flushEffects()
+    })
+
+    expect(api.walletGenerate).toHaveBeenCalledTimes(1)
+    expect(container.querySelector(`input[title="${generated.address}"]`)).not.toBeNull()
+    expect(findButton(container, 'Reset Desktop Sui Wallet')).not.toBeNull()
+  })
+
+  it('imports a pasted private key through walletImport and re-renders with the new address', async () => {
+    const imported = {
+      address: '0x4444444444444444444444444444444444444444444444444444444444444444',
+      publicKey: 'pk-import',
+      createdAt: Date.parse('2026-04-17T09:30:00Z'),
+    }
+    const api = createElectronApi({
+      walletGetInfo: vi.fn().mockResolvedValue(null),
+      walletImport: vi.fn().mockResolvedValue(imported),
+    })
+
+    await renderWithApi(api)
+
+    const importButton = findButton(container, 'Import Existing Key')
+    expect(importButton).not.toBeNull()
+    await act(async () => {
+      importButton?.click()
+      await flushEffects()
+    })
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null
+    expect(textarea).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(textarea, 'suiprivkey1qqqqqqqqqqqqqqq')
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushEffects()
+    })
+
+    const submitButton = findButton(container, 'Import Key')
+    expect(submitButton).not.toBeNull()
+    await act(async () => {
+      submitButton?.click()
+      await flushEffects()
+    })
+
+    expect(api.walletImport).toHaveBeenCalledWith('suiprivkey1qqqqqqqqqqqqqqq')
+    expect(container.querySelector(`input[title="${imported.address}"]`)).not.toBeNull()
   })
 
   it('persists the enhanced motion toggle through desktop config', async () => {

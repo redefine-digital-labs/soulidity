@@ -31,7 +31,7 @@ function normalizeSourceRef(value: unknown): string | null | 'invalid' {
 }
 
 export async function PUT(request: Request) {
-  const auth = await requireDesktopIdentity(request)
+  const auth = await requireDesktopIdentity(request, { mutation: true })
   if (auth.error) {
     return auth.error
   }

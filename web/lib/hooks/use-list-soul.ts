@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildListSoulTx } from '@/lib/soulidity/tx/list'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
 export type ListStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -13,7 +13,7 @@ export function useListSoul(soul: SoulAssetDetail | null) {
   const [status, setStatus] = useState<ListStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [txDigest, setTxDigest] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = usePrivySuiSign()
+  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
 
   async function listSoul(priceAtomic: bigint) {

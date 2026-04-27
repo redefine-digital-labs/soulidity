@@ -1,20 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { resetRateLimitBucketsForTests } from '../../web/lib/rate-limit.ts'
 
 const NORMALIZED_ABC = `0x${'0'.repeat(61)}abc`
 
-function normalizeTestSuiAddress(value: string): string {
-  const hex = value.trim().toLowerCase().replace(/^0x/, '')
-  return `0x${hex.padStart(64, '0')}`
-}
-
 const mockedPrisma = vi.hoisted(() => ({
-  account: {
-    findUnique: vi.fn(),
-    update: vi.fn(),
-  },
   member: {
-    findFirst: vi.fn(),
     findUnique: vi.fn(),
   },
   walletChallenge: {
@@ -23,24 +14,14 @@ const mockedPrisma = vi.hoisted(() => ({
   },
   walletBinding: {
     findFirst: vi.fn(),
-    findUnique: vi.fn(),
-    create: vi.fn(),
-    deleteMany: vi.fn(),
-    update: vi.fn(),
   },
 }))
 
-const mockedPrivy = vi.hoisted(() => ({
-  verifyAuthToken: vi.fn(),
-  getUser: vi.fn(),
-  createWallets: vi.fn(),
-}))
-
 const mockedHeaders = vi.hoisted(() => vi.fn())
-
 const mockedVerify = vi.hoisted(() => ({
   verifyPersonalMessageSignature: vi.fn(),
 }))
+const mockedResolveAgent = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/prisma', () => ({
   prisma: mockedPrisma,
@@ -50,11 +31,11 @@ vi.mock('@web/lib/request-headers', () => ({
   getRequestHeaders: mockedHeaders,
 }))
 
-vi.mock('@web/lib/auth/privy', () => ({
-  privy: mockedPrivy,
-}))
-
 vi.mock('@web/lib/sui-verify', () => mockedVerify)
+
+vi.mock('@web/lib/auth/resolve-agent', () => ({
+  resolveAgentByApiKey: mockedResolveAgent,
+}))
 
 describe('resolveIdentity', () => {
   beforeEach(() => {
@@ -62,779 +43,133 @@ describe('resolveIdentity', () => {
     vi.resetModules()
     resetRateLimitBucketsForTests()
     process.env.NEXT_PUBLIC_BASE_URL = 'https://clawnews.example.com'
+    process.env.AUTH_SECRET = 'test-secret-for-session-jwt'
     delete process.env.TRUST_PROXY_HEADERS
-    mockedPrivy.verifyAuthToken.mockResolvedValue({ userId: 'did:privy:123' })
+  })
+
+  it('returns null when there are no auth headers and no cookie', async () => {
+    mockedHeaders.mockResolvedValue(new Headers())
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
+  })
+
+  it('rejects unknown bearer tokens (no Privy fallback)', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({ authorization: 'Bearer some-legacy-token' }))
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
+  })
+
+  it('rejects empty bearer tokens', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({ authorization: 'Bearer ' }))
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
+  })
+
+  it('resolves agent identity from sk- bearer token', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({ authorization: 'Bearer sk-agent-secret-key' }))
+    mockedResolveAgent.mockResolvedValue({
+      agentMemberId: 'agent-1',
+      ownerMemberId: 'owner-1',
+      accountId: 'account-1',
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toEqual({
+      accountId: 'account-1',
+      memberId: 'agent-1',
+      ownerMemberId: 'owner-1',
+      kind: 'agent',
+    })
+  })
+
+  it('rejects trivially short sk- API keys without DB lookup', async () => {
+    mockedHeaders.mockResolvedValue(new Headers({ authorization: 'Bearer sk-' }))
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedResolveAgent).not.toHaveBeenCalled()
+  })
+
+  it('resolves human identity from a valid session cookie', async () => {
+    const { signSession, generateCsrfToken, hashCsrfToken } = await import('../../web/lib/auth/session.ts')
+    const csrfHash = hashCsrfToken(generateCsrfToken())
+    const sessionToken = await signSession({
+      memberId: 'member-1',
+      accountId: 'account-1',
+      walletAddress: NORMALIZED_ABC,
+      csrfHash,
+      kind: 'human',
+    })
+    mockedHeaders.mockResolvedValue(new Headers({ cookie: `session=${sessionToken}` }))
+    mockedPrisma.member.findUnique.mockResolvedValue({
+      id: 'member-1',
+      accountId: 'account-1',
+      kind: 'human',
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    const identity = await resolveIdentity()
+    expect(identity).toMatchObject({
+      accountId: 'account-1',
+      memberId: 'member-1',
+      kind: 'human',
+    })
+    expect(identity?.session?.csrfHash).toBe(csrfHash)
+  })
+
+  it('rejects a session cookie when the member no longer exists', async () => {
+    const { signSession, generateCsrfToken, hashCsrfToken } = await import('../../web/lib/auth/session.ts')
+    const sessionToken = await signSession({
+      memberId: 'member-1',
+      accountId: 'account-1',
+      walletAddress: NORMALIZED_ABC,
+      csrfHash: hashCsrfToken(generateCsrfToken()),
+      kind: 'human',
+    })
+    mockedHeaders.mockResolvedValue(new Headers({ cookie: `session=${sessionToken}` }))
     mockedPrisma.member.findUnique.mockResolvedValue(null)
-    mockedPrisma.member.findFirst.mockResolvedValue(null)
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue(null)
-    mockedPrisma.walletBinding.findUnique.mockResolvedValue(null)
-    mockedPrisma.walletBinding.deleteMany.mockResolvedValue({ count: 1 })
-    mockedPrisma.walletBinding.update.mockResolvedValue({ id: 'binding-1' })
-    mockedPrivy.createWallets.mockResolvedValue({
-      linkedAccounts: [{ type: 'wallet', chainType: 'sui', address: '0xdef' }],
-    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
   })
 
-  it('backfills a local Sui wallet binding when the Privy user already has one', async () => {
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    // ensureSuiWallet will call getUser in the background
-    mockedPrivy.getUser.mockResolvedValue({
-      linkedAccounts: [{ type: 'wallet', chainType: 'sui', address: '0xabc' }],
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
+  it('rejects a session cookie when the member account no longer matches', async () => {
+    const { signSession, generateCsrfToken, hashCsrfToken } = await import('../../web/lib/auth/session.ts')
+    const sessionToken = await signSession({
+      memberId: 'member-1',
       accountId: 'account-1',
-      memberId: 'member-1',
+      walletAddress: NORMALIZED_ABC,
+      csrfHash: hashCsrfToken(generateCsrfToken()),
       kind: 'human',
     })
-    expect(mockedPrivy.createWallets).not.toHaveBeenCalled()
-    await vi.waitFor(() => {
-      expect(mockedPrisma.walletBinding.create).toHaveBeenCalledWith({
-        data: {
-          memberId: 'member-1',
-          chain: 'sui',
-          address: NORMALIZED_ABC,
-        },
-      })
-    })
-  })
-
-  it('skips Privy wallet sync when the member already has a local Sui binding', async () => {
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      id: 'binding-1',
-      address: NORMALIZED_ABC,
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-1',
-      memberId: 'member-1',
+    mockedHeaders.mockResolvedValue(new Headers({ cookie: `session=${sessionToken}` }))
+    mockedPrisma.member.findUnique.mockResolvedValue({
+      id: 'member-1',
+      accountId: 'account-different',
       kind: 'human',
     })
-    expect(mockedPrivy.getUser).not.toHaveBeenCalled()
-    expect(mockedPrivy.createWallets).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletBinding.create).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletBinding.update).not.toHaveBeenCalled()
-  })
-
-  it('repairs a short-form local Sui binding before skipping Privy sync', async () => {
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      id: 'binding-1',
-      address: '0xabc',
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-1',
-      memberId: 'member-1',
-      kind: 'human',
-    })
-    expect(mockedPrisma.walletBinding.update).toHaveBeenCalledWith({
-      where: { id: 'binding-1' },
-      data: { address: NORMALIZED_ABC },
-    })
-    expect(mockedPrivy.getUser).not.toHaveBeenCalled()
-    expect(mockedPrivy.createWallets).not.toHaveBeenCalled()
-  })
-
-  it('warns when canonicalizing a stored Sui binding collides with another member', async () => {
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      id: 'binding-1',
-      address: '0xabc',
-    })
-    mockedPrisma.walletBinding.update.mockRejectedValueOnce(
-      Object.assign(new Error('Unique constraint failed'), {
-        code: 'P2002',
-        meta: { target: ['chain', 'address'] },
-      }),
-    )
-    mockedPrisma.walletBinding.findUnique.mockResolvedValue({
-      memberId: 'member-elsewhere',
-    })
-    mockedPrivy.getUser.mockResolvedValue({ linkedAccounts: [] })
-    mockedPrivy.createWallets.mockResolvedValue({ linkedAccounts: [] })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-1',
-      memberId: 'member-1',
-      kind: 'human',
-    })
-    await vi.waitFor(() => {
-      expect(consoleWarn).toHaveBeenCalledWith(
-        'Canonical Sui wallet binding already belongs to another member',
-        {
-          address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
-        },
-      )
-    })
-
-    consoleWarn.mockRestore()
-  })
-
-  it('drops a stale short-form Sui binding when the canonical row already belongs to the same member', async () => {
-    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {})
-
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      id: 'binding-1',
-      address: '0xabc',
-    })
-    mockedPrisma.walletBinding.update.mockRejectedValueOnce(
-      Object.assign(new Error('Unique constraint failed'), {
-        code: 'P2002',
-        meta: { target: ['chain', 'address'] },
-      }),
-    )
-    mockedPrisma.walletBinding.findUnique.mockResolvedValue({
-      memberId: 'member-1',
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-1',
-      memberId: 'member-1',
-      kind: 'human',
-    })
-    await vi.waitFor(() => {
-      expect(mockedPrisma.walletBinding.deleteMany).toHaveBeenCalledWith({
-        where: { id: 'binding-1' },
-      })
-    })
-    expect(consoleInfo).toHaveBeenCalledWith(
-      'Removed duplicate non-canonical Sui wallet binding after canonicalization',
-      {
-        memberId: 'member-1',
-        address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
-      },
-    )
-    expect(mockedPrivy.getUser).not.toHaveBeenCalled()
-    expect(mockedPrivy.createWallets).not.toHaveBeenCalled()
-    consoleInfo.mockRestore()
-  })
-
-  it('does not silently no-op when the Privy Sui wallet is already bound to another member', async () => {
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    mockedPrivy.getUser.mockResolvedValue({
-      linkedAccounts: [{ type: 'wallet', chainType: 'sui', address: '0xabc' }],
-    })
-    mockedPrisma.walletBinding.findUnique.mockResolvedValue({
-      id: 'binding-elsewhere',
-      memberId: 'member-elsewhere',
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-1',
-      memberId: 'member-1',
-      kind: 'human',
-    })
-    expect(mockedPrisma.walletBinding.create).not.toHaveBeenCalled()
-    await vi.waitFor(() => {
-      expect(consoleWarn).toHaveBeenCalledWith(
-        'Privy Sui wallet is already bound to another member',
-        {
-          address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
-        },
-      )
-    })
-
-    consoleWarn.mockRestore()
-  })
-
-  it('links a legacy Telegram-backed account on first Privy login', async () => {
-    mockedPrisma.account.findUnique.mockImplementation(async ({ where }: any) => {
-      if (where.privyDid) return null
-      if (where.tgId === '123456') {
-        return {
-          id: 'account-legacy',
-          privyDid: null,
-          tgName: null,
-          email: null,
-          members: [{ id: 'member-legacy', kind: 'human' }],
-        }
-      }
-      return null
-    })
-    mockedPrisma.account.update.mockResolvedValue({
-      id: 'account-legacy',
-    })
-    mockedPrivy.getUser.mockResolvedValue({
-      telegram: {
-        telegramUserId: 123456,
-        username: 'legacy_member',
-      },
-      email: {
-        address: 'legacy@example.com',
-        firstVerifiedAt: new Date(),
-      },
-      linkedAccounts: [],
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-legacy',
-      memberId: 'member-legacy',
-      kind: 'human',
-    })
-    expect(mockedPrisma.account.update).toHaveBeenCalledWith({
-      where: { id: 'account-legacy' },
-      data: {
-        privyDid: 'did:privy:123',
-        email: 'legacy@example.com',
-        tgName: 'legacy_member',
-      },
-    })
-  })
-
-  it('links legacy tgId account even when email is claimed by another account', async () => {
-    mockedPrisma.account.findUnique.mockImplementation(async ({ where }: any) => {
-      if (where.privyDid) return null
-      if (where.tgId === '123456') {
-        return {
-          id: 'account-legacy',
-          privyDid: null,
-          tgName: null,
-          email: null,
-          members: [{ id: 'member-legacy', kind: 'human' }],
-        }
-      }
-      return null
-    })
-    // First update fails: email unique constraint violation
-    mockedPrisma.account.update.mockRejectedValueOnce(
-      Object.assign(new Error('Unique constraint failed'), {
-        code: 'P2002',
-        meta: { target: ['email'] },
-      })
-    )
-    // Retry without email succeeds
-    mockedPrisma.account.update.mockResolvedValueOnce({ id: 'account-legacy' })
-
-    mockedPrivy.getUser.mockResolvedValue({
-      telegram: { telegramUserId: 123456, username: 'legacy_member' },
-      email: { address: 'claimed@example.com', firstVerifiedAt: new Date() },
-      linkedAccounts: [],
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-legacy',
-      memberId: 'member-legacy',
-      kind: 'human',
-    })
-    // Second call should omit the email
-    expect(mockedPrisma.account.update).toHaveBeenCalledTimes(2)
-    expect(mockedPrisma.account.update).toHaveBeenLastCalledWith({
-      where: { id: 'account-legacy' },
-      data: {
-        privyDid: 'did:privy:123',
-        tgName: 'legacy_member',
-      },
-    })
-  })
-
-  it('falls back to linking by email when a legacy account already has one', async () => {
-    mockedPrisma.account.findUnique.mockImplementation(async ({ where }: any) => {
-      if (where.privyDid) return null
-      if (where.email === 'user@example.com') {
-        return {
-          id: 'account-email',
-          privyDid: null,
-          tgName: null,
-          email: 'user@example.com',
-          members: [{ id: 'member-email', kind: 'human' }],
-        }
-      }
-      return null
-    })
-    mockedPrisma.account.update.mockResolvedValue({
-      id: 'account-email',
-    })
-    mockedPrivy.getUser.mockResolvedValue({
-      email: {
-        address: 'USER@example.com',
-        firstVerifiedAt: new Date(),
-      },
-      linkedAccounts: [],
-    })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolvePrivyIdentity('token')
-
-    expect(identity).toEqual({
-      accountId: 'account-email',
-      memberId: 'member-email',
-      kind: 'human',
-    })
-    expect(mockedPrisma.account.update).toHaveBeenCalledWith({
-      where: { id: 'account-email' },
-      data: {
-        privyDid: 'did:privy:123',
-      },
-    })
-  })
-
-  it('verifies wallet challenges against the configured app domain instead of the request host', async () => {
-    const nonce = '11111111-1111-4111-8111-111111111111'
-    const normalizedAddress = `0x${'0'.repeat(63)}1`
-    process.env.TRUST_PROXY_HEADERS = 'true'
-
-    mockedHeaders.mockResolvedValue(new Headers({
-      host: 'evil.example.com',
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0x1',
-      'x-agent-signature': 'signature',
-      'x-agent-message': nonce,
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: normalizedAddress,
-      nonce,
-      usedAt: null,
-      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
-      domain: 'clawnews.example.com',
-    })
-    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      member: {
-        id: 'member-wallet',
-        accountId: 'account-wallet',
-        kind: 'human',
-      },
-    })
-    mockedVerify.verifyPersonalMessageSignature.mockImplementation(async (message: Uint8Array) => {
-      const decoded = new TextDecoder().decode(message)
-      expect(decoded).toContain('clawnews.example.com wants you to sign in with your Sui account:')
-      expect(decoded).not.toContain('evil.example.com')
-
-      return {
-        toSuiAddress: () => normalizedAddress,
-      }
-    })
 
     const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolveIdentity()
-
-    expect(identity).toEqual({
-      accountId: 'account-wallet',
-      memberId: 'member-wallet',
-      kind: 'human',
-    })
-    expect(mockedPrisma.walletBinding.findFirst).toHaveBeenCalledWith({
-      where: { chain: 'sui', address: normalizedAddress },
-      select: {
-        member: {
-          select: { id: true, accountId: true, kind: true },
-        },
-      },
-    })
-    expect(mockedPrisma.walletChallenge.updateMany).toHaveBeenCalledWith({
-      where: { nonce, usedAt: null },
-      data: { usedAt: expect.any(Date) },
-    })
-  })
-
-  it('rejects expired wallet challenges before verifying signatures', async () => {
-    process.env.TRUST_PROXY_HEADERS = 'true'
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0x1',
-      'x-agent-signature': 'signature',
-      'x-agent-message': '22222222-2222-4222-8222-222222222222',
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: `0x${'0'.repeat(63)}1`,
-      nonce: '22222222-2222-4222-8222-222222222222',
-      usedAt: null,
-      expiresAt: new Date('2000-01-01T00:00:00.000Z'),
-      domain: 'clawnews.example.com',
-    })
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
     await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
   })
 
-  it('rejects replayed wallet challenges that were already used', async () => {
-    process.env.TRUST_PROXY_HEADERS = 'true'
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0x1',
-      'x-agent-signature': 'signature',
-      'x-agent-message': '33333333-3333-4333-8333-333333333333',
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: `0x${'0'.repeat(63)}1`,
-      nonce: '33333333-3333-4333-8333-333333333333',
-      usedAt: new Date('2099-03-21T00:00:00.000Z'),
-      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
-      domain: 'clawnews.example.com',
-    })
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
-  })
-
-  it('rejects wallet challenges whose stored address no longer matches the signer address', async () => {
-    process.env.TRUST_PROXY_HEADERS = 'true'
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0x1',
-      'x-agent-signature': 'signature',
-      'x-agent-message': '44444444-4444-4444-8444-444444444444',
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: `0x${'0'.repeat(63)}2`,
-      nonce: '44444444-4444-4444-8444-444444444444',
-      usedAt: null,
-      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
-      domain: 'clawnews.example.com',
-    })
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
-  })
-
-  it('logs unexpected wallet identity failures before failing closed', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const dbError = new Error('db unavailable')
-    process.env.TRUST_PROXY_HEADERS = 'true'
-
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0xabc',
-      'x-agent-signature': 'signature',
-      'x-agent-message': '55555555-5555-4555-8555-555555555555',
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockRejectedValue(dbError)
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(consoleError).toHaveBeenCalledWith(
-      'Unexpected wallet identity resolution failure',
-      expect.objectContaining({
-        address: `${NORMALIZED_ABC.slice(0, 10)}...${NORMALIZED_ABC.slice(-4)}`,
-        nonce: '55555555-5555-4555-8555-555555555555',
-        error: dbError,
-      }),
-    )
-
-    consoleError.mockRestore()
-  })
-
-  it('treats invalid wallet signatures as expected auth failures without error logging', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    process.env.TRUST_PROXY_HEADERS = 'true'
-
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0xabc',
-      'x-agent-signature': 'bad-signature',
-      'x-agent-message': '66666666-6666-4666-8666-666666666666',
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: NORMALIZED_ABC,
-      nonce: '66666666-6666-4666-8666-666666666666',
-      usedAt: null,
-      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
-      domain: 'clawnews.example.com',
-    })
-    mockedVerify.verifyPersonalMessageSignature.mockRejectedValue(new Error('Invalid signature'))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(consoleError).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletBinding.findFirst).not.toHaveBeenCalled()
-
-    consoleError.mockRestore()
-  })
-
-  it('does not consume the wallet challenge after signature verification fails', async () => {
-    process.env.TRUST_PROXY_HEADERS = 'true'
-
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0xabc',
-      'x-agent-signature': 'bad-signature',
-      'x-agent-message': '77777777-7777-4777-8777-777777777777',
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: NORMALIZED_ABC,
-      nonce: '77777777-7777-4777-8777-777777777777',
-      usedAt: null,
-      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
-      domain: 'clawnews.example.com',
-    })
-    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
-    mockedVerify.verifyPersonalMessageSignature.mockRejectedValue(new Error('Invalid signature'))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletBinding.findFirst).not.toHaveBeenCalled()
-  })
-
-  it('rejects wallet challenges that are missing the stored domain', async () => {
-    process.env.TRUST_PROXY_HEADERS = 'true'
-
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0xabc',
-      'x-agent-signature': 'signature',
-      'x-agent-message': '78787878-7878-4878-8878-787878787878',
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: NORMALIZED_ABC,
-      nonce: '78787878-7878-4878-8878-787878787878',
-      usedAt: null,
-      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
-      domain: null,
-    })
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-    expect(mockedPrisma.walletChallenge.updateMany).not.toHaveBeenCalled()
-  })
-
-  it('logs privy verification failures before failing closed', async () => {
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    mockedHeaders.mockResolvedValue(new Headers({
-      authorization: 'Bearer privy-token',
-    }))
-    mockedPrivy.verifyAuthToken.mockRejectedValue(new Error('privy unavailable'))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(consoleWarn).toHaveBeenCalledWith(
-      'Privy token verification failed',
-      expect.objectContaining({
-        error: expect.any(Error),
-      }),
-    )
-
-    consoleWarn.mockRestore()
-  })
-
-  it('falls back to the privy-token cookie when the authorization header is absent', async () => {
-    mockedHeaders.mockResolvedValue(new Headers({
-      cookie: 'privy-session=t; privy-token=privy-cookie-token; theme=dark',
-    }))
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      id: 'binding-1',
-      address: NORMALIZED_ABC,
-    })
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolveIdentity()
-
-    expect(identity).toEqual({
-      accountId: 'account-1',
-      memberId: 'member-1',
-      kind: 'human',
-    })
-    expect(mockedPrivy.verifyAuthToken).toHaveBeenCalledWith('privy-cookie-token')
-  })
-
-  it('does not allow requireIdentity to authenticate from the privy-token cookie alone', async () => {
-    mockedHeaders.mockResolvedValue(new Headers({
-      cookie: 'privy-session=t; privy-token=privy-cookie-token; theme=dark',
-    }))
-
-    const { requireIdentity } = await import('../../web/lib/auth/identity.ts')
-    const result = await requireIdentity()
-
-    expect(result.identity).toBeNull()
-    expect(result.error.status).toBe(401)
-    await expect(result.error.json()).resolves.toEqual({ error: '请先登录' })
-    expect(mockedPrivy.verifyAuthToken).not.toHaveBeenCalled()
-  })
-
-  it('fails closed when resolvePrivyIdentity receives an invalid token directly', async () => {
-    mockedPrivy.verifyAuthToken.mockRejectedValue(new Error('invalid token'))
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolvePrivyIdentity('bad-token')).resolves.toBeNull()
-    expect(mockedPrivy.getUser).not.toHaveBeenCalled()
-  })
-
-  it('rejects oversized wallet auth headers before any DB or signature work', async () => {
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-agent-address': `0x${'a'.repeat(129)}`,
-      'x-agent-signature': 'signature',
-      'x-agent-message': '88888888-8888-4888-8888-888888888888',
-    }))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-  })
-
-  it('rejects oversized wallet signature and nonce headers before any DB or signature work', async () => {
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-agent-address': '0xabc',
-      'x-agent-signature': 's'.repeat(513),
-      'x-agent-message': 'n'.repeat(129),
-    }))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-  })
-
-  it('rejects non-uuid wallet nonces before any DB or signature work', async () => {
-    process.env.TRUST_PROXY_HEADERS = 'true'
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0xabc',
-      'x-agent-signature': 'signature',
-      'x-agent-message': 'not-a-uuid',
-    }))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-  })
-
-  it('prefers wallet auth over bearer tokens when both are present', async () => {
+  it('prefers wallet auth over session cookie when both are present', async () => {
     const nonce = '12121212-1212-4212-8212-121212121212'
     const normalizedAddress = `0x${'0'.repeat(63)}1`
     process.env.TRUST_PROXY_HEADERS = 'true'
 
-    mockedHeaders.mockResolvedValue(new Headers({
-      authorization: 'Bearer privy-token',
-      'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0x1',
-      'x-agent-signature': 'signature',
-      'x-agent-message': nonce,
-    }))
-    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
-      address: normalizedAddress,
-      nonce,
-      usedAt: null,
-      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
-      domain: 'clawnews.example.com',
-    })
-    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      member: {
-        id: 'member-wallet',
-        accountId: 'account-wallet',
-        kind: 'human',
-      },
-    })
-    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
-      toSuiAddress: () => normalizedAddress,
-    })
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-    const identity = await resolveIdentity()
-
-    expect(identity).toEqual({
-      accountId: 'account-wallet',
-      memberId: 'member-wallet',
+    const { signSession, generateCsrfToken, hashCsrfToken } = await import('../../web/lib/auth/session.ts')
+    const sessionToken = await signSession({
+      memberId: 'cookie-member',
+      accountId: 'cookie-account',
+      walletAddress: NORMALIZED_ABC,
+      csrfHash: hashCsrfToken(generateCsrfToken()),
       kind: 'human',
     })
-    expect(mockedPrivy.verifyAuthToken).not.toHaveBeenCalled()
-  })
-
-  it('fails closed when wallet auth resolves a member kind outside the supported union', async () => {
-    const nonce = '13131313-1313-4313-8313-131313131313'
-    const normalizedAddress = NORMALIZED_ABC
-    process.env.TRUST_PROXY_HEADERS = 'true'
 
     mockedHeaders.mockResolvedValue(new Headers({
+      cookie: `session=${sessionToken}`,
       'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0xabc',
+      'x-agent-address': normalizedAddress,
       'x-agent-signature': 'signature',
       'x-agent-message': nonce,
     }))
@@ -847,29 +182,97 @@ describe('resolveIdentity', () => {
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      member: {
-        id: 'member-wallet',
-        accountId: 'account-wallet',
-        kind: 'service',
-      },
+      member: { id: 'wallet-member', accountId: 'wallet-account', kind: 'human' },
     })
     mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
       toSuiAddress: () => normalizedAddress,
     })
 
     const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toMatchObject({
+      memberId: 'wallet-member',
+      accountId: 'wallet-account',
+      kind: 'human',
+    })
+    expect(mockedPrisma.member.findUnique).not.toHaveBeenCalled()
+  })
+})
 
-    await expect(resolveIdentity()).resolves.toBeNull()
+describe('requireMutationIdentity', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.resetModules()
+    resetRateLimitBucketsForTests()
+    process.env.NEXT_PUBLIC_BASE_URL = 'https://clawnews.example.com'
+    process.env.AUTH_SECRET = 'test-secret-for-session-jwt'
   })
 
-  it('rate limits repeated wallet identity probes before extra challenge lookups', async () => {
-    const nonce = '99999999-9999-4999-8999-999999999999'
+  async function buildSessionRequest(opts: { withCsrfHeader?: boolean; sameOrigin?: boolean } = {}) {
+    const { signSession, generateCsrfToken, hashCsrfToken } = await import('../../web/lib/auth/session.ts')
+    const csrfToken = generateCsrfToken()
+    const csrfHash = hashCsrfToken(csrfToken)
+    const sessionToken = await signSession({
+      memberId: 'member-1',
+      accountId: 'account-1',
+      walletAddress: NORMALIZED_ABC,
+      csrfHash,
+      kind: 'human',
+    })
+
+    const headers = new Headers({
+      host: 'app.example.com',
+      cookie: `session=${sessionToken}`,
+    })
+    if (opts.sameOrigin !== false) headers.set('origin', 'https://app.example.com')
+    else headers.set('origin', 'https://evil.example.com')
+    if (opts.withCsrfHeader) headers.set('x-csrf-token', csrfToken)
+
+    mockedHeaders.mockResolvedValue(headers)
+    mockedPrisma.member.findUnique.mockResolvedValue({
+      id: 'member-1',
+      accountId: 'account-1',
+      kind: 'human',
+    })
+
+    return new Request('https://app.example.com/api/test', { method: 'POST', headers })
+  }
+
+  it('rejects cookie-auth mutations without a CSRF header', async () => {
+    const request = await buildSessionRequest({ withCsrfHeader: false })
+    const { requireMutationIdentity } = await import('../../web/lib/auth/identity.ts')
+    const result = await requireMutationIdentity(request)
+    expect(result.identity).toBeNull()
+    expect(result.error?.status).toBe(403)
+  })
+
+  it('rejects cookie-auth mutations with a wrong-origin Origin header', async () => {
+    const request = await buildSessionRequest({ withCsrfHeader: true, sameOrigin: false })
+    const { requireMutationIdentity } = await import('../../web/lib/auth/identity.ts')
+    const result = await requireMutationIdentity(request)
+    expect(result.identity).toBeNull()
+    expect(result.error?.status).toBe(403)
+  })
+
+  it('accepts cookie-auth mutations with a matching CSRF token and same-origin', async () => {
+    const request = await buildSessionRequest({ withCsrfHeader: true, sameOrigin: true })
+    const { requireMutationIdentity } = await import('../../web/lib/auth/identity.ts')
+    const result = await requireMutationIdentity(request)
+    expect(result.error).toBeNull()
+    expect(result.identity).toMatchObject({
+      memberId: 'member-1',
+      accountId: 'account-1',
+      kind: 'human',
+    })
+  })
+
+  it('accepts header-only agent identity without requiring CSRF', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true'
+    const nonce = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
     const normalizedAddress = `0x${'0'.repeat(63)}1`
-    process.env.TRUST_PROXY_HEADERS = 'true'
 
     mockedHeaders.mockResolvedValue(new Headers({
       'x-forwarded-for': '203.0.113.10',
-      'x-agent-address': '0x1',
+      'x-agent-address': normalizedAddress,
       'x-agent-signature': 'signature',
       'x-agent-message': nonce,
     }))
@@ -882,124 +285,29 @@ describe('resolveIdentity', () => {
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      member: {
-        id: 'member-wallet',
-        accountId: 'account-wallet',
-        kind: 'human',
-      },
+      member: { id: 'agent-member', accountId: 'agent-account', kind: 'agent' },
     })
     mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
       toSuiAddress: () => normalizedAddress,
     })
 
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      await expect(resolveIdentity()).resolves.toEqual({
-        accountId: 'account-wallet',
-        memberId: 'member-wallet',
-        kind: 'human',
-      })
-    }
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrisma.walletChallenge.findUnique).toHaveBeenCalledTimes(10)
-  })
-
-  it('fails closed for wallet auth when proxy IP headers are unavailable', async () => {
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    delete process.env.TRUST_PROXY_HEADERS
-    mockedHeaders.mockResolvedValue(new Headers({
-      'x-agent-address': '0x1',
-      'x-agent-signature': 'signature-missing-ip',
-      'x-agent-message': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    }))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrisma.walletChallenge.findUnique).not.toHaveBeenCalled()
-    expect(mockedVerify.verifyPersonalMessageSignature).not.toHaveBeenCalled()
-    expect(consoleWarn).toHaveBeenCalledWith(
-      'Wallet auth requires a trusted client IP; check proxy forwarding or TRUST_PROXY_HEADERS',
-      {
-        address: '0x00000000...0001',
-      },
-    )
-    consoleWarn.mockRestore()
-  })
-
-  it('rejects trivially short agent API keys before hashing or DB lookup', async () => {
-    mockedHeaders.mockResolvedValue(new Headers({
-      authorization: 'Bearer sk-',
-    }))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrisma.member.findFirst).not.toHaveBeenCalled()
-  })
-
-  it('rejects empty bearer tokens before attempting Privy verification', async () => {
-    mockedHeaders.mockResolvedValue(new Headers({
-      authorization: 'Bearer ',
-    }))
-
-    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await expect(resolveIdentity()).resolves.toBeNull()
-    expect(mockedPrivy.verifyAuthToken).not.toHaveBeenCalled()
-  })
-
-  it('skips repeated wallet sync attempts for the same member within the sync TTL', async () => {
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
+    const request = new Request('https://app.example.com/api/test', { method: 'POST' })
+    const { requireMutationIdentity } = await import('../../web/lib/auth/identity.ts')
+    const result = await requireMutationIdentity(request)
+    expect(result.error).toBeNull()
+    expect(result.identity).toMatchObject({
+      memberId: 'agent-member',
+      accountId: 'agent-account',
+      kind: 'agent',
     })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue(null)
-    mockedPrivy.getUser.mockResolvedValue({ linkedAccounts: [] })
-    mockedPrivy.createWallets.mockResolvedValue({ linkedAccounts: [] })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    await resolvePrivyIdentity('token')
-    await resolvePrivyIdentity('token')
-
-    expect(mockedPrisma.walletBinding.findFirst).toHaveBeenCalledTimes(1)
-    expect(mockedPrivy.getUser).toHaveBeenCalledTimes(1)
-    expect(mockedPrivy.createWallets).toHaveBeenCalledTimes(1)
   })
 
-  it('serializes concurrent wallet sync attempts for the same member', async () => {
-    let resolveGetUser: ((value: any) => void) | undefined
-
-    mockedPrisma.account.findUnique.mockResolvedValue({
-      id: 'account-1',
-      privyDid: 'did:privy:123',
-      tgName: 'openclaw',
-      email: 'user@example.com',
-      members: [{ id: 'member-1', kind: 'human' }],
-    })
-    mockedPrisma.walletBinding.findFirst.mockResolvedValue(null)
-    mockedPrivy.getUser.mockImplementation(
-      () => new Promise((resolve) => { resolveGetUser = resolve }),
-    )
-    mockedPrivy.createWallets.mockResolvedValue({ linkedAccounts: [] })
-
-    const { resolvePrivyIdentity } = await import('../../web/lib/auth/identity.ts')
-
-    const first = resolvePrivyIdentity('token')
-    const second = resolvePrivyIdentity('token')
-    await vi.waitFor(() => {
-      expect(resolveGetUser).toBeTypeOf('function')
-    })
-    resolveGetUser?.({ linkedAccounts: [] })
-
-    await Promise.all([first, second])
-
-    expect(mockedPrivy.getUser).toHaveBeenCalledTimes(1)
-    expect(mockedPrivy.createWallets).toHaveBeenCalledTimes(1)
+  it('returns 401 when there is no identity at all', async () => {
+    mockedHeaders.mockResolvedValue(new Headers())
+    const request = new Request('https://app.example.com/api/test', { method: 'POST' })
+    const { requireMutationIdentity } = await import('../../web/lib/auth/identity.ts')
+    const result = await requireMutationIdentity(request)
+    expect(result.identity).toBeNull()
+    expect(result.error?.status).toBe(401)
   })
 })

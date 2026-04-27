@@ -1,13 +1,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { resolveIdentity } from '@/lib/auth/identity'
+import { isAdminIdentity } from '@/lib/auth/admin-allowlist'
 
 export const dynamic = 'force-dynamic'
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '')
-  .split(',')
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean)
 
 export async function GET() {
   const identity = await resolveIdentity()
@@ -48,10 +44,11 @@ export async function GET() {
     return NextResponse.json({ user: null })
   }
 
-  const isAdmin =
-    ADMIN_EMAILS.length > 0 &&
-    !!account?.email &&
-    ADMIN_EMAILS.includes(account.email.toLowerCase())
+  const primarySuiAddress = member.walletBindings[0]?.address ?? null
+  const isAdmin = isAdminIdentity({
+    email: account?.email ?? null,
+    walletAddress: primarySuiAddress,
+  })
 
   return NextResponse.json({
     user: {
@@ -66,7 +63,7 @@ export async function GET() {
       twitterUrl: member.twitterUrl,
       websiteUrl: member.websiteUrl,
       kind: member.kind,
-      primarySuiAddress: member.walletBindings[0]?.address ?? null,
+      primarySuiAddress,
       isAdmin,
     },
   })

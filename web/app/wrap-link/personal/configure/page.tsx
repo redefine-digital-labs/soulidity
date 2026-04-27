@@ -12,7 +12,7 @@ import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 import { useKioskNfts } from '@/lib/hooks/use-kiosk-nfts'
-import { usePrivySuiSign } from '@/lib/hooks/use-privy-sui'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { validatePersonaSpriteDraft } from '@/lib/soulidity/persona-sprite'
 import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
 
@@ -80,7 +80,7 @@ function FileUploadCard({
 export default function ConfigurePage() {
   const router = useRouter()
   const ctx = useWrap()
-  const { suiWallet } = usePrivySuiSign()
+  const { suiWallet } = useWalletSign()
   const { data: nfts } = useKioskNfts(suiWallet?.address)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [skillBundleError, setSkillBundleError] = useState<string | null>(null)

@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import {
   buildChallengeMessage,
-  getTrustedAppDomain,
   normalizeSuiWalletAddress,
 } from '@/lib/auth/challenge'
 import { isUuid } from '@/lib/is-uuid'
@@ -11,96 +10,27 @@ import { getRequestHeaders } from '@/lib/request-headers'
 import { getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
 import { verifyPersonalMessageSignature } from '@/lib/sui-verify'
 import {
-  getSuiWalletSyncCacheEntry,
-  SUI_WALLET_SYNC_IN_FLIGHT_TIMEOUT_MS,
-  setSuiWalletSyncCacheEntry,
-  SUI_WALLET_SYNC_TTL_MS,
-} from '@/lib/auth/sui-wallet-sync-cache'
+  SESSION_COOKIE_NAME,
+  verifySession,
+  type SessionPayload,
+} from '@/lib/auth/session'
+import { checkCsrfForCookieAuth, csrfFailureResponse } from '@/lib/auth/csrf'
 
-import { privy } from './privy'
 import { resolveAgentByApiKey } from './resolve-agent'
-import { isUniqueConstraintError } from '@shared/prisma-errors'
-import { allocateUniqueHandle, resolveHandleSeed } from '@/lib/handle'
 
 export interface Identity {
   accountId: string
   memberId: string
   ownerMemberId?: string
   kind: 'human' | 'agent'
-}
-
-type ResolveIdentityOptions = {
-  allowCookieFallback?: boolean
-}
-
-type HumanAccountLookup = { privyDid: string } | { tgId: string } | { email: string }
-
-type HumanAccountIdentityRecord = {
-  id: string
-  privyDid: string | null
-  tgName: string | null
-  email: string | null
-  members: Array<{
-    id: string
-    kind: string
-  }>
-}
-
-type PrivyUserWithLinkedAccounts = {
-  linkedAccounts: Array<{
-    type: string
-    chainType?: string
-    address?: string
-  }>
+  /** Present when the identity was resolved from a session cookie. */
+  session?: SessionPayload
 }
 
 const WALLET_IDENTITY_RATE_LIMIT = {
   max: 10,
   windowMs: 60 * 1000,
 } as const
-
-async function findHumanAccount(where: HumanAccountLookup): Promise<HumanAccountIdentityRecord | null> {
-  return prisma.account.findUnique({
-    where,
-    include: {
-      members: {
-        where: { kind: 'human' },
-        select: { id: true, kind: true },
-        orderBy: { joinedAt: 'asc' },
-        take: 1,
-      },
-    },
-  })
-}
-
-function toHumanIdentity(account: HumanAccountIdentityRecord): Identity | null {
-  const member = account.members[0]
-  if (!member) {
-    return null
-  }
-
-  return {
-    accountId: account.id,
-    memberId: member.id,
-    kind: 'human',
-  }
-}
-
-function getSuiWalletAddress(user: PrivyUserWithLinkedAccounts): string | null {
-  const wallet = user.linkedAccounts.find(
-    (account): account is PrivyUserWithLinkedAccounts['linkedAccounts'][number] & {
-      type: 'wallet'
-      chainType: 'sui'
-      address: string
-    } =>
-      account.type === 'wallet'
-      && account.chainType === 'sui'
-      && typeof account.address === 'string'
-      && account.address.length > 0,
-  )
-
-  return normalizeSuiWalletAddress(wallet?.address)
-}
 
 function redactWalletAddress(address: string): string {
   if (address.length <= 14) {
@@ -125,415 +55,10 @@ function getCookieValue(cookieHeader: string | null, name: string): string | nul
   return null
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(new Error(message))
-        }, timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timeoutId != null) {
-      clearTimeout(timeoutId)
-    }
-  }
-}
-
-async function ensureCanonicalSuiWalletBinding(memberId: string): Promise<boolean> {
-  const existingBinding = await prisma.walletBinding.findFirst({
-    where: { memberId, chain: 'sui' },
-    orderBy: [
-      { isPrimary: 'desc' },
-      { createdAt: 'asc' },
-    ],
-    select: {
-      id: true,
-      address: true,
-    },
-  })
-  if (!existingBinding) {
-    return false
-  }
-
-  const normalizedAddress = normalizeSuiWalletAddress(existingBinding.address)
-  if (!normalizedAddress) {
-    console.warn('Stored Sui wallet binding has invalid address', {
-      memberId,
-      address: existingBinding.address,
-    })
-    return false
-  }
-
-  if (normalizedAddress !== existingBinding.address) {
-    try {
-      await prisma.walletBinding.update({
-        where: { id: existingBinding.id },
-        data: { address: normalizedAddress },
-      })
-    } catch (error) {
-      if (isUniqueConstraintError(error)) {
-        const conflict = await prisma.walletBinding.findUnique({
-          where: { chain_address: { chain: 'sui', address: normalizedAddress } },
-          select: { memberId: true },
-        })
-        if (conflict?.memberId === memberId) {
-          console.info('Removed duplicate non-canonical Sui wallet binding after canonicalization', {
-            memberId,
-            address: redactWalletAddress(normalizedAddress),
-          })
-          await prisma.walletBinding.deleteMany({
-            where: { id: existingBinding.id },
-          })
-        } else if (conflict?.memberId) {
-          console.warn('Canonical Sui wallet binding already belongs to another member', {
-            address: redactWalletAddress(normalizedAddress),
-          })
-          return false
-        } else {
-          throw error
-        }
-      } else {
-        throw error
-      }
-    }
-  }
-
-  return true
-}
-
-async function syncSuiWalletBinding(
-  privyUserId: string,
-  memberId: string,
-  existingUser?: PrivyUserWithLinkedAccounts,
-): Promise<void> {
-  if (await ensureCanonicalSuiWalletBinding(memberId)) {
-    return
-  }
-
-  const user = existingUser ?? await privy.getUser(privyUserId)
-  let suiWalletAddress = getSuiWalletAddress(user)
-
-  if (!suiWalletAddress) {
-    const updated = await privy.createWallets({
-      userId: privyUserId,
-      wallets: [{ chainType: 'sui', policyIds: [] }],
-    })
-    suiWalletAddress = getSuiWalletAddress(updated)
-  }
-
-  if (!suiWalletAddress) {
-    return
-  }
-
-  const existingAddressBinding = await prisma.walletBinding.findUnique({
-    where: { chain_address: { chain: 'sui', address: suiWalletAddress } },
-    select: { memberId: true },
-  })
-  if (existingAddressBinding) {
-    if (existingAddressBinding.memberId !== memberId) {
-      console.warn('Privy Sui wallet is already bound to another member', {
-        address: redactWalletAddress(suiWalletAddress),
-      })
-    }
-    return
-  }
-
-  try {
-    await prisma.walletBinding.create({
-      data: {
-        memberId,
-        chain: 'sui',
-        address: suiWalletAddress,
-      },
-    })
-  } catch (error) {
-    if (isUniqueConstraintError(error)) {
-      const conflict = await prisma.walletBinding.findUnique({
-        where: { chain_address: { chain: 'sui', address: suiWalletAddress } },
-        select: { memberId: true },
-      })
-      if (conflict?.memberId && conflict.memberId !== memberId) {
-        console.warn('Privy Sui wallet is already bound to another member', {
-          address: redactWalletAddress(suiWalletAddress),
-        })
-        return
-      }
-    } else {
-      throw error
-    }
-  }
-}
-
-async function ensureSuiWallet(
-  privyUserId: string,
-  memberId: string,
-  existingUser?: PrivyUserWithLinkedAccounts,
-): Promise<void> {
-  const currentState = getSuiWalletSyncCacheEntry(memberId)
-  const now = Date.now()
-
-  if (currentState?.inFlight) {
-    await currentState.inFlight
-    return
-  }
-
-  if (currentState && now - currentState.lastAttemptAt < SUI_WALLET_SYNC_TTL_MS) {
-    return
-  }
-
-  const inFlight = (async () => {
-    try {
-      await withTimeout(
-        syncSuiWalletBinding(privyUserId, memberId, existingUser),
-        SUI_WALLET_SYNC_IN_FLIGHT_TIMEOUT_MS,
-        'Sui wallet sync timed out',
-      )
-    } catch (error) {
-      console.error('Failed to sync Privy Sui wallet binding', {
-        privyUserId,
-        memberId,
-        error,
-      })
-    }
-  })()
-  setSuiWalletSyncCacheEntry(memberId, {
-    inFlight,
-    lastAttemptAt: currentState?.lastAttemptAt ?? 0,
-  })
-
-  try {
-    await inFlight
-  } finally {
-    setSuiWalletSyncCacheEntry(memberId, {
-      inFlight: null,
-      lastAttemptAt: Date.now(),
-    })
-  }
-}
-
-export async function syncHumanMemberSuiWallet(accountId: string, memberId: string): Promise<string | null> {
-  const account = await prisma.account.findUnique({
-    where: { id: accountId },
-    select: { privyDid: true },
-  })
-  if (!account?.privyDid) {
-    return null
-  }
-
-  await ensureSuiWallet(account.privyDid, memberId)
-
-  const wallet = await prisma.walletBinding.findFirst({
-    where: { memberId, chain: 'sui' },
-    orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
-    select: { address: true },
-  })
-
-  return wallet?.address ?? null
-}
-
-export async function resolvePrivyIdentity(token: string): Promise<Identity | null> {
-  let claims: Awaited<ReturnType<typeof privy.verifyAuthToken>>
-  try {
-    claims = await privy.verifyAuthToken(token)
-  } catch (error) {
-    console.warn('Privy token verification failed', { error })
-    return null
-  }
-
-  const linkedAccount = await findHumanAccount({ privyDid: claims.userId })
-  if (linkedAccount) {
-    const identity = toHumanIdentity(linkedAccount)
-    if (identity) {
-      void ensureSuiWallet(claims.userId, identity.memberId).catch((error) => {
-        console.error('Failed to schedule Privy Sui wallet sync', {
-          privyUserId: claims.userId,
-          memberId: identity.memberId,
-          error,
-        })
-      })
-    }
-    return identity
-  }
-
-  const privyUser = await privy.getUser(claims.userId)
-  const telegramTgId = privyUser.telegram?.telegramUserId
-  const tgId = telegramTgId !== undefined && telegramTgId !== null
-    ? String(telegramTgId)
-    : null
-  const email = privyUser.email?.firstVerifiedAt
-    ? privyUser.email.address.trim().toLowerCase()
-    : null
-  const tgName = privyUser.telegram?.username?.trim() || null
-
-  const candidates: HumanAccountLookup[] = []
-  if (tgId) {
-    candidates.push({ tgId })
-  }
-  if (email) {
-    candidates.push({ email })
-  }
-
-  for (const candidate of candidates) {
-    const legacyAccount = await findHumanAccount(candidate)
-    if (!legacyAccount) {
-      continue
-    }
-    if (legacyAccount.privyDid && legacyAccount.privyDid !== claims.userId) {
-      continue
-    }
-
-    const updateData: {
-      privyDid?: string
-      email?: string
-      tgName?: string
-    } = {}
-
-    if (legacyAccount.privyDid !== claims.userId) {
-      updateData.privyDid = claims.userId
-    }
-    if (email && legacyAccount.email !== email) {
-      updateData.email = email
-    }
-    if (tgName && legacyAccount.tgName !== tgName) {
-      updateData.tgName = tgName
-    }
-
-    if (Object.keys(updateData).length > 0) {
-      try {
-        await prisma.account.update({
-          where: { id: legacyAccount.id },
-          data: updateData,
-        })
-      } catch (error) {
-        if (isUniqueConstraintError(error) && updateData.email) {
-          // Email already claimed by another account — link privyDid/tgName
-          // without the email so the user can still log in
-          const { email: _, ...safeData } = updateData
-          if (Object.keys(safeData).length > 0) {
-            await prisma.account.update({
-              where: { id: legacyAccount.id },
-              data: safeData,
-            })
-          }
-        } else {
-          throw error
-        }
-      }
-    }
-
-    const identity = toHumanIdentity(legacyAccount)
-    if (identity) {
-      void ensureSuiWallet(claims.userId, identity.memberId, privyUser).catch((error) => {
-        console.error('Failed to schedule Privy Sui wallet sync', {
-          privyUserId: claims.userId,
-          memberId: identity.memberId,
-          error,
-        })
-      })
-    }
-    return identity
-  }
-
-  // --- Auto-create: open registration ---
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      // Check for pending human member to link (TG pre-bound, accountId null)
-      let pendingMember: {
-        id: string
-        handle: string | null
-        displayName: string | null
-        tgName: string | null
-      } | null = null
-      if (tgId) {
-        pendingMember = await tx.member.findFirst({
-          where: { tgId, kind: 'human', accountId: null },
-          select: { id: true, handle: true, displayName: true, tgName: true },
-        })
-      }
-
-      const accountData: {
-        privyDid: string
-        email?: string
-        tgId?: string
-        tgName?: string
-      } = { privyDid: claims.userId }
-      if (email) accountData.email = email
-      if (tgId) accountData.tgId = tgId
-      if (tgName) accountData.tgName = tgName
-
-      const account = await tx.account.create({ data: accountData })
-
-      async function handleExists(candidate: string): Promise<boolean> {
-        const existing = await tx.member.findUnique({ where: { handle: candidate }, select: { id: true } })
-        return !!existing
-      }
-
-      let memberId: string
-      if (pendingMember) {
-        const handleSeed = resolveHandleSeed({
-          displayName: pendingMember.displayName,
-          tgName: pendingMember.tgName ?? tgName,
-          email,
-        })
-        const update: { accountId: string; handle?: string } = { accountId: account.id }
-        if (!pendingMember.handle) {
-          update.handle = await allocateUniqueHandle(handleSeed, pendingMember.id, handleExists)
-        }
-        await tx.member.update({
-          where: { id: pendingMember.id },
-          data: update,
-        })
-        memberId = pendingMember.id
-      } else {
-        const provisional = await tx.member.create({
-          data: { accountId: account.id, kind: 'human' },
-          select: { id: true },
-        })
-        const handleSeed = resolveHandleSeed({ tgName, email })
-        const handle = await allocateUniqueHandle(handleSeed, provisional.id, handleExists)
-        await tx.member.update({ where: { id: provisional.id }, data: { handle } })
-        memberId = provisional.id
-      }
-
-      return { accountId: account.id, memberId }
-    })
-
-    void ensureSuiWallet(claims.userId, result.memberId, privyUser).catch((error) => {
-      console.error('Failed to schedule Privy Sui wallet sync', {
-        privyUserId: claims.userId,
-        memberId: result.memberId,
-        error,
-      })
-    })
-
-    return {
-      accountId: result.accountId,
-      memberId: result.memberId,
-      kind: 'human',
-    }
-  } catch (error) {
-    if (isUniqueConstraintError(error)) {
-      // Race condition: another request created the account concurrently.
-      // Retry lookup by privyDid — it should exist now.
-      const retryAccount = await findHumanAccount({ privyDid: claims.userId })
-      if (retryAccount) {
-        return toHumanIdentity(retryAccount)
-      }
-    }
-    console.error('Failed to auto-create account', { privyUserId: claims.userId, error })
-    return null
-  }
-}
-
-export async function resolveIdentity(options: ResolveIdentityOptions = {}): Promise<Identity | null> {
+export async function resolveIdentity(): Promise<Identity | null> {
   const headerStore = await getRequestHeaders()
 
-  // Wallet signature path (for agents)
+  // 1. Wallet signature path (agents)
   const agentAddress = headerStore.get('x-agent-address')
   const agentSignature = headerStore.get('x-agent-signature')
   const agentMessage = headerStore.get('x-agent-message')
@@ -541,43 +66,56 @@ export async function resolveIdentity(options: ResolveIdentityOptions = {}): Pro
     return resolveWalletIdentity(agentAddress, agentSignature, agentMessage, headerStore)
   }
 
+  // 2. API key path (agents)
   const authHeader = headerStore.get('authorization')
-  let token: string | null = null
-
   if (authHeader) {
     if (!authHeader.startsWith('Bearer ')) return null
-    token = authHeader.slice(7).trim()
+    const token = authHeader.slice(7).trim()
     if (token.length === 0) return null
-  } else {
-    if (options.allowCookieFallback === false) {
-      return null
-    }
-    token = getCookieValue(headerStore.get('cookie'), 'privy-token')
-    if (!token) return null
-  }
 
-  // API Key path
-  if (authHeader && token.startsWith('sk-')) {
-    if (token.length < 10) {
-      return null
+    if (token.startsWith('sk-')) {
+      if (token.length < 10) return null
+      const agent = await resolveAgentByApiKey(token)
+      if (!agent) return null
+      return {
+        accountId: agent.accountId,
+        memberId: agent.agentMemberId,
+        ownerMemberId: agent.ownerMemberId,
+        kind: 'agent',
+      }
     }
-    const agent = await resolveAgentByApiKey(token)
-    if (!agent) return null
 
-    return {
-      accountId: agent.accountId,
-      memberId: agent.agentMemberId,
-      ownerMemberId: agent.ownerMemberId,
-      kind: 'agent',
-    }
-  }
-
-  // Privy token path
-  try {
-    return await resolvePrivyIdentity(token)
-  } catch (error) {
-    console.warn('Privy token verification failed', { error })
+    // Unknown bearer token (e.g. legacy Privy token) — reject so callers must
+    // adopt the new wallet/session flow.
     return null
+  }
+
+  // 3. Session cookie path (browser humans)
+  const sessionToken = getCookieValue(headerStore.get('cookie'), SESSION_COOKIE_NAME)
+  if (!sessionToken) return null
+
+  return resolveSessionCookie(sessionToken)
+}
+
+async function resolveSessionCookie(token: string): Promise<Identity | null> {
+  const payload = await verifySession(token)
+  if (!payload) return null
+
+  // Verify the member still exists with the expected kind/account. Stale
+  // session tokens (member deleted, kind changed) must not authenticate.
+  const member = await prisma.member.findUnique({
+    where: { id: payload.memberId },
+    select: { id: true, accountId: true, kind: true },
+  })
+  if (!member?.accountId) return null
+  if (member.kind !== 'human') return null
+  if (member.accountId !== payload.accountId) return null
+
+  return {
+    accountId: payload.accountId,
+    memberId: payload.memberId,
+    kind: 'human',
+    session: payload,
   }
 }
 
@@ -609,7 +147,6 @@ async function resolveWalletIdentity(
   if (addressRateLimit.limited) return null
 
   try {
-    // Look up the challenge by nonce first — need expiresAt to reconstruct the message
     const challenge = await prisma.walletChallenge.findUnique({
       where: { nonce },
     })
@@ -630,7 +167,6 @@ async function resolveWalletIdentity(
       nonce,
       challenge.expiresAt,
     )
-    // Verify Sui signature against the reconstructed message
     const msg = new TextEncoder().encode(expectedMessage)
     let publicKey: Awaited<ReturnType<typeof verifyPersonalMessageSignature>>
     try {
@@ -643,14 +179,12 @@ async function resolveWalletIdentity(
       return null
     }
 
-    // Mark the challenge as used (atomic: prevents concurrent replay)
     const result = await prisma.walletChallenge.updateMany({
       where: { nonce, usedAt: null },
       data: { usedAt: new Date() },
     })
     if (result.count === 0) return null
 
-    // Find the wallet binding and its member
     const binding = await prisma.walletBinding.findFirst({
       where: { chain: 'sui', address: normalizedAddress },
       select: {
@@ -679,12 +213,45 @@ async function resolveWalletIdentity(
   }
 }
 
+/**
+ * Mutating-route auth helper. Header-based auth (agent wallet sig / API key)
+ * is accepted directly. Cookie-based session auth additionally requires a
+ * matching CSRF token and same-origin Origin/Referer.
+ */
+export async function requireMutationIdentity(
+  request: Request,
+): Promise<{ error: NextResponse; identity: null } | { error: null; identity: Identity }> {
+  const identity = await resolveIdentity()
+  if (!identity) {
+    return {
+      error: NextResponse.json({ error: '请先登录' }, { status: 401 }),
+      identity: null,
+    }
+  }
+
+  // Header-based identity bypasses CSRF (agent wallet sig + agent API key).
+  if (!identity.session) {
+    return { error: null, identity }
+  }
+
+  const csrf = checkCsrfForCookieAuth(request, identity.session.csrfHash)
+  if (!csrf.ok) {
+    return { error: csrfFailureResponse(), identity: null }
+  }
+
+  return { error: null, identity }
+}
+
+/**
+ * Read-only / personalization helper. Accepts header auth or session cookie
+ * without CSRF — safe because no state mutation happens.
+ *
+ * Mutating routes MUST use {@link requireMutationIdentity}, not this.
+ */
 export async function requireIdentity(): Promise<
   { error: NextResponse; identity: null } | { error: null; identity: Identity }
 > {
-  // Cookie fallback is reserved for read-only best-effort personalization.
-  // Mutating routes using requireIdentity must present explicit header auth.
-  const identity = await resolveIdentity({ allowCookieFallback: false })
+  const identity = await resolveIdentity()
   if (!identity) {
     return {
       error: NextResponse.json({ error: '请先登录' }, { status: 401 }),

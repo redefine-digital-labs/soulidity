@@ -3,18 +3,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SuiClientProvider } from '@mysten/dapp-kit'
 import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import { PrivyProvider as BasePrivyProvider } from '@privy-io/react-auth'
 import { usePersonaLibrary, type PersonaItem } from '../../hooks/usePersonaLibrary'
 import {
   loadDecryptedPrivateAssetVersion,
   parsePrivateAssetAccess,
 } from '../../lib/soulidity/asset-access'
-import { usePrivySuiSign } from '../../lib/hooks/use-privy-sui'
+import { useDesktopWallet } from '../../lib/hooks/use-desktop-wallet'
 
 type CardSection = 'downloaded' | 'owned' | 'marketplace'
 
 type RuntimeConfig = {
-  privyAppId: string | null
   suiNetwork: string
   authReady: boolean
   authBlocker: string | null
@@ -468,7 +466,7 @@ function LibraryTabInner({
 }
 
 function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: string | null }) {
-  const { signPersonalMessage, suiClient, suiWallet } = usePrivySuiSign()
+  const { signPersonalMessage, suiClient, suiWallet } = useDesktopWallet()
 
   const walletMismatch = useMemo(
     () => Boolean(primarySuiAddress && suiWallet?.address && !sameWalletAddress(primarySuiAddress, suiWallet.address)),
@@ -532,13 +530,9 @@ function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: strin
 }
 
 function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | null }) {
-  const ownerOnlyEnabled = Boolean(runtimeConfig?.authReady && runtimeConfig?.privyAppId)
+  const ownerOnlyEnabled = Boolean(runtimeConfig?.authReady)
   const [queryClient] = useState(() => new QueryClient())
   const [primarySuiAddress, setPrimarySuiAddress] = useState<string | null>(null)
-  const getCustomAccessToken = useCallback(async () => {
-    const token = await window.electronAPI.getDesktopPrivyToken()
-    return token.jwt
-  }, [])
 
   useEffect(() => {
     if (!ownerOnlyEnabled) return
@@ -555,31 +549,17 @@ function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | n
     }
   }, [ownerOnlyEnabled])
 
-  if (!ownerOnlyEnabled || !runtimeConfig?.privyAppId) {
+  if (!ownerOnlyEnabled) {
     return <LibraryTabInner ownerOnlyDownloadReady={false} walletMismatch={false} />
   }
 
-  const network = runtimeConfig.suiNetwork as SuiNetwork
+  const network = runtimeConfig!.suiNetwork as SuiNetwork
   const defaultNetwork: SuiNetwork = network in suiNetworks ? network : 'testnet'
 
   return (
     <QueryClientProvider client={queryClient}>
       <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-        <BasePrivyProvider
-          appId={runtimeConfig.privyAppId}
-          config={{
-            customAuth: {
-              enabled: true,
-              getCustomAccessToken,
-              isLoading: false,
-            },
-            appearance: {
-              showWalletLoginFirst: false,
-            },
-          }}
-        >
-          <LibraryTabWalletInner primarySuiAddress={primarySuiAddress} />
-        </BasePrivyProvider>
+        <LibraryTabWalletInner primarySuiAddress={primarySuiAddress} />
       </SuiClientProvider>
     </QueryClientProvider>
   )
@@ -600,7 +580,6 @@ export function LibraryTab(): React.JSX.Element {
       .catch(() => {
         if (!cancelled) {
           setRuntimeConfig({
-            privyAppId: null,
             suiNetwork: 'testnet',
             authReady: false,
             authBlocker: 'Failed to load desktop wallet configuration.',

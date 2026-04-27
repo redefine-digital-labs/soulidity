@@ -1,21 +1,25 @@
 import { NextResponse } from 'next/server'
 
-import { requireIdentity, syncHumanMemberSuiWallet } from '@/lib/auth/identity'
+import { requireMutationIdentity } from '@/lib/auth/identity'
+import { getMemberPrimarySuiWalletAddress } from '@/lib/auth/sui-wallet'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(_request: Request) {
-  const { error, identity } = await requireIdentity()
+// Returns the primary Sui wallet bound to the current human member. Wallet
+// bindings are now established at wallet-login time; this route exists for
+// clients that want to read or refresh the bound address.
+export async function POST(request: Request) {
+  const { error, identity } = await requireMutationIdentity(request)
   if (error) return error
 
   if (identity.kind !== 'human') {
     return NextResponse.json({ error: 'Only human accounts can link wallets' }, { status: 403 })
   }
 
-  const primarySuiAddress = await syncHumanMemberSuiWallet(identity.accountId, identity.memberId)
+  const primarySuiAddress = await getMemberPrimarySuiWalletAddress(identity.memberId)
   if (!primarySuiAddress) {
     return NextResponse.json(
-      { error: 'Unable to provision a Sui wallet for this account yet. Please try again.' },
+      { error: 'No Sui wallet bound to this account. Sign in with a wallet to link one.' },
       { status: 409 },
     )
   }

@@ -33,7 +33,7 @@ export async function POST(
     return NextResponse.json({ error: 'versionIndex must be a non-negative integer' }, { status: 400 })
   }
 
-  const auth = await requireHumanWalletIdentity()
+  const auth = await requireHumanWalletIdentity({ mutation: request })
   if ('error' in auth) {
     return auth.error
   }
