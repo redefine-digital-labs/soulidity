@@ -1,67 +1,173 @@
+/**
+ * Idempotent env-driven setup for the two E2E agent identities.
+ *
+ * Reads:
+ *   E2E_AGENT_ALPHA_PRIVATE_KEY / E2E_AGENT_ALPHA_API_KEY
+ *   E2E_AGENT_BETA_PRIVATE_KEY  / E2E_AGENT_BETA_API_KEY
+ *
+ * For each agent, ensures:
+ *   - Account row keyed by walletAddress
+ *   - Member row attached to that account, kind='agent', agentStatus='active',
+ *     apiKeyHash = sha256(apiKey), apiKey cleared
+ *   - WalletBinding (chain='sui', address=derived) tied to the member
+ *
+ * Safe to re-run; updates only the fields that drift.
+ */
+import "./lib/dotenv";
 import { PrismaClient } from "../src/db/prisma-client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { createHash } from "node:crypto";
+import { loadKeypairFromEnv } from "./lib/keypair";
+
+type AgentSpec = {
+  label: string;
+  privateKeyEnv: string;
+  apiKeyEnv: string;
+  handle: string;
+  displayName: string;
+};
+
+const AGENTS: AgentSpec[] = [
+  {
+    label: "Agent Alpha",
+    privateKeyEnv: "E2E_AGENT_ALPHA_PRIVATE_KEY",
+    apiKeyEnv: "E2E_AGENT_ALPHA_API_KEY",
+    handle: "e2e-agent-alpha",
+    displayName: "E2E Agent Alpha",
+  },
+  {
+    label: "Agent Beta",
+    privateKeyEnv: "E2E_AGENT_BETA_PRIVATE_KEY",
+    apiKeyEnv: "E2E_AGENT_BETA_API_KEY",
+    handle: "e2e-agent-beta",
+    displayName: "E2E Agent Beta",
+  },
+];
 
 function hashApiKey(apiKey: string): string {
   return createHash("sha256").update(apiKey).digest("hex");
 }
 
-async function main() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const p = new PrismaClient({ adapter });
-
-  // Agent Alpha: wallet 0x3b82...8610, API key sk-ea27...4f
-  const alphaKey = "sk-ea27c27dbedf3e46ef857f21e73b4238a8498f04ca432b4f";
-  const alphaHash = hashApiKey(alphaKey);
-
-  // Agent Beta: wallet 0x7ef4...8790, API key sk-c264...c3
-  const betaKey = "sk-c264016082af57dda7a64f15bb9219f2507d398ac56d66c3";
-  const betaHash = hashApiKey(betaKey);
-
-  // Find agent members by wallet address
-  const alphaWallet = await p.walletBinding.findFirst({
-    where: { address: { startsWith: "0x3b82" } },
-    select: { memberId: true, address: true }
-  });
-
-  const betaWallet = await p.walletBinding.findFirst({
-    where: { address: { startsWith: "0x7ef4" } },
-    select: { memberId: true, address: true }
-  });
-
-  if (!alphaWallet) {
-    console.error("Agent Alpha wallet not found (0x3b82...)");
-    process.exit(1);
-  }
-  if (!betaWallet) {
-    console.error("Agent Beta wallet not found (0x7ef4...)");
-    process.exit(1);
-  }
-
-  console.log(`Agent Alpha: member=${alphaWallet.memberId}, wallet=${alphaWallet.address}`);
-  console.log(`Agent Beta:  member=${betaWallet.memberId}, wallet=${betaWallet.address}`);
-
-  // Set API key hashes + activate
-  await p.member.update({
-    where: { id: alphaWallet.memberId },
-    data: { apiKey: null, apiKeyHash: alphaHash, agentStatus: "active" }
-  });
-  console.log(`Agent Alpha: apiKeyHash set (${alphaHash.slice(0, 10)}...)`);
-
-  await p.member.update({
-    where: { id: betaWallet.memberId },
-    data: { apiKey: null, apiKeyHash: betaHash, agentStatus: "active" }
-  });
-  console.log(`Agent Beta:  apiKeyHash set (${betaHash.slice(0, 10)}...)`);
-
-  // Verify
-  const alpha = await p.member.findUnique({ where: { id: alphaWallet.memberId }, select: { apiKeyHash: true, agentStatus: true, kind: true } });
-  const beta = await p.member.findUnique({ where: { id: betaWallet.memberId }, select: { apiKeyHash: true, agentStatus: true, kind: true } });
-  console.log(`\nVerification:`);
-  console.log(`  Alpha: kind=${alpha?.kind} status=${alpha?.agentStatus} hasHash=${!!alpha?.apiKeyHash}`);
-  console.log(`  Beta:  kind=${beta?.kind} status=${beta?.agentStatus} hasHash=${!!beta?.apiKeyHash}`);
-
-  await p.$disconnect();
+function requireEnv(name: string): string {
+  const raw = process.env[name]?.trim();
+  if (!raw) throw new Error(`${name} is required`);
+  return raw;
 }
 
-main().catch(console.error);
+async function ensureAgent(
+  p: InstanceType<typeof PrismaClient>,
+  spec: AgentSpec,
+): Promise<{ address: string; memberId: string }> {
+  const keypair = loadKeypairFromEnv(spec.privateKeyEnv);
+  const address = keypair.toSuiAddress();
+  const apiKey = requireEnv(spec.apiKeyEnv);
+  const apiKeyHash = hashApiKey(apiKey);
+
+  // 1. Account: keyed by walletAddress (unique). Create if missing.
+  let account = await p.account.findUnique({ where: { walletAddress: address } });
+  if (!account) {
+    account = await p.account.create({ data: { walletAddress: address } });
+  }
+
+  // 2. Member: prefer existing match by (accountId, kind='agent'); otherwise
+  // promote a member already attached to this wallet via WalletBinding (covers
+  // historical data where Account.walletAddress was not yet populated).
+  let member = await p.member.findFirst({
+    where: { accountId: account.id, kind: "agent" },
+  });
+
+  if (!member) {
+    const binding = await p.walletBinding.findUnique({
+      where: { chain_address: { chain: "sui", address } },
+    });
+    if (binding) {
+      member = await p.member.findUnique({ where: { id: binding.memberId } });
+    }
+  }
+
+  if (!member) {
+    // Reuse stale handle if a previous run left a different display name.
+    const existingHandle = await p.member.findUnique({ where: { handle: spec.handle } });
+    if (existingHandle) {
+      member = existingHandle;
+    } else {
+      member = await p.member.create({
+        data: {
+          accountId: account.id,
+          kind: "agent",
+          agentStatus: "active",
+          apiKey: null,
+          apiKeyHash,
+          handle: spec.handle,
+          displayName: spec.displayName,
+        },
+      });
+    }
+  }
+
+  // 3. Sync member fields (idempotent).
+  member = await p.member.update({
+    where: { id: member.id },
+    data: {
+      accountId: account.id,
+      kind: "agent",
+      agentStatus: "active",
+      apiKey: null,
+      apiKeyHash,
+      handle: member.handle ?? spec.handle,
+      displayName: member.displayName ?? spec.displayName,
+    },
+  });
+
+  // 4. WalletBinding: idempotent upsert.
+  await p.walletBinding.upsert({
+    where: { chain_address: { chain: "sui", address } },
+    update: { memberId: member.id, isPrimary: true },
+    create: {
+      memberId: member.id,
+      chain: "sui",
+      address,
+      isPrimary: true,
+    },
+  });
+
+  // 5. Mirror walletAddress onto Account if it drifted.
+  if (account.walletAddress !== address) {
+    await p.account.update({ where: { id: account.id }, data: { walletAddress: address } });
+  }
+
+  console.log(
+    `${spec.label}: member=${member.id} wallet=${address} apiKeyHash=${apiKeyHash.slice(0, 10)}…`,
+  );
+  return { address, memberId: member.id };
+}
+
+async function main() {
+  const adapter = new PrismaPg({ connectionString: requireEnv("DATABASE_URL") });
+  const p = new PrismaClient({ adapter });
+
+  try {
+    const results = [];
+    for (const spec of AGENTS) {
+      results.push({ ...spec, ...(await ensureAgent(p, spec)) });
+    }
+
+    console.log("\nVerification:");
+    for (const r of results) {
+      const m = await p.member.findUnique({
+        where: { id: r.memberId },
+        select: { kind: true, agentStatus: true, apiKeyHash: true, handle: true },
+      });
+      console.log(
+        `  ${r.label}: kind=${m?.kind} status=${m?.agentStatus} hasHash=${!!m?.apiKeyHash} handle=${m?.handle} address=${r.address}`,
+      );
+    }
+  } finally {
+    await p.$disconnect();
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

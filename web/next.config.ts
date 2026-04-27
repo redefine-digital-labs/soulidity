@@ -1,7 +1,9 @@
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-dotenv.config({ path: path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), '.env') })
+const __repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+dotenv.config({ path: path.join(__repoRoot, '.env') })
+dotenv.config({ path: path.join(__repoRoot, '.env.local'), override: true })
 
 import type { NextConfig } from 'next'
 
