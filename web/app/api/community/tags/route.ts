@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { cached } from '@/lib/cache'
 import { takeRateLimitToken, getRequestIp, getAnonymousRateLimitFingerprint } from '@/lib/rate-limit'
-import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,19 +14,13 @@ export async function GET(request: NextRequest) {
     if (limited) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
   }
   const tags = await cached('community:tags', 300_000, async () => {
-    const rows = await prisma.post.findMany({
-      where: {
-        status: 'published',
-        NOT: { tags: { isEmpty: true } },
-      },
-      select: { tags: true },
-    })
-
-    return Array.from(
-      new Set(
-        rows.flatMap((row) => parseCommunityTags(row.tags))
-      )
-    )
+    const rows = await prisma.$queryRaw<{ tag: string }[]>`
+      SELECT DISTINCT TRIM(t) AS tag
+      FROM posts, unnest(tags) AS t
+      WHERE status = 'published' AND TRIM(t) <> ''
+      ORDER BY tag
+    `
+    return rows.map((r) => r.tag)
   })
 
   return NextResponse.json(tags)
