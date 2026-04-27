@@ -80,18 +80,19 @@ describe('Walrus blob validation', () => {
     expect(getWalrusRuntimeConfig().aggregatorUrl).toBe('https://aggregator.dev-2.example')
   })
 
-  it('caps upload retries instead of walking every testnet publisher twice', async () => {
+  it('walks every configured testnet publisher once before giving up', async () => {
     global.fetch = vi.fn(async () => {
       throw new Error('publisher down')
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { getWalrusRuntimeConfig, uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const publisherCount = getWalrusRuntimeConfig().publisherUrls.length
 
     await expect(uploadPublic(Buffer.from('payload'))).rejects.toThrow('publisher down')
-    expect(global.fetch).toHaveBeenCalledTimes(4)
+    expect(global.fetch).toHaveBeenCalledTimes(publisherCount)
   })
 
-  it('samples a capped subset of configured testnet publishers within the retry budget', async () => {
+  it('samples each configured testnet publisher exactly once within the retry budget', async () => {
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
     const fetchMock = vi.fn(async () => {
       throw new Error('publisher down')
@@ -99,14 +100,13 @@ describe('Walrus blob validation', () => {
     global.fetch = fetchMock as typeof fetch
 
     const { getWalrusRuntimeConfig, uploadPublic } = await import('../../web/lib/services/walrus.ts')
-    const knownPublisherBlobUrls = new Set(
-      getWalrusRuntimeConfig().publisherUrls.map((url) => `${url}/v1/blobs`),
-    )
+    const publisherUrls = getWalrusRuntimeConfig().publisherUrls
+    const knownPublisherBlobUrls = new Set(publisherUrls.map((url) => `${url}/v1/blobs`))
 
     await expect(uploadPublic(Buffer.from('payload'))).rejects.toThrow('publisher down')
     const attemptedUrls = fetchMock.mock.calls.map(([url]) => String(url))
-    expect(attemptedUrls).toHaveLength(4)
-    expect(new Set(attemptedUrls).size).toBe(4)
+    expect(attemptedUrls).toHaveLength(publisherUrls.length)
+    expect(new Set(attemptedUrls).size).toBe(publisherUrls.length)
     attemptedUrls.forEach((url) => {
       expect(knownPublisherBlobUrls.has(url)).toBe(true)
     })
@@ -115,14 +115,43 @@ describe('Walrus blob validation', () => {
   })
 
   it('does not retry non-retryable 4xx upload failures', async () => {
-    global.fetch = vi.fn(async () => new Response('payload too large', { status: 413 })) as typeof fetch
+    global.fetch = vi.fn(async () => new Response('bad request', { status: 400 })) as typeof fetch
 
     const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
 
     await expect(uploadPublic(Buffer.from('payload'))).rejects.toThrow(
-      'Walrus upload failed: 413 payload too large',
+      'Walrus upload failed: 400 bad request',
     )
     expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries 413 across publishers because per-node body-size caps differ', async () => {
+    let attempts = 0
+    global.fetch = vi.fn(async () => {
+      attempts += 1
+      if (attempts < 2) {
+        return new Response('payload too large', { status: 413 })
+      }
+
+      return new Response(
+        JSON.stringify({
+          newlyCreated: {
+            blobObject: {
+              blobId: 'blob-123',
+              id: 'walrus-object-1',
+            },
+          },
+        }),
+      )
+    }) as typeof fetch
+
+    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+
+    await expect(uploadPublic(Buffer.from('payload'))).resolves.toEqual({
+      blobId: 'blob-123',
+      blobObjectId: 'walrus-object-1',
+    })
+    expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 
   it('retries 429 upload failures and succeeds on a later publisher', async () => {
