@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Content-Length header is required for uploads' }, { status: 411 })
   }
   if (contentLength > MAX_UPLOAD_FORMDATA_BYTES) {
-    return NextResponse.json({ error: 'File exceeds 50 MB limit' }, { status: 413 })
+    return NextResponse.json({ error: FILE_TOO_LARGE_ERROR }, { status: 413 })
   }
 
   let formData: FormData

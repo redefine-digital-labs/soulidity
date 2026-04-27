@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { del } from '@vercel/blob'
 import { runSoulUploadPipeline, type SoulUploadPipelineResult } from '@/lib/soulidity/soul-upload-pipeline'
-import { MAX_SOUL_UPLOAD_BYTES } from '@/lib/soulidity/upload-validation'
+import { FILE_TOO_LARGE_ERROR, MAX_SOUL_UPLOAD_BYTES } from '@/lib/soulidity/upload-validation'
+import { WalrusUploadError } from '@/lib/services/walrus'
 import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
     const advertisedLength = contentLengthHeader ? Number(contentLengthHeader) : null
     if (advertisedLength != null && Number.isFinite(advertisedLength) && advertisedLength > MAX_SOUL_UPLOAD_BYTES) {
       await safeDelete(blobUrl)
-      return NextResponse.json({ error: 'File exceeds 50 MB limit' }, { status: 413 })
+      return NextResponse.json({ error: FILE_TOO_LARGE_ERROR }, { status: 413 })
     }
     const arrayBuffer = await fetchRes.arrayBuffer()
     buffer = Buffer.from(arrayBuffer)
@@ -144,8 +145,15 @@ export async function POST(req: NextRequest) {
       pathname: consumed.binding.pathname,
       error,
     })
-    const message = error instanceof Error ? error.message : 'Failed to upload payload'
-    finalizeErrorResponse = NextResponse.json({ error: message }, { status: 502 })
+    if (error instanceof WalrusUploadError && error.status === 413) {
+      finalizeErrorResponse = NextResponse.json(
+        { error: 'Upload exceeded the Walrus publisher size cap (~10 MiB). Reduce the file or set WALRUS_PUBLISHER_URL to a publisher with a higher limit.' },
+        { status: 413 },
+      )
+    } else {
+      const message = error instanceof Error ? error.message : 'Failed to upload payload'
+      finalizeErrorResponse = NextResponse.json({ error: message }, { status: 502 })
+    }
   } finally {
     // Whether the pipeline succeeded, rejected the bytes, or threw while
     // writing to Walrus, the Vercel Blob copy is only a temp staging artifact.

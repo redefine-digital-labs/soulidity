@@ -7,7 +7,11 @@ import { Tag } from '@/components/ui/tag'
 import { UploadZone } from '@/components/ui/upload-zone'
 import { useAssets } from '@/lib/hooks/use-assets'
 import { validatePersonaSpriteDraft } from '@/lib/soulidity/persona-sprite'
+import { MAX_SOUL_UPLOAD_BYTES } from '@/lib/soulidity/upload-validation'
 import type { SoulAssetDetail, SoulAssetVersionRecord } from '@/lib/soulidity/types'
+
+const SPRITE_SHEET_UPLOAD_LIMIT_MIB = Math.ceil(MAX_SOUL_UPLOAD_BYTES / (1024 * 1024))
+const SPRITE_SHEET_UPLOAD_HINT = `PNG, up to ${SPRITE_SHEET_UPLOAD_LIMIT_MIB} MiB`
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -154,7 +158,7 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
             <UploadZone
               icon="🖼"
               label={sheetFile ? sheetFile.name : 'Sprite sheet PNG'}
-              sublabel={sheetFile ? `${Math.max(1, Math.round(sheetFile.size / 1024))} KB selected` : 'PNG, up to 50 MB'}
+              sublabel={sheetFile ? `${Math.max(1, Math.round(sheetFile.size / 1024))} KB selected` : SPRITE_SHEET_UPLOAD_HINT}
               accept="image/png"
               onFileSelect={(file) => { void handleSheetSelect(file) }}
               className="py-6"

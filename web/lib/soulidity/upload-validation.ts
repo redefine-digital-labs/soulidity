@@ -2,8 +2,13 @@ import { unzipSync } from 'fflate'
 import { parseSkillMd } from '@/lib/soulidity/content-schema'
 import { SKILL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
 
-export const MAX_SOUL_UPLOAD_BYTES = 50 * 1024 * 1024
-export const FILE_TOO_LARGE_ERROR = 'File exceeds 50 MB limit'
+// Aligned with the walrus-publisher binary default (`--max-body-size-kib 10240`)
+// minus headroom for AES-GCM auth tag (16 B) and HTTP framing. Files larger
+// than this can't be stored on public Walrus testnet/mainnet publishers; lift
+// only when WALRUS_PUBLISHER_URL points at a self-hosted publisher with a
+// raised limit.
+export const MAX_SOUL_UPLOAD_BYTES = 10 * 1024 * 1024 - 1024
+export const FILE_TOO_LARGE_ERROR = 'File exceeds the 10 MiB upload limit'
 export const JSON_METADATA_TOO_LARGE_ERROR = 'JSON metadata exceeds 5 MB limit'
 export const SKILL_BUNDLE_NOT_ZIP_ERROR = "Can't use this file. Upload a .zip file for Skills & Docs."
 export const SKILL_BUNDLE_MISSING_SKILL_MD_ERROR = "Can't use this ZIP file. Put SKILL.md at the ZIP root or inside one folder, then upload it again."

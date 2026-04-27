@@ -50,10 +50,12 @@ const WALRUS_UPLOAD_TIMEOUT_MS = 60_000
 const SUI_CLOCK_OBJECT_ID = '0x6'
 const WALRUS_BLOB_TYPE = '0xd84704c17fc870b8764832c535aa6b11f21a95cd6f5bb38a9b07d2cf42220c66::blob::Blob'
 
+// See web/lib/services/walrus.ts for verification notes — the other public
+// testnet publishers cap out at ~1 MiB due to nginx defaults and were removed.
 const TESTNET_PUBLISHER_URLS = [
   'https://publisher.walrus-testnet.walrus.space',
-  'https://publisher.walrus-testnet.h2o-nodes.com',
-  'https://sui-walrus-testnet-publisher.bwarelabs.com',
+  'https://testnet-publisher.walrus.graphyte.dev',
+  'https://walrus-testnet-publisher.nodeinfra.com',
 ]
 const MAINNET_PUBLISHER_URL = 'https://publisher.mainnet.walrus.space'
 

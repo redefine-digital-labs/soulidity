@@ -15,14 +15,14 @@ const WALRUS_RETRY_AFTER_MAX_DELAY_MS = 10_000
 const WALRUS_RETRY_AFTER_HTTP_DATE_MIN_DELAY_MS = 500
 const INVALID_WALRUS_BLOB_ID_CHARS = /[\\/?#%\u0000-\u001F\u007F]/
 
+// Verified 2026-04-27 to accept ≥10 MiB bodies (the walrus-publisher binary
+// default). Other community publishers from the public registry are deployed
+// behind nginx without `client_max_body_size` set, so they 413 anything over
+// nginx's 1 MB default — including legitimate sprite uploads. Do not re-add
+// without re-probing actual ceiling per publisher.
 const TESTNET_PUBLISHER_URLS = [
   'https://publisher.walrus-testnet.walrus.space',
-  'https://publisher.walrus-testnet.h2o-nodes.com',
-  'https://sm1-walrus-testnet-publisher.stakesquid.com',
-  'https://sui-walrus-testnet-publisher.bwarelabs.com',
   'https://testnet-publisher.walrus.graphyte.dev',
-  'https://walrus-testnet-publisher.stakecraft.com',
-  'https://walrus-testnet-publisher.crouton.digital',
   'https://walrus-testnet-publisher.nodeinfra.com',
 ]
 
@@ -51,11 +51,12 @@ export interface WalrusUploadOptions {
   sendObjectTo?: string | null
 }
 
-class WalrusUploadError extends Error {
+export class WalrusUploadError extends Error {
   constructor(
     message: string,
     readonly retryable: boolean,
     readonly retryAfterMs: number | null = null,
+    readonly status: number | null = null,
   ) {
     super(message)
     this.name = 'WalrusUploadError'
@@ -277,14 +278,19 @@ async function putWalrusBlob(buffer: Buffer, options?: WalrusUploadOptions): Pro
 
       if (!res.ok) {
         const text = (await res.text()).slice(0, 500)
+        // 413 is retryable across publishers (not against the same one): community
+        // publishers have varying nginx body-size caps, so the next one in rotation
+        // may accept the same payload.
+        const retryable = res.status === 429 || res.status === 413 || res.status >= 500
         throw new WalrusUploadError(
           `Walrus upload failed: ${res.status} ${text}`,
-          res.status === 429 || res.status >= 500,
+          retryable,
           res.status === 429
             ? (parseRetryAfterMs(res.headers.get('Retry-After')) ?? 1000)
-            : res.status >= 500
+            : retryable
               ? WALRUS_RETRY_BACKOFF_MS
               : null,
+          res.status,
         )
       }
 
