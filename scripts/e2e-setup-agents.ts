@@ -4,10 +4,15 @@
  * Reads:
  *   E2E_AGENT_ALPHA_PRIVATE_KEY / E2E_AGENT_ALPHA_API_KEY
  *   E2E_AGENT_BETA_PRIVATE_KEY  / E2E_AGENT_BETA_API_KEY
+ *   E2E_AGENT_OWNER_WALLET (optional, recommended) — Sui address of the human
+ *     account that "owns" the agents. `web/lib/auth/resolve-agent.ts`
+ *     requires `agent.account.members[kind=human]` to be non-empty when
+ *     resolving an API key, so the agent Member must hang off an Account
+ *     that already has a human Member (typically the E2E Seller). When
+ *     omitted, falls back to the address derived from E2E_SELLER_PRIVATE_KEY.
  *
  * For each agent, ensures:
- *   - Account row keyed by walletAddress
- *   - Member row attached to that account, kind='agent', agentStatus='active',
+ *   - Member row pointed at the owner's Account, kind='agent', agentStatus='active',
  *     apiKeyHash = sha256(apiKey), apiKey cleared
  *   - WalletBinding (chain='sui', address=derived) tied to the member
  *
@@ -54,24 +59,58 @@ function requireEnv(name: string): string {
   return raw;
 }
 
+async function resolveOwnerAccountId(
+  p: InstanceType<typeof PrismaClient>,
+): Promise<string> {
+  const explicit = process.env.E2E_AGENT_OWNER_WALLET?.trim();
+  let ownerAddress = explicit;
+  if (!ownerAddress) {
+    const sellerKey = process.env.E2E_SELLER_PRIVATE_KEY?.trim();
+    if (!sellerKey) {
+      throw new Error(
+        "Either E2E_AGENT_OWNER_WALLET or E2E_SELLER_PRIVATE_KEY must be set so the agent rows can hang off a human-owned Account (resolveAgentByApiKey requires it).",
+      );
+    }
+    ownerAddress = loadKeypairFromEnv("E2E_SELLER_PRIVATE_KEY").toSuiAddress();
+  }
+  const binding = await p.walletBinding.findUnique({
+    where: { chain_address: { chain: "sui", address: ownerAddress } },
+    select: { memberId: true },
+  });
+  if (!binding) {
+    throw new Error(
+      `Owner wallet ${ownerAddress} has no WalletBinding row yet — log in once with that wallet via the web UI before running this script (or set E2E_AGENT_OWNER_WALLET to a wallet that already exists in DB).`,
+    );
+  }
+  const owner = await p.member.findUnique({
+    where: { id: binding.memberId },
+    select: { id: true, accountId: true, kind: true },
+  });
+  if (!owner?.accountId || owner.kind !== "human") {
+    throw new Error(
+      `Owner wallet ${ownerAddress} resolves to member ${owner?.id ?? "?"} (kind=${owner?.kind}) without a human Account; resolveAgentByApiKey will reject any agent attached here.`,
+    );
+  }
+  return owner.accountId;
+}
+
 async function ensureAgent(
   p: InstanceType<typeof PrismaClient>,
   spec: AgentSpec,
+  ownerAccountId: string,
 ): Promise<{ address: string; memberId: string }> {
   const keypair = loadKeypairFromEnv(spec.privateKeyEnv);
   const address = keypair.toSuiAddress();
   const apiKey = requireEnv(spec.apiKeyEnv);
   const apiKeyHash = hashApiKey(apiKey);
 
-  // 1. Account: keyed by walletAddress (unique). Create if missing.
-  let account = await p.account.findUnique({ where: { walletAddress: address } });
-  if (!account) {
-    account = await p.account.create({ data: { walletAddress: address } });
-  }
+  // The agent Member hangs off the owner's Account so resolveAgentByApiKey
+  // can find a sibling kind='human' member to return as `ownerMemberId`.
+  const account = { id: ownerAccountId };
 
-  // 2. Member: prefer existing match by (accountId, kind='agent'); otherwise
+  // 1. Member: prefer existing match by (accountId, kind='agent'); otherwise
   // promote a member already attached to this wallet via WalletBinding (covers
-  // historical data where Account.walletAddress was not yet populated).
+  // earlier installs where the agent had its own orphan Account).
   let member = await p.member.findFirst({
     where: { accountId: account.id, kind: "agent" },
   });
@@ -131,11 +170,6 @@ async function ensureAgent(
     },
   });
 
-  // 5. Mirror walletAddress onto Account if it drifted.
-  if (account.walletAddress !== address) {
-    await p.account.update({ where: { id: account.id }, data: { walletAddress: address } });
-  }
-
   console.log(
     `${spec.label}: member=${member.id} wallet=${address} apiKeyHash=${apiKeyHash.slice(0, 10)}…`,
   );
@@ -147,9 +181,11 @@ async function main() {
   const p = new PrismaClient({ adapter });
 
   try {
+    const ownerAccountId = await resolveOwnerAccountId(p);
+    console.log(`Owner account: ${ownerAccountId}`);
     const results = [];
     for (const spec of AGENTS) {
-      results.push({ ...spec, ...(await ensureAgent(p, spec)) });
+      results.push({ ...spec, ...(await ensureAgent(p, spec, ownerAccountId)) });
     }
 
     console.log("\nVerification:");

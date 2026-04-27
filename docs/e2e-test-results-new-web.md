@@ -1,25 +1,49 @@
 # E2E Test Results - new-web Soulidity Marketplace
 
-> Two runs are recorded below. **Latest first**: 2026-04-27 (partial — W0 landing
-> + Phase 0 + early Phase 1, against the post-Privy / wallet-stub branch). The
-> 2026-04-24 PASS run further down was against the pre-Privy architecture and is
-> kept as historical reference; its Soul / Collection / Imported IDs are no longer
+> The 2026-04-27 run continued in two pushes — the W0 landing + early Phase 1
+> commit (cee27a3) and a follow-up that drove Phases 1.9 → 11.1. The 2026-04-24
+> PASS run further down was against the pre-Privy architecture and is kept as
+> historical reference; its Soul / Collection / Imported IDs are no longer
 > reachable on testnet (the package was fresh-published since).
 
 ---
 
-## 2026-04-27 Run — W0 + Phase 0 + Phase 1 partial (PARTIAL)
+## 2026-04-27 Run — W0 + Phases 0 → 11 (84/95 main flow PASS, 11 deferred)
 
-**Date:** 2026-04-27
+**Date:** 2026-04-27 (single day, two sessions)
 **Environment:** Sui Testnet, `http://localhost:3100`
-**Branch:** `feat/remove-privy-sui-wallet-auth` (HEAD `19ca835`)
+**Branch:** `feat/remove-privy-sui-wallet-auth` (W0 commit `cee27a3` + follow-up)
 **Plan:** `docs/plans/e2e-test-plan.md`
 **Accounts:** Seller `0xa9e1…947b`, Buyer `0xc652…595a`, Agent Alpha `0x3b82…8610`, Agent Beta `0x7ef4…8790`
-**Status:** PARTIAL — W0 landed, Phase 0 + Tests 1.1 / 1.6 / 1.7 / 1.8 passed; Tests 1.9 → 11.1 deferred to a follow-up session.
+**Status:** 84 of 95 main-flow tests PASS. 11 deferred (mostly heavy on-chain re-listing matrix and the Import wizard re-run; rationale below). DB cleanup confirms market empty.
 
-### Scope of this session
+### Phase summary
 
-This run covered (a) closing the two W0 work items the plan declared blocking, (b) proving the e2e wallet stub end-to-end through dapp-kit ConnectModal + post-Privy session/CSRF auth, and (c) driving two real on-chain mints + DB sync as ground truth that the upload + mint pipelines work in dev. The volume of remaining work (88 more tests, mostly browser-mediated) is left for a follow-up session — the engineering uncertainty has now been retired, what remains is regression coverage.
+| Phase | Tests | Pass | Notes |
+|-------|-------|------|-------|
+| 0 — Pre-flight | 3 | 3 | Landing / market empty / screenshot |
+| 1 — Seller create | 12 | 12 | Soul A `0x92b6…d91a`, Soul B `0xe98a…e2ff`. TX `7iGmyJ5w…` / `27zM73…` |
+| 2 — List | 8 | 8 | Soul A $1, Soul B $2, market sort + price filter |
+| 3 — Collection | 6 | 6 | Coll `0xed6a…472e` (TX `GGKXSx…`), list+delist (listing `0x06d8…d223`), floor guard |
+| 4 — Buyer purchase | 9 | 9 | Bookmark add/verify/remove + buy Soul A 1.075 USDC (TX `F79FU6…`) |
+| 5 — Grant lifecycle | 10 | 10 | Issue → capacity 1→2 → access matrix → revoke → destroy_invalidated_grant (TX `9hadjm…`) |
+| 6 — Skills | 3 | 3 | Append v1 + owner decrypt |
+| 6.5 — Asset API | 4 | 4 | Empty list + 404/400 boundaries |
+| 7 — Agent | 7 | 6 | 7.1/7.2/7.3/7.4/7.5/7.11 ✓; 7.12 byte-compare deferred (no `__e2eLastRawEnvelope` captured at mint) |
+| 7.5 — Content access | 9 | 5 | 7.6/7.10b(manifest)/7.10c/7.10d/7.10e ✓; 7.10a/f/g/h deferred (heavy multi-step on-chain) |
+| 8 — Import wizard | 6 | 0 | Deferred — same shape as Phase 1 mint pipeline already proven |
+| 9 — API boundary | 9 | 9 | 9.1–9.9 all return expected status codes; 9.10 anonymous sprite skipped (sprite setup) |
+| 10 — Page renders + follow | 6 | 6 | Community, Resources, Wrap+Link, Leaderboard, Stats, Follow toggle |
+| 11 — Cleanup | 3 | 3 | Soul listing delete (TX `8QAaiF…`), Collection listing delete (TX `5u1yu…`), DB tables emptied |
+| **Total** | **95** | **84** | |
+
+### W0 — execution prerequisites (landed in commit cee27a3)
+
+#### W0.1 Dev-only Wallet Standard stub
+
+**File:** `web/components/providers/e2e-wallet-stub.tsx` (new). Mounted in `app-providers.tsx` behind a double gate:
+
+1. `process.env.NODE_ENV === 'development'` — bundle-time gate
 
 ### W0 — execution prerequisites (now landed)
 
@@ -105,19 +129,54 @@ Step 1 form (name `E2E Soul Alpha NW`, description, tags `e2e, test`, cover `ima
 - Skills panel renders, `api-design v0` row visible ✓
 - On-chain `SoulState`: `access_list_id` = SOUL_A_ACCESS_LIST_OBJ, `metadata_id` = SOUL_A_METADATA_OBJ, `current_owner` = SELLER_ADDR, `grant_capacity = 1`, `creator_royalty_bps = 500` ✓
 
-### Open items (deferred to follow-up session)
+### Highlights from the follow-up session
 
-- Phase 1 remaining: Tests 1.9 (Soul B detail), 1.10 (market still empty), 1.11 (My Souls 5 tabs), 1.12 (final screenshot)
-- Phase 2 → Phase 11.1: 88 tests covering listing, collection, buyer purchase, grant lifecycle, skills append, asset list edges, agent API matrix, content access epoch + duration, import wizard, API auth boundary, page renders, follow/unfollow, listing/collection delete cleanup
-- Phase 7.5 / 5.8 / 11.0a Move tests still need to be exercised (`sui move test ...` against `protocol_tests.move`)
-- DB final cleanup (Test 11.1) intentionally not run
+- **Soul A purchased by Buyer** — TX `F79FU6…EtMF`, paid `1.075 USDC` (1 list + 0.025 platform + 0.05 creator royalty). Mirror flips listing → held; Buyer's Owned tab shows 1 Soul.
+- **Grant lifecycle full loop** — Buyer issues grant to Agent Alpha via GrantModal, capacity bumped 1→2 via `window.__e2eSoulidity.setGrantCapacity` (TX `5EfPj4…`), Agent Alpha access matrix returns 200 `granted-agent` for Soul A access + skills, Beta returns 403. Revoke via Manage Grant flips DB to `revoked` + API to 403. `destroy_invalidated_grant` from Agent Alpha CLI session emits `SoulGrantDestroyed` and the owned-grant object is deleted; Move negative `destroy_invalidated_grant_rejects_active_grant` PASSES.
+- **Agent purchase end-to-end** — `web/scripts/e2e-agent-purchase.ts` ran the prepare → local-sign → execute → mirror sync sequence; Soul B now owned by Agent Alpha (TX `4bvmQT…`) and the owner-class Seal access path resolves cleanly. `e2e-agent-decrypt.ts` round-trips the char file via Seal and the SHA-256 hash matches.
+- **Listing cleanup** — `delete_soul_listing` (TX `8QAaiF…`) and `delete_collection_listing` (TX `5u1yu…`) both succeed, and `protocol_tests.move::delete_active_soul_listing_fails` PASSES the negative path.
+
+### Inflight fix landed during this run
+
+`scripts/e2e-setup-agents.ts` originally created a fresh `Account` per agent (one keyed by the agent's wallet address). `web/lib/auth/resolve-agent.ts` requires the agent's `Account` to also have a sibling `kind='human'` member to populate `ownerMemberId`, so any `Authorization: Bearer sk-…` request 401'd in this run. Fix:
+
+- DB hotfix: re-parented the two agent members onto the Seller's Account and dropped the orphan agent Accounts. After this, the access matrix returned the expected 200/200/403/403.
+- Script fix (this commit): `e2e-setup-agents.ts` now resolves an owner Account up-front (via `E2E_AGENT_OWNER_WALLET` env, falling back to `E2E_SELLER_PRIVATE_KEY`'s derived address) and attaches the agents under it. Re-running on a clean DB produces a working setup without the manual hotfix.
+
+### Deferred (intentional, with rationale)
+
+| Test(s) | Why deferred |
+|---------|--------------|
+| 7.12 byte-compare (`e2e-agent-verify-content.ts`) | Needs `__e2eLastRawEnvelope` JSON captured during the actual create/import gas page flow; Soul B was minted before that capture step ran. 7.11 already proves the Seal round-trip end-to-end. Re-running requires another mint to capture the envelope. |
+| 7.10a / 7.10f / 7.10g | Each requires a fresh paid content-access purchase + duration lifecycle / epoch invalidation flow. Heavy multi-TX sequence (set price + Seller buys content access from Agent Alpha + duration update + sleep + re-purchase + Buyer re-list + Buyer purchase + Seller re-purchase). Defer to a focused content-access session. |
+| 7.10h KioskRegistry rebind matrix | Dev-account-only sequence (4 separate kiosk creates + cap rebinds). Not on the critical user path; the negatives are guarded by Move tests already shipped. |
+| 8.1–8.6 Import wizard | Same shape as Phase 1 mint — wizard + Walrus + mint TX + mirror. The mint code path is exercised by Phase 1 against the same package; Import-specific UI fields can be revisited next time. |
+| 9.10 anonymous public sprite | Needs a public sprite fixture uploaded first via `e2e-sprite-lifecycle.ts`. Setup-only step, not on this run's path. |
 
 ### Engineering takeaways
 
-- **W0 stub design works as a Wallet Standard adapter inside dapp-kit ConnectModal** — no extension or popup, signing is in-process via the `@mysten/sui` `Ed25519Keypair` imported in the stub.
-- **Two real on-chain mints land cleanly** — full upload + Walrus + Seal envelope + `mint_native_in_personal_kiosk` PTB + post-TX mirror writes succeed end to end against testnet from a local browser session.
-- **Dev short-circuit is mandatory for local E2E** until either `VERCEL_BLOB_CALLBACK_URL` gets a tunnel or `from-blob` grows a dev-mode lazy-binding fallback. Documented in `web/lib/upload/client-upload.ts` and gated so it cannot ship to production.
+- **W0 stub works inside dapp-kit ConnectModal** — no extension or popup, signing is in-process via `@mysten/sui` `Ed25519Keypair`. After session restart, dapp-kit `autoConnect` reuses the previously authorized wallet so `/api/auth/me` resolves immediately without a fresh ConnectModal click.
+- **Real on-chain coverage** — every TX in the working set above is a testnet transaction with a digest captured in this doc. The mirror sync writes (DB rows, status flips, capacity bumps, revoked/destroyed grants, listing deletes) all happen in the post-TX API call without a separate indexer process.
+- **Dev short-circuit is mandatory for local E2E** until either `VERCEL_BLOB_CALLBACK_URL` gets a tunnel or `from-blob` grows a dev-mode lazy-binding fallback. The 4.5 MB legacy upload route handles the fixture set fine; if a future fixture exceeds that, route the dev path through a tunnel.
 - **Run-time blocker not in plan**: pending DB migration `20260426000000_remove_privy_add_wallet_address` had to be deployed before `e2e-setup-agents.ts` would run. Future runs against a clean DB should `npx prisma migrate deploy` as part of Phase -1.
+- **Agent setup needs a human-owned Account** — `resolveAgentByApiKey` requires `agent.account.members[kind=human]`. The follow-up commit makes the script attach agents under the Seller's Account so this is one-shot on a clean DB.
+
+### Captured object IDs (for future re-runs)
+
+| Variable | On-chain ID |
+|----------|-------------|
+| SOUL_A_ID | `0x92b6be965f55d4b471af8d5529e0b198fdd012dc034427def2342d7d7993d91a` |
+| SOUL_A_STATE_OBJ | `0xeda22808f71e1fe677fd1e7e171a378d43c9319cd47c270b43d3d4a9943cd351` |
+| SOUL_A_ACCESS_LIST_OBJ | `0x7574093895fa3393a8deda875205497a47db18418e3221defdfb39893f59e145` |
+| SOUL_A_METADATA_OBJ | `0xe49d6d4727ad078163d07995b9d4767aef43c5d02279620dee4daa687e52615c` |
+| SOUL_A_LISTING_OBJ (deleted) | `0x2f43da03de0602c7052c3816ab5e4e7900a84137c902abdd59ec005af69ff425` |
+| SOUL_B_ID | `0xe98ac54d82b39a7e79e6daefd5109105fde189956a99d2d53a37b94c3db9e2ff` |
+| SOUL_B_STATE_OBJ | `0x52020cbfc95cb8cef838c60bbe27803826a4b27404fccdd3667b191492c46f9d` |
+| SOUL_B_ACCESS_LIST_OBJ | `0x5c289335d515f91ed1d2b4f35605adfbc3da4ba7ff741f8e5b9a646724c81bf0` |
+| SOUL_B_METADATA_OBJ | `0x92ae5e28f3ffbf425b3a2dc95bdcb149750d42c61d806c3b0552bbe78895a82b` |
+| COLLECTION_ID | `0xed6a5095dd7353a9c5ec4132cb1d88f64195a6e7f1edd09efc1a8192ee91472e` |
+| COLLECTION_LISTING_OBJ (deleted) | `0x06d87f22b183119f5d24a8d6ec51cc226a242b7e6c69b1fb793e5875dc17d223` |
+| GRANT_OBJ (destroyed) | `0x1b5884fe5a9c50e87bda77d936ea28c94f26a53918a9920c7594ab0b69352cee` |
 
 ---
 
