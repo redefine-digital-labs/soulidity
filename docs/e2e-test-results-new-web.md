@@ -8,14 +8,14 @@
 
 ---
 
-## 2026-04-27 Run — W0 + Phases 0 → 11 (95/95 main flow PASS)
+## 2026-04-27 Run — W0 + Phases 0 → 11 (95/95 main flow PASS) + 9.10 supplementary PASS
 
-**Date:** 2026-04-27 (single day, four pushes)
+**Date:** 2026-04-27 (single day, five pushes)
 **Environment:** Sui Testnet, `http://localhost:3100`
-**Branch:** `feat/remove-privy-sui-wallet-auth` (W0 commit `cee27a3`, Phases 1.9–11 commit `532529d`, Phase 8 + 7.12 commit `8c86b03`, content-access + kiosk follow-up)
+**Branch:** `feat/remove-privy-sui-wallet-auth` (W0 commit `cee27a3`, Phases 1.9–11 commit `532529d`, Phase 8 + 7.12 commit `8c86b03`, 7.10a/f/g/h commit `eab58e1`, 9.10 supplementary follow-up)
 **Plan:** `docs/plans/e2e-test-plan.md`
 **Accounts:** Seller `0xa9e1…947b`, Buyer `0xc652…595a`, Agent Alpha `0x3b82…8610`, Agent Beta `0x7ef4…8790`
-**Status:** **95 of 95 main-flow tests PASS.** Phase 11 cleanup intentionally re-ran before this push (DB wiped after first pass), so the content-access tests for 7.10a/f/g hung off the freshly imported Soul instead of the original Soul B; semantics are identical.
+**Status:** **95 of 95 main-flow tests PASS** + **9.10 supplementary PASS**. Phase 11 cleanup intentionally re-ran before the content-access push (DB wiped after first pass), so the content-access tests for 7.10a/f/g hung off the freshly imported Soul instead of the original Soul B; semantics are identical. Test 9.10 is a "补充测试 不计入 95" entry in the plan; it is also passing.
 
 ### Phase summary
 
@@ -192,11 +192,14 @@ The plan's optional dev-account CLI sequence (4 separate kiosk creates + cap reb
 
 The positive `init_personal_kiosk` + `ensure_personal_kiosk_registered` paths are exercised every time someone mints / lists / purchases a Soul (Phases 1, 4, 7, 8 all hit these). Negative `EPersonalKioskMismatch` is the same abort code as `EOldKioskMismatch` and is covered by the mismatch test above.
 
-### Deferred (intentional, outside 95-count)
+### Test 9.10 — anonymous public sprite (supplementary, not in 95-count)
 
-| Test | Why outside |
-|------|-------------|
-| 9.10 anonymous public sprite | The plan keeps this as a "补充测试 不计入 95" entry. Needs a public sprite fixture uploaded first via `e2e-sprite-lifecycle.ts`; the workflow is straightforward but not a regression on top of the existing 95 plan items. |
+The plan keeps this as a "补充测试 不计入 95" entry. Run after the main pass:
+
+- The `desktop/data/assets/wusaqi/sprite.png` fixture is 7.88 MB. The Walrus testnet aggregator returns `413 Request Entity Too Large` at that size, so the mint flow's first sprite upload attempt failed. Substituted in a 788 KB `sprite.png.bak` from `desktop/data/assets/walrus/` (1104×960 PNG) plus a freshly authored `manifest.json` matching its dimensions. **Note for the plan:** if the fixture size limit is what we want to enforce, the wizard upload-validation should reject ≥ 5 MB sprites with a clear error rather than relying on the upstream Walrus aggregator's 413; right now the user sees the generic "Failed to upload payload" status from the mint flow's catch-all.
+- Buyer minted a fresh Soul `0xccc49230322c79d36237fb8f6a2412393958e7c3d31aa29f0aa8ef8614b4b475` with the smaller fixture, sprite visibility set to **Public**. DB confirms `assets_on_chain_id` non-null, `active_sprite_asset_name = persona-sprite`, `active_sprite_version_index = 0`, `active_sprite_download_policy = public`.
+- Ran `web/scripts/e2e-public-sprite-anonymous.ts` (no auth header + bogus Bearer). Both probes returned `visibility=public` + `walrusBlobId`. Downloaded the Walrus blob and confirmed it byte-matches the original `sprite.png` (788_564 bytes, sha256 `cf905681…04f1`).
+- Output: `PASS — public sprite is reachable by anonymous callers and bytes match.`
 
 ### Engineering takeaways
 
@@ -223,6 +226,7 @@ The positive `init_personal_kiosk` + `ensure_personal_kiosk_registered` paths ar
 | COLLECTION_LISTING_OBJ (deleted) | `0x06d87f22b183119f5d24a8d6ec51cc226a242b7e6c69b1fb793e5875dc17d223` |
 | GRANT_OBJ (destroyed) | `0x1b5884fe5a9c50e87bda77d936ea28c94f26a53918a9920c7594ab0b69352cee` |
 | IMPORTED_SOUL_ID | `0xa57c22ab256465cfa4fb7fe1c0fbbd86806e23825b65ead2b954bc01b7128d70` |
+| SPRITE_SOUL_ID (9.10) | `0xccc49230322c79d36237fb8f6a2412393958e7c3d31aa29f0aa8ef8614b4b475` |
 
 ---
 
