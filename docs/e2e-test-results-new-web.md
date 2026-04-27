@@ -44,14 +44,6 @@
 **File:** `web/components/providers/e2e-wallet-stub.tsx` (new). Mounted in `app-providers.tsx` behind a double gate:
 
 1. `process.env.NODE_ENV === 'development'` — bundle-time gate
-
-### W0 — execution prerequisites (now landed)
-
-#### W0.1 Dev-only Wallet Standard stub
-
-**File:** `web/components/providers/e2e-wallet-stub.tsx` (new). Mounted in `app-providers.tsx` behind a double gate:
-
-1. `process.env.NODE_ENV === 'development'` — bundle-time gate
 2. `process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1'` — runtime gate; a normal `npm run dev` session does not register the stub even if a stale `__E2E_PRIVATE_KEY` sits in localStorage
 
 Implements `standard:connect`, `standard:disconnect`, `standard:events`, `sui:signPersonalMessage` v1.1, `sui:signTransaction` v2, `sui:signAndExecuteTransaction` v2.
