@@ -125,7 +125,7 @@ async function resolveWalletIdentity(
   nonce: string,
   requestHeaders: Awaited<ReturnType<typeof getRequestHeaders>>,
 ): Promise<Identity | null> {
-  if (address.length > 128 || nonce.length > 128 || signature.length > 512) return null
+  if (address.length > 128 || nonce.length > 128 || signature.length > 8192) return null
   if (!isUuid(nonce)) return null
 
   const normalizedAddress = normalizeSuiWalletAddress(address)
@@ -170,7 +170,9 @@ async function resolveWalletIdentity(
     const msg = new TextEncoder().encode(expectedMessage)
     let publicKey: Awaited<ReturnType<typeof verifyPersonalMessageSignature>>
     try {
-      publicKey = await verifyPersonalMessageSignature(msg, signature)
+      publicKey = await verifyPersonalMessageSignature(msg, signature, {
+        address: normalizedAddress,
+      })
     } catch {
       return null
     }

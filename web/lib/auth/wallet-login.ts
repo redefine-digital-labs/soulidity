@@ -61,7 +61,9 @@ export async function loginWithWalletSignature(
   if (!isUuid(input.nonce)) {
     throw new WalletLoginError('invalid_nonce')
   }
-  if (input.signature.length === 0 || input.signature.length > 512) {
+  // zkLogin signatures (base64-encoded JWT + proof + ephemeral key + sig) routinely
+  // exceed 2KB; cap is to bound DB / verify cost, not protocol-correct length.
+  if (input.signature.length === 0 || input.signature.length > 8192) {
     throw new WalletLoginError('signature_invalid')
   }
 
@@ -88,8 +90,16 @@ export async function loginWithWalletSignature(
   const messageBytes = new TextEncoder().encode(expectedMessage)
   let publicKey: Awaited<ReturnType<typeof verifyPersonalMessageSignature>>
   try {
-    publicKey = await verifyPersonalMessageSignature(messageBytes, input.signature)
-  } catch {
+    publicKey = await verifyPersonalMessageSignature(messageBytes, input.signature, {
+      address: normalizedAddress,
+    })
+  } catch (error) {
+    console.error('[wallet-login] verify failed', {
+      addr: normalizedAddress,
+      sigPrefix: input.signature.slice(0, 8),
+      sigLen: input.signature.length,
+      err: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    })
     throw new WalletLoginError('signature_invalid')
   }
 
