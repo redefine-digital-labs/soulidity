@@ -8,14 +8,14 @@
 
 ---
 
-## 2026-04-27 Run — W0 + Phases 0 → 11 (84/95 main flow PASS, 11 deferred)
+## 2026-04-27 Run — W0 + Phases 0 → 11 (91/95 main flow PASS, 4 deferred)
 
-**Date:** 2026-04-27 (single day, two sessions)
+**Date:** 2026-04-27 (single day, three pushes)
 **Environment:** Sui Testnet, `http://localhost:3100`
-**Branch:** `feat/remove-privy-sui-wallet-auth` (W0 commit `cee27a3` + follow-up)
+**Branch:** `feat/remove-privy-sui-wallet-auth` (W0 commit `cee27a3`, Phases 1.9–11 commit `bec0df6`, Phase 8 + 7.12 follow-up)
 **Plan:** `docs/plans/e2e-test-plan.md`
 **Accounts:** Seller `0xa9e1…947b`, Buyer `0xc652…595a`, Agent Alpha `0x3b82…8610`, Agent Beta `0x7ef4…8790`
-**Status:** 84 of 95 main-flow tests PASS. 11 deferred (mostly heavy on-chain re-listing matrix and the Import wizard re-run; rationale below). DB cleanup confirms market empty.
+**Status:** 91 of 95 main-flow tests PASS. 4 deferred (the remaining 7.10a/f/g/h content-access lifecycle + KioskRegistry rebind matrix). DB cleanup confirmed market empty after the main pass; Phase 8 mint reused the cleaned-up DB and passed.
 
 ### Phase summary
 
@@ -29,13 +29,13 @@
 | 5 — Grant lifecycle | 10 | 10 | Issue → capacity 1→2 → access matrix → revoke → destroy_invalidated_grant (TX `9hadjm…`) |
 | 6 — Skills | 3 | 3 | Append v1 + owner decrypt |
 | 6.5 — Asset API | 4 | 4 | Empty list + 404/400 boundaries |
-| 7 — Agent | 7 | 6 | 7.1/7.2/7.3/7.4/7.5/7.11 ✓; 7.12 byte-compare deferred (no `__e2eLastRawEnvelope` captured at mint) |
-| 7.5 — Content access | 9 | 5 | 7.6/7.10b(manifest)/7.10c/7.10d/7.10e ✓; 7.10a/f/g/h deferred (heavy multi-step on-chain) |
-| 8 — Import wizard | 6 | 0 | Deferred — same shape as Phase 1 mint pipeline already proven |
-| 9 — API boundary | 9 | 9 | 9.1–9.9 all return expected status codes; 9.10 anonymous sprite skipped (sprite setup) |
+| 7 — Agent | 7 | 7 | 7.1–7.5 + 7.11 + 7.12 byte-compare all passed |
+| 7.5 — Content access | 9 | 5 | 7.6/7.10b(manifest)/7.10c/7.10d/7.10e ✓; 7.10a/f/g/h still deferred (rationale below) |
+| 8 — Import wizard | 6 | 6 | Imported Soul `0xa57c…8d70` (TX `5PV37P…Gtc1`); used to capture envelope for 7.12 |
+| 9 — API boundary | 9 | 9 | 9.1–9.9 all return expected status codes; 9.10 anonymous sprite skipped (sprite setup only, not a regression) |
 | 10 — Page renders + follow | 6 | 6 | Community, Resources, Wrap+Link, Leaderboard, Stats, Follow toggle |
 | 11 — Cleanup | 3 | 3 | Soul listing delete (TX `8QAaiF…`), Collection listing delete (TX `5u1yu…`), DB tables emptied |
-| **Total** | **95** | **84** | |
+| **Total** | **95** | **91** | |
 
 ### W0 — execution prerequisites (landed in commit cee27a3)
 
@@ -143,15 +143,24 @@ Step 1 form (name `E2E Soul Alpha NW`, description, tags `e2e, test`, cover `ima
 - DB hotfix: re-parented the two agent members onto the Seller's Account and dropped the orphan agent Accounts. After this, the access matrix returned the expected 200/200/403/403.
 - Script fix (this commit): `e2e-setup-agents.ts` now resolves an owner Account up-front (via `E2E_AGENT_OWNER_WALLET` env, falling back to `E2E_SELLER_PRIVATE_KEY`'s derived address) and attaches the agents under it. Re-running on a clean DB produces a working setup without the manual hotfix.
 
-### Deferred (intentional, with rationale)
+### Phase 8 + Test 7.12 follow-up
+
+After the main pass committed cleanup, a third push drove the Import wizard end-to-end and re-ran 7.12 against the resulting Soul:
+
+- **Phase 8 / Imported Soul** — `0xa57c22ab256465cfa4fb7fe1c0fbbd86806e23825b65ead2b954bc01b7128d70`, TX `5PV37PCZAvR9rxCt29HfxNULcgSpYiJ9KEv7BR2eGtc1`. Soul Character `soul.md`, founding memory entry `1777259693795`, skill `api-design v0`. Same dev-only upload short-circuit handled the multi-file path; success page rendered the imported provenance ref.
+- **Test 7.12** — captured `window.__e2eLastRawEnvelope` from the `/import/gas` page (sprite was null since fixture has no sprite), issued grant from Seller to Agent Alpha via GrantModal, then ran `web/scripts/e2e-agent-verify-content.ts` with `RAW_ENVELOPES_JSON` + `SOUL_UPLOAD_SECRET`. Output:
+  - `OK char` — `soul.md` (1018 bytes, sha256 `aad35826…5827`)
+  - `OK memory` — `memory.md` (1018 bytes, sha256 `aad35826…5827`)
+  - `OK skills` — `skill.zip` (5779 bytes, sha256 `9e6fd6fc…e1a9`)
+  - `OK 3 artifact(s) matched byte-for-byte.`
+
+### Deferred (4 remaining, intentional)
 
 | Test(s) | Why deferred |
 |---------|--------------|
-| 7.12 byte-compare (`e2e-agent-verify-content.ts`) | Needs `__e2eLastRawEnvelope` JSON captured during the actual create/import gas page flow; Soul B was minted before that capture step ran. 7.11 already proves the Seal round-trip end-to-end. Re-running requires another mint to capture the envelope. |
-| 7.10a / 7.10f / 7.10g | Each requires a fresh paid content-access purchase + duration lifecycle / epoch invalidation flow. Heavy multi-TX sequence (set price + Seller buys content access from Agent Alpha + duration update + sleep + re-purchase + Buyer re-list + Buyer purchase + Seller re-purchase). Defer to a focused content-access session. |
+| 7.10a / 7.10f / 7.10g | Each requires a fresh paid content-access purchase + duration lifecycle / epoch invalidation flow. Heavy multi-TX sequence (set price + Seller buys content access from Agent Alpha + duration update + sleep + re-purchase + Buyer re-list + Buyer purchase + Seller re-purchase). The negatives are already covered by Move tests in 7.10d/e. Defer to a focused content-access session. |
 | 7.10h KioskRegistry rebind matrix | Dev-account-only sequence (4 separate kiosk creates + cap rebinds). Not on the critical user path; the negatives are guarded by Move tests already shipped. |
-| 8.1–8.6 Import wizard | Same shape as Phase 1 mint — wizard + Walrus + mint TX + mirror. The mint code path is exercised by Phase 1 against the same package; Import-specific UI fields can be revisited next time. |
-| 9.10 anonymous public sprite | Needs a public sprite fixture uploaded first via `e2e-sprite-lifecycle.ts`. Setup-only step, not on this run's path. |
+| 9.10 anonymous public sprite | Needs a public sprite fixture uploaded first via `e2e-sprite-lifecycle.ts`. Setup-only step, marked outside the 95-count by the plan. |
 
 ### Engineering takeaways
 
@@ -177,6 +186,7 @@ Step 1 form (name `E2E Soul Alpha NW`, description, tags `e2e, test`, cover `ima
 | COLLECTION_ID | `0xed6a5095dd7353a9c5ec4132cb1d88f64195a6e7f1edd09efc1a8192ee91472e` |
 | COLLECTION_LISTING_OBJ (deleted) | `0x06d87f22b183119f5d24a8d6ec51cc226a242b7e6c69b1fb793e5875dc17d223` |
 | GRANT_OBJ (destroyed) | `0x1b5884fe5a9c50e87bda77d936ea28c94f26a53918a9920c7594ab0b69352cee` |
+| IMPORTED_SOUL_ID | `0xa57c22ab256465cfa4fb7fe1c0fbbd86806e23825b65ead2b954bc01b7128d70` |
 
 ---
 
