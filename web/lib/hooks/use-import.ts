@@ -93,19 +93,24 @@ export function useImport() {
 
   // Hydrate pending recovery state from sessionStorage
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(IMPORT_RECOVERY_KEY)
-      if (raw) {
-        const recovery: ImportRecoveryState = JSON.parse(raw)
-        if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
-          recoveryRef.current = recovery
-          setTxDigest(recovery.txDigest)
-        } else if (user?.id) {
-          // Only clear when a different authenticated user is confirmed, not during auth loading
-          sessionStorage.removeItem(IMPORT_RECOVERY_KEY)
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      try {
+        const raw = sessionStorage.getItem(IMPORT_RECOVERY_KEY)
+        if (raw) {
+          const recovery: ImportRecoveryState = JSON.parse(raw)
+          if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
+            recoveryRef.current = recovery
+            setTxDigest(recovery.txDigest)
+          } else if (user?.id) {
+            // Only clear when a different authenticated user is confirmed, not during auth loading
+            sessionStorage.removeItem(IMPORT_RECOVERY_KEY)
+          }
         }
-      }
-    } catch { /* ignore */ }
+      } catch { /* ignore */ }
+    })
+    return () => { cancelled = true }
   }, [user?.id])
 
   async function importSoul(params: ImportParams) {

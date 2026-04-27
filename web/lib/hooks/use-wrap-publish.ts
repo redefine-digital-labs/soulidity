@@ -137,21 +137,26 @@ export function useWrapPublish() {
   const recoveryRef = useRef<WrapRecoveryState | null>(null)
 
   useEffect(() => {
-    const recovery = sanitizeWrapRecoveryState(
-      typeof window === 'undefined' ? null : sessionStorage.getItem(WRAP_MINT_RECOVERY_KEY),
-      user?.id,
-    )
-    if (recovery) {
-      recoveryRef.current = recovery
-      setTxDigest(recovery.txDigest)
-      return
-    }
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      const recovery = sanitizeWrapRecoveryState(
+        typeof window === 'undefined' ? null : sessionStorage.getItem(WRAP_MINT_RECOVERY_KEY),
+        user?.id,
+      )
+      if (recovery) {
+        recoveryRef.current = recovery
+        setTxDigest(recovery.txDigest)
+        return
+      }
 
-    recoveryRef.current = null
-    setTxDigest(null)
-    try {
-      sessionStorage.removeItem(WRAP_MINT_RECOVERY_KEY)
-    } catch {}
+      recoveryRef.current = null
+      setTxDigest(null)
+      try {
+        sessionStorage.removeItem(WRAP_MINT_RECOVERY_KEY)
+      } catch {}
+    })
+    return () => { cancelled = true }
   }, [user?.id])
 
   const clearRecovery = useCallback(() => {
@@ -162,7 +167,7 @@ export function useWrapPublish() {
     } catch {}
   }, [])
 
-  const publish = useCallback(async (params?: WrapPublishParams) => {
+  const publish = async (params?: WrapPublishParams) => {
     if (!suiWallet) {
       setError('Please sign in first')
       setStatus('error')
@@ -326,7 +331,7 @@ export function useWrapPublish() {
       setStatus('error')
       return null
     }
-  }, [suiWallet, txDigest, signAndExecute, getAuthHeaders, user?.id, clearRecovery, suiClient])
+  }
 
   return { status, error, txDigest, result, publish, suiWallet }
 }

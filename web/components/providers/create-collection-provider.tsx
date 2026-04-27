@@ -168,57 +168,62 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
   }, [])
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(PUBLISH_RESULT_KEY)
-      if (raw) {
-        const stored = JSON.parse(raw) as StoredCollectionPublishResult
-        if (stored.userId === user?.id && stored.result && hasCurrentSoulidityDeploymentSignature(stored)) {
-          setPublishResultRaw(stored.result)
-          if (stored.snapshot) setSuccessSnapshot(stored.snapshot)
-        } else {
-          sessionStorage.removeItem(PUBLISH_RESULT_KEY)
-        }
-      }
-    } catch { /* ignore corrupt/missing storage */ }
-
-    // Hydrate draft inputs from recovery state so the preview page
-    // can resume a partially-completed collection launch after refresh
-    try {
-      const recoveryRaw = sessionStorage.getItem(MINT_RECOVERY_KEY)
-      if (recoveryRaw) {
-        const recovery = JSON.parse(recoveryRaw)
-        if (recovery.userId === user?.id && recovery.txDigest && recovery.collectionMeta && hasCurrentSoulidityDeploymentSignature(recovery)) {
-          const meta = recovery.collectionMeta
-          setName(meta.name ?? '')
-          setDescription(meta.description ?? '')
-          setExtraRoyaltyBps(meta.extraRoyaltyBps ?? 500)
-          setTradeable(meta.tradeable ?? true)
-          setSpriteVisibility(meta.spriteVisibility === 'public' ? 'public' : 'private')
-          if (recovery.floorPriceAtomic) {
-            // Convert atomic back to display string (inverse of parseDisplayAmountToAtomic)
-            const v = BigInt(recovery.floorPriceAtomic)
-            const factor = 10n ** 6n
-            const whole = v / factor
-            const frac = (v % factor).toString().padStart(6, '0').replace(/0+$/, '')
-            setFloorPrice(frac ? `${whole}.${frac}` : whole.toString())
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      try {
+        const raw = sessionStorage.getItem(PUBLISH_RESULT_KEY)
+        if (raw) {
+          const stored = JSON.parse(raw) as StoredCollectionPublishResult
+          if (stored.userId === user?.id && stored.result && hasCurrentSoulidityDeploymentSignature(stored)) {
+            setPublishResultRaw(stored.result)
+            if (stored.snapshot) setSuccessSnapshot(stored.snapshot)
+          } else {
+            sessionStorage.removeItem(PUBLISH_RESULT_KEY)
           }
-          if (Array.isArray(recovery.souls) && recovery.souls.length > 0) {
-            setBatchSouls(recovery.souls.map((s: { input?: BatchSoulEntry }) => ({
-              name: s.input?.name ?? '',
-              description: s.input?.description ?? '',
-              tags: Array.isArray(s.input?.tags) ? s.input.tags : [],
-              creatorRoyaltyBps: s.input?.creatorRoyaltyBps ?? 0,
-            })))
-          }
-          setHasRecoveryTx(true)
         }
-      }
-    } catch { /* ignore corrupt/missing recovery */ }
+      } catch { /* ignore corrupt/missing storage */ }
 
-    setIsHydrated(true)
+      // Hydrate draft inputs from recovery state so the preview page
+      // can resume a partially-completed collection launch after refresh
+      try {
+        const recoveryRaw = sessionStorage.getItem(MINT_RECOVERY_KEY)
+        if (recoveryRaw) {
+          const recovery = JSON.parse(recoveryRaw)
+          if (recovery.userId === user?.id && recovery.txDigest && recovery.collectionMeta && hasCurrentSoulidityDeploymentSignature(recovery)) {
+            const meta = recovery.collectionMeta
+            setName(meta.name ?? '')
+            setDescription(meta.description ?? '')
+            setExtraRoyaltyBps(meta.extraRoyaltyBps ?? 500)
+            setTradeable(meta.tradeable ?? true)
+            setSpriteVisibility(meta.spriteVisibility === 'public' ? 'public' : 'private')
+            if (recovery.floorPriceAtomic) {
+              // Convert atomic back to display string (inverse of parseDisplayAmountToAtomic)
+              const v = BigInt(recovery.floorPriceAtomic)
+              const factor = 10n ** 6n
+              const whole = v / factor
+              const frac = (v % factor).toString().padStart(6, '0').replace(/0+$/, '')
+              setFloorPrice(frac ? `${whole}.${frac}` : whole.toString())
+            }
+            if (Array.isArray(recovery.souls) && recovery.souls.length > 0) {
+              setBatchSouls(recovery.souls.map((s: { input?: BatchSoulEntry }) => ({
+                name: s.input?.name ?? '',
+                description: s.input?.description ?? '',
+                tags: Array.isArray(s.input?.tags) ? s.input.tags : [],
+                creatorRoyaltyBps: s.input?.creatorRoyaltyBps ?? 0,
+              })))
+            }
+            setHasRecoveryTx(true)
+          }
+        }
+      } catch { /* ignore corrupt/missing recovery */ }
+
+      setIsHydrated(true)
+    })
+    return () => { cancelled = true }
   }, [user?.id])
 
-  const setPublishResult = useCallback((result: CollectionSyncResponse | null, snapshot?: CollectionSuccessSnapshot | null) => {
+  const setPublishResult = (result: CollectionSyncResponse | null, snapshot?: CollectionSuccessSnapshot | null) => {
     setPublishResultRaw(result)
     setSuccessSnapshot(snapshot ?? null)
     try {
@@ -231,7 +236,7 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
         sessionStorage.removeItem(PUBLISH_RESULT_KEY)
       }
     } catch { /* storage quota exceeded */ }
-  }, [user?.id])
+  }
 
   const reset = useCallback(() => {
     setName('')

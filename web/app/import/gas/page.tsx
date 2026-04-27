@@ -164,8 +164,10 @@ export default function ImportGasPage() {
   const { getAuthHeaders, user } = useAuth()
   const importSoulRef = useRef(importSoul)
   const getAuthHeadersRef = useRef(getAuthHeaders)
-  importSoulRef.current = importSoul
-  getAuthHeadersRef.current = getAuthHeaders
+  useEffect(() => {
+    importSoulRef.current = importSoul
+    getAuthHeadersRef.current = getAuthHeaders
+  })
 
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
   const [deployError, setDeployError] = useState<string | null>(null)
@@ -183,7 +185,12 @@ export default function ImportGasPage() {
 
   // Re-evaluate recovery state reactively when auth resolves
   useEffect(() => {
-    setHasImportRecovery(checkImportRecovery(user?.id))
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      setHasImportRecovery(checkImportRecovery(user?.id))
+    })
+    return () => { cancelled = true }
   }, [user?.id])
 
   useEffect(() => {

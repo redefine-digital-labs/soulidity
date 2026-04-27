@@ -149,7 +149,9 @@ async function runWalletLogin(
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
-  const [csrfToken, setCsrfToken] = useState<string | null>(null)
+  const [csrfToken, setCsrfToken] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : readCsrfTokenCookie(),
+  )
   const [showLoginModal, setShowLoginModal] = useState(false)
   const loginRunningForAddressRef = useRef<string | null>(null)
   const disconnectHandlerRef = useRef<(() => Promise<void>) | null>(null)
@@ -171,9 +173,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    setCsrfToken(readCsrfTokenCookie())
-    fetchUser()
-  }, [fetchUser])
+    let cancelled = false
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        setUser(data?.user ?? null)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setUser(null)
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const completeWalletLogin = useCallback(async (
     address: string,

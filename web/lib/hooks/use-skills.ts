@@ -82,12 +82,9 @@ export function useSkills(soul: SoulAssetDetail | null) {
   }, [soul, suiWallet])
 
   const canManageSkills = Boolean(soul?.skillsOnChainId) && (soul?.isOwner || skillGrant != null)
-  const skillVersions = useMemo(() => {
-    if (skillVersionsQuery.data?.pages.length) {
-      return skillVersionsQuery.data.pages.flatMap((page) => page.items)
-    }
-    return soul?.skillVersions ?? []
-  }, [skillVersionsQuery.data?.pages, soul?.skillVersions])
+  const skillVersions = skillVersionsQuery.data?.pages.length
+    ? skillVersionsQuery.data.pages.flatMap((page) => page.items)
+    : soul?.skillVersions ?? []
   const skillVersionCount = skillVersionsQuery.data?.pages[0]?.total ?? soul?.skillVersionCount ?? skillVersions.length
 
   async function uploadSkillFile(file: File, visibility: 'public' | 'private') {

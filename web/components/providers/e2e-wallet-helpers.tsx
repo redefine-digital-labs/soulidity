@@ -79,10 +79,12 @@ export function E2EWalletHelpers() {
   const suiClientRef = useRef(suiClient)
   const walletAddressRef = useRef<string | null>(suiWallet?.address ?? null)
 
-  getAuthHeadersRef.current = getAuthHeaders
-  signAndExecuteRef.current = signAndExecute
-  suiClientRef.current = suiClient
-  walletAddressRef.current = suiWallet?.address ?? null
+  useEffect(() => {
+    getAuthHeadersRef.current = getAuthHeaders
+    signAndExecuteRef.current = signAndExecute
+    suiClientRef.current = suiClient
+    walletAddressRef.current = suiWallet?.address ?? null
+  })
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return

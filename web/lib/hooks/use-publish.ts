@@ -94,18 +94,23 @@ export function usePublish() {
   // Hydrate pending mint recovery state from sessionStorage (survives page refresh)
   // Scoped to authenticated user — discard cross-user stale state
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(MINT_RECOVERY_KEY)
-      if (raw) {
-        const recovery: MintRecoveryState = JSON.parse(raw)
-        if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
-          recoveryRef.current = recovery
-          setTxDigest(recovery.txDigest)
-        } else {
-          sessionStorage.removeItem(MINT_RECOVERY_KEY)
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      try {
+        const raw = sessionStorage.getItem(MINT_RECOVERY_KEY)
+        if (raw) {
+          const recovery: MintRecoveryState = JSON.parse(raw)
+          if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
+            recoveryRef.current = recovery
+            setTxDigest(recovery.txDigest)
+          } else {
+            sessionStorage.removeItem(MINT_RECOVERY_KEY)
+          }
         }
-      }
-    } catch { /* ignore corrupt/missing storage */ }
+      } catch { /* ignore corrupt/missing storage */ }
+    })
+    return () => { cancelled = true }
   }, [user?.id])
 
   async function publish(params: PublishParams) {

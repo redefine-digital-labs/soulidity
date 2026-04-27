@@ -302,40 +302,45 @@ export function useCollectionPublish(draftSignature?: string | null) {
     if (!user?.id) {
       return
     }
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
 
-    const recovery = sanitizeRecoveryState(sessionStorage.getItem(RECOVERY_KEY), user?.id)
-    if (!recovery) {
-      clearRecoveryState()
-      return
-    }
-
-    if (draftSignature && recovery.draftSignature && recovery.draftSignature !== draftSignature) {
-      if (hasCommittedOnChainState(recovery)) {
-        // On-chain state exists — keep recovery to prevent duplicate mints/collections
-        recoveryRef.current = recovery
-        uploadedImageUrlRef.current = recovery.uploadedImageUrl
-        setTxDigest(recovery.txDigest)
-        setSyncData(recovery.collectionData)
-        setProgress({
-          totalSouls: recovery.souls.length,
-          mintedSouls: countMintedSouls(recovery.souls),
-          boundSouls: countBoundSouls(recovery.souls),
-        })
+      const recovery = sanitizeRecoveryState(sessionStorage.getItem(RECOVERY_KEY), user?.id)
+      if (!recovery) {
+        clearRecoveryState()
         return
       }
-      clearRecoveryState()
-      return
-    }
 
-    recoveryRef.current = recovery
-    uploadedImageUrlRef.current = recovery.uploadedImageUrl
-    setTxDigest(recovery.txDigest)
-    setSyncData(recovery.collectionData)
-    setProgress({
-      totalSouls: recovery.souls.length,
-      mintedSouls: countMintedSouls(recovery.souls),
-      boundSouls: countBoundSouls(recovery.souls),
+      if (draftSignature && recovery.draftSignature && recovery.draftSignature !== draftSignature) {
+        if (hasCommittedOnChainState(recovery)) {
+          // On-chain state exists — keep recovery to prevent duplicate mints/collections
+          recoveryRef.current = recovery
+          uploadedImageUrlRef.current = recovery.uploadedImageUrl
+          setTxDigest(recovery.txDigest)
+          setSyncData(recovery.collectionData)
+          setProgress({
+            totalSouls: recovery.souls.length,
+            mintedSouls: countMintedSouls(recovery.souls),
+            boundSouls: countBoundSouls(recovery.souls),
+          })
+          return
+        }
+        clearRecoveryState()
+        return
+      }
+
+      recoveryRef.current = recovery
+      uploadedImageUrlRef.current = recovery.uploadedImageUrl
+      setTxDigest(recovery.txDigest)
+      setSyncData(recovery.collectionData)
+      setProgress({
+        totalSouls: recovery.souls.length,
+        mintedSouls: countMintedSouls(recovery.souls),
+        boundSouls: countBoundSouls(recovery.souls),
+      })
     })
+    return () => { cancelled = true }
   }, [draftSignature, user?.id, clearRecoveryState])
 
   async function publish(params: CollectionPublishParams) {

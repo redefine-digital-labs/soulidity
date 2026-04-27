@@ -149,10 +149,14 @@ function ToastProvider({ children }: { children: React.ReactNode }) {
   // stale paused=true (the container unmounted while hovered/focused, so
   // mouseLeave/blur never fired) and never schedules its dismiss timer.
   useEffect(() => {
-    if (toasts.length === 0) {
+    if (toasts.length !== 0) return
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
       setIsHovered(false)
       setIsFocused(false)
-    }
+    })
+    return () => { cancelled = true }
   }, [toasts.length])
 
   const showToast = useCallback((message: string, color: ToastColor = 'default') => {

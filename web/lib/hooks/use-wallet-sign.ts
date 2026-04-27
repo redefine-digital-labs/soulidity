@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 import {
   useCurrentAccount,
   useSignPersonalMessage,
@@ -33,10 +33,7 @@ export function useWalletSign() {
   const { mutateAsync: signTransaction } = useSignTransaction()
   const { mutateAsync: signPersonalMessageMutation } = useSignPersonalMessage()
 
-  const suiWallet = useMemo(() => {
-    if (!currentAccount?.address) return null
-    return { address: currentAccount.address }
-  }, [currentAccount?.address])
+  const suiWallet = currentAccount?.address ? { address: currentAccount.address } : null
 
   const signAndExecute = useCallback(async (tx: Transaction): Promise<SuiTxResult> => {
     if (!currentAccount) {

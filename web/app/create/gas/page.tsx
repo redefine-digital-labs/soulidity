@@ -167,9 +167,11 @@ export default function CreateGasPage() {
   const publishRef = useRef(publish)
   const getAuthHeadersRef = useRef(getAuthHeaders)
   const signAndExecuteRef = useRef(signAndExecute)
-  publishRef.current = publish
-  getAuthHeadersRef.current = getAuthHeaders
-  signAndExecuteRef.current = signAndExecute
+  useEffect(() => {
+    publishRef.current = publish
+    getAuthHeadersRef.current = getAuthHeaders
+    signAndExecuteRef.current = signAndExecute
+  })
 
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
   const [deployError, setDeployError] = useState<string | null>(null)
