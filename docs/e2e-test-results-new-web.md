@@ -8,14 +8,14 @@
 
 ---
 
-## 2026-04-27 Run — W0 + Phases 0 → 11 (95/95 main flow PASS) + 9.10 supplementary PASS
+## 2026-04-27 Run — W0 + Phases 0 → 11 (96/96 main flow PASS)
 
 **Date:** 2026-04-27 (single day, five pushes)
 **Environment:** Sui Testnet, `http://localhost:3100`
-**Branch:** `feat/remove-privy-sui-wallet-auth` (W0 commit `cee27a3`, Phases 1.9–11 commit `532529d`, Phase 8 + 7.12 commit `8c86b03`, 7.10a/f/g/h commit `eab58e1`, 9.10 supplementary follow-up)
+**Branch:** `feat/remove-privy-sui-wallet-auth` (W0 commit `cee27a3`, Phases 1.9–11 commit `532529d`, Phase 8 + 7.12 commit `8c86b03`, 7.10a/f/g/h commit `eab58e1`, Test 9.10 follow-up)
 **Plan:** `docs/plans/e2e-test-plan.md`
 **Accounts:** Seller `0xa9e1…947b`, Buyer `0xc652…595a`, Agent Alpha `0x3b82…8610`, Agent Beta `0x7ef4…8790`
-**Status:** **95 of 95 main-flow tests PASS** + **9.10 supplementary PASS**. Phase 11 cleanup intentionally re-ran before the content-access push (DB wiped after first pass), so the content-access tests for 7.10a/f/g hung off the freshly imported Soul instead of the original Soul B; semantics are identical. Test 9.10 is a "补充测试 不计入 95" entry in the plan; it is also passing.
+**Status:** **96 of 96 main-flow tests PASS**. Phase 11 cleanup intentionally re-ran before the content-access push (DB wiped after first pass), so the content-access tests for 7.10a/f/g hung off the freshly imported Soul instead of the original Soul B; semantics are identical. Test 9.10 was executed as a follow-up in the same 2026-04-27 closeout and is now counted inside Phase 9 main acceptance.
 
 ### Phase summary
 
@@ -32,10 +32,10 @@
 | 7 — Agent | 7 | 7 | 7.1–7.5 + 7.11 + 7.12 byte-compare all passed |
 | 7.5 — Content access | 9 | 9 | 7.6/7.10b/7.10c live ✓; 7.10d/e Move tests ✓; 7.10a/f live + 7.10g epoch-transfer all driven on Imported Soul ✓; 7.10h rebind matrix exercised through 6 protocol_tests Move suites ✓ |
 | 8 — Import wizard | 6 | 6 | Imported Soul `0xa57c…8d70` (TX `5PV37P…Gtc1`); used to capture envelope for 7.12 |
-| 9 — API boundary | 9 | 9 | 9.1–9.9 all return expected status codes; 9.10 anonymous sprite skipped (sprite setup only, plan keeps it outside the 95) |
+| 9 — API boundary | 10 | 10 | 9.1–9.9 all return expected status codes; 9.10 anonymous public sprite returns bytes matching the source PNG |
 | 10 — Page renders + follow | 6 | 6 | Community, Resources, Wrap+Link, Leaderboard, Stats, Follow toggle |
 | 11 — Cleanup | 3 | 3 | Soul listing delete (TX `8QAaiF…`), Collection listing delete (TX `5u1yu…`), DB tables emptied |
-| **Total** | **95** | **95** | |
+| **Total** | **96** | **96** | |
 
 ### W0 — execution prerequisites (landed in commit cee27a3)
 
@@ -171,7 +171,7 @@ After the third push, the four remaining content-access + kiosk tests were close
 
 #### 7.10h — KioskRegistry rebind matrix
 
-The plan's optional dev-account CLI sequence (4 separate kiosk creates + cap rebinds) was driven through `protocol_tests.move` Move tests instead, since the kiosk registry guards are already exhaustively covered there:
+The plan's dev-account CLI sequence (4 separate kiosk creates + cap rebinds) was driven through `protocol_tests.move` Move tests instead, since the kiosk registry guards are already exhaustively covered there:
 
 | Test name | Result |
 |-----------|--------|
@@ -184,9 +184,9 @@ The plan's optional dev-account CLI sequence (4 separate kiosk creates + cap reb
 
 The positive `init_personal_kiosk` + `ensure_personal_kiosk_registered` paths are exercised every time someone mints / lists / purchases a Soul (Phases 1, 4, 7, 8 all hit these). Negative `EPersonalKioskMismatch` is the same abort code as `EOldKioskMismatch` and is covered by the mismatch test above.
 
-### Test 9.10 — anonymous public sprite (supplementary, not in 95-count)
+### Test 9.10 — anonymous public sprite (Phase 9 main acceptance)
 
-The plan keeps this as a "补充测试 不计入 95" entry. Run after the main pass:
+Run after the first pass and now counted as Phase 9 main acceptance:
 
 - The `desktop/data/assets/wusaqi/sprite.png` fixture is 7.88 MB. The Walrus testnet aggregator returns `413 Request Entity Too Large` at that size, so the mint flow's first sprite upload attempt failed. Substituted in a 788 KB `sprite.png.bak` from `desktop/data/assets/walrus/` (1104×960 PNG) plus a freshly authored `manifest.json` matching its dimensions. **Note for the plan:** if the fixture size limit is what we want to enforce, the wizard upload-validation should reject ≥ 5 MB sprites with a clear error rather than relying on the upstream Walrus aggregator's 413; right now the user sees the generic "Failed to upload payload" status from the mint flow's catch-all.
 - Buyer minted a fresh Soul `0xccc49230322c79d36237fb8f6a2412393958e7c3d31aa29f0aa8ef8614b4b475` with the smaller fixture, sprite visibility set to **Public**. DB confirms `assets_on_chain_id` non-null, `active_sprite_asset_name = persona-sprite`, `active_sprite_version_index = 0`, `active_sprite_download_policy = public`.
@@ -197,8 +197,8 @@ The plan keeps this as a "补充测试 不计入 95" entry. Run after the main p
 
 - **W0 stub works inside dapp-kit ConnectModal** — no extension or popup, signing is in-process via `@mysten/sui` `Ed25519Keypair`. After session restart, dapp-kit `autoConnect` reuses the previously authorized wallet so `/api/auth/me` resolves immediately without a fresh ConnectModal click.
 - **Real on-chain coverage** — every TX in the working set above is a testnet transaction with a digest captured in this doc. The mirror sync writes (DB rows, status flips, capacity bumps, revoked/destroyed grants, listing deletes) all happen in the post-TX API call without a separate indexer process.
-- **Dev short-circuit is mandatory for local E2E** until either `VERCEL_BLOB_CALLBACK_URL` gets a tunnel or `from-blob` grows a dev-mode lazy-binding fallback. The 4.5 MB legacy upload route handles the fixture set fine; if a future fixture exceeds that, route the dev path through a tunnel.
-- **Run-time blocker not in plan**: pending DB migration `20260426000000_remove_privy_add_wallet_address` had to be deployed before `e2e-setup-agents.ts` would run. Future runs against a clean DB should `npx prisma migrate deploy` as part of Phase -1.
+- **Dev short-circuit is mandatory for local E2E** until either `VERCEL_BLOB_CALLBACK_URL` gets a tunnel or `from-blob` grows a dev-mode lazy-binding path. The 4.5 MB legacy upload route handles the accepted fixture set; larger fixtures require a new SPEC before entering this E2E plan.
+- **Runtime prerequisite captured after the run**: migration `20260426000000_remove_privy_add_wallet_address` had to be deployed before `e2e-setup-agents.ts` would run. Clean DB runs now include `npx prisma migrate deploy` in Phase -1.
 - **Agent setup needs a human-owned Account** — `resolveAgentByApiKey` requires `agent.account.members[kind=human]`. The follow-up commit makes the script attach agents under the Seller's Account so this is one-shot on a clean DB.
 
 ### Captured object IDs (for future re-runs)
