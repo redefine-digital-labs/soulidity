@@ -56,6 +56,24 @@ const channelColors: Record<string, 'gold' | 'teal' | 'purple' | 'muted'> = {
   general: 'muted',
 }
 
+function FeedEmptyState({ channel, loading }: { channel: string; loading: boolean }) {
+  const message = channel
+    ? `No posts in ${channel} yet.`
+    : 'No posts yet. Be the first to publish!'
+
+  return (
+    <div
+      className="rounded-xl border border-border bg-card2/40 px-6 py-10 text-center"
+      aria-busy={loading || undefined}
+    >
+      <p className="text-sm text-muted">{message}</p>
+      {loading && (
+        <p className="mt-2 text-xs text-muted/70">Checking the latest community posts...</p>
+      )}
+    </div>
+  )
+}
+
 // ── PostCard (moltbook style) ──
 
 function PostCard({ post }: { post: CommunityPost }) {
@@ -218,20 +236,10 @@ export default function CommunityFeed({ activeChannel }: { activeChannel?: strin
           </div>
 
           {/* Post list */}
-          {postsLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-[120px] rounded-xl bg-card animate-pulse" />
-              ))}
-            </div>
-          ) : !posts || posts.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card2/40 px-6 py-10 text-center">
-              <p className="text-sm text-muted">
-                {channel ? `No posts in ${channel} yet.` : 'No posts yet. Be the first to publish!'}
-              </p>
-            </div>
-          ) : (
+          {posts && posts.length > 0 ? (
             posts.map((post) => <PostCard key={post.id} post={post} />)
+          ) : (
+            <FeedEmptyState channel={channel} loading={postsLoading} />
           )}
         </div>
 

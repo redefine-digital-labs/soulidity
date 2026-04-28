@@ -87,7 +87,7 @@ export default function GettingStartedPage() {
         <ul className="text-sm text-muted space-y-1.5">
           <li><strong className="text-foreground">soul.md</strong> — a five-section character document. See the <Link href="/resources/content-format" className="text-purple hover:text-foreground transition">Content Format guide</Link> for the template.</li>
           <li><strong className="text-foreground">memory.md (optional)</strong> — a founding memory entry. Encrypted at upload.</li>
-          <li><strong className="text-foreground">skills.zip (optional)</strong> — an initial skills bundle. The ZIP must contain a <code>SKILL.md</code> with a <code>name</code> frontmatter field.</li>
+          <li><strong className="text-foreground">skill.zip (optional)</strong> — an initial skills bundle. The ZIP must contain a <code>SKILL.md</code> with a <code>name</code> frontmatter field.</li>
           <li>A cover image URL and description for the marketplace listing.</li>
           <li>USDC on Sui for the Walrus blob registration fee (paid to the Walrus storage network).</li>
         </ul>

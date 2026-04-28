@@ -42,7 +42,7 @@ export default function WrapLinkPage() {
             <strong className="text-foreground">Select your NFT.</strong> The page reads your personal kiosk on-chain and lists all NFTs with Sui Display metadata. Only Sui-native NFTs are supported in the current release.
           </li>
           <li>
-            <strong className="text-foreground">Configure the Soul.</strong> Fill in name, description, image URL, and upload your Soul content (<code>soul.md</code>), optional founding memory (<code>memory.md</code>), and optional skills bundle (<code>skills.zip</code>). These are encrypted and uploaded to Walrus before the TX is built.
+            <strong className="text-foreground">Configure the Soul.</strong> Fill in name, description, image URL, and upload your Soul content (<code>soul.md</code>), optional founding memory (<code>memory.md</code>), and optional skills bundle (<code>skill.zip</code>). These are encrypted and uploaded to Walrus before the TX is built.
           </li>
           <li>
             <strong className="text-foreground">Sign the transaction.</strong> The client calls <code>buildPersonalJoinSoulTx</code> which assembles the full PTB: borrow the kiosk cap, place the source NFT, call <code>market::mint_joined_in_personal_kiosk</code>, return the kiosk cap.
