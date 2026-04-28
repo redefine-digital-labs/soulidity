@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 
-const EFFECTIVE_DATE = '2026-04-28'
+const EFFECTIVE_DATE = '2026-04-29'
 const title = 'Privacy Policy'
 const description =
   'How Soulidity collects, stores, and uses data across the web, on-chain, and desktop surfaces.'
@@ -66,6 +66,22 @@ export default function PrivacyPage() {
               the Service.
             </li>
             <li>
+              <strong className="text-foreground">Product analytics</strong> — page
+              views, client-side errors, performance metrics, and product event
+              telemetry (e.g. wallet login, Soul publish, Telegram bot interaction).
+              When you are signed in, events are tied to your member ID and may
+              include your Sui wallet address, Telegram user ID, or Telegram chat
+              ID so we can debug per-account issues. Click and navigation
+              autocapture runs with text and element-attribute masking enabled and
+              with personal-data URL parameters masked, so only structural metadata
+              (element type, CSS classes, page paths) is recorded. Session replay
+              is enabled with input masking (`maskAllInputs`) and text masking by
+              default; only elements explicitly marked `data-ph-allow` are recorded
+              as plaintext in replay. Sensitive fields (passwords, secrets, tokens,
+              mnemonics, private keys, Seal session keys, Walrus blob bodies,
+              email) are scrubbed before ingestion on both client and server.
+            </li>
+            <li>
               <strong className="text-foreground">Device telemetry</strong> — the
               Desktop client may send session validation pings and error reports
               tied to your linked account. No keystrokes or screen content are
@@ -107,6 +123,13 @@ export default function PrivacyPage() {
             <li><strong className="text-foreground">Seal</strong> — access-control and key distribution.</li>
             <li><strong className="text-foreground">Telegram</strong> — community bot surfaces.</li>
             <li><strong className="text-foreground">Vercel</strong> — web hosting and, if enabled, analytics.</li>
+            <li>
+              <strong className="text-foreground">PostHog</strong> — product
+              analytics, session replay (with input/text masking), feature flags,
+              and error monitoring. Receives the event categories listed in
+              &ldquo;Product analytics&rdquo; above, including signed-in member,
+              wallet, and Telegram identifiers.
+            </li>
           </ul>
           <p className="mt-2 text-muted">
             Each provider handles data under its own policy; on-chain data is, by

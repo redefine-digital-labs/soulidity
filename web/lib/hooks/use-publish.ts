@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import posthog from 'posthog-js'
 import type { Transaction } from '@mysten/sui/transactions'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
@@ -286,6 +287,8 @@ export function usePublish() {
       return
     }
 
+    const startedAt = Date.now()
+    posthog.capture('soul_publish_started', { resumed: Boolean(txDigest) })
     try {
       setError(null)
       const authHeaders = await getAuthHeaders()
@@ -327,6 +330,10 @@ export function usePublish() {
         const executedDigest = result.digest
         digest = executedDigest
         setTxDigest(executedDigest)
+        posthog.capture('soul_publish_sui_signed', {
+          txDigest: executedDigest,
+          elapsedMs: Date.now() - startedAt,
+        })
 
         // Persist raw Seal material before calling Seal key servers. If sidecar
         // creation fails, refresh can rebuild the sidecars without re-minting.
@@ -390,6 +397,10 @@ export function usePublish() {
       const syncData: PublishSyncResponse = await syncRes.json()
       setPublishData(syncData)
       setStatus('done')
+      posthog.capture('soul_publish_completed', {
+        txDigest: digest,
+        elapsedMs: Date.now() - startedAt,
+      })
 
       // Clear recovery state on successful sync
       recoveryRef.current = null
@@ -397,6 +408,15 @@ export function usePublish() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Publish failed')
       setStatus('error')
+      posthog.captureException(
+        nextError instanceof Error ? nextError : new Error(String(nextError)),
+        {
+          scope: 'soul_publish',
+          phase: status,
+          txDigest,
+          elapsedMs: Date.now() - startedAt,
+        },
+      )
     }
   }
 

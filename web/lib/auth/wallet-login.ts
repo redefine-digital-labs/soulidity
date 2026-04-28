@@ -7,6 +7,7 @@ import { isUuid } from '@/lib/is-uuid'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 import { allocateUniqueHandle, resolveHandleSeed } from '@/lib/handle'
 import { verifyPersonalMessageSignature } from '@/lib/sui-verify'
+import { captureServerEvent, captureServerException } from '@/lib/observability/posthog-server'
 
 export type WalletLoginErrorReason =
   | 'invalid_address'
@@ -51,6 +52,47 @@ export interface WalletLoginResult {
 }
 
 export async function loginWithWalletSignature(
+  input: WalletLoginInput,
+): Promise<WalletLoginResult> {
+  const startedAt = Date.now()
+  const distinctId = normalizeSuiWalletAddress(input.address) ?? 'anonymous'
+  captureServerEvent('wallet_login_started', {
+    distinctId,
+    properties: { hasTgContext: Boolean(input.verifiedTgContext?.tgId) },
+  })
+  try {
+    const result = await loginWithWalletSignatureImpl(input)
+    captureServerEvent('wallet_login_succeeded', {
+      distinctId: result.memberId,
+      properties: {
+        walletAddress: result.walletAddress,
+        elapsedMs: Date.now() - startedAt,
+      },
+    })
+    return result
+  } catch (err) {
+    if (err instanceof WalletLoginError) {
+      captureServerEvent('wallet_login_failed', {
+        distinctId,
+        properties: {
+          errorReason: err.reason,
+          elapsedMs: Date.now() - startedAt,
+        },
+      })
+    } else {
+      captureServerException(err, {
+        distinctId,
+        properties: {
+          scope: 'wallet_login',
+          elapsedMs: Date.now() - startedAt,
+        },
+      })
+    }
+    throw err
+  }
+}
+
+async function loginWithWalletSignatureImpl(
   input: WalletLoginInput,
 ): Promise<WalletLoginResult> {
   const normalizedAddress = normalizeSuiWalletAddress(input.address)

@@ -1,5 +1,6 @@
 import Parser from 'rss-parser'
 import type { CollectedItem } from './types.js'
+import { captureBackendException } from '../observability/posthog.js'
 
 export const RSS_FEEDS = [
   { name: 'coindesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
@@ -43,6 +44,11 @@ export async function collectRss(): Promise<CollectedItem[]> {
       items.push(...r.value)
     } else {
       console.error(`Failed to fetch RSS from ${RSS_FEEDS[i].name}:`, r.reason)
+      captureBackendException(r.reason, {
+        scope: 'collector',
+        collector: 'rss',
+        source: RSS_FEEDS[i].name,
+      })
     }
   }
   return items

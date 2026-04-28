@@ -2,6 +2,7 @@ import { Bot, InlineKeyboard } from 'grammy'
 import type { PrismaClient } from '../db/database.js'
 import { formatArticle } from './formatter.js'
 import { syncArticleToPost } from '../shared/sync-article-post.js'
+import { captureBackendEvent, captureBackendException } from '../observability/posthog.js'
 
 /** Auto-publish draft articles older than `maxAgeMs` (default 10 minutes). */
 export async function autoPublish(
@@ -57,6 +58,8 @@ export async function autoPublish(
         data: { articleId: article.id, channel: 'tg_daily', messageId, publishedAt: new Date() },
       })
 
+      captureBackendEvent('article_published', { articleId: article.id, messageId, channel: 'tg_daily' })
+
       // Sync to community news post (awaited to avoid orphaned promises before disconnect)
       try {
         await syncArticleToPost(prisma, article.id)
@@ -67,6 +70,8 @@ export async function autoPublish(
       published++
     } catch (err) {
       console.error(`Failed to auto-publish article ${article.id}:`, err instanceof Error ? err.message : err)
+      captureBackendException(err, { scope: 'publisher', articleId: article.id })
+      captureBackendEvent('article_publish_failed', { articleId: article.id, error: err instanceof Error ? err.message : String(err) })
       failed++
     }
   }

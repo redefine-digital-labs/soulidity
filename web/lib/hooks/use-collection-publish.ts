@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import posthog from 'posthog-js'
 import { useSuiClient } from '@mysten/dapp-kit'
 import { buildCreateCollectionTx, buildAddSoulToCollectionTx } from '@/lib/soulidity/tx/collection'
 import {
@@ -456,6 +457,10 @@ export function useCollectionPublish(draftSignature?: string | null) {
       return
     }
 
+    const startedAt = Date.now()
+    posthog.capture('collection_publish_started', {
+      soulCount: params.souls?.length ?? 0,
+    })
     try {
       setError(null)
       const authHeaders = await getAuthHeaders()
@@ -855,12 +860,25 @@ export function useCollectionPublish(draftSignature?: string | null) {
 
       setSyncData(collectionData)
       setStatus('done')
+      posthog.capture('collection_publish_completed', {
+        soulCount: params.souls?.length ?? 0,
+        elapsedMs: Date.now() - startedAt,
+      })
 
       uploadedImageUrlRef.current = null
       setRecoveryState(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Collection creation failed')
       setStatus('error')
+      posthog.captureException(
+        err instanceof Error ? err : new Error(String(err)),
+        {
+          scope: 'collection_publish',
+          phase: status,
+          soulCount: params.souls?.length ?? 0,
+          elapsedMs: Date.now() - startedAt,
+        },
+      )
     }
   }
 

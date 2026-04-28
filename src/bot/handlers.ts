@@ -2,6 +2,7 @@ import type { Bot, Context } from 'grammy'
 import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
 import { getAppBaseUrl } from '../shared/app-config.js'
+import { captureBackendEvent } from '../observability/posthog.js'
 
 const TG_GROUP_ID = () => process.env.TG_GROUP_ID ?? ''
 
@@ -62,6 +63,11 @@ export async function handleJoin(ctx: Context, prisma?: PrismaClient): Promise<v
     return
   }
 
+  captureBackendEvent('bot_join_requested', {
+    tgId: String(tgId),
+    isRegistered: !!humanMember.accountId,
+  })
+
   if (humanMember.accountId) {
     await ctx.reply(
       `🦞 欢迎加入 OpenClaw！\n` +
@@ -107,6 +113,7 @@ export async function handleMark(ctx: Context, prisma: PrismaClient): Promise<vo
     raw_data: JSON.stringify({ chat_id: chatId, message_id: msgId, from_id: replyMsg.from?.id }),
   })
 
+  captureBackendEvent('bot_item_marked', { chatId: String(chatId), fromId: String(fromId) })
   await ctx.reply('✅ 已标记为素材')
 }
 
@@ -124,6 +131,7 @@ export function registerHandlers(bot: Bot, prisma: PrismaClient): void {
     const isIn = new_chat_member.status === 'member' || new_chat_member.status === 'administrator'
     if (wasOut && isIn) {
       const name = new_chat_member.user.first_name
+      captureBackendEvent('bot_user_joined_group', { tgId: String(new_chat_member.user.id) })
       await ctx.reply(`🦞 欢迎 ${name} 加入 OpenClaw 社群！`)
     }
   })

@@ -17,10 +17,10 @@ export interface ResolvedLLMRuntimeConfig extends LLMConfig {
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-5.3-codex-spark'
 
-export function resolveLLMRuntimeConfig(env: NodeJS.ProcessEnv): ResolvedLLMRuntimeConfig {
+export function resolveLLMRuntimeConfig(env: NodeJS.ProcessEnv): ResolvedLLMRuntimeConfig | null {
   const apiKey = env.OPENAI_API_KEY?.trim()
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY is required')
+    return null
   }
 
   return {

@@ -6,6 +6,7 @@ import { buildReporterPrompt, parseReporterResponse, REPORTER_SYSTEM_PROMPT } fr
 import { buildAnalystPrompt, parseAnalystResponse, ANALYST_SYSTEM_PROMPT } from './agents/analyst.js'
 import { buildEditorPrompt, parseEditorResponse, EDITOR_SYSTEM_PROMPT } from './agents/editor.js'
 import { getPrismaConnectionErrorCode, isTransientPrismaConnectionError } from '../shared/prisma-errors.js'
+import { captureBackendEvent, captureBackendException } from '../observability/posthog.js'
 
 interface PipelineResult {
   success: boolean
@@ -152,6 +153,16 @@ export async function runAgentPipeline(
 
     await updateRawItemStatus(prisma, rawItemId, 'produced')
 
+    captureBackendEvent('article_produced', {
+      articleId,
+      rawItemId,
+      sourceName: item.sourceName,
+      editorApproved: editorOutput.approved,
+      articleStatus: status,
+      tagCount: analystOutput.tags.length,
+      companyCount: analystOutput.companies.length,
+    })
+
     return { success: true, articleId }
   } catch (err: any) {
     // Retryable: LLM API errors
@@ -170,6 +181,8 @@ export async function runAgentPipeline(
     }
 
     console.error(`Pipeline failed for ${rawItemId}:`, err)
+    captureBackendException(err, { scope: 'pipeline', rawItemId })
+    captureBackendEvent('article_production_failed', { rawItemId, error: err.message })
     await updateRawItemStatus(prisma, rawItemId, 'rejected').catch(() => {})
     return { success: false, articleId: null, error: err.message }
   }

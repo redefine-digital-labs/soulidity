@@ -4,6 +4,8 @@ import { useEffect, type ReactNode } from 'react'
 import { SuiClientProvider, WalletProvider } from '@mysten/dapp-kit'
 import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import '@mysten/dapp-kit/dist/index.css'
+import posthog from 'posthog-js'
+import { PostHogProvider } from 'posthog-js/react'
 import { QueryProvider } from './query-provider'
 import { AuthProvider } from './auth-provider'
 import { WalletAuthBridge } from './wallet-auth-bridge'
@@ -34,25 +36,27 @@ export function AppProviders({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <QueryProvider>
-      {process.env.NODE_ENV === 'development' &&
-      process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1' ? (
-        <E2EWalletStub />
-      ) : null}
-      <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-        <WalletProvider autoConnect>
-          <AuthProvider>
-            <WalletAuthBridge />
-            <ToastProvider>
-              <UploadCostReviewProvider>
-                <E2EWalletHelpers />
-                <WalletLoginModal />
-                {children}
-              </UploadCostReviewProvider>
-            </ToastProvider>
-          </AuthProvider>
-        </WalletProvider>
-      </SuiClientProvider>
-    </QueryProvider>
+    <PostHogProvider client={posthog}>
+      <QueryProvider>
+        {process.env.NODE_ENV === 'development' &&
+        process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1' ? (
+          <E2EWalletStub />
+        ) : null}
+        <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
+          <WalletProvider autoConnect>
+            <AuthProvider>
+              <WalletAuthBridge />
+              <ToastProvider>
+                <UploadCostReviewProvider>
+                  <E2EWalletHelpers />
+                  <WalletLoginModal />
+                  {children}
+                </UploadCostReviewProvider>
+              </ToastProvider>
+            </AuthProvider>
+          </WalletProvider>
+        </SuiClientProvider>
+      </QueryProvider>
+    </PostHogProvider>
   )
 }

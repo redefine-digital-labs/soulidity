@@ -6,6 +6,7 @@ import { isDuplicate } from './dedup.js'
 import { insertRawItem } from '../db/database.js'
 import { isRelevant } from './x.js'
 import type { CollectedItem } from './types.js'
+import { captureBackendEvent, shutdownPostHogWithTimeout } from '../observability/posthog.js'
 
 export async function runCollectors(prisma: PrismaClient, collectors: Array<() => Promise<CollectedItem[]>>): Promise<{ total: number; inserted: number; skipped: number; filtered: number }> {
   let total = 0
@@ -50,6 +51,7 @@ export async function runCollectors(prisma: PrismaClient, collectors: Array<() =
     }
   }
 
+  captureBackendEvent('collector_run_completed', { total, inserted, skipped, filtered })
   return { total, inserted, skipped, filtered }
 }
 
@@ -61,19 +63,30 @@ if (process.argv[1]?.endsWith('run.ts') || process.argv[1]?.endsWith('run.js')) 
 
   const mode = process.argv[2]
 
-  if (mode === 'x') {
-    const { collectX, closePool } = await import('./x.js')
-    console.log('Running X collector...')
-    try {
-      const result = await collectX(prisma)
-      console.log(`Done. Total ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}, pending_review ${result.pendingReview}`)
-    } finally {
-      await closePool()
+  try {
+    if (mode === 'x') {
+      const { collectX, closePool } = await import('./x.js')
+      console.log('Running X collector...')
+      try {
+        const result = await collectX(prisma)
+        console.log(`Done. Total ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}, pending_review ${result.pendingReview}`)
+      } finally {
+        await closePool()
+      }
+    } else {
+      console.log('Running collectors...')
+      const result = await runCollectors(prisma, [collectRss, collectGithub])
+      console.log(`Done. Fetched ${result.total} items, inserted ${result.inserted} new, filtered ${result.filtered}, skipped ${result.skipped} duplicates.`)
     }
-  } else {
-    console.log('Running collectors...')
-    const result = await runCollectors(prisma, [collectRss, collectGithub])
-    console.log(`Done. Fetched ${result.total} items, inserted ${result.inserted} new, filtered ${result.filtered}, skipped ${result.skipped} duplicates.`)
+  } finally {
+    try {
+      await prisma.$disconnect()
+    } finally {
+      try {
+        await shutdownPostHogWithTimeout()
+      } catch (error) {
+        console.error('[collector] failed to flush PostHog telemetry:', error)
+      }
+    }
   }
-  await prisma.$disconnect()
 }
