@@ -40,6 +40,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@prisma/client'],
   env: {
     NEXT_PUBLIC_WALRUS_WASM_VERSION: walrusWasmVersion,
+    NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim() || '',
+    NEXT_PUBLIC_POSTHOG_HOST:
+      process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || '/ingest',
   },
   turbopack: {
     root: repoRoot,
@@ -56,6 +59,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }]
   },
+  async rewrites() {
+    return [
+      { source: '/ingest/static/:path*', destination: 'https://us-assets.i.posthog.com/static/:path*' },
+      { source: '/ingest/:path*', destination: 'https://us.i.posthog.com/:path*' },
+      { source: '/ingest/decide', destination: 'https://us.i.posthog.com/decide' },
+    ]
+  },
+  skipTrailingSlashRedirect: true,
 }
 
 export default nextConfig

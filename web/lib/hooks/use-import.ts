@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import posthog from 'posthog-js'
 import type { Transaction } from '@mysten/sui/transactions'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { buildImportSoulTx } from '@/lib/soulidity/tx/import'
@@ -281,6 +282,8 @@ export function useImport() {
       return
     }
 
+    const startedAt = Date.now()
+    posthog.capture('soul_import_started', { resumed: Boolean(txDigest) })
     try {
       setError(null)
       const authHeaders = await getAuthHeaders()
@@ -322,6 +325,10 @@ export function useImport() {
         const executedDigest = result.digest
         digest = executedDigest
         setTxDigest(executedDigest)
+        posthog.capture('soul_import_sui_signed', {
+          txDigest: executedDigest,
+          elapsedMs: Date.now() - startedAt,
+        })
 
         // Persist raw Seal material before calling Seal key servers. If sidecar
         // creation fails, refresh can rebuild the sidecars without re-importing.
@@ -384,6 +391,10 @@ export function useImport() {
       const syncData: ImportSyncResponse = await syncRes.json()
       setImportData(syncData)
       setStatus('done')
+      posthog.capture('soul_import_completed', {
+        txDigest: digest,
+        elapsedMs: Date.now() - startedAt,
+      })
 
       // Clear recovery on success
       recoveryRef.current = null
@@ -391,6 +402,15 @@ export function useImport() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Import failed')
       setStatus('error')
+      posthog.captureException(
+        nextError instanceof Error ? nextError : new Error(String(nextError)),
+        {
+          scope: 'soul_import',
+          phase: status,
+          txDigest,
+          elapsedMs: Date.now() - startedAt,
+        },
+      )
     }
   }
 

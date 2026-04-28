@@ -1,6 +1,7 @@
 import pg from 'pg'
 import type { PrismaClient } from '../db/database.js'
 import { getCollectorState, upsertCollectorState } from '../db/database.js'
+import { captureBackendEvent, captureBackendException } from '../observability/posthog.js'
 
 // Parse "timestamp without time zone" as UTC to avoid local-timezone offset
 // when the external DB stores wall-clock times in a non-tz column.
@@ -95,6 +96,11 @@ function getPool(): pg.Pool {
     })
     xPool.on('error', (err) => {
       console.error('X database pool error:', err.message)
+      captureBackendException(err, {
+        scope: 'collector',
+        collector: 'x',
+        subsystem: 'pg-pool',
+      })
     })
   }
   return xPool
@@ -235,5 +241,6 @@ export async function collectX(prisma: PrismaClient, deps: CollectXDeps = {}): P
     }
   }
 
+  captureBackendEvent('x_collection_completed', { total, inserted, filtered, pendingReview })
   return { total, inserted, filtered, pendingReview }
 }

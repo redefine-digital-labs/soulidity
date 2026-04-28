@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import posthog from 'posthog-js'
 
 const CSRF_COOKIE_NAME = 'csrf-token'
 
@@ -204,6 +205,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await fetchUser()
     } catch (error) {
       console.error('Wallet login failed', error)
+      posthog.capture('wallet_login_client_failed', {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
       try {
         await disconnectHandlerRef.current?.()
       } catch {
@@ -215,6 +219,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginRunningForAddressRef.current = null
     }
   }, [fetchUser])
+
+  useEffect(() => {
+    if (user?.id) {
+      posthog.identify(user.id, {
+        walletAddress: user.primarySuiAddress,
+        memberKind: user.kind,
+      })
+    }
+  }, [user?.id, user?.primarySuiAddress, user?.kind])
 
   const registerDisconnectHandler = useCallback((handler: () => Promise<void>) => {
     disconnectHandlerRef.current = handler
@@ -235,6 +248,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setCsrfToken(null)
     setUser(null)
+    posthog.reset()
     try {
       await disconnectHandlerRef.current?.()
     } catch {

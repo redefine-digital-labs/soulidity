@@ -2,6 +2,7 @@ import type { PrismaClient } from '../db/database.js'
 import { getRawItemsByStatus, updateRawItemStatus } from '../db/database.js'
 import type { RawItem } from '../shared/types.js'
 import { findDuplicateMatch } from '../shared/dedup.js'
+import { captureBackendEvent } from '../observability/posthog.js'
 
 const WINDOW_HOURS = 72
 const DEDUP_REFERENCE_STATUSES = ['deduped', 'processing', 'produced', 'published', 'kb_saved']
@@ -64,5 +65,6 @@ export async function runDedup(prisma: PrismaClient, limit = 200): Promise<{ tot
   ])
 
   console.log(`Dedup: ${items.length} items → ${keep.length} kept, ${duplicate.length} duplicates`)
+  captureBackendEvent('dedup_completed', { total: items.length, kept: keep.length, duplicates: duplicate.length })
   return { total: items.length, kept: keep.length, duplicates: duplicate.length }
 }

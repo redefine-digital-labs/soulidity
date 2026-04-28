@@ -1,5 +1,8 @@
 'use client'
 
+import { useEffect } from 'react'
+import posthog from 'posthog-js'
+
 export default function Error({
   error,
   reset,
@@ -7,6 +10,10 @@ export default function Error({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    posthog.captureException(error, { digest: error.digest })
+  }, [error])
+
   return (
     <div className="min-h-[calc(100vh-56px)] flex flex-col items-center justify-center text-center px-6">
       <div className="text-7xl mb-6 opacity-40">⚠️</div>
