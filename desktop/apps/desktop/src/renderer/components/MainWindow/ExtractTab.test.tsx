@@ -7,25 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExtractSoulDraft, LocalExtractAgentStatus, OpenClawImportStatus, SessionScanResult } from '@soulidity/shared'
 import { ExtractTab } from './ExtractTab'
 
-vi.mock('@tanstack/react-query', () => ({
-  QueryClient: class QueryClient {},
-  QueryClientProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}))
-
-vi.mock('@mysten/dapp-kit', () => ({
-  SuiClientProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useSuiClient: () => null,
-}))
-
-vi.mock('../../lib/hooks/use-desktop-wallet', () => ({
-  useDesktopWallet: () => ({
-    suiWallet: null,
-    signAndExecute: vi.fn(),
-    signPersonalMessage: vi.fn(),
-    suiClient: null,
-  }),
-}))
-
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function flushEffects() {
@@ -154,7 +135,6 @@ type MockElectronApi = Pick<
   | 'desktop:create-draft:save'
   | 'desktop:create-draft:clear'
   | 'desktop:create-draft:pick-cover-image'
-  | 'getDesktopRuntimeConfig'
   | 'extraction:scan-sessions'
   | 'extraction:get-openclaw-import-status'
   | 'extraction:get-local-agent-statuses'
@@ -174,12 +154,6 @@ function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectr
       dataUrl: 'data:image/png;base64,Y292ZXI=',
       fileName: 'custom-cover.png',
       mimeType: 'image/png',
-    }),
-    getDesktopRuntimeConfig: vi.fn().mockResolvedValue({
-      suiNetwork: 'testnet',
-      webBaseUrl: 'https://clawnews-mu.vercel.app',
-      authReady: false,
-      authBlocker: 'Desktop wallet auth is not configured yet.',
     }),
     'extraction:scan-sessions': vi.fn().mockResolvedValue([makeScanResult()]),
     'extraction:get-openclaw-import-status': vi.fn().mockResolvedValue(makeOpenClawStatus()),
@@ -399,7 +373,7 @@ describe('ExtractTab', () => {
     await click(container, 'Start Scan')
     await click(container, 'Create with Codex')
 
-    expect(container.textContent).toContain('Cover image is required before minting')
+    expect(container.textContent).toContain('Cover image is required before web create')
     expect(container.textContent).toContain('Upload Cover Image')
 
     await click(container, 'Upload Cover Image')
@@ -420,30 +394,29 @@ describe('ExtractTab', () => {
     }))
 
     expect(container.textContent).toContain('Create Soul Locally')
-    expect(container.textContent).toContain('Cover image is required before minting')
+    expect(container.textContent).toContain('Cover image is required before web create')
     expect(container.textContent).toContain('Upload Cover Image')
   })
 
-  it('keeps desktop mint auth lazy until the user explicitly opens it', async () => {
+  it('routes saved local drafts to the web create flow instead of desktop mint', async () => {
+    const openWebCreate = vi.fn().mockResolvedValue(undefined)
     await renderWithApi(createElectronApi({
       'desktop:create-draft:load': vi.fn().mockResolvedValue(makeDraft()),
-      getDesktopRuntimeConfig: vi.fn().mockResolvedValue({
-        suiNetwork: 'testnet',
-        webBaseUrl: 'https://clawnews-mu.vercel.app',
-        authReady: true,
-        authBlocker: null,
-      }),
+      'extraction:open-web-create': openWebCreate,
     }))
 
-    expect(container.textContent).toContain('Load Desktop Mint')
+    expect(container.textContent).toContain('Create on Web')
+    expect(container.textContent).toContain('wallet-paid web create flow')
+    expect(container.textContent).toContain('Open Web Create')
+    expect(container.textContent).not.toContain('Load Desktop Mint')
     expect(container.textContent).not.toContain('Mint on Sui')
 
-    await click(container, 'Load Desktop Mint')
+    await click(container, 'Open Web Create')
 
-    expect(container.textContent).toContain('Mint on Sui')
+    expect(openWebCreate).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the desktop wallet notice without leaking the raw env var name', async () => {
+  it('does not expose the retired desktop mint path for new local drafts', async () => {
     await renderWithApi(createElectronApi({
       'extraction:get-openclaw-import-status': vi.fn().mockResolvedValue(makeOpenClawStatus({
         ready: false,
@@ -454,20 +427,15 @@ describe('ExtractTab', () => {
       'extraction:get-local-agent-statuses': vi.fn().mockResolvedValue(makeAgentStatuses([
         { agent: 'codex', status: 'available', detail: 'Ready.' },
       ])),
-      getDesktopRuntimeConfig: vi.fn().mockResolvedValue({
-        suiNetwork: 'testnet',
-        webBaseUrl: 'https://clawnews-mu.vercel.app',
-        authReady: false,
-        authBlocker: 'The connected web deployment does not serve desktop wallet auth yet.',
-      }),
     }))
 
     await click(container, 'Start Scan')
     await click(container, 'Create with Codex')
 
-    expect(container.textContent).toContain('The connected web deployment does not serve desktop wallet auth yet.')
-    // Make sure raw env var names never leak to UI copy. Using a regex avoids
-    // putting the literal string in source (the no-residue test would flag it).
+    expect(container.textContent).toContain('Create on Web')
+    expect(container.textContent).toContain('Open Web Create')
+    expect(container.textContent).not.toContain('Desktop wallet auth')
+    expect(container.textContent).not.toContain('Mint on Sui')
     expect(container.textContent ?? '').not.toMatch(/[A-Z_]+_PRIVY_APP_ID/)
   })
 })
