@@ -3,11 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "copy-walrus-wasm": "node scripts/copy-walrus-wasm.mjs",
     "dev": "next dev --port 3100",
+    "predev": "npm run copy-walrus-wasm",
     "prisma:generate": "prisma generate --schema=../prisma/schema.prisma",
     "typegen": "next typegen",
     "typecheck": "npm run prisma:generate && npm run typegen && tsc -p tsconfig.json --noEmit",
     "build": "npm run prisma:generate && next build --webpack",
+    "prebuild": "npm run copy-walrus-wasm",
     "start": "next start",
     "lint": "eslint"
   },
