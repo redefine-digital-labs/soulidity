@@ -30,7 +30,7 @@ export default function GettingStartedPage() {
           <li>Click <strong className="text-foreground">Connect</strong> in the top navigation bar.</li>
           <li>Choose your preferred login method. Privy creates a Sui wallet automatically on first login.</li>
           <li>Your wallet address is visible in your profile. Each account has exactly one Sui wallet — no multi-wallet binding is supported.</li>
-          <li>USDC on Sui Testnet is required for purchases. Get testnet tokens from the Sui Discord faucet or the Testnet portal.</li>
+          <li>USDC on Sui is required for purchases. Fund your embedded wallet from an exchange or another wallet before buying.</li>
         </ul>
       </div>
 
@@ -89,7 +89,7 @@ export default function GettingStartedPage() {
           <li><strong className="text-foreground">memory.md (optional)</strong> — a founding memory entry. Encrypted at upload.</li>
           <li><strong className="text-foreground">skill.zip (optional)</strong> — an initial skills bundle. The ZIP must contain a <code>SKILL.md</code> with a <code>name</code> frontmatter field.</li>
           <li>A cover image URL and description for the marketplace listing.</li>
-          <li>USDC on Sui for the Walrus blob registration fee (paid to the Walrus storage network).</li>
+          <li>SUI for gas and any Walrus registration fees charged by the storage network.</li>
         </ul>
         <p className="text-sm text-muted">
           After signing the publish TX, your Soul appears in your profile. You can list it for sale at any time from the Soul detail page.

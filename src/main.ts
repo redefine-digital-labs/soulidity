@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import '../scripts/lib/dotenv.js'
 import { Bot } from 'grammy'
 import { createPrisma } from './db/database.js'
 import { createLLMAdapter, resolveLLMRuntimeConfig } from './producer/llm.js'

@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  OFFICIAL_MAINNET_KIOSK_PACKAGE_ID,
+  OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID,
+} from '../../web/lib/soulidity/kiosk'
 
 const mockedGetObject = vi.hoisted(() => vi.fn())
 const mockedGetOwnedObjects = vi.hoisted(() => vi.fn())
@@ -126,6 +130,47 @@ describe('Soulidity queries', () => {
       owner: '0xabc',
       cursor: 'cursor-2',
       filter: { StructType: `${'0x' + '99'.repeat(32)}::personal_kiosk::PersonalKioskCap` },
+      options: {
+        showOwner: true,
+        showContent: true,
+        showType: true,
+      },
+    })
+  })
+
+  it('uses the official mainnet kiosk type origin when listing upgraded PersonalKioskCap objects', async () => {
+    process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID = OFFICIAL_MAINNET_KIOSK_PACKAGE_ID
+    mockedGetOwnedObjects.mockResolvedValueOnce({
+      data: [{
+        data: {
+          objectId: '0x1',
+          type: `${OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
+          owner: { AddressOwner: '0xabc' },
+          content: {
+            dataType: 'moveObject',
+            type: `${OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
+            fields: {
+              cap: {
+                fields: {
+                  for: '0x11',
+                },
+              },
+            },
+          },
+        },
+      }],
+      hasNextPage: false,
+      nextCursor: null,
+    })
+
+    const { listOwnedPersonalKioskCaps } = await import('../../web/lib/soulidity/queries')
+
+    await expect(listOwnedPersonalKioskCaps('0xabc')).resolves.toHaveLength(1)
+    expect(mockedGetOwnedObjects).toHaveBeenCalledWith({
+      owner: '0xabc',
+      filter: {
+        StructType: `${OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
+      },
       options: {
         showOwner: true,
         showContent: true,

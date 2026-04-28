@@ -20,7 +20,6 @@
  *   OWNER_PRIVATE_KEY="suiprivkey1..." \
  *   SOUL_ON_CHAIN_ID="0x..." \
  *   NEXT_PUBLIC_SUI_NETWORK="testnet" \
- *   NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID="0x..." \  # same as Soulidity package
  *   DATABASE_URL="postgresql://..." \
  *   npx tsx scripts/e2e-sprite-lifecycle.ts <subcommand>
  *

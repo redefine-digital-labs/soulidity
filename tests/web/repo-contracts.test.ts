@@ -60,6 +60,7 @@ describe('repository contract guards', () => {
     const envExample = readFileSync(join(repoRoot, '.env.example'), 'utf8')
     const deploymentManifest = JSON.parse(readFileSync(join(webRoot, 'lib', 'soulidity', 'deployment-manifest.json'), 'utf8')) as {
       testnet?: Record<string, string>
+      mainnet?: Record<string, string>
     }
     const rootPackage = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
       scripts?: Record<string, string>
@@ -83,6 +84,14 @@ describe('repository contract guards', () => {
     expect(deploymentManifest.testnet?.soulTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
     expect(deploymentManifest.testnet?.collectionTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
     expect(deploymentManifest.testnet?.paymentCoinType).toContain('::')
+
+    expect(deploymentManifest.mainnet?.packageId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.mainnet?.marketConfigId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.mainnet?.soulTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.mainnet?.collectionTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.mainnet?.paymentCoinType).toBe(
+      '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+    )
 
     // Scripts may not exist in root package.json after monorepo restructuring;
     // verify only when present to avoid false negatives during transitions.

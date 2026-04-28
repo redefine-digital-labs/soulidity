@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
 import { prisma } from '@/lib/prisma'
 import { scrapeUrl } from '@/lib/scraper'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { createAdminLLMAdapter, resolveAdminLLMRuntimeConfig } from '@/lib/admin-llm'
 
 export const dynamic = 'force-dynamic'
 
@@ -86,11 +86,6 @@ function toSlug(name: string): string {
 
 // --- API Route ---
 
-const llmClient = new OpenAI({
-  baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-  apiKey: process.env.ZAI_API_KEY ?? '',
-})
-
 export async function POST(req: NextRequest) {
   let rawItemId: string | undefined
   try {
@@ -143,29 +138,23 @@ export async function POST(req: NextRequest) {
       throw err
     }
 
-    // LLM produce
-    if (!process.env.ZAI_API_KEY) {
+    let llmText: string
+    try {
+      const prompt = buildUserPrompt(title, content, url, 'Manual')
+      const llm = createAdminLLMAdapter(resolveAdminLLMRuntimeConfig(process.env))
+      llmText = await llm.generate(SYSTEM_PROMPT, prompt)
+    } catch (error) {
       // Clean up the orphaned raw_items row so the same URL can be retried
       if (rawItemId) {
         await prisma.rawItem.delete({ where: { id: rawItemId } }).catch(() => {})
       }
-      return NextResponse.json({ error: 'LLM API key not configured' }, { status: 500 })
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : 'LLM generation failed' },
+        { status: 500 },
+      )
     }
 
     await prisma.rawItem.update({ where: { id: rawItemId }, data: { status: 'processing' } })
-
-    const prompt = buildUserPrompt(title, content, url, 'Manual')
-    const response = await llmClient.chat.completions.create({
-      model: 'glm-4.7',
-      max_tokens: 4096,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-    })
-
-    const llmText = response.choices[0]?.message?.content
-    if (!llmText) throw new Error('Empty response from LLM')
 
     const article = parseResponse(llmText)
 

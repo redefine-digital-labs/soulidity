@@ -9,5 +9,24 @@
     "publishTxDigest": "HKenfarHCL6jnrqS2CosAkVNc7zBTTVXfpby5RB62i7r",
     "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b",
     "upgradeStateId": "0x616117e725110550e03490bf189e0c5a9a01c2383e819eff2092b58560355f2c"
+  },
+  "mainnet": {
+    "packageId": "0x994eeb7f0a9b4519feb2a1346ca4786e4bf8435b706a7fc2b1a4eb2fbbc9db2f",
+    "marketConfigId": "0xa0a09fa8b905cfb9ca3b53bc88dd167f4d6f9b4bffaf7b542099bbd4021e6ce5",
+    "kioskRegistryId": "0x30dabdeb7e432dc4683c6819a6d1b748350c2909045b82336c300cc5df2fd906",
+    "soulTransferPolicyId": "0x90d61e4786eb5ff6002cd666d706e55c57ff6a000c3eac32de4be5909af799fb",
+    "collectionTransferPolicyId": "0xb45dfdf630d6f4f694622154cf4f3b57d0977ffeb49eb38e406fb6a7a0a07039",
+    "paymentCoinType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+    "publishTxDigest": "CnH9DvyWeEeUq6TiEEj45Qw2ytWjQiRSPU6kbebyrJSu",
+    "upgradeCapId": "0x2044e2404ef11f00044e71ec1237734f11da2ad432a2930b8dd63ce26332d65a",
+    "upgradeStateId": "0xbe31ce205de53e2e9acdf59a2b7c455a6e5bc9ca7e0df6dc245b46b7b24ed6ce",
+    "marketAdminCapId": "0x3e21bf89559211fe507a694d3a5d9a10a0948a94a4ff97de81e43ffa2bb21735",
+    "soulPolicyCapId": "0x65a38258795b7fbdc522049a03c032c0a39e04d86642b4a1c4096bd109d9f5bd",
+    "collectionPolicyCapId": "0x1be8ebba386163f268d1509c09f22b4289754e7a27a7ce23ea6b63334f1bce6d",
+    "soulDisplayId": "0x68dc901ef50caa92667b892ba5f7b8875c84a5dbd24149b0f7547298effb183d",
+    "collectionDisplayId": "0x38de1f45e921f3582bd78a7ac1093005f54e0607df3187ec2fbee03d31ffecfa",
+    "multisigOwner": "0xcaab58c145b4c0479f662a88bcb9d4db9f1f391f8ec19535b1ef75ce08879294",
+    "capTransferTxDigest": "HnJR16hHYpZsetFyrxVz2Ypv2Bd7QiDKqnGAPTiEap4f",
+    "trackUpgradeCapTxDigest": "HnJR16hHYpZsetFyrxVz2Ypv2Bd7QiDKqnGAPTiEap4f"
   }
 }

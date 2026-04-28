@@ -26,12 +26,17 @@ import {
   scopeMaskToScopes,
   getTrustedPackageIds,
   getVendoredKioskPackageAddress,
+  getPersonalKioskCapTypePackageAddress,
   ensureTransactionSucceeded,
   readTransactionSender,
   quoteSoulPurchase,
   quoteCollectionPurchase,
   OnChainVerificationError,
 } from '../../web/lib/soulidity/queries'
+import {
+  OFFICIAL_MAINNET_KIOSK_PACKAGE_ID,
+  OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID,
+} from '../../web/lib/soulidity/kiosk'
 import {
   ALL_SOUL_GRANT_SCOPE_MASK,
   DEFAULT_ISSUE_SCOPE_MASK,
@@ -245,6 +250,12 @@ describe('getVendoredKioskPackageAddress', () => {
   it('throws when env contains an invalid address', () => {
     process.env[ENV_KEY] = 'garbage'
     expect(() => getVendoredKioskPackageAddress()).toThrow(/invalid kiosk package address/)
+  })
+
+  it('resolves the official mainnet kiosk type origin for PersonalKioskCap filters', () => {
+    process.env[ENV_KEY] = OFFICIAL_MAINNET_KIOSK_PACKAGE_ID
+    expect(getVendoredKioskPackageAddress()).toBe(OFFICIAL_MAINNET_KIOSK_PACKAGE_ID)
+    expect(getPersonalKioskCapTypePackageAddress()).toBe(OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID)
   })
 })
 

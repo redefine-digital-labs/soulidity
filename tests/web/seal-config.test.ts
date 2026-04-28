@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import deploymentManifest from '../../web/lib/soulidity/deployment-manifest.json'
+
 const ORIGINAL_ENV = { ...process.env }
 
 vi.mock('server-only', () => ({}))
@@ -9,7 +11,6 @@ describe('Seal service configuration', () => {
     vi.resetModules()
     process.env = { ...ORIGINAL_ENV }
     delete process.env.SEAL_SERVER_CONFIGS
-    delete process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID
     delete process.env.NEXT_PUBLIC_SUI_NETWORK
     delete process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS
     delete process.env.NEXT_PUBLIC_SEAL_THRESHOLD
@@ -20,9 +21,7 @@ describe('Seal service configuration', () => {
     process.env = { ...ORIGINAL_ENV }
   })
 
-  it('uses the soul object package id as the access policy package and falls back to testnet defaults', async () => {
-    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = '0xsoul'
-
+  it('uses the active Soulidity manifest package id as the access policy package and falls back to testnet defaults', async () => {
     const mod = await import('../../web/lib/services/seal.ts')
 
     expect(mod.hasSealSessionConfig()).toBe(true)
@@ -31,7 +30,7 @@ describe('Seal service configuration', () => {
       currentKioskId: '0xkiosk',
       currentKioskCapOnChainId: '0xkioskcap',
     })).toEqual({
-      packageId: '0xsoul',
+      packageId: deploymentManifest.testnet.packageId,
       soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
       functionName: 'seal_approve_owner_in_personal_kiosk',
@@ -44,7 +43,7 @@ describe('Seal service configuration', () => {
       soulObjectId: '0xsoul-object',
       allowlistRegistryObjectId: '0xallowlist',
     })).toEqual({
-      packageId: '0xsoul',
+      packageId: deploymentManifest.testnet.packageId,
       soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
       functionName: 'seal_approve_allowlisted',
@@ -69,8 +68,6 @@ describe('Seal service configuration', () => {
   })
 
   it('allows the access policy package id to be overridden with the on-chain Soul package id', async () => {
-    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = '0xpublished'
-
     const mod = await import('../../web/lib/services/seal.ts')
 
     expect(mod.getOwnerSealSession({
@@ -92,7 +89,6 @@ describe('Seal service configuration', () => {
   })
 
   it('honors explicit runtime overrides', async () => {
-    process.env.NEXT_PUBLIC_SOUL_OBJECT_PACKAGE_ID = '0xoverride'
     process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
     process.env.NEXT_PUBLIC_SEAL_THRESHOLD = '1'
     process.env.NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS = 'false'
@@ -133,9 +129,13 @@ describe('Seal service configuration', () => {
     consoleWarn.mockRestore()
   })
 
-  it('reports missing session config when the soul object package is absent', async () => {
+  it('reports missing session config on mainnet when Seal key servers are absent', async () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const mod = await import('../../web/lib/services/seal.ts')
 
     expect(mod.hasSealSessionConfig()).toBe(false)
+    expect(consoleWarn).toHaveBeenCalledWith('Seal key server config is empty on mainnet')
+    consoleWarn.mockRestore()
   })
 })

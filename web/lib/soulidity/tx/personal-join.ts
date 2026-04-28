@@ -1,5 +1,6 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { getKioskPackageAddress } from '@/lib/soulidity/kiosk'
 import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@/lib/soulidity/metadata'
 import { buildBuyerKioskArgs, finishBuyerKioskArgs, validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
 import type { AssetType, SoulDownloadPolicy } from '@/lib/soulidity/types'
@@ -174,7 +175,7 @@ export function buildPersonalJoinSoulTx(params: PersonalJoinTxParams) {
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
 
-  const kioskPackageId = process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID?.trim() || '0x2'
+  const kioskPackageId = getKioskPackageAddress()
   const [kioskOwnerCap, borrowHotPotato] = tx.moveCall({
     target: `${kioskPackageId}::personal_kiosk::borrow_val`,
     arguments: [personalKiosk.buyerKioskCap],

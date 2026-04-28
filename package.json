@@ -12,6 +12,7 @@
     "typecheck:root": "npm run prisma:generate && tsc -p tsconfig.json --noEmit",
     "typecheck:web": "npm --prefix web run typecheck",
     "typecheck": "npm run typecheck:root && npm run typecheck:web",
+    "build:web:production-env": "CLAWNEWS_LOAD_ENV_LOCAL=false npm --prefix web run build",
     "publish:soulidity": "tsx scripts/publish-soulidity-and-sync.ts",
     "collect": "tsx src/collector/run.ts",
     "collect:x": "tsx src/collector/run.ts x",
@@ -21,7 +22,8 @@
     "scan:skills": "tsx src/collector/scan-skills.ts",
     "sync:v6-plan": "tsx scripts/export-v6-plan-json.ts",
     "validate:v6-plan": "tsx scripts/export-v6-plan-json.ts --check && node scripts/validate-v6-plan.mjs",
-    "e2e:public-sprite": "tsx web/scripts/e2e-public-sprite-anonymous.ts"
+    "e2e:public-sprite": "tsx web/scripts/e2e-public-sprite-anonymous.ts",
+    "vercel:sync-production-env": "tsx scripts/sync-vercel-production-env.ts"
   },
   "dependencies": {
     "@mysten/sui": "^2.15.0",

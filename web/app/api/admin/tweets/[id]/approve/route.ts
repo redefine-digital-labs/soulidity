@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { buildApprovedTweetUpdate, parseTweetMeta } from '@/lib/admin-tweet-review'
-import OpenAI from 'openai'
+import { createAdminLLMAdapter, resolveAdminLLMRuntimeConfig } from '@/lib/admin-llm'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,43 +66,20 @@ export async function POST(
       return NextResponse.json({ error: 'Item already claimed by another action' }, { status: 409 })
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY
-    const zaiKey = process.env.ZAI_API_KEY
-    const apiKey = geminiKey ?? zaiKey
-    if (!apiKey) {
-      await prisma.rawItem.updateMany({
-        where: { id, status: 'reviewing' },
-        data: { status: 'pending_review' },
-      }).catch(() => {})
-      return NextResponse.json({ error: 'LLM API key not configured' }, { status: 500 })
-    }
-
-    const useGemini = !!geminiKey
     const meta = parseTweetMeta(item.rawData) ?? {}
-
-    const client = new OpenAI({
-      baseURL: useGemini
-        ? 'https://generativelanguage.googleapis.com/v1beta/openai'
-        : 'https://open.bigmodel.cn/api/paas/v4',
-      apiKey,
-    })
-
-    const response = await client.chat.completions.create({
-      model: useGemini ? 'gemini-2.5-flash' : 'glm-4.7',
-      max_tokens: 4096,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildPrompt(item.content ?? '', meta) },
-      ],
-    })
-
-    const text = response.choices[0]?.message?.content
-    if (!text) {
+    let text: string
+    try {
+      const llm = createAdminLLMAdapter(resolveAdminLLMRuntimeConfig(process.env))
+      text = await llm.generate(SYSTEM_PROMPT, buildPrompt(item.content ?? '', meta))
+    } catch (error) {
       await prisma.rawItem.updateMany({
         where: { id, status: 'reviewing' },
         data: { status: 'pending_review' },
       }).catch(() => {})
-      return NextResponse.json({ error: 'Empty LLM response' }, { status: 500 })
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : 'LLM generation failed' },
+        { status: 500 },
+      )
     }
 
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()

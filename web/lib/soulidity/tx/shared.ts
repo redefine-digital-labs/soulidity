@@ -1,5 +1,6 @@
 import { Transaction, type TransactionArgument } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { getKioskPackageAddress } from '@/lib/soulidity/kiosk'
 
 export const MAX_NAME_BYTES = 256
 export const MAX_DESCRIPTION_BYTES = 4096
@@ -80,7 +81,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
-  const kioskPackageId = process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID?.trim() || '0x2'
+  const kioskPackageId = getKioskPackageAddress()
   const buyerKioskId = params.buyerKioskId?.trim()
   const buyerKioskCapOnChainId = params.buyerKioskCapOnChainId?.trim()
 

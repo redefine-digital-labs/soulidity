@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 const __repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 dotenv.config({ path: path.join(__repoRoot, '.env') })
-dotenv.config({ path: path.join(__repoRoot, '.env.local'), override: true })
+if (process.env.CLAWNEWS_LOAD_ENV_LOCAL !== 'false') {
+  dotenv.config({ path: path.join(__repoRoot, '.env.local'), override: true })
+}
 
 import type { NextConfig } from 'next'
 

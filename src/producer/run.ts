@@ -1,17 +1,19 @@
-import 'dotenv/config'
+import '../../scripts/lib/dotenv.js'
 import { createPrisma } from '../db/database.js'
-import { createZaiAdapter } from './llm.js'
+import { createLLMAdapter, resolveLLMRuntimeConfig } from './llm.js'
 import { produceArticles } from './produce.js'
 import { autoPublish } from '../publisher/publish.js'
 
-const apiKey = process.env.ZAI_API_KEY
-if (!apiKey) {
-  console.error('ZAI_API_KEY is required')
+let llmRuntime
+try {
+  llmRuntime = resolveLLMRuntimeConfig(process.env)
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error))
   process.exit(1)
 }
 
 const prisma = createPrisma()
-const llm = createZaiAdapter(apiKey)
+const llm = createLLMAdapter(llmRuntime)
 
 console.log('Producing articles...')
 const result = await produceArticles(prisma, llm, 10, 3)

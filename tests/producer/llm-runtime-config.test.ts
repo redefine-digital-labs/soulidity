@@ -2,35 +2,33 @@ import { describe, expect, it } from 'vitest'
 import { resolveLLMRuntimeConfig } from '../../src/producer/llm.js'
 
 describe('resolveLLMRuntimeConfig', () => {
-  it('falls back to zai when LLM_PROVIDER is unset and only ZAI_API_KEY exists', () => {
+  it('uses OpenAI Codex Spark by default', () => {
     const config = resolveLLMRuntimeConfig({
-      ZAI_API_KEY: 'zai-secret',
+      OPENAI_API_KEY: 'openai-secret',
     })
 
-    expect(config.provider).toBe('zai')
-    expect(config.keyEnv).toBe('ZAI_API_KEY')
-    expect(config.apiKey).toBe('zai-secret')
-    expect(config.baseURL).toBe('https://open.bigmodel.cn/api/paas/v4')
-    expect(config.model).toBe('glm-4.7')
+    expect(config.provider).toBe('openai')
+    expect(config.keyEnv).toBe('OPENAI_API_KEY')
+    expect(config.apiKey).toBe('openai-secret')
+    expect(config.model).toBe('gpt-5.3-codex-spark')
   })
 
-  it('uses gemini when explicitly requested', () => {
+  it('honors OpenAI model and base URL overrides', () => {
     const config = resolveLLMRuntimeConfig({
-      LLM_PROVIDER: 'gemini',
-      GEMINI_API_KEY: 'gemini-secret',
-      LLM_MODEL: 'gemini-custom',
+      OPENAI_API_KEY: 'openai-secret',
+      OPENAI_MODEL: 'gpt-custom',
+      OPENAI_BASE_URL: 'https://llm.example/v1',
     })
 
-    expect(config.provider).toBe('gemini')
-    expect(config.keyEnv).toBe('GEMINI_API_KEY')
-    expect(config.apiKey).toBe('gemini-secret')
-    expect(config.model).toBe('gemini-custom')
+    expect(config.provider).toBe('openai')
+    expect(config.apiKey).toBe('openai-secret')
+    expect(config.model).toBe('gpt-custom')
+    expect(config.baseURL).toBe('https://llm.example/v1')
   })
 
-  it('throws when explicit gemini is missing GEMINI_API_KEY', () => {
+  it('throws when OpenAI API key is missing', () => {
     expect(() => resolveLLMRuntimeConfig({
-      LLM_PROVIDER: 'gemini',
-      ZAI_API_KEY: 'zai-secret',
-    })).toThrow('GEMINI_API_KEY is required for LLM_PROVIDER=gemini')
+      OPENAI_MODEL: 'gpt-custom',
+    })).toThrow('OPENAI_API_KEY is required')
   })
 })

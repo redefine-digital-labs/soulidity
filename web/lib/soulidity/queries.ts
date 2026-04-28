@@ -2,6 +2,10 @@ import { normalizeWalrusBlobId } from '@/lib/services/walrus'
 import { suiClient } from '@/lib/sui'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { SOUL_GRANT_SCOPE_BITS } from '@/lib/soulidity/grant-scopes'
+import {
+  getKioskPackageAddress,
+  getPersonalKioskCapStructType,
+} from '@/lib/soulidity/kiosk'
 import type {
   ActiveGrantSlotObject,
   ResolvedPersonalKiosk,
@@ -20,6 +24,8 @@ import type {
   SoulStateObject,
   SoulidityMarketConfig,
 } from '@/lib/soulidity/types'
+
+export { getPersonalKioskCapTypePackageAddress } from '@/lib/soulidity/kiosk'
 
 type TransactionLike = {
   digest?: string
@@ -48,7 +54,6 @@ type ObjectLike = {
 const MAX_BPS = 10_000n
 const MAX_U64 = 18_446_744_073_709_551_615n
 const OPTIONAL_VECTOR_MAX_DEPTH = 4
-const KIOSK_PACKAGE_ENV_KEY = 'NEXT_PUBLIC_KIOSK_PACKAGE_ID'
 const MAX_KIOSK_CAP_PAGES = 5
 
 export class OnChainVerificationError extends Error {
@@ -386,16 +391,7 @@ function expectMoveObject(response: ObjectLike, objectId: string, expectedTypePr
 }
 
 export function getVendoredKioskPackageAddress() {
-  const configuredPackageAddress = process.env[KIOSK_PACKAGE_ENV_KEY]?.trim()
-  if (!configuredPackageAddress) {
-    throw new Error(`${KIOSK_PACKAGE_ENV_KEY} must be set`)
-  }
-
-  const normalized = normalizeSuiValue(configuredPackageAddress)
-  if (!normalized) {
-    throw new Error(`${KIOSK_PACKAGE_ENV_KEY} contains an invalid kiosk package address`)
-  }
-  return normalized
+  return getKioskPackageAddress()
 }
 
 export function getTrustedPackageIds(...packageIds: Array<string | null | undefined>) {
@@ -894,7 +890,7 @@ export async function getRegisteredPersonalKiosk(params: {
 }
 
 export async function listOwnedPersonalKioskCaps(ownerAddress: string): Promise<ResolvedPersonalKiosk[]> {
-  const personalKioskCapType = `${getVendoredKioskPackageAddress()}::personal_kiosk::PersonalKioskCap`
+  const personalKioskCapType = getPersonalKioskCapStructType()
   const kiosks: ResolvedPersonalKiosk[] = []
   let cursor: string | null | undefined = undefined
   let pagesRead = 0
