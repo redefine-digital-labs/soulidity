@@ -1,36 +1,53 @@
 import { describe, expect, it } from 'vitest'
-import { resolveLLMRuntimeConfig } from '../../src/producer/llm.js'
+import { DEFAULT_DEEPSEEK_MODEL, resolveLLMRuntimeConfig } from '../../src/producer/llm.js'
 
 describe('resolveLLMRuntimeConfig', () => {
-  it('uses OpenAI Codex Spark by default', () => {
+  it('uses DEFAULT_PROVIDER as the DeepSeek model when it contains a model id', () => {
     const config = resolveLLMRuntimeConfig({
-      OPENAI_API_KEY: 'openai-secret',
+      DEFAULT_PROVIDER: 'deepseek-v4-flash',
+      DEEPSEEK_API_KEY: 'deepseek-secret',
     })
 
     expect(config).not.toBeNull()
-    expect(config!.provider).toBe('openai')
-    expect(config!.keyEnv).toBe('OPENAI_API_KEY')
-    expect(config!.apiKey).toBe('openai-secret')
-    expect(config!.model).toBe('gpt-5.3-codex-spark')
+    expect(config!.provider).toBe('deepseek')
+    expect(config!.keyEnv).toBe('DEEPSEEK_API_KEY')
+    expect(config!.apiKey).toBe('deepseek-secret')
+    expect(config!.model).toBe('deepseek-v4-flash')
+    expect(config!.baseURL).toBe('https://api.deepseek.com')
   })
 
-  it('honors OpenAI model and base URL overrides', () => {
+  it('supports explicit DeepSeek model and base URL overrides', () => {
     const config = resolveLLMRuntimeConfig({
-      OPENAI_API_KEY: 'openai-secret',
-      OPENAI_MODEL: 'gpt-custom',
-      OPENAI_BASE_URL: 'https://llm.example/v1',
+      DEFAULT_PROVIDER: 'deepseek',
+      DEEPSEEK_API_KEY: 'deepseek-secret',
+      DEEPSEEK_MODEL: 'deepseek-v4-pro',
+      DEEPSEEK_BASE_URL: 'https://deepseek.example',
     })
 
     expect(config).not.toBeNull()
-    expect(config!.provider).toBe('openai')
-    expect(config!.apiKey).toBe('openai-secret')
-    expect(config!.model).toBe('gpt-custom')
-    expect(config!.baseURL).toBe('https://llm.example/v1')
+    expect(config!.model).toBe('deepseek-v4-pro')
+    expect(config!.baseURL).toBe('https://deepseek.example')
   })
 
-  it('returns null when OpenAI API key is missing', () => {
+  it('defaults to the current DeepSeek non-thinking model', () => {
+    const config = resolveLLMRuntimeConfig({
+      DEEPSEEK_API_KEY: 'deepseek-secret',
+    })
+
+    expect(config).not.toBeNull()
+    expect(config!.model).toBe(DEFAULT_DEEPSEEK_MODEL)
+  })
+
+  it('returns null when DEEPSEEK_API_KEY is missing', () => {
     expect(resolveLLMRuntimeConfig({
-      OPENAI_MODEL: 'gpt-custom',
+      DEEPSEEK_MODEL: 'deepseek-v4-pro',
     })).toBeNull()
+  })
+
+  it('throws for unsupported providers', () => {
+    expect(() => resolveLLMRuntimeConfig({
+      DEFAULT_PROVIDER: 'openai',
+      DEEPSEEK_API_KEY: 'deepseek-secret',
+    })).toThrow('Unsupported DEFAULT_PROVIDER for producer LLM: openai')
   })
 })

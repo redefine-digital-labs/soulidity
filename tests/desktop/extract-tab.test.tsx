@@ -218,6 +218,7 @@ describe('ExtractTab', () => {
         { agent: 'codex', status: 'available', detail: 'Ready.' },
       ]),
       'extraction:create-local-draft': vi.fn().mockResolvedValue(createdDraft),
+      'extraction:open-web-create': vi.fn().mockResolvedValue(undefined),
       'extraction:scan-progress': vi.fn().mockReturnValue(() => {}),
       'desktop:create-draft:load': vi.fn().mockResolvedValue(null),
       'desktop:create-draft:save': vi.fn().mockResolvedValue(undefined),
@@ -247,7 +248,8 @@ describe('ExtractTab', () => {
     })
 
     expect(container.textContent).toContain('Created with Codex')
-    expect(container.textContent).not.toContain('Open Web Create')
+    expect(window.electronAPI['extraction:create-local-draft']).toHaveBeenCalledTimes(1)
+    expect(window.electronAPI['extraction:open-web-create']).not.toHaveBeenCalled()
     expect(window.electronAPI['desktop:create-draft:save']).toHaveBeenCalled()
 
     vi.useRealTimers()

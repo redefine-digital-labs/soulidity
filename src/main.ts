@@ -81,7 +81,7 @@ process.on('unhandledRejection', (reason) => {
 
 const llmRuntime = resolveLLMRuntimeConfig(process.env)
 if (!llmRuntime) {
-  console.warn('OPENAI_API_KEY not set, LLM disabled — content production will be skipped.')
+  console.warn('DEEPSEEK_API_KEY not set, LLM disabled — content production will be skipped.')
 }
 
 prisma = createPrisma()

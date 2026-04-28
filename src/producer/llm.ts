@@ -7,35 +7,48 @@ export interface LLMAdapter {
 export interface LLMConfig {
   apiKey: string
   model: string
-  baseURL?: string
+  baseURL: string
 }
 
 export interface ResolvedLLMRuntimeConfig extends LLMConfig {
-  provider: 'openai'
-  keyEnv: 'OPENAI_API_KEY'
+  provider: 'deepseek'
+  keyEnv: 'DEEPSEEK_API_KEY'
 }
 
-export const DEFAULT_OPENAI_MODEL = 'gpt-5.3-codex-spark'
+export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-flash'
+export const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 
 export function resolveLLMRuntimeConfig(env: NodeJS.ProcessEnv): ResolvedLLMRuntimeConfig | null {
-  const apiKey = env.OPENAI_API_KEY?.trim()
+  const configuredDefault = env.DEFAULT_PROVIDER?.trim()
+  const provider = configuredDefault?.startsWith('deepseek-')
+    ? 'deepseek'
+    : (configuredDefault || 'deepseek').toLowerCase()
+  if (provider !== 'deepseek') {
+    throw new Error(`Unsupported DEFAULT_PROVIDER for producer LLM: ${provider}`)
+  }
+
+  const apiKey = env.DEEPSEEK_API_KEY?.trim()
   if (!apiKey) {
     return null
   }
 
+  const model = env.DEEPSEEK_MODEL?.trim()
+    || (configuredDefault?.startsWith('deepseek-') ? configuredDefault : undefined)
+    || DEFAULT_DEEPSEEK_MODEL
+
   return {
-    provider: 'openai',
-    keyEnv: 'OPENAI_API_KEY',
+    provider: 'deepseek',
+    keyEnv: 'DEEPSEEK_API_KEY',
     apiKey,
-    model: env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
-    baseURL: env.OPENAI_BASE_URL?.trim() || undefined,
+    model,
+    baseURL: env.DEEPSEEK_BASE_URL?.trim() || DEFAULT_DEEPSEEK_BASE_URL,
   }
 }
 
 export function createLLMAdapter(config: LLMConfig): LLMAdapter {
   const client = new OpenAI({
     apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    baseURL: config.baseURL,
   })
   return {
     async generate(systemPrompt: string, userPrompt: string): Promise<string> {

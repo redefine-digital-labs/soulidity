@@ -7,7 +7,7 @@ import { shutdownPostHogWithTimeout } from '../observability/posthog.js'
 
 const llmRuntime = resolveLLMRuntimeConfig(process.env)
 if (!llmRuntime) {
-  console.error('OPENAI_API_KEY is required to run the producer.')
+  console.error('DEEPSEEK_API_KEY is required to run the producer.')
   process.exit(1)
 }
 
