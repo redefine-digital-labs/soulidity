@@ -146,19 +146,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   'desktop:create-draft:pick-cover-image': (): Promise<{ dataUrl: string; fileName: string; mimeType: string } | null> =>
     ipcRenderer.invoke('desktop:create-draft:pick-cover-image'),
 
-  // ── Desktop create + mint ──
-  'desktop:create:upload': (params: {
-    bytes: Uint8Array
-    fileName: string
-    mimeType: string
-    uploadType: 'public' | 'encrypted'
-    sendObjectTo?: string | null
-  }): Promise<unknown> => ipcRenderer.invoke('desktop:create:upload', params),
-  'desktop:create:personal-kiosk': (params: { walletAddress?: string | null }): Promise<unknown> =>
-    ipcRenderer.invoke('desktop:create:personal-kiosk', params),
-  'desktop:create:publish': (payload: Record<string, unknown>): Promise<unknown> =>
-    ipcRenderer.invoke('desktop:create:publish', payload),
-
   // ── Soul download + active persona ──
   soulDownload: (params: { catalogId: string }): Promise<{ catalogId: string; spriteId: string } | { error: string }> =>
     ipcRenderer.invoke('soul:download', params),

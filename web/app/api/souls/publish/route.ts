@@ -15,6 +15,7 @@ import { upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skil
 import { upsertAssetVersionProjection } from '@/lib/soulidity/mirror/upsert-asset'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
+import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
@@ -87,11 +88,10 @@ export async function POST(request: Request) {
     const initialAsset = tryExtractAssetVersionAppendedEvent(transaction, packageId)
     const contentAccessList = tryExtractContentAccessListCreatedEvent(transaction, packageId)
 
-    // Unseal DEK envelopes into proper SealEnvelopeSidecars for downstream access
-    const rawSoulEnvelope = typeof body?.sealSidecar === 'string' ? body.sealSidecar : null
-    const rawMemoryEnvelope = typeof body?.memorySealSidecar === 'string' ? body.memorySealSidecar : null
-    const rawSkillsEnvelope = typeof body?.skillsSealSidecar === 'string' ? body.skillsSealSidecar : null
-    const rawAssetsEnvelope = typeof body?.assetsSealSidecar === 'string' ? body.assetsSealSidecar : null
+    const providedSoulSidecar = parseProvidedSidecar(body?.sealSidecar, 'sealSidecar')
+    const providedMemorySidecar = parseProvidedSidecar(body?.memorySealSidecar, 'memorySealSidecar')
+    const providedSkillsSidecar = parseProvidedSidecar(body?.skillsSealSidecar, 'skillsSealSidecar')
+    const providedAssetsSidecar = parseProvidedSidecar(body?.assetsSealSidecar, 'assetsSealSidecar')
 
     let soulSidecar = null
     let memorySidecar = null
@@ -102,19 +102,19 @@ export async function POST(request: Request) {
         packageId,
         soulObjectId: minted.soulId,
         stateObjectId: minted.stateId,
-        rawSoulEnvelope,
-        rawMemoryEnvelope,
+        soulSidecar: providedSoulSidecar,
+        memorySidecar: providedMemorySidecar,
         memoryBinding: foundingMemory ? {
           memoryObjectId: foundingMemory.memoryId,
           timestampKey: foundingMemory.timestampKey,
         } : null,
-        rawSkillsEnvelope,
+        skillsSidecar: providedSkillsSidecar,
         skillBinding: initialSkill ? {
           skillsObjectId: initialSkill.skillsId,
           skillName: initialSkill.skillName,
           versionIndex: initialSkill.versionIndex,
         } : null,
-        rawAssetsEnvelope,
+        assetsSidecar: providedAssetsSidecar,
         assetBinding: initialAsset ? {
           assetsObjectId: initialAsset.assetsId,
           assetName: initialAsset.assetName,
@@ -259,6 +259,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(responseBody)
   } catch (error) {
+    if (error instanceof SealSidecarRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error('[soul-publish] Failed to mirror Soulidity mint', {
       memberId: auth.identity.memberId,
       txDigest,

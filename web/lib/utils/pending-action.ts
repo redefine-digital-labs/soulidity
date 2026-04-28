@@ -2,7 +2,7 @@
  * sessionStorage-backed pending-action store.
  *
  * When a guest clicks a gated action (e.g. Buy a Soul), the intended
- * navigation is saved here before Privy login is triggered. After the
+ * navigation is saved here before wallet login is triggered. After the
  * user authenticates, AppShell consumes the entry and resumes the
  * original intent. TTL caps stale entries to 10 minutes.
  */

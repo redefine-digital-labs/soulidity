@@ -20,6 +20,12 @@ const SKILL_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
 const ASSET_DOCUMENT_ID_DOMAIN = 'soul-asset:'
 const ASSET_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
 const MAX_ENCRYPTED_DEK_BASE64_LENGTH = 16 * 1024
+const DOCUMENT_ID_DOMAIN_SPECS = [
+  { domain: DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + DOCUMENT_ID_NONCE_BYTES },
+  { domain: MEMORY_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 8 + MEMORY_DOCUMENT_ID_NONCE.length },
+  { domain: SKILL_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 1 + 8 + SKILL_DOCUMENT_ID_NONCE.length },
+  { domain: ASSET_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 1 + 8 + ASSET_DOCUMENT_ID_NONCE.length },
+] as const
 
 export interface SealEnvelopeSidecar {
   version: 1
@@ -138,7 +144,10 @@ function normalizeSuiHex(value: string): string {
   return stripHexPrefix(normalizeSuiAddress(value)).toLowerCase()
 }
 
-function isValidDocumentId(value: string): boolean {
+function isValidDocumentIdForDomains(
+  value: string,
+  specs: readonly { domain: string; minSuffixBytes: number }[],
+): boolean {
   if (!value.startsWith('0x')) return false
   const hex = stripHexPrefix(value)
   if (hex.length === 0 || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(hex)) {
@@ -146,19 +155,31 @@ function isValidDocumentId(value: string): boolean {
   }
 
   const bytes = hexToBytes(value)
-  const minimumLength = new TextEncoder().encode(DOCUMENT_ID_DOMAIN).length + 1 + 32 + DOCUMENT_ID_NONCE_BYTES
-  if (bytes.length < minimumLength) {
-    return false
-  }
-
-  const domainBytes = new TextEncoder().encode(DOCUMENT_ID_DOMAIN)
-  for (let index = 0; index < domainBytes.length; index += 1) {
-    if (bytes[index] !== domainBytes[index]) {
-      return false
+  for (const spec of specs) {
+    const domainBytes = new TextEncoder().encode(spec.domain)
+    const minimumLength = domainBytes.length + 1 + spec.minSuffixBytes
+    if (bytes.length < minimumLength) continue
+    let domainMatches = true
+    for (let index = 0; index < domainBytes.length; index += 1) {
+      if (bytes[index] !== domainBytes[index]) {
+        domainMatches = false
+        break
+      }
+    }
+    if (domainMatches && bytes[domainBytes.length] === DOCUMENT_ID_VERSION) {
+      return true
     }
   }
 
-  return bytes[domainBytes.length] === DOCUMENT_ID_VERSION
+  return false
+}
+
+function isValidDocumentId(value: string): boolean {
+  return isValidDocumentIdForDomains(value, [DOCUMENT_ID_DOMAIN_SPECS[0]])
+}
+
+function isValidSealEnvelopeDocumentId(value: string): boolean {
+  return isValidDocumentIdForDomains(value, DOCUMENT_ID_DOMAIN_SPECS)
 }
 
 export function assertDocumentIdMatchesExpectedBinding(params: {
@@ -234,7 +255,7 @@ export function parseSealEnvelopeSidecar(value: unknown): SealEnvelopeSidecar {
   if (cipher !== AES_GCM_CIPHER_LABEL) {
     throw new Error('Unsupported Seal envelope cipher')
   }
-  if (!isValidDocumentId(documentId)) {
+  if (!isValidSealEnvelopeDocumentId(documentId)) {
     throw new Error('Seal envelope sidecar documentId is invalid')
   }
   if (encryptedDek.length > MAX_ENCRYPTED_DEK_BASE64_LENGTH) {

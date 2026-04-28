@@ -117,7 +117,7 @@ public struct MemoryBlobKey has copy, drop, store {
             Returns a <code>MemoryAccessResponse</code> containing the Walrus blob URL, sidecar, Seal server config, and approval policy. The <code>entryKey</code> path segment is the decimal <code>timestamp_key</code>.
           </li>
           <li>
-            The route validates the viewer identity (Privy + wallet), checks rate limits (30 req/min), and resolves the access via <code>resolveMemoryAccessPayload</code> — which fetches live <code>SoulState</code> from chain to verify ownership or active grant.
+            The route validates the viewer identity from the wallet session or agent API key, checks rate limits (30 req/min), and resolves the access via <code>resolveMemoryAccessPayload</code> — which fetches live <code>SoulState</code> from chain to verify ownership or active grant.
           </li>
           <li>
             Credentialed Seal server configs are not permitted for browser access. Server-side agent access uses a separate code path.

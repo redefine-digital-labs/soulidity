@@ -36,7 +36,7 @@ export default function WrapLinkPage() {
         <h2 className="text-lg font-semibold">Step-by-Step: Personal Join Flow</h2>
         <ol className="text-sm text-muted space-y-3 list-decimal ml-5">
           <li>
-            <strong className="text-foreground">Go to /wrap-link</strong> and choose Personal Join. You must be logged in with a Privy wallet.
+            <strong className="text-foreground">Go to /wrap-link</strong> and choose Personal Join. You must be logged in with your connected Sui wallet.
           </li>
           <li>
             <strong className="text-foreground">Select your NFT.</strong> The page reads your personal kiosk on-chain and lists all NFTs with Sui Display metadata. Only Sui-native NFTs are supported in the current release.

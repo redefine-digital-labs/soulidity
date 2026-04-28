@@ -11,28 +11,52 @@ import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import {
+  createAssetSealSidecarFromMaterial,
+  createMemorySealSidecarFromMaterial,
+  createSkillSealSidecarFromMaterial,
+  createSoulSealSidecarFromMaterial,
+  type PendingSealMaterial,
+} from '@/lib/upload/client-seal'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import type { KioskNft } from '@/lib/hooks/use-kiosk-nfts'
 import type { WrapPublishResult } from '@/components/providers/wrap-provider'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import {
+  extractSoulMintedToKioskEvent,
+  tryExtractAssetVersionAppendedEvent,
+  tryExtractMemoryEntryAppendedEvent,
+  tryExtractSkillVersionAppendedEvent,
+} from '@/lib/soulidity/events'
+import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 
 const WRAP_MINT_RECOVERY_KEY = 'soul-wrap-personal-recovery'
 
 interface WrapSyncBody {
   txDigest: string
-  sealSidecar: string | null
-  memorySealSidecar: string | null
-  skillsSealSidecar: string | null
-  assetsSealSidecar: string | null
+  sealSidecar: SealEnvelopeSidecar | null
+  memorySealSidecar: SealEnvelopeSidecar | null
+  skillsSealSidecar: SealEnvelopeSidecar | null
+  assetsSealSidecar: SealEnvelopeSidecar | null
 }
 
 interface WrapRecoveryState {
   userId: string
   txDigest: string
-  syncBody: WrapSyncBody
+  syncBody?: WrapSyncBody | null
+  pendingSync?: WrapSyncMaterial | null
   deploymentSignature: string
+}
+
+interface WrapSyncMaterial {
+  sealMaterial?: PendingSealMaterial | null
+  memorySealMaterial?: PendingSealMaterial | null
+  skillsSealMaterial?: PendingSealMaterial | null
+  assetsSealMaterial?: PendingSealMaterial | null
 }
 
 export type WrapPublishStatus = 'idle' | 'uploading' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -53,10 +77,34 @@ function isWrapSyncBody(value: unknown): value is WrapSyncBody {
   const candidate = value as Partial<WrapSyncBody>
   return typeof candidate.txDigest === 'string'
     && candidate.txDigest.length > 0
-    && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'string')
-    && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'string')
-    && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'string')
-    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'string')
+    && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'object')
+    && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'object')
+    && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'object')
+    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'object')
+}
+
+function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<PendingSealMaterial>
+  return candidate.version === 1
+    && typeof candidate.dek === 'string'
+    && typeof candidate.iv === 'string'
+    && typeof candidate.contentHash === 'string'
+    && typeof candidate.mimeType === 'string'
+    && typeof candidate.fileName === 'string'
+}
+
+function isOptionalPendingSealMaterial(value: unknown): value is PendingSealMaterial | null | undefined {
+  return value == null || isPendingSealMaterial(value)
+}
+
+function isWrapSyncMaterial(value: unknown): value is WrapSyncMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<WrapSyncMaterial>
+  return isOptionalPendingSealMaterial(candidate.sealMaterial)
+    && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
+    && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
+    && isOptionalPendingSealMaterial(candidate.assetsSealMaterial)
 }
 
 export function sanitizeWrapRecoveryState(raw: string | null, userId: string | null | undefined): WrapRecoveryState | null {
@@ -64,25 +112,92 @@ export function sanitizeWrapRecoveryState(raw: string | null, userId: string | n
 
   try {
     const parsed = JSON.parse(raw) as Partial<WrapRecoveryState>
+    const hasRecoverablePayload = isWrapSyncBody(parsed.syncBody) || isWrapSyncMaterial(parsed.pendingSync)
     if (
       parsed.userId !== userId
       || typeof parsed.txDigest !== 'string'
-      || !isWrapSyncBody(parsed.syncBody)
+      || !hasRecoverablePayload
       || !hasCurrentSoulidityDeploymentSignature(parsed)
     ) {
       return null
     }
-    if (parsed.syncBody.txDigest !== parsed.txDigest) {
+    if (parsed.syncBody && parsed.syncBody.txDigest !== parsed.txDigest) {
       return null
     }
     return {
       userId,
       txDigest: parsed.txDigest,
-      syncBody: parsed.syncBody,
+      syncBody: isWrapSyncBody(parsed.syncBody) ? parsed.syncBody : null,
+      pendingSync: isWrapSyncMaterial(parsed.pendingSync) ? parsed.pendingSync : null,
       deploymentSignature: parsed.deploymentSignature,
     }
   } catch {
     return null
+  }
+}
+
+function persistWrapRecovery(recovery: WrapRecoveryState | null) {
+  if (typeof window === 'undefined') return
+  try {
+    if (recovery) {
+      sessionStorage.setItem(WRAP_MINT_RECOVERY_KEY, JSON.stringify(recovery))
+    } else {
+      sessionStorage.removeItem(WRAP_MINT_RECOVERY_KEY)
+    }
+  } catch {}
+}
+
+async function buildWrapSyncBody(params: {
+  txDigest: string
+  txResult: unknown
+  material: WrapSyncMaterial
+  suiClient: unknown
+}): Promise<WrapSyncBody> {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
+  const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
+  const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
+  const initialAsset = tryExtractAssetVersionAppendedEvent(params.txResult as never, packageId)
+
+  return {
+    txDigest: params.txDigest,
+    sealSidecar: params.material.sealMaterial
+      ? await createSoulSealSidecarFromMaterial({
+          suiClient: params.suiClient as never,
+          packageId,
+          soulObjectId: minted.soulId,
+          material: params.material.sealMaterial,
+        })
+      : null,
+    memorySealSidecar: params.material.memorySealMaterial && foundingMemory
+      ? await createMemorySealSidecarFromMaterial({
+          suiClient: params.suiClient as never,
+          packageId,
+          memoryObjectId: foundingMemory.memoryId,
+          timestampKey: foundingMemory.timestampKey,
+          material: params.material.memorySealMaterial,
+        })
+      : null,
+    skillsSealSidecar: params.material.skillsSealMaterial && initialSkill
+      ? await createSkillSealSidecarFromMaterial({
+          suiClient: params.suiClient as never,
+          packageId,
+          skillsObjectId: initialSkill.skillsId,
+          skillName: initialSkill.skillName,
+          versionIndex: initialSkill.versionIndex,
+          material: params.material.skillsSealMaterial,
+        })
+      : null,
+    assetsSealSidecar: params.material.assetsSealMaterial && initialAsset
+      ? await createAssetSealSidecarFromMaterial({
+          suiClient: params.suiClient as never,
+          packageId,
+          assetsObjectId: initialAsset.assetsId,
+          assetName: initialAsset.assetName,
+          versionIndex: initialAsset.versionIndex,
+          material: params.material.assetsSealMaterial,
+        })
+      : null,
   }
 }
 
@@ -116,6 +231,12 @@ async function uploadFile(
   file: File,
   type: 'public' | 'encrypted',
   headers: Record<string, string>,
+  wallet: {
+    walletAddress: string
+    suiClient: unknown
+    signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
+    confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
+  },
   sendObjectTo?: string,
 ) {
   return uploadSoulPayload({
@@ -124,6 +245,10 @@ async function uploadFile(
     kind: 'soul-content',
     authHeaders: headers,
     sendObjectTo: sendObjectTo ?? null,
+    walletAddress: wallet.walletAddress,
+    suiClient: wallet.suiClient,
+    signAndExecute: wallet.signAndExecute,
+    confirmQuote: wallet.confirmQuote,
   })
 }
 
@@ -134,6 +259,7 @@ export function useWrapPublish() {
   const [result, setResult] = useState<WrapPublishResult | null>(null)
   const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders, user } = useAuth()
+  const { requestUploadCostApproval } = useUploadCostReview()
   const recoveryRef = useRef<WrapRecoveryState | null>(null)
 
   useEffect(() => {
@@ -162,9 +288,7 @@ export function useWrapPublish() {
   const clearRecovery = useCallback(() => {
     recoveryRef.current = null
     setTxDigest(null)
-    try {
-      sessionStorage.removeItem(WRAP_MINT_RECOVERY_KEY)
-    } catch {}
+    persistWrapRecovery(null)
   }, [])
 
   const publish = async (params?: WrapPublishParams) => {
@@ -187,26 +311,32 @@ export function useWrapPublish() {
         setResult(null)
         setStatus('uploading')
         const walletAddress = suiWallet.address
+        const walletUpload = {
+          walletAddress,
+          suiClient,
+          signAndExecute,
+          confirmQuote: requestUploadCostApproval,
+        }
 
         // 1. Upload character file (encrypted)
-        const charUpload = await uploadFile(params.charFile, 'encrypted', authHeaders, walletAddress)
+        const charUpload = await uploadFile(params.charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
         if (!charUpload.blobObjectId) {
           throw new Error('Character file was deduplicated. Please modify the content to make it unique.')
         }
 
         // 2. Upload memory file (encrypted)
-        const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletAddress)
+        const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletUpload, walletAddress)
         if (!memUpload.blobObjectId) {
           throw new Error('Memory file was deduplicated. Please modify the content to make it unique.')
         }
-        if (typeof memUpload.sealDekEnvelope !== 'string' || !memUpload.sealDekEnvelope.trim()) {
+        if (!memUpload.sealMaterial) {
           throw new Error('Memory file upload is missing Seal recovery data.')
         }
 
         // 3. Upload skills file (encrypted, optional)
         let skillsUpload = null
         if (params.skillsFile) {
-          skillsUpload = await uploadFile(params.skillsFile, 'encrypted', authHeaders, walletAddress)
+          skillsUpload = await uploadFile(params.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
         }
 
         let spriteUpload = null
@@ -224,12 +354,13 @@ export function useWrapPublish() {
             params.spriteSheetFile,
             visibility === 'public' ? 'public' : 'encrypted',
             authHeaders,
+            walletUpload,
             walletAddress,
           )
           if (!spriteUpload.blobObjectId) {
             throw new Error('Persona sprite upload is missing blobObjectId.')
           }
-          if (visibility === 'private' && (!spriteUpload.sealDekEnvelope || typeof spriteUpload.sealDekEnvelope !== 'string')) {
+          if (visibility === 'private' && !spriteUpload.sealMaterial) {
             throw new Error('Persona sprite upload is missing Seal recovery data.')
           }
 
@@ -286,26 +417,50 @@ export function useWrapPublish() {
         digest = executedDigest
         setTxDigest(executedDigest)
 
-        const recovery: WrapRecoveryState = {
-          ...attachSoulidityDeploymentSignature({
-            userId: user?.id ?? '',
-            txDigest: executedDigest,
-            syncBody: {
-              txDigest: executedDigest,
-              sealSidecar: typeof charUpload.sealDekEnvelope === 'string' ? charUpload.sealDekEnvelope : null,
-              memorySealSidecar: typeof memUpload.sealDekEnvelope === 'string' ? memUpload.sealDekEnvelope : null,
-              skillsSealSidecar: typeof skillsUpload?.sealDekEnvelope === 'string' ? skillsUpload.sealDekEnvelope : null,
-              assetsSealSidecar: typeof spriteUpload?.sealDekEnvelope === 'string' ? spriteUpload.sealDekEnvelope : null,
-            },
-          }),
+        const pendingSync: WrapSyncMaterial = {
+          sealMaterial: charUpload.sealMaterial ?? null,
+          memorySealMaterial: memUpload.sealMaterial ?? null,
+          skillsSealMaterial: skillsUpload?.sealMaterial ?? null,
+          assetsSealMaterial: spriteUpload?.sealMaterial ?? null,
         }
+        const recovery: WrapRecoveryState = attachSoulidityDeploymentSignature({
+          userId: user?.id ?? '',
+          txDigest: executedDigest,
+          pendingSync,
+          syncBody: null,
+        })
         recoveryRef.current = recovery
-        try {
-          sessionStorage.setItem(WRAP_MINT_RECOVERY_KEY, JSON.stringify(recovery))
-        } catch {}
+        persistWrapRecovery(recovery)
+
+        recovery.syncBody = await buildWrapSyncBody({
+          txDigest: executedDigest,
+          txResult,
+          material: pendingSync,
+          suiClient,
+        })
+        recoveryRef.current = recovery
+        persistWrapRecovery(recovery)
       }
 
-      const syncBody = recoveryRef.current?.txDigest === digest ? recoveryRef.current.syncBody : null
+      if (!digest) {
+        throw new Error('Wrap transaction digest is missing')
+      }
+      const recovery = recoveryRef.current?.txDigest === digest ? recoveryRef.current : null
+      let syncBody = recovery?.syncBody ?? null
+      if (!syncBody && recovery?.pendingSync) {
+        syncBody = await buildWrapSyncBody({
+          txDigest: digest,
+          txResult: await suiClient.getTransactionBlock({
+            digest,
+            options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
+          }),
+          material: recovery.pendingSync,
+          suiClient,
+        })
+        recovery.syncBody = syncBody
+        recoveryRef.current = recovery
+        persistWrapRecovery(recovery)
+      }
       if (!syncBody) {
         throw new Error('Pending wrap recovery data is unavailable. Do not retry this wrap transaction.')
       }

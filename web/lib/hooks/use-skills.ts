@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import type { SoulAssetDetail, SoulSkillVersionRecord, SoulSkillVersionsPageResponse } from '@/lib/soulidity/types'
@@ -10,14 +10,113 @@ import { buildAppendSkillVersionTx, buildDeleteSkillVersionTx } from '@/lib/soul
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import { createSkillSealSidecarFromMaterial, type PendingSealMaterial } from '@/lib/upload/client-seal'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { extractSkillVersionAppendedEvent } from '@/lib/soulidity/events'
+import {
+  attachSoulidityDeploymentSignature,
+  hasCurrentSoulidityDeploymentSignature,
+} from '@/lib/soulidity/client-session'
+import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 
-type PendingSkillAction = 'append' | 'delete' | 'read' | null
+type PendingSkillAction = 'append' | 'delete' | 'read' | 'recovering' | null
+
+const SKILL_APPEND_RECOVERY_KEY_PREFIX = 'soul-skill-append-recovery:'
 
 type UploadedSkillPayload = {
   blobId: string
   blobObjectId: string | null
-  sealDekEnvelope?: string | null
+  sealMaterial?: PendingSealMaterial | null
   skillName?: string | null
+}
+
+interface SkillAppendSyncBody {
+  txDigest: string
+  skillsSealSidecar: SealEnvelopeSidecar | null
+}
+
+interface SkillAppendSyncMaterial {
+  txDigest: string
+  sealMaterial?: PendingSealMaterial | null
+}
+
+interface SkillAppendRecoveryState {
+  userId: string
+  soulOnChainId: string
+  syncBody?: SkillAppendSyncBody | null
+  pendingSync?: SkillAppendSyncMaterial | null
+  deploymentSignature: string
+}
+
+function skillAppendRecoveryStorageKey(soulOnChainId: string) {
+  return `${SKILL_APPEND_RECOVERY_KEY_PREFIX}${soulOnChainId}`
+}
+
+function isSkillAppendSyncBody(value: unknown): value is SkillAppendSyncBody {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<SkillAppendSyncBody>
+  return typeof candidate.txDigest === 'string'
+    && candidate.txDigest.length > 0
+    && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'object')
+}
+
+function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<PendingSealMaterial>
+  return candidate.version === 1
+    && typeof candidate.dek === 'string'
+    && typeof candidate.iv === 'string'
+    && typeof candidate.contentHash === 'string'
+    && typeof candidate.mimeType === 'string'
+    && typeof candidate.fileName === 'string'
+}
+
+function isSkillAppendSyncMaterial(value: unknown): value is SkillAppendSyncMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<SkillAppendSyncMaterial>
+  return typeof candidate.txDigest === 'string'
+    && candidate.txDigest.length > 0
+    && (candidate.sealMaterial == null || isPendingSealMaterial(candidate.sealMaterial))
+}
+
+export function sanitizeSkillAppendRecoveryState(
+  raw: string | null,
+  userId: string | null | undefined,
+  soulOnChainId: string | null | undefined,
+): SkillAppendRecoveryState | null {
+  if (!raw || !userId || !soulOnChainId) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<SkillAppendRecoveryState>
+    if (
+      parsed.userId !== userId
+      || parsed.soulOnChainId !== soulOnChainId
+      || (!isSkillAppendSyncBody(parsed.syncBody) && !isSkillAppendSyncMaterial(parsed.pendingSync))
+      || !hasCurrentSoulidityDeploymentSignature(parsed)
+    ) {
+      return null
+    }
+    return {
+      userId,
+      soulOnChainId,
+      syncBody: isSkillAppendSyncBody(parsed.syncBody) ? parsed.syncBody : null,
+      pendingSync: isSkillAppendSyncMaterial(parsed.pendingSync) ? parsed.pendingSync : null,
+      deploymentSignature: parsed.deploymentSignature,
+    }
+  } catch {
+    return null
+  }
+}
+
+function persistSkillAppendRecovery(storageKey: string, recovery: SkillAppendRecoveryState | null) {
+  if (typeof window === 'undefined') return
+  try {
+    if (recovery) {
+      sessionStorage.setItem(storageKey, JSON.stringify(recovery))
+    } else {
+      sessionStorage.removeItem(storageKey)
+    }
+  } catch {}
 }
 
 function sameSuiAddress(left: string, right: string) {
@@ -47,7 +146,9 @@ export function useSkills(soul: SoulAssetDetail | null) {
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { suiWallet, signAndExecute, signPersonalMessage, suiClient } = useWalletSign()
-  const { getAuthHeaders } = useAuth()
+  const { getAuthHeaders, user } = useAuth()
+  const { requestUploadCostApproval } = useUploadCostReview()
+  const pendingRecoveryRef = useRef<Record<string, boolean>>({})
   const skillVersionsQuery = useInfiniteQuery<SoulSkillVersionsPageResponse>({
     queryKey: ['soul-skill-versions', soul?.onChainId ?? null],
     enabled: Boolean(soul?.onChainId),
@@ -87,6 +188,114 @@ export function useSkills(soul: SoulAssetDetail | null) {
     : soul?.skillVersions ?? []
   const skillVersionCount = skillVersionsQuery.data?.pages[0]?.total ?? soul?.skillVersionCount ?? skillVersions.length
 
+  const postAppendMirror = useCallback(async (
+    soulOnChainId: string,
+    syncBody: SkillAppendSyncBody,
+  ) => {
+    const authHeaders = await getAuthHeaders()
+    const response = await fetch(`/api/souls/${encodeURIComponent(soulOnChainId)}/skills`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify(syncBody),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(
+        payload && typeof payload === 'object' && typeof payload.error === 'string'
+          ? payload.error
+          : 'Failed to mirror skill append transaction',
+      )
+    }
+    return payload
+  }, [getAuthHeaders])
+
+  const buildSkillAppendSyncBody = useCallback(async (params: {
+    txDigest: string
+    txResult: unknown
+    sealMaterial?: PendingSealMaterial | null
+  }): Promise<SkillAppendSyncBody> => {
+    let skillsSealSidecar: SealEnvelopeSidecar | null = null
+    if (params.sealMaterial) {
+      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      const appended = extractSkillVersionAppendedEvent(params.txResult as never, packageId)
+      skillsSealSidecar = await createSkillSealSidecarFromMaterial({
+        suiClient: suiClient as never,
+        packageId,
+        skillsObjectId: appended.skillsId,
+        skillName: appended.skillName,
+        versionIndex: appended.versionIndex,
+        material: params.sealMaterial,
+      })
+    }
+    return {
+      txDigest: params.txDigest,
+      skillsSealSidecar,
+    }
+  }, [suiClient])
+
+  // Auto-resume effect: if a previous append signed the on-chain TX but the
+  // Seal sidecar build or mirror POST failed (incl. across page reload), the
+  // pending recovery row carries the txDigest plus raw Seal material so we
+  // can rebuild the sidecar from material and complete the mirror without
+  // re-uploading or re-signing a new skill version.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const soulOnChainId = soul?.onChainId
+    const userId = user?.id
+    if (!soulOnChainId || !userId) return
+    if (pendingRecoveryRef.current[soulOnChainId]) return
+
+    const storageKey = skillAppendRecoveryStorageKey(soulOnChainId)
+    const recovery = sanitizeSkillAppendRecoveryState(
+      sessionStorage.getItem(storageKey),
+      userId,
+      soulOnChainId,
+    )
+    if (!recovery) {
+      try { sessionStorage.removeItem(storageKey) } catch {}
+      return
+    }
+
+    pendingRecoveryRef.current[soulOnChainId] = true
+    void (async () => {
+      setPending('recovering')
+      setError(null)
+      try {
+        let syncBody = recovery.syncBody ?? null
+        if (!syncBody && recovery.pendingSync) {
+          const txResult = await suiClient.getTransactionBlock({
+            digest: recovery.pendingSync.txDigest,
+            options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
+          })
+          syncBody = await buildSkillAppendSyncBody({
+            txDigest: recovery.pendingSync.txDigest,
+            txResult,
+            sealMaterial: recovery.pendingSync.sealMaterial,
+          })
+          recovery.syncBody = syncBody
+          persistSkillAppendRecovery(storageKey, recovery)
+        }
+        if (!syncBody) {
+          throw new Error('Pending skill append recovery is missing sync data')
+        }
+        await postAppendMirror(soulOnChainId, syncBody)
+        persistSkillAppendRecovery(storageKey, null)
+        await queryClient.invalidateQueries({ queryKey: ['soul', soulOnChainId] })
+        await queryClient.invalidateQueries({ queryKey: ['soul-skill-versions', soulOnChainId] })
+      } catch (nextError) {
+        // Leave the recovery row so the user can retry on a subsequent mount.
+        setError(
+          nextError instanceof Error
+            ? `Pending skill append mirror failed: ${nextError.message}`
+            : 'Pending skill append mirror failed',
+        )
+      } finally {
+        pendingRecoveryRef.current[soulOnChainId] = false
+        setPending(null)
+      }
+    })()
+  }, [soul?.onChainId, user?.id, postAppendMirror, queryClient, suiClient, buildSkillAppendSyncBody])
+
   async function uploadSkillFile(file: File, visibility: 'public' | 'private') {
     const authHeaders = await getAuthHeaders()
     const result = await uploadSoulPayload({
@@ -95,11 +304,15 @@ export function useSkills(soul: SoulAssetDetail | null) {
       kind: 'soul-content',
       authHeaders,
       sendObjectTo: suiWallet?.address ?? null,
+      walletAddress: suiWallet?.address ?? '',
+      suiClient,
+      signAndExecute,
+      confirmQuote: requestUploadCostApproval,
     })
     const uploaded: UploadedSkillPayload = {
       blobId: result.blobId,
       blobObjectId: result.blobObjectId,
-      sealDekEnvelope: result.sealDekEnvelope ?? null,
+      sealMaterial: result.sealMaterial ?? null,
       skillName: result.skillName ?? null,
     }
     if (!uploaded.blobObjectId) {
@@ -146,23 +359,43 @@ export function useSkills(soul: SoulAssetDetail | null) {
         grantObjectId: soul.isOwner ? null : skillGrant?.onChainId ?? null,
       })
       const result = await signAndExecute(tx)
-      const authHeaders = await getAuthHeaders()
-      const response = await fetch(`/api/souls/${encodeURIComponent(soul.onChainId)}/skills`, {
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          txDigest: result.digest,
-          rawSkillsEnvelope: visibility === 'private' ? uploaded.sealDekEnvelope ?? null : null,
-        }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(
-          payload && typeof payload === 'object' && typeof payload.error === 'string'
-            ? payload.error
-            : 'Failed to mirror skill append transaction',
-        )
+      if (visibility === 'private' && !uploaded.sealMaterial) {
+        throw new Error('Private skill upload is missing Seal material')
       }
+      const pendingSync: SkillAppendSyncMaterial = {
+        txDigest: result.digest,
+        sealMaterial: visibility === 'private' ? uploaded.sealMaterial : null,
+      }
+
+      // Persist raw Seal material + tx digest BEFORE calling Seal key servers
+      // and BEFORE the mirror POST. If sidecar creation or the mirror fails
+      // (incl. page reload), the auto-resume effect can rebuild the sidecar
+      // from the persisted material and complete the mirror without minting
+      // a new skill version on chain.
+      const storageKey = skillAppendRecoveryStorageKey(soul.onChainId)
+      let recovery: SkillAppendRecoveryState | null = null
+      if (user?.id && typeof window !== 'undefined') {
+        recovery = attachSoulidityDeploymentSignature({
+          userId: user.id,
+          soulOnChainId: soul.onChainId,
+          pendingSync,
+          syncBody: null,
+        })
+        persistSkillAppendRecovery(storageKey, recovery)
+      }
+
+      const syncBody = await buildSkillAppendSyncBody({
+        txDigest: result.digest,
+        txResult: result,
+        sealMaterial: pendingSync.sealMaterial,
+      })
+      if (recovery) {
+        recovery.syncBody = syncBody
+        persistSkillAppendRecovery(storageKey, recovery)
+      }
+
+      const payload = await postAppendMirror(soul.onChainId, syncBody)
+      persistSkillAppendRecovery(storageKey, null)
 
       await queryClient.invalidateQueries({ queryKey: ['soul', soul.onChainId] })
       await queryClient.invalidateQueries({ queryKey: ['soul-skill-versions', soul.onChainId] })

@@ -85,7 +85,7 @@ export async function resolveIdentity(): Promise<Identity | null> {
       }
     }
 
-    // Unknown bearer token (e.g. legacy Privy token) — reject so callers must
+    // Unknown bearer token from a retired auth provider — reject so callers must
     // adopt the new wallet/session flow.
     return null
   }

@@ -12,6 +12,9 @@ import { buildClearActiveSpriteTx } from '@/lib/soulidity/tx/metadata'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildPersonaSpriteMoodMap, parsePersonaSpriteConfig } from '@/lib/soulidity/persona-sprite'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import { createAssetSealSidecarFromMaterial, type PendingSealMaterial } from '@/lib/upload/client-seal'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
+import { extractAssetVersionAppendedEvent } from '@/lib/soulidity/events'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
@@ -32,14 +35,20 @@ type PendingAssetAction = 'append' | 'delete' | 'clear' | 'recovering' | null
 
 interface SpriteAppendSyncBody {
   txDigest: string
-  rawAssetsEnvelope: string | null
+  assetsSealSidecar: import('@/lib/services/seal-crypto').SealEnvelopeSidecar | null
 }
 
 interface SpriteAppendRecoveryState {
   userId: string
   soulOnChainId: string
-  syncBody: SpriteAppendSyncBody
+  syncBody?: SpriteAppendSyncBody | null
+  pendingSync?: SpriteAppendSyncMaterial | null
   deploymentSignature: string
+}
+
+interface SpriteAppendSyncMaterial {
+  txDigest: string
+  sealMaterial?: PendingSealMaterial | null
 }
 
 function spriteAppendRecoveryStorageKey(soulOnChainId: string) {
@@ -51,7 +60,26 @@ function isSpriteAppendSyncBody(value: unknown): value is SpriteAppendSyncBody {
   const candidate = value as Partial<SpriteAppendSyncBody>
   return typeof candidate.txDigest === 'string'
     && candidate.txDigest.length > 0
-    && (candidate.rawAssetsEnvelope === null || typeof candidate.rawAssetsEnvelope === 'string')
+    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'object')
+}
+
+function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<PendingSealMaterial>
+  return candidate.version === 1
+    && typeof candidate.dek === 'string'
+    && typeof candidate.iv === 'string'
+    && typeof candidate.contentHash === 'string'
+    && typeof candidate.mimeType === 'string'
+    && typeof candidate.fileName === 'string'
+}
+
+function isSpriteAppendSyncMaterial(value: unknown): value is SpriteAppendSyncMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<SpriteAppendSyncMaterial>
+  return typeof candidate.txDigest === 'string'
+    && candidate.txDigest.length > 0
+    && (candidate.sealMaterial == null || isPendingSealMaterial(candidate.sealMaterial))
 }
 
 export function sanitizeSpriteAppendRecoveryState(
@@ -65,7 +93,7 @@ export function sanitizeSpriteAppendRecoveryState(
     if (
       parsed.userId !== userId
       || parsed.soulOnChainId !== soulOnChainId
-      || !isSpriteAppendSyncBody(parsed.syncBody)
+      || (!isSpriteAppendSyncBody(parsed.syncBody) && !isSpriteAppendSyncMaterial(parsed.pendingSync))
       || !hasCurrentSoulidityDeploymentSignature(parsed)
     ) {
       return null
@@ -73,7 +101,8 @@ export function sanitizeSpriteAppendRecoveryState(
     return {
       userId,
       soulOnChainId,
-      syncBody: parsed.syncBody,
+      syncBody: isSpriteAppendSyncBody(parsed.syncBody) ? parsed.syncBody : null,
+      pendingSync: isSpriteAppendSyncMaterial(parsed.pendingSync) ? parsed.pendingSync : null,
       deploymentSignature: parsed.deploymentSignature,
     }
   } catch {
@@ -81,12 +110,23 @@ export function sanitizeSpriteAppendRecoveryState(
   }
 }
 
+function persistSpriteAppendRecovery(storageKey: string, recovery: SpriteAppendRecoveryState | null) {
+  if (typeof window === 'undefined') return
+  try {
+    if (recovery) {
+      sessionStorage.setItem(storageKey, JSON.stringify(recovery))
+    } else {
+      sessionStorage.removeItem(storageKey)
+    }
+  } catch {}
+}
+
 type AppendUploadResult = {
   blobId: string
   blobObjectId: string
   contentHash: string
   blobUrl: string
-  sealDekEnvelope?: string | null
+  sealMaterial?: PendingSealMaterial | null
 }
 
 function policyToU8(policy: SoulDownloadPolicy): number {
@@ -123,6 +163,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
   const queryClient = useQueryClient()
   const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders, user } = useAuth()
+  const { requestUploadCostApproval } = useUploadCostReview()
   const pendingRecoveryRef = useRef<Record<string, boolean>>({})
 
   const postAppendMirror = useCallback(async (
@@ -172,8 +213,24 @@ export function useAssets(soul: SoulAssetDetail | null) {
       setPending('recovering')
       setError(null)
       try {
-        await postAppendMirror(soulOnChainId, recovery.syncBody)
-        try { sessionStorage.removeItem(storageKey) } catch {}
+        let syncBody = recovery.syncBody ?? null
+        if (!syncBody && recovery.pendingSync) {
+          syncBody = await buildSpriteAppendSyncBody({
+            txDigest: recovery.pendingSync.txDigest,
+            txResult: await suiClient.getTransactionBlock({
+              digest: recovery.pendingSync.txDigest,
+              options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
+            }),
+            sealMaterial: recovery.pendingSync.sealMaterial,
+          })
+          recovery.syncBody = syncBody
+          persistSpriteAppendRecovery(storageKey, recovery)
+        }
+        if (!syncBody) {
+          throw new Error('Pending sprite append recovery is missing sync data')
+        }
+        await postAppendMirror(soulOnChainId, syncBody)
+        persistSpriteAppendRecovery(storageKey, null)
         await queryClient.invalidateQueries({ queryKey: ['soul', soulOnChainId] })
         await queryClient.invalidateQueries({ queryKey: ['soul-asset-versions', soulOnChainId] })
       } catch (nextError) {
@@ -188,7 +245,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
         setPending(null)
       }
     })()
-  }, [soul?.onChainId, user?.id, postAppendMirror, queryClient])
+  }, [soul?.onChainId, user?.id, postAppendMirror, queryClient, suiClient])
 
   const assetsQuery = useQuery<SoulAssetVersionsResponse>({
     queryKey: ['soul-asset-versions', soul?.onChainId ?? null],
@@ -217,13 +274,41 @@ export function useAssets(soul: SoulAssetDetail | null) {
       kind: 'persona-sprite',
       authHeaders,
       sendObjectTo: suiWallet.address,
+      walletAddress: suiWallet.address,
+      suiClient,
+      signAndExecute,
+      confirmQuote: requestUploadCostApproval,
     })
     return {
       blobId: uploaded.blobId,
       blobObjectId: uploaded.blobObjectId,
       contentHash: uploaded.contentHash,
       blobUrl: uploaded.blobUrl,
-      sealDekEnvelope: uploaded.sealDekEnvelope ?? null,
+      sealMaterial: uploaded.sealMaterial ?? null,
+    }
+  }
+
+  async function buildSpriteAppendSyncBody(params: {
+    txDigest: string
+    txResult: unknown
+    sealMaterial?: PendingSealMaterial | null
+  }): Promise<SpriteAppendSyncBody> {
+    let assetsSealSidecar = null
+    if (params.sealMaterial) {
+      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      const appended = extractAssetVersionAppendedEvent(params.txResult as never, packageId)
+      assetsSealSidecar = await createAssetSealSidecarFromMaterial({
+        suiClient: suiClient as never,
+        packageId,
+        assetsObjectId: appended.assetsId,
+        assetName: appended.assetName,
+        versionIndex: appended.versionIndex,
+        material: params.sealMaterial,
+      })
+    }
+    return {
+      txDigest: params.txDigest,
+      assetsSealSidecar,
     }
   }
 
@@ -313,30 +398,39 @@ export function useAssets(soul: SoulAssetDetail | null) {
       })
 
       const result = await signAndExecute(tx)
-
-      const syncBody: SpriteAppendSyncBody = {
+      if (params.visibility === 'private' && !uploaded.sealMaterial) {
+        throw new Error('Private sprite upload is missing Seal material')
+      }
+      const pendingSync: SpriteAppendSyncMaterial = {
         txDigest: result.digest,
-        rawAssetsEnvelope: params.visibility === 'private' ? uploaded.sealDekEnvelope ?? null : null,
+        sealMaterial: params.visibility === 'private' ? uploaded.sealMaterial : null,
       }
 
-      // Persist recovery before the mirror POST so a tab reload / network failure between
-      // signing and mirror can resume with the original `rawAssetsEnvelope` — the server
-      // cannot reconstruct it from chain data or Walrus after the fact.
       const storageKey = spriteAppendRecoveryStorageKey(soul.onChainId)
+      let recovery: SpriteAppendRecoveryState | null = null
       if (user?.id && typeof window !== 'undefined') {
-        const recovery: SpriteAppendRecoveryState = attachSoulidityDeploymentSignature({
+        recovery = attachSoulidityDeploymentSignature({
           userId: user.id,
           soulOnChainId: soul.onChainId,
-          syncBody,
+          pendingSync,
+          syncBody: null,
         })
-        try {
-          sessionStorage.setItem(storageKey, JSON.stringify(recovery))
-        } catch {}
+        persistSpriteAppendRecovery(storageKey, recovery)
+      }
+
+      const syncBody = await buildSpriteAppendSyncBody({
+        txDigest: result.digest,
+        txResult: result,
+        sealMaterial: pendingSync.sealMaterial,
+      })
+      if (recovery) {
+        recovery.syncBody = syncBody
+        persistSpriteAppendRecovery(storageKey, recovery)
       }
 
       try {
         await postAppendMirror(soul.onChainId, syncBody)
-        try { sessionStorage.removeItem(storageKey) } catch {}
+        persistSpriteAppendRecovery(storageKey, null)
       } catch (mirrorError) {
         // Leave the recovery row in place for the auto-resume effect on the next mount.
         throw mirrorError

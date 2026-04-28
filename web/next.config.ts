@@ -1,4 +1,5 @@
 import dotenv from 'dotenv'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 const __repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -12,6 +13,19 @@ import type { NextConfig } from 'next'
 const appRoot = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(appRoot, '..')
 
+function readWalrusWasmVersion(): string {
+  const pkgJson = path.join(appRoot, 'node_modules', '@mysten', 'walrus-wasm', 'package.json')
+  if (!existsSync(pkgJson)) return ''
+  try {
+    const parsed = JSON.parse(readFileSync(pkgJson, 'utf8')) as { version?: unknown }
+    return typeof parsed.version === 'string' ? parsed.version : ''
+  } catch {
+    return ''
+  }
+}
+
+const walrusWasmVersion = readWalrusWasmVersion()
+
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -24,6 +38,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactCompiler: true,
   serverExternalPackages: ['@prisma/client'],
+  env: {
+    NEXT_PUBLIC_WALRUS_WASM_VERSION: walrusWasmVersion,
+  },
   turbopack: {
     root: repoRoot,
   },

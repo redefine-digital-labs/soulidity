@@ -1,9 +1,23 @@
 /**
- * Batch Soul publisher — reads souls/template.csv, processes each Soul through
- * upload → mint → sync → list → sync-list with per-Soul checkpointing.
+ * Internal legacy batch Soul publisher — reads souls/template.csv, processes
+ * each Soul through upload → mint → sync → list → sync-list with per-Soul
+ * checkpointing.
  *
- * Usage:
- *   NODE_PATH=web/node_modules npx tsx scripts/batch-publish.ts [--resume] [--dry-run] [--start N] [--only N]
+ * DISABLED: this script encrypts uploads with a server-side `SOUL_UPLOAD_SECRET`
+ * and posts the resulting raw DEK envelopes as `sealSidecar` strings to
+ * `/api/souls/publish`. The current sync routes only accept structured Seal
+ * sidecar objects (`parseProvidedSidecar` rejects strings), so running this
+ * end-to-end uploads to Walrus and mints the Soul on chain, then fails the
+ * sync step with HTTP 400 and leaves the minted Soul unsynced/unlisted —
+ * requiring manual on-chain recovery.
+ *
+ * Until this script is migrated to produce the same Seal sidecar objects as
+ * the wallet-paid browser flow, the executable path is hard-disabled at start
+ * of `main()`. `--dry-run` is still allowed because it neither uploads nor
+ * signs any transaction, so it is safe for inspection.
+ *
+ * Usage (dry-run only):
+ *   NODE_PATH=web/node_modules npx tsx scripts/batch-publish.ts --dry-run [--start N] [--only N]
  *
  * Required env (loaded from .env):
  *   BATCH_SIGNER_SECRET_KEY  — Sui Ed25519 secret key (bech32 suiprivkey1..., base64, or hex)
@@ -14,7 +28,7 @@
  *
  * Flags:
  *   --resume   Resume from souls/manifest.json (skip completed phases)
- *   --dry-run  Show planned actions without executing
+ *   --dry-run  Show planned actions without executing (only supported mode)
  *   --start N  Start from Soul index N
  *   --only N   Process only Soul index N
  */
@@ -854,6 +868,23 @@ function parseArgs(argv: string[]) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+
+  // The current `/api/souls/publish` (and import/wrap) routes reject string
+  // `sealDekEnvelope` payloads via `parseProvidedSidecar`. This script still
+  // posts those strings, so any non-dry-run run would Walrus-upload + mint
+  // on-chain and then fail the sync step, leaving the minted Soul orphaned.
+  // Hard-disable everything except `--dry-run` until the script is migrated
+  // to produce structured `SealEnvelopeSidecar` objects.
+  if (!args.dryRun) {
+    throw new Error(
+      'scripts/batch-publish.ts is disabled: it still posts raw `sealDekEnvelope` strings ' +
+      'to /api/souls/publish, which the current sync routes reject. Running it would mint ' +
+      'Souls on-chain and then fail the sync step, leaving them unmirrored. ' +
+      'Use the wallet-paid browser publish flow, or migrate this script to emit ' +
+      'structured Seal sidecar objects before re-enabling. Pass --dry-run for inspection.',
+    )
+  }
+
   const rows = parseCSV(TEMPLATE_CSV)
   const network = getNetwork()
   const deployment = getDeployment()

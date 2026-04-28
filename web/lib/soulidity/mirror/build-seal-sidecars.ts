@@ -1,13 +1,11 @@
-import { unsealDekEnvelope } from '@/lib/services/dek-envelope'
-import { createSealClient, getSealRuntimeConfig } from '@/lib/services/seal'
 import {
-  createAssetVersionSealEnvelopeSidecar,
-  createMemoryEntrySealEnvelopeSidecar,
-  createSealEnvelopeSidecar,
-  createSkillVersionSealEnvelopeSidecar,
+  assertDocumentIdMatchesExpectedBinding,
+  generateAssetDocumentIdForVersion,
+  generateMemoryDocumentId,
+  generateSkillDocumentIdForVersion,
+  parseSealEnvelopeSidecar,
   type SealEnvelopeSidecar,
 } from '@/lib/services/seal-crypto'
-import { getSoulStateObject } from '@/lib/soulidity/queries'
 
 export class SealSidecarSyncConfigError extends Error {}
 
@@ -15,12 +13,12 @@ export async function buildSyncSealSidecars(params: {
   packageId: string
   soulObjectId: string
   stateObjectId: string
-  rawSoulEnvelope?: string | null
-  rawMemoryEnvelope?: string | null
+  soulSidecar?: SealEnvelopeSidecar | null
+  memorySidecar?: SealEnvelopeSidecar | null
   memoryBinding?: { memoryObjectId: string; timestampKey: number } | null
-  rawSkillsEnvelope?: string | null
+  skillsSidecar?: SealEnvelopeSidecar | null
   skillBinding?: { skillsObjectId: string; skillName: string; versionIndex: number } | null
-  rawAssetsEnvelope?: string | null
+  assetsSidecar?: SealEnvelopeSidecar | null
   assetBinding?: { assetsObjectId: string; assetName: string; versionIndex: number } | null
 }): Promise<{
   soulSidecar: SealEnvelopeSidecar | null
@@ -28,12 +26,14 @@ export async function buildSyncSealSidecars(params: {
   skillsSidecar: SealEnvelopeSidecar | null
   assetsSidecar: SealEnvelopeSidecar | null
 }> {
-  const rawSoulEnvelope = params.rawSoulEnvelope ?? null
-  const rawMemoryEnvelope = params.rawMemoryEnvelope ?? null
-  const rawSkillsEnvelope = params.rawSkillsEnvelope ?? null
-  const rawAssetsEnvelope = params.rawAssetsEnvelope ?? null
+  const providedSoulSidecar = params.soulSidecar ? parseSealEnvelopeSidecar(params.soulSidecar) : null
+  const providedMemorySidecar = params.memorySidecar ? parseSealEnvelopeSidecar(params.memorySidecar) : null
+  const providedSkillsSidecar = params.skillsSidecar ? parseSealEnvelopeSidecar(params.skillsSidecar) : null
+  const providedAssetsSidecar = params.assetsSidecar ? parseSealEnvelopeSidecar(params.assetsSidecar) : null
 
-  if (!rawSoulEnvelope && !rawMemoryEnvelope && !rawSkillsEnvelope && !rawAssetsEnvelope) {
+  if (
+    !providedSoulSidecar && !providedMemorySidecar && !providedSkillsSidecar && !providedAssetsSidecar
+  ) {
     return {
       soulSidecar: null,
       memorySidecar: null,
@@ -42,99 +42,61 @@ export async function buildSyncSealSidecars(params: {
     }
   }
 
-  const runtimeConfig = getSealRuntimeConfig()
-  if (runtimeConfig.threshold <= 0 || runtimeConfig.serverConfigs.length === 0) {
-    throw new SealSidecarSyncConfigError('Seal is not configured for Soul publishing')
-  }
-
-  const sealClient = createSealClient()
-  const soulState = await getSoulStateObject(params.stateObjectId, params.packageId)
-  const sealPackageId = soulState.packageId ?? params.packageId
-
   let soulSidecar: SealEnvelopeSidecar | null = null
   let memorySidecar: SealEnvelopeSidecar | null = null
   let skillsSidecar: SealEnvelopeSidecar | null = null
   let assetsSidecar: SealEnvelopeSidecar | null = null
 
-  if (rawSoulEnvelope) {
-    const unsealedEnvelope = unsealDekEnvelope(rawSoulEnvelope)
-    try {
-      soulSidecar = await createSealEnvelopeSidecar({
-        sealClient,
-        packageId: sealPackageId,
-        soulObjectId: params.soulObjectId,
-        threshold: runtimeConfig.threshold,
-        dek: unsealedEnvelope.dek,
-        iv: unsealedEnvelope.iv,
-        contentHash: unsealedEnvelope.contentHash,
-        mimeType: unsealedEnvelope.mimeType,
-        fileName: unsealedEnvelope.fileName,
-      })
-    } finally {
-      unsealedEnvelope.dek.fill(0)
-    }
+  if (providedSoulSidecar) {
+    assertDocumentIdMatchesExpectedBinding({
+      documentId: providedSoulSidecar.documentId,
+      expectedSoulObjectId: params.soulObjectId,
+    })
+    soulSidecar = providedSoulSidecar
   }
 
-  if (rawMemoryEnvelope && params.memoryBinding) {
-    const unsealedMemoryEnvelope = unsealDekEnvelope(rawMemoryEnvelope)
-    try {
-      memorySidecar = await createMemoryEntrySealEnvelopeSidecar({
-        sealClient,
-        packageId: sealPackageId,
-        memoryObjectId: params.memoryBinding.memoryObjectId,
-        timestampKey: params.memoryBinding.timestampKey,
-        threshold: runtimeConfig.threshold,
-        dek: unsealedMemoryEnvelope.dek,
-        iv: unsealedMemoryEnvelope.iv,
-        contentHash: unsealedMemoryEnvelope.contentHash,
-        mimeType: unsealedMemoryEnvelope.mimeType,
-        fileName: unsealedMemoryEnvelope.fileName,
-      })
-    } finally {
-      unsealedMemoryEnvelope.dek.fill(0)
+  if (providedMemorySidecar && !params.memoryBinding) {
+    throw new Error('Memory Seal sidecar was provided without an appended memory entry')
+  }
+  if (providedMemorySidecar && params.memoryBinding) {
+    const expectedDocumentId = generateMemoryDocumentId(
+      params.memoryBinding.memoryObjectId,
+      params.memoryBinding.timestampKey,
+    ).toLowerCase()
+    if (providedMemorySidecar.documentId.toLowerCase() !== expectedDocumentId) {
+      throw new Error('Memory Seal sidecar documentId does not match the appended memory entry')
     }
+    memorySidecar = providedMemorySidecar
   }
 
-  if (rawSkillsEnvelope && params.skillBinding) {
-    const unsealedSkillsEnvelope = unsealDekEnvelope(rawSkillsEnvelope)
-    try {
-      skillsSidecar = await createSkillVersionSealEnvelopeSidecar({
-        sealClient,
-        packageId: sealPackageId,
-        skillsObjectId: params.skillBinding.skillsObjectId,
-        skillName: params.skillBinding.skillName,
-        versionIndex: params.skillBinding.versionIndex,
-        threshold: runtimeConfig.threshold,
-        dek: unsealedSkillsEnvelope.dek,
-        iv: unsealedSkillsEnvelope.iv,
-        contentHash: unsealedSkillsEnvelope.contentHash,
-        mimeType: unsealedSkillsEnvelope.mimeType,
-        fileName: unsealedSkillsEnvelope.fileName,
-      })
-    } finally {
-      unsealedSkillsEnvelope.dek.fill(0)
+  if (providedSkillsSidecar && !params.skillBinding) {
+    throw new Error('Skill Seal sidecar was provided without an appended skill version')
+  }
+  if (providedSkillsSidecar && params.skillBinding) {
+    const expectedDocumentId = generateSkillDocumentIdForVersion(
+      params.skillBinding.skillsObjectId,
+      params.skillBinding.skillName,
+      params.skillBinding.versionIndex,
+    ).toLowerCase()
+    if (providedSkillsSidecar.documentId.toLowerCase() !== expectedDocumentId) {
+      throw new Error('Skill Seal sidecar documentId does not match the appended skill version')
     }
+    skillsSidecar = providedSkillsSidecar
   }
 
-  if (rawAssetsEnvelope && params.assetBinding) {
-    const unsealedAssetsEnvelope = unsealDekEnvelope(rawAssetsEnvelope)
-    try {
-      assetsSidecar = await createAssetVersionSealEnvelopeSidecar({
-        sealClient,
-        packageId: sealPackageId,
-        assetsObjectId: params.assetBinding.assetsObjectId,
-        assetName: params.assetBinding.assetName,
-        versionIndex: params.assetBinding.versionIndex,
-        threshold: runtimeConfig.threshold,
-        dek: unsealedAssetsEnvelope.dek,
-        iv: unsealedAssetsEnvelope.iv,
-        contentHash: unsealedAssetsEnvelope.contentHash,
-        mimeType: unsealedAssetsEnvelope.mimeType,
-        fileName: unsealedAssetsEnvelope.fileName,
-      })
-    } finally {
-      unsealedAssetsEnvelope.dek.fill(0)
+  if (providedAssetsSidecar && !params.assetBinding) {
+    throw new Error('Asset Seal sidecar was provided without an appended asset version')
+  }
+  if (providedAssetsSidecar && params.assetBinding) {
+    const expectedDocumentId = generateAssetDocumentIdForVersion(
+      params.assetBinding.assetsObjectId,
+      params.assetBinding.assetName,
+      params.assetBinding.versionIndex,
+    ).toLowerCase()
+    if (providedAssetsSidecar.documentId.toLowerCase() !== expectedDocumentId) {
+      throw new Error('Asset Seal sidecar documentId does not match the appended asset version')
     }
+    assetsSidecar = providedAssetsSidecar
   }
 
   return {

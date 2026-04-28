@@ -11,6 +11,7 @@ import { WalletLoginModal } from './wallet-login-modal'
 import { E2EWalletHelpers } from './e2e-wallet-helpers'
 import { E2EWalletStub } from './e2e-wallet-stub'
 import { ToastProvider } from '@/components/ui/toast'
+import { UploadCostReviewProvider } from '@/components/upload/upload-cost-review'
 import { syncSoulidityDeploymentSession } from '@/lib/soulidity/client-session'
 
 // SuiJsonRpcClientOptions requires both `url` and `network` in dapp-kit v1 / @mysten/sui v2
@@ -43,9 +44,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
           <AuthProvider>
             <WalletAuthBridge />
             <ToastProvider>
-              <E2EWalletHelpers />
-              <WalletLoginModal />
-              {children}
+              <UploadCostReviewProvider>
+                <E2EWalletHelpers />
+                <WalletLoginModal />
+                {children}
+              </UploadCostReviewProvider>
             </ToastProvider>
           </AuthProvider>
         </WalletProvider>

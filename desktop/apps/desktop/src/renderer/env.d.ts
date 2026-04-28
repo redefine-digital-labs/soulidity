@@ -100,17 +100,6 @@ declare global {
       'desktop:create-draft:clear': () => Promise<void>
       'desktop:create-draft:pick-cover-image': () => Promise<{ dataUrl: string; fileName: string; mimeType: string } | null>
 
-      // ── Desktop create + mint ──
-      'desktop:create:upload': (params: {
-        bytes: Uint8Array
-        fileName: string
-        mimeType: string
-        uploadType: 'public' | 'encrypted'
-        sendObjectTo?: string | null
-      }) => Promise<unknown>
-      'desktop:create:personal-kiosk': (params: { walletAddress?: string | null }) => Promise<unknown>
-      'desktop:create:publish': (payload: Record<string, unknown>) => Promise<unknown>
-
       // ── Soul download + active persona ──
       soulDownload: (params: { catalogId: string }) => Promise<{ catalogId: string; spriteId: string } | { error: string }>
       soulFetchManifest: (params: { catalogId: string; viewer?: string | null }) => Promise<unknown>

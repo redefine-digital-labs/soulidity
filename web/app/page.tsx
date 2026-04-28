@@ -185,7 +185,7 @@ export default function LandingPage() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-5 opacity-50">
-          {['Sui', 'Walrus', 'Seal', 'Privy', 'OpenClaw'].map((tech) => (
+          {['Sui', 'Walrus', 'Seal', 'Wallet Auth', 'OpenClaw'].map((tech) => (
             <span key={tech} className="text-xs font-semibold">
               {tech}
             </span>

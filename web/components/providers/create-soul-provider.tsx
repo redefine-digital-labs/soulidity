@@ -6,6 +6,7 @@ import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
+import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 
 const PUBLISH_RESULT_KEY = 'soul-publish-result'
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
@@ -24,12 +25,12 @@ interface EncryptedUploadResult {
   blobObjectId: string
   contentHash: string
   blobUrl: string
-  sealDekEnvelope: string
+  sealMaterial: PendingSealMaterial
   skillName?: string | null
 }
 
 interface SpriteAssetUploadResult extends PublicUploadResult {
-  sealDekEnvelope?: string | null
+  sealMaterial?: PendingSealMaterial | null
 }
 
 export interface UploadResults {

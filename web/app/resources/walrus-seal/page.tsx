@@ -86,15 +86,15 @@ export default function WalrusSealPage() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Server-Side Sidecar Build</h2>
+        <h2 className="text-lg font-semibold">Client-Side Sidecar Build</h2>
         <p className="text-sm text-muted">
-          The API server builds sidecars after on-chain TX success via <code>buildSyncSealSidecars</code> in <code>web/lib/soulidity/mirror/build-seal-sidecars.ts</code>. The server receives the raw DEK envelope (sealed at upload time), connects to the Seal key server network as a server-side client, and re-encrypts the DEK under the now-known on-chain object IDs.
+          Upload flows encrypt in the browser, ask the wallet to pay Walrus storage through the upload relay, then build Seal sidecar objects after the on-chain TX exposes the final Soul/Memory/Skills/Assets object IDs. Mirror APIs only verify and store those sidecars; they do not receive raw DEK envelopes.
         </p>
         <ul className="text-sm text-muted space-y-1.5">
-          <li>The raw envelope is unsealed via <code>unsealDekEnvelope</code> (symmetric server secret) to get the plaintext DEK.</li>
-          <li>The Seal client then re-encrypts with the correct document ID bound to the Soul/Memory/Skills object ID.</li>
-          <li>The DEK is zeroed from memory immediately after sidecar construction.</li>
-          <li>If <code>SEAL_SERVER_CONFIGS</code> is empty or threshold is 0, sidecar construction throws <code>SealSidecarSyncConfigError</code>.</li>
+          <li>The DEK and IV stay in browser memory plus short-lived recovery state until mirror sync succeeds.</li>
+          <li>The browser Seal client encrypts the DEK with the document ID bound to the newly minted object.</li>
+          <li>The mirror API rejects private artifacts without a sidecar object bound to the expected document ID.</li>
+          <li>Wallet signing does not start until the shared Walrus cost review is confirmed.</li>
         </ul>
       </div>
 

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 
-const EFFECTIVE_DATE = '2026-04-21'
+const EFFECTIVE_DATE = '2026-04-28'
 const title = 'Terms of Service'
 const description =
   'Terms governing access to Soulidity, the on-chain Soul marketplace and community.'
@@ -46,9 +46,10 @@ export default function TermsPage() {
           <h2 className="mb-2 text-base font-bold">2. Eligibility &amp; Accounts</h2>
           <p className="text-muted">
             You must be of legal age to form a binding contract in your jurisdiction.
-            Identity is resolved via Privy, Telegram, or a Sui wallet challenge. You
-            are responsible for safeguarding your wallet keys, session tokens, and
-            any agent API keys issued to you.
+            Identity is resolved via a Sui wallet challenge, desktop session, agent
+            API key, or Telegram community context where applicable. You are
+            responsible for safeguarding your wallet keys, session tokens, and any
+            agent API keys issued to you.
           </p>
         </section>
 
@@ -136,7 +137,7 @@ export default function TermsPage() {
           <h2 className="mb-2 text-base font-bold">10. Disclaimer of Warranties</h2>
           <p className="text-muted">
             The Service is provided “AS IS” and “AS AVAILABLE”, without warranties
-            of any kind. We do not warrant that Sui, Walrus, Seal, Privy, or other
+            of any kind. We do not warrant that Sui, Walrus, Seal, or other
             third-party infrastructure will be uninterrupted, secure, or error-free.
             Digital assets are volatile; use at your own risk.
           </p>

@@ -3,6 +3,7 @@ import { takeRateLimitToken } from '@/lib/rate-limit'
 import { extractSkillVersionAppendedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
+import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
@@ -90,7 +91,7 @@ export async function POST(
       return NextResponse.json({ error: 'Transaction appended a skill version for a different Soul' }, { status: 422 })
     }
 
-    const rawSkillsEnvelope = typeof body?.rawSkillsEnvelope === 'string' ? body.rawSkillsEnvelope : null
+    const providedSkillsSidecar = parseProvidedSidecar(body?.skillsSealSidecar ?? body?.sealSidecar, 'skillsSealSidecar')
 
     const mirroredSoul = await syncSoulProjectionFromChain({
       packageId,
@@ -113,7 +114,7 @@ export async function POST(
         packageId,
         soulObjectId: soul.onChainId,
         stateObjectId: soul.stateOnChainId,
-        rawSkillsEnvelope,
+        skillsSidecar: providedSkillsSidecar,
         skillBinding: {
           skillsObjectId: appended.skillsId,
           skillName: appended.skillName,
@@ -165,6 +166,9 @@ export async function POST(
 
     return NextResponse.json(responseBody)
   } catch (error) {
+    if (error instanceof SealSidecarRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error('[soul-skills] Failed to mirror Soulidity skills append transaction', {
       memberId: auth.identity.memberId,
       txDigest,

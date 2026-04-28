@@ -12,13 +12,29 @@ import {
 } from '@/lib/soulidity/client-session'
 import { normalizeTags } from '@/lib/soulidity/tags'
 import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import {
+  extractSoulMintedToKioskEvent,
+  tryExtractAssetVersionAppendedEvent,
+  tryExtractMemoryEntryAppendedEvent,
+  tryExtractSkillVersionAppendedEvent,
+} from '@/lib/soulidity/events'
+import {
+  createAssetSealSidecarFromMaterial,
+  createMemorySealSidecarFromMaterial,
+  createSkillSealSidecarFromMaterial,
+  createSoulSealSidecarFromMaterial,
+  type PendingSealMaterial,
+} from '@/lib/upload/client-seal'
+import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
 interface MintRecoveryState {
   userId: string
   txDigest: string
-  syncBody: Record<string, unknown>
+  syncBody?: PublishSyncBody | null
+  pendingSync?: PublishSyncMaterial | null
   deploymentSignature: string
 }
 
@@ -31,6 +47,28 @@ export interface PublishSyncResponse {
   memoryOnChainId: string
   listingStatus: string
 }
+
+interface PublishSyncBody {
+  txDigest: string
+  tags: string[]
+  previewImages: string[]
+  readme: string | null
+  sealSidecar: SealEnvelopeSidecar | null
+  memorySealSidecar: SealEnvelopeSidecar | null
+  skillsSealSidecar: SealEnvelopeSidecar | null
+  assetsSealSidecar: SealEnvelopeSidecar | null
+}
+
+type PublishSyncMaterial = Pick<
+  PublishParams,
+  | 'tags'
+  | 'previewImages'
+  | 'readme'
+  | 'sealMaterial'
+  | 'memorySealMaterial'
+  | 'skillsSealMaterial'
+  | 'assetsSealMaterial'
+>
 
 export interface PublishParams {
   name: string
@@ -64,11 +102,11 @@ export interface PublishParams {
   contentAccessPriceAtomic?: number
   contentAccessDefaultScopeMask?: number
   contentAccessDefaultDurationMs?: number | null
-  skillsSealSidecar?: string | null
-  memorySealSidecar?: string | null
-  assetsSealSidecar?: string | null
+  skillsSealMaterial?: PendingSealMaterial | null
+  memorySealMaterial?: PendingSealMaterial | null
+  assetsSealMaterial?: PendingSealMaterial | null
   creatorRoyaltyBps: number
-  sealSidecar?: string | null
+  sealMaterial?: PendingSealMaterial | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -80,6 +118,133 @@ async function resolvePersonalKiosk(headers: Record<string, string>, walletAddre
     throw new Error(body.error || 'Failed to resolve personal kiosk')
   }
   return res.json()
+}
+
+function isPublishSyncBody(value: unknown): value is PublishSyncBody {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<PublishSyncBody>
+  return typeof candidate.txDigest === 'string'
+    && Array.isArray(candidate.tags)
+    && Array.isArray(candidate.previewImages)
+    && (candidate.readme === null || typeof candidate.readme === 'string')
+    && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'object')
+    && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'object')
+    && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'object')
+    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'object')
+}
+
+function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<PendingSealMaterial>
+  return candidate.version === 1
+    && typeof candidate.dek === 'string'
+    && typeof candidate.iv === 'string'
+    && typeof candidate.contentHash === 'string'
+    && typeof candidate.mimeType === 'string'
+    && typeof candidate.fileName === 'string'
+}
+
+function isOptionalPendingSealMaterial(value: unknown): value is PendingSealMaterial | null | undefined {
+  return value == null || isPendingSealMaterial(value)
+}
+
+function isPublishSyncMaterial(value: unknown): value is PublishSyncMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<PublishSyncMaterial>
+  return Array.isArray(candidate.tags)
+    && candidate.tags.every((tag) => typeof tag === 'string')
+    && Array.isArray(candidate.previewImages)
+    && candidate.previewImages.every((image) => typeof image === 'string')
+    && (candidate.readme == null || typeof candidate.readme === 'string')
+    && isOptionalPendingSealMaterial(candidate.sealMaterial)
+    && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
+    && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
+    && isOptionalPendingSealMaterial(candidate.assetsSealMaterial)
+}
+
+function buildPublishSyncMaterial(params: PublishParams): PublishSyncMaterial {
+  return {
+    tags: params.tags,
+    previewImages: params.previewImages,
+    readme: params.readme ?? null,
+    sealMaterial: params.sealMaterial ?? null,
+    memorySealMaterial: params.memorySealMaterial ?? null,
+    skillsSealMaterial: params.skillsSealMaterial ?? null,
+    assetsSealMaterial: params.assetsSealMaterial ?? null,
+  }
+}
+
+function persistMintRecovery(recovery: MintRecoveryState | null) {
+  if (typeof window === 'undefined') return
+  try {
+    if (recovery) {
+      sessionStorage.setItem(MINT_RECOVERY_KEY, JSON.stringify(recovery))
+    } else {
+      sessionStorage.removeItem(MINT_RECOVERY_KEY)
+    }
+  } catch {}
+}
+
+async function buildPublishSyncBody(params: {
+  txDigest: string
+  txResult: unknown
+  publishParams: PublishSyncMaterial
+  suiClient: unknown
+}): Promise<PublishSyncBody> {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
+  const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
+  const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
+  const initialAsset = tryExtractAssetVersionAppendedEvent(params.txResult as never, packageId)
+
+  const sealSidecar = params.publishParams.sealMaterial
+    ? await createSoulSealSidecarFromMaterial({
+        suiClient: params.suiClient as never,
+        packageId,
+        soulObjectId: minted.soulId,
+        material: params.publishParams.sealMaterial,
+      })
+    : null
+  const memorySealSidecar = params.publishParams.memorySealMaterial && foundingMemory
+    ? await createMemorySealSidecarFromMaterial({
+        suiClient: params.suiClient as never,
+        packageId,
+        memoryObjectId: foundingMemory.memoryId,
+        timestampKey: foundingMemory.timestampKey,
+        material: params.publishParams.memorySealMaterial,
+      })
+    : null
+  const skillsSealSidecar = params.publishParams.skillsSealMaterial && initialSkill
+    ? await createSkillSealSidecarFromMaterial({
+        suiClient: params.suiClient as never,
+        packageId,
+        skillsObjectId: initialSkill.skillsId,
+        skillName: initialSkill.skillName,
+        versionIndex: initialSkill.versionIndex,
+        material: params.publishParams.skillsSealMaterial,
+      })
+    : null
+  const assetsSealSidecar = params.publishParams.assetsSealMaterial && initialAsset
+    ? await createAssetSealSidecarFromMaterial({
+        suiClient: params.suiClient as never,
+        packageId,
+        assetsObjectId: initialAsset.assetsId,
+        assetName: initialAsset.assetName,
+        versionIndex: initialAsset.versionIndex,
+        material: params.publishParams.assetsSealMaterial,
+      })
+    : null
+
+  return {
+    txDigest: params.txDigest,
+    tags: normalizeTags(params.publishParams.tags),
+    previewImages: params.publishParams.previewImages,
+    readme: params.publishParams.readme ?? null,
+    sealSidecar,
+    memorySealSidecar,
+    skillsSealSidecar,
+    assetsSealSidecar,
+  }
 }
 
 export function usePublish() {
@@ -101,7 +266,8 @@ export function usePublish() {
         const raw = sessionStorage.getItem(MINT_RECOVERY_KEY)
         if (raw) {
           const recovery: MintRecoveryState = JSON.parse(raw)
-          if (recovery.txDigest && recovery.syncBody && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
+          const hasRecoverablePayload = isPublishSyncBody(recovery.syncBody) || isPublishSyncMaterial(recovery.pendingSync)
+          if (recovery.txDigest && hasRecoverablePayload && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
             recoveryRef.current = recovery
             setTxDigest(recovery.txDigest)
           } else {
@@ -162,35 +328,53 @@ export function usePublish() {
         digest = executedDigest
         setTxDigest(executedDigest)
 
-        // Persist recovery state before sync — survives page refresh to prevent duplicate mints
-        const syncBody = {
+        // Persist raw Seal material before calling Seal key servers. If sidecar
+        // creation fails, refresh can rebuild the sidecars without re-minting.
+        const pendingSync = buildPublishSyncMaterial(params)
+        const recovery: MintRecoveryState = attachSoulidityDeploymentSignature({
+          userId: user?.id ?? '',
           txDigest: executedDigest,
-          tags: normalizeTags(params.tags),
-          previewImages: params.previewImages,
-          readme: params.readme ?? null,
-          sealSidecar: params.sealSidecar ?? null,
-          memorySealSidecar: params.memorySealSidecar ?? null,
-          skillsSealSidecar: params.skillsSealSidecar ?? null,
-          assetsSealSidecar: params.assetsSealSidecar ?? null,
-        }
-        recoveryRef.current = attachSoulidityDeploymentSignature({ userId: user?.id ?? '', txDigest: executedDigest, syncBody })
-        try { sessionStorage.setItem(MINT_RECOVERY_KEY, JSON.stringify(recoveryRef.current)) } catch {}
+          pendingSync,
+          syncBody: null,
+        })
+        recoveryRef.current = recovery
+        persistMintRecovery(recovery)
+
+        const syncBody = await buildPublishSyncBody({
+          txDigest: executedDigest,
+          txResult: result,
+          publishParams: pendingSync,
+          suiClient,
+        })
+        recovery.syncBody = syncBody
+        recoveryRef.current = recovery
+        persistMintRecovery(recovery)
       }
 
       // Use recovered sync body when available (preserves original metadata after refresh),
       // otherwise build from caller params (same-tab retry with in-memory txDigest)
-      const syncBody = recoveryRef.current?.txDigest === digest
-        ? recoveryRef.current.syncBody
-        : {
-            txDigest: digest,
-            tags: normalizeTags(params.tags),
-            previewImages: params.previewImages,
-            readme: params.readme ?? null,
-            sealSidecar: params.sealSidecar ?? null,
-            memorySealSidecar: params.memorySealSidecar ?? null,
-            skillsSealSidecar: params.skillsSealSidecar ?? null,
-            assetsSealSidecar: params.assetsSealSidecar ?? null,
-          }
+      if (!digest) {
+        throw new Error('Publish transaction digest is missing')
+      }
+      const recovery = recoveryRef.current?.txDigest === digest ? recoveryRef.current : null
+      let syncBody = recovery?.syncBody ?? null
+      if (!syncBody) {
+        const pendingSync = recovery?.pendingSync ?? buildPublishSyncMaterial(params)
+        syncBody = await buildPublishSyncBody({
+          txDigest: digest,
+          txResult: await suiClient.getTransactionBlock({
+            digest,
+            options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
+          }),
+          publishParams: pendingSync,
+          suiClient,
+        })
+        if (recovery) {
+          recovery.syncBody = syncBody
+          recoveryRef.current = recovery
+          persistMintRecovery(recovery)
+        }
+      }
 
       setStatus('syncing')
       const syncRes = await fetch('/api/souls/publish', {
@@ -209,7 +393,7 @@ export function usePublish() {
 
       // Clear recovery state on successful sync
       recoveryRef.current = null
-      try { sessionStorage.removeItem(MINT_RECOVERY_KEY) } catch {}
+      persistMintRecovery(null)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Publish failed')
       setStatus('error')

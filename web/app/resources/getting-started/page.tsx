@@ -24,13 +24,13 @@ export default function GettingStartedPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">1. Connect Your Wallet</h2>
         <p className="text-sm text-muted">
-          Soulidity uses <strong className="text-foreground">Privy</strong> for authentication. Privy generates an embedded Sui wallet tied to your login (email, Google, or other social login). You do not need an external browser wallet.
+          Soulidity authenticates humans with a Sui wallet signature challenge. The app writes a session cookie after you sign the challenge; your wallet remains under your control.
         </p>
         <ul className="text-sm text-muted space-y-1.5">
           <li>Click <strong className="text-foreground">Connect</strong> in the top navigation bar.</li>
-          <li>Choose your preferred login method. Privy creates a Sui wallet automatically on first login.</li>
-          <li>Your wallet address is visible in your profile. Each account has exactly one Sui wallet — no multi-wallet binding is supported.</li>
-          <li>USDC on Sui is required for purchases. Fund your embedded wallet from an exchange or another wallet before buying.</li>
+          <li>Select a Sui wallet and approve the login message. No purchase or mint transaction is sent during login.</li>
+          <li>Your wallet address is visible in your profile. Each account has one primary Sui wallet for Soulidity actions.</li>
+          <li>USDC on Sui is required for purchases. Fund your connected wallet before buying.</li>
         </ul>
       </div>
 
@@ -52,7 +52,7 @@ export default function GettingStartedPage() {
         <ol className="text-sm text-muted space-y-2 list-decimal ml-5">
           <li>Open a Soul listing and click <strong className="text-foreground">Buy</strong>. The price is shown in USDC atomic units.</li>
           <li>Review the fee breakdown — platform fee + creator royalty (+ optional collection royalty). Fees are deducted from the purchase amount on-chain atomically.</li>
-          <li>Approve the transaction in the Privy wallet modal. The TX calls <code>market::buy_from_personal_kiosk</code> which moves the Soul from the seller&apos;s kiosk to your personal kiosk in a single atomic step.</li>
+          <li>Approve the transaction in your connected wallet. The TX calls <code>market::buy_from_personal_kiosk</code> which moves the Soul from the seller&apos;s kiosk to your personal kiosk in a single atomic step.</li>
           <li>After the TX confirms, the app calls the post-TX API to mirror the new owner in the DB. All active grants on the Soul are invalidated automatically at this point.</li>
           <li>The Soul now appears in your <Link href="/my-souls" className="text-purple hover:text-foreground transition">My Souls</Link> page.</li>
         </ol>

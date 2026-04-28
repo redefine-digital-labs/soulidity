@@ -94,7 +94,7 @@ export function E2EWalletHelpers() {
       getAuthHeaders: () => getAuthHeadersRef.current(),
       selectPaymentCoins: async (params: { totalAtomic: string | number | bigint; coinType?: string }) => {
         const owner = walletAddressRef.current
-        if (!owner) throw new Error('No Sui wallet found in Privy account')
+        if (!owner) throw new Error('No Sui wallet found for the current account')
         const totalAtomic = toAtomic(params.totalAtomic, 'totalAtomic')
         const coinType = params.coinType ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
         const selected = await selectCoinObjectIdsForAmountAcrossPages(suiClientRef.current, {
@@ -109,7 +109,7 @@ export function E2EWalletHelpers() {
       },
       purchaseContentAccess: async (params: E2EContentAccessPurchaseParams) => {
         const owner = walletAddressRef.current
-        if (!owner) throw new Error('No Sui wallet found in Privy account')
+        if (!owner) throw new Error('No Sui wallet found for the current account')
         const totalAtomic = resolveTotalAtomic(params)
         const paymentCoinObjectIds = params.paymentCoinObjectIds?.length
           ? params.paymentCoinObjectIds

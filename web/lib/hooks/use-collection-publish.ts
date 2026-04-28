@@ -12,28 +12,44 @@ import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import {
+  createAssetSealSidecarFromMaterial,
+  createMemorySealSidecarFromMaterial,
+  createSkillSealSidecarFromMaterial,
+  createSoulSealSidecarFromMaterial,
+  type PendingSealMaterial,
+} from '@/lib/upload/client-seal'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import type { SoulFolderMap } from '@/components/providers/create-collection-provider'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
 import { assertObjectInputsExist, findMissingObjectIds } from '@/lib/soulidity/object-inputs'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import {
+  extractSoulMintedToKioskEvent,
+  tryExtractAssetVersionAppendedEvent,
+  tryExtractMemoryEntryAppendedEvent,
+  tryExtractSkillVersionAppendedEvent,
+} from '@/lib/soulidity/events'
+import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 
 const RECOVERY_KEY = 'collection-mint-recovery'
 
-const RECOVERY_VERSION = 8 as const
+const RECOVERY_VERSION = 9 as const
 
 interface SoulUploadRecovery {
   protectedBlobObjectId: string
-  sealDekEnvelope: string
+  sealMaterial: PendingSealMaterial
   foundingMemoryBlobObjectId: string
-  memorySealDekEnvelope: string
+  memorySealMaterial: PendingSealMaterial
   skillsBlobObjectId: string | null
   initialSkillName: string | null
-  skillsSealDekEnvelope: string | null
+  skillsSealMaterial: PendingSealMaterial | null
   assetBlobObjectId: string | null
   assetVisibility: PersonaSpriteVisibility | null
-  assetsSealDekEnvelope: string | null
+  assetsSealMaterial: PendingSealMaterial | null
   spriteConfigJson: string | null
   spriteMoodMapJson: string | null
   imageUrl: string
@@ -95,6 +111,16 @@ interface PublishSyncResponse {
   stateOnChainId: string
   memoryOnChainId: string
   listingStatus: string
+}
+
+interface PublishSyncBody {
+  txDigest: string
+  tags: string[]
+  previewImages: string[]
+  sealSidecar: SealEnvelopeSidecar | null
+  memorySealSidecar: SealEnvelopeSidecar | null
+  skillsSealSidecar: SealEnvelopeSidecar | null
+  assetsSealSidecar: SealEnvelopeSidecar | null
 }
 
 /** Soul defined in the batch template — metadata only, files come from soulFolders */
@@ -240,6 +266,12 @@ async function uploadFile(
   file: File,
   type: 'public' | 'encrypted',
   headers: Record<string, string>,
+  wallet: {
+    walletAddress: string
+    suiClient: unknown
+    signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
+    confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
+  },
   sendObjectTo?: string,
 ) {
   return uploadSoulPayload({
@@ -248,6 +280,10 @@ async function uploadFile(
     kind: 'soul-content',
     authHeaders: headers,
     sendObjectTo: sendObjectTo ?? null,
+    walletAddress: wallet.walletAddress,
+    suiClient: wallet.suiClient,
+    signAndExecute: wallet.signAndExecute,
+    confirmQuote: wallet.confirmQuote,
   })
 }
 
@@ -265,6 +301,75 @@ function createMemorySeedFile(soul: BatchSoulToMint): File {
   return new File([blob], 'memory-seed.txt', { type: 'text/plain' })
 }
 
+async function buildSoulPublishSyncBody(params: {
+  txDigest: string
+  txResult: unknown
+  soul: BatchSoulToMint
+  uploads: SoulUploadRecovery
+  suiClient: unknown
+}): Promise<PublishSyncBody> {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
+  const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
+  const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
+  const initialAsset = tryExtractAssetVersionAppendedEvent(params.txResult as never, packageId)
+
+  if (!foundingMemory) {
+    throw new Error(`Soul "${params.soul.name}" mint transaction is missing the founding memory event`)
+  }
+  if (params.uploads.skillsSealMaterial && !initialSkill) {
+    throw new Error(`Soul "${params.soul.name}" mint transaction is missing the initial skill event`)
+  }
+  if (params.uploads.assetsSealMaterial && !initialAsset) {
+    throw new Error(`Soul "${params.soul.name}" mint transaction is missing the persona sprite asset event`)
+  }
+
+  const sealSidecar = await createSoulSealSidecarFromMaterial({
+    suiClient: params.suiClient as never,
+    packageId,
+    soulObjectId: minted.soulId,
+    material: params.uploads.sealMaterial,
+  })
+  const memorySealSidecar = await createMemorySealSidecarFromMaterial({
+    suiClient: params.suiClient as never,
+    packageId,
+    memoryObjectId: foundingMemory.memoryId,
+    timestampKey: foundingMemory.timestampKey,
+    material: params.uploads.memorySealMaterial,
+  })
+  const skillsSealSidecar = params.uploads.skillsSealMaterial && initialSkill
+    ? await createSkillSealSidecarFromMaterial({
+        suiClient: params.suiClient as never,
+        packageId,
+        skillsObjectId: initialSkill.skillsId,
+        skillName: initialSkill.skillName,
+        versionIndex: initialSkill.versionIndex,
+        material: params.uploads.skillsSealMaterial,
+      })
+    : null
+  const assetsSealSidecar = params.uploads.assetsSealMaterial && initialAsset
+    ? await createAssetSealSidecarFromMaterial({
+        suiClient: params.suiClient as never,
+        packageId,
+        assetsObjectId: initialAsset.assetsId,
+        assetName: initialAsset.assetName,
+        versionIndex: initialAsset.versionIndex,
+        material: params.uploads.assetsSealMaterial,
+      })
+    : null
+
+  const previewImageUrl = params.uploads.imageUrl.startsWith('http') ? params.uploads.imageUrl : ''
+  return {
+    txDigest: params.txDigest,
+    tags: params.soul.tags,
+    previewImages: previewImageUrl ? [previewImageUrl] : [],
+    sealSidecar,
+    memorySealSidecar,
+    skillsSealSidecar,
+    assetsSealSidecar,
+  }
+}
+
 export function useCollectionPublish(draftSignature?: string | null) {
   const suiClient = useSuiClient()
   const [status, setStatus] = useState<CollectionPublishStatus>('idle')
@@ -274,6 +379,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
   const [progress, setProgress] = useState<CollectionPublishProgress>({ totalSouls: 0, mintedSouls: 0, boundSouls: 0 })
   const { suiWallet, signAndExecute } = useWalletSign()
   const { getAuthHeaders, user } = useAuth()
+  const { requestUploadCostApproval } = useUploadCostReview()
   const recoveryRef = useRef<RecoveryState | null>(null)
   const uploadedImageUrlRef = useRef<string | null>(null)
   const setRecoveryState = (nextState: RecoveryState | null) => {
@@ -354,6 +460,12 @@ export function useCollectionPublish(draftSignature?: string | null) {
       setError(null)
       const authHeaders = await getAuthHeaders()
       const walletAddress = suiWallet.address
+      const walletUpload = {
+        walletAddress,
+        suiClient,
+        signAndExecute,
+        confirmQuote: requestUploadCostApproval,
+      }
       const currentDraftSignature = buildCollectionDraftSignature(params)
       const hydratedRecovery = recoveryRef.current
 
@@ -403,7 +515,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
             throw new Error('Missing cover image for collection recovery. Restart from Step 1.')
           }
           setStatus('uploading')
-          const uploaded = await uploadFile(params.coverImageFile, 'public', authHeaders)
+          const uploaded = await uploadFile(params.coverImageFile, 'public', authHeaders, walletUpload)
           imageUrl = uploaded.blobUrl
           uploadedImageUrlRef.current = imageUrl
           recovery.uploadedImageUrl = imageUrl
@@ -501,43 +613,43 @@ export function useCollectionPublish(draftSignature?: string | null) {
 
           // Character file — from folder's soul.md, fallback to auto-generated
           const charFile = folder?.characterFile ?? createCharacterFile(soul)
-          const charUpload = await uploadFile(charFile, 'encrypted', authHeaders, walletAddress)
+          const charUpload = await uploadFile(charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
           if (!charUpload.blobObjectId) {
             throw new Error(`Character file upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
           }
-          if (typeof charUpload.sealDekEnvelope !== 'string' || !charUpload.sealDekEnvelope.trim()) {
+          if (!charUpload.sealMaterial) {
             throw new Error(`Character file upload for Soul "${soul.name}" is missing Seal recovery data.`)
           }
 
           // Memory — from folder's memory.md, fallback to auto-generated
           const memFile = folder?.memoryFile ?? createMemorySeedFile(soul)
-          const memUpload = await uploadFile(memFile, 'encrypted', authHeaders, walletAddress)
+          const memUpload = await uploadFile(memFile, 'encrypted', authHeaders, walletUpload, walletAddress)
           if (!memUpload.blobObjectId) {
             throw new Error(`Memory upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
           }
-          if (typeof memUpload.sealDekEnvelope !== 'string' || !memUpload.sealDekEnvelope.trim()) {
+          if (!memUpload.sealMaterial) {
             throw new Error(`Memory upload for Soul "${soul.name}" is missing Seal recovery data.`)
           }
 
           let skillsBlobObjectId: string | null = null
           let initialSkillName: string | null = null
-          let skillsSealDekEnvelope: string | null = null
+          let skillsSealMaterial: PendingSealMaterial | null = null
           if (folder?.skillsFile) {
-            const skillsUpload = await uploadFile(folder.skillsFile, 'encrypted', authHeaders, walletAddress)
+            const skillsUpload = await uploadFile(folder.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
             if (!skillsUpload.blobObjectId) {
               throw new Error(`Skills bundle upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
             }
-            if (typeof skillsUpload.sealDekEnvelope !== 'string' || !skillsUpload.sealDekEnvelope.trim()) {
+            if (!skillsUpload.sealMaterial) {
               throw new Error(`Skills bundle upload for Soul "${soul.name}" is missing Seal recovery data.`)
             }
             skillsBlobObjectId = skillsUpload.blobObjectId
             initialSkillName = typeof skillsUpload.skillName === 'string' ? skillsUpload.skillName : null
-            skillsSealDekEnvelope = skillsUpload.sealDekEnvelope
+            skillsSealMaterial = skillsUpload.sealMaterial
           }
 
           let assetBlobObjectId: string | null = null
           let assetVisibility: PersonaSpriteVisibility | null = null
-          let assetsSealDekEnvelope: string | null = null
+          let assetsSealMaterial: PendingSealMaterial | null = null
           let spriteConfigJson: string | null = null
           let spriteMoodMapJson: string | null = null
           const spriteValidation = await validatePersonaSpriteDraft({
@@ -553,18 +665,19 @@ export function useCollectionPublish(draftSignature?: string | null) {
               folder.spriteSheetFile,
               visibility === 'public' ? 'public' : 'encrypted',
               authHeaders,
+              walletUpload,
               walletAddress,
             )
             if (!spriteUpload.blobObjectId) {
               throw new Error(`Persona sprite upload for Soul "${soul.name}" is missing blobObjectId.`)
             }
-            if (visibility === 'private' && (typeof spriteUpload.sealDekEnvelope !== 'string' || !spriteUpload.sealDekEnvelope.trim())) {
+            if (visibility === 'private' && !spriteUpload.sealMaterial) {
               throw new Error(`Persona sprite upload for Soul "${soul.name}" is missing Seal recovery data.`)
             }
 
             assetBlobObjectId = spriteUpload.blobObjectId
             assetVisibility = visibility
-            assetsSealDekEnvelope = typeof spriteUpload.sealDekEnvelope === 'string' ? spriteUpload.sealDekEnvelope : null
+            assetsSealMaterial = spriteUpload.sealMaterial ?? null
             spriteConfigJson = JSON.stringify({
               frameWidth: spriteValidation.config.frameWidth,
               frameHeight: spriteValidation.config.frameHeight,
@@ -577,21 +690,21 @@ export function useCollectionPublish(draftSignature?: string | null) {
           // Image — from folder's image file, fallback to collection cover URL
           let resolvedImageUrl = fallbackImageUrl
           if (folder?.imageFile) {
-            const imgUpload = await uploadFile(folder.imageFile, 'public', authHeaders)
+            const imgUpload = await uploadFile(folder.imageFile, 'public', authHeaders, walletUpload)
             resolvedImageUrl = imgUpload.blobUrl
           }
 
           soulState.uploads = {
             protectedBlobObjectId: charUpload.blobObjectId,
-            sealDekEnvelope: charUpload.sealDekEnvelope,
+            sealMaterial: charUpload.sealMaterial,
             foundingMemoryBlobObjectId: memUpload.blobObjectId,
-            memorySealDekEnvelope: memUpload.sealDekEnvelope,
+            memorySealMaterial: memUpload.sealMaterial,
             skillsBlobObjectId,
             initialSkillName,
-            skillsSealDekEnvelope,
+            skillsSealMaterial,
             assetBlobObjectId,
             assetVisibility,
-            assetsSealDekEnvelope,
+            assetsSealMaterial,
             spriteConfigJson,
             spriteMoodMapJson,
             imageUrl: resolvedImageUrl,
@@ -618,6 +731,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
 
           // Build + sign mint TX (skip if we already have a digest from a previous attempt)
           let mintDigest = soulState.mintDigest
+          let mintTxResult: unknown | null = null
           if (!mintDigest) {
             await assertObjectInputsExist(suiClient, {
               'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
@@ -652,26 +766,34 @@ export function useCollectionPublish(draftSignature?: string | null) {
             })
             const mintResult = await signAndExecute(mintTx)
             mintDigest = mintResult.digest
+            mintTxResult = mintResult
 
             // Persist digest to recovery BEFORE sync — prevents duplicate mint on retry
             soulState.mintDigest = mintDigest
             setRecoveryState({ ...recovery, souls: [...recovery.souls] })
           }
+          if (!mintDigest) {
+            throw new Error(`Soul "${soul.name}" mint transaction digest is missing`)
+          }
+          if (!mintTxResult) {
+            mintTxResult = await suiClient.getTransactionBlock({
+              digest: mintDigest,
+              options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
+            })
+          }
 
           // Mirror publish (uses stored or fresh digest)
-          const previewImageUrl = soulState.uploads.imageUrl.startsWith('http') ? soulState.uploads.imageUrl : ''
+          const syncBody = await buildSoulPublishSyncBody({
+            txDigest: mintDigest,
+            txResult: mintTxResult,
+            soul,
+            uploads: soulState.uploads,
+            suiClient,
+          })
           const publishRes = await fetch('/api/souls/publish', {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              txDigest: mintDigest,
-              tags: soul.tags,
-              previewImages: previewImageUrl ? [previewImageUrl] : [],
-              sealSidecar: soulState.uploads.sealDekEnvelope,
-              memorySealSidecar: soulState.uploads.memorySealDekEnvelope,
-              skillsSealSidecar: soulState.uploads.skillsSealDekEnvelope,
-              assetsSealSidecar: soulState.uploads.assetsSealDekEnvelope,
-            }),
+            body: JSON.stringify(syncBody),
           })
           if (!publishRes.ok) {
             const body = await publishRes.json().catch(() => ({}))

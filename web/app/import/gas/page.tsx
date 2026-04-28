@@ -17,6 +17,9 @@ import {
 import { useImport } from '@/lib/hooks/use-import'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import type { PendingSealMaterial } from '@/lib/upload/client-seal'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -88,26 +91,36 @@ interface UploadedPublicResult {
 }
 
 interface UploadedEncryptedResult extends UploadedPublicResult {
-  sealDekEnvelope: string
+  sealMaterial: PendingSealMaterial
   skillName?: string | null
+}
+
+interface WalletUploadContext {
+  walletAddress: string
+  suiClient: unknown
+  signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
+  confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
 }
 
 async function uploadFile(
   file: File,
   type: 'public',
   headers: Record<string, string>,
+  wallet: WalletUploadContext,
   sendObjectTo?: string,
 ): Promise<UploadedPublicResult>
 async function uploadFile(
   file: File,
   type: 'encrypted',
   headers: Record<string, string>,
+  wallet: WalletUploadContext,
   sendObjectTo?: string,
 ): Promise<UploadedEncryptedResult>
 async function uploadFile(
   file: File,
   type: 'public' | 'encrypted',
   headers: Record<string, string>,
+  wallet: WalletUploadContext,
   sendObjectTo?: string,
 ): Promise<UploadedPublicResult | UploadedEncryptedResult> {
   const result = await uploadSoulPayload({
@@ -116,17 +129,21 @@ async function uploadFile(
     kind: 'soul-content',
     authHeaders: headers,
     sendObjectTo: sendObjectTo ?? null,
+    walletAddress: wallet.walletAddress,
+    suiClient: wallet.suiClient,
+    signAndExecute: wallet.signAndExecute,
+    confirmQuote: wallet.confirmQuote,
   })
   if (type === 'encrypted') {
-    if (!result.sealDekEnvelope) {
-      throw new Error('Encrypted upload response is missing sealDekEnvelope')
+    if (!result.sealMaterial) {
+      throw new Error('Encrypted upload response is missing Seal material')
     }
     return {
       blobId: result.blobId,
       blobObjectId: result.blobObjectId,
       contentHash: result.contentHash,
       blobUrl: result.blobUrl,
-      sealDekEnvelope: result.sealDekEnvelope,
+      sealMaterial: result.sealMaterial,
       skillName: result.skillName ?? null,
     }
   }
@@ -161,6 +178,8 @@ export default function ImportGasPage() {
   const ctx = useImportSoul()
   const { setImportResult } = ctx
   const { status, error, txDigest, importData, importSoul, suiWallet } = useImport()
+  const { signAndExecute } = useWalletSign()
+  const { requestUploadCostApproval } = useUploadCostReview()
   const { getAuthHeaders, user } = useAuth()
   const importSoulRef = useRef(importSoul)
   const getAuthHeadersRef = useRef(getAuthHeaders)
@@ -217,6 +236,12 @@ export default function ImportGasPage() {
 
     try {
       const authHeaders = await getAuthHeaders()
+      const walletUpload = {
+        walletAddress,
+        suiClient,
+        signAndExecute,
+        confirmQuote: requestUploadCostApproval,
+      }
       const results: UploadResults = selectReusableUploadResults(ctx.uploadResults, walletAddress)
       const missingCachedObjectIds = new Set(await findMissingObjectIds(suiClient, [
         results.charFile?.blobObjectId,
@@ -248,43 +273,43 @@ export default function ImportGasPage() {
       // 1. Upload cover image
       if (!results.coverImage) {
         setUploadPhase('uploading-cover')
-        results.coverImage = await uploadFile(ctx.coverImageFile, 'public', authHeaders)
+        results.coverImage = await uploadFile(ctx.coverImageFile, 'public', authHeaders, walletUpload)
       }
 
       // 2. Upload character file (encrypted)
       if (!results.charFile) {
         setUploadPhase('uploading-character')
-        results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletAddress)
+        results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       // 3. Upload memory (encrypted)
       if (!results.memorySeed) {
         setUploadPhase('uploading-memory')
-        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletAddress)
+        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       // 4. Upload skills file (encrypted, optional)
       if (ctx.skillsFile && !results.skillsFile) {
         setUploadPhase('uploading-skills')
-        results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletAddress)
+        results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       if (ctx.spriteSheetFile && spriteValidation.config && !results.spriteSheet) {
         setUploadPhase('uploading-sprite')
         results.spriteSheet = ctx.spriteVisibility === 'public'
-          ? await uploadFile(ctx.spriteSheetFile, 'public', authHeaders, walletAddress)
-          : await uploadFile(ctx.spriteSheetFile, 'encrypted', authHeaders, walletAddress)
+          ? await uploadFile(ctx.spriteSheetFile, 'public', authHeaders, walletUpload, walletAddress)
+          : await uploadFile(ctx.spriteSheetFile, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       ctx.setUploadResults(results)
       setUploadPhase('done')
 
       if (process.env.NODE_ENV === 'development') {
-        ;(window as any).__e2eLastRawEnvelope = {
-          char: results.charFile?.sealDekEnvelope ?? null,
-          memory: results.memorySeed?.sealDekEnvelope ?? null,
-          skills: results.skillsFile?.sealDekEnvelope ?? null,
-          sprite: results.spriteSheet?.sealDekEnvelope ?? null,
+        ;(window as any).__e2eLastSealMaterial = {
+          char: results.charFile?.sealMaterial ?? null,
+          memory: results.memorySeed?.sealMaterial ?? null,
+          skills: results.skillsFile?.sealMaterial ?? null,
+          sprite: results.spriteSheet?.sealMaterial ?? null,
         }
       }
 
@@ -300,7 +325,7 @@ export default function ImportGasPage() {
       if (!results.memorySeed.blobObjectId) {
         throw new Error('Memory already exists on Walrus. Please modify your memory file slightly and retry.')
       }
-      if (typeof results.memorySeed.sealDekEnvelope !== 'string' || !results.memorySeed.sealDekEnvelope.trim()) {
+      if (!results.memorySeed.sealMaterial) {
         throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
       }
       if (results.skillsFile && !results.skillsFile.blobObjectId) {
@@ -309,7 +334,7 @@ export default function ImportGasPage() {
       if (results.spriteSheet && !results.spriteSheet.blobObjectId) {
         throw new Error('Persona sprite upload was deduplicated by Walrus. Please modify your sprite sheet slightly and retry.')
       }
-      if (ctx.spriteVisibility === 'private' && results.spriteSheet && (typeof results.spriteSheet.sealDekEnvelope !== 'string' || !results.spriteSheet.sealDekEnvelope.trim())) {
+      if (ctx.spriteVisibility === 'private' && results.spriteSheet && !results.spriteSheet.sealMaterial) {
         throw new Error('Persona sprite upload is missing Seal recovery data. Please retry.')
       }
 
@@ -343,10 +368,10 @@ export default function ImportGasPage() {
           : null,
         originRef: ctx.originRef,
         creatorRoyaltyBps: ctx.royalty,
-        sealSidecar: results.charFile.sealDekEnvelope ?? null,
-        memorySealSidecar: results.memorySeed.sealDekEnvelope ?? null,
-        skillsSealSidecar: results.skillsFile?.sealDekEnvelope ?? null,
-        assetsSealSidecar: results.spriteSheet?.sealDekEnvelope ?? null,
+        sealMaterial: results.charFile.sealMaterial ?? null,
+        memorySealMaterial: results.memorySeed.sealMaterial ?? null,
+        skillsSealMaterial: results.skillsFile?.sealMaterial ?? null,
+        assetsSealMaterial: results.spriteSheet?.sealMaterial ?? null,
       })
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : 'Deploy failed')

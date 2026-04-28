@@ -14,6 +14,8 @@ import { buildUpdateCollectionListingPriceTx } from '@/lib/soulidity/tx/update-c
 import { selectCoinObjectIdsForAmountAcrossPages } from '@/lib/soulidity/coin-selection'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
+import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 
 export type CreateCollectionStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
 
@@ -74,6 +76,7 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
   const [txDigest, setTxDigest] = useState<string | null>(null)
   const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
+  const { requestUploadCostApproval } = useUploadCostReview()
 
   async function buyCollection() {
     if (!collection || !suiWallet || !collection.quote?.totalAtomic || !collection.listingObjectOnChainId) {
@@ -201,19 +204,17 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
       // Upload image to Walrus during the building phase (before TX / gas)
       let resolvedImageUrl = params.imageUrl
       if (params.imageFile) {
-        const formData = new FormData()
-        formData.append('file', params.imageFile)
-        const uploadRes = await fetch('/api/collections/upload-image', {
-          method: 'POST',
-          headers: authHeaders,
-          body: formData,
+        const uploadResult = await uploadSoulPayload({
+          file: params.imageFile,
+          uploadType: 'public',
+          kind: 'soul-content',
+          authHeaders,
+          walletAddress: suiWallet.address,
+          suiClient,
+          signAndExecute,
+          confirmQuote: requestUploadCostApproval,
         })
-        if (!uploadRes.ok) {
-          const uploadBody = await uploadRes.json().catch(() => ({}))
-          throw new Error(uploadBody.error || 'Cover image upload failed')
-        }
-        const uploadResult = await uploadRes.json()
-        resolvedImageUrl = uploadResult.imageUrl
+        resolvedImageUrl = uploadResult.blobUrl
       }
 
       const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)

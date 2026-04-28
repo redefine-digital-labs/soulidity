@@ -5,6 +5,7 @@ import { takeRateLimitToken } from '@/lib/rate-limit'
 import { extractAssetVersionAppendedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
+import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { upsertAssetVersionProjection } from '@/lib/soulidity/mirror/upsert-asset'
@@ -104,11 +105,11 @@ export async function POST(
       return NextResponse.json({ error: 'Transaction appended an asset version for a different Soul' }, { status: 422 })
     }
 
-    const rawAssetsEnvelope = typeof body?.rawAssetsEnvelope === 'string' ? body.rawAssetsEnvelope : null
+    const providedAssetsSidecar = parseProvidedSidecar(body?.assetsSealSidecar ?? body?.sealSidecar, 'assetsSealSidecar')
 
-    if (appended.visibility === 'private' && !rawAssetsEnvelope) {
+    if (appended.visibility === 'private' && !providedAssetsSidecar) {
       return NextResponse.json(
-        { error: 'rawAssetsEnvelope is required for private asset versions' },
+        { error: 'assetsSealSidecar is required for private asset versions' },
         { status: 422 },
       )
     }
@@ -134,7 +135,7 @@ export async function POST(
         packageId,
         soulObjectId: soul.onChainId,
         stateObjectId: soul.stateOnChainId,
-        rawAssetsEnvelope,
+        assetsSidecar: providedAssetsSidecar,
         assetBinding: {
           assetsObjectId: appended.assetsId,
           assetName: appended.assetName,
@@ -185,6 +186,9 @@ export async function POST(
 
     return NextResponse.json(responseBody)
   } catch (error) {
+    if (error instanceof SealSidecarRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error('[soul-assets] Failed to mirror Soulidity assets append transaction', {
       memberId: auth.identity.memberId,
       txDigest,

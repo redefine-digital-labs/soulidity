@@ -3,6 +3,7 @@ import { takeRateLimitToken } from '@/lib/rate-limit'
 import { extractMemoryEntryAppendedEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
+import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
 import { upsertMemoryEntryProjection } from '@/lib/soulidity/mirror/upsert-memory'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
@@ -52,7 +53,15 @@ export async function POST(
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  const rawMemoryEnvelope = typeof body?.rawMemoryEnvelope === 'string' ? body.rawMemoryEnvelope : null
+  let providedMemorySidecar = null
+  try {
+    providedMemorySidecar = parseProvidedSidecar(body?.memorySealSidecar ?? body?.sealSidecar, 'memorySealSidecar')
+  } catch (error) {
+    if (error instanceof SealSidecarRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+    throw error
+  }
 
   try {
     await waitForTransactionBestEffort(txDigest)
@@ -74,7 +83,7 @@ export async function POST(
         packageId,
         soulObjectId: soul.onChainId,
         stateObjectId: soul.stateOnChainId,
-        rawMemoryEnvelope,
+        memorySidecar: providedMemorySidecar,
         memoryBinding: {
           memoryObjectId: appended.memoryId,
           timestampKey: appended.timestampKey,
@@ -113,6 +122,9 @@ export async function POST(
 
     return NextResponse.json(responseBody)
   } catch (error) {
+    if (error instanceof SealSidecarRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error('[soul-memory] Failed to mirror Soulidity memory append transaction', {
       memberId: auth.identity.memberId,
       txDigest,

@@ -7,6 +7,9 @@ import { useAuth, type AuthUser } from '@/components/providers/auth-provider'
 import { Button } from '@/components/ui/button'
 import { CoverImagePicker } from '@/components/ui/cover-image-picker'
 import { useUpdateProfile } from '@/lib/hooks/use-profile'
+import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
+import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -18,6 +21,8 @@ type WalletStatus = 'idle' | 'syncing' | 'success' | 'error'
 function ProfileForm({ user }: { user: AuthUser }) {
   const { status, error, updateProfile } = useUpdateProfile()
   const { getAuthHeaders, refresh } = useAuth()
+  const { suiWallet, suiClient, signAndExecute } = useWalletSign()
+  const { requestUploadCostApproval } = useUploadCostReview()
 
   const [displayName, setDisplayName] = useState(() => user.displayName ?? user.tgName ?? '')
   const [handle, setHandle] = useState(() => user.handle ?? '')
@@ -28,6 +33,7 @@ function ProfileForm({ user }: { user: AuthUser }) {
   const [walletAddress, setWalletAddress] = useState<string | null>(() => user.primarySuiAddress)
   const [walletStatus, setWalletStatus] = useState<WalletStatus>('idle')
   const [walletError, setWalletError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const coverPreviewObjectUrlRef = useRef<string | null>(null)
   const [coverImageFile, setCoverImageFileRaw] = useState<File | null>(null)
@@ -61,24 +67,23 @@ function ProfileForm({ user }: { user: AuthUser }) {
 
   const uploadCoverImage = useCallback(async () => {
     if (!coverImageFile) return coverImagePreviewUrl
-
-    const headers = await getAuthHeaders()
-    const formData = new FormData()
-    formData.append('file', coverImageFile)
-
-    const response = await fetch('/api/profile/cover', {
-      method: 'POST',
-      headers,
-      body: formData,
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.error || `Cover upload failed: ${response.status}`)
+    if (!suiWallet) {
+      throw new Error('Connect a Sui wallet before uploading a profile cover')
     }
 
-    const data = await response.json() as { blobUrl: string }
-    return data.blobUrl
-  }, [coverImageFile, coverImagePreviewUrl, getAuthHeaders])
+    const headers = await getAuthHeaders()
+    const upload = await uploadSoulPayload({
+      file: coverImageFile,
+      uploadType: 'public',
+      kind: 'soul-content',
+      authHeaders: headers,
+      walletAddress: suiWallet.address,
+      suiClient,
+      signAndExecute,
+      confirmQuote: requestUploadCostApproval,
+    })
+    return upload.blobUrl
+  }, [coverImageFile, coverImagePreviewUrl, getAuthHeaders, requestUploadCostApproval, signAndExecute, suiClient, suiWallet])
 
   const handleSyncWallet = useCallback(async () => {
     setWalletStatus('syncing')
@@ -106,6 +111,7 @@ function ProfileForm({ user }: { user: AuthUser }) {
   }, [getAuthHeaders, refresh])
 
   async function handleSave() {
+    setSaveError(null)
     try {
       const nextCoverImageUrl = await uploadCoverImage()
       const savedProfile = await updateProfile({
@@ -124,8 +130,8 @@ function ProfileForm({ user }: { user: AuthUser }) {
       }
       setCoverImageFileRaw(null)
       setCoverImagePreviewUrl(savedProfile.coverImage ?? nextCoverImageUrl ?? null)
-    } catch {
-      /* error set in hook */
+    } catch (saveFailure) {
+      setSaveError(saveFailure instanceof Error ? saveFailure.message : 'Profile update failed')
     }
   }
 
@@ -162,7 +168,7 @@ function ProfileForm({ user }: { user: AuthUser }) {
           <div>
             <h2 className="text-sm font-bold text-foreground">Sui Wallet</h2>
             <p className="text-xs text-muted mt-1">
-              Your public profile and Soulidity actions use the wallet provisioned through Privy.
+              Your public profile and Soulidity actions use your connected Sui wallet.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => void handleSyncWallet()} disabled={isSyncingWallet}>
@@ -258,9 +264,9 @@ function ProfileForm({ user }: { user: AuthUser }) {
           <p className="text-xs font-semibold text-teal">Profile saved successfully</p>
         </div>
       )}
-      {error && (
+      {(error || saveError) && (
         <div className="mb-4 rounded-lg border border-danger/30 bg-danger/8 px-4 py-2.5">
-          <p className="text-xs font-semibold text-danger">{error}</p>
+          <p className="text-xs font-semibold text-danger">{error || saveError}</p>
         </div>
       )}
 

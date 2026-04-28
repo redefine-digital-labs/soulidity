@@ -974,43 +974,6 @@ ipcMain.handle('desktop:create-draft:pick-cover-image', async () => {
   }
 })
 
-// ── Desktop Create + Mint Proxy ──────────────────────────
-ipcMain.handle('desktop:create:upload', async (_event, params: {
-  bytes: Uint8Array
-  fileName: string
-  mimeType: string
-  uploadType: 'public' | 'encrypted'
-  sendObjectTo?: string | null
-}) => {
-  const formData = new FormData()
-  formData.append('file', new File([params.bytes], params.fileName, { type: params.mimeType }))
-  formData.append('type', params.uploadType)
-  if (params.sendObjectTo?.trim()) {
-    formData.append('sendObjectTo', params.sendObjectTo.trim())
-  }
-
-  return fetchDesktopJson('/api/souls/upload', {
-    method: 'POST',
-    body: formData,
-  }, 'Upload desktop soul asset')
-})
-ipcMain.handle('desktop:create:personal-kiosk', async (_event, params: {
-  walletAddress?: string | null
-}) => {
-  const walletAddress = params.walletAddress?.trim()
-  const query = walletAddress
-    ? `?walletAddress=${encodeURIComponent(walletAddress)}`
-    : ''
-  return fetchDesktopJson(`/api/souls/personal-kiosk${query}`, {}, 'Fetch desktop personal kiosk')
-})
-ipcMain.handle('desktop:create:publish', async (_event, payload: Record<string, unknown>) => {
-  return fetchDesktopJson('/api/souls/publish', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }, 'Publish desktop soul')
-})
-
 // ── Soul Download + Active Persona ──────────────────────
 ipcMain.handle('soul:download', async (_event, params: { catalogId: string }) => {
   const token = loadDesktopToken()

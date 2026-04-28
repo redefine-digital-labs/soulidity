@@ -24,7 +24,7 @@ async function waitForTransactionBestEffort(
 
 /**
  * Sui wallet signing surface backed by @mysten/dapp-kit. Replaces the legacy
- * Privy embedded-wallet hook. Callers see the same shape as before:
+ * embedded-wallet hook. Callers see the same shape as before:
  * `{ suiWallet, signAndExecute, signPersonalMessage, suiClient }`.
  */
 export function useWalletSign() {

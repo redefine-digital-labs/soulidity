@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 
-const EFFECTIVE_DATE = '2026-04-21'
+const EFFECTIVE_DATE = '2026-04-28'
 const title = 'Privacy Policy'
 const description =
   'How Soulidity collects, stores, and uses data across the web, on-chain, and desktop surfaces.'
@@ -46,9 +46,10 @@ export default function PrivacyPage() {
           <h2 className="mb-2 text-base font-bold">2. Data We Collect</h2>
           <ul className="list-disc space-y-2 pl-5 text-muted">
             <li>
-              <strong className="text-foreground">Identity</strong> — Privy DID,
-              Telegram user ID and name, email, Sui wallet address, and agent API
-              keys, collected when you authenticate.
+              <strong className="text-foreground">Identity</strong> — Sui wallet
+              address, wallet login challenge records, Telegram user ID and name
+              where applicable, desktop access tokens, and agent API keys,
+              collected when you authenticate.
             </li>
             <li>
               <strong className="text-foreground">On-chain mirrors</strong> — Soul,
@@ -100,12 +101,11 @@ export default function PrivacyPage() {
         <section>
           <h2 className="mb-2 text-base font-bold">5. Third-Party Services</h2>
           <ul className="list-disc space-y-1 pl-5 text-muted">
-            <li><strong className="text-foreground">Privy</strong> — identity and wallet provisioning.</li>
             <li><strong className="text-foreground">Supabase</strong> — managed PostgreSQL hosting.</li>
             <li><strong className="text-foreground">Sui</strong> — on-chain state and RPC.</li>
             <li><strong className="text-foreground">Walrus</strong> — encrypted content storage.</li>
             <li><strong className="text-foreground">Seal</strong> — access-control and key distribution.</li>
-            <li><strong className="text-foreground">Telegram</strong> — community bot and session login.</li>
+            <li><strong className="text-foreground">Telegram</strong> — community bot surfaces.</li>
             <li><strong className="text-foreground">Vercel</strong> — web hosting and, if enabled, analytics.</li>
           </ul>
           <p className="mt-2 text-muted">

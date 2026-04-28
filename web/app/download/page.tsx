@@ -95,7 +95,7 @@ const requirements = [
   { label: 'macOS', value: '13 Ventura or later' },
   { label: 'Architecture', value: 'Apple Silicon (M-series)' },
   { label: 'Disk space', value: '~80 MB installed' },
-  { label: 'Account', value: 'Privy-linked Soulidity account' },
+  { label: 'Account', value: 'Wallet-linked Soulidity account' },
 ]
 
 export default async function DownloadPage() {

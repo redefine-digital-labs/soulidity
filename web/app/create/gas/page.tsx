@@ -12,7 +12,9 @@ import { useToast } from '@/components/ui/toast'
 import { usePublish, type PublishParams } from '@/lib/hooks/use-publish'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
+import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -92,26 +94,36 @@ interface UploadedPublicResult {
 }
 
 interface UploadedEncryptedResult extends UploadedPublicResult {
-  sealDekEnvelope: string
+  sealMaterial: PendingSealMaterial
   skillName?: string | null
+}
+
+interface WalletUploadContext {
+  walletAddress: string
+  suiClient: unknown
+  signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
+  confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
 }
 
 async function uploadFile(
   file: File,
   type: 'public',
   headers: Record<string, string>,
+  wallet: WalletUploadContext,
   sendObjectTo?: string,
 ): Promise<UploadedPublicResult>
 async function uploadFile(
   file: File,
   type: 'encrypted',
   headers: Record<string, string>,
+  wallet: WalletUploadContext,
   sendObjectTo?: string,
 ): Promise<UploadedEncryptedResult>
 async function uploadFile(
   file: File,
   type: 'public' | 'encrypted',
   headers: Record<string, string>,
+  wallet: WalletUploadContext,
   sendObjectTo?: string,
 ): Promise<UploadedPublicResult | UploadedEncryptedResult> {
   const result = await uploadSoulPayload({
@@ -120,17 +132,21 @@ async function uploadFile(
     kind: 'soul-content',
     authHeaders: headers,
     sendObjectTo: sendObjectTo ?? null,
+    walletAddress: wallet.walletAddress,
+    suiClient: wallet.suiClient,
+    signAndExecute: wallet.signAndExecute,
+    confirmQuote: wallet.confirmQuote,
   })
   if (type === 'encrypted') {
-    if (!result.sealDekEnvelope) {
-      throw new Error('Encrypted upload response is missing sealDekEnvelope')
+    if (!result.sealMaterial) {
+      throw new Error('Encrypted upload response is missing Seal material')
     }
     return {
       blobId: result.blobId,
       blobObjectId: result.blobObjectId,
       contentHash: result.contentHash,
       blobUrl: result.blobUrl,
-      sealDekEnvelope: result.sealDekEnvelope,
+      sealMaterial: result.sealMaterial,
       skillName: result.skillName ?? null,
     }
   }
@@ -164,13 +180,20 @@ export default function CreateGasPage() {
   const { getAuthHeaders, user } = useAuth()
   const { showToast } = useToast()
   const { signAndExecute } = useWalletSign()
+  const { requestUploadCostApproval } = useUploadCostReview()
   const publishRef = useRef(publish)
   const getAuthHeadersRef = useRef(getAuthHeaders)
   const signAndExecuteRef = useRef(signAndExecute)
+  const suiClientRef = useRef(suiClient)
+  const walletRef = useRef(suiWallet)
+  const requestUploadCostApprovalRef = useRef(requestUploadCostApproval)
   useEffect(() => {
     publishRef.current = publish
     getAuthHeadersRef.current = getAuthHeaders
     signAndExecuteRef.current = signAndExecute
+    suiClientRef.current = suiClient
+    walletRef.current = suiWallet
+    requestUploadCostApprovalRef.current = requestUploadCostApproval
   })
 
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
@@ -219,23 +242,30 @@ export default function CreateGasPage() {
     }
   }, [status, error, showToast])
 
-  // Expose publish + authenticated upload + list for E2E testing
+  // Expose publish + authenticated upload + list for E2E testing.
+  // Gated to development so the helpers (notably __e2eUpload, which auto-approves
+  // wallet-paid Walrus quotes) cannot be invoked from production pages.
   useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return
     const w = window as any
     w.__e2ePublish = (params: PublishParams) => publishRef.current(params)
     w.__e2eUpload = async (fileContent: string, fileName: string, type: 'public' | 'encrypted' = 'encrypted') => {
       const headers = await getAuthHeadersRef.current()
       const blob = new Blob([fileContent], { type: 'text/markdown' })
       const file = new File([blob], fileName, { type: 'text/markdown' })
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('type', type)
-      const res = await fetch('/api/souls/upload', { method: 'POST', headers, body: formData })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || `Upload failed: ${res.status}`)
+      const wallet = walletRef.current
+      if (!wallet) {
+        throw new Error('Connect a Sui wallet before uploading')
       }
-      return res.json()
+      const walletUpload = {
+        walletAddress: wallet.address,
+        suiClient: suiClientRef.current,
+        signAndExecute: signAndExecuteRef.current,
+        confirmQuote: async () => true,
+      }
+      return type === 'public'
+        ? uploadFile(file, 'public', headers, walletUpload)
+        : uploadFile(file, 'encrypted', headers, walletUpload)
     }
     w.__e2eListSoul = async (params: {
       currentKioskId: string; currentKioskCapOnChainId: string;
@@ -292,7 +322,7 @@ export default function CreateGasPage() {
     return () => {
       delete w.__e2ePublish; delete w.__e2eUpload; delete w.__e2eListSoul
       delete w.__e2eGetAuthHeaders; delete w.__e2eIssueGrant; delete w.__e2eRevokeGrant
-      delete w.__e2eLastRawEnvelope
+      delete w.__e2eLastSealMaterial
     }
   }, [])
 
@@ -305,6 +335,12 @@ export default function CreateGasPage() {
 
     try {
       const authHeaders = await getAuthHeaders()
+      const walletUpload = {
+        walletAddress,
+        suiClient,
+        signAndExecute,
+        confirmQuote: requestUploadCostApproval,
+      }
       const results: UploadResults = selectReusableUploadResults(ctx.uploadResults, walletAddress)
       const missingCachedObjectIds = new Set(await findMissingObjectIds(suiClient, [
         results.charFile?.blobObjectId,
@@ -336,45 +372,45 @@ export default function CreateGasPage() {
       // 1. Upload cover image (public, no sendObjectTo — only used as URL, not TX object)
       if (!results.coverImage) {
         setUploadPhase('uploading-cover')
-        results.coverImage = await uploadFile(ctx.coverImageFile, 'public', authHeaders)
+        results.coverImage = await uploadFile(ctx.coverImageFile, 'public', authHeaders, walletUpload)
       }
 
       // 2. Upload character file (encrypted) — Blob object referenced in TX, must be owned by signer
       if (!results.charFile) {
         setUploadPhase('uploading-character')
-        results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletAddress)
+        results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       // 3. Upload memory (encrypted) — Blob object referenced in TX, must be owned by signer
       if (!results.memorySeed) {
         setUploadPhase('uploading-memory')
-        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletAddress)
+        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       // 4. Upload skills file (encrypted, optional) — Blob object referenced in TX, must be owned by signer
       if (ctx.skillsFile && !results.skillsFile) {
         setUploadPhase('uploading-skills')
-        results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletAddress)
+        results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       if (ctx.spriteSheetFile && spriteValidation.config && !results.spriteSheet) {
         setUploadPhase('uploading-sprite')
         results.spriteSheet = ctx.spriteVisibility === 'public'
-          ? await uploadFile(ctx.spriteSheetFile, 'public', authHeaders, walletAddress)
-          : await uploadFile(ctx.spriteSheetFile, 'encrypted', authHeaders, walletAddress)
+          ? await uploadFile(ctx.spriteSheetFile, 'public', authHeaders, walletUpload, walletAddress)
+          : await uploadFile(ctx.spriteSheetFile, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
       // Store upload results in context for retry support
       ctx.setUploadResults(results)
       setUploadPhase('done')
 
-      // Expose raw DEK envelopes for E2E byte-level content verification (dev only)
+      // Expose upload-side Seal material for E2E byte-level content verification (dev only).
       if (process.env.NODE_ENV === 'development') {
-        ;(window as any).__e2eLastRawEnvelope = {
-          char: results.charFile?.sealDekEnvelope ?? null,
-          memory: results.memorySeed?.sealDekEnvelope ?? null,
-          skills: results.skillsFile?.sealDekEnvelope ?? null,
-          sprite: results.spriteSheet?.sealDekEnvelope ?? null,
+        ;(window as any).__e2eLastSealMaterial = {
+          char: results.charFile?.sealMaterial ?? null,
+          memory: results.memorySeed?.sealMaterial ?? null,
+          skills: results.skillsFile?.sealMaterial ?? null,
+          sprite: results.spriteSheet?.sealMaterial ?? null,
         }
       }
 
@@ -388,7 +424,7 @@ export default function CreateGasPage() {
       if (!results.memorySeed.blobObjectId) {
         throw new Error('This exact memory text already exists on Walrus. Please add a unique detail to your memory so it can be stored as a distinct on-chain founding memory.')
       }
-      if (typeof results.memorySeed.sealDekEnvelope !== 'string' || !results.memorySeed.sealDekEnvelope.trim()) {
+      if (!results.memorySeed.sealMaterial) {
         throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
       }
       if (results.skillsFile && !results.skillsFile.blobObjectId) {
@@ -397,7 +433,7 @@ export default function CreateGasPage() {
       if (results.spriteSheet && !results.spriteSheet.blobObjectId) {
         throw new Error('Persona sprite upload was deduplicated by Walrus and no owned Blob object was created. Please modify your sprite sheet slightly and retry.')
       }
-      if (ctx.spriteVisibility === 'private' && results.spriteSheet && (typeof results.spriteSheet.sealDekEnvelope !== 'string' || !results.spriteSheet.sealDekEnvelope.trim())) {
+      if (ctx.spriteVisibility === 'private' && results.spriteSheet && !results.spriteSheet.sealMaterial) {
         throw new Error('Persona sprite upload is missing Seal recovery data. Please retry.')
       }
 
@@ -434,10 +470,10 @@ export default function CreateGasPage() {
             }
           : null,
         creatorRoyaltyBps: ctx.royalty,
-        sealSidecar: results.charFile.sealDekEnvelope ?? null,
-        memorySealSidecar: results.memorySeed.sealDekEnvelope ?? null,
-        skillsSealSidecar: results.skillsFile?.sealDekEnvelope ?? null,
-        assetsSealSidecar: results.spriteSheet?.sealDekEnvelope ?? null,
+        sealMaterial: results.charFile.sealMaterial ?? null,
+        memorySealMaterial: results.memorySeed.sealMaterial ?? null,
+        skillsSealMaterial: results.skillsFile?.sealMaterial ?? null,
+        assetsSealMaterial: results.spriteSheet?.sealMaterial ?? null,
       })
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : 'Deploy failed')

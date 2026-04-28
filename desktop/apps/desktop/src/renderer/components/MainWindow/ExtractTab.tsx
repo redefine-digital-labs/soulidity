@@ -1,12 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { SuiClientProvider } from '@mysten/dapp-kit'
-import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
-import { normalizeSuiAddress } from '@mysten/sui/utils'
 import type {
   CreateLocalExtractDraftInput,
   ExtractSoulDraft,
-  ExtractSoulDraftPendingSync,
   ImportOpenClawDraftInput,
   LocalExtractAgent,
   LocalExtractAgentStatus,
@@ -17,65 +12,8 @@ import type {
 import {
   refreshExtractSoulDraftCover,
 } from '@soulidity/shared'
-import { assertObjectInputsExist } from '../../lib/soulidity/object-inputs'
-import { buildPublishSoulTx } from '../../lib/soulidity/tx/publish'
-import { useDesktopWallet } from '../../lib/hooks/use-desktop-wallet'
 
 type Step = 'scan' | 'review' | 'create'
-
-type DesktopAuthStatus = {
-  hasToken: boolean
-  accountId: string | null
-}
-
-type DesktopMeResponse = {
-  profile: {
-    accountId: string
-    primarySuiAddress: string | null
-  }
-}
-
-type RuntimeConfig = {
-  suiNetwork: string
-  webBaseUrl: string
-  authReady: boolean
-  authBlocker: string | null
-}
-
-type PersonalKioskResponse = {
-  ownerAddress: string
-  currentKioskId: string
-  currentKioskCapOnChainId: string
-}
-
-type DesktopUploadResponse = {
-  blobId: string
-  blobObjectId: string
-  contentHash: string
-  blobUrl: string
-  sealDekEnvelope?: string | null
-  skillName?: string | null
-}
-
-type DesktopPublishResponse = {
-  txDigest: string
-  soulOnChainId: string
-  stateOnChainId: string
-  memoryOnChainId: string
-  listingStatus: string
-}
-
-type MintStatus =
-  | 'idle'
-  | 'uploading-cover'
-  | 'uploading-soul'
-  | 'uploading-memory'
-  | 'uploading-skills'
-  | 'building'
-  | 'signing'
-  | 'syncing'
-  | 'done'
-  | 'error'
 
 function getElectronMethod<T extends (...args: any[]) => any>(name: string, missingMessage: string): T {
   const api = (window as any).electronAPI as Record<string, unknown> | undefined
@@ -398,30 +336,6 @@ function ipcOnScanProgress(cb: (progress: ScanProgress) => void): () => void {
   }
 }
 
-async function ipcGetDesktopAuthStatus(): Promise<DesktopAuthStatus> {
-  const invoke = getOptionalElectronMethod<() => Promise<DesktopAuthStatus>>('getDesktopAuthStatus')
-  if (!invoke) {
-    return { hasToken: true, accountId: null }
-  }
-
-  try {
-    return await invoke()
-  } catch {
-    return { hasToken: true, accountId: null }
-  }
-}
-
-async function ipcGetDesktopMe(): Promise<DesktopMeResponse | null> {
-  const invoke = getOptionalElectronMethod<() => Promise<DesktopMeResponse>>('getDesktopMe')
-  if (!invoke) return null
-
-  try {
-    return await invoke()
-  } catch {
-    return null
-  }
-}
-
 async function ipcLoadDraft(): Promise<ExtractSoulDraft | null> {
   const invoke = getOptionalElectronMethod<() => Promise<ExtractSoulDraft | null>>('desktop:create-draft:load')
   if (!invoke) return null
@@ -455,84 +369,6 @@ async function ipcPickCoverImage(): Promise<{ dataUrl: string; fileName: string;
     return await invoke()
   } catch (err) {
     throw asIpcError(err, 'Failed to select a cover image')
-  }
-}
-
-async function ipcGetRuntimeConfig(): Promise<RuntimeConfig> {
-  const invoke = getOptionalElectronMethod<() => Promise<RuntimeConfig>>('getDesktopRuntimeConfig')
-  if (!invoke) {
-    return {
-      suiNetwork: 'testnet',
-      webBaseUrl: '',
-      authReady: false,
-      authBlocker: 'Desktop wallet preflight is unavailable in this build.',
-    }
-  }
-
-  try {
-    return await invoke()
-  } catch {
-    return {
-      suiNetwork: 'testnet',
-      webBaseUrl: '',
-      authReady: false,
-      authBlocker: 'Desktop wallet preflight failed in this build.',
-    }
-  }
-}
-
-async function ipcUpload(params: {
-  bytes: Uint8Array
-  fileName: string
-  mimeType: string
-  uploadType: 'public' | 'encrypted'
-  sendObjectTo?: string | null
-}): Promise<DesktopUploadResponse> {
-  const invoke = getElectronMethod<(params: {
-    bytes: Uint8Array
-    fileName: string
-    mimeType: string
-    uploadType: 'public' | 'encrypted'
-    sendObjectTo?: string | null
-  }) => Promise<DesktopUploadResponse>>(
-    'desktop:create:upload',
-    'Desktop upload IPC is not available',
-  )
-
-  try {
-    return await invoke(params)
-  } catch (err) {
-    throw asIpcError(err, 'Upload failed')
-  }
-}
-
-async function ipcResolvePersonalKiosk(walletAddress: string): Promise<PersonalKioskResponse | null> {
-  const invoke = getElectronMethod<(params: { walletAddress: string }) => Promise<PersonalKioskResponse>>(
-    'desktop:create:personal-kiosk',
-    'Desktop personal kiosk IPC is not available',
-  )
-
-  try {
-    return await invoke({ walletAddress })
-  } catch (err) {
-    const error = asIpcError(err, 'Failed to resolve personal kiosk')
-    if (/no soulidity? personal kiosk found/i.test(error.message)) {
-      return null
-    }
-    throw error
-  }
-}
-
-async function ipcPublish(payload: ExtractSoulDraftPendingSync): Promise<DesktopPublishResponse> {
-  const invoke = getElectronMethod<(payload: Record<string, unknown>) => Promise<DesktopPublishResponse>>(
-    'desktop:create:publish',
-    'Desktop publish IPC is not available',
-  )
-
-  try {
-    return await invoke(payload as unknown as Record<string, unknown>)
-  } catch (err) {
-    throw asIpcError(err, 'Failed to mirror publish')
   }
 }
 
@@ -610,41 +446,14 @@ function getDraftHeadline(draft: ExtractSoulDraft) {
 
 function getDraftNotice(draft: ExtractSoulDraft) {
   if (draft.creationSource?.kind === 'openclaw-import') {
-    return 'SOUL.md and memory.md came directly from your OpenClaw workspace. Edit only what should change before upload.'
+    return 'SOUL.md and memory.md came directly from your OpenClaw workspace. Edit only what should change before opening web create.'
   }
 
   if (draft.creationSource?.kind === 'local-agent') {
-    return 'This draft was created locally after desktop assembled the source context for a read-only coding agent. Review the copy, adjust it if needed, then continue to upload and mint.'
+    return 'This draft was created locally after desktop assembled the source context for a read-only coding agent. Review the copy, adjust it if needed, then continue in web create.'
   }
 
-  return 'This local draft stays editable all the way through upload and mint.'
-}
-
-function textToBytes(value: string) {
-  return new TextEncoder().encode(value)
-}
-
-function base64ToBytes(value: string) {
-  const binary = atob(value)
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return bytes
-}
-
-function dataUrlToBytes(dataUrl: string) {
-  const match = dataUrl.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?(?:;base64)?,(.*)$/)
-  if (!match) {
-    throw new Error('Invalid cover image data URL')
-  }
-
-  const [, mimeType = 'application/octet-stream', payload] = match
-  if (dataUrl.includes(';base64,')) {
-    return { bytes: base64ToBytes(payload), mimeType }
-  }
-
-  return { bytes: textToBytes(decodeURIComponent(payload)), mimeType }
+  return 'This local draft stays editable until you continue in web create.'
 }
 
 async function fileToBase64(file: File) {
@@ -656,356 +465,38 @@ async function fileToBase64(file: File) {
   return btoa(binary)
 }
 
-function sameWalletAddress(left: string | null | undefined, right: string | null | undefined) {
-  if (!left || !right) return false
-
-  try {
-    return normalizeSuiAddress(left) === normalizeSuiAddress(right)
-  } catch {
-    return false
-  }
-}
-
 function hasCustomCoverImage(draft: ExtractSoulDraft) {
   return Boolean(asString(draft.coverImageDataUrl).trim()) && !draft.coverImageGenerated
 }
 
-function getMintStatusLabel(status: MintStatus) {
-  switch (status) {
-    case 'uploading-cover':
-      return 'Uploading cover image...'
-    case 'uploading-soul':
-      return 'Encrypting and uploading soul.md...'
-    case 'uploading-memory':
-      return 'Encrypting and uploading memory.md...'
-    case 'uploading-skills':
-      return 'Encrypting and uploading skills.zip...'
-    case 'building':
-      return 'Building mint transaction...'
-    case 'signing':
-      return 'Waiting for wallet signature...'
-    case 'syncing':
-      return 'Syncing publish state...'
-    case 'done':
-      return 'Soul minted successfully.'
-    case 'error':
-      return 'Mint failed.'
-    default:
-      return ''
-  }
-}
+function WebCreatePanel() {
+  const [openError, setOpenError] = useState<string | null>(null)
 
-type DesktopMintPanelProps = {
-  draft: ExtractSoulDraft
-  primarySuiAddress: string | null
-  onMintSuccess: (result: DesktopPublishResponse) => void
-}
-
-type MintProvidersProps = DesktopMintPanelProps & {
-  runtimeConfig: RuntimeConfig
-}
-
-const suiNetworks = {
-  testnet: { url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' as const },
-  mainnet: { url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' as const },
-}
-
-type SuiNetwork = keyof typeof suiNetworks
-
-function DesktopMintPanelInner({ draft, primarySuiAddress, onMintSuccess }: DesktopMintPanelProps) {
-  const { suiWallet, signAndExecute, suiClient } = useDesktopWallet()
-  const [mintStatus, setMintStatus] = useState<MintStatus>('idle')
-  const [mintError, setMintError] = useState<string | null>(null)
-  const [publishResult, setPublishResult] = useState<DesktopPublishResponse | null>(null)
-
-  const walletMismatch = useMemo(
-    () => Boolean(primarySuiAddress && suiWallet?.address && !sameWalletAddress(primarySuiAddress, suiWallet.address)),
-    [primarySuiAddress, suiWallet?.address],
-  )
-
-  const handleMint = useCallback(async () => {
-    if (!hasCustomCoverImage(draft)) {
-      setMintStatus('error')
-      setMintError('Upload a cover image before minting from desktop.')
-      return
-    }
-
-    if (!primarySuiAddress) {
-      setMintStatus('error')
-      setMintError('Bind a primary Sui wallet before minting from desktop.')
-      return
-    }
-
-    if (!suiWallet?.address) {
-      setMintStatus('error')
-      setMintError('No desktop Sui wallet is available. Generate or import one in Settings.')
-      return
-    }
-
-    if (walletMismatch) {
-      setMintStatus('error')
-      setMintError('The desktop wallet does not match the bound Sui wallet for this account.')
-      return
-    }
-
+  const handleOpenWebCreate = useCallback(async () => {
     try {
-      setMintError(null)
-
-      // Resume from pending sync if a previous on-chain TX succeeded but mirror failed
-      if (draft.pendingSync) {
-        setMintStatus('syncing')
-        const publishResult = await ipcPublish(draft.pendingSync)
-
-        setPublishResult(publishResult)
-        setMintStatus('done')
-        await ipcClearDraft()
-        onMintSuccess(publishResult)
-        return
-      }
-
-      setMintStatus('uploading-cover')
-      const coverPayload = dataUrlToBytes(draft.coverImageDataUrl)
-      const coverImage = await ipcUpload({
-        bytes: coverPayload.bytes,
-        fileName: draft.coverImageFileName,
-        mimeType: draft.coverImageMimeType || coverPayload.mimeType,
-        uploadType: 'public',
-      })
-
-      setMintStatus('uploading-soul')
-      const soulFile = await ipcUpload({
-        bytes: textToBytes(draft.soulMarkdown),
-        fileName: 'soul.md',
-        mimeType: 'text/markdown',
-        uploadType: 'encrypted',
-      })
-
-      setMintStatus('uploading-memory')
-      const memoryFile = await ipcUpload({
-        bytes: textToBytes(draft.memoryMarkdown),
-        fileName: 'memory.md',
-        mimeType: 'text/markdown',
-        uploadType: 'encrypted',
-      })
-
-      let skillsFile: DesktopUploadResponse | null = null
-      if (draft.skillsArchive) {
-        setMintStatus('uploading-skills')
-        skillsFile = await ipcUpload({
-          bytes: base64ToBytes(draft.skillsArchive.dataBase64),
-          fileName: draft.skillsArchive.fileName,
-          mimeType: draft.skillsArchive.mimeType,
-          uploadType: 'encrypted',
-        })
-      }
-
-      if (!coverImage.blobUrl) {
-        throw new Error('Cover image upload is missing a blob URL.')
-      }
-      if (!soulFile.blobObjectId) {
-        throw new Error('soul.md upload did not create a Walrus blob object. Modify the content and retry.')
-      }
-      if (!memoryFile.blobObjectId) {
-        throw new Error('memory.md upload did not create a Walrus blob object. Modify the content and retry.')
-      }
-      if (!memoryFile.sealDekEnvelope?.trim()) {
-        throw new Error('memory.md upload is missing Seal recovery data.')
-      }
-      if (skillsFile && !skillsFile.blobObjectId) {
-        throw new Error('skills.zip upload did not create a Walrus blob object. Modify the archive and retry.')
-      }
-
-      setMintStatus('building')
-      const personalKiosk = await ipcResolvePersonalKiosk(suiWallet.address)
-      await assertObjectInputsExist(suiClient, {
-        'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
-        'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
-        'Soul character blob': soulFile.blobObjectId,
-        'Founding memory blob': memoryFile.blobObjectId,
-        'Skills blob': skillsFile?.blobObjectId ?? null,
-      })
-
-      const tx = buildPublishSoulTx({
-        currentKioskId: personalKiosk?.currentKioskId ?? null,
-        currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
-        name: draft.name,
-        description: draft.description,
-        imageUrl: coverImage.blobUrl,
-        protectedBlobObjectId: soulFile.blobObjectId,
-        foundingMemoryBlobObjectId: memoryFile.blobObjectId,
-        skillsBlobObjectId: skillsFile?.blobObjectId ?? null,
-        initialSkillName: skillsFile?.skillName ?? null,
-        skillsVisibility: 'private',
-        creatorRoyaltyBps: draft.royaltyBps,
-      })
-
-      setMintStatus('signing')
-      const signed = await signAndExecute(tx)
-
-      // Persist the sync payload before calling ipcPublish so a retry
-      // after mirror failure resumes from here instead of re-minting.
-      const syncPayload = {
-        txDigest: signed.digest,
-        tags: draft.tags,
-        previewImages: [coverImage.blobUrl],
-        readme: null,
-        sealSidecar: soulFile.sealDekEnvelope ?? null,
-        memorySealSidecar: memoryFile.sealDekEnvelope ?? null,
-        skillsSealSidecar: skillsFile?.sealDekEnvelope ?? null,
-      }
-      await ipcSaveDraft({ ...draft, pendingSync: syncPayload })
-
-      setMintStatus('syncing')
-      const publishResult = await ipcPublish(syncPayload)
-
-      setPublishResult(publishResult)
-      setMintStatus('done')
-      await ipcClearDraft()
-      onMintSuccess(publishResult)
+      setOpenError(null)
+      await ipcOpenWebCreate()
     } catch (err) {
-      setMintStatus('error')
-      setMintError(err instanceof Error ? err.message : 'Mint failed')
-    }
-  }, [draft, onMintSuccess, primarySuiAddress, signAndExecute, suiClient, suiWallet?.address, walletMismatch])
-
-  return (
-    <section className="settings-section">
-      <h3 className="settings-section__title">Preview & Mint</h3>
-      <p className="extract-notice">
-        Minting now stays inside desktop. The signed transaction must come from the same Sui wallet bound to this account.
-      </p>
-
-      <div className="extract-evidence" style={{ marginBottom: 12 }}>
-        <div className="extract-evidence__row">
-          <span className="extract-evidence__label">Bound wallet</span>
-          <span className="extract-evidence__value">{primarySuiAddress ?? 'Not bound'}</span>
-        </div>
-        <div className="extract-evidence__row">
-          <span className="extract-evidence__label">Desktop wallet</span>
-          <span className="extract-evidence__value">{suiWallet?.address ?? 'Connecting...'}</span>
-        </div>
-        <div className="extract-evidence__row">
-          <span className="extract-evidence__label">Auth state</span>
-          <span className="extract-evidence__value">
-            {suiWallet ? 'wallet ready' : 'no wallet bound'}
-          </span>
-        </div>
-      </div>
-
-      {walletMismatch && (
-        <p className="link-panel__error" style={{ marginBottom: 12 }}>
-          The desktop wallet does not match the bound Sui wallet for this account.
-        </p>
-      )}
-
-      {mintError && (
-        <p className="link-panel__error" style={{ marginBottom: 12 }}>
-          {mintError}
-        </p>
-      )}
-
-      {mintStatus !== 'idle' && (
-        <p className="extract-status" style={{ marginBottom: 12 }}>
-          {getMintStatusLabel(mintStatus)}
-        </p>
-      )}
-
-      {publishResult && (
-        <div className="extract-evidence" style={{ marginBottom: 12 }}>
-          <div className="extract-evidence__row">
-            <span className="extract-evidence__label">Tx digest</span>
-            <span className="extract-evidence__value">{publishResult.txDigest}</span>
-          </div>
-          <div className="extract-evidence__row">
-            <span className="extract-evidence__label">Soul</span>
-            <span className="extract-evidence__value">{publishResult.soulOnChainId}</span>
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        className="link-button"
-        onClick={handleMint}
-        disabled={!hasCustomCoverImage(draft) || (mintStatus !== 'idle' && mintStatus !== 'error' && mintStatus !== 'done')}
-      >
-        Mint on Sui
-      </button>
-    </section>
-  )
-}
-
-function DesktopMintProviders({ runtimeConfig, ...props }: MintProvidersProps) {
-  const [queryClient] = useState(() => new QueryClient())
-  const network = runtimeConfig.suiNetwork as SuiNetwork
-  const defaultNetwork: SuiNetwork = network in suiNetworks ? network : 'testnet'
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-        <DesktopMintPanelInner {...props} />
-      </SuiClientProvider>
-    </QueryClientProvider>
-  )
-}
-
-function DesktopMintPanel(props: DesktopMintPanelProps) {
-  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null)
-  const [showMintControls, setShowMintControls] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-
-    void ipcGetRuntimeConfig().then((nextConfig) => {
-      if (!cancelled) {
-        setRuntimeConfig(nextConfig)
-      }
-    })
-
-    return () => {
-      cancelled = true
+      setOpenError(err instanceof Error ? err.message : 'Failed to open web create')
     }
   }, [])
 
-  if (!runtimeConfig) {
-    return (
-      <section className="settings-section">
-        <p className="extract-status">Loading desktop wallet configuration...</p>
-      </section>
-    )
-  }
-
-  if (!runtimeConfig.authReady) {
-    return (
-      <section className="settings-section">
-        <h3 className="settings-section__title">Preview & Mint</h3>
-        <p className="extract-status">
-          {runtimeConfig.authBlocker
-            ?? 'Desktop wallet auth is unavailable on this build right now.'}
+  return (
+    <section className="settings-section">
+      <h3 className="settings-section__title">Create on Web</h3>
+      <p className="extract-notice">
+        Desktop local draft creation is still available, but final upload and mint now use the wallet-paid web create flow.
+      </p>
+      {openError && (
+        <p className="link-panel__error" style={{ marginBottom: 12 }}>
+          {openError}
         </p>
-      </section>
-    )
-  }
-
-  if (!showMintControls) {
-    return (
-      <section className="settings-section">
-        <h3 className="settings-section__title">Preview & Mint</h3>
-        <p className="extract-notice">
-          Desktop mint auth now stays unloaded until you explicitly open it, so reviewing or editing this draft does not trigger the full-window wallet backdrop.
-        </p>
-        <button
-          type="button"
-          className="link-button"
-          onClick={() => setShowMintControls(true)}
-        >
-          Load Desktop Mint
-        </button>
-      </section>
-    )
-  }
-
-  return <DesktopMintProviders runtimeConfig={runtimeConfig} {...props} />
+      )}
+      <button type="button" className="link-button" onClick={handleOpenWebCreate}>
+        Open Web Create
+      </button>
+    </section>
+  )
 }
 
 export function ExtractTab(): React.JSX.Element {
@@ -1022,9 +513,7 @@ export function ExtractTab(): React.JSX.Element {
   const [activeDraftAction, setActiveDraftAction] = useState<'openclaw' | LocalExtractAgent | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [coverActionError, setCoverActionError] = useState<string | null>(null)
-  const [desktopMe, setDesktopMe] = useState<DesktopMeResponse | null>(null)
   const [draft, setDraft] = useState<ExtractSoulDraft | null>(null)
-  const [publishResult, setPublishResult] = useState<DesktopPublishResponse | null>(null)
 
   const unsubRef = useRef<(() => void) | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1043,22 +532,12 @@ export function ExtractTab(): React.JSX.Element {
   useEffect(() => {
     let cancelled = false
 
-    void Promise.all([
-      ipcGetDesktopAuthStatus(),
-      ipcLoadDraft(),
-    ]).then(async ([authStatus, loadedDraft]) => {
+    void ipcLoadDraft().then((loadedDraft) => {
       if (cancelled) return
 
       if (loadedDraft) {
         setDraft(loadedDraft)
         setStep('create')
-      }
-
-      if (authStatus.hasToken) {
-        const me = await ipcGetDesktopMe()
-        if (!cancelled) {
-          setDesktopMe(me)
-        }
       }
 
       hasHydratedDraftRef.current = true
@@ -1185,7 +664,6 @@ export function ExtractTab(): React.JSX.Element {
         skillId: selectedOpenClawSkillId || null,
       })
       setDraft(nextDraft)
-      setPublishResult(null)
       setStep('create')
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'OpenClaw import failed')
@@ -1203,7 +681,6 @@ export function ExtractTab(): React.JSX.Element {
     try {
       const nextDraft = await ipcCreateLocalDraft({ agent, scanResults })
       setDraft(nextDraft)
-      setPublishResult(null)
       setStep('create')
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Local draft creation failed')
@@ -1520,7 +997,7 @@ export function ExtractTab(): React.JSX.Element {
       <section className="settings-section">
         <h3 className="settings-section__title">{draft ? getDraftHeadline(draft) : 'Create Soul Locally'}</h3>
         <p className="extract-notice">
-          {draft ? getDraftNotice(draft) : 'This local draft stays editable before upload and mint.'}
+          {draft ? getDraftNotice(draft) : 'This local draft stays editable before web create.'}
         </p>
       </section>
 
@@ -1722,7 +1199,7 @@ export function ExtractTab(): React.JSX.Element {
               )}
               <p className={!hasCustomCoverImage(draft) ? 'link-panel__error' : 'extract-status'}>
                 {!hasCustomCoverImage(draft)
-                  ? 'Cover image is required before minting. Replace the generated placeholder with a real cover image.'
+                  ? 'Cover image is required before web create. Replace the generated placeholder with a real cover image.'
                   : `Cover ready: ${draft.coverImageFileName}`}
               </p>
               {coverActionError && (
@@ -1757,31 +1234,8 @@ export function ExtractTab(): React.JSX.Element {
             </button>
           </section>
 
-          <DesktopMintPanel
-            draft={draft}
-            primarySuiAddress={desktopMe?.profile?.primarySuiAddress ?? null}
-            onMintSuccess={(result) => {
-              setPublishResult(result)
-              setDraft(null)
-            }}
-          />
+          <WebCreatePanel />
         </>
-      )}
-
-      {publishResult && (
-        <section className="settings-section">
-          <h3 className="settings-section__title">Last Mint</h3>
-          <div className="extract-evidence">
-            <div className="extract-evidence__row">
-              <span className="extract-evidence__label">Tx digest</span>
-              <span className="extract-evidence__value">{publishResult.txDigest}</span>
-            </div>
-            <div className="extract-evidence__row">
-              <span className="extract-evidence__label">Soul</span>
-              <span className="extract-evidence__value">{publishResult.soulOnChainId}</span>
-            </div>
-          </div>
-        </section>
       )}
     </div>
   )

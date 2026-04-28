@@ -41,7 +41,7 @@ interface SkillGroupProps {
   skillName: string
   versions: SoulSkillVersionRecord[]
   canManageSkills: boolean
-  pending: 'append' | 'delete' | 'read' | null
+  pending: 'append' | 'delete' | 'read' | 'recovering' | null
   onDelete: (version: SoulSkillVersionRecord) => void
   onOpen: (version: SoulSkillVersionRecord) => void
 }
