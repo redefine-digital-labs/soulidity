@@ -4,7 +4,7 @@
 
 `web/`（Next.js 16 + React 19，port 3100）是 Soulidity 唯一的 web 前端，替代 legacy `web/`（原 port 3000）。本计划覆盖 Soul 全生命周期：创建 → 上架 → 购买 → Grant → 访问 → Skills → Memory → 解密，以及 Collection / Import。
 
-**最近一次执行（2026-04-27）：96/96 主验收 PASS**。覆盖分支 `feat/remove-privy-sui-wallet-auth`（W0 commit `cee27a3`、Phases 1.9–11 commit `532529d`、Phase 8 + 7.12 commit `8c86b03`、7.10a/f/g/h commit `eab58e1`、Test 9.10 commit `8e0c7fd`）。原执行台账曾将 Test 9.10 单列；本计划已把 9.10 并入 Phase 9 主验收，不再保留待办 / 延期测试项。详细对象 ID / TX 摘要见 `docs/e2e-test-results-new-web.md` 的 `2026-04-27 Run` 段。
+**最近一次执行（2026-04-28）：96/96 主验收 PASS**。本次按 `.env.local` 测试环境、Sui Testnet 地址、Chrome DevTools MCP 浏览器流程执行，覆盖 wallet-paid Walrus `UploadCostReview`、Seal 私有内容、Agent API、ContentAccess、Import、公共 sprite 匿名访问和 Cleanup。详细对象 ID / TX 摘要见 `docs/e2e-test-results-new-web.md` 的 `2026-04-28 Run` 段。这里的“主验收”指 main-flow acceptance，不是 Sui mainnet 验收；当前文档只能证明 web testnet 主流程通过，不能证明 mainnet runtime 已无问题。2026-04-27 PASS 是 wallet-paid Walrus cutover 前的历史基线，仍保留在结果文档中用于对照；原执行台账曾将 Test 9.10 单列，本计划已把 9.10 并入 Phase 9 主验收，不再保留待办 / 延期测试项。
 
 **当前部署基线（2026-04-24 fresh publish，Published.toml `version = 1`）**
 
@@ -88,11 +88,13 @@
    - DB：`accounts.privy_did` 删除，新增去规范化列 `accounts.wallet_address` + 表 `WalletChallenge`。`wallet_bindings` 不变。
    - Hook：`usePrivySuiSign` → `useWalletSign`（`web/lib/hooks/use-wallet-sign.ts`）；`useGenericLogin` → `useLogin`（`web/lib/hooks/use-login.ts`）。
 
-7. **Soul / sprite / skills 上传统一走 Vercel Blob direct-upload（commits dfb0fa5、a2f8a27、dee2233）**
-   - 新路由：`POST /api/souls/upload/token`（presigned token，`@vercel/blob/client::handleUpload`）+ `POST /api/souls/upload/from-blob`（服务端拉 staging blob → `runSoulUploadPipeline` → 加密上传 Walrus → 删除 staging blob，409 race 自动重试 5 次）。
-   - 客户端入口：`web/lib/upload/client-upload.ts::uploadSoulPayload`。Phase 1 / 3 / 6 / 8 所有 Soul / sprite / skills / wrap / collection 大文件都走它。
+7. **Soul / sprite / skills 上传统一走 wallet-paid Walrus browser upload（2026-04-28）**
+   - 旧路由 `POST /api/souls/upload`、`/api/souls/upload/token`、`/api/souls/upload/from-blob` 已退役为 410；不再使用 Vercel Blob staging、服务端 publisher 或 raw DEK envelope。
+   - 客户端入口：`web/lib/upload/client-upload.ts::uploadSoulPayload`。Phase 1 / 3 / 6 / 8 所有 Soul / sprite / skills / wrap / collection 大文件都走它；签名前必须先展示 `UploadCostReview` 并由连接的钱包支付 Walrus storage / Sui gas / relay tip。
+   - 报价入口：`web/lib/upload/walrus-quote.ts::quoteWalrusUpload`。当前实现 `<= 50 MiB` 单 blob，`> 50 MiB` 自动按 16 MiB chunk + manifest blob 上传；quote 覆盖所有 chunk / manifest 的 Walrus storage、write cost、relay tip 与 register/certify TX 数，TTL 为 60 秒。
+   - 私有内容在浏览器内 AES-GCM 加密；`web/lib/upload/client-seal.ts` 只把短期 `PendingSealMaterial` 留给当前会话 / recovery，mirror API 只接受客户端生成的 Seal sidecar object。raw DEK envelope string 直接 400。
    - Persona Asset Panel：`web/components/souls/persona-asset-panel.tsx`（owner-only sprite 版本管理：append + activate + delete + clear，一笔 PTB = `assets::append_version` + `metadata::upsert_metadata_blob` + `metadata::set_active_sprite`）。
-   - Collection publish cover 也走 `uploadSoulPayload(..., 'public')`；legacy `/api/collections/upload-image` 仍存在，但不是 Phase 3 publish 主路径。
+   - Collection/profile cover 也走 `uploadSoulPayload(..., 'public')`；legacy `/api/collections/upload-image` 和 `/api/profile/cover` 已退役为 410。
 
 8. **新 mirror 路由 `POST /api/souls/[id]/grant-capacity`（commit 107ab0d）**
    - 接 `txDigest` → 链上读 `GrantCapacityUpdated` 事件 → upsert `soul_assets.grantCapacity` / `activeGrantCount`。`window.__e2eSoulidity.setGrantCapacity` 已在内部调用此路由（`e2e-wallet-helpers.tsx:148`），Phase 5.2a 不需要再单独 cURL。
@@ -154,6 +156,23 @@
 - 文中的 `button:has-text("...")`、`input[...]`、`selector: ...`、`a[href="..."]` 仅用于帮助执行者在 snapshot / DOM 中定位目标。
 - 执行时不要把这些字符串直接当作 Chrome DevTools MCP 参数；必须先刷新 snapshot，再用对应 `uid` 调 `click` / `fill` / `upload_file`。
 - 每次页面跳转、modal 打开、toast 消失、列表刷新、iframe 重绘后，都要重新 `take_snapshot`，不要复用旧 `uid`。
+
+### Wallet-paid Walrus 成本确认
+
+凡是页面调用 `uploadSoulPayload`，都会在第一笔 Walrus register/certify 钱包签名前弹出 `UploadCostReview`。执行者必须把这个弹窗当作上传流程的一部分处理，不能只等待最终 TX：
+
+1. `wait_for` text "Review Upload Cost"。
+2. `take_snapshot`，断言弹窗含当前网络（本计划为 `testnet`）、Payload、Storage、Transactions、WAL storage、Relay tip、Gas budget estimate。
+3. 当前小 fixture 每个文件应显示 `Storage = 3 epochs`、`Transactions = 2`；若引入 `> 50 MiB` fixture，则必须看到 chunk item 与 manifest item，且 transaction count = `(chunkCount + manifestCount) * 2`。
+4. 点击 `Confirm`。如果点击 `Cancel` 或 quote TTL / 文件 / 网络 / relay / chunk plan 变化，上传应在签名前失败并要求重新确认；这类负向由 unit/repo guard 覆盖，不计入 96 项主流程。
+5. 同一操作会按上传文件数重复弹窗；每次页面变化后重新 `take_snapshot`，不要复用旧 `uid`。
+
+### Testnet Walrus 上传限制口径
+
+- Walrus 协议最大 blob size 不是本计划的直接 E2E 上限；按官方文档，真实值应以 `walrus info --context testnet` 查询为准，文档当前示例口径是 13.3 GiB。ClawNews 产品层仍限制 `MAX_SOUL_UPLOAD_BYTES = 500 MiB`。
+- Testnet 公共 upload relay / publisher 是外部服务，可能因 HTTP body size、rate limit、relay tip freshness、storage node 状态或 413/429/5xx 临时失败而低于协议上限；这属于 testnet infra limitation，不等同产品合约失败。
+- 96 项主流程只使用小 fixture（最大约 5.6 KiB，Phase 9.10 sprite helper 约 7.9 MiB），不把 `> 50 MiB` live upload 绑定到 testnet 公共服务稳定性。`> 50 MiB` chunk + manifest 行为由 unit/repo guard 固化；若需要 live 大文件 smoke，必须先通过 Phase -1.8 的 testnet Walrus capability probe。
+- Phase 9.10 的 `e2e-sprite-lifecycle.ts` 是白盒 helper，当前仍走 `web/lib/services/walrus.ts` publisher path，不代表用户 UI 的 upload relay path；如果 publisher 返回 413，只能换小 fixture / 下采样 sprite / 配置已验证 publisher，不允许把该失败归因到 wallet-paid UI 上传主链路。
 
 ### 终端步骤的边界
 
@@ -282,7 +301,7 @@ Step 2: POST /api/agent/souls/{id}/purchase/execute
 
 > Agent 购买 / 解密脚本当前读取通用 env：`AGENT_PRIVATE_KEY`（或 `AGENT_MNEMONIC`）+ `AGENT_API_KEY`。本计划统一用 `AGENT_PRIVATE_KEY="$E2E_AGENT_ALPHA_PRIVATE_KEY"` / `AGENT_PRIVATE_KEY="$E2E_AGENT_BETA_PRIVATE_KEY"` 映射，避免继续依赖 mnemonic。
 
-### Sui CLI 速查（地址发现 + 余额检查 + USDC mint）
+### Sui CLI 速查（地址发现 + 余额检查 + WAL / USDC mint）
 
 > 前提：`sui client active-env` = testnet，`sui --version` >= 1.69.0
 
@@ -291,9 +310,19 @@ Step 2: POST /api/agent/souls/{id}/purchase/execute
 | `sui client active-address` | 当前活跃地址（USDC mint 需为 Treasury Cap owner） |
 | `sui client balance <addr>` | 全币种余额 |
 | `sui client balance --coin-type "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC" <addr>` | USDC 余额 |
+| `sui client balance --coin-type "0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL" <addr>` | WAL 余额（wallet-paid Walrus register/certify 需要） |
 | `sui client gas <addr>` | SUI gas coin 列表 |
 | `sui client objects <addr>` | 所有拥有的对象（含 kiosk、Soul 等） |
 | `sui client switch --address <addr>` | 切换 active address（USDC mint 前切到 Treasury Owner） |
+
+### WAL 测试网包（wallet-paid Walrus 必需）
+
+| 属性 | 值 |
+|------|---|
+| Coin Type | `0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL` |
+| 来源 | 当前 testnet Walrus package 的 `staking::stake_with_pool` 入参解析；若 Walrus package 升级，先按 `@mysten/walrus` 当前 package config 重新派生 |
+
+WAL 用于 `uploadSoulPayload` 里的 Walrus storage / write cost；SUI 只覆盖 gas 与 upload relay tip，不能替代 WAL。Phase 1 / 3 / 6 / 8 的所有 `UploadCostReview` 都必须在 signer 钱包 WAL 余额充足时执行，否则 register blob TX 会在签名前或 dry-run 阶段失败。
 
 ### USDC 测试网包（自动 mint 用）
 
@@ -323,7 +352,6 @@ sui client call \
 - `E2E_AGENT_ALPHA_API_KEY`（`sk-…`，Agent API auth）
 - `E2E_AGENT_BETA_PRIVATE_KEY`
 - `E2E_AGENT_BETA_API_KEY`
-- `SOUL_UPLOAD_SECRET`（Phase 7.12 Seal 内容比对用）
 - `AUTH_SECRET`（本计划要求显式设置；签 session JWT，≥32 字节随机）
 
 ### 钱包地址自动派生
@@ -354,7 +382,7 @@ NODE
 - `SOUL_B_FOUNDING_MEMORY_TIMESTAMP_KEY` / `SOUL_B_INITIAL_SKILL_NAME` / `SOUL_B_INITIAL_SKILL_VERSION_INDEX` — Phase 1.7 publish sync 响应捕获（Phase 7.12 使用）
 - `SOUL_A_LISTING_OBJ` — Phase 2.2 listing TX 或 Phase 4.5 purchase 后事件捕获（Phase 11.0a 使用）
 - `COLLECTION_LISTING_OBJ` — Phase 3.5 list + delist collection right 后捕获（Phase 11.0b 使用）
-- `CAPTURED_RAW_ENVELOPES_JSON` — Phase 1.6/1.7 mint/import gas 页在发布成功时立即捕获的 `{char,memory,skills,sprite}` raw DEK envelope JSON，Phase 7.12 复用
+- `CAPTURED_SEAL_MATERIAL_JSON` — Phase 1.6/1.7 mint/import gas 页在发布成功时立即捕获的 `{char,memory,skills,sprite}` Pending Seal material JSON，Phase 7.12 复用
 - `MEMORY_ENTRY_KEY` / `SKILL_NAME` / `SKILL_VERSION_INDEX` — Phase 7.12 访问 memory / skills artifact 时使用，来自 publish/import sync 响应
 
 ---
@@ -464,43 +492,48 @@ sui client balance $AGENT_BETA_ADDR
 > WHERE wb.address = '$SELLER_ADDR' AND wb.chain = 'sui';
 > ```
 
-### -1.3 钱包余额检查 + SUI 人工补给 + USDC 自动 mint
+### -1.3 钱包余额检查 + SUI / WAL 人工补给 + USDC 自动 mint
 
 **最低余额要求：**
 
-| 角色 | SUI Gas | Test USDC | 用途 |
-|------|---------|-----------|------|
-| Seller | ≥0.5 SUI | — | Create / List / Grant / SetGrantCapacity / SetContentAccessPrice 等 TX gas |
-| Buyer | ≥0.5 SUI | ≥10 USDC | 购买 Soul A ($1) + Phase 7.10a content access purchase + gas |
-| Agent Alpha | ≥0.3 SUI | ≥10 USDC | Agent 购买 Soul B ($2) + Phase 7.10g re-purchase + gas |
-| Agent Beta | ≥0.1 SUI | — | 仅 403 验证 + gas 备用 |
+| 角色 | SUI Gas / Relay Tip | WAL Storage | Test USDC | 用途 |
+|------|---------------------|-------------|-----------|------|
+| Seller | ≥0.5 SUI | ≥10,000,000 atomic WAL | — | Create Soul A/B + Collection 的 wallet-paid Walrus register/certify、List / Grant / SetGrantCapacity / SetContentAccessPrice |
+| Buyer | ≥0.5 SUI | ≥5,000,000 atomic WAL | ≥10 USDC | 购买 Soul A ($1) + Phase 6 skills append + Phase 8 import + Phase 7.10a content access purchase |
+| Agent Alpha | ≥0.3 SUI | — | ≥10 USDC | Agent 购买 Soul B ($2) + Phase 7.10g re-purchase + gas |
+| Agent Beta | ≥0.1 SUI | — | — | 仅 403 验证 + gas 备用 |
+
+WAL 下限是当前小 fixture 的执行缓冲，不是协议常量。每次执行仍以 `UploadCostReview` 的 `WAL storage` 实时报价为准：若 quote 总和超过表格缓冲，先补 WAL 再继续；不得用 `__e2eUpload` 自动 approve 跳过成本确认。
 
 **Step 1 — 检查 4 地址当前余额：**
 
 ```bash
 USDC_TYPE="0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC"
+WAL_TYPE="0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL"
 for var in SELLER_ADDR BUYER_ADDR AGENT_ALPHA_ADDR AGENT_BETA_ADDR; do
   ADDR=${!var}
   echo "=== $var = $ADDR ==="
   sui client balance "$ADDR" 2>&1 | head -20
+  sui client balance --coin-type "$WAL_TYPE" "$ADDR" 2>&1 | head -5
   sui client balance --coin-type "$USDC_TYPE" "$ADDR" 2>&1 | head -5
 done
 ```
 
-**Step 2 — SUI 不足时，AI 列清单暂停等用户转账（**手动介入唯一一次**）：**
+**Step 2 — SUI / WAL 不足时，AI 列清单暂停等用户转账（**手动介入唯一一次**）：**
 
 AI 根据 Step 1 输出对照"最低余额要求"，生成清单形如：
 
 ```
-请从你的 wallet 给以下测试地址转 SUI（testnet）：
+请从你的 wallet 给以下测试地址转 SUI / WAL（testnet）：
 - BUYER_ADDR (0xabc...) : 缺 0.3 SUI
+- SELLER_ADDR (0x123...) : 缺 10,000,000 atomic WAL
 - AGENT_ALPHA_ADDR (0xdef...) : 缺 0.2 SUI
 - (其余地址余额充足)
 
 转完后回复"已转完"继续。
 ```
 
-用户从自有钱包转账后回告"已转完"。AI 重跑 Step 1 校验 SUI ≥ 最低要求；不达标则回 Step 2 重列清单。
+用户从自有钱包转账后回告"已转完"。AI 重跑 Step 1 校验 SUI / WAL ≥ 最低要求；不达标则回 Step 2 重列清单。若本地有足额测试 WAL / SUI keystore，AI 可以直接按清单转账；否则不得进入 Phase 1/3/6/8 的 wallet-paid upload 流程。
 
 > 不再使用 `sui client faucet`：testnet faucet 频率限制 + 失败率高，让用户用自有钱包转更可靠。
 
@@ -555,16 +588,20 @@ ls -la /Users/admin/Documents/example/soul.md \
 - 当前前端：`curl http://localhost:3100/market`（确认 HTML 含 "Soulidity"）
 - Agent API 已迁移到当前 `web/` 应用（port 3100），**不再需要 legacy web (port 3000)**
 - Env 必填校验（写入 `.env.local`，`web/next.config.ts` 已 `dotenv.config({ path: '../.env.local', override: true })`）：
-  - `NODE_ENV=development`（W0 e2e-wallet-stub + dev-only upload 短路均依赖此 bundle-time gate）
-  - `NEXT_PUBLIC_E2E_TEST_MODE=1`（runtime gate；同时启用 e2e-wallet-stub 注册与 `client-upload` 短路到 legacy `/api/souls/upload`）
+  - `NODE_ENV=development`（W0 e2e-wallet-stub bundle-time gate）
+  - `NEXT_PUBLIC_E2E_TEST_MODE=1`（runtime gate；启用 e2e-wallet-stub 注册）
+  - `NEXT_PUBLIC_SUI_NETWORK=testnet`（web、Walrus quote/upload、Seal helper 与 Node 脚本都按此选择网络）
   - `AUTH_SECRET`（≥32 字节随机；虽然 dev 有回退值，本计划要求显式设置，避免 session secret 漂移）
-  - `SOUL_UPLOAD_SECRET`（Test 7.12 `e2e-agent-verify-content.ts` 用于解信封 + 字节比对）
   - `E2E_SELLER_PRIVATE_KEY` / `E2E_BUYER_PRIVATE_KEY` / `E2E_AGENT_ALPHA_PRIVATE_KEY` / `E2E_AGENT_BETA_PRIVATE_KEY`（4 个角色 keypair）
   - `E2E_AGENT_ALPHA_API_KEY` / `E2E_AGENT_BETA_API_KEY`（agent setup 脚本 + Bearer auth）
   - `E2E_AGENT_OWNER_WALLET`（可选；缺失时 setup 脚本回退到 `E2E_SELLER_PRIVATE_KEY` 派生地址）
-  - `BLOB_READ_WRITE_TOKEN`（推荐保留；E2E 自动化主路径走 dev 短路至 legacy `/api/souls/upload`，不消耗此 token，但其他依赖 Vercel Blob 的开发流仍需要）
+- Wallet-paid Walrus / Seal 可选覆盖（testnet 默认可不填；若填写必须与 `NEXT_PUBLIC_SUI_NETWORK` 一致）：
+  - `NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL`（默认 testnet upload relay）
+  - `NEXT_PUBLIC_WALRUS_AGGREGATOR_URL`（默认 testnet aggregator）
+  - `NEXT_PUBLIC_WALRUS_WASM_URL`（默认从 `@mysten/walrus-wasm` CDN 加载）
+  - `NEXT_PUBLIC_SEAL_SERVER_CONFIGS` / `NEXT_PUBLIC_SEAL_THRESHOLD` / `NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS`（testnet 有默认 key server；mainnet smoke 必须显式配置）
 - W0 Stub 自检：`evaluate_script` 在任意页面运行 `(navigator.wallets ?? []).some(w => w.name === 'E2E Test Wallet')`，没设 `__E2E_PRIVATE_KEY` 前应为 `false`；设了 + reload 后应为 `true`
-- 严禁出现 `NEXT_PUBLIC_PRIVY_APP_ID` / `PRIVY_APP_SECRET` / `PRIVY_CUSTOM_AUTH_*`（CI 有 ripgrep no-residue guard）
+- 严禁出现 `NEXT_PUBLIC_PRIVY_APP_ID` / `PRIVY_APP_SECRET` / `PRIVY_CUSTOM_AUTH_*`（CI 有 ripgrep no-residue guard）。E2E 用户上传链路也不得要求 `BLOB_READ_WRITE_TOKEN`、`WALRUS_PUBLISHER_URL` 或 `SOUL_UPLOAD_SECRET`；这些若在本地存在，只能服务 desktop release / 历史批量发布脚本 / 内部白盒脚本，不能作为主流程前提。
 
 ### -1.6 清空浏览器状态
 `evaluate_script`: `localStorage.clear(); sessionStorage.clear();`
@@ -577,6 +614,32 @@ RUN_DATE=$(date +%F)
 export ARTIFACT_DIR="e2e-artifacts/${RUN_DATE}"
 mkdir -p "$ARTIFACT_DIR"
 ```
+
+### -1.8 Testnet Walrus capability probe
+
+本步骤只确认 testnet 公共 Walrus 服务当前可用边界；不上传业务 fixture，不替代 Phase 1 / 3 / 6 / 8 的真实 wallet-paid UI 上传。
+
+**Step 1 — relay tip-config 可达：**
+```bash
+cd /Users/admin/Desktop/nao/clawnews
+WALRUS_RELAY="${NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL:-https://upload-relay.testnet.walrus.space}"
+curl -fsS "${WALRUS_RELAY%/}/v1/tip-config" | tee "$ARTIFACT_DIR/walrus-tip-config.json"
+```
+通过标准：退出码 0，JSON 为 `no_tip` 或 `send_tip`。失败 / 超时 / 429 / 5xx = 环境阻塞，先换 relay 或稍后重试；不能继续声称 wallet-paid upload 已通过。
+
+**Step 2 — 记录协议上限（有 `walrus` CLI 时执行）：**
+```bash
+if command -v walrus >/dev/null 2>&1; then
+  walrus info --context testnet | tee "$ARTIFACT_DIR/walrus-info.txt"
+else
+  echo "walrus CLI not installed; skip protocol info probe" | tee "$ARTIFACT_DIR/walrus-info.txt"
+fi
+```
+通过标准：如果 CLI 存在，输出必须包含 maximum blob size / storage epoch 信息；如果 CLI 不存在，不阻塞主流程，因为 web path 使用 `@mysten/walrus` SDK + upload relay。
+
+**Step 3 — 大文件 live smoke 边界：**
+- 默认 96 项主流程不跑 `> 50 MiB` live upload。
+- 若本轮目标明确要求验证 testnet 大文件上传，先设置 `E2E_WALRUS_LIVE_LARGE_UPLOAD=1`，再用专门 fixture 跑 `> 50 MiB`；如果 upload relay / publisher 返回 413/429/5xx，记录为 testnet Walrus capability failure，不改写主 96 项业务结论。
 
 ---
 
@@ -688,20 +751,21 @@ mkdir -p "$ARTIFACT_DIR"
 2. `wait_for` text "Step 4" 或 "Transaction Preview"
 3. Gas 页守卫: `missingStep1` → redirect `/create`，`missingStep2` → redirect `/create/content`。必须从 wizard 顺序走到，保持 CreateSoulProvider context。
 
-> **注意**: Gas 页 `handleDeploy()` 内部完成全流程：upload cover(public) → char(encrypted) → memory(encrypted) → skills(encrypted) → buildPublishSoulTx → signAndExecute → POST `/api/souls/publish` mirror 同步。e2e-wallet-stub 接管签名（内存 keypair，0 popup），无需手动介入。所有上传走 Vercel Blob direct-upload（`uploadSoulPayload` → `/api/souls/upload/token` → `/api/souls/upload/from-blob`）；服务端拉 staging blob 后加密上传 Walrus，409 race 自动重试 5 次。
+> **注意**: Gas 页 `handleDeploy()` 内部完成全流程：upload cover(public) → char(encrypted) → memory(encrypted) → skills(encrypted) → buildPublishSoulTx → signAndExecute → POST `/api/souls/publish` mirror 同步。e2e-wallet-stub 接管签名（内存 keypair，0 popup）。所有上传走 browser wallet-paid Walrus path：`uploadSoulPayload` 本地加密、报价、弹出 `UploadCostReview`，再由测试钱包签 Walrus register/certify TX。
 
 ### Test 1.6: Deploy Soul A — Sign & Deploy
 1. `click` "✓ Sign & Deploy" 按钮（`button:has-text("Sign & Deploy")`）
 2. `wait_for` `[data-testid="publish-status"]` 出现，跟踪状态变化: uploading → building → signing → syncing
-3. e2e-wallet-stub 接管签名（内存 keypair，0 popup）
-4. `wait_for` URL 变为 `/create/success`（status=done 时自动 redirect），timeout 90s
-5. `wait_for` text "Soul Born"（success 页标题）
-6. 从 success 页提取 **SOUL_A_ID**（Soul Object ID 行）:
+3. 按"Wallet-paid Walrus 成本确认"循环处理 `UploadCostReview` 弹窗。当前 fixture fresh run 预期 4 次确认：cover(public)、char(encrypted)、memory(encrypted)、skills(encrypted)；每次确认后由 e2e-wallet-stub 签 Walrus register/certify TX。
+4. e2e-wallet-stub 接管 Soul mint 签名（内存 keypair，0 popup）
+5. `wait_for` URL 变为 `/create/success`（status=done 时自动 redirect），timeout 90s
+6. `wait_for` text "Soul Born"（success 页标题）
+7. 从 success 页提取 **SOUL_A_ID**（Soul Object ID 行）:
    ```javascript
    evaluate_script(`document.body.innerText.match(/0x[a-f0-9]{64}/)?.[0] ?? ''`)
    ```
-7. `take_screenshot` → `$ARTIFACT_DIR/phase1-soul-a-published.png`
-8. **DB 验证 mint mirror 写入完整：**
+8. `take_screenshot` → `$ARTIFACT_DIR/phase1-soul-a-published.png`
+9. **DB 验证 mint mirror 写入完整：**
    ```sql
    SELECT on_chain_id, assets_on_chain_id, access_list_on_chain_id, metadata_on_chain_id,
           active_sprite_asset_name, active_voice_asset_name, sprite_config_json, voice_config_json
@@ -711,7 +775,7 @@ mkdir -p "$ARTIFACT_DIR"
    - `metadata_on_chain_id IS NOT NULL`（mint 自动创建 SoulMetadata shared object），记录为 **SOUL_A_METADATA_OBJ**
    - `assets_on_chain_id` 为 NULL（wizard 不传 `assetBlobObjectId`）
    - `active_sprite_asset_name` / `active_voice_asset_name` / `sprite_config_json` / `voice_config_json` 均为 NULL（fixture 未上传 sprite / voice）
-9. **DB 捕获初始 Skills 版本：**
+10. **DB 捕获初始 Skills 版本：**
    ```sql
    SELECT skill_name, version_index
    FROM soul_skill_version_records
@@ -728,8 +792,9 @@ mkdir -p "$ARTIFACT_DIR"
 3. Cover: `upload_file` ← `/Users/admin/Documents/example/images.jpeg`
 4. Content: 同 Test 1.3 — soul.md, memory.md, skill.zip 均来自 `/Documents/example/`
 5. Preview → Gas → Sign & Deploy
-6. 从 success 页捕获 **SOUL_B_ID**
-7. **DB 验证同 Test 1.6 step 8：**
+6. Deploy 阶段同 Test 1.6 处理 `UploadCostReview`；fresh run 预期 4 次确认
+7. 从 success 页捕获 **SOUL_B_ID**
+8. **DB 验证同 Test 1.6 step 9：**
    ```sql
    SELECT on_chain_id, assets_on_chain_id, access_list_on_chain_id, metadata_on_chain_id
    FROM soul_assets WHERE on_chain_id = '$SOUL_B_ID';
@@ -928,8 +993,9 @@ evaluate_script(`
 3. `evaluate_script` 验证 collection name "E2E Collection Alpha", floor "5 USDC", royalty "5%"
 4. `evaluate_script` 验证 1 个 Soul row 含 "Ready" tag
 5. `click` "Sign & Launch →" 按钮（`button:has-text("Sign & Launch")`）
-6. e2e-wallet-stub 自动签名（多笔 TX: create collection → upload files → mint soul → bind soul）
-7. `wait_for` URL 含 `/collections/create/success`，timeout 120s（多笔 TX）
+6. 按"Wallet-paid Walrus 成本确认"循环处理 `UploadCostReview`。当前 1-Soul fixture fresh run 预期 5 次确认：collection cover(public)、child char(encrypted)、child memory(encrypted)、child skills(encrypted)、child image(public)。
+7. e2e-wallet-stub 自动签名（多笔 TX: Walrus register/certify → create collection → mint soul → bind soul）
+8. `wait_for` URL 含 `/collections/create/success`，timeout 120s（多笔 TX）
 
 ### Test 3.4: Collection Success
 1. `wait_for` text "Collection Born"
@@ -1228,11 +1294,12 @@ curl -s -w "\n%{http_code}" \
    ```
    > Selector 需运行时通过 `evaluate_script` 定位 SkillsPanel 内的隐藏 file input 并打标签。
 2. `click` "Append Version" 按钮
-3. e2e-wallet-stub 自动签名 `append_version_as_owner()` TX
-4. `wait_for` 新 skill version row 出现
-5. `evaluate_script` 验证 version row 含 "private" tag + blob 地址
+3. 按"Wallet-paid Walrus 成本确认"处理 1 次 `UploadCostReview`（skill.zip encrypted upload，当前 fixture 小文件预期 `Transactions = 2`）
+4. e2e-wallet-stub 自动签名 Walrus register/certify 和 `append_version_as_owner()` TX
+5. `wait_for` 新 skill version row 出现
+6. `evaluate_script` 验证 version row 含 "private" tag + blob 地址
 
-> Skills 大文件 (>2 MB) 走 `uploadSoulPayload` → `/api/souls/upload/token` → `/api/souls/upload/from-blob`；客户端 hook (`use-skills.ts`) 接口不变，仅 server log 中可见 `from-blob` 路由调用。
+> Skills 大文件 (>2 MB) 走 `uploadSoulPayload` 的 wallet-paid Walrus path；客户端 hook (`use-skills.ts`) 在 append TX 成功后用 tx event 生成 `skillsSealSidecar` 并提交 mirror。
 
 ### Test 6.3: Owner Decrypt Skills Version
 1. 在 skill version row 点击 "Decrypt" 按钮
@@ -1394,12 +1461,12 @@ npx tsx web/scripts/e2e-agent-decrypt.ts
 
 ### Test 7.12: Seal 加密内容与原始文件逐字节比对
 
-前置：Agent Alpha 已购买 Soul B（Test 7.3）并拥有 owner 访问权（Test 7.4）。创建 / 导入 gas 页在 development 环境暴露 `window.__e2eLastRawEnvelope = { char, memory, skills, sprite }`，测试必须在 mint/import 后立即捕获该 JSON。本测试必须在 Test 7.10g 的 Soul B 再转售之前执行，否则 Agent Alpha 不再是 Soul B owner。
+前置：Agent Alpha 已购买 Soul B（Test 7.3）并拥有 owner 访问权（Test 7.4）。创建 / 导入 gas 页在 development 环境暴露 `window.__e2eLastSealMaterial = { char, memory, skills, sprite }`，测试必须在 mint/import 后立即捕获该 JSON。本测试必须在 Test 7.10g 的 Soul B 再转售之前执行，否则 Agent Alpha 不再是 Soul B owner。
 
 ```bash
 SOUL_ID=${SOUL_B_ID} \
 AGENT_API_KEY="${E2E_AGENT_ALPHA_API_KEY}" \
-RAW_ENVELOPES_JSON="${CAPTURED_RAW_ENVELOPES_JSON}" \
+PENDING_SEAL_MATERIALS_JSON="${CAPTURED_SEAL_MATERIAL_JSON}" \
 MEMORY_ENTRY_KEY="${SOUL_B_FOUNDING_MEMORY_TIMESTAMP_KEY}" \
 SKILL_NAME="${SOUL_B_INITIAL_SKILL_NAME}" \
 SKILL_VERSION_INDEX="${SOUL_B_INITIAL_SKILL_VERSION_INDEX}" \
@@ -1878,8 +1945,9 @@ cd /Users/admin/Desktop/nao/clawnews/move/soulidity && \
 ### Test 8.5: Import Step 5 — Pay Gas & Deploy（`/import/gas`）
 1. `wait_for` text "Pay Gas"
 2. `click` "Sign & Deploy" 按钮（`button:has-text("Sign & Deploy")`）
-3. e2e-wallet-stub 自动签名
-4. `wait_for` URL 含 `/import/success`，timeout 90s
+3. 按"Wallet-paid Walrus 成本确认"循环处理 `UploadCostReview`。当前 fixture fresh run 预期 4 次确认：cover(public)、char(encrypted)、memory(encrypted)、skills(encrypted)。
+4. e2e-wallet-stub 自动签名 Walrus register/certify 和 import mint TX
+5. `wait_for` URL 含 `/import/success`，timeout 90s
 
 ### Test 8.6: Import Step 6 — On-chain Success（`/import/success`）
 1. `wait_for` success 页面内容
@@ -1968,11 +2036,13 @@ curl -s -o /dev/null -w "%{http_code}" \
 > **前置：** 先用 `web/scripts/e2e-sprite-lifecycle.ts` 给 SOUL_A 上传一个 public sprite（`OWNER_PRIVATE_KEY=$E2E_BUYER_PRIVATE_KEY`，因为 Phase 4 之后 Buyer 是 SOUL_A 的 owner），记录 `assetName` / `versionIndex` / 源 PNG 路径：
 >
 > ```bash
-> SOUL_ID=$SOUL_A_ID \
+> SOUL_ON_CHAIN_ID=$SOUL_A_ID \
 > OWNER_PRIVATE_KEY=$E2E_BUYER_PRIVATE_KEY \
-> ASSETS_DIR=/Users/admin/Desktop/nao/clawnews/desktop/data/assets/wusaqi \
-> npx tsx web/scripts/e2e-sprite-lifecycle.ts append --visibility public
+> DESKTOP_ASSETS_DIR=/Users/admin/Desktop/nao/clawnews/desktop/data/assets \
+> npx tsx web/scripts/e2e-sprite-lifecycle.ts append wusaqi public
 > ```
+>
+> 该脚本是白盒 sprite lifecycle helper，当前直接调用 `web/lib/services/walrus.ts` 的 publisher helper，不代表用户 UI 上传主路径；用户 UI 上传主路径仍必须走 `UploadCostReview`。
 
 ```bash
 SOUL_ID=$SOUL_A_ID \
@@ -2252,12 +2322,12 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | 函数 | 签名 | 用途 | E2E 使用 |
 |------|------|------|----------|
 | `__e2ePublish` | `(params: PublishParams) => Promise` | 触发 mint TX | Phase 1 create 流程 |
-| `__e2eUpload` | `(fileContent: string, fileName: string, type?: 'public'\|'encrypted') => Promise<UploadResult>` | Walrus 文件上传 | Phase 1 create 流程 |
+| `__e2eUpload` | `(fileContent: string, fileName: string, type?: 'public'\|'encrypted') => Promise<UploadResult>` | 白盒 Walrus 上传 helper；当前实现自动 approve quote，仅用于调试，不替代主流程 `UploadCostReview` | 辅助调试 |
 | `__e2eListSoul` | `(params: { currentKioskId, currentKioskCapOnChainId, stateObjectId, soulObjectId, priceAtomic }) => Promise` | 上架 | Phase 2 list 流程 |
 | `__e2eGetAuthHeaders` | `() => Promise<Record<string, string>>` | 获取 `{ 'x-csrf-token': csrf }`（cookie `session` 由浏览器自动携带） | 通用 |
 | `__e2eIssueGrant` | `(params: { stateObjectId, granteeAddress, scopeMask, soulObjectId }) => Promise` | 发放 grant | **已废弃** — Phase 5 改用 GrantModal UI |
 | `__e2eRevokeGrant` | `(params: { stateObjectId, granteeAddress, soulObjectId }) => Promise` | 撤销 grant | **已废弃** — Phase 5 改用 GrantModal UI |
-| `__e2eLastRawEnvelope` | 已实现（create/import gas 页） | `{char,memory,skills,sprite}` raw envelope 暴露点 | Phase 7.12 逐字节比对 |
+| `__e2eLastSealMaterial` | 已实现（create/import gas 页） | `{char,memory,skills,sprite}` Pending Seal material 暴露点 | Phase 7.12 逐字节比对 |
 | `__e2eSoulidity` | 已实现（dev-only AppProviders helper） | content access purchase / price / duration / grant capacity helper；`setGrantCapacity` 已内部 POST `/api/souls/[id]/grant-capacity` mirror（无需测试侧再单独 cURL） | Phase 5.2a + Phase 7.10a/f/g |
 | `E2EWalletStub` | 已实现的 dev-only Wallet Standard 钱包桩（`web/components/providers/e2e-wallet-stub.tsx`） | 通过 `localStorage['__E2E_PRIVATE_KEY']` 注入 keypair → ConnectModal 自动列出 → 0 popup 签所有 message / TX | Phase 0 onwards 全部登录与签名 |
 
@@ -2305,7 +2375,8 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/components/providers/wallet-auth-bridge.tsx` | 钱包 connect 后自动 challenge → login |
 | `web/components/providers/e2e-wallet-helpers.tsx` | `window.__e2eSoulidity` dev-only helper |
 | `web/components/providers/e2e-wallet-stub.tsx` | **W0 已实现**：dev-only Wallet Standard 测试桩 |
-| `web/components/providers/app-providers.tsx` | **W0 已实现**：development 分支挂 `<E2EWalletStub />` |
+| `web/components/providers/app-providers.tsx` | **W0 已实现**：development 分支挂 `<E2EWalletStub />`，并包裹 `<UploadCostReviewProvider />` |
+| `web/components/upload/upload-cost-review.tsx` | wallet-paid Walrus 成本确认 modal — 所有 `uploadSoulPayload` UI 路径签名前必经 |
 | `web/components/souls/grant-modal.tsx` | GrantModal UI — Phase 5.2, 5.6 |
 | `web/components/souls/memory-panel.tsx` | Memory Panel — Phase 1.8, 6.3 |
 | `web/components/souls/persona-asset-panel.tsx` | Persona Sprite 管理面板（owner-only，append + activate + delete + clear） |
@@ -2324,7 +2395,9 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/lib/hooks/use-social.ts` | Bookmark/Follow hooks — Phase 4.3a-c, 10.6 |
 | `web/lib/hooks/use-collection-publish.ts` | Collection publish — Phase 3.3 |
 | `web/lib/hooks/use-import.ts` | Import hook — Phase 8.4 |
-| `web/lib/upload/client-upload.ts` | `uploadSoulPayload` — Vercel Blob direct-upload 客户端入口 |
+| `web/lib/upload/client-upload.ts` | `uploadSoulPayload` — wallet-paid Walrus upload 客户端入口 |
+| `web/lib/upload/walrus-quote.ts` | `quoteWalrusUpload` / chunk plan / quote TTL 与 fingerprint 校验 |
+| `web/lib/upload/client-seal.ts` | 浏览器端 AES-GCM 加密与 client-built Seal sidecar 生成 |
 | `web/components/souls/skills-panel.tsx` | Skills 面板 UI — Phase 6 |
 
 ### Agent API（已实现 ✅）
@@ -2381,8 +2454,11 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/app/api/auth/wallet-login/route.ts` | 校验签名 → 写 `session` + `csrf-token` cookies；同源 + rate limit 20/60s |
 | `web/app/api/auth/me/route.ts` | 当前用户信息（GET，无需 CSRF） |
 | `web/app/api/auth/logout/route.ts` | 清 cookies（带 CSRF 校验） |
-| `web/app/api/souls/upload/token/route.ts` | Vercel Blob presigned token（`@vercel/blob/client::handleUpload`） |
-| `web/app/api/souls/upload/from-blob/route.ts` | 服务端拉 staging blob → Walrus；409 race 自动重试 5 次 |
+| `web/app/api/souls/upload/route.ts` | 已退役为 410；不再接受 server-side Soul upload |
+| `web/app/api/souls/upload/token/route.ts` | 已退役为 410；不再签发 Vercel Blob token |
+| `web/app/api/souls/upload/from-blob/route.ts` | 已退役为 410；不再接受 Vercel Blob staging finalize |
+| `web/app/api/collections/upload-image/route.ts` | 已退役为 410；Collection cover 走 wallet-paid browser Walrus |
+| `web/app/api/profile/cover/route.ts` | 已退役为 410；Profile cover 走 wallet-paid browser Walrus |
 | `web/app/api/souls/[id]/grant-capacity/route.ts` | 链上 `GrantCapacityUpdated` 事件 mirror |
 | `web/lib/auth/identity.ts` | `requireMutationIdentity` / `requireIdentity`；session cookie + agent API key identity resolver |
 | `web/lib/soulidity/server.ts` | `requireHumanWalletIdentity` / `requireSoulCreateWalletIdentity`；Soulidity human wallet guard |
@@ -2395,7 +2471,8 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 | `web/lib/rate-limit.ts` | `takeRateLimitToken` — IP/member rate limiting |
 | `web/lib/sui.ts` | `suiClient` — Sui RPC 客户端 |
 | `web/lib/prisma.ts` | `prisma` — 共享 Prisma 客户端 |
-| `web/lib/upload/client-upload.ts` | `uploadSoulPayload` — Vercel Blob direct-upload 客户端入口 |
+| `web/lib/upload/client-upload.ts` | `uploadSoulPayload` — wallet-paid Walrus upload 客户端入口 |
+| `web/lib/soulidity/mirror/provided-sidecar.ts` | mirror 路由解析 client-built sidecar；raw DEK envelope string 返回 400 |
 
 ### Collection 批量处理
 | 文件 | 用途 |
@@ -2425,7 +2502,7 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 9. **Agent 购买两步签名 TTL**：prepare → execute 之间必须在 10 分钟内完成，否则 `/api/agent/souls/{id}/purchase/execute` 返回 410。
 10. **Collection directory upload**：Chrome DevTools MCP `upload_file` 不支持 `webkitdirectory` picker；Phase 3.2 使用 `evaluate_script` 构造 File + DataTransfer + dispatch change event，此为唯一执行路径。
 11. **Import 字段映射**：`soul.md` 作为 source file 时 name/description 不会自动映射，Phase 8.3 必须通过 Chrome DevTools MCP `fill` 写入 `E2E Imported Soul` 与 `Imported from local file`。
-12. **Seal 逐字节比对前置**：Phase 7.12 脚本需要 (a) create / import gas 页结束瞬间捕获 `window.__e2eLastRawEnvelope` 的完整 JSON；(b) `SOUL_UPLOAD_SECRET` 环境变量有值。
+12. **Seal 逐字节比对前置**：Phase 7.12 脚本需要在 create / import gas 页结束瞬间捕获 `window.__e2eLastSealMaterial` 的完整 JSON；不再需要 `SOUL_UPLOAD_SECRET` 或 raw DEK envelope。
 13. **Follow 测试前置**：Phase 10.6 依赖 Phase -1.2 记录的 `SELLER_MEMBER_ID`。
 14. **Bookmark 时序**：Phase 4.3a-4.3c 必须在 Buyer 登录后、购买前执行（需要 Market 列表两个 Soul 均 listed）。
 15. **Admin 面板范围外**：7 个 admin 页面 + 11 个 admin API 路由不在本轮覆盖面（无 admin 测试账号）。
@@ -2451,15 +2528,15 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 
 32. **CSRF + Same-Origin 强约束**：所有走 cookie auth 的 mutating 路由（以 `web/lib/auth/identity.ts::requireMutationIdentity` / `requireHumanWalletIdentity({ mutation })` 为真值）要求 `x-csrf-token` header 与 session 内 `csrfHash` 匹配，并且 Origin/Referer 与请求 host 同源。E2E `curl` 调用必须同时传 `Cookie: session=...; csrf-token=...` + `x-csrf-token: ...` 两份。`/api/auth/wallet-login` 与 `/api/auth/logout` 还要 `Origin: http://localhost:3100`。Agent API 路径走 `Authorization: Bearer sk-...` 不受影响。
 
-33. **Vercel Blob 上传链路**：`POST /api/souls/upload/token` 使用 `BLOB_READ_WRITE_TOKEN` env 与 `@vercel/blob/client::handleUpload`；token 生成需要 caller 通过 `requireMutationIdentity`（即浏览器 cookie + CSRF）。Phase 1 / 3 / 6 / 8 大文件全部经此路径；服务端 `from-blob` 路由会在成功 / 失败两种路径都删除 Vercel staging blob，409 race 自动重试 5 次。Collection publish cover 也走 `uploadSoulPayload(..., 'public')`；legacy `/api/collections/upload-image` 仍存在，但不是本计划主路径。
-
-   **dev-only 短路（2026-04-27 新增）**：Vercel Blob 的 `onUploadCompleted` 是服务端到服务端回调，无法回到 `localhost:3100`，导致 from-blob 永远 409。`web/lib/upload/client-upload.ts` 在 `NODE_ENV === 'development' && NEXT_PUBLIC_E2E_TEST_MODE === '1'` 时短路到 legacy `/api/souls/upload`（同样的 auth + 校验 + Walrus 路径，仅去掉 Blob 中转）。生产构建不进入此分支。当前受管 fixture 文件最大 5.6 KB，低于 legacy 路径的 4.5 MB serverless 入站限制；超过该大小的 fixture 不属于本计划验收集，必须先更新 SPEC 与上传链路验收，不能作为待办测试项挂在本计划后面。
+33. **wallet-paid Walrus 上传链路**：`uploadSoulPayload` 在浏览器本地校验、加密、计算 quote，并通过 `UploadCostReview` 要求用户确认 Walrus storage / Sui gas / relay tip 后才发起钱包签名。当前产品上限是 `MAX_SOUL_UPLOAD_BYTES = 500 MiB`；`<= 50 MiB` 单 blob，`> 50 MiB` 自动 16 MiB chunk + manifest，quote TTL 60 秒，文件 / 网络 / relay / chunk plan 变化必须重新确认。测试网执行还必须考虑 Phase -1.8 的 Walrus capability probe：协议 blob 上限可由 `walrus info --context testnet` 查询，但公共 relay / publisher 的实际 HTTP body、rate limit 与 413/429/5xx 行为可能更低；默认 96 项主流程不把 `> 50 MiB` live upload 作为 testnet 公共服务通过条件。旧 Vercel Blob staging 路由、server-side Soul upload、collection/profile server upload 路由均返回 410；E2E 也不再依赖 `BLOB_READ_WRITE_TOKEN`、`WALRUS_PUBLISHER_URL`、`SOUL_UPLOAD_SECRET` 或 legacy upload 短路。`__e2eUpload` 是白盒 helper，会自动 approve quote，不能替代主流程成本确认验收。
 
 34. **e2e-wallet-stub 前置（W0，2026-04-27 已落地）**：`web/components/providers/e2e-wallet-stub.tsx` 已挂在 `app-providers.tsx` development 分支（双门控：`NODE_ENV === 'development'` AND `NEXT_PUBLIC_E2E_TEST_MODE === '1'`）。该桩通过 `localStorage['__E2E_PRIVATE_KEY']` 重建 Ed25519 keypair，注册到 dapp-kit `getWallets()`（经 `wallet-standard:app-ready` handshake）。未设 `NEXT_PUBLIC_E2E_TEST_MODE=1` 或非 dev 环境时不进入 bundle/不挂载，普通开发会话即便 localStorage 残留 `__E2E_PRIVATE_KEY` 也不会激活。Phase -1.5 自检：`evaluate_script` 在任意页面运行 `(navigator.wallets ?? []).some(w => w.name === 'E2E Test Wallet')`，未设 `__E2E_PRIVATE_KEY` 前应为 `false`，设了 + reload 后应为 `true`。
 
 35. **`scripts/e2e-setup-agents.ts` env-driven（W0.2，2026-04-27 已重写）**：从 `E2E_AGENT_ALPHA_PRIVATE_KEY` / `E2E_AGENT_ALPHA_API_KEY` / `E2E_AGENT_BETA_PRIVATE_KEY` / `E2E_AGENT_BETA_API_KEY` 派生地址 + 计算 SHA-256，幂等 `findOrCreate` `Account` / `Member(kind='agent', agentStatus='active')` / `WalletBinding(chain='sui')`。两次连续运行得到相同 member ID 与 hash。脚本入口 `import './lib/dotenv'` 自动加载 `.env` + `.env.local`。
 
 36. **`web/next.config.ts` 加载 `.env.local`（2026-04-27 新增）**：原本只 `dotenv.config({ path: '../.env' })`，现追加 `dotenv.config({ path: '../.env.local', override: true })`。E2E 用的 `NEXT_PUBLIC_E2E_TEST_MODE=1` + `E2E_*` 私钥都放在 `.env.local`，dev server 起来时一并注入。
+
+37. **Client-built Seal sidecar 契约**：create/import/wrap/memory/skills/assets mirror 路由只接受客户端在 TX 成功后生成的 Seal sidecar object，并用链上事件 / object id 绑定校验 document id。`window.__e2eLastSealMaterial` 只给 Phase 7.12 本地逐字节比对使用，不能作为 API body 直接提交；raw DEK envelope string 必须返回 400。
 
 ---
 
@@ -2475,9 +2552,12 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 - Test 7.10h KioskRegistry rebind 全矩阵必须覆盖：同 cap 幂等（no-op）/ 不同 cap abort / 非空旧 kiosk abort / 正向 rebind
 - Phase 5.2 / 5.6 grant 发放 & 撤销全部走 GrantModal UI；Phase 5.2a 容量调整走 `window.__e2eSoulidity.setGrantCapacity`（helper 内部已 mirror）；Phase 5.8 destroy_invalidated_grant 走 `sui client call`（CLI active-address 必须为 `GRANT_OBJ` 持有者，本流程为 Agent Alpha）
 - Phase 7.11 / 7.12 Seal 链路必须跑通：Phase 7.11 `e2e-agent-decrypt.ts` 退出 0 + content hash 匹配；Phase 7.12 `e2e-agent-verify-content.ts` 输出 `OK 3 artifact(s) matched byte-for-byte.`（char / memory / skills 三个 artifact 全匹配）
-- Test 9.10 匿名 public sprite 下载属于 Phase 9 主验收：`web/scripts/e2e-sprite-lifecycle.ts append --visibility public` 生成 public sprite 后，`web/scripts/e2e-public-sprite-anonymous.ts` 必须用 anonymous + bogus Bearer 两条路径拿到 `visibility=public` + `walrusBlobId`，并完成源 PNG 字节比对
+- Phase 1 / 3 / 6 / 8 所有 UI 上传都必须实际出现并确认 `UploadCostReview`；确认前不得出现 Walrus register/certify 或 Soul mint/list/append TX 签名
+- Phase -1.8 必须记录 testnet Walrus relay tip-config；如果 relay 不可达，后续上传失败按环境阻塞处理，不把主流程失败误判成产品回归。`> 50 MiB` live smoke 只有在显式设置 `E2E_WALRUS_LIVE_LARGE_UPLOAD=1` 且 probe 通过后才纳入本轮证据。
+- Test 9.10 匿名 public sprite 下载属于 Phase 9 主验收：`SOUL_ON_CHAIN_ID=$SOUL_A_ID npx tsx web/scripts/e2e-sprite-lifecycle.ts append wusaqi public` 生成 public sprite 后，`web/scripts/e2e-public-sprite-anonymous.ts` 必须用 anonymous + bogus Bearer 两条路径拿到 `visibility=public` + `walrusBlobId`，并完成源 PNG 字节比对
 - 截图存档到 `$ARTIFACT_DIR`（默认 `e2e-artifacts/<RUN_DATE>/`）
 - 测试结果更新到 `docs/e2e-test-results-new-web.md`
+- Repo guard 必须保持：用户上传 UI / 核心 upload helper 不引用 `/api/souls/upload*`、`@vercel/blob/client`、`sealDekEnvelope`、raw envelope submit；生产用户上传 env 不依赖 `WALRUS_PUBLISHER_URL`、`SOUL_UPLOAD_SECRET`、`BLOB_READ_WRITE_TOKEN`
 - Phase 11 cleanup 完成后：market 恢复空状态；DB `soul_*` / `content_access_records` / `follows` / `bookmarks` 均为空；Soul A 的 SoulListing 与 Collection 的 CollectionListing 对象均 `Object has been deleted`
 - 所有 mutating cURL 必须同时携带 `Cookie: session=...; csrf-token=...` + `x-csrf-token` header；缺任一返回 403（环境失败，非业务失败）
 - W0 已完成但每次运行仍需在 Phase -1.5 自检：确认 `NODE_ENV=development`、`NEXT_PUBLIC_E2E_TEST_MODE=1` 且 `e2e-wallet-stub.tsx` 已挂载（否则 Test 1.1 会卡在 ConnectModal，不能算业务失败）

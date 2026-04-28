@@ -13,6 +13,9 @@ function readSource(relativePath: string) {
   return readFileSync(resolve(process.cwd(), relativePath), 'utf8')
 }
 
+const soulSidecar = { version: 1, mode: 'seal-envelope', documentId: '0xsoul-doc', encryptedDek: 'soul-encrypted', iv: 'soul-iv' }
+const memorySidecar = { version: 1, mode: 'seal-envelope', documentId: '0xmemory-doc', encryptedDek: 'memory-encrypted', iv: 'memory-iv' }
+
 describe('sanitizeWrapRecoveryState', () => {
   it('accepts a same-user recovery payload with matching sync digest', () => {
     expect(sanitizeWrapRecoveryState(JSON.stringify(attachSoulidityDeploymentSignature({
@@ -20,9 +23,8 @@ describe('sanitizeWrapRecoveryState', () => {
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: '5YzRecoveryDigest',
-        category: 'personal-join',
-        sealSidecar: 'char-envelope',
-        memorySealSidecar: 'memory-envelope',
+        sealSidecar: soulSidecar,
+        memorySealSidecar: memorySidecar,
         skillsSealSidecar: null,
         assetsSealSidecar: null,
       },
@@ -31,9 +33,8 @@ describe('sanitizeWrapRecoveryState', () => {
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: '5YzRecoveryDigest',
-        category: 'personal-join',
-        sealSidecar: 'char-envelope',
-        memorySealSidecar: 'memory-envelope',
+        sealSidecar: soulSidecar,
+        memorySealSidecar: memorySidecar,
         skillsSealSidecar: null,
         assetsSealSidecar: null,
       },
@@ -46,9 +47,8 @@ describe('sanitizeWrapRecoveryState', () => {
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: '5YzRecoveryDigest',
-        category: 'personal-join',
-        sealSidecar: 'char-envelope',
-        memorySealSidecar: 'memory-envelope',
+        sealSidecar: soulSidecar,
+        memorySealSidecar: memorySidecar,
         skillsSealSidecar: null,
         assetsSealSidecar: null,
       },
@@ -74,9 +74,8 @@ describe('sanitizeWrapRecoveryState', () => {
       txDigest: '5YzRecoveryDigest',
       syncBody: {
         txDigest: 'DifferentDigest',
-        category: 'personal-join',
-        sealSidecar: 'char-envelope',
-        memorySealSidecar: 'memory-envelope',
+        sealSidecar: soulSidecar,
+        memorySealSidecar: memorySidecar,
         skillsSealSidecar: null,
         assetsSealSidecar: null,
       },

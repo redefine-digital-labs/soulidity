@@ -5,6 +5,15 @@ import {
   type UploadResults,
 } from '@/components/providers/create-soul-provider'
 
+const pendingSealMaterial = {
+  version: 1 as const,
+  dek: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+  iv: 'AAAAAAAAAAAAAAAA',
+  contentHash: '0'.repeat(64),
+  mimeType: 'text/plain',
+  fileName: 'bundle.txt',
+}
+
 const baseUploadResults: UploadResults = {
   ownerAddress: '0xold',
   coverImage: {
@@ -18,21 +27,21 @@ const baseUploadResults: UploadResults = {
     blobObjectId: '0xchar',
     contentHash: 'char-hash',
     blobUrl: 'https://example.com/char',
-    sealDekEnvelope: 'char-envelope',
+    sealMaterial: pendingSealMaterial,
   },
   memorySeed: {
     blobId: 'memory-blob',
     blobObjectId: '0xmemory',
     contentHash: 'memory-hash',
     blobUrl: 'https://example.com/memory',
-    sealDekEnvelope: 'memory-envelope',
+    sealMaterial: pendingSealMaterial,
   },
   skillsFile: {
     blobId: 'skills-blob',
     blobObjectId: '0xskills',
     contentHash: 'skills-hash',
     blobUrl: 'https://example.com/skills',
-    sealDekEnvelope: 'skills-envelope',
+    sealMaterial: pendingSealMaterial,
   },
 }
 

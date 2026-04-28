@@ -6,6 +6,7 @@ const SOUL_ID = `0x${'2'.repeat(64)}`
 const STATE_ID = `0x${'3'.repeat(64)}`
 const MEMORY_ID = `0x${'4'.repeat(64)}`
 const TX_DIGEST = '11111111111111111111111111111111'
+const SOUL_SIDECAR = { version: 1, mode: 'seal-envelope', documentId: '0xsoul-doc', encryptedDek: 'soul-encrypted', iv: 'soul-iv' }
 
 const mockedRequireSoulCreateWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedAssertTransactionSender = vi.hoisted(() => vi.fn())
@@ -235,8 +236,7 @@ describe('soul publish route', () => {
 
       tags: ['typescript', 'desktop'],
       previewImages: ['https://example.com/cover.png'],
-      sealSidecar: 'envelope',
-      memorySealSidecar: 'memory-envelope',
+      sealSidecar: SOUL_SIDECAR,
     }))
 
     expect(response.status).toBe(200)
@@ -265,6 +265,9 @@ describe('soul publish route', () => {
       tags: ['typescript', 'desktop'],
       creatorMemberId: 'member-1',
       currentOwnerMemberId: 'member-1',
+    }))
+    expect(mockedBuildSyncSealSidecars).toHaveBeenCalledWith(expect.objectContaining({
+      soulSidecar: SOUL_SIDECAR,
     }))
     expect(mockedStoreSoulidityTxSync).toHaveBeenCalledWith(expect.objectContaining({
       routeKey: 'publish',

@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 
-const TEST_SECRET = 'a'.repeat(64)
 const AUTH_TAG_BYTES = 16
 
 // Mock server-only modules that seal-crypto.ts imports transitively
@@ -31,10 +30,6 @@ function sha256hex(data: Buffer): string {
 }
 
 describe('Seal AES-GCM encrypt-decrypt roundtrip', () => {
-  beforeEach(() => {
-    process.env.SOUL_UPLOAD_SECRET = TEST_SECRET
-  })
-
   it('encrypts plaintext and decrypts back with matching hash', () => {
     const plaintext = Buffer.from('Hello Soul bundle content — 你好世界!')
     const contentHash = sha256hex(plaintext)
@@ -53,40 +48,6 @@ describe('Seal AES-GCM encrypt-decrypt roundtrip', () => {
     // Decrypted content matches original
     expect(Buffer.compare(recovered, plaintext)).toBe(0)
     expect(sha256hex(recovered)).toBe(contentHash)
-  })
-
-  it('roundtrips through DEK envelope: encrypt → seal envelope → unseal → decrypt', async () => {
-    const { sealDekEnvelope, unsealDekEnvelope } = await import('../../web/lib/services/dek-envelope')
-
-    const plaintext = Buffer.from('Sealed bundle content for E2E test')
-    const contentHash = sha256hex(plaintext)
-    const dek = randomBytes(32)
-    const iv = randomBytes(12)
-
-    // Encrypt
-    const ciphertext = aesGcmEncrypt(plaintext, dek, iv)
-
-    // Seal the DEK into an envelope (what the upload route does)
-    const envelope = sealDekEnvelope({
-      dek: new Uint8Array(dek),
-      iv: new Uint8Array(iv),
-      contentHash,
-      mimeType: 'application/zip',
-      fileName: 'bundle.zip',
-    })
-
-    // Unseal the envelope (what the publish route does)
-    const unsealed = unsealDekEnvelope(envelope)
-
-    // Decrypt with recovered DEK + IV
-    const recovered = aesGcmDecrypt(ciphertext, Buffer.from(unsealed.dek), Buffer.from(unsealed.iv))
-
-    // Verify complete roundtrip
-    expect(sha256hex(recovered)).toBe(contentHash)
-    expect(sha256hex(recovered)).toBe(unsealed.contentHash)
-    expect(Buffer.compare(recovered, plaintext)).toBe(0)
-    expect(unsealed.mimeType).toBe('application/zip')
-    expect(unsealed.fileName).toBe('bundle.zip')
   })
 
   it('rejects tampered ciphertext via GCM auth tag', () => {

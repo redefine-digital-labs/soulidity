@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
-const mockedUnsealDekEnvelope = vi.hoisted(() => vi.fn())
 const mockedGetSealRuntimeConfig = vi.hoisted(() => vi.fn())
 const mockedCreateSealClient = vi.hoisted(() => vi.fn())
 const mockedCreateSealEnvelopeSidecar = vi.hoisted(() => vi.fn())
@@ -36,10 +35,6 @@ vi.mock('@web/lib/prisma', () => ({
 
 vi.mock('@web/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
-}))
-
-vi.mock('@web/lib/services/dek-envelope', () => ({
-  unsealDekEnvelope: mockedUnsealDekEnvelope,
 }))
 
 vi.mock('@web/lib/services/seal', () => ({
@@ -120,6 +115,9 @@ const STATE_ID = `0x${'3'.repeat(64)}`
 const MEMORY_ID = `0x${'4'.repeat(64)}`
 const SKILLS_ID = `0x${'5'.repeat(64)}`
 const WALLET_ADDRESS = `0x${'1'.repeat(64)}`
+const SOUL_SIDECAR = { version: 1, mode: 'seal-envelope', documentId: '0xsoul-doc', encryptedDek: 'soul-encrypted', iv: 'soul-iv' }
+const MEMORY_SIDECAR = { version: 1, mode: 'seal-envelope', documentId: '0xmemory-doc', encryptedDek: 'memory-encrypted', iv: 'memory-iv' }
+const SKILLS_SIDECAR = { version: 1, mode: 'seal-envelope', documentId: '0xskill-doc', encryptedDek: 'skill-encrypted', iv: 'skill-iv' }
 
 function makeRequest(body: Record<string, unknown>) {
   return new Request('http://localhost/api/wrap-link/personal', {
@@ -196,12 +194,12 @@ describe('POST /api/wrap-link/personal', () => {
     return POST(makeRequest(body) as any)
   }
 
-  it('converts string DEK envelopes into Seal sidecars before syncing the projection', async () => {
+  it('accepts client-built Seal sidecars before syncing the projection', async () => {
     const response = await callRoute({
       txDigest: TX_DIGEST,
-      sealSidecar: 'char-envelope',
-      memorySealSidecar: 'memory-envelope',
-      skillsSealSidecar: 'skills-envelope',
+      sealSidecar: SOUL_SIDECAR,
+      memorySealSidecar: MEMORY_SIDECAR,
+      skillsSealSidecar: SKILLS_SIDECAR,
     })
 
     expect(response.status).toBe(200)
@@ -209,9 +207,9 @@ describe('POST /api/wrap-link/personal', () => {
       packageId: PACKAGE_ID,
       soulObjectId: SOUL_ID,
       stateObjectId: STATE_ID,
-      rawSoulEnvelope: 'char-envelope',
-      rawMemoryEnvelope: 'memory-envelope',
-      rawSkillsEnvelope: 'skills-envelope',
+      soulSidecar: SOUL_SIDECAR,
+      memorySidecar: MEMORY_SIDECAR,
+      skillsSidecar: SKILLS_SIDECAR,
     }))
     expect(mockedSyncSoulProjectionFromChain).toHaveBeenCalledWith(expect.objectContaining({
       soulObjectId: SOUL_ID,
@@ -227,7 +225,21 @@ describe('POST /api/wrap-link/personal', () => {
     }))
   })
 
-  it('returns 503 when Seal runtime is unavailable for a pending DEK envelope', async () => {
+  it('rejects raw DEK envelopes before projection sync', async () => {
+    const response = await callRoute({
+      txDigest: TX_DIGEST,
+      sealSidecar: 'char-envelope',
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'sealSidecar must be a Seal sidecar object, not a raw DEK envelope',
+    })
+    expect(mockedBuildSyncSealSidecars).not.toHaveBeenCalled()
+    expect(mockedSyncSoulProjectionFromChain).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 when Seal runtime is unavailable while validating provided sidecars', async () => {
     const { SealSidecarSyncConfigError } = await import('../../web/lib/soulidity/mirror/build-seal-sidecars') as any
     mockedBuildSyncSealSidecars.mockRejectedValueOnce(
       new SealSidecarSyncConfigError('Seal is not configured for Soul publishing'),
@@ -235,7 +247,7 @@ describe('POST /api/wrap-link/personal', () => {
 
     const response = await callRoute({
       txDigest: TX_DIGEST,
-      sealSidecar: 'char-envelope',
+      sealSidecar: SOUL_SIDECAR,
     })
 
     expect(response.status).toBe(503)

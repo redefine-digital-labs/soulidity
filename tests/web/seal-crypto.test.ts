@@ -48,6 +48,30 @@ describe('Seal envelope crypto', () => {
     ).toThrow('Seal envelope sidecar documentId is invalid')
   })
 
+  it('accepts mirrored memory and skill document namespaces', async () => {
+    const {
+      generateMemoryDocumentId,
+      generateSkillDocumentIdForVersion,
+      parseSealEnvelopeSidecar,
+    } = await import('../../web/lib/services/seal-crypto.ts')
+    const memoryDocumentId = generateMemoryDocumentId(`0x${'22'.repeat(32)}`, 123)
+    const skillDocumentId = generateSkillDocumentIdForVersion(`0x${'44'.repeat(32)}`, 'api-design', 0)
+
+    for (const documentId of [memoryDocumentId, skillDocumentId]) {
+      expect(parseSealEnvelopeSidecar({
+        version: 1,
+        mode: 'seal-envelope',
+        documentId,
+        encryptedDek: 'ZW5jcnlwdGVk',
+        iv: VALID_IV_BASE64,
+        cipher: 'AES-GCM-256',
+        mimeType: 'application/zip',
+        fileName: 'bundle.zip',
+        contentHash: VALID_CONTENT_HASH,
+      }).documentId).toBe(documentId)
+    }
+  })
+
   it('roundtrips a bundle through envelope encryption with a mock Seal client', async () => {
     const { decryptBundle, encryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
 

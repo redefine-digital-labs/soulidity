@@ -15,32 +15,32 @@ describe('memory encryption regressions', () => {
 
     expect(createGasSource).toContain("'uploading-memory'")
     expect(createGasSource).toContain('Encrypting & uploading memory')
-    expect(createGasSource).toContain("results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletAddress)")
-    expect(createGasSource).toContain('memorySealSidecar: results.memorySeed.sealDekEnvelope ?? null')
+    expect(createGasSource).toContain("results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)")
+    expect(createGasSource).toContain('memorySealMaterial: results.memorySeed.sealMaterial ?? null')
 
     expect(importGasSource).toContain("'uploading-memory'")
     expect(importGasSource).toContain('Encrypting & uploading memory')
-    expect(importGasSource).toContain("results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletAddress)")
-    expect(importGasSource).toContain('memorySealSidecar: results.memorySeed.sealDekEnvelope ?? null')
+    expect(importGasSource).toContain("results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)")
+    expect(importGasSource).toContain('memorySealMaterial: results.memorySeed.sealMaterial ?? null')
 
-    expect(publishHookSource).toContain('memorySealSidecar?: string | null')
-    expect(publishHookSource).toContain('memorySealSidecar: params.memorySealSidecar ?? null')
+    expect(publishHookSource).toContain('memorySealMaterial?: PendingSealMaterial | null')
+    expect(publishHookSource).toContain('createMemorySealSidecarFromMaterial')
 
-    expect(importHookSource).toContain('memorySealSidecar?: string | null')
-    expect(importHookSource).toContain('memorySealSidecar: params.memorySealSidecar ?? null')
+    expect(importHookSource).toContain('memorySealMaterial?: PendingSealMaterial | null')
+    expect(importHookSource).toContain('createMemorySealSidecarFromMaterial')
   })
 
   it('keeps personal-join and collection mint flows on encrypted founding memory with mirrored recovery payloads', () => {
     const wrapHookSource = readSource('web/lib/hooks/use-wrap-publish.ts')
     const collectionHookSource = readSource('web/lib/hooks/use-collection-publish.ts')
 
-    expect(wrapHookSource).toContain('memorySealSidecar: string | null')
-    expect(wrapHookSource).toContain("const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletAddress)")
-    expect(wrapHookSource).toContain("memorySealSidecar: typeof memUpload.sealDekEnvelope === 'string' ? memUpload.sealDekEnvelope : null")
+    expect(wrapHookSource).toContain('memorySealSidecar: SealEnvelopeSidecar | null')
+    expect(wrapHookSource).toContain("const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletUpload, walletAddress)")
+    expect(wrapHookSource).toContain('memorySealSidecar: memUpload.sealMaterial && foundingMemory')
 
-    expect(collectionHookSource).toContain('memorySealDekEnvelope: string')
-    expect(collectionHookSource).toContain("const memUpload = await uploadFile(memFile, 'encrypted', authHeaders, walletAddress)")
-    expect(collectionHookSource).toContain('memorySealSidecar: soulState.uploads.memorySealDekEnvelope')
+    expect(collectionHookSource).toContain('memorySealMaterial: PendingSealMaterial')
+    expect(collectionHookSource).toContain("const memUpload = await uploadFile(memFile, 'encrypted', authHeaders, walletUpload, walletAddress)")
+    expect(collectionHookSource).toContain('createMemorySealSidecarFromMaterial')
   })
 
   it('keeps provider upload state typed as encrypted for founding memory', () => {
@@ -49,6 +49,13 @@ describe('memory encryption regressions', () => {
 
     expect(createProviderSource).toContain('memorySeed?: EncryptedUploadResult')
     expect(importProviderSource).toContain('memorySeed?: EncryptedUploadResult')
+  })
+
+  it('uses the canonical testnet Seal key server in E2E mode', () => {
+    const clientSealSource = readSource('web/lib/upload/client-seal.ts')
+
+    expect(clientSealSource).toContain("process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1'")
+    expect(clientSealSource).toContain('DEFAULT_TESTNET_SEAL_SERVER_CONFIGS')
   })
 })
 
