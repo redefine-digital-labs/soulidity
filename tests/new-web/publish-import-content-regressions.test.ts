@@ -36,7 +36,8 @@ describe('memory encryption regressions', () => {
 
     expect(wrapHookSource).toContain('memorySealSidecar: SealEnvelopeSidecar | null')
     expect(wrapHookSource).toContain("const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletUpload, walletAddress)")
-    expect(wrapHookSource).toContain('memorySealSidecar: memUpload.sealMaterial && foundingMemory')
+    expect(wrapHookSource).toContain('memorySealMaterial: memUpload.sealMaterial ?? null')
+    expect(wrapHookSource).toContain('memorySealSidecar: params.material.memorySealMaterial && foundingMemory')
 
     expect(collectionHookSource).toContain('memorySealMaterial: PendingSealMaterial')
     expect(collectionHookSource).toContain("const memUpload = await uploadFile(memFile, 'encrypted', authHeaders, walletUpload, walletAddress)")

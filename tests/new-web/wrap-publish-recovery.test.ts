@@ -88,7 +88,10 @@ describe('wrap publish recovery regressions', () => {
     const source = readSource('web/lib/hooks/use-wrap-publish.ts')
 
     expect(source).toContain("const WRAP_MINT_RECOVERY_KEY = 'soul-wrap-personal-recovery'")
-    expect(source).toContain('const syncBody = recoveryRef.current?.txDigest === digest ? recoveryRef.current.syncBody : null')
+    expect(source).toContain('pendingSync,')
+    expect(source).toContain('persistWrapRecovery(recovery)')
+    expect(source).toContain('let syncBody = recovery?.syncBody ?? null')
+    expect(source).toContain('recovery.pendingSync')
     expect(source).toContain('sessionStorage.setItem(WRAP_MINT_RECOVERY_KEY, JSON.stringify(recovery))')
   })
 

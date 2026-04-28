@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
-    "dev": "tsx src/main.ts",
+    "dev": "CLAWNEWS_LOAD_ENV_LOCAL=false tsx src/main.ts",
     "test": "npm run validate:v6-plan && npm run prisma:generate && vitest run",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",

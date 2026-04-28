@@ -1,11 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  WALRUS_SINGLE_BLOB_MAX_BYTES,
   WALRUS_UPLOAD_QUOTE_TTL_MS,
   buildWalrusUploadPlan,
   isWalrusUploadQuoteFresh,
   quoteWalrusUpload,
 } from '@/lib/upload/walrus-quote'
+import {
+  FILE_TOO_LARGE_ERROR,
+  MAX_SOUL_UPLOAD_BYTES,
+  validateSoulUploadFile,
+} from '@/lib/soulidity/upload-validation'
 
 describe('wallet-paid Walrus upload quote guards', () => {
   it('formats WAL costs in human-readable WAL units', async () => {
@@ -79,11 +85,21 @@ describe('wallet-paid Walrus upload quote guards', () => {
     const source = readFileSync('web/lib/upload/client-upload.ts', 'utf8')
 
     expect(source).toContain('quoteWalrusUpload')
+    expect(source).toContain('chunking: false')
     expect(source).not.toContain('/api/souls/upload')
     expect(source).not.toContain('/api/souls/upload/token')
     expect(source).not.toContain('/api/souls/upload/from-blob')
     expect(source).not.toContain('@vercel/blob/client')
     expect(source).not.toContain('sealDekEnvelope')
+    expect(source).not.toContain('clawnews-walrus-chunk-manifest')
+  })
+
+  it('rejects product uploads above Walrus single-blob size until downloaders can reassemble chunks', () => {
+    expect(MAX_SOUL_UPLOAD_BYTES).toBe(WALRUS_SINGLE_BLOB_MAX_BYTES)
+    expect(validateSoulUploadFile({
+      size: WALRUS_SINGLE_BLOB_MAX_BYTES + 1,
+      type: 'application/zip',
+    } as File, 'public')).toBe(FILE_TOO_LARGE_ERROR)
   })
 
   it('does not ask the relay tip quoter to enforce a zero tip ceiling', () => {
