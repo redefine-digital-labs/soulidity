@@ -80,7 +80,10 @@ interface SuiClientWithCache {
   }
 }
 
-const DEFAULT_STORAGE_EPOCHS = 3
+// 26 mainnet epochs × 14 days/epoch = 364 days ≈ 12 months. Comfortably under
+// the mainnet `max_epochs_ahead` cap (≈53). On testnet (1 day/epoch) this is
+// 26 days, which is fine for testing.
+const DEFAULT_STORAGE_EPOCHS = 26
 const DEFAULT_TESTNET_RELAY_URL = 'https://upload-relay.testnet.walrus.space'
 const DEFAULT_MAINNET_RELAY_URL = 'https://upload-relay.mainnet.walrus.space'
 const DEFAULT_TESTNET_AGGREGATOR_URL = 'https://aggregator.walrus-testnet.walrus.space'
@@ -384,6 +387,12 @@ export async function uploadSoulPayload(params: UploadSoulPayloadParams): Promis
   })
   const quote = await quoteWalrusUpload(plan, {
     fetchStorageCost: (payloadBytes, epochs) => quoteClient.storageCost(payloadBytes, epochs),
+    // Delegate to the SDK so the quoted tip uses the encoded blob size with the
+    // live n_shards, matching what `WriteBlobFlow` will actually transfer at
+    // sign time. The quoteClient is constructed with maxRelayTipMist =
+    // MAX_SAFE_INTEGER, so the SDK's max-check cannot throw during quoting.
+    calculateRelayTip: async (payloadBytes) =>
+      BigInt(await quoteClient.calculateUploadRelayTip({ size: payloadBytes })),
   })
   const approved = await params.confirmQuote(quote)
   if (!approved) {

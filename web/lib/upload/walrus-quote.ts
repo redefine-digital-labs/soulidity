@@ -71,11 +71,6 @@ export interface WalrusUploadQuote {
   expiresAt: number
 }
 
-type RelayTipConfig =
-  | string
-  | { no_tip: true }
-  | { send_tip: { address: string; kind: { const: number | string | bigint } | { linear: { base: number | string | bigint; perEncodedKib?: number | string | bigint; per_encoded_kib?: number | string | bigint; encoded_size_mul_per_kib?: number | string | bigint } } } }
-
 function assertPositiveSafeInteger(value: number, label: string) {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${label} must be a positive safe integer`)
@@ -185,29 +180,6 @@ export function buildWalrusUploadPlan(input: WalrusUploadPlanInput): WalrusUploa
   }
 }
 
-function bigintFromUnknown(value: number | string | bigint | undefined, label: string): bigint {
-  if (typeof value === 'bigint') return value
-  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return BigInt(Math.trunc(value))
-  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value)
-  throw new Error(`${label} is not a valid non-negative integer`)
-}
-
-function calculateRelayTip(config: RelayTipConfig, payloadBytes: number): bigint {
-  if (typeof config === 'string') return 0n
-  if ('no_tip' in config) return 0n
-  const kind = config.send_tip.kind
-  if ('const' in kind) {
-    return bigintFromUnknown(kind.const, 'relay const tip')
-  }
-  const base = bigintFromUnknown(kind.linear.base, 'relay linear base tip')
-  const perEncodedKib = bigintFromUnknown(
-    kind.linear.perEncodedKib ?? kind.linear.per_encoded_kib ?? kind.linear.encoded_size_mul_per_kib,
-    'relay linear perEncodedKib tip',
-  )
-  const kib = BigInt(Math.ceil(payloadBytes / 1024))
-  return base + perEncodedKib * kib
-}
-
 function quoteItemsFromPlan(plan: WalrusUploadPlan): Array<{ label: string; payloadBytes: number }> {
   return plan.files.flatMap((file) => {
     if (file.chunkCount <= 1) {
@@ -232,26 +204,15 @@ export async function quoteWalrusUpload(
   plan: WalrusUploadPlan,
   options: {
     now?: () => number
-    fetchTipConfig?: (url: string) => Promise<RelayTipConfig>
     fetchStorageCost?: (payloadBytes: number, storageEpochs: number) => Promise<{
       storageCost: bigint
       writeCost: bigint
       totalCost: bigint
     }>
-    calculateRelayTip?: (payloadBytes: number) => Promise<bigint>
+    calculateRelayTip: (payloadBytes: number) => Promise<bigint>
     estimateGasBudgetMist?: (plan: WalrusUploadPlan) => bigint
-  } = {},
+  },
 ): Promise<WalrusUploadQuote> {
-  const fetchTipConfig = options.fetchTipConfig ?? (async (url: string) => {
-    const response = await fetch(url, { cache: 'no-store' })
-    if (!response.ok) {
-      throw new Error(`Walrus relay tip quote failed: ${response.status}`)
-    }
-    return response.json() as Promise<RelayTipConfig>
-  })
-  const tipConfig = options.calculateRelayTip
-    ? null
-    : await fetchTipConfig(`${plan.relayUrl}/v1/tip-config`)
   const rawItems = quoteItemsFromPlan(plan)
   const items: WalrusQuoteItem[] = []
 
@@ -259,9 +220,7 @@ export async function quoteWalrusUpload(
     const storageCost = options.fetchStorageCost
       ? await options.fetchStorageCost(rawItem.payloadBytes, plan.storageEpochs)
       : { storageCost: 0n, writeCost: 0n, totalCost: 0n }
-    const relayTipMist = options.calculateRelayTip
-      ? await options.calculateRelayTip(rawItem.payloadBytes)
-      : calculateRelayTip(tipConfig!, rawItem.payloadBytes)
+    const relayTipMist = await options.calculateRelayTip(rawItem.payloadBytes)
     items.push({
       ...rawItem,
       relayTipMist,
