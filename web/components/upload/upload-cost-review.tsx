@@ -98,8 +98,12 @@ export function UploadCostReviewProvider({ children }: { children: ReactNode }) 
                 <div className="mt-1 text-sm font-semibold text-foreground">{quote.storageEpochs} epochs</div>
               </div>
               <div className="rounded-lg border border-border/60 bg-black/20 px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted">Transactions</div>
-                <div className="mt-1 text-sm font-semibold text-foreground">{quote.transactionCount}</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted">
+                  {quote.walletSignatureCount != null ? 'Wallet signatures' : 'Transactions'}
+                </div>
+                <div className="mt-1 text-sm font-semibold text-foreground">
+                  {quote.walletSignatureCount ?? quote.transactionCount}
+                </div>
               </div>
             </div>
 

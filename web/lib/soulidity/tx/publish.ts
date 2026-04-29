@@ -45,6 +45,14 @@ type PublishTxParams = {
   contentAccessDefaultScopeMask?: number
   contentAccessDefaultDurationMs?: number | null
   creatorRoyaltyBps: number
+  /**
+   * Optional hook to splice extra commands into the publish PTB after the
+   * personal-kiosk setup and before `mint_native_in_personal_kiosk`. The
+   * batch publish flow uses this to bundle N `certify_blob` calls into the
+   * mint TX, so registering and certifying N blobs costs 2 wallet
+   * signatures total instead of 1 + 2N.
+   */
+  attachBeforeMint?: (tx: Transaction) => void | Promise<void>
 }
 
 const SUI_CLOCK_OBJECT_ID = '0x6'
@@ -161,7 +169,7 @@ function resolveDownloadPolicy(
   return visibility === 'public' ? 'public' : 'owner_only'
 }
 
-export function buildPublishSoulTx(params: PublishTxParams) {
+export async function buildPublishSoulTx(params: PublishTxParams): Promise<Transaction> {
   validateSoulPublishArgs(params)
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
@@ -173,6 +181,9 @@ export function buildPublishSoulTx(params: PublishTxParams) {
     buyerKioskId: params.currentKioskId,
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
+  if (params.attachBeforeMint) {
+    await params.attachBeforeMint(tx)
+  }
   const initialSprite = resolveInitialSprite(params)
   const initialVoice = resolveInitialVoice(params)
 

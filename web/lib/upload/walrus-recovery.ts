@@ -122,21 +122,178 @@ export function clearWalrusUploadRecovery(key: string): void {
   }
 }
 
+export interface WalrusOrphanBlob {
+  /** SDK blobId from the prior register. */
+  blobId: string
+  /** Resolved on-chain Blob object id, or null if it could not be derived. */
+  blobObjectId: string | null
+}
+
 export class WalrusUploadResumeMismatchError extends Error {
-  readonly orphanBlobObjectId: string | null
+  /**
+   * Every orphaned Blob from the previous register that will not be reused.
+   * Single-blob path always carries one entry; the batch path carries one
+   * entry per file in the batch so the deletable-blob cleanup flow has every
+   * object id, not just the first.
+   */
+  readonly orphanBlobs: ReadonlyArray<WalrusOrphanBlob>
   readonly orphanTxDigest: string
-  readonly orphanBlobId: string
 
   constructor(params: {
     message: string
-    orphanBlobObjectId: string | null
+    orphanBlobs: ReadonlyArray<WalrusOrphanBlob>
     orphanTxDigest: string
-    orphanBlobId: string
   }) {
     super(params.message)
     this.name = 'WalrusUploadResumeMismatchError'
-    this.orphanBlobObjectId = params.orphanBlobObjectId
+    this.orphanBlobs = params.orphanBlobs
     this.orphanTxDigest = params.orphanTxDigest
-    this.orphanBlobId = params.orphanBlobId
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Batch recovery — for `prepareSoulBlobsForBatchPublish`. Same semantics as
+// the single-blob recovery above: the wallet has paid PTB1 (registerBlob × N)
+// even if the storage-node uploads, certificates, or mint PTB later fail.
+// Persisting that state lets the next attempt reuse the registered Blob
+// objects instead of paying again, and surfaces the orphan IDs when the new
+// attempt's encoded blobs don't match (e.g. encryption regenerated keys).
+// ---------------------------------------------------------------------------
+
+const BATCH_KEY_PREFIX = 'soulidity.walrus-batch-upload-recovery:'
+
+export interface WalrusBatchRecoveryBlob {
+  /** Plaintext SHA-256 of the source file — stable across re-encryption. */
+  contentHash: string
+  /** Resolved recipient address for `transferObjects`. */
+  sendObjectTo: string
+  /** Encoded payload byte length used for the prior register. */
+  payloadByteLength: number
+  /** SDK blobId from the prior `client.encodeBlob(payload)`. */
+  blobId: string
+  /** On-chain Blob object id resolved from the register tx; null until
+   *  `resolveCreatedBlobObjectIds` succeeds. */
+  blobObjectId: string | null
+}
+
+export interface WalrusBatchRecoveryRecord {
+  walletAddress: string
+  network: 'testnet' | 'mainnet'
+  storageEpochs: number
+  registerTxDigest: string
+  blobs: WalrusBatchRecoveryBlob[]
+  savedAt: number
+}
+
+export interface WalrusBatchRecoveryKeyParts {
+  network: 'testnet' | 'mainnet'
+  walletAddress: string
+  storageEpochs: number
+  /** Per-file `(contentHash, sendObjectTo)` in the same order as the input batch. */
+  files: Array<{ contentHash: string; sendObjectTo: string }>
+}
+
+async function digestKeySuffix(parts: WalrusBatchRecoveryKeyParts): Promise<string> {
+  const text = parts.files
+    .map((f) => `${f.contentHash}|${f.sendObjectTo.toLowerCase()}`)
+    .join('\n')
+  if (typeof globalThis.crypto?.subtle?.digest !== 'function') {
+    // Fallback: hex-join lengths + first chars (only used in non-browser contexts).
+    return parts.files.map((f) => f.contentHash.slice(0, 8)).join('-')
+  }
+  const buf = new TextEncoder().encode(text)
+  const hash = await globalThis.crypto.subtle.digest('SHA-256', buf)
+  const bytes = new Uint8Array(hash)
+  let hex = ''
+  for (const byte of bytes) hex += byte.toString(16).padStart(2, '0')
+  return hex
+}
+
+export async function buildWalrusBatchRecoveryKey(parts: WalrusBatchRecoveryKeyParts): Promise<string> {
+  const suffix = await digestKeySuffix(parts)
+  return [
+    BATCH_KEY_PREFIX,
+    parts.network,
+    parts.walletAddress.toLowerCase(),
+    String(parts.storageEpochs),
+    String(parts.files.length),
+    suffix,
+  ].join('|')
+}
+
+function isBatchBlob(value: unknown): value is WalrusBatchRecoveryBlob {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Partial<WalrusBatchRecoveryBlob>
+  return (
+    typeof c.contentHash === 'string'
+    && typeof c.sendObjectTo === 'string'
+    && typeof c.payloadByteLength === 'number'
+    && typeof c.blobId === 'string'
+    && (c.blobObjectId === null || typeof c.blobObjectId === 'string')
+  )
+}
+
+function isBatchRecord(value: unknown): value is WalrusBatchRecoveryRecord {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Partial<WalrusBatchRecoveryRecord>
+  return (
+    typeof c.walletAddress === 'string'
+    && (c.network === 'testnet' || c.network === 'mainnet')
+    && typeof c.storageEpochs === 'number'
+    && typeof c.registerTxDigest === 'string'
+    && Array.isArray(c.blobs)
+    && c.blobs.every(isBatchBlob)
+    && typeof c.savedAt === 'number'
+  )
+}
+
+export function readWalrusBatchRecovery(key: string): WalrusBatchRecoveryRecord | null {
+  const s = storage()
+  if (!s) return null
+  let raw: string | null = null
+  try {
+    raw = s.getItem(key)
+  } catch {
+    return null
+  }
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!isBatchRecord(parsed)) {
+      try { s.removeItem(key) } catch {}
+      return null
+    }
+    if (Date.now() - parsed.savedAt > TTL_MS) {
+      try { s.removeItem(key) } catch {}
+      return null
+    }
+    return parsed
+  } catch {
+    try { s.removeItem(key) } catch {}
+    return null
+  }
+}
+
+export function persistWalrusBatchRecovery(
+  key: string,
+  record: Omit<WalrusBatchRecoveryRecord, 'savedAt'>,
+): void {
+  const s = storage()
+  if (!s) return
+  try {
+    const payload: WalrusBatchRecoveryRecord = { ...record, savedAt: Date.now() }
+    s.setItem(key, JSON.stringify(payload))
+  } catch {
+    /* swallow */
+  }
+}
+
+export function clearWalrusBatchRecovery(key: string): void {
+  const s = storage()
+  if (!s) return
+  try {
+    s.removeItem(key)
+  } catch {
+    /* swallow */
   }
 }

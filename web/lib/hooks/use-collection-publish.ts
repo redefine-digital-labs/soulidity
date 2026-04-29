@@ -746,7 +746,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
               'Skills blob': soulState.uploads.skillsBlobObjectId,
               'Persona sprite blob': soulState.uploads.assetBlobObjectId,
             })
-            const mintTx = buildPublishSoulTx({
+            const mintTx = await buildPublishSoulTx({
               currentKioskId: personalKiosk?.currentKioskId ?? null,
               currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
               name: soul.name,

@@ -28,7 +28,9 @@ loadDesktopBuildEnv()
 
 const sharedEnvDefines = defineEnv({
   NEXT_PUBLIC_SUI_NETWORK: process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet',
-  NEXT_PUBLIC_KIOSK_PACKAGE_ID: process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID || '0x2',
+  // Empty string lets the runtime fallback in web/lib/soulidity/kiosk.ts pick
+  // the correct mainnet/testnet kiosk package by network.
+  NEXT_PUBLIC_KIOSK_PACKAGE_ID: process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID || '',
   NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL || '',
   SOULIDITY_WEB_URL: process.env.SOULIDITY_WEB_URL || '',
 })

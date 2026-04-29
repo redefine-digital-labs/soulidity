@@ -11,8 +11,13 @@ import { buttonStyles } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { usePublish, type PublishParams } from '@/lib/hooks/use-publish'
 import { useAuth } from '@/components/providers/auth-provider'
-import { uploadSoulPayload, WalrusUploadCancelledError } from '@/lib/upload/client-upload'
-import type { PendingSealMaterial } from '@/lib/upload/client-seal'
+import {
+  prepareSoulBlobsForBatchPublish,
+  uploadSoulPayload,
+  WalrusUploadCancelledError,
+  type BatchSoulUploadFile,
+  type PreparedSoulBlobs,
+} from '@/lib/upload/client-upload'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
@@ -25,9 +30,10 @@ import {
 import { buildListSoulTx } from '@/lib/soulidity/tx/list'
 import { buildIssueGrantTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
 import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
-import { findMissingObjectIds } from '@/lib/soulidity/object-inputs'
+import { validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
-  selectReusableUploadResults,
   useCreateSoul,
   type UploadResults,
 } from '@/components/providers/create-soul-provider'
@@ -55,22 +61,18 @@ const royaltyLabels: Record<number, string> = {
 
 type UploadPhase =
   | 'idle'
-  | 'uploading-cover'
-  | 'uploading-character'
-  | 'uploading-memory'
-  | 'uploading-skills'
-  | 'uploading-sprite'
-  | 'uploading-sprite-metadata'
+  | 'preflight'
+  | 'preparing-uploads'
+  | 'awaiting-register-signature'
+  | 'uploading-to-relay'
   | 'done'
 
 const uploadPhaseLabels: Record<UploadPhase, string> = {
   'idle': '',
-  'uploading-cover': 'Uploading cover image…',
-  'uploading-character': 'Encrypting & uploading character file…',
-  'uploading-memory': 'Encrypting & uploading memory…',
-  'uploading-skills': 'Encrypting & uploading skills bundle…',
-  'uploading-sprite': 'Uploading persona sprite sheet…',
-  'uploading-sprite-metadata': 'Generating & uploading persona sprite metadata…',
+  'preflight': 'Verifying kiosk and publish requirements…',
+  'preparing-uploads': 'Encrypting & encoding files…',
+  'awaiting-register-signature': 'Awaiting wallet signature for batched register…',
+  'uploading-to-relay': 'Uploading encoded payloads to Walrus…',
   'done': 'Uploads complete',
 }
 
@@ -89,78 +91,27 @@ function withMime(file: File): File {
   return new File([file], file.name, { type: expected })
 }
 
-interface UploadedPublicResult {
-  blobId: string
-  blobObjectId: string
-  contentHash: string
-  blobUrl: string
-}
-
-interface UploadedEncryptedResult extends UploadedPublicResult {
-  sealMaterial: PendingSealMaterial
-  skillName?: string | null
-}
-
-interface WalletUploadContext {
-  walletAddress: string
-  suiClient: unknown
-  signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
-  confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
-}
-
-async function uploadFile(
-  file: File,
-  type: 'public',
-  headers: Record<string, string>,
-  wallet: WalletUploadContext,
-  sendObjectTo?: string,
-): Promise<UploadedPublicResult>
-async function uploadFile(
-  file: File,
-  type: 'encrypted',
-  headers: Record<string, string>,
-  wallet: WalletUploadContext,
-  sendObjectTo?: string,
-): Promise<UploadedEncryptedResult>
-async function uploadFile(
-  file: File,
-  type: 'public' | 'encrypted',
-  headers: Record<string, string>,
-  wallet: WalletUploadContext,
-  sendObjectTo?: string,
-): Promise<UploadedPublicResult | UploadedEncryptedResult> {
-  const result = await uploadSoulPayload({
-    file: withMime(file),
-    uploadType: type,
-    kind: 'soul-content',
-    authHeaders: headers,
-    sendObjectTo: sendObjectTo ?? null,
-    walletAddress: wallet.walletAddress,
-    suiClient: wallet.suiClient,
-    signAndExecute: wallet.signAndExecute,
-    confirmQuote: wallet.confirmQuote,
+// Stable fingerprint over the batch inputs. Used to keep the prepared batch
+// across mint-signature retries (so the same paid PTB1 + uploaded certificates
+// are reused) without holding stale state when the user actually changes a
+// file. Encryption regenerates AES-GCM keys on every preparePayload(), so any
+// re-call of `prepareSoulBlobsForBatchPublish` for an unchanged draft would
+// produce different blobIds than the persisted recovery and force the
+// orphan-mismatch branch.
+function buildBatchFingerprint(walletAddress: string, files: BatchSoulUploadFile[]): string {
+  return JSON.stringify({
+    walletAddress: walletAddress.toLowerCase(),
+    files: files.map((f) => ({
+      name: f.file.name,
+      size: f.file.size,
+      lastModified: f.file.lastModified,
+      type: f.file.type,
+      uploadType: f.uploadType,
+      kind: f.kind,
+      sendObjectTo: f.sendObjectTo?.trim().toLowerCase() ?? null,
+    })),
   })
-  if (type === 'encrypted') {
-    if (!result.sealMaterial) {
-      throw new Error('Encrypted upload response is missing Seal material')
-    }
-    return {
-      blobId: result.blobId,
-      blobObjectId: result.blobObjectId,
-      contentHash: result.contentHash,
-      blobUrl: result.blobUrl,
-      sealMaterial: result.sealMaterial,
-      skillName: result.skillName ?? null,
-    }
-  }
-  return {
-    blobId: result.blobId,
-    blobObjectId: result.blobObjectId,
-    contentHash: result.contentHash,
-    blobUrl: result.blobUrl,
-  }
 }
-
 
 function checkMintRecovery(userId: string | undefined): boolean {
   if (typeof window === 'undefined' || !userId) return false
@@ -206,6 +157,18 @@ export default function CreateGasPage() {
   const [deployError, setDeployError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const completedDigestRef = useRef<string | null>(null)
+  // Cache for the prepared batch (PTB1 digest + uploaded certificates +
+  // attachCertifyCalls closure) so a mint-signature rejection or transient
+  // mint-PTB failure can retry the SAME mint signature without re-running
+  // `prepareSoulBlobsForBatchPublish` — that re-encrypts every payload with
+  // fresh AES-GCM keys, produces different blobIds than the persisted PTB1
+  // recovery, and forces the orphan-mismatch branch. Keyed by wallet +
+  // file fingerprint; cleared on successful mint and when files change.
+  const preparedBatchRef = useRef<{
+    walletAddress: string
+    fingerprint: string
+    prepared: PreparedSoulBlobs
+  } | null>(null)
 
   // ── Balance checking ──
   const balances = useWalletBalances(suiWallet?.address ?? null)
@@ -263,15 +226,17 @@ export default function CreateGasPage() {
       if (!wallet) {
         throw new Error('Connect a Sui wallet before uploading')
       }
-      const walletUpload = {
+      return uploadSoulPayload({
+        file: withMime(file),
+        uploadType: type,
+        kind: 'soul-content',
+        authHeaders: headers,
+        sendObjectTo: type === 'encrypted' ? wallet.address : null,
         walletAddress: wallet.address,
         suiClient: suiClientRef.current,
         signAndExecute: signAndExecuteRef.current,
         confirmQuote: async () => true,
-      }
-      return type === 'public'
-        ? uploadFile(file, 'public', headers, walletUpload)
-        : uploadFile(file, 'encrypted', headers, walletUpload)
+      })
     }
     w.__e2eListSoul = async (params: {
       currentKioskId: string; currentKioskCapOnChainId: string;
@@ -340,33 +305,6 @@ export default function CreateGasPage() {
     const walletAddress = suiWallet.address
 
     try {
-      const authHeaders = await getAuthHeaders()
-      const walletUpload = {
-        walletAddress,
-        suiClient,
-        signAndExecute,
-        confirmQuote: requestUploadCostApproval,
-      }
-      const results: UploadResults = selectReusableUploadResults(ctx.uploadResults, walletAddress)
-      const missingCachedObjectIds = new Set(await findMissingObjectIds(suiClient, [
-        results.charFile?.blobObjectId,
-        results.memorySeed?.blobObjectId,
-        results.skillsFile?.blobObjectId,
-        results.spriteSheet?.blobObjectId,
-      ]))
-      if (results.charFile && missingCachedObjectIds.has(results.charFile.blobObjectId)) {
-        results.charFile = undefined
-      }
-      if (results.memorySeed && missingCachedObjectIds.has(results.memorySeed.blobObjectId)) {
-        results.memorySeed = undefined
-      }
-      if (results.skillsFile && missingCachedObjectIds.has(results.skillsFile.blobObjectId)) {
-        results.skillsFile = undefined
-      }
-      if (results.spriteSheet && missingCachedObjectIds.has(results.spriteSheet.blobObjectId)) {
-        results.spriteSheet = undefined
-      }
-
       const spriteValidation = await validatePersonaSpriteDraft({
         sheetFile: ctx.spriteSheetFile,
         configFile: ctx.spriteConfigFile,
@@ -375,75 +313,219 @@ export default function CreateGasPage() {
         throw new Error(spriteValidation.error)
       }
 
-      // 1. Upload cover image (public, no sendObjectTo — only used as URL, not TX object)
-      if (!results.coverImage) {
-        setUploadPhase('uploading-cover')
-        results.coverImage = await uploadFile(ctx.coverImageFile, 'public', authHeaders, walletUpload)
+      // Build a single batch: cover (public) + char/memory/skills (encrypted)
+      // + optional sprite. The batch publishes via 1 register PTB + parallel
+      // HTTP uploads, then mint+certify lands in 1 more PTB inside `publish`,
+      // for 2 wallet signatures total regardless of how many files.
+      const fileIndex = { cover: -1, char: -1, memory: -1, skills: -1, sprite: -1 }
+      const batchFiles: BatchSoulUploadFile[] = []
+
+      fileIndex.cover = batchFiles.length
+      batchFiles.push({
+        file: withMime(ctx.coverImageFile),
+        uploadType: 'public',
+        kind: 'soul-content',
+      })
+
+      fileIndex.char = batchFiles.length
+      batchFiles.push({
+        file: withMime(ctx.charFile),
+        uploadType: 'encrypted',
+        kind: 'soul-content',
+        sendObjectTo: walletAddress,
+      })
+
+      fileIndex.memory = batchFiles.length
+      batchFiles.push({
+        file: withMime(ctx.memoryFile),
+        uploadType: 'encrypted',
+        kind: 'soul-content',
+        sendObjectTo: walletAddress,
+      })
+
+      if (ctx.skillsFile) {
+        fileIndex.skills = batchFiles.length
+        batchFiles.push({
+          file: withMime(ctx.skillsFile),
+          uploadType: 'encrypted',
+          kind: 'soul-content',
+          sendObjectTo: walletAddress,
+        })
       }
 
-      // 2. Upload character file (encrypted) — Blob object referenced in TX, must be owned by signer
-      if (!results.charFile) {
-        setUploadPhase('uploading-character')
-        results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
+      if (ctx.spriteSheetFile && spriteValidation.config) {
+        fileIndex.sprite = batchFiles.length
+        batchFiles.push({
+          file: withMime(ctx.spriteSheetFile),
+          uploadType: ctx.spriteVisibility === 'public' ? 'public' : 'encrypted',
+          kind: 'persona-sprite',
+          sendObjectTo: walletAddress,
+        })
       }
 
-      // 3. Upload memory (encrypted) — Blob object referenced in TX, must be owned by signer
-      if (!results.memorySeed) {
-        setUploadPhase('uploading-memory')
-        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)
+      // Preflight: anything that can fail without consulting a freshly-paid
+      // register PTB runs BEFORE `prepareSoulBlobsForBatchPublish`. If a
+      // transient HTTP/RPC error or a missing env trips here, the user has
+      // not yet signed PTB1 and the next Deploy click does not have to
+      // mismatch a freshly re-encrypted payload against an already-paid
+      // register. Tags / kiosk / required envs / publish-arg shape are all
+      // resolved up-front; the only thing left to fail after PTB1 is the
+      // mint+certify PTB itself.
+      setUploadPhase('preflight')
+      const preflightAuthHeaders = await getAuthHeaders()
+      const preflightKioskRes = await fetch(
+        `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`,
+        { cache: 'no-store', headers: preflightAuthHeaders },
+      )
+      let prefetchedPersonalKiosk: { currentKioskId: string | null; currentKioskCapOnChainId: string | null } | null = null
+      if (preflightKioskRes.status !== 404) {
+        if (!preflightKioskRes.ok) {
+          const body = await preflightKioskRes.json().catch(() => ({}))
+          throw new Error(body.error || 'Failed to resolve personal kiosk')
+        }
+        prefetchedPersonalKiosk = await preflightKioskRes.json()
+      }
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': prefetchedPersonalKiosk?.currentKioskId ?? null,
+        'Your personal kiosk capability': prefetchedPersonalKiosk?.currentKioskCapOnChainId ?? null,
+      })
+      // The real imageUrl is filled in after PTB1 succeeds; use a placeholder
+      // that satisfies the non-empty + ≤1024-byte byte-length guards so the
+      // rest of `validateSoulPublishArgs` can still trip on bad name /
+      // description / royalty before any wallet signature.
+      validateSoulPublishArgs({
+        name: ctx.name,
+        description: ctx.description,
+        imageUrl: 'preflight://placeholder',
+        creatorRoyaltyBps: ctx.royalty,
+      })
+      // Surface a missing env ahead of the paid PTB rather than after.
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
+
+      // Reuse the prepared batch when the user retries the SAME draft (e.g.
+      // closed the mint wallet popup, or hit a transient SDK/RPC error after
+      // PTB1 paid). prepareSoulBlobsForBatchPublish re-encrypts every payload
+      // with fresh AES-GCM keys, so calling it from scratch on retry yields
+      // different blobIds than the persisted PTB1 recovery — which trips the
+      // orphan-mismatch branch even though the user only wanted to re-sign
+      // mint. Cache lives in `preparedBatchRef`; cleared on successful mint
+      // (via wrapped onMintTxExecuted) and on draft changes (fingerprint).
+      const fingerprint = buildBatchFingerprint(walletAddress, batchFiles)
+      const cachedBatch = preparedBatchRef.current
+      const reusable =
+        !!cachedBatch
+        && cachedBatch.walletAddress === walletAddress
+        && cachedBatch.fingerprint === fingerprint
+      let prepared: PreparedSoulBlobs
+      if (reusable) {
+        prepared = cachedBatch.prepared
+      } else {
+        if (cachedBatch) preparedBatchRef.current = null
+        setUploadPhase('preparing-uploads')
+        prepared = await prepareSoulBlobsForBatchPublish({
+          files: batchFiles,
+          walletAddress,
+          suiClient,
+          signAndExecute,
+          confirmQuote: async (quote) => {
+            setUploadPhase('awaiting-register-signature')
+            const approved = await requestUploadCostApproval(quote)
+            if (approved) setUploadPhase('uploading-to-relay')
+            return approved
+          },
+        })
+        preparedBatchRef.current = { walletAddress, fingerprint, prepared }
       }
 
-      // 4. Upload skills file (encrypted, optional) — Blob object referenced in TX, must be owned by signer
-      if (ctx.skillsFile && !results.skillsFile) {
-        setUploadPhase('uploading-skills')
-        results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
+      const cover = prepared.files[fileIndex.cover]
+      const char = prepared.files[fileIndex.char]
+      const memory = prepared.files[fileIndex.memory]
+      const skills = fileIndex.skills >= 0 ? prepared.files[fileIndex.skills] : null
+      const sprite = fileIndex.sprite >= 0 ? prepared.files[fileIndex.sprite] : null
+
+      if (!char.sealMaterial) {
+        throw new Error('Character file upload is missing Seal recovery data. Please retry.')
+      }
+      if (!memory.sealMaterial) {
+        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
+      }
+      if (skills && !skills.sealMaterial) {
+        throw new Error('Skills bundle upload is missing Seal recovery data. Please retry.')
+      }
+      if (sprite && ctx.spriteVisibility === 'private' && !sprite.sealMaterial) {
+        throw new Error('Persona sprite upload is missing Seal recovery data. Please retry.')
+      }
+      if (!char.blobObjectId) {
+        throw new Error('Character file upload was deduplicated by Walrus and no owned Blob object was created. Please modify your character file slightly and retry.')
+      }
+      if (!memory.blobObjectId) {
+        throw new Error('This exact memory text already exists on Walrus. Please add a unique detail to your memory so it can be stored as a distinct on-chain founding memory.')
+      }
+      if (skills && !skills.blobObjectId) {
+        throw new Error('Skills bundle upload was deduplicated by Walrus and no owned Blob object was created. Please modify your skills file slightly and retry.')
+      }
+      if (sprite && !sprite.blobObjectId) {
+        throw new Error('Persona sprite upload was deduplicated by Walrus and no owned Blob object was created. Please modify your sprite sheet slightly and retry.')
       }
 
-      if (ctx.spriteSheetFile && spriteValidation.config && !results.spriteSheet) {
-        setUploadPhase('uploading-sprite')
-        results.spriteSheet = ctx.spriteVisibility === 'public'
-          ? await uploadFile(ctx.spriteSheetFile, 'public', authHeaders, walletUpload, walletAddress)
-          : await uploadFile(ctx.spriteSheetFile, 'encrypted', authHeaders, walletUpload, walletAddress)
+      const results: UploadResults = {
+        ownerAddress: walletAddress,
+        coverImage: {
+          blobId: cover.blobId,
+          blobObjectId: cover.blobObjectId,
+          contentHash: cover.contentHash,
+          blobUrl: cover.blobUrl,
+        },
+        charFile: {
+          blobId: char.blobId,
+          blobObjectId: char.blobObjectId,
+          contentHash: char.contentHash,
+          blobUrl: char.blobUrl,
+          sealMaterial: char.sealMaterial,
+          skillName: char.skillName ?? null,
+        },
+        memorySeed: {
+          blobId: memory.blobId,
+          blobObjectId: memory.blobObjectId,
+          contentHash: memory.contentHash,
+          blobUrl: memory.blobUrl,
+          sealMaterial: memory.sealMaterial,
+        },
+        skillsFile: skills && skills.sealMaterial
+          ? {
+              blobId: skills.blobId,
+              blobObjectId: skills.blobObjectId,
+              contentHash: skills.contentHash,
+              blobUrl: skills.blobUrl,
+              sealMaterial: skills.sealMaterial,
+              skillName: skills.skillName ?? null,
+            }
+          : undefined,
+        spriteSheet: sprite
+          ? {
+              blobId: sprite.blobId,
+              blobObjectId: sprite.blobObjectId,
+              contentHash: sprite.contentHash,
+              blobUrl: sprite.blobUrl,
+              sealMaterial: sprite.sealMaterial ?? null,
+            }
+          : undefined,
       }
-
-      // Store upload results in context for retry support
       ctx.setUploadResults(results)
       setUploadPhase('done')
 
-      // Expose upload-side Seal material for E2E byte-level content verification (dev only).
       if (process.env.NODE_ENV === 'development') {
         ;(window as any).__e2eLastSealMaterial = {
-          char: results.charFile?.sealMaterial ?? null,
-          memory: results.memorySeed?.sealMaterial ?? null,
-          skills: results.skillsFile?.sealMaterial ?? null,
-          sprite: results.spriteSheet?.sealMaterial ?? null,
+          char: char.sealMaterial,
+          memory: memory.sealMaterial,
+          skills: skills?.sealMaterial ?? null,
+          sprite: sprite?.sealMaterial ?? null,
         }
       }
 
-      // Narrow types — all required uploads must be present at this point
-      if (!results.coverImage || !results.charFile || !results.memorySeed) {
-        throw new Error('Required uploads missing')
-      }
-      if (!results.charFile.blobObjectId) {
-        throw new Error('Character file upload was deduplicated by Walrus and no owned Blob object was created. Please modify your character file slightly and retry.')
-      }
-      if (!results.memorySeed.blobObjectId) {
-        throw new Error('This exact memory text already exists on Walrus. Please add a unique detail to your memory so it can be stored as a distinct on-chain founding memory.')
-      }
-      if (!results.memorySeed.sealMaterial) {
-        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
-      }
-      if (results.skillsFile && !results.skillsFile.blobObjectId) {
-        throw new Error('Skills bundle upload was deduplicated by Walrus and no owned Blob object was created. Please modify your skills file slightly and retry.')
-      }
-      if (results.spriteSheet && !results.spriteSheet.blobObjectId) {
-        throw new Error('Persona sprite upload was deduplicated by Walrus and no owned Blob object was created. Please modify your sprite sheet slightly and retry.')
-      }
-      if (ctx.spriteVisibility === 'private' && results.spriteSheet && !results.spriteSheet.sealMaterial) {
-        throw new Error('Persona sprite upload is missing Seal recovery data. Please retry.')
-      }
-
-      // 5. Call publish (builds TX → signs → syncs)
       const parsedTags = ctx.tags
         .split(',')
         .map((t) => t.trim())
@@ -453,16 +535,17 @@ export default function CreateGasPage() {
         name: ctx.name,
         description: ctx.description,
         tags: parsedTags,
-        imageUrl: results.coverImage.blobUrl,
-        previewImages: [results.coverImage.blobUrl],
-        protectedBlobObjectId: results.charFile.blobObjectId,
-        foundingMemoryBlobObjectId: results.memorySeed.blobObjectId,
-        skillsBlobObjectId: results.skillsFile?.blobObjectId ?? null,
-        initialSkillName: results.skillsFile?.skillName ?? null,
+        imageUrl: cover.blobUrl,
+        previewImages: [cover.blobUrl],
+        prefetchedPersonalKiosk,
+        protectedBlobObjectId: char.blobObjectId,
+        foundingMemoryBlobObjectId: memory.blobObjectId,
+        skillsBlobObjectId: skills?.blobObjectId ?? null,
+        initialSkillName: skills?.skillName ?? null,
         skillsVisibility: 'private',
-        initialSprite: results.spriteSheet && spriteValidation.config
+        initialSprite: sprite && spriteValidation.config
           ? {
-              blobObjectId: results.spriteSheet.blobObjectId,
+              blobObjectId: sprite.blobObjectId,
               assetName: 'persona-sprite',
               visibility: ctx.spriteVisibility,
               downloadPolicy: ctx.spriteVisibility === 'public' ? 'public' : 'owner_only',
@@ -476,10 +559,15 @@ export default function CreateGasPage() {
             }
           : null,
         creatorRoyaltyBps: ctx.royalty,
-        sealMaterial: results.charFile.sealMaterial ?? null,
-        memorySealMaterial: results.memorySeed.sealMaterial ?? null,
-        skillsSealMaterial: results.skillsFile?.sealMaterial ?? null,
-        assetsSealMaterial: results.spriteSheet?.sealMaterial ?? null,
+        sealMaterial: char.sealMaterial,
+        memorySealMaterial: memory.sealMaterial,
+        skillsSealMaterial: skills?.sealMaterial ?? null,
+        assetsSealMaterial: sprite?.sealMaterial ?? null,
+        attachBeforeMint: prepared.attachCertifyCalls,
+        onMintTxExecuted: () => {
+          prepared.clearBatchRecovery()
+          preparedBatchRef.current = null
+        },
       })
     } catch (err) {
       if (!(err instanceof WalrusUploadCancelledError)) {

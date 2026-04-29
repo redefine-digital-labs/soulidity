@@ -108,6 +108,25 @@ export interface PublishParams {
   assetsSealMaterial?: PendingSealMaterial | null
   creatorRoyaltyBps: number
   sealMaterial?: PendingSealMaterial | null
+  /**
+   * Splices N `certify_blob` calls into the mint PTB before `mint_native_in_personal_kiosk`.
+   * Provided by `prepareSoulBlobsForBatchPublish`; lets register/certify+mint cost 2 signatures total.
+   */
+  attachBeforeMint?: (tx: Transaction) => void | Promise<void>
+  /**
+   * Invoked once `signAndExecute(mintTx)` succeeds. Used by callers to drop
+   * batch register-recovery state so the next deploy does not surface a now
+   * stale orphan record. No-op if the mint TX never executes.
+   */
+  onMintTxExecuted?: () => void
+  /**
+   * Personal kiosk pre-resolved by the caller's preflight. When set, the hook
+   * skips the in-line `/api/souls/personal-kiosk` fetch so a transient 5xx
+   * cannot strand a freshly-paid batch register PTB. The caller is expected to
+   * have already confirmed the kiosk objects exist on-chain via
+   * `assertObjectInputsExist`.
+   */
+  prefetchedPersonalKiosk?: { currentKioskId: string | null; currentKioskCapOnChainId: string | null } | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -297,7 +316,15 @@ export function usePublish() {
       let digest = txDigest
       if (!digest) {
         setStatus('building')
-        const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
+        // Reuse the caller's preflight kiosk when supplied; this is the
+        // contract for batch publishes that pay PTB1 before reaching the hook
+        // and would orphan the registered Blob objects on a fresh-fetch 5xx.
+        // `null` is a legitimate preflight result (first-time creator: 404 →
+        // no kiosk yet), so we must NOT fall back on it — only `undefined`
+        // (no preflight supplied) triggers the resolvePersonalKiosk fetch.
+        const personalKiosk = Object.prototype.hasOwnProperty.call(params, 'prefetchedPersonalKiosk')
+          ? params.prefetchedPersonalKiosk
+          : await resolvePersonalKiosk(authHeaders, suiWallet.address)
         await assertObjectInputsExist(suiClient, {
           'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
           'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
@@ -306,7 +333,7 @@ export function usePublish() {
           'Skills blob': params.skillsBlobObjectId ?? null,
           'Persona sprite blob': params.initialSprite?.blobObjectId ?? null,
         })
-        const tx: Transaction = buildPublishSoulTx({
+        const tx: Transaction = await buildPublishSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
           currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
           name: params.name,
@@ -323,20 +350,35 @@ export function usePublish() {
           contentAccessDefaultScopeMask: params.contentAccessDefaultScopeMask,
           contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
           creatorRoyaltyBps: params.creatorRoyaltyBps,
+          attachBeforeMint: params.attachBeforeMint,
         })
 
         setStatus('signing')
         const result = await signAndExecute(tx)
         const executedDigest = result.digest
+        // signAndExecute returns the raw executeTransactionBlock result and
+        // does NOT reject Move aborts: a digest can come back with
+        // effects.status.status === 'failure' (stale kiosk caps, bad Walrus
+        // certificate, or any other on-chain abort). Treat that as a hard
+        // failure BEFORE persisting the digest or clearing batch recovery —
+        // otherwise buildPublishSyncBody() will throw on the missing mint
+        // event while the registered Blob objects from PTB1 have already been
+        // orphaned and the user has no way to retry.
+        const txStatus = (result as { effects?: { status?: { status?: string; error?: string } } } | null | undefined)?.effects?.status
+        if (txStatus?.status !== 'success') {
+          const detail = [txStatus?.status ? `status=${txStatus.status}` : null, txStatus?.error ? `error=${txStatus.error}` : null]
+            .filter(Boolean)
+            .join(', ')
+          throw new Error(`Soul mint transaction ${executedDigest} did not succeed${detail ? ` (${detail})` : ''}`)
+        }
         digest = executedDigest
         setTxDigest(executedDigest)
-        posthog.capture('soul_publish_sui_signed', {
-          txDigest: executedDigest,
-          elapsedMs: Date.now() - startedAt,
-        })
-
-        // Persist raw Seal material before calling Seal key servers. If sidecar
-        // creation fails, refresh can rebuild the sidecars without re-minting.
+        // Persist raw Seal material BEFORE clearing batch recovery so a tab
+        // crash / refresh / OS kill in the window between "mint succeeded"
+        // and "mint recovery written" cannot strand the user with a minted
+        // Soul that has no resumable mirror state on either side. Sidecar
+        // creation can still fail later — refresh rebuilds them from
+        // pendingSync without re-minting.
         const pendingSync = buildPublishSyncMaterial(params)
         const recovery: MintRecoveryState = attachSoulidityDeploymentSignature({
           userId: user?.id ?? '',
@@ -346,6 +388,15 @@ export function usePublish() {
         })
         recoveryRef.current = recovery
         persistMintRecovery(recovery)
+
+        // Mint TX is on-chain AND succeeded AND the resumable mirror state is
+        // durable — the registered Blob objects from PTB1 are now certified,
+        // so the batch register-recovery record is no longer needed.
+        try { params.onMintTxExecuted?.() } catch { /* swallow callback errors */ }
+        posthog.capture('soul_publish_sui_signed', {
+          txDigest: executedDigest,
+          elapsedMs: Date.now() - startedAt,
+        })
 
         const syncBody = await buildPublishSyncBody({
           txDigest: executedDigest,

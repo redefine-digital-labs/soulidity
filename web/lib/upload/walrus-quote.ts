@@ -20,6 +20,14 @@ export interface WalrusUploadPlanInput {
   chunking: ChunkingMode
   relayUrl: string
   chunkSizeBytes?: number
+  /**
+   * Number of wallet signatures the caller will request. The default is one
+   * per Walrus operation (`(chunkCount + manifestCount) * 2`), which matches
+   * the per-blob register+certify path. Batch flows that bundle N
+   * register_blob calls into one PTB and N certify_blob calls into the mint
+   * PTB pass `walletSignatureCount: 2` to keep the cost-review modal honest.
+   */
+  walletSignatureCount?: number
 }
 
 export interface WalrusUploadPlanFile {
@@ -40,6 +48,15 @@ export interface WalrusUploadPlan {
   chunkCount: number
   manifestCount: number
   transactionCount: number
+  /**
+   * Wallet signatures the user will be asked to approve. `null` means the
+   * legacy per-blob model where each Walrus operation maps 1:1 to a wallet
+   * transaction (`transactionCount` is the source of truth). When set, this
+   * overrides `transactionCount` in cost-review UI and gas-budget defaults so
+   * batch flows that collapse N operations into 2 PTBs do not display 2N
+   * signatures.
+   */
+  walletSignatureCount: number | null
   fingerprint: string
 }
 
@@ -61,6 +78,8 @@ export interface WalrusUploadQuote {
   chunkCount: number
   manifestCount: number
   transactionCount: number
+  /** Mirrors `WalrusUploadPlan.walletSignatureCount`. */
+  walletSignatureCount: number | null
   relayTipMist: bigint
   walStorageCost: bigint
   walWriteCost: bigint
@@ -136,6 +155,9 @@ export function buildWalrusUploadPlan(input: WalrusUploadPlanInput): WalrusUploa
   if (input.files.length === 0) {
     throw new Error('At least one file is required for a Walrus upload quote')
   }
+  if (input.walletSignatureCount !== undefined) {
+    assertPositiveSafeInteger(input.walletSignatureCount, 'walletSignatureCount')
+  }
 
   const files = input.files.map((file) => {
     assertPositiveSafeInteger(file.size, `${file.name || 'file'} size`)
@@ -156,6 +178,7 @@ export function buildWalrusUploadPlan(input: WalrusUploadPlanInput): WalrusUploa
   ), 0)
   const chunkCount = files.reduce((sum, file) => sum + file.chunkCount, 0)
   const relayUrl = normalizeRelayUrl(input.relayUrl)
+  const walletSignatureCount = input.walletSignatureCount ?? null
   const fingerprintPayload = {
     files,
     network: input.network,
@@ -163,6 +186,7 @@ export function buildWalrusUploadPlan(input: WalrusUploadPlanInput): WalrusUploa
     chunking,
     chunkSizeBytes,
     relayUrl,
+    walletSignatureCount,
   }
 
   return {
@@ -176,6 +200,7 @@ export function buildWalrusUploadPlan(input: WalrusUploadPlanInput): WalrusUploa
     chunkCount,
     manifestCount,
     transactionCount: (chunkCount + manifestCount) * 2,
+    walletSignatureCount,
     fingerprint: hashString(stableStringify(fingerprintPayload)),
   }
 }
@@ -230,6 +255,10 @@ export async function quoteWalrusUpload(
   }
 
   const quotedAt = options.now?.() ?? Date.now()
+  // When the caller has bundled Walrus operations into fewer wallet PTBs,
+  // size the gas budget against the actual signature count rather than
+  // against the per-blob op count (which would massively over-budget).
+  const gasBudgetMultiplier = plan.walletSignatureCount ?? plan.transactionCount
   return {
     id: plan.fingerprint,
     network: plan.network,
@@ -240,10 +269,11 @@ export async function quoteWalrusUpload(
     chunkCount: plan.chunkCount,
     manifestCount: plan.manifestCount,
     transactionCount: plan.transactionCount,
+    walletSignatureCount: plan.walletSignatureCount,
     relayTipMist: items.reduce((sum, item) => sum + item.relayTipMist, 0n),
     walStorageCost: items.reduce((sum, item) => sum + item.walStorageCost, 0n),
     walWriteCost: items.reduce((sum, item) => sum + item.walWriteCost, 0n),
-    gasBudgetMist: options.estimateGasBudgetMist?.(plan) ?? BigInt(plan.transactionCount) * 50_000_000n,
+    gasBudgetMist: options.estimateGasBudgetMist?.(plan) ?? BigInt(gasBudgetMultiplier) * 50_000_000n,
     items,
     planFingerprint: plan.fingerprint,
     quotedAt,
@@ -263,6 +293,7 @@ export function isWalrusUploadQuoteFresh(
     chunking: plan.chunking,
     chunkSizeBytes: plan.chunkSizeBytes,
     relayUrl: plan.relayUrl,
+    walletSignatureCount: plan.walletSignatureCount,
   }))
   return Boolean(
     quote
@@ -274,6 +305,7 @@ export function isWalrusUploadQuoteFresh(
     && quote.chunkCount === plan.chunkCount
     && quote.manifestCount === plan.manifestCount
     && quote.transactionCount === plan.transactionCount
+    && quote.walletSignatureCount === plan.walletSignatureCount
     && quote.expiresAt >= now,
   )
 }
