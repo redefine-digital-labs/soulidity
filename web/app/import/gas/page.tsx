@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useSuiClient } from '@mysten/dapp-kit'
+import { useAutoConnectWallet, useCurrentWallet, useSuiClient } from '@mysten/dapp-kit'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -19,6 +19,8 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload, WalrusUploadCancelledError } from '@/lib/upload/client-upload'
 import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
+import { useLogin } from '@/lib/hooks/use-login'
+import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
 import {
@@ -180,6 +182,9 @@ export default function ImportGasPage() {
   const { setImportResult } = ctx
   const { status, error, txDigest, importData, importSoul, suiWallet } = useImport()
   const { signAndExecute } = useWalletSign()
+  const walletConnection = useCurrentWallet()
+  const autoConnectStatus = useAutoConnectWallet()
+  const openWalletLogin = useLogin()
   const { requestUploadCostApproval } = useUploadCostReview()
   const { getAuthHeaders, user } = useAuth()
   const importSoulRef = useRef(importSoul)
@@ -415,6 +420,26 @@ export default function ImportGasPage() {
   const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
   const isBusy = (uploadPhase !== 'idle' && uploadPhase !== 'done') || status === 'building' || status === 'signing' || status === 'syncing'
   const combinedError = deployError || error
+  const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
+  const walletActionState = getWalletActionState({
+    hasActiveWallet: !!suiWallet,
+    hasSessionWallet: !!user?.primarySuiAddress,
+    walletRestoring,
+    busy: isBusy,
+    busyLabel: uploadPhaseLabels[uploadPhase] || `${status}...`,
+    balanceBlocked,
+    recovery: inRecovery,
+    txDigest,
+    readyLabel: '✓ Sign & Deploy',
+  })
+
+  function handleWalletAction(action: () => void | Promise<void>) {
+    if (walletActionState.needsWalletReconnect) {
+      openWalletLogin()
+      return
+    }
+    void action()
+  }
 
   return (
     <div className="relative z-10 border-t border-purple/20">
@@ -658,36 +683,30 @@ export default function ImportGasPage() {
           ) : inRecovery ? (
             <button
               type="button"
-              disabled={isBusy || !suiWallet || !txDigest}
-              onClick={handleResume}
+              disabled={walletActionState.disabled}
+              onClick={() => handleWalletAction(handleResume)}
               className={buttonStyles({
                 variant: 'gold',
                 size: 'lg',
                 full: true,
-                className: `rounded-[10px] px-4 py-2.5 text-[13px] ${isBusy ? 'opacity-60 cursor-wait' : ''} ${!suiWallet || !txDigest ? 'opacity-50 cursor-not-allowed' : ''}`,
+                className: `rounded-[10px] px-4 py-2.5 text-[13px] ${isBusy ? 'opacity-60 cursor-wait' : ''} ${walletActionState.disabled ? 'opacity-50 cursor-not-allowed' : ''}`,
               })}
             >
-              {!suiWallet ? 'No Sui Wallet Connected'
-                : !txDigest ? 'Loading recovery…'
-                  : isBusy ? `${status}…`
-                    : 'Resume Sync'}
+              {walletActionState.label}
             </button>
           ) : (
             <button
               type="button"
-              disabled={isBusy || balanceBlocked || !suiWallet}
-              onClick={handleDeploy}
+              disabled={walletActionState.disabled}
+              onClick={() => handleWalletAction(handleDeploy)}
               className={buttonStyles({
                 variant: 'gold',
                 size: 'lg',
                 full: true,
-                className: `rounded-[10px] px-4 py-2.5 text-[13px] ${isBusy ? 'opacity-60 cursor-wait' : ''} ${balanceBlocked || !suiWallet ? 'opacity-50 cursor-not-allowed' : ''}`,
+                className: `rounded-[10px] px-4 py-2.5 text-[13px] ${isBusy ? 'opacity-60 cursor-wait' : ''} ${walletActionState.disabled ? 'opacity-50 cursor-not-allowed' : ''}`,
               })}
             >
-              {!suiWallet ? 'No Sui Wallet Connected'
-                : balanceBlocked ? 'Insufficient Balance'
-                  : isBusy ? (uploadPhaseLabels[uploadPhase] || `${status}…`)
-                    : '✓ Sign & Deploy'}
+              {walletActionState.label}
             </button>
           )}
         </div>

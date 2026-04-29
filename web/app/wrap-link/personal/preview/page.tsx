@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { useAutoConnectWallet, useCurrentWallet } from '@mysten/dapp-kit'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -11,6 +12,9 @@ import { buttonStyles } from '@/components/ui/button'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 import { useKioskNfts } from '@/lib/hooks/use-kiosk-nfts'
 import { useWrapPublish } from '@/lib/hooks/use-wrap-publish'
+import { useAuth } from '@/components/providers/auth-provider'
+import { useLogin } from '@/lib/hooks/use-login'
+import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 
 const statusLabels: Record<string, string> = {
   uploading: 'Uploading Soul files to Walrus…',
@@ -24,6 +28,10 @@ export default function PreviewSignPage() {
   const ctx = useWrap()
   const { setPublishResult } = ctx
   const { status, error, txDigest, result, publish, suiWallet } = useWrapPublish()
+  const { user } = useAuth()
+  const walletConnection = useCurrentWallet()
+  const autoConnectStatus = useAutoConnectWallet()
+  const openWalletLogin = useLogin()
   const { data: nfts } = useKioskNfts(suiWallet?.address)
   const completedDigestRef = useRef<string | null>(null)
 
@@ -55,9 +63,21 @@ export default function PreviewSignPage() {
     }
   }, [status, result, setPublishResult, router])
 
-  if ((missingStep1 || missingStep2) && !hasPendingRecovery) return null
-
   const isBusy = status !== 'idle' && status !== 'done' && status !== 'error'
+  const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
+  const walletActionState = getWalletActionState({
+    hasActiveWallet: !!suiWallet,
+    hasSessionWallet: !!user?.primarySuiAddress,
+    walletRestoring,
+    busy: isBusy,
+    busyLabel: statusLabels[status] ?? 'Processing...',
+    balanceBlocked: false,
+    recovery: isRecoveryMode,
+    txDigest,
+    readyLabel: 'Sign & Expand Soul',
+  })
+
+  if ((missingStep1 || missingStep2) && !hasPendingRecovery) return null
 
   async function handleSign() {
     if (isRecoveryMode) {
@@ -75,6 +95,14 @@ export default function PreviewSignPage() {
       spriteVisibility: ctx.spriteVisibility,
       royalty: ctx.royalty,
     })
+  }
+
+  function handleSignAction() {
+    if (walletActionState.needsWalletReconnect) {
+      openWalletLogin()
+      return
+    }
+    void handleSign()
   }
 
   return (
@@ -227,21 +255,18 @@ export default function PreviewSignPage() {
             )}
             <button
               type="button"
-              disabled={isBusy || !suiWallet}
-              onClick={handleSign}
+              disabled={walletActionState.disabled}
+              onClick={handleSignAction}
               className={buttonStyles({
                 variant: isRecoveryMode ? 'primary' : 'gold',
                 size: 'lg',
-                className: `min-w-0 ${isRecoveryMode ? 'w-full' : 'flex-1'} rounded-xl ${isBusy ? 'opacity-60 cursor-wait' : ''} ${!suiWallet ? 'opacity-50 cursor-not-allowed' : ''}`,
+                className: `min-w-0 ${isRecoveryMode ? 'w-full' : 'flex-1'} rounded-xl ${isBusy ? 'opacity-60 cursor-wait' : ''} ${walletActionState.disabled ? 'opacity-50 cursor-not-allowed' : ''}`,
               })}
             >
-              {!suiWallet
-                ? 'No Wallet Connected'
-                : isBusy
-                  ? (statusLabels[status] ?? 'Processing…')
-                  : isRecoveryMode
-                    ? <>Resume Sync <span aria-hidden="true">→</span></>
-                    : <>Sign &amp; Expand Soul <span aria-hidden="true">→</span></>}
+              {walletActionState.label}
+              {!walletActionState.disabled && !walletActionState.needsWalletReconnect && (
+                <span aria-hidden="true"> →</span>
+              )}
             </button>
           </div>
         </PageContainer>

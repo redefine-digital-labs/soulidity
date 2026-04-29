@@ -348,9 +348,9 @@ export function useImport() {
           importParams: pendingSync,
           suiClient,
         })
-        recovery.syncBody = syncBody
-        recoveryRef.current = recovery
-        persistImportRecovery(recovery)
+        const recoveryWithSyncBody = { ...recovery, syncBody }
+        recoveryRef.current = recoveryWithSyncBody
+        persistImportRecovery(recoveryWithSyncBody)
       }
 
       // Use recovered sync body when available
@@ -371,9 +371,9 @@ export function useImport() {
           suiClient,
         })
         if (recovery) {
-          recovery.syncBody = syncBody
-          recoveryRef.current = recovery
-          persistImportRecovery(recovery)
+          const recoveryWithSyncBody = { ...recovery, syncBody }
+          recoveryRef.current = recoveryWithSyncBody
+          persistImportRecovery(recoveryWithSyncBody)
         }
       }
 

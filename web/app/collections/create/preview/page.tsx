@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useAutoConnectWallet, useCurrentWallet } from '@mysten/dapp-kit'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -12,6 +13,8 @@ import { buttonStyles } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 import { useAuth } from '@/components/providers/auth-provider'
+import { useLogin } from '@/lib/hooks/use-login'
+import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 import {
   useCreateCollection,
   collectionSteps,
@@ -206,6 +209,9 @@ export default function PreviewPage() {
     : null
   const { status, error, txDigest, syncData, progress, publish, suiWallet, resetRecovery } = useCollectionPublish(draftSignature)
   const { showToast } = useToast()
+  const walletConnection = useCurrentWallet()
+  const autoConnectStatus = useAutoConnectWallet()
+  const openWalletLogin = useLogin()
 
   const floor = floorPrice || '0'
   const royaltyDisplay = formatRoyalty(extraRoyaltyBps)
@@ -213,6 +219,23 @@ export default function PreviewPage() {
   const soulNames = batchSouls.map((s) => s.name).join(', ')
 
   const isBusy = status !== 'idle' && status !== 'done' && status !== 'error'
+  const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
+  const walletActionState = getWalletActionState({
+    hasActiveWallet: !!suiWallet,
+    hasSessionWallet: !!user?.primarySuiAddress,
+    walletRestoring,
+    busy: isBusy,
+    busyLabel: statusLabels[status] ?? 'Processing...',
+    balanceBlocked: false,
+    recovery: !!txDigest && !ctx.coverImageFile,
+    txDigest,
+    readyLabel: 'Sign & Launch',
+    recoveryReadyLabel: 'Resume Launch',
+    reconnectLabel: 'Reconnect Sui Wallet',
+    connectLabel: 'Connect Sui Wallet',
+  })
+  const missingLaunchInput = !ctx.coverImageFile && !txDigest
+  const launchDisabled = walletActionState.disabled || missingLaunchInput
 
   // Store publish result in context and navigate to success when done
   useEffect(() => {
@@ -278,6 +301,14 @@ export default function PreviewPage() {
         creatorRoyaltyBps: s.creatorRoyaltyBps,
       })),
     })
+  }
+
+  function handleLaunchAction() {
+    if (walletActionState.needsWalletReconnect) {
+      openWalletLogin()
+      return
+    }
+    void handleLaunch()
   }
 
   return (
@@ -438,21 +469,18 @@ export default function PreviewPage() {
             </Link>
             <button
               type="button"
-              disabled={isBusy || !suiWallet || (!ctx.coverImageFile && !txDigest)}
-              onClick={handleLaunch}
+              disabled={launchDisabled}
+              onClick={handleLaunchAction}
               className={buttonStyles({
                 variant: 'landing',
                 size: 'lg',
-                className: `min-w-0 flex-1 rounded-xl ${isBusy ? 'opacity-60 cursor-wait' : ''} ${!suiWallet ? 'opacity-50 cursor-not-allowed' : ''}`,
+                className: `min-w-0 flex-1 rounded-xl ${isBusy ? 'opacity-60 cursor-wait' : ''} ${launchDisabled ? 'opacity-50 cursor-not-allowed' : ''}`,
               })}
             >
-              {!suiWallet
-                ? 'No Wallet Connected'
-                : isBusy
-                  ? (statusLabels[status] ?? 'Processing…')
-                  : txDigest && !ctx.coverImageFile
-                    ? <>Resume Launch <span aria-hidden="true">→</span></>
-                    : <>Sign &amp; Launch <span aria-hidden="true">→</span></>}
+              {walletActionState.label}
+              {!walletActionState.disabled && !walletActionState.needsWalletReconnect && (
+                <span aria-hidden="true"> →</span>
+              )}
             </button>
           </div>
         </PageContainer>

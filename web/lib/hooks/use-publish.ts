@@ -353,9 +353,9 @@ export function usePublish() {
           publishParams: pendingSync,
           suiClient,
         })
-        recovery.syncBody = syncBody
-        recoveryRef.current = recovery
-        persistMintRecovery(recovery)
+        const recoveryWithSyncBody = { ...recovery, syncBody }
+        recoveryRef.current = recoveryWithSyncBody
+        persistMintRecovery(recoveryWithSyncBody)
       }
 
       // Use recovered sync body when available (preserves original metadata after refresh),
@@ -377,9 +377,9 @@ export function usePublish() {
           suiClient,
         })
         if (recovery) {
-          recovery.syncBody = syncBody
-          recoveryRef.current = recovery
-          persistMintRecovery(recovery)
+          const recoveryWithSyncBody = { ...recovery, syncBody }
+          recoveryRef.current = recoveryWithSyncBody
+          persistMintRecovery(recoveryWithSyncBody)
         }
       }
 

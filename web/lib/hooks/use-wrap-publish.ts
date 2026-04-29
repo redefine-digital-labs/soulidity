@@ -432,14 +432,15 @@ export function useWrapPublish() {
         recoveryRef.current = recovery
         persistWrapRecovery(recovery)
 
-        recovery.syncBody = await buildWrapSyncBody({
+        const syncBody = await buildWrapSyncBody({
           txDigest: executedDigest,
           txResult,
           material: pendingSync,
           suiClient,
         })
-        recoveryRef.current = recovery
-        persistWrapRecovery(recovery)
+        const recoveryWithSyncBody = { ...recovery, syncBody }
+        recoveryRef.current = recoveryWithSyncBody
+        persistWrapRecovery(recoveryWithSyncBody)
       }
 
       if (!digest) {
@@ -457,9 +458,9 @@ export function useWrapPublish() {
           material: recovery.pendingSync,
           suiClient,
         })
-        recovery.syncBody = syncBody
-        recoveryRef.current = recovery
-        persistWrapRecovery(recovery)
+        const recoveryWithSyncBody = { ...recovery, syncBody }
+        recoveryRef.current = recoveryWithSyncBody
+        persistWrapRecovery(recoveryWithSyncBody)
       }
       if (!syncBody) {
         throw new Error('Pending wrap recovery data is unavailable. Do not retry this wrap transaction.')
