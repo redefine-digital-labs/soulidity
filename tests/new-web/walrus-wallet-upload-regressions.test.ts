@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   WALRUS_SINGLE_BLOB_MAX_BYTES,
   WALRUS_UPLOAD_QUOTE_TTL_MS,
@@ -24,18 +24,6 @@ describe('wallet-paid Walrus upload quote guards', () => {
   })
 
   it('quotes all chunks plus the manifest with relay tip before upload', async () => {
-    const fetchTipConfig = vi.fn(async () => ({
-      send_tip: {
-        address: '0x2',
-        kind: {
-          linear: {
-            base: 10,
-            per_encoded_kib: 2,
-          },
-        },
-      },
-    }))
-
     const plan = buildWalrusUploadPlan({
       files: [
         { name: 'large.bin', size: 55 * 1024 * 1024, encryptedSize: 55 * 1024 * 1024 + 16 },
@@ -49,15 +37,22 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(plan.chunkCount).toBe(4)
     expect(plan.transactionCount).toBe(10)
 
+    // Caller supplies an encoded-size-aware tip calculator (in production this
+    // delegates to WalrusClient.calculateUploadRelayTip, which uses
+    // encodedBlobLength under the hood).
+    const tipCalls: number[] = []
     const quote = await quoteWalrusUpload(plan, {
       now: () => 1_000,
-      fetchTipConfig,
+      calculateRelayTip: async (payloadBytes) => {
+        tipCalls.push(payloadBytes)
+        return BigInt(payloadBytes)
+      },
     })
 
-    expect(fetchTipConfig).toHaveBeenCalledWith('https://relay.example/v1/tip-config')
     expect(quote.totalBytes).toBeGreaterThan(55 * 1024 * 1024)
-    expect(quote.relayTipMist).toBeGreaterThan(0n)
     expect(quote.items).toHaveLength(5)
+    expect(tipCalls).toHaveLength(5)
+    expect(quote.relayTipMist).toBe(tipCalls.reduce((sum, bytes) => sum + BigInt(bytes), 0n))
     expect(quote.expiresAt).toBe(1_000 + WALRUS_UPLOAD_QUOTE_TTL_MS)
   })
 
@@ -71,7 +66,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
     })
     const quote = await quoteWalrusUpload(plan, {
       now: () => 10_000,
-      fetchTipConfig: async () => ({ no_tip: true }),
+      calculateRelayTip: async () => 0n,
     })
 
     expect(isWalrusUploadQuoteFresh(quote, plan, 10_500)).toBe(true)
@@ -113,7 +108,12 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(quoteClientBlock).not.toContain('maxRelayTipMist: 0n')
   })
 
-  it('quotes relay tips without the SDK cached max-tip checker', () => {
+  it('quotes relay tips via the SDK encoded-size calculator', () => {
+    // The quote MUST use WalrusClient.calculateUploadRelayTip so the displayed
+    // tip is computed from the encoded blob length (matching what the SDK
+    // actually transfers at sign time). A previous regression used raw payload
+    // bytes here and produced ~665× under-quotes that crashed mainnet uploads
+    // with `Tip amount (...) exceeds the maximum allowed tip (...)`.
     const source = readFileSync('web/lib/upload/client-upload.ts', 'utf8')
     const quoteStart = source.indexOf('const quote = await quoteWalrusUpload')
     const quoteEnd = source.indexOf('const approved = await params.confirmQuote', quoteStart)
@@ -121,7 +121,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
 
     expect(quoteStart).toBeGreaterThanOrEqual(0)
     expect(quoteEnd).toBeGreaterThan(quoteStart)
-    expect(quoteBlock).not.toContain('calculateUploadRelayTip')
+    expect(quoteBlock).toContain('calculateUploadRelayTip')
   })
 
   it('clears the SDK upload relay tip cache before constructing Walrus clients', () => {
