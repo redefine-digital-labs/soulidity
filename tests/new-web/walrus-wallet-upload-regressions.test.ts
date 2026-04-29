@@ -583,4 +583,88 @@ describe('wallet-paid Walrus upload quote guards', () => {
     // re-reading the latest set value.
     expect(fnSource).toMatch(/queue\?\.shift\(\)/)
   })
+
+  it('falls back to storage confirmations after a direct node write failure', () => {
+    // A real create attempt can fail with
+    // "Too many failures while writing blob ... to nodes" even after enough
+    // storage nodes have persisted the slivers. The Blob object is already
+    // paid/registered at that point, so the batch path should re-query
+    // confirmations and continue to certificate+mint when quorum is available.
+    const source = readFileSync('web/lib/upload/client-upload.ts', 'utf8')
+    const helperStart = source.indexOf('async function writeEncodedBlobAndBuildCertificate')
+    const helperEnd = source.indexOf('\n}\n', helperStart)
+
+    expect(helperStart).toBeGreaterThanOrEqual(0)
+    expect(helperEnd).toBeGreaterThan(helperStart)
+    const helperBlock = source.slice(helperStart, helperEnd)
+    expect(helperBlock).toContain('client.writeEncodedBlobToNodes')
+    expect(helperBlock).toContain('client.getStorageConfirmations')
+    expect(helperBlock).toContain('client.certificateFromConfirmations')
+
+    const batchStart = source.indexOf('export async function prepareSoulBlobsForBatchPublish')
+    const uploadStart = source.indexOf('const uploaded = await Promise.all', batchStart)
+    const uploadEnd = source.indexOf('// 8. Materialize per-file results', uploadStart)
+    expect(batchStart).toBeGreaterThanOrEqual(0)
+    expect(uploadStart).toBeGreaterThan(batchStart)
+    expect(uploadEnd).toBeGreaterThan(uploadStart)
+    const uploadBlock = source.slice(uploadStart, uploadEnd)
+    expect(uploadBlock).toContain('writeEncodedBlobAndBuildCertificate')
+    expect(uploadBlock).not.toContain('client.writeEncodedBlobToNodes({')
+  })
+
+  it('exposes a wallet-signed reclaim helper for stale batch orphans', () => {
+    // A batch resume mismatch means the prior register PTB has already created
+    // deletable Blob objects, but the current encrypted payloads no longer
+    // match those blobIds. The app needs a first-class helper that builds a
+    // wallet-signed Walrus delete transaction for every orphan object instead
+    // of leaving users with only a textual "use deletable-blob flow" hint.
+    const source = readFileSync('web/lib/upload/client-upload.ts', 'utf8')
+    const helperStart = source.indexOf('export async function reclaimWalrusOrphanBlobs')
+    const helperEnd = source.indexOf('\n}\n', helperStart)
+
+    expect(helperStart).toBeGreaterThanOrEqual(0)
+    expect(helperEnd).toBeGreaterThan(helperStart)
+    const helperBlock = source.slice(helperStart, helperEnd)
+    expect(helperBlock).toContain('createWalrusClient')
+    expect(helperBlock).toContain('client.deleteBlob')
+    expect(helperBlock).toContain('tx.transferObjects')
+    expect(helperBlock).toContain('params.signAndExecute(tx)')
+    expect(helperBlock).toMatch(/effects\?\.status/)
+    expect(helperBlock).toMatch(/status\s*!==\s*'success'/)
+  })
+
+  it('surfaces batch resume mismatch with a reclaim action on the create gas page', () => {
+    // The stale encrypted-payload case is expected after a page refresh or
+    // after a previous deploy failed before `preparedBatchRef` was populated.
+    // The create page should keep the orphan descriptors from the thrown
+    // WalrusUploadResumeMismatchError and expose a wallet action to reclaim
+    // them, while still allowing the next deploy attempt to start clean after
+    // the recovery row has been cleared.
+    const source = readFileSync('web/app/create/gas/page.tsx', 'utf8')
+
+    expect(source).toContain('WalrusUploadResumeMismatchError')
+    expect(source).toContain('reclaimWalrusOrphanBlobs')
+    expect(source).toContain('const [walrusOrphanRecovery, setWalrusOrphanRecovery]')
+    expect(source).toContain('async function handleReclaimWalrusOrphans')
+    expect(source).toContain('setWalrusOrphanRecovery({')
+
+    const handleDeployStart = source.indexOf('async function handleDeploy()')
+    const catchStart = source.indexOf('} catch (err) {', handleDeployStart)
+    const catchEnd = source.indexOf('setUploadPhase(\'idle\')', catchStart)
+    expect(catchStart).toBeGreaterThanOrEqual(0)
+    expect(catchEnd).toBeGreaterThan(catchStart)
+    const catchBlock = source.slice(catchStart, catchEnd)
+    expect(catchBlock).toContain('err instanceof WalrusUploadResumeMismatchError')
+    expect(catchBlock).toContain('preparedBatchRef.current = null')
+    expect(catchBlock).toContain('setWalrusOrphanRecovery')
+
+    const reclaimStart = source.indexOf('async function handleReclaimWalrusOrphans')
+    const reclaimEnd = source.indexOf('\n  }\n', reclaimStart)
+    expect(reclaimStart).toBeGreaterThanOrEqual(0)
+    expect(reclaimEnd).toBeGreaterThan(reclaimStart)
+    const reclaimBlock = source.slice(reclaimStart, reclaimEnd)
+    expect(reclaimBlock).toContain('reclaimWalrusOrphanBlobs')
+    expect(reclaimBlock).toContain('showToast')
+    expect(reclaimBlock).toContain('setWalrusOrphanRecovery(null)')
+  })
 })
