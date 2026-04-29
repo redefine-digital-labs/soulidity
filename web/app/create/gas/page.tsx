@@ -11,10 +11,11 @@ import { buttonStyles } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { usePublish, type PublishParams } from '@/lib/hooks/use-publish'
 import { useAuth } from '@/components/providers/auth-provider'
-import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import { uploadSoulPayload, WalrusUploadCancelledError } from '@/lib/upload/client-upload'
 import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
+import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -476,6 +477,12 @@ export default function CreateGasPage() {
         assetsSealMaterial: results.spriteSheet?.sealMaterial ?? null,
       })
     } catch (err) {
+      if (!(err instanceof WalrusUploadCancelledError)) {
+        captureFrontendException(err, {
+          scope: 'create_soul_deploy',
+          phase: uploadPhase,
+        })
+      }
       setDeployError(err instanceof Error ? err.message : 'Deploy failed')
       setUploadPhase('idle')
     }
@@ -492,6 +499,10 @@ export default function CreateGasPage() {
         previewImages: [], protectedBlobObjectId: '', creatorRoyaltyBps: 0,
       })
     } catch (err) {
+      captureFrontendException(err, {
+        scope: 'create_soul_resume_sync',
+        txDigest,
+      })
       setDeployError(err instanceof Error ? err.message : 'Resume failed')
     }
   }

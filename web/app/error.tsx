@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import posthog from 'posthog-js'
+import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
 
 export default function Error({
   error,
@@ -11,7 +11,7 @@ export default function Error({
   reset: () => void
 }) {
   useEffect(() => {
-    posthog.captureException(error, { digest: error.digest })
+    captureFrontendException(error, { digest: error.digest, scope: 'app-error' })
   }, [error])
 
   return (

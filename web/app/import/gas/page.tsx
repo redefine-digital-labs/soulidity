@@ -16,10 +16,11 @@ import {
 } from '@/lib/hooks/use-wallet-balances'
 import { useImport } from '@/lib/hooks/use-import'
 import { useAuth } from '@/components/providers/auth-provider'
-import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import { uploadSoulPayload, WalrusUploadCancelledError } from '@/lib/upload/client-upload'
 import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
+import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -374,6 +375,12 @@ export default function ImportGasPage() {
         assetsSealMaterial: results.spriteSheet?.sealMaterial ?? null,
       })
     } catch (err) {
+      if (!(err instanceof WalrusUploadCancelledError)) {
+        captureFrontendException(err, {
+          scope: 'import_soul_deploy',
+          phase: uploadPhase,
+        })
+      }
       setDeployError(err instanceof Error ? err.message : 'Deploy failed')
       setUploadPhase('idle')
     }
@@ -389,6 +396,10 @@ export default function ImportGasPage() {
         originRef: ctx.originRef,
       })
     } catch (err) {
+      captureFrontendException(err, {
+        scope: 'import_soul_resume_sync',
+        txDigest,
+      })
       setDeployError(err instanceof Error ? err.message : 'Resume failed')
     }
   }

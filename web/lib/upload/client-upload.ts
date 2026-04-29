@@ -42,6 +42,18 @@ export interface SoulUploadResult {
 
 export type SignAndExecuteWalrusTx = (tx: Transaction) => Promise<{ digest: string }>
 
+/**
+ * Thrown when the user declines the upload-cost review modal. Treated as an
+ * intentional control-flow signal — callers should NOT report it as a frontend
+ * exception (it is not an app failure).
+ */
+export class WalrusUploadCancelledError extends Error {
+  constructor(message = 'Walrus upload was cancelled before wallet signing') {
+    super(message)
+    this.name = 'WalrusUploadCancelledError'
+  }
+}
+
 export interface UploadSoulPayloadParams {
   file: File
   uploadType: SoulUploadType
@@ -375,7 +387,7 @@ export async function uploadSoulPayload(params: UploadSoulPayloadParams): Promis
   })
   const approved = await params.confirmQuote(quote)
   if (!approved) {
-    throw new Error('Walrus upload was cancelled before wallet signing')
+    throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
   }
   if (!isWalrusUploadQuoteFresh(quote, plan)) {
     throw new Error('Walrus upload quote expired before wallet signing')
