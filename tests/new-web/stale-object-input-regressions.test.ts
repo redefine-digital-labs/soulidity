@@ -7,13 +7,20 @@ function readSource(relativePath: string) {
 }
 
 describe('stale object input regression guards', () => {
-  it('revalidates cached encrypted blob inputs before create and import mint transactions', () => {
+  it('routes the create flow through the batched upload + mint pipeline', () => {
+    // Create flow upgraded to one register PTB + one certify+mint PTB so N
+    // encrypted files cost 2 wallet signatures total. Stale cached blob
+    // re-validation (findMissingObjectIds) is no longer applicable because
+    // every Deploy attempt re-runs the full batch.
     const createGas = readSource('web/app/create/gas/page.tsx')
-    const importGas = readSource('web/app/import/gas/page.tsx')
 
-    expect(createGas).toContain('findMissingObjectIds')
-    expect(createGas).toContain('results.charFile = undefined')
-    expect(createGas).toContain('results.memorySeed = undefined')
+    expect(createGas).toContain('prepareSoulBlobsForBatchPublish')
+    expect(createGas).toContain('attachBeforeMint: prepared.attachCertifyCalls')
+    expect(createGas).toContain('uploadType: \'encrypted\'')
+  })
+
+  it('revalidates cached encrypted blob inputs before import mint transactions', () => {
+    const importGas = readSource('web/app/import/gas/page.tsx')
 
     expect(importGas).toContain('findMissingObjectIds')
     expect(importGas).toContain('results.charFile = undefined')

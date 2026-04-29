@@ -36,6 +36,7 @@ import {
 import {
   OFFICIAL_MAINNET_KIOSK_PACKAGE_ID,
   OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID,
+  OFFICIAL_TESTNET_KIOSK_PACKAGE_ID,
 } from '../../web/lib/soulidity/kiosk'
 import {
   ALL_SOUL_GRANT_SCOPE_MASK,
@@ -231,9 +232,11 @@ describe('getTrustedPackageIds', () => {
 
 describe('getVendoredKioskPackageAddress', () => {
   const ENV_KEY = 'NEXT_PUBLIC_KIOSK_PACKAGE_ID'
+  const NETWORK_KEY = 'NEXT_PUBLIC_SUI_NETWORK'
 
   beforeEach(() => {
     delete process.env[ENV_KEY]
+    delete process.env[NETWORK_KEY]
   })
 
   it('returns a normalized address when env is set', () => {
@@ -243,13 +246,29 @@ describe('getVendoredKioskPackageAddress', () => {
     expect(result).toMatch(/aa$/)
   })
 
-  it('throws when env is not set', () => {
+  it('throws when env is not set and no network is configured', () => {
     expect(() => getVendoredKioskPackageAddress()).toThrow(/NEXT_PUBLIC_KIOSK_PACKAGE_ID must be set/)
   })
 
   it('throws when env contains an invalid address', () => {
     process.env[ENV_KEY] = 'garbage'
     expect(() => getVendoredKioskPackageAddress()).toThrow(/invalid kiosk package address/)
+  })
+
+  it('falls back to the testnet kiosk package when network=testnet and env is unset', () => {
+    process.env[NETWORK_KEY] = 'testnet'
+    expect(getVendoredKioskPackageAddress()).toBe(OFFICIAL_TESTNET_KIOSK_PACKAGE_ID)
+  })
+
+  it('falls back to the mainnet kiosk package when network=mainnet and env is unset', () => {
+    process.env[NETWORK_KEY] = 'mainnet'
+    expect(getVendoredKioskPackageAddress()).toBe(OFFICIAL_MAINNET_KIOSK_PACKAGE_ID)
+  })
+
+  it('env override takes precedence over network fallback', () => {
+    process.env[NETWORK_KEY] = 'mainnet'
+    process.env[ENV_KEY] = '0xAA'
+    expect(getVendoredKioskPackageAddress()).toMatch(/aa$/)
   })
 
   it('resolves the official mainnet kiosk type origin for PersonalKioskCap filters', () => {

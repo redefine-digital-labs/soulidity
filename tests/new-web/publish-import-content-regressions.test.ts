@@ -7,24 +7,31 @@ function readSource(relativePath: string) {
 }
 
 describe('memory encryption regressions', () => {
-  it('keeps create and import gas flows on encrypted founding memory with memory sidecars', () => {
+  it('keeps the create gas flow on encrypted founding memory via the batched upload pipeline', () => {
     const createGasSource = readSource('web/app/create/gas/page.tsx')
-    const importGasSource = readSource('web/app/import/gas/page.tsx')
     const publishHookSource = readSource('web/lib/hooks/use-publish.ts')
-    const importHookSource = readSource('web/lib/hooks/use-import.ts')
 
-    expect(createGasSource).toContain("'uploading-memory'")
-    expect(createGasSource).toContain('Encrypting & uploading memory')
-    expect(createGasSource).toContain("results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)")
-    expect(createGasSource).toContain('memorySealMaterial: results.memorySeed.sealMaterial ?? null')
+    // The create flow batches all uploads through `prepareSoulBlobsForBatchPublish`.
+    // Memory must enter the batch as `uploadType: 'encrypted'` and its Seal
+    // material must thread to the publish hook so the memory sidecar still
+    // gets created post-mint.
+    expect(createGasSource).toContain('prepareSoulBlobsForBatchPublish')
+    expect(createGasSource).toContain('file: withMime(ctx.memoryFile)')
+    expect(createGasSource).toMatch(/uploadType:\s*'encrypted'/)
+    expect(createGasSource).toContain('memorySealMaterial: memory.sealMaterial')
+
+    expect(publishHookSource).toContain('memorySealMaterial?: PendingSealMaterial | null')
+    expect(publishHookSource).toContain('createMemorySealSidecarFromMaterial')
+  })
+
+  it('keeps the import gas flow on encrypted founding memory with memory sidecars', () => {
+    const importGasSource = readSource('web/app/import/gas/page.tsx')
+    const importHookSource = readSource('web/lib/hooks/use-import.ts')
 
     expect(importGasSource).toContain("'uploading-memory'")
     expect(importGasSource).toContain('Encrypting & uploading memory')
     expect(importGasSource).toContain("results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)")
     expect(importGasSource).toContain('memorySealMaterial: results.memorySeed.sealMaterial ?? null')
-
-    expect(publishHookSource).toContain('memorySealMaterial?: PendingSealMaterial | null')
-    expect(publishHookSource).toContain('createMemorySealSidecarFromMaterial')
 
     expect(importHookSource).toContain('memorySealMaterial?: PendingSealMaterial | null')
     expect(importHookSource).toContain('createMemorySealSidecarFromMaterial')

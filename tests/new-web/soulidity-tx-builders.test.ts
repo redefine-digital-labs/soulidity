@@ -249,21 +249,21 @@ describe('publish.ts — buildPublishSoulTx', () => {
     currentKioskCapOnChainId: OBJ('33'),
   }
 
-  it('returns a Transaction with valid params (existing kiosk)', () => {
-    const tx = buildPublishSoulTx(VALID_PARAMS)
+  it('returns a Transaction with valid params (existing kiosk)', async () => {
+    const tx = await buildPublishSoulTx(VALID_PARAMS)
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('returns a Transaction with new kiosk (no kiosk IDs)', () => {
-    const tx = buildPublishSoulTx({
+  it('returns a Transaction with new kiosk (no kiosk IDs)', async () => {
+    const tx = await buildPublishSoulTx({
       ...VALID_SOUL_PUBLISH_ARGS,
       protectedBlobObjectId: OBJ('44'),
     })
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('returns a Transaction with optional founding memory and skills', () => {
-    const tx = buildPublishSoulTx({
+  it('returns a Transaction with optional founding memory and skills', async () => {
+    const tx = await buildPublishSoulTx({
       ...VALID_PARAMS,
       foundingMemoryBlobObjectId: OBJ('55'),
       skillsBlobObjectId: OBJ('66'),
@@ -287,8 +287,8 @@ describe('publish.ts — buildPublishSoulTx', () => {
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('defaults initial asset name to persona-sprite when an asset blob is present', () => {
-    const tx = buildPublishSoulTx({
+  it('defaults initial asset name to persona-sprite when an asset blob is present', async () => {
+    const tx = await buildPublishSoulTx({
       ...VALID_PARAMS,
       skillsBlobObjectId: OBJ('66'),
       initialSkillName: 'skills-v1',
@@ -300,13 +300,28 @@ describe('publish.ts — buildPublishSoulTx', () => {
     expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
   })
 
-  it('throws on invalid name', () => {
-    expect(() => buildPublishSoulTx({ ...VALID_PARAMS, name: '' })).toThrow('Soul name is required')
+  it('invokes attachBeforeMint between kiosk setup and the mint call', async () => {
+    const calls: string[] = []
+    const tx = await buildPublishSoulTx({
+      ...VALID_PARAMS,
+      attachBeforeMint: (transaction) => {
+        calls.push('attachBeforeMint')
+        // Splicing a custom moveCall here proves the hook can mutate the tx
+        // before the mint command is appended.
+        transaction.moveCall({ target: '0x2::tx_context::sender', arguments: [] })
+      },
+    })
+    expect(calls).toEqual(['attachBeforeMint'])
+    expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('throws on invalid royalty', () => {
-    expect(() => buildPublishSoulTx({ ...VALID_PARAMS, creatorRoyaltyBps: 3000 }))
-      .toThrow('creatorRoyaltyBps must be between 0 and')
+  it('throws on invalid name', async () => {
+    await expect(buildPublishSoulTx({ ...VALID_PARAMS, name: '' })).rejects.toThrow('Soul name is required')
+  })
+
+  it('throws on invalid royalty', async () => {
+    await expect(buildPublishSoulTx({ ...VALID_PARAMS, creatorRoyaltyBps: 3000 }))
+      .rejects.toThrow('creatorRoyaltyBps must be between 0 and')
   })
 })
 

@@ -108,18 +108,24 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(quoteClientBlock).not.toContain('maxRelayTipMist: 0n')
   })
 
-  it('quotes relay tips via the SDK encoded-size calculator', () => {
-    // The quote MUST use WalrusClient.calculateUploadRelayTip so the displayed
-    // tip is computed from the encoded blob length (matching what the SDK
-    // actually transfers at sign time). A previous regression used raw payload
-    // bytes here and produced ~665× under-quotes that crashed mainnet uploads
-    // with `Tip amount (...) exceeds the maximum allowed tip (...)`.
+  it('quotes relay tips via the SDK encoded-size calculator in the legacy single-blob path', () => {
+    // The legacy `uploadSoulPayload` still uses the upload relay, so its quote
+    // MUST go through WalrusClient.calculateUploadRelayTip to compute tip from
+    // encoded blob length (a prior regression used raw payload bytes and
+    // produced ~665× under-quotes that crashed mainnet uploads with
+    // `Tip amount (...) exceeds the maximum allowed tip (...)`).
+    //
+    // The batch path (`prepareSoulBlobsForBatchPublish`) deliberately bypasses
+    // the relay because the relay only validates `ptb.inputs.first()` as the
+    // auth payload, which is incompatible with multi-blob register PTBs.
     const source = readFileSync('web/lib/upload/client-upload.ts', 'utf8')
-    const quoteStart = source.indexOf('const quote = await quoteWalrusUpload')
+    const legacyStart = source.indexOf('export async function uploadSoulPayload')
+    const quoteStart = source.indexOf('const quote = await quoteWalrusUpload', legacyStart)
     const quoteEnd = source.indexOf('const approved = await params.confirmQuote', quoteStart)
     const quoteBlock = source.slice(quoteStart, quoteEnd)
 
-    expect(quoteStart).toBeGreaterThanOrEqual(0)
+    expect(legacyStart).toBeGreaterThanOrEqual(0)
+    expect(quoteStart).toBeGreaterThan(legacyStart)
     expect(quoteEnd).toBeGreaterThan(quoteStart)
     expect(quoteBlock).toContain('calculateUploadRelayTip')
   })
