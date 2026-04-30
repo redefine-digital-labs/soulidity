@@ -59,6 +59,7 @@ describe('Vercel production env sync guardrails', () => {
       UPSTASH_REDIS_REST_TOKEN: 'test-upstash-token',
       NEXT_PUBLIC_POSTHOG_KEY: 'phc_testprojectkey',
       NEXT_PUBLIC_POSTHOG_HOST: '/ingest',
+      NEXT_PUBLIC_POSTHOG_SESSION_REPLAY: 'true',
     })
 
     const result = runSync(envFile)
@@ -68,5 +69,20 @@ describe('Vercel production env sync guardrails', () => {
     expect(result.stdout).toContain('- UPSTASH_REDIS_REST_TOKEN (sensitive)')
     expect(result.stdout).toContain('- NEXT_PUBLIC_POSTHOG_KEY')
     expect(result.stdout).toContain('- NEXT_PUBLIC_POSTHOG_HOST')
+    expect(result.stdout).toContain('- NEXT_PUBLIC_POSTHOG_SESSION_REPLAY')
+  })
+
+  it('does not require PostHog session replay env to sync production env', () => {
+    const envFile = writeEnvFile({
+      UPSTASH_REDIS_REST_URL: 'https://example.upstash.io',
+      UPSTASH_REDIS_REST_TOKEN: 'test-upstash-token',
+      NEXT_PUBLIC_POSTHOG_KEY: 'phc_testprojectkey',
+      NEXT_PUBLIC_POSTHOG_HOST: '/ingest',
+    })
+
+    const result = runSync(envFile)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('NEXT_PUBLIC_POSTHOG_SESSION_REPLAY')
   })
 })
