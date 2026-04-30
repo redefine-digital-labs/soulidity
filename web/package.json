@@ -7,7 +7,7 @@
     "dev": "next dev --port 3100",
     "predev": "npm run copy-walrus-wasm",
     "prisma:generate": "prisma generate --schema=../prisma/schema.prisma",
-    "prisma:migrate:deploy": "prisma migrate deploy --schema=../prisma/schema.prisma",
+    "prisma:migrate:deploy": "cd .. && prisma migrate deploy --schema=prisma/schema.prisma",
     "typegen": "next typegen",
     "typecheck": "npm run prisma:generate && npm run typegen && tsc -p tsconfig.json --noEmit",
     "build:vercel": "npm run prisma:migrate:deploy && npm run build",

@@ -15,7 +15,9 @@ describe('Vercel Walrus WASM deployment config', () => {
 
     expect(vercel.buildCommand).toBe('npm run build:vercel')
     expect(webPackage.scripts?.['build:vercel']).toBe('npm run prisma:migrate:deploy && npm run build')
-    expect(webPackage.scripts?.['prisma:migrate:deploy']).toBe('prisma migrate deploy --schema=../prisma/schema.prisma')
+    expect(webPackage.scripts?.['prisma:migrate:deploy']).toBe(
+      'cd .. && prisma migrate deploy --schema=prisma/schema.prisma',
+    )
     expect(webPackage.scripts?.prebuild).toBe('npm run copy-walrus-wasm')
     expect(webPackage.scripts?.['copy-walrus-wasm']).toBe('node scripts/copy-walrus-wasm.mjs')
   })
