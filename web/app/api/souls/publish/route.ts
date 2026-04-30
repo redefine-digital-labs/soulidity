@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { takeRateLimitToken } from '@/lib/rate-limit'
+import { takeBestEffortRateLimitToken } from '@/lib/rate-limit'
 import {
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     return auth.error
   }
 
-  const rateLimit = await takeRateLimitToken(`soul-publish:${auth.identity.memberId}`, SOUL_PUBLISH_RATE_LIMIT)
+  const rateLimit = await takeBestEffortRateLimitToken(`soul-publish:${auth.identity.memberId}`, SOUL_PUBLISH_RATE_LIMIT)
   if (rateLimit.limited) {
     return NextResponse.json(
       { error: 'Too many Soulidity publish sync requests, try again later' },

@@ -16,6 +16,7 @@ const mockedPrisma = vi.hoisted(() => ({
   },
 }))
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
+const mockedTakeBestEffortRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedGetStoredSoulidityTxSync = vi.hoisted(() => vi.fn())
 const mockedStoreSoulidityTxSync = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
@@ -45,6 +46,7 @@ vi.mock('@web/lib/prisma', () => ({
 
 vi.mock('@web/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
+  takeBestEffortRateLimitToken: mockedTakeBestEffortRateLimitToken,
 }))
 
 vi.mock('@/lib/soulidity/mirror/tx-sync', () => ({
@@ -104,6 +106,7 @@ describe('soul publish route', () => {
     })
     mockedAssertTransactionSender.mockReturnValue(null)
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
+    mockedTakeBestEffortRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedGetStoredSoulidityTxSync.mockResolvedValue(null)
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
     mockedReadTransactionSender.mockReturnValue(AUTHOR_ADDRESS)
@@ -211,7 +214,7 @@ describe('soul publish route', () => {
   })
 
   it('rate limits publish sync before chain reads', async () => {
-    mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 30 })
+    mockedTakeBestEffortRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 30 })
 
     const { POST } = await import('../../web/app/api/souls/publish/route.ts')
     const response = await POST(createRequest({
@@ -227,6 +230,23 @@ describe('soul publish route', () => {
       error: 'Too many Soulidity publish sync requests, try again later',
     })
     expect(mockedGetSuccessfulTransactionBlock).not.toHaveBeenCalled()
+  })
+
+  it('uses best-effort rate limiting for post-chain publish sync', async () => {
+    const { POST } = await import('../../web/app/api/souls/publish/route.ts')
+    const response = await POST(createRequest({
+      txDigest: TX_DIGEST,
+      tags: ['typescript'],
+      previewImages: ['https://example.com/cover.png'],
+      sealSidecar: SOUL_SIDECAR,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockedTakeBestEffortRateLimitToken).toHaveBeenCalledWith(
+      'soul-publish:member-1',
+      { max: 10, windowMs: 5 * 60_000 },
+    )
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
   })
 
   it('mirrors a successful desktop publish and stores the tx sync response', async () => {
