@@ -30,6 +30,7 @@ import {
   type WalrusOrphanBlob,
   type WalrusUploadRecoveryRecord,
 } from '@/lib/upload/walrus-recovery'
+import { assertSuiTxSucceeded } from '@/lib/sui/tx-result'
 
 export type SoulUploadKind = 'persona-sprite' | 'soul-content'
 export type SoulUploadType = 'public' | 'encrypted'
@@ -259,19 +260,11 @@ async function uploadSingleBlob(params: {
       deletable,
     })
     const registerResult = await params.signAndExecute(registerTx)
-    // signAndExecute returns the raw executeTransactionBlock result and does
-    // NOT reject on Move aborts: a digest can come back with
-    // effects.status.status === 'failure' without throwing. Persisting
-    // recovery off a failed register would point future resume attempts at a
-    // digest that created no Blob, where `writeBlobFlow.encode({ resume })`
-    // would throw with a stale-orphan error even though no Blob exists.
-    const registerStatus = (registerResult as { effects?: { status?: { status?: string; error?: string } } } | null | undefined)?.effects?.status
-    if (registerStatus?.status !== 'success') {
+    try {
+      assertSuiTxSucceeded(registerResult, 'Walrus register transaction')
+    } catch (error) {
       clearWalrusUploadRecovery(params.recoveryKey)
-      const detail = [registerStatus?.status ? `status=${registerStatus.status}` : null, registerStatus?.error ? `error=${registerStatus.error}` : null]
-        .filter(Boolean)
-        .join(', ')
-      throw new Error(`Walrus register transaction ${registerResult.digest} did not succeed${detail ? ` (${detail})` : ''}`)
+      throw error
     }
     txDigest = registerResult.digest
     // Persist the registered blob immediately so a relay/certify failure does
@@ -312,21 +305,7 @@ async function uploadSingleBlob(params: {
 
   const certifyTx = flow.certify()
   const certifyResult = await params.signAndExecute(certifyTx)
-  // Mirror the register guard: signAndExecute returns the raw
-  // executeTransactionBlock response and does NOT reject Move aborts, so a
-  // certify digest can come back with effects.status.status === 'failure'
-  // (stale/deleted Blob, gas failure). Clearing recovery off such a digest
-  // would strand the caller — the registered Blob is still on chain but the
-  // resume record needed to re-run certify without paying another register
-  // is gone. Throw before flow.getBlob() and before clearing recovery so the
-  // next attempt can resume at certify.
-  const certifyStatus = (certifyResult as { effects?: { status?: { status?: string; error?: string } } } | null | undefined)?.effects?.status
-  if (certifyStatus?.status !== 'success') {
-    const detail = [certifyStatus?.status ? `status=${certifyStatus.status}` : null, certifyStatus?.error ? `error=${certifyStatus.error}` : null]
-      .filter(Boolean)
-      .join(', ')
-    throw new Error(`Walrus certify transaction ${certifyResult.digest} did not succeed${detail ? ` (${detail})` : ''}`)
-  }
+  assertSuiTxSucceeded(certifyResult, 'Walrus certify transaction')
   const certified = await flow.getBlob()
 
   // Successful end-to-end run — recovery is no longer needed.
@@ -636,13 +615,7 @@ export async function reclaimWalrusOrphanBlobs(params: {
   }
 
   const result = await params.signAndExecute(tx)
-  const status = result.effects?.status
-  if (status?.status !== 'success') {
-    const detail = [status?.status ? `status=${status.status}` : null, status?.error ? `error=${status.error}` : null]
-      .filter(Boolean)
-      .join(', ')
-    throw new Error(`Walrus orphan reclaim transaction ${result.digest} did not succeed${detail ? ` (${detail})` : ''}`)
-  }
+  assertSuiTxSucceeded(result, 'Walrus orphan reclaim transaction')
 
   return {
     digest: result.digest,
@@ -843,22 +816,11 @@ export async function prepareSoulBlobsForBatchPublish(
 
     // 5. Sign PTB1.
     const registerResult = await params.signAndExecute(tx)
-    // signAndExecute returns the raw executeTransactionBlock result and does
-    // NOT reject on Move aborts: the wallet helper resolves successfully even
-    // when effects.status.status === 'failure'. Persisting batch recovery off
-    // a failed digest wedges the next Deploy click — the resume branch tries
-    // to re-derive Blob objects from a digest that created none, throws on
-    // the missing objects, and the recovery record sticks. Verify the on-chain
-    // status BEFORE assigning the digest or persisting any recovery, and clear
-    // any stale record under the same key so a future retry can re-register
-    // from a clean state.
-    const registerStatus = (registerResult as { effects?: { status?: { status?: string; error?: string } } } | null | undefined)?.effects?.status
-    if (registerStatus?.status !== 'success') {
+    try {
+      assertSuiTxSucceeded(registerResult, 'Walrus batch register transaction')
+    } catch (error) {
       clearWalrusBatchRecovery(recoveryKey)
-      const detail = [registerStatus?.status ? `status=${registerStatus.status}` : null, registerStatus?.error ? `error=${registerStatus.error}` : null]
-        .filter(Boolean)
-        .join(', ')
-      throw new Error(`Walrus batch register transaction ${registerResult.digest} did not succeed${detail ? ` (${detail})` : ''}`)
+      throw error
     }
     registerDigest = registerResult.digest
 

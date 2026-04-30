@@ -28,6 +28,10 @@ import {
   type PendingSealMaterial,
 } from '@/lib/upload/client-seal'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import {
+  assertSuiTxSucceeded,
+  getSuiTxErrorProperties,
+} from '@/lib/sui/tx-result'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
@@ -356,21 +360,7 @@ export function usePublish() {
         setStatus('signing')
         const result = await signAndExecute(tx)
         const executedDigest = result.digest
-        // signAndExecute returns the raw executeTransactionBlock result and
-        // does NOT reject Move aborts: a digest can come back with
-        // effects.status.status === 'failure' (stale kiosk caps, bad Walrus
-        // certificate, or any other on-chain abort). Treat that as a hard
-        // failure BEFORE persisting the digest or clearing batch recovery —
-        // otherwise buildPublishSyncBody() will throw on the missing mint
-        // event while the registered Blob objects from PTB1 have already been
-        // orphaned and the user has no way to retry.
-        const txStatus = (result as { effects?: { status?: { status?: string; error?: string } } } | null | undefined)?.effects?.status
-        if (txStatus?.status !== 'success') {
-          const detail = [txStatus?.status ? `status=${txStatus.status}` : null, txStatus?.error ? `error=${txStatus.error}` : null]
-            .filter(Boolean)
-            .join(', ')
-          throw new Error(`Soul mint transaction ${executedDigest} did not succeed${detail ? ` (${detail})` : ''}`)
-        }
+        assertSuiTxSucceeded(result, 'Soul mint transaction')
         digest = executedDigest
         setTxDigest(executedDigest)
         // Persist raw Seal material BEFORE clearing batch recovery so a tab
@@ -465,6 +455,7 @@ export function usePublish() {
           scope: 'soul_publish',
           phase: status,
           txDigest,
+          ...getSuiTxErrorProperties(nextError),
           elapsedMs: Date.now() - startedAt,
         },
       )

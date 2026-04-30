@@ -28,6 +28,7 @@ import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
+import { getSuiTxErrorProperties } from '@/lib/sui/tx-result'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -598,6 +599,7 @@ export default function CreateGasPage() {
         captureFrontendException(err, {
           scope: 'create_soul_deploy',
           phase: uploadPhase,
+          ...getSuiTxErrorProperties(err),
         })
       }
       setDeployError(err instanceof Error ? err.message : 'Deploy failed')
@@ -624,6 +626,7 @@ export default function CreateGasPage() {
       captureFrontendException(err, {
         scope: 'create_soul_walrus_orphan_reclaim',
         txDigest: walrusOrphanRecovery.orphanTxDigest,
+        ...getSuiTxErrorProperties(err),
       })
       setDeployError(err instanceof Error ? err.message : 'Failed to reclaim Walrus blobs')
     } finally {
@@ -645,6 +648,7 @@ export default function CreateGasPage() {
       captureFrontendException(err, {
         scope: 'create_soul_resume_sync',
         txDigest,
+        ...getSuiTxErrorProperties(err),
       })
       setDeployError(err instanceof Error ? err.message : 'Resume failed')
     }

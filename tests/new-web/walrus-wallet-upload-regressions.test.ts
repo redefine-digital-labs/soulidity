@@ -390,12 +390,11 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(onMintIdx).toBeGreaterThan(setDigestIdx)
 
     const guardBlock = source.slice(signStart, setDigestIdx)
-    // Reads effects.status.status from the wallet result.
-    expect(guardBlock).toContain("effects?.status")
-    expect(guardBlock).toMatch(/txStatus\?\.status\s*!==\s*'success'/)
+    // Uses the shared Sui result assertion instead of hand-reading
+    // effects.status.status at each call site.
+    expect(guardBlock).toContain("assertSuiTxSucceeded(result, 'Soul mint transaction')")
     // Throws on non-success BEFORE setTxDigest / onMintTxExecuted runs, so a
     // failed digest cannot clear batch recovery.
-    expect(guardBlock).toContain('throw new Error')
     expect(guardBlock).not.toContain('setTxDigest')
     expect(guardBlock).not.toContain('onMintTxExecuted')
   })
@@ -442,14 +441,13 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(persistCall).toBeGreaterThan(signCall)
 
     const guardBlock = source.slice(signCall, persistCall)
-    // Reads effects.status from the wallet result.
-    expect(guardBlock).toContain('effects')
-    expect(guardBlock).toMatch(/status\s*!==\s*'success'/)
+    // Uses the shared Sui result assertion instead of duplicating
+    // effects.status parsing at each Walrus call site.
+    expect(guardBlock).toContain("assertSuiTxSucceeded(registerResult, 'Walrus batch register transaction')")
     // Clears any stale recovery row so a retry can register from a clean state.
     expect(guardBlock).toContain('clearWalrusBatchRecovery(recoveryKey)')
     // Throws BEFORE persistWalrusBatchRecovery runs and BEFORE the digest
     // is assigned to registerDigest (which is consumed by the persist call).
-    expect(guardBlock).toContain('throw new Error')
     expect(guardBlock).not.toContain('persistWalrusBatchRecovery')
   })
 
@@ -468,10 +466,8 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(persistCall).toBeGreaterThan(signCall)
 
     const guardBlock = source.slice(signCall, persistCall)
-    expect(guardBlock).toContain('effects')
-    expect(guardBlock).toMatch(/status\s*!==\s*'success'/)
+    expect(guardBlock).toContain("assertSuiTxSucceeded(registerResult, 'Walrus register transaction')")
     expect(guardBlock).toContain('clearWalrusUploadRecovery(params.recoveryKey)')
-    expect(guardBlock).toContain('throw new Error')
     expect(guardBlock).not.toContain('persistWalrusUploadRecovery')
   })
 
@@ -499,12 +495,11 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(clearCall).toBeGreaterThan(getBlobCall)
 
     const guardBlock = source.slice(certifySignCall, getBlobCall)
-    // Reads effects.status from the certify wallet result.
-    expect(guardBlock).toContain('effects')
-    expect(guardBlock).toMatch(/status\s*!==\s*'success'/)
+    // Uses the shared Sui result assertion instead of duplicating
+    // effects.status parsing at each Walrus call site.
+    expect(guardBlock).toContain("assertSuiTxSucceeded(certifyResult, 'Walrus certify transaction')")
     // Throws BEFORE flow.getBlob() and BEFORE clearWalrusUploadRecovery, so a
     // failed certify cannot strand the caller with a cleared recovery.
-    expect(guardBlock).toContain('throw new Error')
     // No actual call expressions for getBlob or clearWalrusUploadRecovery
     // appear before the throw (comments referencing them are fine).
     expect(guardBlock).not.toMatch(/await\s+flow\.getBlob\s*\(/)
@@ -629,8 +624,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(helperBlock).toContain('client.deleteBlob')
     expect(helperBlock).toContain('tx.transferObjects')
     expect(helperBlock).toContain('params.signAndExecute(tx)')
-    expect(helperBlock).toMatch(/effects\?\.status/)
-    expect(helperBlock).toMatch(/status\s*!==\s*'success'/)
+    expect(helperBlock).toContain("assertSuiTxSucceeded(result, 'Walrus orphan reclaim transaction')")
   })
 
   it('surfaces batch resume mismatch with a reclaim action on the create gas page', () => {

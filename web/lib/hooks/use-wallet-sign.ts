@@ -8,31 +8,10 @@ import {
   useSuiClient,
 } from '@mysten/dapp-kit'
 import type { Transaction } from '@mysten/sui/transactions'
-
-type SuiTxResult = {
-  digest: string
-  effects: {
-    status?: { status?: string; error?: string }
-    [key: string]: unknown
-  }
-  [key: string]: unknown
-}
-
-export function normalizeSuiTxResult(result: unknown): SuiTxResult {
-  if (!result || typeof result !== 'object') {
-    throw new Error('Wallet transaction execution did not return a transaction result')
-  }
-
-  const candidate = result as { digest?: unknown; effects?: unknown }
-  if (typeof candidate.digest !== 'string' || candidate.digest.length === 0) {
-    throw new Error('Wallet transaction execution did not return a transaction digest')
-  }
-  if (!candidate.effects || typeof candidate.effects !== 'object') {
-    throw new Error('Wallet transaction execution did not return effects')
-  }
-
-  return result as SuiTxResult
-}
+import {
+  resolveSuiTxResultWithEffects,
+  type SuiTxResultWithEffects,
+} from '@/lib/sui/tx-result'
 
 async function waitForTransactionBestEffort(
   client: ReturnType<typeof useSuiClient>,
@@ -58,18 +37,19 @@ export function useWalletSign() {
 
   const suiWallet = currentAccount?.address ? { address: currentAccount.address } : null
 
-  const signAndExecute = useCallback(async (tx: Transaction): Promise<SuiTxResult> => {
+  const signAndExecute = useCallback(async (tx: Transaction): Promise<SuiTxResultWithEffects> => {
     if (!currentAccount) {
       throw new Error('Connect a Sui wallet before signing transactions')
     }
     tx.setSenderIfNotSet(currentAccount.address)
+    tx.setGasBudgetIfNotSet('20000000')
 
     const { bytes, signature } = await signTransaction({
       transaction: tx,
       account: currentAccount,
     })
 
-    const result = normalizeSuiTxResult(await suiClient.executeTransactionBlock({
+    const result = await resolveSuiTxResultWithEffects(suiClient, await suiClient.executeTransactionBlock({
       transactionBlock: bytes,
       signature,
       options: {
