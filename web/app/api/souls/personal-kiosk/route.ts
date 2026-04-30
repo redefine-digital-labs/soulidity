@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
-import { takeRateLimitToken } from '@/lib/rate-limit'
+import { takeBestEffortRateLimitToken } from '@/lib/rate-limit'
 import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@/lib/soulidity/personal-kiosk'
 import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     return auth.error
   }
 
-  const rateLimit = await takeRateLimitToken(`soul-personal-kiosk:${auth.identity.memberId}`, SOUL_PERSONAL_KIOSK_RATE_LIMIT)
+  const rateLimit = await takeBestEffortRateLimitToken(`soul-personal-kiosk:${auth.identity.memberId}`, SOUL_PERSONAL_KIOSK_RATE_LIMIT)
   if (rateLimit.limited) {
     return NextResponse.json(
       { error: 'Too many Soul personal kiosk requests, try again later' },

@@ -6,6 +6,7 @@ const KIOSK_CAP_ID = `0x${'3'.repeat(64)}`
 
 const mockedRequireSoulCreateWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
+const mockedTakeBestEffortRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
 const MockSoulidityPersonalKioskInvariantError = vi.hoisted(() => class MockSoulidityPersonalKioskInvariantError extends Error {
   kind: 'conflict' | 'service'
@@ -22,6 +23,7 @@ vi.mock('@/lib/soulidity/server', () => ({
 
 vi.mock('@web/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
+  takeBestEffortRateLimitToken: mockedTakeBestEffortRateLimitToken,
 }))
 
 vi.mock('@/lib/soulidity/personal-kiosk', () => ({
@@ -40,6 +42,7 @@ describe('Soul personal kiosk route', () => {
       primarySuiAddress: BUYER_ADDRESS,
     })
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
+    mockedTakeBestEffortRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedResolveOwnedPersonalKiosk.mockResolvedValue({
       status: 'ready',
       kiosk: {
@@ -106,7 +109,7 @@ describe('Soul personal kiosk route', () => {
   })
 
   it('rate limits personal kiosk resolution before chain lookup', async () => {
-    mockedTakeRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 30 })
+    mockedTakeBestEffortRateLimitToken.mockResolvedValueOnce({ limited: true, retryAfterSeconds: 30 })
 
     const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
     const response = await GET(createRequest())
@@ -116,6 +119,18 @@ describe('Soul personal kiosk route', () => {
       error: 'Too many Soul personal kiosk requests, try again later',
     })
     expect(mockedResolveOwnedPersonalKiosk).not.toHaveBeenCalled()
+  })
+
+  it('uses best-effort read-only rate limiting for the create-flow kiosk preflight', async () => {
+    const { GET } = await import('../../web/app/api/souls/personal-kiosk/route.ts')
+    const response = await GET(createRequest(`http://localhost/api/souls/personal-kiosk?walletAddress=${BUYER_ADDRESS}`))
+
+    expect(response.status).toBe(200)
+    expect(mockedTakeBestEffortRateLimitToken).toHaveBeenCalledWith(
+      'soul-personal-kiosk:member-1',
+      { max: 30, windowMs: 60_000 },
+    )
+    expect(mockedTakeRateLimitToken).not.toHaveBeenCalled()
   })
 
   it('returns the resolved Soulidity personal kiosk for the authenticated viewer', async () => {

@@ -5,6 +5,7 @@ import {
   resetRateLimitBucketsForTests,
   takeRateLimitTokenWithFallback,
   type RateLimitOptions,
+  type RateLimitResult,
 } from '@/lib/rate-limit-core'
 
 export const MISSING_CLIENT_IP_ERROR = 'Unable to determine client IP'
@@ -84,13 +85,27 @@ function allowsInMemoryFallback(): boolean {
 export async function takeRateLimitToken(
   key: string,
   options: RateLimitOptions,
-): Promise<{ limited: boolean; retryAfterSeconds: number }> {
+): Promise<RateLimitResult> {
   const limiter = createUpstashLimiter(options)
   return takeRateLimitTokenWithFallback({
     key,
     options,
     takeRemoteToken: limiter ? () => limiter.limit(key) : null,
     allowInMemoryFallback: allowsInMemoryFallback(),
+    onRemoteFallback: warnRateLimitFallbackOnce,
+  })
+}
+
+export async function takeBestEffortRateLimitToken(
+  key: string,
+  options: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const limiter = createUpstashLimiter(options)
+  return takeRateLimitTokenWithFallback({
+    key,
+    options,
+    takeRemoteToken: limiter ? () => limiter.limit(key) : null,
+    allowInMemoryFallback: true,
     onRemoteFallback: warnRateLimitFallbackOnce,
   })
 }
