@@ -1,6 +1,7 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@/lib/soulidity/metadata'
+import { resolveWalrusBlobType } from '@/lib/soulidity/walrus-blob'
 import { buildBuyerKioskArgs, finishBuyerKioskArgs, validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
 
 import type { AssetType, SoulDownloadPolicy } from '@/lib/soulidity/types'
@@ -56,27 +57,26 @@ type PublishTxParams = {
 }
 
 const SUI_CLOCK_OBJECT_ID = '0x6'
-const WALRUS_BLOB_TYPE = '0xd84704c17fc870b8764832c535aa6b11f21a95cd6f5bb38a9b07d2cf42220c66::blob::Blob'
 // SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS | SCOPE_ASSETS (mirrors Move grant::all_scopes)
 const ALL_ACCESS_SCOPES = 15
 
 function buildFoundingMemoryArg(tx: Transaction, blobObjectId?: string | null) {
   return tx.object.option({
-    type: WALRUS_BLOB_TYPE,
+    type: resolveWalrusBlobType(),
     value: blobObjectId ? tx.object(blobObjectId) : null,
   })
 }
 
 function buildSkillsArg(tx: Transaction, blobObjectId?: string | null) {
   return tx.object.option({
-    type: WALRUS_BLOB_TYPE,
+    type: resolveWalrusBlobType(),
     value: blobObjectId ? tx.object(blobObjectId) : null,
   })
 }
 
 function buildAssetArg(tx: Transaction, blobObjectId?: string | null) {
   return tx.object.option({
-    type: WALRUS_BLOB_TYPE,
+    type: resolveWalrusBlobType(),
     value: blobObjectId ? tx.object(blobObjectId) : null,
   })
 }

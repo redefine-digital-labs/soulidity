@@ -1,4 +1,5 @@
-import { describe, expect, it, vi, beforeAll } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { describe, expect, it, vi, beforeAll, afterEach } from 'vitest'
 import { Transaction } from '@mysten/sui/transactions'
 
 // ---------------------------------------------------------------------------
@@ -22,11 +23,23 @@ beforeAll(() => {
   process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID = '0x' + 'ee'.repeat(32)
 })
 
+const ORIGINAL_SUI_NETWORK = process.env.NEXT_PUBLIC_SUI_NETWORK
+
+afterEach(() => {
+  if (ORIGINAL_SUI_NETWORK === undefined) {
+    delete process.env.NEXT_PUBLIC_SUI_NETWORK
+  } else {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = ORIGINAL_SUI_NETWORK
+  }
+})
+
 // ---------------------------------------------------------------------------
 // Helpers — reusable valid object IDs and params
 // ---------------------------------------------------------------------------
 const OBJ = (hex: string) => '0x' + hex.repeat(32)
 const ADDR = OBJ('a1')
+const TESTNET_WALRUS_BLOB_TYPE = '0xd84704c17fc870b8764832c535aa6b11f21a95cd6f5bb38a9b07d2cf42220c66::blob::Blob'
+const MAINNET_WALRUS_BLOB_TYPE = '0xfdc88f7d7cf30afab2f82e8380d11ee8f70efb90e863d1de8616fae1bb09ea77::blob::Blob'
 
 function encodeBcsString(value: string) {
   const utf8 = Buffer.from(value, 'utf8')
@@ -47,6 +60,23 @@ function encodeBcsString(value: string) {
 
 function getPureInputBytes(tx: Transaction) {
   return tx.getData().inputs.flatMap((input) => ('Pure' in input ? [input.Pure.bytes] : []))
+}
+
+function getObjectOptionTypeArguments(tx: Transaction) {
+  return tx.getData().commands.flatMap((command) => {
+    if (!('MoveCall' in command)) {
+      return []
+    }
+    const moveCall = command.MoveCall
+    if (moveCall.module !== 'option' || !['none', 'some'].includes(moveCall.function)) {
+      return []
+    }
+    return moveCall.typeArguments
+  })
+}
+
+function readRepoText(relativePath: string) {
+  return readFileSync(new URL(`../../${relativePath}`, import.meta.url), 'utf8')
 }
 
 const VALID_SOUL_PUBLISH_ARGS = {
@@ -285,6 +315,42 @@ describe('publish.ts — buildPublishSoulTx', () => {
       },
     })
     expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('uses the mainnet Walrus Blob type for all object options on mainnet', async () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+
+    const tx = await buildPublishSoulTx({
+      ...VALID_PARAMS,
+      foundingMemoryBlobObjectId: OBJ('55'),
+      skillsBlobObjectId: OBJ('66'),
+      assetBlobObjectId: OBJ('77'),
+      assetType: 'sprite',
+    })
+
+    expect(getObjectOptionTypeArguments(tx)).toEqual([
+      MAINNET_WALRUS_BLOB_TYPE,
+      MAINNET_WALRUS_BLOB_TYPE,
+      MAINNET_WALRUS_BLOB_TYPE,
+    ])
+  })
+
+  it('keeps the testnet Walrus Blob type for object options by default', async () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'testnet'
+
+    const tx = await buildPublishSoulTx({
+      ...VALID_PARAMS,
+      foundingMemoryBlobObjectId: OBJ('55'),
+      skillsBlobObjectId: OBJ('66'),
+      assetBlobObjectId: OBJ('77'),
+      assetType: 'sprite',
+    })
+
+    expect(getObjectOptionTypeArguments(tx)).toEqual([
+      TESTNET_WALRUS_BLOB_TYPE,
+      TESTNET_WALRUS_BLOB_TYPE,
+      TESTNET_WALRUS_BLOB_TYPE,
+    ])
   })
 
   it('defaults initial asset name to persona-sprite when an asset blob is present', async () => {
@@ -1014,6 +1080,24 @@ describe('import.ts — buildImportSoulTx', () => {
     expect(tx).toBeInstanceOf(Transaction)
   })
 
+  it('uses the mainnet Walrus Blob type for all object options on mainnet', () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+
+    const tx = buildImportSoulTx({
+      ...VALID_PARAMS,
+      foundingMemoryBlobObjectId: OBJ('55'),
+      skillsBlobObjectId: OBJ('66'),
+      assetBlobObjectId: OBJ('77'),
+      assetType: 'sprite',
+    })
+
+    expect(getObjectOptionTypeArguments(tx)).toEqual([
+      MAINNET_WALRUS_BLOB_TYPE,
+      MAINNET_WALRUS_BLOB_TYPE,
+      MAINNET_WALRUS_BLOB_TYPE,
+    ])
+  })
+
   it('defaults initial asset name to persona-sprite when an asset blob is present', () => {
     const tx = buildImportSoulTx({
       ...VALID_PARAMS,
@@ -1087,6 +1171,24 @@ describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
     expect(tx).toBeInstanceOf(Transaction)
   })
 
+  it('uses the mainnet Walrus Blob type for all object options on mainnet', () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+
+    const tx = buildPersonalJoinSoulTx({
+      ...VALID_PARAMS,
+      foundingMemoryBlobObjectId: OBJ('55'),
+      skillsBlobObjectId: OBJ('66'),
+      assetBlobObjectId: OBJ('77'),
+      assetType: 'sprite',
+    })
+
+    expect(getObjectOptionTypeArguments(tx)).toEqual([
+      MAINNET_WALRUS_BLOB_TYPE,
+      MAINNET_WALRUS_BLOB_TYPE,
+      MAINNET_WALRUS_BLOB_TYPE,
+    ])
+  })
+
   it('defaults initial asset name to persona-sprite when an asset blob is present', () => {
     const tx = buildPersonalJoinSoulTx({
       ...VALID_PARAMS,
@@ -1127,6 +1229,18 @@ describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
   it('propagates validation errors from validateSoulPublishArgs', () => {
     expect(() => buildPersonalJoinSoulTx({ ...VALID_PARAMS, description: '' }))
       .toThrow('Soul description is required')
+  })
+})
+
+describe('Soulidity tx builders — Walrus Blob type regression guard', () => {
+  it('does not hardcode the testnet Walrus Blob type in runtime mint builders', () => {
+    for (const relativePath of [
+      'web/lib/soulidity/tx/publish.ts',
+      'web/lib/soulidity/tx/import.ts',
+      'web/lib/soulidity/tx/personal-join.ts',
+    ]) {
+      expect(readRepoText(relativePath), relativePath).not.toContain(TESTNET_WALRUS_BLOB_TYPE)
+    }
   })
 })
 
