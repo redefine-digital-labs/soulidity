@@ -13,6 +13,7 @@ import { SectionHeader } from '@/components/layout/section-header'
 import { FilterTabs } from '@/components/nav/filter-tabs'
 import { buttonStyles } from '@/components/ui/button'
 import { GrantModal } from '@/components/souls/grant-modal'
+import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
 import { CollectionSection } from '@/components/collections/collection-section'
 import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulGrantStatus, SoulAssetSummary } from '@/lib/soulidity/types'
@@ -633,20 +634,11 @@ export default function MySoulsPage() {
                   href={`/souls/${encodeURIComponent(soul.onChainId)}`}
                   className="overflow-hidden rounded-xl border border-border bg-card hover:border-purple hover:-translate-y-0.5 transition block"
                 >
-                  <div
-                    className="flex h-[100px] items-center justify-center"
-                    style={
-                      soul.imageUrl
-                        ? {
-                            backgroundImage: `linear-gradient(135deg, rgba(15,17,26,0.18), rgba(44,20,98,0.58)), url(${soul.imageUrl})`,
-                            backgroundSize: 'cover',
-                            backgroundPosition: 'center',
-                          }
-                        : { background: 'linear-gradient(135deg, var(--card2) 0%, var(--purple-deep) 100%)' }
-                    }
-                  >
-                    {!soul.imageUrl && <span className="text-3xl">🤖</span>}
-                  </div>
+                  <SoulCoverImage
+                    imageUrl={soul.imageUrl}
+                    className="aspect-[4/5]"
+                    fallback={<span className="text-3xl">🤖</span>}
+                  />
                   <div className="p-3 space-y-1.5">
                     <div className="text-sm font-bold text-foreground truncate">{soul.name}</div>
                     <div className="text-xs text-muted line-clamp-2 leading-relaxed">{soul.description}</div>

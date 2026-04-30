@@ -11,6 +11,7 @@ import { Button, buttonStyles } from '@/components/ui/button'
 import { SkillsPanel } from '@/components/souls/skills-panel'
 import { MemoryPanel } from '@/components/souls/memory-panel'
 import { PersonaAssetPanel } from '@/components/souls/persona-asset-panel'
+import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
 import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
@@ -64,20 +65,6 @@ function ProvenanceStrip({ soul }: { soul: SoulAssetDetail }) {
       ))}
     </div>
   )
-}
-
-function buildHeroStyle(imageUrl: string | null | undefined) {
-  if (!imageUrl) {
-    return {
-      background: 'linear-gradient(135deg, var(--card2) 0%, var(--purple-deep) 100%)',
-    }
-  }
-
-  return {
-    backgroundImage: `linear-gradient(135deg, rgba(15, 17, 26, 0.2), rgba(44, 20, 98, 0.75)), url(${imageUrl})`,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-  }
 }
 
 function ListingCta({
@@ -146,14 +133,16 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
 
   if (isLoading) {
     return (
-      <div className="max-w-[760px] w-full mx-auto px-4 sm:px-6 py-8">
+      <div className="max-w-[1080px] w-full mx-auto px-4 sm:px-6 py-8">
         <div className="h-4 w-32 bg-card2 rounded animate-pulse mb-6" />
         <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="h-[220px] bg-card2 animate-pulse" />
-          <div className="p-6 space-y-3">
-            <div className="h-6 w-56 bg-card2 rounded animate-pulse" />
-            <div className="h-4 w-40 bg-card2 rounded animate-pulse" />
-            <div className="h-16 w-full bg-card2 rounded animate-pulse" />
+          <div className="p-6 grid gap-6 md:grid-cols-[280px_1fr] lg:grid-cols-[320px_1fr]">
+            <div className="aspect-[4/5] bg-card2 animate-pulse rounded-xl" />
+            <div className="space-y-3">
+              <div className="h-6 w-56 bg-card2 rounded animate-pulse" />
+              <div className="h-4 w-40 bg-card2 rounded animate-pulse" />
+              <div className="h-16 w-full bg-card2 rounded animate-pulse" />
+            </div>
           </div>
         </div>
       </div>
@@ -162,7 +151,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
 
   if (error || !soul) {
     return (
-      <div className="max-w-[760px] mx-auto px-4 sm:px-6 py-12">
+      <div className="max-w-[1080px] mx-auto px-4 sm:px-6 py-12">
         <EmptyState
           icon="🫥"
           label="Soul not found"
@@ -183,7 +172,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
       : 'Not listed'
 
   return (
-    <div className="max-w-[760px] w-full mx-auto px-4 sm:px-6 py-8 relative z-10 space-y-6">
+    <div className="max-w-[1080px] w-full mx-auto px-4 sm:px-6 py-8 relative z-10 space-y-6">
       <div className="flex items-center justify-between gap-3">
         <Link href="/market" className="text-muted text-xs hover:text-foreground transition block">
           ← Back to Market
@@ -200,17 +189,21 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="w-full h-[200px] sm:h-[240px] flex items-end p-6" style={buildHeroStyle(soul.imageUrl)}>
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
-            <span>{soul.provenanceKind === 'personal-join' ? 'Personal Join' : soul.provenanceKind === 'imported' ? 'Imported' : 'Native'}</span>
-            <span className="text-white/50">·</span>
-            <span>{soul.listingStatus === 'listed' ? 'Listed' : 'Held'}</span>
-          </div>
-        </div>
-
         <div className="p-6 space-y-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-3">
+          <div className="grid gap-6 md:grid-cols-[280px_1fr] lg:grid-cols-[320px_1fr]">
+            <SoulCoverImage
+              imageUrl={soul.imageUrl}
+              className="aspect-[4/5] rounded-xl border border-border"
+              hasOverlay
+            >
+              <div className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
+                <span>{soul.provenanceKind === 'personal-join' ? 'Personal Join' : soul.provenanceKind === 'imported' ? 'Imported' : 'Native'}</span>
+                <span className="text-white/50">·</span>
+                <span>{soul.listingStatus === 'listed' ? 'Listed' : 'Held'}</span>
+              </div>
+            </SoulCoverImage>
+
+            <div className="flex min-w-0 flex-col gap-4">
               <div className="flex flex-wrap gap-1.5">
                 {soul.tags.map((tag) => (
                   <Tag key={tag} color="muted">{tag}</Tag>
@@ -228,18 +221,18 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               </div>
 
               <p className="text-sm text-muted leading-7">{soul.description}</p>
-            </div>
 
-            <div className="min-w-[240px] rounded-xl border border-gold bg-card2 p-4">
-              <div className="text-xs text-muted">Current checkout total</div>
-              <div className="mt-1 font-display text-2xl font-bold text-gold">{priceLabel}</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <ListingCta
-                  soul={soul}
-                  priceLabel={priceLabel}
-                  onUpdatePrice={() => setShowUpdatePrice(true)}
-                  onDelist={() => setShowDelist(true)}
-                />
+              <div className="rounded-xl border border-gold bg-card2 p-4">
+                <div className="text-xs text-muted">Current checkout total</div>
+                <div className="mt-1 font-display text-2xl font-bold text-gold">{priceLabel}</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <ListingCta
+                    soul={soul}
+                    priceLabel={priceLabel}
+                    onUpdatePrice={() => setShowUpdatePrice(true)}
+                    onDelist={() => setShowDelist(true)}
+                  />
+                </div>
               </div>
             </div>
           </div>

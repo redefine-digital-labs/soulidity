@@ -119,13 +119,20 @@
 
 ### Soul Card (`soul-card`)
 - `--card` background, 1px `--border`, 12px radius, overflow hidden
-- Image area: 140px height, gradient background with centered emoji (36px)
+- Image area: `aspect-[4/5]` portrait via `<SoulCoverImage>`. Original art shows in full via `object-cover` against a portrait container that matches typical character-render aspect ratios. Fallback: gradient with centered initial / emoji (36px).
 - Body: 14px padding
 - Tags row at top
 - Card name: 14px, 700 weight
 - Description: 12px, muted, line-height 1.5
 - Footer: price (gold, 700 weight) on the left
 - Hover: border → purple, translateY(-2px), box-shadow `0 8px 32px rgba(168,85,247,0.15)`
+
+### Soul Cover Image (`SoulCoverImage`)
+- Shared component for any Soul / Collection cover artwork. Located at `web/components/souls/soul-cover-image.tsx`.
+- Strategy: `<img object-cover>` filling a portrait container. Recommended aspect: `aspect-[4/5]` (matches typical character-render aspect; minimal cropping).
+- Optional `hasOverlay` adds a bottom darkening gradient so badges/tags overlaid on the image stay readable.
+- Gradient fallback with centered initial/emoji when `imageUrl` is null. Custom `fallbackStyle` supported (e.g., seeded `avatarGradientFor`).
+- Used in: market grid (Soul + Collection cards), soul detail hero (two-column layout, image left), my-souls grid, collection cards, community profile soul previews, sell/buy summary chips (`h-12 w-12` square variant).
 
 ### Card (generic `card`)
 - `--card` background, 1px `--border`, 12px radius, 20px padding

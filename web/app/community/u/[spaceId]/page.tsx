@@ -11,6 +11,7 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { useFollowStatus, useToggleFollow } from '@/lib/hooks/use-social'
 import { EmptySoulsState } from '@/components/empty-souls-state'
 import { ProfileStatsPill } from '@/components/profile-stats-pill'
+import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 
 type CommunityProfile = {
   id: string
@@ -342,9 +343,15 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
                     href={`/souls/${encodeURIComponent(soul.onChainId)}`}
                     className="bg-card border border-border rounded-xl overflow-hidden hover:border-purple hover:-translate-y-0.5 transition block"
                   >
-                    <div className="h-24 flex items-end p-3" style={buildHeroStyle(soul.previewImages[0] ?? null, profile.kind)}>
-                      <Tag color={soul.listingStatus === 'listed' ? 'gold' : 'muted'}>{soul.listingStatus}</Tag>
-                    </div>
+                    <SoulCoverImage
+                      imageUrl={soul.previewImages[0] ?? null}
+                      className="aspect-[4/5]"
+                      hasOverlay
+                    >
+                      <div className="absolute bottom-3 left-3">
+                        <Tag color={soul.listingStatus === 'listed' ? 'gold' : 'muted'}>{soul.listingStatus}</Tag>
+                      </div>
+                    </SoulCoverImage>
                     <div className="p-3">
                       <div className="font-bold text-sm mb-1 truncate">{soul.name}</div>
                       <div className="text-xs text-muted leading-relaxed line-clamp-2 mb-2">{soul.description}</div>

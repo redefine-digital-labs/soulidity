@@ -7,6 +7,7 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { TxPending } from '@/components/ui/tx-pending'
 import { useToast } from '@/components/ui/toast'
+import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { usePurchase } from '@/lib/hooks/use-purchase'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
@@ -171,16 +172,11 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
 
         <div className="bg-card2 border border-border rounded-xl p-4 mb-4">
           <div className="flex items-center gap-3 mb-4">
-            <div
-              className="w-12 h-12 rounded-lg border border-border bg-card flex items-center justify-center text-lg font-semibold"
-              style={soul.imageUrl ? {
-                backgroundImage: `linear-gradient(135deg, rgba(15,17,26,0.15), rgba(44,20,98,0.55)), url(${soul.imageUrl})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-              } : undefined}
-            >
-              {!soul.imageUrl ? soul.name.slice(0, 1).toUpperCase() : null}
-            </div>
+            <SoulCoverImage
+              imageUrl={soul.imageUrl}
+              className="w-12 h-12 rounded-lg border border-border bg-card shrink-0"
+              fallback={<span className="text-lg font-semibold">{soul.name.slice(0, 1).toUpperCase()}</span>}
+            />
             <div>
               <p className="font-bold text-sm">{soul.name}</p>
               <p className="text-muted text-xs">Seller {formatAddress(soul.currentOwnerAddress)}</p>

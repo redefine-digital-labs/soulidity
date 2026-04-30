@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
+import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 
@@ -129,16 +130,11 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
 
         {/* Soul preview card */}
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card2 p-4">
-          <div
-            className="w-12 h-12 rounded-lg border border-border bg-card flex items-center justify-center text-lg font-semibold shrink-0"
-            style={soul.imageUrl ? {
-              backgroundImage: `linear-gradient(135deg, rgba(15,17,26,0.15), rgba(44,20,98,0.55)), url(${soul.imageUrl})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-            } : undefined}
-          >
-            {!soul.imageUrl ? soul.name.slice(0, 1).toUpperCase() : null}
-          </div>
+          <SoulCoverImage
+            imageUrl={soul.imageUrl}
+            className="w-12 h-12 rounded-lg border border-border bg-card shrink-0"
+            fallback={<span className="text-lg font-semibold">{soul.name.slice(0, 1).toUpperCase()}</span>}
+          />
           <div className="min-w-0 flex-1">
             <p className="font-bold text-sm">{soul.name}</p>
             <p className="text-xs text-muted capitalize">{soul.tags[0] ?? 'Soul'}</p>

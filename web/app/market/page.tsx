@@ -13,6 +13,7 @@ import { Input, Select } from '@/components/ui/input'
 import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
+import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@/lib/soulidity/types'
 
@@ -21,20 +22,6 @@ import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@/lib/soulidi
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
   return `${value.slice(0, 6)}…${value.slice(-4)}`
-}
-
-function buildHeroStyle(imageUrl: string | null | undefined) {
-  if (!imageUrl) {
-    return {
-      background: 'linear-gradient(135deg, var(--card2) 0%, var(--purple-deep) 100%)',
-    }
-  }
-
-  return {
-    backgroundImage: `linear-gradient(135deg, rgba(15,17,26,0.18), rgba(44,20,98,0.58)), url(${imageUrl})`,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-  }
 }
 
 // Seeded gradient so the same Soul always renders the same avatar fallback.
@@ -131,7 +118,7 @@ function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary
       className="card card-hover group overflow-hidden cursor-pointer"
     >
       <CollectionStateRibbon collection={collection} />
-      <div className="h-[132px]" style={buildHeroStyle(collection.imageUrl)} />
+      <SoulCoverImage imageUrl={collection.imageUrl} className="aspect-[4/5]" />
       <div className="p-4 space-y-3">
         <div>
           <h3 className="text-base font-bold text-foreground">{collection.name}</h3>
@@ -155,7 +142,7 @@ function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary
 function SoulCardSkeleton() {
   return (
     <div aria-hidden="true" className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="h-[140px] animate-pulse bg-card2" />
+      <div className="aspect-[4/5] animate-pulse bg-card2" />
       <div className="space-y-2.5 p-3.5">
         <div className="flex gap-1.5">
           <div className="h-4 w-12 animate-pulse rounded-full bg-card2" />
@@ -417,21 +404,22 @@ export default function MarketPage() {
                     href={`/souls/${encodeURIComponent(soul.onChainId)}`}
                     className="block cursor-pointer"
                   >
-                    <div
-                      className="relative flex h-[140px] items-center justify-center"
-                      style={soul.imageUrl ? buildHeroStyle(soul.imageUrl) : { backgroundImage: avatarGradientFor(soul.onChainId) }}
-                    >
-                      {!soul.imageUrl && (
+                    <SoulCoverImage
+                      imageUrl={soul.imageUrl}
+                      className="aspect-[4/5]"
+                      fallbackStyle={{ backgroundImage: avatarGradientFor(soul.onChainId) }}
+                      fallback={
                         <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full border border-white/10 bg-[rgba(13,10,30,0.55)] font-display text-[28px] font-extrabold tracking-[-0.02em] text-white backdrop-blur-sm">
                           {avatarInitial(soul.name)}
                         </div>
-                      )}
+                      }
+                    >
                       {soul.collectionOnChainId && (
                         <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full border border-border bg-[rgba(13,10,30,0.72)] px-2 py-[3px] text-[10.5px] font-semibold text-muted backdrop-blur-sm">
                           from collection ↗
                         </span>
                       )}
-                    </div>
+                    </SoulCoverImage>
                     <div className="space-y-2.5 p-3.5">
                       <div className="flex flex-wrap gap-1.5">
                         {soul.tags.slice(0, 3).map((tag) => (
