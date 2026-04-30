@@ -3,13 +3,24 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+type PrismaEnv = Record<string, string | undefined>;
+
+function readNonEmptyEnv(env: PrismaEnv, key: string): string | undefined {
+  const value = env[key]?.trim();
+  return value ? value : undefined;
+}
+
+export function resolvePrismaDatabaseUrl(env: PrismaEnv = process.env): string | undefined {
+  return readNonEmptyEnv(env, "DIRECT_URL") ?? readNonEmptyEnv(env, "DATABASE_URL");
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
-    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
+    url: resolvePrismaDatabaseUrl(),
+    shadowDatabaseUrl: readNonEmptyEnv(process.env, "SHADOW_DATABASE_URL"),
   },
 });
