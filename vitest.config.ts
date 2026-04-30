@@ -26,6 +26,7 @@ export default defineConfig({
       { find: 'react-dom/client', replacement: requireExistingAliasTarget('./web/node_modules/react-dom/client.js') },
       { find: 'react-dom', replacement: requireExistingAliasTarget('./web/node_modules/react-dom/index.js') },
       { find: 'react', replacement: requireExistingAliasTarget('./web/node_modules/react/index.js') },
+      { find: 'server-only', replacement: requireExistingAliasTarget('./tests/mocks/server-only.ts') },
       { find: 'jose', replacement: requireExistingAliasTarget('./web/node_modules/jose/dist/webapi/index.js') },
       { find: '@mysten/dapp-kit', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/dapp-kit/src/index.ts') },
       // These pin the workspace tests to the web package's bundled ESM entrypoints. Revisit them

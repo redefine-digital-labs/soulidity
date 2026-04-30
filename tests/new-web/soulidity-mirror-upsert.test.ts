@@ -338,6 +338,7 @@ describe('upsertSoulProjection', () => {
       expect(section.imageUrl).toBe('https://example.com/soul.png')
       expect(section.metadataOnChainId).toBe('0xmetadata')
       expect(section.provenanceKind).toBe('native')
+      expect(section.personaKind).toBe('agents')
       expect(section.originRef).toBeNull()
       expect(section.collectionOnChainId).toBe('0xcol')
       expect(section.grantCapacity).toBe(3)

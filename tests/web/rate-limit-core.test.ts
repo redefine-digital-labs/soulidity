@@ -35,4 +35,21 @@ describe('takeRateLimitTokenWithFallback', () => {
       reason: 'remote_error',
     }))
   })
+
+  it('fails closed when remote limiting is unavailable and fallback is disabled', async () => {
+    const onRemoteFallback = vi.fn()
+
+    const result = await takeRateLimitTokenWithFallback({
+      key: 'strict-key',
+      options: { max: 10, windowMs: 30_000 },
+      takeRemoteToken: null,
+      allowInMemoryFallback: false,
+      onRemoteFallback,
+    })
+
+    expect(result).toEqual({ limited: true, retryAfterSeconds: 30 })
+    expect(onRemoteFallback).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'remote_unavailable',
+    }))
+  })
 })

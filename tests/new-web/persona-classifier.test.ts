@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAgentTagLikePatterns,
   inferPersona,
+  inferPersonaKind,
   tagMatchesAgentKeyword,
 } from '../../web/lib/soulidity/persona'
 
@@ -53,6 +54,16 @@ describe('inferPersona', () => {
   it('falls back to character when no agent token is present', () => {
     expect(inferPersona(['maid', 'fairy'])).toBe('character')
     expect(inferPersona([])).toBe('character')
+  })
+})
+
+describe('inferPersonaKind', () => {
+  it('returns the database persona kind for agent-like tags', () => {
+    expect(inferPersonaKind(['AI Agent'])).toBe('agents')
+  })
+
+  it('returns the database persona kind for character-like tags', () => {
+    expect(inferPersonaKind(['maid', 'fairy'])).toBe('characters')
   })
 })
 

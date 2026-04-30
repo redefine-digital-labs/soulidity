@@ -5,7 +5,6 @@ import { NextRequest } from 'next/server'
 
 const mockedFindMany = vi.hoisted(() => vi.fn())
 const mockedCount = vi.hoisted(() => vi.fn())
-const mockedQueryRaw = vi.hoisted(() => vi.fn())
 const mockedToSoulAssetSummaryList = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/prisma', () => ({
@@ -14,7 +13,6 @@ vi.mock('@/lib/prisma', () => ({
       findMany: mockedFindMany,
       count: mockedCount,
     },
-    $queryRaw: mockedQueryRaw,
   },
 }))
 
@@ -65,7 +63,6 @@ describe('GET /api/souls', () => {
   beforeEach(() => {
     mockedFindMany.mockReset()
     mockedCount.mockReset()
-    mockedQueryRaw.mockReset()
     mockedToSoulAssetSummaryList.mockReset()
   })
 
@@ -142,36 +139,34 @@ describe('GET /api/souls', () => {
     })
   })
 
-  it('pre-filters by persona-matching IDs before pagination when persona=agents', async () => {
-    mockedQueryRaw.mockResolvedValueOnce([{ id: 'soul-a' }, { id: 'soul-b' }])
+  it('uses the indexed personaKind field when persona=agents', async () => {
     mockedFindMany.mockResolvedValueOnce([])
     mockedCount.mockResolvedValueOnce(0)
     mockedToSoulAssetSummaryList.mockReturnValueOnce([])
 
     await GET(new NextRequest('http://localhost/api/souls?persona=agents'))
 
-    expect(mockedQueryRaw).toHaveBeenCalledTimes(1)
     expect(mockedFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         listingStatus: 'listed',
-        id: { in: ['soul-a', 'soul-b'] },
+        personaKind: 'agents',
       }),
     }))
   })
 
-  it('short-circuits to an empty response when no persona matches exist', async () => {
-    mockedQueryRaw.mockResolvedValueOnce([])
+  it('uses the indexed personaKind field when persona=characters', async () => {
+    mockedFindMany.mockResolvedValueOnce([])
+    mockedCount.mockResolvedValueOnce(0)
+    mockedToSoulAssetSummaryList.mockReturnValueOnce([])
 
-    const response = await GET(new NextRequest('http://localhost/api/souls?persona=characters'))
+    await GET(new NextRequest('http://localhost/api/souls?persona=characters'))
 
-    expect(mockedFindMany).not.toHaveBeenCalled()
-    expect(mockedCount).not.toHaveBeenCalled()
-    await expect(response.json()).resolves.toEqual({
-      items: [],
-      total: 0,
-      page: 1,
-      totalPages: 1,
-    })
+    expect(mockedFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        listingStatus: 'listed',
+        personaKind: 'characters',
+      }),
+    }))
   })
 
   it('skips the persona pre-query when persona is absent', async () => {
@@ -181,7 +176,6 @@ describe('GET /api/souls', () => {
 
     await GET(new NextRequest('http://localhost/api/souls'))
 
-    expect(mockedQueryRaw).not.toHaveBeenCalled()
     expect(mockedFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { listingStatus: 'listed' },
     }))

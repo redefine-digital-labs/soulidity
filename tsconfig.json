@@ -19,5 +19,5 @@
     }
   },
   "include": ["src/**/*", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "dist", "web", "scripts/batch-publish.ts"]
+  "exclude": ["node_modules", "dist", "web"]
 }

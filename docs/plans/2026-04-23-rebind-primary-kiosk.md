@@ -59,7 +59,7 @@ Total Move tests: 147/147 passing.
 - New `buildRebindPrimaryKioskTx({ oldKioskId, newKioskCapOnChainId })` — single `rebind_primary_kiosk` move call, validates required params and non-collision.
 - Unit tests in `tests/new-web/soulidity-tx-builders.test.ts` (4 cases: happy path, empty oldKioskId, empty newCap, collision). 119/119 builder tests passing.
 
-Existing callers of `ensure_personal_kiosk_registered` (`shared.ts::buildBuyerKioskArgs`, `list.ts`, `update-price.ts`, `update-collection-price.ts`, `scripts/batch-publish.ts`) remain correct under the tighter semantics — they always present the user's current cap, which matches the registered record.
+Existing active callers of `ensure_personal_kiosk_registered` (`shared.ts::buildBuyerKioskArgs`, `list.ts`, `update-price.ts`, `update-collection-price.ts`) remain correct under the tighter semantics — they always present the user's current cap, which matches the registered record.
 
 ### Documentation
 

@@ -7,8 +7,9 @@
     "dev": "pnpm run build:backend && pnpm run build:skills && electron-vite dev",
     "build": "pnpm run build:backend && electron-vite build",
     "preview": "electron-vite preview",
-    "package": "pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --mac",
-    "package:mac": "pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --mac",
+    "package": "pnpm run package:mac",
+    "package:mac": "node scripts/assert-mac-release-env.mjs && pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --mac",
+    "package:mac:unsigned": "SOULIDITY_ALLOW_UNSIGNED_MAC_BUILD=1 pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --mac -c.mac.identity=null -c.mac.notarize=false",
     "package:win": "pnpm run build:backend && pnpm run build:skills && electron-vite build && electron-builder --win",
     "build:backend": "pnpm --filter @soulidity/backend run build",
     "build:shared": "pnpm --filter @soulidity/shared run build",
@@ -57,9 +58,7 @@
         { "target": "zip", "arch": ["arm64"] }
       ],
       "category": "public.app-category.productivity",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "identity": null,
-      "notarize": false
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "dmg": {
       "title": "${productName} ${version}"
@@ -83,26 +82,26 @@
   "dependencies": {
     "@mysten/dapp-kit": "^1.0.4",
     "@mysten/seal": "^1.1.1",
-    "@mysten/sui": "^2.15.0",
-    "@noble/hashes": "^1.8.0",
+    "@mysten/sui": "2.16.0",
     "@soulidity/backend": "workspace:*",
     "@soulidity/shared": "workspace:*",
-    "@tanstack/react-query": "^5.99.0",
+    "@tanstack/react-query": "5.100.6",
     "chokidar": "^5.0.0",
-    "electron-store": "8",
+    "electron-store": "11.0.2",
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0",
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.0",
-    "electron": "^34.0.0",
+    "@types/node": "^22.19.17",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "5.1.1",
+    "electron": "41.3.0",
     "electron-builder": "^26.8.1",
-    "electron-vite": "^2.3.0",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0",
-    "typescript": "^5.4.0"
+    "electron-vite": "5.0.0",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "typescript": "6.0.3",
+    "vite": "7.3.2"
   }
 }

@@ -13,7 +13,9 @@ const mockedPrisma = vi.hoisted(() => ({
     findMany: vi.fn(),
     findUnique: vi.fn(),
     findFirst: vi.fn(),
+    count: vi.fn(),
   },
+  $queryRaw: vi.fn(),
 }))
 
 const mockedResolveDesktopSpriteManifest = vi.hoisted(() => vi.fn())
@@ -68,6 +70,7 @@ function makeSoul(overrides: Record<string, unknown> = {}) {
 describe('listDesktopCatalogItems', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    mockedPrisma.$queryRaw.mockResolvedValue([{ count: 0n }])
     mockedResolveDesktopSpriteManifest.mockResolvedValue({
       downloadPolicy: 'public',
       config: { src: 'persona-sprite.png' },
@@ -76,8 +79,12 @@ describe('listDesktopCatalogItems', () => {
   })
 
   it('returns empty items when no entries exist', async () => {
-    mockedPrisma.desktopCatalogEntry.findMany.mockResolvedValue([])
+    mockedPrisma.$queryRaw
+      .mockResolvedValueOnce([{ count: 0n }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ count: 0n }])
     mockedPrisma.soulAsset.findMany.mockResolvedValue([])
+    mockedPrisma.soulAsset.count.mockResolvedValue(0)
 
     const { listDesktopCatalogItems } = await import('../../web/lib/desktop/repository')
     const result = await listDesktopCatalogItems({ page: 1, pageSize: 12 })
@@ -86,6 +93,14 @@ describe('listDesktopCatalogItems', () => {
   })
 
   it('returns starter catalog items with listing fields defaulted', async () => {
+    mockedPrisma.$queryRaw
+      .mockResolvedValueOnce([{ count: 1n }])
+      .mockResolvedValueOnce([{
+        id: 'entry-1',
+        sourceType: 'starter',
+        sourceRef: 'aurora',
+      }])
+      .mockResolvedValueOnce([{ count: 0n }])
     mockedPrisma.desktopCatalogEntry.findMany.mockResolvedValue([{
       id: 'entry-1',
       sourceType: 'starter',
@@ -105,6 +120,7 @@ describe('listDesktopCatalogItems', () => {
       updatedAt: new Date('2026-04-10T00:00:00.000Z'),
     }])
     mockedPrisma.soulAsset.findMany.mockResolvedValue([])
+    mockedPrisma.soulAsset.count.mockResolvedValue(0)
 
     const { listDesktopCatalogItems } = await import('../../web/lib/desktop/repository')
     const result = await listDesktopCatalogItems({ page: 1, pageSize: 12 })
@@ -120,8 +136,12 @@ describe('listDesktopCatalogItems', () => {
   })
 
   it('returns listed souls with price and sprite policy', async () => {
-    mockedPrisma.desktopCatalogEntry.findMany.mockResolvedValue([])
+    mockedPrisma.$queryRaw
+      .mockResolvedValueOnce([{ count: 0n }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ count: 1n }])
     mockedPrisma.soulAsset.findMany.mockResolvedValue([makeSoul()])
+    mockedPrisma.soulAsset.count.mockResolvedValue(1)
 
     const { listDesktopCatalogItems } = await import('../../web/lib/desktop/repository')
     const result = await listDesktopCatalogItems({ page: 1, pageSize: 12 })
@@ -151,17 +171,14 @@ describe('listDesktopCatalogItems', () => {
   })
 
   it('filters public marketplace souls to listed entries only', async () => {
-    mockedPrisma.desktopCatalogEntry.findMany.mockResolvedValue([{
-      id: 'entry-soul',
-      sourceType: 'soul',
-      sourceRef: '0xsoul-held',
-      sortOrder: 0,
-      updatedAt: new Date('2026-04-11T00:00:00.000Z'),
-    }])
-    mockedPrisma.starterPersonaAsset.findMany.mockResolvedValue([])
-    mockedPrisma.soulAsset.findMany
+    mockedPrisma.$queryRaw
+      .mockResolvedValueOnce([{ count: 0n }])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([makeSoul({ onChainId: '0xsoul-listed' })])
+      .mockResolvedValueOnce([{ count: 1n }])
+    mockedPrisma.desktopCatalogEntry.findMany.mockResolvedValue([])
+    mockedPrisma.starterPersonaAsset.findMany.mockResolvedValue([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([makeSoul({ onChainId: '0xsoul-listed' })])
+    mockedPrisma.soulAsset.count.mockResolvedValue(1)
 
     const { listDesktopCatalogItems } = await import('../../web/lib/desktop/repository')
     const result = await listDesktopCatalogItems({ page: 1, pageSize: 12 })
@@ -170,9 +187,30 @@ describe('listDesktopCatalogItems', () => {
     expect(result.items[0]?.id).toBe('soul:0xsoul-listed')
     expect(mockedPrisma.soulAsset.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
       where: expect.objectContaining({
-        onChainId: { in: ['0xsoul-held'] },
         listingStatus: 'listed',
       }),
+      skip: 0,
+      take: 12,
+    }))
+  })
+
+  it('uses database pagination for dynamic listed souls instead of materializing all rows', async () => {
+    mockedPrisma.$queryRaw
+      .mockResolvedValueOnce([{ count: 0n }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ count: 1000n }])
+    mockedPrisma.soulAsset.findMany.mockResolvedValue([makeSoul({ onChainId: '0xsoul-page2' })])
+    mockedPrisma.soulAsset.count.mockResolvedValue(1000)
+
+    const { listDesktopCatalogItems } = await import('../../web/lib/desktop/repository')
+    const result = await listDesktopCatalogItems({ page: 2, pageSize: 12 })
+
+    expect(result.total).toBe(1000)
+    expect(mockedPrisma.soulAsset.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { listingStatus: 'listed' },
+      orderBy: { updatedAt: 'desc' },
+      skip: 12,
+      take: 12,
     }))
   })
 })

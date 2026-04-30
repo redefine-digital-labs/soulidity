@@ -9,11 +9,13 @@ function readJson<T>(relativePath: string): T {
 }
 
 describe('Vercel Walrus WASM deployment config', () => {
-  it('uses the web npm build so prebuild copies the Walrus WASM asset before Next builds', () => {
+  it('runs Prisma migrations before the Vercel web build and still copies the Walrus WASM asset', () => {
     const vercel = readJson<{ buildCommand?: string }>('web/vercel.json')
     const webPackage = readJson<{ scripts?: Record<string, string> }>('web/package.json')
 
-    expect(vercel.buildCommand).toBe('npm run build')
+    expect(vercel.buildCommand).toBe('npm run build:vercel')
+    expect(webPackage.scripts?.['build:vercel']).toBe('npm run prisma:migrate:deploy && npm run build')
+    expect(webPackage.scripts?.['prisma:migrate:deploy']).toBe('prisma migrate deploy --schema=../prisma/schema.prisma')
     expect(webPackage.scripts?.prebuild).toBe('npm run copy-walrus-wasm')
     expect(webPackage.scripts?.['copy-walrus-wasm']).toBe('node scripts/copy-walrus-wasm.mjs')
   })
