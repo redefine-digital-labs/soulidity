@@ -106,6 +106,12 @@ type DesktopCatalogSource = {
   sourceType: DesktopCatalogSourceType
   sourceRef: string
 }
+type ExplicitCatalogSourceRow = {
+  id: string
+  sourceType: string
+  sourceRef: string
+}
+type CountRow = { count: bigint | number | string }
 
 type PendingCatalogSource =
   | {
@@ -186,6 +192,166 @@ function buildDynamicSoulCatalogSource(onChainId: string): DesktopCatalogSource 
     sourceType: 'soul',
     sourceRef: onChainId,
   }
+}
+
+function toCount(rows: CountRow[]): number {
+  const raw = rows[0]?.count ?? 0
+  return Number(raw)
+}
+
+function toDesktopCatalogSource(row: ExplicitCatalogSourceRow): DesktopCatalogSource | null {
+  if (row.sourceType !== 'starter' && row.sourceType !== 'soul') {
+    return null
+  }
+  return {
+    id: row.id,
+    sourceType: row.sourceType,
+    sourceRef: row.sourceRef,
+  }
+}
+
+async function countValidExplicitCatalogSources(params: {
+  includeHidden?: boolean
+  includeUnpublished?: boolean
+  sourceType?: DesktopCatalogSourceType | null
+}): Promise<number> {
+  const rows = await prisma.$queryRaw<CountRow[]>`
+    SELECT COUNT(*)::bigint AS "count"
+    FROM "desktop_catalog_entries" e
+    WHERE (${params.includeUnpublished === true} OR e."is_published" = true)
+      AND (${params.includeHidden === true} OR e."is_hidden" = false)
+      AND (${params.sourceType ?? null}::text IS NULL OR e."source_type" = ${params.sourceType ?? null})
+      AND (
+        (
+          e."source_type" = 'starter'
+          AND EXISTS (
+            SELECT 1
+            FROM "starter_persona_assets" starter
+            WHERE starter."slug" = e."source_ref"
+          )
+        )
+        OR (
+          e."source_type" = 'soul'
+          AND EXISTS (
+            SELECT 1
+            FROM "soul_assets" soul
+            WHERE soul."on_chain_id" = e."source_ref"
+              AND soul."listing_status" = 'listed'
+          )
+        )
+      )
+  `
+  return toCount(rows)
+}
+
+async function listValidExplicitCatalogSources(params: {
+  includeHidden?: boolean
+  includeUnpublished?: boolean
+  sourceType?: DesktopCatalogSourceType | null
+  skip: number
+  take: number
+}): Promise<DesktopCatalogSource[]> {
+  if (params.take <= 0) return []
+
+  const rows = await prisma.$queryRaw<ExplicitCatalogSourceRow[]>`
+    SELECT
+      e."id",
+      e."source_type" AS "sourceType",
+      e."source_ref" AS "sourceRef"
+    FROM "desktop_catalog_entries" e
+    WHERE (${params.includeUnpublished === true} OR e."is_published" = true)
+      AND (${params.includeHidden === true} OR e."is_hidden" = false)
+      AND (${params.sourceType ?? null}::text IS NULL OR e."source_type" = ${params.sourceType ?? null})
+      AND (
+        (
+          e."source_type" = 'starter'
+          AND EXISTS (
+            SELECT 1
+            FROM "starter_persona_assets" starter
+            WHERE starter."slug" = e."source_ref"
+          )
+        )
+        OR (
+          e."source_type" = 'soul'
+          AND EXISTS (
+            SELECT 1
+            FROM "soul_assets" soul
+            WHERE soul."on_chain_id" = e."source_ref"
+              AND soul."listing_status" = 'listed'
+          )
+        )
+      )
+    ORDER BY e."sort_order" ASC, e."updated_at" DESC
+    OFFSET ${params.skip}
+    LIMIT ${params.take}
+  `
+
+  return rows.flatMap((row) => {
+    const source = toDesktopCatalogSource(row)
+    return source ? [source] : []
+  })
+}
+
+async function listVisibleExplicitSoulRefs(params: {
+  includeHidden?: boolean
+  includeUnpublished?: boolean
+}): Promise<string[]> {
+  const entries = await prisma.desktopCatalogEntry.findMany({
+    where: buildDesktopCatalogWhere({
+      ...params,
+      sourceType: 'soul',
+    }),
+    select: {
+      sourceRef: true,
+    },
+  })
+  return (entries ?? []).map((entry) => entry.sourceRef)
+}
+
+async function loadPendingCatalogSources(sources: DesktopCatalogSource[]): Promise<PendingCatalogSource[]> {
+  const starterRefs = sources
+    .filter((entry) => entry.sourceType === 'starter')
+    .map((entry) => entry.sourceRef)
+  const explicitSoulRefs = sources
+    .filter((entry) => entry.sourceType === 'soul')
+    .map((entry) => entry.sourceRef)
+
+  const [starters, explicitSouls] = await Promise.all([
+    starterRefs.length > 0
+      ? prisma.starterPersonaAsset.findMany({
+          where: {
+            slug: {
+              in: starterRefs,
+            },
+          },
+          select: starterCatalogSelect,
+        })
+      : Promise.resolve([] as StarterCatalogRow[]),
+    explicitSoulRefs.length > 0
+      ? prisma.soulAsset.findMany({
+          where: {
+            onChainId: {
+              in: explicitSoulRefs,
+            },
+            listingStatus: 'listed',
+          },
+          select: soulCatalogSelect,
+        })
+      : Promise.resolve([] as SoulCatalogRow[]),
+  ])
+
+  const startersBySlug = new Map(starters.map((starter) => [starter.slug, starter]))
+  const explicitSoulsByOnChainId = new Map(explicitSouls.map((soul) => [soul.onChainId, soul]))
+
+  return sources.flatMap((entry): PendingCatalogSource[] => {
+    if (entry.sourceType === 'starter') {
+      const starter = startersBySlug.get(entry.sourceRef)
+      return starter ? [{ kind: 'starter', entry, starter }] : []
+    }
+
+    const soul = explicitSoulsByOnChainId.get(entry.sourceRef)
+    return soul ? [{ kind: 'soul', entry, soul }] : []
+  })
 }
 
 function toStarterCatalogItem(entry: DesktopCatalogSource, starter: StarterCatalogRow): DesktopCatalogItem {
@@ -324,116 +490,54 @@ export async function listDesktopCatalogItems(params: {
   includeUnpublished?: boolean
   sourceType?: DesktopCatalogSourceType | null
 }) {
-  const where = buildDesktopCatalogWhere(params)
+  const start = (params.page - 1) * params.pageSize
+  const explicitTotal = await countValidExplicitCatalogSources(params)
+  const explicitTake = start < explicitTotal
+    ? Math.min(params.pageSize, explicitTotal - start)
+    : 0
 
-  // Fetch all matching entries first, then paginate after resolving sources.
-  // This avoids under-filled pages when a catalog entry points to a deleted source.
-  const entries = await prisma.desktopCatalogEntry.findMany({
-    where,
-    select: desktopCatalogEntryListSelect,
-    orderBy: [
-      { sortOrder: 'asc' },
-      { updatedAt: 'desc' },
-    ],
+  const explicitSources = await listValidExplicitCatalogSources({
+    ...params,
+    skip: start,
+    take: explicitTake,
   })
+  const pending = await loadPendingCatalogSources(explicitSources)
 
-  const starterRefs = entries
-    .filter((entry) => entry.sourceType === 'starter')
-    .map((entry) => entry.sourceRef)
-  const explicitSoulRefs = entries
-    .filter((entry) => entry.sourceType === 'soul')
-    .map((entry) => entry.sourceRef)
+  let dynamicTotal = 0
+  if (params.sourceType !== 'starter') {
+    const explicitSoulRefs = await listVisibleExplicitSoulRefs(params)
+    const dynamicWhere: Prisma.SoulAssetWhereInput = explicitSoulRefs.length > 0
+      ? {
+          listingStatus: 'listed',
+          onChainId: { notIn: explicitSoulRefs },
+        }
+      : { listingStatus: 'listed' }
+    dynamicTotal = await prisma.soulAsset.count({ where: dynamicWhere })
 
-  const [starters, explicitSouls, dynamicListedSouls] = await Promise.all([
-    starterRefs.length > 0
-      ? prisma.starterPersonaAsset.findMany({
-          where: {
-            slug: {
-              in: starterRefs,
-            },
-          },
-          select: starterCatalogSelect,
-        })
-      : Promise.resolve([] as StarterCatalogRow[]),
-    explicitSoulRefs.length > 0
-      ? prisma.soulAsset.findMany({
-          where: {
-            onChainId: {
-              in: explicitSoulRefs,
-            },
-            listingStatus: 'listed',
-          },
-          select: soulCatalogSelect,
-        })
-      : Promise.resolve([] as SoulCatalogRow[]),
-    params.sourceType === 'starter'
-      ? Promise.resolve([] as SoulCatalogRow[])
-      : prisma.soulAsset.findMany({
-          where: explicitSoulRefs.length > 0
-            ? {
-                listingStatus: 'listed',
-                onChainId: { notIn: explicitSoulRefs },
-              }
-            : {
-                listingStatus: 'listed',
-              },
-          select: soulCatalogSelect,
-          orderBy: { updatedAt: 'desc' },
-        }),
-  ])
+    const dynamicTake = params.pageSize - pending.length
+    const dynamicSkip = Math.max(0, start - explicitTotal)
+    if (dynamicTake > 0 && dynamicSkip < dynamicTotal) {
+      const dynamicListedSouls = await prisma.soulAsset.findMany({
+        where: dynamicWhere,
+        select: soulCatalogSelect,
+        orderBy: { updatedAt: 'desc' },
+        skip: dynamicSkip,
+        take: dynamicTake,
+      })
 
-  const startersBySlug = new Map(starters.map((starter) => [starter.slug, starter]))
-  const explicitSoulsByOnChainId = new Map(explicitSouls.map((soul) => [soul.onChainId, soul]))
-
-  const pending: PendingCatalogSource[] = []
-
-  for (const entry of entries) {
-    if (entry.sourceType === 'starter') {
-      const starter = startersBySlug.get(entry.sourceRef)
-      if (starter) {
-        pending.push({
-          kind: 'starter',
-          entry: {
-            id: entry.id,
-            sourceType: 'starter',
-            sourceRef: entry.sourceRef,
-          },
-          starter,
-        })
-      }
-      continue
-    }
-
-    if (entry.sourceType === 'soul') {
-      const soul = explicitSoulsByOnChainId.get(entry.sourceRef)
-      if (soul) {
+      for (const soul of dynamicListedSouls) {
         pending.push({
           kind: 'soul',
-          entry: {
-            id: entry.id,
-            sourceType: 'soul',
-            sourceRef: entry.sourceRef,
-          },
+          entry: buildDynamicSoulCatalogSource(soul.onChainId),
           soul,
         })
       }
     }
   }
 
-  for (const soul of dynamicListedSouls) {
-    pending.push({
-      kind: 'soul',
-      entry: buildDynamicSoulCatalogSource(soul.onChainId),
-      soul,
-    })
-  }
-
-  const start = (params.page - 1) * params.pageSize
-  const pageItems = pending.slice(start, start + params.pageSize)
-
   return {
-    items: await Promise.all(pageItems.map(resolvePendingCatalogItem)),
-    total: pending.length,
+    items: await Promise.all(pending.map(resolvePendingCatalogItem)),
+    total: explicitTotal + dynamicTotal,
   }
 }
 

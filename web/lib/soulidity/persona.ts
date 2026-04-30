@@ -15,6 +15,7 @@ export const AGENT_KEYWORDS = [
 ] as const
 
 export type PersonaFilter = 'all' | 'agents' | 'characters'
+export type PersonaKind = Exclude<PersonaFilter, 'all'>
 
 export function parsePersonaFilter(value: string | null | undefined): PersonaFilter {
   if (value === 'agents' || value === 'characters') return value
@@ -42,6 +43,10 @@ export function tagMatchesAgentKeyword(tag: string): boolean {
 
 export function inferPersona(tags: string[]): 'agent' | 'character' {
   return tags.some(tagMatchesAgentKeyword) ? 'agent' : 'character'
+}
+
+export function inferPersonaKind(tags: string[]): PersonaKind {
+  return tags.some(tagMatchesAgentKeyword) ? 'agents' : 'characters'
 }
 
 // SQL LIKE patterns that encode the same token-boundary semantics as

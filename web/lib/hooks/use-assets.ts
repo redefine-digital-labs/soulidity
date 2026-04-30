@@ -189,6 +189,30 @@ export function useAssets(soul: SoulAssetDetail | null) {
     }
   }, [getAuthHeaders])
 
+  const buildSpriteAppendSyncBody = useCallback(async (params: {
+    txDigest: string
+    txResult: unknown
+    sealMaterial?: PendingSealMaterial | null
+  }): Promise<SpriteAppendSyncBody> => {
+    let assetsSealSidecar = null
+    if (params.sealMaterial) {
+      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      const appended = extractAssetVersionAppendedEvent(params.txResult as never, packageId)
+      assetsSealSidecar = await createAssetSealSidecarFromMaterial({
+        suiClient: suiClient as never,
+        packageId,
+        assetsObjectId: appended.assetsId,
+        assetName: appended.assetName,
+        versionIndex: appended.versionIndex,
+        material: params.sealMaterial,
+      })
+    }
+    return {
+      txDigest: params.txDigest,
+      assetsSealSidecar,
+    }
+  }, [suiClient])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const soulOnChainId = soul?.onChainId
@@ -245,7 +269,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
         setPending(null)
       }
     })()
-  }, [soul?.onChainId, user?.id, postAppendMirror, queryClient, suiClient])
+  }, [soul?.onChainId, user?.id, buildSpriteAppendSyncBody, postAppendMirror, queryClient, suiClient])
 
   const assetsQuery = useQuery<SoulAssetVersionsResponse>({
     queryKey: ['soul-asset-versions', soul?.onChainId ?? null],
@@ -285,30 +309,6 @@ export function useAssets(soul: SoulAssetDetail | null) {
       contentHash: uploaded.contentHash,
       blobUrl: uploaded.blobUrl,
       sealMaterial: uploaded.sealMaterial ?? null,
-    }
-  }
-
-  async function buildSpriteAppendSyncBody(params: {
-    txDigest: string
-    txResult: unknown
-    sealMaterial?: PendingSealMaterial | null
-  }): Promise<SpriteAppendSyncBody> {
-    let assetsSealSidecar = null
-    if (params.sealMaterial) {
-      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-      const appended = extractAssetVersionAppendedEvent(params.txResult as never, packageId)
-      assetsSealSidecar = await createAssetSealSidecarFromMaterial({
-        suiClient: suiClient as never,
-        packageId,
-        assetsObjectId: appended.assetsId,
-        assetName: appended.assetName,
-        versionIndex: appended.versionIndex,
-        material: params.sealMaterial,
-      })
-    }
-    return {
-      txDigest: params.txDigest,
-      assetsSealSidecar,
     }
   }
 

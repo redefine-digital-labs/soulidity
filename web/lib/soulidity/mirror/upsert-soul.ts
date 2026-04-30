@@ -1,5 +1,6 @@
 import { PrismaRuntime } from '@db/prisma-client'
 import { prisma } from '@/lib/prisma'
+import { inferPersonaKind } from '@/lib/soulidity/persona'
 import type { SoulMetadataObject, SoulObject, SoulStateObject, SoulMemoryObject } from '@/lib/soulidity/types'
 import type { Prisma } from '@db/prisma-client'
 
@@ -33,6 +34,7 @@ export async function upsertSoulProjection(params: {
   const accessListUpdate = params.state.accessListId != null
     ? { accessListOnChainId: params.state.accessListId }
     : {}
+  const personaKind = inferPersonaKind(params.tags)
 
   const result = await prisma.soulAsset.upsert({
     where: { onChainId: params.soul.objectId },
@@ -65,6 +67,7 @@ export async function upsertSoulProjection(params: {
       contentBlobId: params.soul.protectedBlobId ?? params.soul.protectedBlobObjectId,
       contentBlobObjectId: params.soul.protectedBlobObjectId,
       provenanceKind: params.soul.provenanceKind,
+      personaKind,
       originRef: params.soul.originRef,
       collectionOnChainId: params.state.collectionId,
       grantCapacity: params.state.grantCapacity,
@@ -107,6 +110,7 @@ export async function upsertSoulProjection(params: {
       contentBlobId: params.soul.protectedBlobId ?? params.soul.protectedBlobObjectId,
       contentBlobObjectId: params.soul.protectedBlobObjectId,
       provenanceKind: params.soul.provenanceKind,
+      personaKind,
       originRef: params.soul.originRef,
       collectionOnChainId: params.state.collectionId,
       grantCapacity: params.state.grantCapacity,

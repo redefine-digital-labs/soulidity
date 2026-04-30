@@ -6,15 +6,15 @@ export function buildSoulsWhere(params: {
   minPriceRaw: string
   maxPriceRaw: string
   creator: string
-  personaIds?: string[] | null
+  personaKind?: 'agents' | 'characters' | null
 }): Prisma.SoulAssetWhereInput {
-  const { q, tag, minPriceRaw, maxPriceRaw, creator, personaIds } = params
+  const { q, tag, minPriceRaw, maxPriceRaw, creator, personaKind } = params
   const where: Prisma.SoulAssetWhereInput = {
     listingStatus: 'listed',
   }
 
-  if (personaIds) {
-    where.id = { in: personaIds }
+  if (personaKind) {
+    where.personaKind = personaKind
   }
 
   if (tag) {
