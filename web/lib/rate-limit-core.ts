@@ -56,8 +56,11 @@ export async function takeRateLimitTokenWithFallback(params: {
   key: string
   options: RateLimitOptions
   takeRemoteToken?: (() => Promise<{ success: boolean; reset: number }>) | null
+  allowInMemoryFallback?: boolean
   onRemoteFallback?: ((details: { reason: 'remote_unavailable' | 'remote_error'; error?: unknown }) => void) | null
 }): Promise<RateLimitResult> {
+  const allowInMemoryFallback = params.allowInMemoryFallback ?? true
+
   if (params.takeRemoteToken) {
     try {
       const { success, reset } = await params.takeRemoteToken()
@@ -70,6 +73,13 @@ export async function takeRateLimitTokenWithFallback(params: {
     }
   } else {
     params.onRemoteFallback?.({ reason: 'remote_unavailable' })
+  }
+
+  if (!allowInMemoryFallback) {
+    return {
+      limited: true,
+      retryAfterSeconds: Math.max(1, Math.ceil(params.options.windowMs / 1000)),
+    }
   }
 
   return inMemoryTakeToken(params.key, params.options)

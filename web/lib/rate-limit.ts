@@ -63,6 +63,20 @@ function warnRateLimitFallbackOnce(details: { reason: 'remote_unavailable' | 're
   })
 }
 
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === 'production'
+    || process.env.VERCEL === '1'
+    || process.env.VERCEL === 'true'
+    || Boolean(process.env.VERCEL_ENV)
+}
+
+function allowsInMemoryFallback(): boolean {
+  if (process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK === 'true') {
+    return true
+  }
+  return !isProductionRuntime()
+}
+
 // ---------------------------------------------------------------------------
 // Public API — same interface as before
 // ---------------------------------------------------------------------------
@@ -76,6 +90,7 @@ export async function takeRateLimitToken(
     key,
     options,
     takeRemoteToken: limiter ? () => limiter.limit(key) : null,
+    allowInMemoryFallback: allowsInMemoryFallback(),
     onRemoteFallback: warnRateLimitFallbackOnce,
   })
 }
