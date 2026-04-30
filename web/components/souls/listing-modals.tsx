@@ -14,22 +14,6 @@ import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
 
 /* ------------------------------------------------------------------ */
-/*  Shared                                                             */
-/* ------------------------------------------------------------------ */
-
-async function fetchPersonalKiosk(authHeaders: Record<string, string>, walletAddress?: string | null) {
-  const url = walletAddress
-    ? `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`
-    : '/api/souls/personal-kiosk'
-  const res = await fetch(url, { cache: 'no-store', headers: authHeaders })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || 'Failed to resolve personal kiosk')
-  }
-  return res.json() as Promise<{ currentKioskId: string; currentKioskCapOnChainId: string }>
-}
-
-/* ------------------------------------------------------------------ */
 /*  Update Price Modal                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -43,7 +27,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
   const [price, setPrice] = useState('')
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
+  const { signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
   const { showToast } = useToast()
@@ -75,18 +59,22 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const kiosk = await fetchPersonalKiosk(authHeaders, suiWallet?.address)
+      const soulKioskId = soul.currentKioskId
+      const soulKioskCapId = soul.currentKioskCapOnChainId
+      if (!soulKioskId || !soulKioskCapId) {
+        throw new Error('Soul kiosk info is missing - the Soul may not be held in a personal kiosk')
+      }
       await assertObjectInputsExist(suiClient, {
-        'Your personal kiosk': kiosk.currentKioskId,
-        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        'Soul kiosk': soulKioskId,
+        'Soul kiosk capability': soulKioskCapId,
         'Soul state': soul.stateOnChainId,
         Soul: soul.onChainId,
         'Soul listing': soul.listingObjectOnChainId,
         Collection: soul.collectionOnChainId,
       })
       const tx = buildUpdateListingPriceTx({
-        currentKioskId: kiosk.currentKioskId,
-        currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
+        currentKioskId: soulKioskId,
+        currentKioskCapOnChainId: soulKioskCapId,
         stateObjectId: soul.stateOnChainId,
         soulObjectId: soul.onChainId,
         listingObjectId: soul.listingObjectOnChainId,
@@ -185,7 +173,7 @@ interface DelistModalProps {
 export function DelistModal({ soul, open, onClose }: DelistModalProps) {
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
-  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
+  const { signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
   const { showToast } = useToast()
@@ -200,15 +188,19 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
     setError(null)
     try {
       const authHeaders = await getAuthHeaders()
-      const kiosk = await fetchPersonalKiosk(authHeaders, suiWallet?.address)
+      const soulKioskId = soul.currentKioskId
+      const soulKioskCapId = soul.currentKioskCapOnChainId
+      if (!soulKioskId || !soulKioskCapId) {
+        throw new Error('Soul kiosk info is missing - the Soul may not be held in a personal kiosk')
+      }
       await assertObjectInputsExist(suiClient, {
-        'Your personal kiosk': kiosk.currentKioskId,
-        'Your personal kiosk capability': kiosk.currentKioskCapOnChainId,
+        'Soul kiosk': soulKioskId,
+        'Soul kiosk capability': soulKioskCapId,
         'Soul listing': soul.listingObjectOnChainId,
       })
       const tx = buildDelistSoulTx({
-        currentKioskId: kiosk.currentKioskId,
-        currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
+        currentKioskId: soulKioskId,
+        currentKioskCapOnChainId: soulKioskCapId,
         listingObjectId: soul.listingObjectOnChainId,
       })
       const result = await signAndExecute(tx)
