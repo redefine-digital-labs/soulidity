@@ -42,7 +42,10 @@ export function useWalletSign() {
       throw new Error('Connect a Sui wallet before signing transactions')
     }
     tx.setSenderIfNotSet(currentAccount.address)
-    tx.setGasBudgetIfNotSet('15000000')
+    // Intentionally do not call `setGasBudget`. Mainnet PTB2 (mint + N×certify
+    // + 5-8 shared objects + Seal/ContentAccessList) regularly exceeds any
+    // safe hardcoded budget; the wallet's own dry-run is the authoritative
+    // gas estimator for the signing flow.
 
     const { bytes, signature } = await signTransaction({
       transaction: tx,

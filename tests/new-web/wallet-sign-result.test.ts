@@ -23,15 +23,20 @@ describe('wallet sign transaction result normalization', () => {
     expect(normalizeSuiTxResult({ digest: 'abc' })).toMatchObject({ digest: 'abc' })
   })
 
-  it('sets an explicit gas budget before wallet signing to avoid SDK dry-run simulation', () => {
+  it('lets the wallet auto-estimate gas via dry-run instead of hardcoding a budget', () => {
+    // A hardcoded budget rejects mainnet PTB2 (mint + N×certify + 5-8 shared
+    // objects + Seal policy / ContentAccessList) whenever the wallet's dry-run
+    // estimate exceeds it. The wallet (Slush / Sui Wallet) is the authoritative
+    // gas estimator on the signing path, so the hook only sets the sender and
+    // forwards the transaction without touching gasBudget.
     const source = readFileSync('web/lib/hooks/use-wallet-sign.ts', 'utf8')
     const senderCall = source.indexOf('tx.setSenderIfNotSet(currentAccount.address)')
-    const gasBudgetCall = source.indexOf("tx.setGasBudgetIfNotSet('15000000')")
     const signCall = source.indexOf('await signTransaction({')
 
     expect(senderCall).toBeGreaterThanOrEqual(0)
-    expect(gasBudgetCall).toBeGreaterThan(senderCall)
-    expect(gasBudgetCall).toBeLessThan(signCall)
+    expect(signCall).toBeGreaterThan(senderCall)
+    expect(source).not.toMatch(/setGasBudgetIfNotSet/)
+    expect(source).not.toMatch(/\.setGasBudget\(/)
   })
 
   it('resolves digest-only execute results through waitForTransaction with effects enabled', async () => {
