@@ -40,6 +40,10 @@ const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_POSTHOG_KEY',
   'NEXT_PUBLIC_POSTHOG_HOST',
   'POSTHOG_SERVER_KEY',
+  'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN',
+  'KV_REST_API_URL',
+  'KV_REST_API_TOKEN',
 ] as const
 
 const FORBIDDEN_ENV_KEYS = new Set([
@@ -111,6 +115,21 @@ function assertProductionEnv(env: Record<string, string>) {
 
   if (env.NEXT_PUBLIC_SUI_NETWORK?.trim() !== 'mainnet') {
     errors.push('NEXT_PUBLIC_SUI_NETWORK must be mainnet before syncing Vercel Production env')
+  }
+
+  const hasUpstashRateLimit = Boolean(env.UPSTASH_REDIS_REST_URL?.trim())
+    && Boolean(env.UPSTASH_REDIS_REST_TOKEN?.trim())
+  const hasKvRateLimit = Boolean(env.KV_REST_API_URL?.trim())
+    && Boolean(env.KV_REST_API_TOKEN?.trim())
+  if (!hasUpstashRateLimit && !hasKvRateLimit) {
+    errors.push('Missing shared rate limiter env pair: set UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN or KV_REST_API_URL/KV_REST_API_TOKEN')
+  }
+
+  const publicPostHogKey = env.NEXT_PUBLIC_POSTHOG_KEY?.trim()
+  if (!publicPostHogKey) {
+    errors.push('Missing NEXT_PUBLIC_POSTHOG_KEY for browser analytics ingestion')
+  } else if (!publicPostHogKey.startsWith('phc_')) {
+    errors.push('NEXT_PUBLIC_POSTHOG_KEY must be a PostHog project API key that starts with phc_')
   }
 
   const adminDefaultProvider = env.DEFAULT_PROVIDER?.trim()
