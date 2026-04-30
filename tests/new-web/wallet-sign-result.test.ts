@@ -26,7 +26,7 @@ describe('wallet sign transaction result normalization', () => {
   it('sets an explicit gas budget before wallet signing to avoid SDK dry-run simulation', () => {
     const source = readFileSync('web/lib/hooks/use-wallet-sign.ts', 'utf8')
     const senderCall = source.indexOf('tx.setSenderIfNotSet(currentAccount.address)')
-    const gasBudgetCall = source.indexOf("tx.setGasBudgetIfNotSet('20000000')")
+    const gasBudgetCall = source.indexOf("tx.setGasBudgetIfNotSet('15000000')")
     const signCall = source.indexOf('await signTransaction({')
 
     expect(senderCall).toBeGreaterThanOrEqual(0)

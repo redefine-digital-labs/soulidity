@@ -4,8 +4,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
 
 export const SUI_COIN_TYPE = '0x2::sui::SUI'
-// Minimum SUI balance required for gas (~0.02 SUI with margin)
-export const MIN_SUI_BALANCE = 20_000_000n // 0.02 SUI (9 decimals)
+export const WALLET_TX_GAS_BUDGET_MIST = 15_000_000n
+export const WALLET_FLOW_GAS_MARGIN_MIST = 10_000_000n
+
+export function minimumSuiBalanceForWalletTransactions(walletTransactionCount: number): bigint {
+  if (!Number.isSafeInteger(walletTransactionCount) || walletTransactionCount < 1) {
+    throw new Error('wallet transaction count must be a positive safe integer')
+  }
+  return BigInt(walletTransactionCount) * WALLET_TX_GAS_BUDGET_MIST + WALLET_FLOW_GAS_MARGIN_MIST
+}
+
+// Minimum SUI balance required for gas across the 2-tx deploy flow (PTB1 register + PTB2 mint+certify)
+export const MIN_SUI_BALANCE = minimumSuiBalanceForWalletTransactions(2) // 0.04 SUI (9 decimals)
 
 export function formatBalance(atomicBalance: bigint, decimals: number): string {
   const whole = atomicBalance / 10n ** BigInt(decimals)

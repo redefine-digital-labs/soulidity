@@ -11,7 +11,7 @@ import { buttonStyles } from '@/components/ui/button'
 import { TxRow } from '@/components/shared/tx-row'
 import {
   formatBalance,
-  MIN_SUI_BALANCE,
+  minimumSuiBalanceForWalletTransactions,
   useWalletBalances,
 } from '@/lib/hooks/use-wallet-balances'
 import { useImport } from '@/lib/hooks/use-import'
@@ -23,6 +23,10 @@ import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
+import {
+  countPendingImportUploads,
+  txBoundImportUploadObjectIds,
+} from '@/lib/import/import-wallet-balance'
 import {
   buildPersonaSpriteMoodMap,
   validatePersonaSpriteDraft,
@@ -198,15 +202,76 @@ export default function ImportGasPage() {
   const [deployError, setDeployError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const completedDigestRef = useRef<string | null>(null)
+  const [verifiedReusableUploadState, setVerifiedReusableUploadState] = useState<{
+    walletAddress: string
+    uploadResults: UploadResults | null
+    blobObjectIds: ReadonlySet<string>
+  } | null>(null)
 
   const balances = useWalletBalances(suiWallet?.address ?? null)
-  const suiInsufficient = balances.sui !== null && balances.sui < MIN_SUI_BALANCE
+  const reusableUploadResults = suiWallet
+    ? selectReusableUploadResults(ctx.uploadResults, suiWallet.address)
+    : ctx.uploadResults
+  const verifiedReusableBlobObjectIds =
+    verifiedReusableUploadState
+    && verifiedReusableUploadState.walletAddress === suiWallet?.address
+    && verifiedReusableUploadState.uploadResults === ctx.uploadResults
+      ? verifiedReusableUploadState.blobObjectIds
+      : null
+  const pendingImportUploadCount = countPendingImportUploads({
+    reusableUploadResults,
+    hasSkillsFile: Boolean(ctx.skillsFile),
+    hasSpriteSheetFile: Boolean(ctx.spriteSheetFile),
+    verifiedReusableBlobObjectIds,
+  })
+  const importWalletTransactionCount = 1 + pendingImportUploadCount * 2
+  const minImportSuiBalance = minimumSuiBalanceForWalletTransactions(importWalletTransactionCount)
+  const suiInsufficient = balances.sui !== null && balances.sui < minImportSuiBalance
   const balanceBlocked = suiInsufficient
 
   const missing = !ctx.resolvedName || !ctx.resolvedDescription || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile
   const [hasImportRecovery, setHasImportRecovery] = useState(false)
   // Detect recovery from both sessionStorage (remount) and in-memory state (same-tab sync failure)
   const inRecovery = (hasImportRecovery || (!!txDigest && status === 'error')) && status !== 'done'
+
+  useEffect(() => {
+    let cancelled = false
+    const walletAddress = suiWallet?.address
+    const uploadResults = ctx.uploadResults
+    if (!walletAddress) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const currentReusableUploadResults = selectReusableUploadResults(uploadResults, walletAddress)
+    const txBoundObjectIds = txBoundImportUploadObjectIds(currentReusableUploadResults)
+    if (txBoundObjectIds.length === 0) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void findMissingObjectIds(suiClient, txBoundObjectIds)
+      .then((missingObjectIds) => {
+        if (cancelled) return
+        const missingObjectIdSet = new Set(missingObjectIds)
+        setVerifiedReusableUploadState({
+          walletAddress,
+          uploadResults,
+          blobObjectIds: new Set(txBoundObjectIds.filter((id) => !missingObjectIdSet.has(id))),
+        })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVerifiedReusableUploadState(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [ctx.uploadResults, suiClient, suiWallet?.address])
 
   // Re-evaluate recovery state reactively when auth resolves
   useEffect(() => {
@@ -529,7 +594,7 @@ export default function ImportGasPage() {
                   <span className="text-foreground">~0.005 SUI</span>
                 </TxRow>
                 <TxRow label="Walrus Storage">
-                  <span className="text-muted">Paid by publisher node</span>
+                  <span className="text-muted">Paid by connected wallet after cost review</span>
                 </TxRow>
               </div>
             </div>
@@ -543,7 +608,7 @@ export default function ImportGasPage() {
                 {suiInsufficient && (
                   <p className="text-xs text-danger/90">
                     SUI balance: <span className="font-mono font-semibold">{formatBalance(balances.sui!, 9)} SUI</span>
-                    {' '}— need at least <span className="font-semibold">0.02 SUI</span> for gas fees.
+                    {' '}— need at least <span className="font-semibold">{formatBalance(minImportSuiBalance, 9)} SUI</span> for gas fees.
                   </p>
                 )}
                 {suiWallet && (

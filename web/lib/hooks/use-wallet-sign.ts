@@ -42,7 +42,7 @@ export function useWalletSign() {
       throw new Error('Connect a Sui wallet before signing transactions')
     }
     tx.setSenderIfNotSet(currentAccount.address)
-    tx.setGasBudgetIfNotSet('20000000')
+    tx.setGasBudgetIfNotSet('15000000')
 
     const { bytes, signature } = await signTransaction({
       transaction: tx,

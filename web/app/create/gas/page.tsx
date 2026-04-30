@@ -768,7 +768,7 @@ export default function CreateGasPage() {
               <span className="text-foreground">~0.005 SUI</span>
             </TxRow>
             <TxRow label="Walrus Storage">
-              <span className="text-muted">Paid by publisher node</span>
+              <span className="text-muted">Paid by connected wallet after cost review</span>
             </TxRow>
           </div>
         </div>
@@ -782,7 +782,7 @@ export default function CreateGasPage() {
             {suiInsufficient && (
               <p className="text-xs text-danger/90">
                 SUI balance: <span className="font-mono font-semibold">{formatBalance(balances.sui!, 9)} SUI</span>
-                {' '}— need at least <span className="font-semibold">0.02 SUI</span> for gas fees.
+                {' '}— need at least <span className="font-semibold">0.04 SUI</span> for gas fees.
               </p>
             )}
             {suiWallet && (

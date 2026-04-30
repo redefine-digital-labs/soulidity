@@ -37,6 +37,21 @@ describe('memory encryption regressions', () => {
     expect(importHookSource).toContain('createMemorySealSidecarFromMaterial')
   })
 
+  it('keeps wallet-paid gas page copy and import balance floor aligned with upload transaction count', () => {
+    const createGasSource = readSource('web/app/create/gas/page.tsx')
+    const importGasSource = readSource('web/app/import/gas/page.tsx')
+
+    expect(createGasSource).not.toContain('Paid by publisher node')
+    expect(importGasSource).not.toContain('Paid by publisher node')
+    expect(createGasSource).toContain('Paid by connected wallet after cost review')
+    expect(importGasSource).toContain('Paid by connected wallet after cost review')
+
+    expect(importGasSource).toContain('minimumSuiBalanceForWalletTransactions(importWalletTransactionCount)')
+    expect(importGasSource).toContain('const pendingImportUploadCount =')
+    expect(importGasSource).toContain('formatBalance(minImportSuiBalance, 9)')
+    expect(importGasSource).not.toContain('balances.sui < MIN_SUI_BALANCE')
+  })
+
   it('keeps personal-join and collection mint flows on encrypted founding memory with mirrored recovery payloads', () => {
     const wrapHookSource = readSource('web/lib/hooks/use-wrap-publish.ts')
     const collectionHookSource = readSource('web/lib/hooks/use-collection-publish.ts')

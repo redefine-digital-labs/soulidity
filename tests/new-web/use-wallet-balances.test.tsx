@@ -4,7 +4,10 @@ import React, { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 
-import { useWalletBalances } from '../../web/lib/hooks/use-wallet-balances'
+import {
+  minimumSuiBalanceForWalletTransactions,
+  useWalletBalances,
+} from '../../web/lib/hooks/use-wallet-balances'
 
 const mockedGetBalance = vi.hoisted(() => vi.fn())
 const mockedSuiClient = vi.hoisted(() => ({
@@ -72,6 +75,12 @@ describe('useWalletBalances', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('sizes the minimum SUI floor from the wallet transaction count plus margin', () => {
+    expect(minimumSuiBalanceForWalletTransactions(2)).toBe(40_000_000n)
+    expect(minimumSuiBalanceForWalletTransactions(7)).toBe(115_000_000n)
+    expect(() => minimumSuiBalanceForWalletTransactions(0)).toThrow('wallet transaction count')
   })
 
   it('does not reuse stale balances when the same address reconnects after disconnect', async () => {
