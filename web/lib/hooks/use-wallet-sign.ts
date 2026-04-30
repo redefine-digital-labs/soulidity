@@ -9,7 +9,30 @@ import {
 } from '@mysten/dapp-kit'
 import type { Transaction } from '@mysten/sui/transactions'
 
-type SuiTxResult = any
+type SuiTxResult = {
+  digest: string
+  effects: {
+    status?: { status?: string; error?: string }
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+export function normalizeSuiTxResult(result: unknown): SuiTxResult {
+  if (!result || typeof result !== 'object') {
+    throw new Error('Wallet transaction execution did not return a transaction result')
+  }
+
+  const candidate = result as { digest?: unknown; effects?: unknown }
+  if (typeof candidate.digest !== 'string' || candidate.digest.length === 0) {
+    throw new Error('Wallet transaction execution did not return a transaction digest')
+  }
+  if (!candidate.effects || typeof candidate.effects !== 'object') {
+    throw new Error('Wallet transaction execution did not return effects')
+  }
+
+  return result as SuiTxResult
+}
 
 async function waitForTransactionBestEffort(
   client: ReturnType<typeof useSuiClient>,
@@ -46,7 +69,7 @@ export function useWalletSign() {
       account: currentAccount,
     })
 
-    const result = await suiClient.executeTransactionBlock({
+    const result = normalizeSuiTxResult(await suiClient.executeTransactionBlock({
       transactionBlock: bytes,
       signature,
       options: {
@@ -55,7 +78,7 @@ export function useWalletSign() {
         showObjectChanges: true,
         showEvents: true,
       },
-    })
+    }))
 
     await waitForTransactionBestEffort(suiClient, result.digest)
     return result
