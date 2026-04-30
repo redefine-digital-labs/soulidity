@@ -16,6 +16,8 @@ import type {
   TaskWriteApprovalResult,
 } from '@soulidity/shared'
 
+declare module '*.css'
+
 declare global {
   interface Window {
     electronAPI: {

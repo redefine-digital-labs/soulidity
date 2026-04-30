@@ -26,7 +26,7 @@ function deriveStatus(file: unknown): CliAgentStatus {
 
 export function useCliStatus() {
   const [status, setStatus] = useState<CliAgentStatus>('idle')
-  const graceTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,7 +44,7 @@ export function useCliStatus() {
 
       // Always cancel the previous grace timeout — a stale closure would overwrite
       // a fresh active status back to idle when it fires
-      clearTimeout(graceTimerRef.current)
+      if (graceTimerRef.current) clearTimeout(graceTimerRef.current)
 
       // If showing a terminal state, schedule a re-evaluation after the grace period
       if (next === 'completed' || next === 'error') {
@@ -56,7 +56,7 @@ export function useCliStatus() {
 
     return () => {
       unsub?.()
-      clearTimeout(graceTimerRef.current)
+      if (graceTimerRef.current) clearTimeout(graceTimerRef.current)
     }
   }, [])
 

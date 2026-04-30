@@ -53,12 +53,27 @@ import { getOpenClawImportStatus, importOpenClawDraft } from './soul-extraction/
 import { buildUpdateErrorStatus, isMissingLatestReleaseAssetError, toUpdateErrorMessage } from './update-errors'
 import { getDesktopWebBaseUrl, readDesktopJsonResponse } from './web-api'
 import { validateOpenExternalUrl } from './external-url'
+import { installWebContentsNavigationGuards, SECURE_WINDOW_WEB_PREFERENCES } from './window-security'
 import { AgentRuntimeController, createUnixSocketTransportServer, type UnixSocketTransportServerHandle } from './agent-runtime'
 import { AgentRuntimeHookManager, getDefaultRuntimeSocketPath } from './agent-runtime-hooks'
 import { createCompatMirrorWriter } from './compat-mirror-writer'
 
 // ── electron-store 替代手写 config ──────────────────────────
 const store = new Store({ name: 'soulidity-settings' })
+
+function getRendererNavigationAllowlist(): string[] {
+  const urls = [new URL('../renderer/index.html', `file://${__dirname}/`).toString()]
+  if (process.env['NODE_ENV'] === 'development' && process.env['ELECTRON_RENDERER_URL']) {
+    urls.push(process.env['ELECTRON_RENDERER_URL'])
+  }
+  return urls
+}
+
+function guardWindowNavigation(win: BrowserWindow): void {
+  installWebContentsNavigationGuards(win.webContents, {
+    allowedNavigationUrls: getRendererNavigationAllowlist(),
+  })
+}
 
 // ── 窗口引用 ───────────────────────────────────────────────
 let ballWin: BrowserWindow | null = null
@@ -331,10 +346,11 @@ function createBallWindow(): void {
     frame: false, transparent: true, alwaysOnTop: true,
     skipTaskbar: true, resizable: false, hasShadow: false, show: false,
     webPreferences: {
+      ...SECURE_WINDOW_WEB_PREFERENCES,
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
     }
   })
+  guardWindowNavigation(ballWin)
 
   if (process.platform === 'darwin') {
     ballWin.setAlwaysOnTop(true, 'floating')
@@ -663,8 +679,12 @@ function createMainWindow(): void {
     frame: false, transparent: false, alwaysOnTop: false,
     skipTaskbar: false, resizable: true, hasShadow: true, show: false,
     backgroundColor: '#18181c',
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false }
+    webPreferences: {
+      ...SECURE_WINDOW_WEB_PREFERENCES,
+      preload: join(__dirname, '../preload/index.js'),
+    }
   })
+  guardWindowNavigation(mainWin)
 
   mainWin.on('ready-to-show', () => mainWin?.show())
   mainWin.on('closed', () => { mainWin = null })

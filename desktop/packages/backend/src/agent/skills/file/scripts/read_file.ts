@@ -49,6 +49,9 @@ async function readDocx(filePath: string) {
 
 function formatSpreadsheetCell(value: unknown) {
   if (value == null) return ''
+  if (value instanceof Date) {
+    return value.toISOString().replace(/T00:00:00\.000Z$/, '')
+  }
 
   return String(value)
     .replace(/\r/g, '\\r')
@@ -57,22 +60,12 @@ function formatSpreadsheetCell(value: unknown) {
 }
 
 async function readXlsx(filePath: string) {
-  const XLSX = await import('xlsx')
-  const workbook = XLSX.read(readFileSync(filePath), {
-    cellDates: true,
-    cellText: true,
-  })
+  const readExcelFile = (await import('read-excel-file/node')).default
+  const sheets = await readExcelFile(filePath)
   const lines: string[] = []
-  for (const sheetName of workbook.SheetNames) {
-    lines.push(`=== Sheet: ${sheetName} ===`)
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
-      header: 1,
-      raw: false,
-      defval: '',
-      blankrows: false,
-    })
-
-    for (const row of rows) {
+  for (const sheet of sheets) {
+    lines.push(`=== Sheet: ${sheet.sheet} ===`)
+    for (const row of sheet.data) {
       const formattedRow = row.map(formatSpreadsheetCell)
 
       while (formattedRow.length > 0 && formattedRow[formattedRow.length - 1] === '') {
