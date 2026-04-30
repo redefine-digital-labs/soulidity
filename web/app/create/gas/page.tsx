@@ -13,11 +13,16 @@ import { usePublish, type PublishParams } from '@/lib/hooks/use-publish'
 import { useAuth } from '@/components/providers/auth-provider'
 import {
   prepareSoulBlobsForBatchPublish,
+  reclaimWalrusOrphanBlobs,
   uploadSoulPayload,
   WalrusUploadCancelledError,
   type BatchSoulUploadFile,
   type PreparedSoulBlobs,
 } from '@/lib/upload/client-upload'
+import {
+  WalrusUploadResumeMismatchError,
+  type WalrusOrphanBlob,
+} from '@/lib/upload/walrus-recovery'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
@@ -155,6 +160,11 @@ export default function CreateGasPage() {
 
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
   const [deployError, setDeployError] = useState<string | null>(null)
+  const [walrusOrphanRecovery, setWalrusOrphanRecovery] = useState<{
+    orphanTxDigest: string
+    orphanBlobs: WalrusOrphanBlob[]
+  } | null>(null)
+  const [reclaimingOrphans, setReclaimingOrphans] = useState(false)
   const [copied, setCopied] = useState(false)
   const completedDigestRef = useRef<string | null>(null)
   // Cache for the prepared batch (PTB1 digest + uploaded certificates +
@@ -301,6 +311,7 @@ export default function CreateGasPage() {
     if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile || !suiWallet) return
 
     setDeployError(null)
+    setWalrusOrphanRecovery(null)
     ctx.setPublishResult(null)
     const walletAddress = suiWallet.address
 
@@ -570,6 +581,19 @@ export default function CreateGasPage() {
         },
       })
     } catch (err) {
+      if (err instanceof WalrusUploadResumeMismatchError) {
+        preparedBatchRef.current = null
+        setWalrusOrphanRecovery({
+          orphanTxDigest: err.orphanTxDigest,
+          orphanBlobs: [...err.orphanBlobs],
+        })
+        setDeployError(
+          'A previous Walrus register transaction can no longer be resumed because the encrypted payload changed. '
+          + 'The stale local recovery was cleared; reclaim the orphaned blobs, or click Sign & Deploy again to start from a clean register.',
+        )
+        setUploadPhase('idle')
+        return
+      }
       if (!(err instanceof WalrusUploadCancelledError)) {
         captureFrontendException(err, {
           scope: 'create_soul_deploy',
@@ -578,6 +602,32 @@ export default function CreateGasPage() {
       }
       setDeployError(err instanceof Error ? err.message : 'Deploy failed')
       setUploadPhase('idle')
+    }
+  }
+
+  async function handleReclaimWalrusOrphans() {
+    if (!suiWallet || !walrusOrphanRecovery || reclaimingOrphans) return
+
+    setReclaimingOrphans(true)
+    setDeployError(null)
+    try {
+      const result = await reclaimWalrusOrphanBlobs({
+        orphanBlobs: walrusOrphanRecovery.orphanBlobs,
+        walletAddress: suiWallet.address,
+        suiClient,
+        signAndExecute,
+      })
+      setWalrusOrphanRecovery(null)
+      preparedBatchRef.current = null
+      showToast(`Reclaimed ${result.reclaimedCount} Walrus blob(s).`, 'success')
+    } catch (err) {
+      captureFrontendException(err, {
+        scope: 'create_soul_walrus_orphan_reclaim',
+        txDigest: walrusOrphanRecovery.orphanTxDigest,
+      })
+      setDeployError(err instanceof Error ? err.message : 'Failed to reclaim Walrus blobs')
+    } finally {
+      setReclaimingOrphans(false)
     }
   }
 
@@ -609,7 +659,7 @@ export default function CreateGasPage() {
 
   const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
   const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
-  const isBusy = uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing'
+  const isBusy = reclaimingOrphans || uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing'
   const combinedError = deployError || error
   const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
   const walletActionState = getWalletActionState({
@@ -807,6 +857,38 @@ export default function CreateGasPage() {
             {combinedError && (
               <div className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-4 py-3">
                 {combinedError}
+              </div>
+            )}
+            {walrusOrphanRecovery && (
+              <div className="space-y-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/8 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#F59E0B]">
+                      Walrus Orphan Recovery
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-muted">
+                      Previous register: <span className="font-mono text-foreground">{walrusOrphanRecovery.orphanTxDigest.slice(0, 16)}…</span>
+                      {' '}· {walrusOrphanRecovery.orphanBlobs.length} blob(s)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={walletActionState.disabled || reclaimingOrphans}
+                    onClick={() => handleWalletAction(handleReclaimWalrusOrphans)}
+                    className={buttonStyles({
+                      variant: 'outline',
+                      size: 'sm',
+                      className:
+                        `shrink-0 rounded-[10px] border-[#F59E0B]/40 px-3 py-1.5 text-[12px] text-[#F59E0B] hover:border-[#F59E0B]/70 ${walletActionState.disabled || reclaimingOrphans ? 'opacity-50 cursor-not-allowed' : ''}`,
+                    })}
+                  >
+                    {reclaimingOrphans ? 'Reclaiming…' : 'Reclaim'}
+                  </button>
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted">
+                  Reclaim signs a Walrus delete transaction for the stale deletable Blob objects.
+                  You can also deploy again from a clean register if you choose to leave them orphaned.
+                </p>
               </div>
             )}
           </div>

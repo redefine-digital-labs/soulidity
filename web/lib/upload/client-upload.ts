@@ -27,6 +27,7 @@ import {
   readWalrusUploadRecovery,
   WalrusUploadResumeMismatchError,
   type WalrusBatchRecoveryBlob,
+  type WalrusOrphanBlob,
   type WalrusUploadRecoveryRecord,
 } from '@/lib/upload/walrus-recovery'
 
@@ -45,7 +46,10 @@ export interface SoulUploadResult {
   quoteId: string
 }
 
-export type SignAndExecuteWalrusTx = (tx: Transaction) => Promise<{ digest: string }>
+export type SignAndExecuteWalrusTx = (tx: Transaction) => Promise<{
+  digest: string
+  effects?: { status?: { status?: string; error?: string } }
+}>
 
 /**
  * Thrown when the user declines the upload-cost review modal. Treated as an
@@ -560,6 +564,92 @@ async function resolveCreatedBlobObjectIds(params: {
   })
 }
 
+async function writeEncodedBlobAndBuildCertificate(params: {
+  client: Awaited<ReturnType<typeof createWalrusClient>>
+  blobId: string
+  blobObjectId: string
+  metadata: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['metadata']
+  sliversByNode: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['sliversByNode']
+  deletable: boolean
+}) {
+  let confirmations: Awaited<ReturnType<typeof params.client.writeEncodedBlobToNodes>>
+  let writeError: unknown = null
+  try {
+    confirmations = await params.client.writeEncodedBlobToNodes({
+      blobId: params.blobId,
+      objectId: params.blobObjectId,
+      metadata: params.metadata,
+      sliversByNode: params.sliversByNode,
+      deletable: params.deletable,
+    })
+  } catch (error) {
+    writeError = error
+    confirmations = await params.client.getStorageConfirmations({
+      blobId: params.blobId,
+      objectId: params.blobObjectId,
+      deletable: params.deletable,
+    })
+  }
+
+  try {
+    const certificate = await params.client.certificateFromConfirmations({
+      confirmations,
+      blobId: params.blobId,
+      blobObjectId: params.blobObjectId,
+      deletable: params.deletable,
+    })
+    return {
+      blobId: params.blobId,
+      blobObjectId: params.blobObjectId,
+      certificate,
+    }
+  } catch (certificateError) {
+    if (writeError) throw writeError
+    throw certificateError
+  }
+}
+
+export async function reclaimWalrusOrphanBlobs(params: {
+  orphanBlobs: ReadonlyArray<WalrusOrphanBlob>
+  walletAddress: string
+  suiClient: unknown
+  signAndExecute: SignAndExecuteWalrusTx
+}): Promise<{ digest: string; reclaimedCount: number }> {
+  const blobObjectIds = Array.from(new Set(
+    params.orphanBlobs
+      .map((blob) => blob.blobObjectId)
+      .filter((blobObjectId): blobObjectId is string => !!blobObjectId),
+  ))
+  if (blobObjectIds.length === 0) {
+    throw new Error('No reclaimable Walrus Blob object ids were found for the stale batch.')
+  }
+
+  const client = await createWalrusClient({
+    suiClient: params.suiClient,
+    network: getWalrusNetwork(),
+  })
+  const tx = new Transaction()
+  tx.setSenderIfNotSet(params.walletAddress)
+  for (const blobObjectId of blobObjectIds) {
+    const storage = tx.add(client.deleteBlob({ blobObjectId }))
+    tx.transferObjects([storage], params.walletAddress)
+  }
+
+  const result = await params.signAndExecute(tx)
+  const status = result.effects?.status
+  if (status?.status !== 'success') {
+    const detail = [status?.status ? `status=${status.status}` : null, status?.error ? `error=${status.error}` : null]
+      .filter(Boolean)
+      .join(', ')
+    throw new Error(`Walrus orphan reclaim transaction ${result.digest} did not succeed${detail ? ` (${detail})` : ''}`)
+  }
+
+  return {
+    digest: result.digest,
+    reclaimedCount: blobObjectIds.length,
+  }
+}
+
 function buildAggregateUploadPlan(prepared: PreparedFile[], network: 'testnet' | 'mainnet', storageEpochs: number, relayUrl: string) {
   return buildWalrusUploadPlan({
     files: prepared.map((p) => ({
@@ -815,24 +905,14 @@ export async function prepareSoulBlobsForBatchPublish(
   const uploaded = await Promise.all(
     prepared.map(async (_p, i) => {
       const m = encodedList[i]
-      const confirmations = await client.writeEncodedBlobToNodes({
+      return writeEncodedBlobAndBuildCertificate({
+        client,
         blobId: m.blobId,
-        objectId: blobObjectIds[i],
+        blobObjectId: blobObjectIds[i],
         metadata: m.metadata,
         sliversByNode: m.sliversByNode,
         deletable: true,
       })
-      const certificate = await client.certificateFromConfirmations({
-        confirmations,
-        blobId: m.blobId,
-        blobObjectId: blobObjectIds[i],
-        deletable: true,
-      })
-      return {
-        blobId: m.blobId,
-        blobObjectId: blobObjectIds[i],
-        certificate,
-      }
     }),
   )
 
