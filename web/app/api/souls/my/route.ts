@@ -35,7 +35,12 @@ export async function GET() {
 
   const [owned, collections, grants] = await Promise.all([
     prisma.soulAsset.findMany({
-      where: { currentOwnerMemberId: identity.memberId },
+      where: {
+        OR: [
+          { currentOwnerMemberId: identity.memberId },
+          ...(walletAddresses.length > 0 ? [{ currentOwnerAddress: { in: walletAddresses } }] : []),
+        ],
+      },
       select: mySoulSelect,
       orderBy: { createdAt: 'desc' },
     }),
@@ -44,6 +49,12 @@ export async function GET() {
         OR: [
           { creatorMemberId: identity.memberId },
           { currentHolderMemberId: identity.memberId },
+          ...(walletAddresses.length > 0
+            ? [
+                { creatorAddress: { in: walletAddresses } },
+                { currentHolderAddress: { in: walletAddresses } },
+              ]
+            : []),
         ],
       },
       select: soulCollectionSummarySelect,
