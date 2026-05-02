@@ -161,6 +161,7 @@ function makeGrantSlot(overrides: Record<string, unknown> = {}) {
     scopeMask: 1,
     scopes: ['seal'],
     expiresAtMs: null,
+    ownershipEpochSnapshot: 1,
     ...overrides,
   }
 }

@@ -35,7 +35,7 @@ import {
 } from '../../web/lib/soulidity/queries'
 import {
   OFFICIAL_MAINNET_KIOSK_PACKAGE_ID,
-  OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID,
+  OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID,
   OFFICIAL_TESTNET_KIOSK_PACKAGE_ID,
 } from '../../web/lib/soulidity/kiosk'
 import {
@@ -274,7 +274,15 @@ describe('getVendoredKioskPackageAddress', () => {
   it('resolves the official mainnet kiosk type origin for PersonalKioskCap filters', () => {
     process.env[ENV_KEY] = OFFICIAL_MAINNET_KIOSK_PACKAGE_ID
     expect(getVendoredKioskPackageAddress()).toBe(OFFICIAL_MAINNET_KIOSK_PACKAGE_ID)
-    expect(getPersonalKioskCapTypePackageAddress()).toBe(OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID)
+    expect(getPersonalKioskCapTypePackageAddress()).toBe(OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID)
+  })
+
+  it('resolves the mainnet PersonalKioskCap struct type via network fallback', async () => {
+    process.env[NETWORK_KEY] = 'mainnet'
+    const { getPersonalKioskCapStructType } = await import('../../web/lib/soulidity/kiosk')
+    expect(getPersonalKioskCapStructType()).toBe(
+      `${OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
+    )
   })
 })
 

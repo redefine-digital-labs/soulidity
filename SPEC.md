@@ -54,3 +54,18 @@
    - `npm test -- tests/new-web/**` 或等价覆盖 relevant new-web suite
    - `npm --prefix new-web run typecheck`
    - `npm --prefix new-web run build`
+
+## Audit Closeout Addendum — 2026-05-02
+
+本轮在 fresh deploy / mainnet reset 前提下继续收口 Soulidity 审计项，不保旧链上 ABI 或旧对象布局。
+
+追加验收：
+
+1. `SoulState.active_grants` 不再是可枚举 vector，改为 grantee / grant-id 双 Table 索引与 `active_grant_count`；owner rotation 只归零当前 active count，旧 grant 通过 epoch mismatch 懒失效。
+2. grant 发放拒绝当前或过去的过期时间；revoke / revoke-scope / assert / destroy / cleanup 都只触碰目标 grant id 或 grantee，避免 O(n) 清理。
+3. `ContentAccessList` 与 `SoulState.access_list_id` 双向绑定；add / revoke / price / duration / scope / seal approve / purchase 全部拒绝未绑定 access list。
+4. Content access entry 继续 epoch-pinned，旧 epoch row 保留审计价值，并提供 permissionless stale-row cleanup。
+5. assets / skills soft-delete 后可由 owner purge 对应 Walrus Blob dynamic object field；purged / deleted version 不可再通过 Seal approval。
+6. metadata active sprite / voice 底层 setter 只保留 package 内部可见，外部必须走 `market` wrapper，继续校验 asset 存在、未删、类型与 public/private policy。
+7. `register_existing_personal_kiosk` 删除，所有登记路径统一到 `ensure_personal_kiosk_registered`；content access 禁止 owner 自购。
+8. mint / collection create / listing 护栏提前拒绝 platform fee + royalty 超过 `MAX_BPS` 的组合。

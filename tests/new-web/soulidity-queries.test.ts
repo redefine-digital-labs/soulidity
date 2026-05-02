@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OFFICIAL_MAINNET_KIOSK_PACKAGE_ID,
-  OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID,
+  OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID,
 } from '../../web/lib/soulidity/kiosk'
 
 const mockedGetObject = vi.hoisted(() => vi.fn())
 const mockedGetOwnedObjects = vi.hoisted(() => vi.fn())
+const mockedGetDynamicFields = vi.hoisted(() => vi.fn())
 const mockedGetDynamicFieldObject = vi.hoisted(() => vi.fn())
 
 vi.mock('@web/lib/sui', () => ({
   suiClient: {
     getObject: mockedGetObject,
     getOwnedObjects: mockedGetOwnedObjects,
+    getDynamicFields: mockedGetDynamicFields,
     getDynamicFieldObject: mockedGetDynamicFieldObject,
   },
 }))
@@ -52,6 +54,95 @@ describe('Soulidity queries', () => {
       soulId: '0x0000000000000000000000000000000000000000000000000000000000000006',
       skillCount: 2,
       skillsTableId: '0x0000000000000000000000000000000000000000000000000000000000000008',
+    })
+  })
+
+  it('parses SoulState active grants from the Table dynamic fields', async () => {
+    mockedGetObject.mockResolvedValue({
+      data: {
+        objectId: '0x5',
+        type: '0x42::soul::SoulState',
+        content: {
+          dataType: 'moveObject',
+          type: '0x42::soul::SoulState',
+          fields: {
+            soul_id: '0x6',
+            creator: '0xc0de',
+            creator_royalty_bps: '500',
+            current_owner: '0xc0de',
+            current_kiosk_id: '0x7',
+            ownership_epoch: '3',
+            grant_capacity: '10000',
+            active_grant_count: '1',
+            active_grants: {
+              type: '0x2::table::Table<address, 0x42::soul::ActiveGrantSlot>',
+              fields: {
+                id: { id: '0x8' },
+                size: '2',
+              },
+            },
+            active_grant_ids: {
+              fields: {
+                id: { id: '0x9' },
+                size: '2',
+              },
+            },
+            memory_id: [],
+            metadata_id: [],
+            skills_id: [],
+            assets_id: [],
+            collection_id: [],
+            access_list_id: [],
+          },
+        },
+      },
+    })
+    mockedGetDynamicFields.mockResolvedValue({
+      data: [{
+        name: {
+          type: 'address',
+          value: '0xaaa',
+        },
+      }],
+      hasNextPage: false,
+      nextCursor: null,
+    })
+    mockedGetDynamicFieldObject.mockResolvedValue({
+      data: {
+        content: {
+          fields: {
+            name: '0xaaa',
+            value: {
+              fields: {
+                grant_id: '0xabc',
+                grantee: '0xaaa',
+                scope_mask: '5',
+                expires_at_ms: [],
+                ownership_epoch_snapshot: '3',
+              },
+            },
+          },
+        },
+      },
+    })
+
+    const { getSoulStateObject } = await import('../../web/lib/soulidity/queries')
+    await expect(getSoulStateObject('0x5', '0x42')).resolves.toMatchObject({
+      objectId: '0x5',
+      activeGrantCount: 1,
+      activeGrants: [{
+        grantId: '0x0000000000000000000000000000000000000000000000000000000000000abc',
+        granteeAddress: '0x0000000000000000000000000000000000000000000000000000000000000aaa',
+        scopeMask: 5,
+        scopes: ['seal', 'skills'],
+        expiresAtMs: null,
+        ownershipEpochSnapshot: 3,
+      }],
+    })
+    expect(mockedGetDynamicFields).toHaveBeenCalledWith({
+      parentId: '0x0000000000000000000000000000000000000000000000000000000000000008',
+      cursor: undefined,
+      limit: 50,
     })
   })
 
@@ -144,11 +235,11 @@ describe('Soulidity queries', () => {
       data: [{
         data: {
           objectId: '0x1',
-          type: `${OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
+          type: `${OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
           owner: { AddressOwner: '0xabc' },
           content: {
             dataType: 'moveObject',
-            type: `${OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
+            type: `${OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
             fields: {
               cap: {
                 fields: {
@@ -169,7 +260,7 @@ describe('Soulidity queries', () => {
     expect(mockedGetOwnedObjects).toHaveBeenCalledWith({
       owner: '0xabc',
       filter: {
-        StructType: `${OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
+        StructType: `${OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
       },
       options: {
         showOwner: true,

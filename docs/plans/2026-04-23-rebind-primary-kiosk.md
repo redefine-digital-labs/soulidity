@@ -1,6 +1,8 @@
 # Primary Kiosk Rebind — Split-API Recovery Path
 
-**Status**: Implemented 2026-04-23. Contract + SDK landed; frontend exposure deferred.
+**Status**: Superseded by 2026-05-02 fresh publish reset for mainnet runtime (`docs/plans/2026-05-02-soulidity-mainnet-reset-and-post-mint-sprite.md`). The rebind contract + SDK remain in the codebase for emergency recovery, but the live recovery path on mainnet is now "fresh package + DB reset," not rebind. Historical implementation notes below are retained for reference.
+
+**Original status**: Implemented 2026-04-23. Contract + SDK landed; frontend exposure deferred.
 
 **Goal**: Close the M-1 "silent kiosk overwrite orphans locked Souls" gap surfaced during the follow-up Sui audit (see `docs/audits/2026-04-03-soulidity-audit.md` Fix Log). Preserve the ability to repoint a user's primary personal kiosk when needed, but hard-block the path that could strand Soul objects.
 
@@ -16,7 +18,7 @@ Prior behaviour: `register_existing_personal_kiosk` and `ensure_personal_kiosk_r
 
 Split the API into two entrypoints with separate invariants:
 
-1. **Idempotent registration** (`ensure_personal_kiosk_registered` / `register_existing_personal_kiosk`) — backed by a renamed helper `insert_or_assert_personal_kiosk_registration`:
+1. **Idempotent registration** (`ensure_personal_kiosk_registered`; the older `register_existing_personal_kiosk` wrapper is removed) — backed by helper `insert_or_assert_personal_kiosk_registration`:
    - First call inserts the registration and emits `PersonalKioskRegistrationUpdated`.
    - Repeat calls with the same `(kiosk_id, kiosk_cap_id)` are silent no-ops.
    - Re-registration with a different kiosk/cap hard-aborts `EPersonalKioskMismatch`.

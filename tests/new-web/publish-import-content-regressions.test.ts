@@ -66,6 +66,57 @@ describe('memory encryption regressions', () => {
     expect(collectionHookSource).toContain('createMemorySealSidecarFromMaterial')
   })
 
+  it('keeps collection batch persona sprites post-mint-only', () => {
+    const collectionSoulsPageSource = readSource('web/app/collections/create/souls/page.tsx')
+    const collectionPreviewSource = readSource('web/app/collections/create/preview/page.tsx')
+    const collectionProviderSource = readSource('web/components/providers/create-collection-provider.tsx')
+    const collectionHookSource = readSource('web/lib/hooks/use-collection-publish.ts')
+    const collectionBatchUtilsSource = readSource('web/app/collections/create/souls/batch-utils.ts')
+
+    expect(collectionSoulsPageSource).toContain('Persona sprites are added after mint')
+    expect(collectionSoulsPageSource).not.toContain('persona-sprite.png ← sprite sheet')
+    expect(collectionPreviewSource).toContain('Post-mint from each Soul detail page')
+    expect(collectionProviderSource).not.toContain('spriteVisibility')
+    expect(collectionBatchUtilsSource).not.toContain('spriteSheetFile')
+    expect(collectionBatchUtilsSource).not.toContain('spriteConfigFile')
+    expect(collectionHookSource).not.toContain('validatePersonaSpriteDraft')
+    expect(collectionHookSource).not.toContain('initialSprite:')
+    expect(collectionHookSource).not.toContain('assetBlobObjectId')
+  })
+
+  it('keeps native, import, and personal-join persona sprites post-mint-only', () => {
+    const createProviderSource = readSource('web/components/providers/create-soul-provider.tsx')
+    const importProviderSource = readSource('web/components/providers/import-soul-provider.tsx')
+    const wrapProviderSource = readSource('web/components/providers/wrap-provider.tsx')
+    const createGasSource = readSource('web/app/create/gas/page.tsx')
+    const importGasSource = readSource('web/app/import/gas/page.tsx')
+    const wrapPreviewSource = readSource('web/app/wrap-link/personal/preview/page.tsx')
+    const publishHookSource = readSource('web/lib/hooks/use-publish.ts')
+    const importHookSource = readSource('web/lib/hooks/use-import.ts')
+    const wrapHookSource = readSource('web/lib/hooks/use-wrap-publish.ts')
+
+    for (const source of [createProviderSource, importProviderSource, wrapProviderSource]) {
+      expect(source).not.toContain('spriteSheetFile')
+      expect(source).not.toContain('spriteConfigFile')
+      expect(source).not.toContain('spriteVisibility')
+    }
+
+    for (const source of [createGasSource, importGasSource, wrapPreviewSource, publishHookSource, importHookSource, wrapHookSource]) {
+      expect(source).not.toContain('validatePersonaSpriteDraft')
+      expect(source).not.toContain('buildPersonaSpriteMoodMap')
+      expect(source).not.toContain('assetsSealMaterial')
+      expect(source).not.toContain('Persona sprite blob')
+      expect(source).not.toContain('Wrapped persona sprite blob')
+      expect(source).not.toContain('spriteSheetFile')
+      expect(source).not.toContain('spriteConfigFile')
+      expect(source).not.toContain('spriteVisibility')
+      expect(source).not.toContain('initialSprite:')
+    }
+
+    expect(readSource('web/app/create/preview/page.tsx')).toMatch(/persona sprites are added after mint/i)
+    expect(readSource('web/app/import/preview/page.tsx')).toMatch(/persona sprites are added after mint/i)
+  })
+
   it('keeps provider upload state typed as encrypted for founding memory', () => {
     const createProviderSource = readSource('web/components/providers/create-soul-provider.tsx')
     const importProviderSource = readSource('web/components/providers/import-soul-provider.tsx')

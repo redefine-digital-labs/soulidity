@@ -242,6 +242,14 @@ describe('shared.ts — buildBuyerKioskArgs', () => {
     expect(result.needsTransfer).toBe(true)
     expect(result.buyerKiosk).toBeDefined()
     expect(result.buyerKioskCap).toBeDefined()
+    expect(tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean))
+      .toContain('ensure_personal_kiosk_registered')
+    expect(tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean))
+      .not.toContain('register_existing_personal_kiosk')
   })
 
   it('creates new kiosk when both are null', () => {
@@ -598,7 +606,9 @@ describe('buy.ts — buildBuyCollectionTx', () => {
 // content-access.ts — purchase / owner controls
 // =========================================================================
 import {
+  buildCleanupStaleContentAccessEntriesTx,
   buildPurchaseContentAccessTx,
+  buildSetContentAccessDefaultScopeTx,
   buildSetContentAccessDurationTx,
   buildSetContentAccessPriceTx,
 } from '../../web/lib/soulidity/tx/content-access'
@@ -666,6 +676,22 @@ describe('content-access.ts — owner controls', () => {
     const tx = buildSetContentAccessDurationTx({
       ...VALID_PARAMS,
       newDurationMs: null,
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('builds set default scope tx', () => {
+    const tx = buildSetContentAccessDefaultScopeTx({
+      ...VALID_PARAMS,
+      scopeMask: 15,
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('builds stale row cleanup tx', () => {
+    const tx = buildCleanupStaleContentAccessEntriesTx({
+      ...VALID_PARAMS,
+      addresses: [ADDR],
     })
     expect(tx).toBeInstanceOf(Transaction)
   })
@@ -794,6 +820,7 @@ describe('update-price.ts — buildUpdateListingPriceTx', () => {
 // grant.ts — buildIssueGrantTx, buildRevokeGrantTx, buildRevokeGrantScopeTx
 // =========================================================================
 import {
+  buildCleanupInactiveGrantsTx,
   buildIssueGrantTx,
   buildRevokeGrantTx,
   buildRevokeGrantScopeTx,
@@ -843,6 +870,21 @@ describe('grant.ts — buildIssueGrantTx', () => {
   it('throws on non-integer scopeMask', () => {
     expect(() => buildIssueGrantTx({ ...VALID_PARAMS, scopeMask: 1.5 }))
       .toThrow('scopeMask must be a positive integer')
+  })
+
+  it('throws when expiry is not in the future', () => {
+    expect(() => buildIssueGrantTx({ ...VALID_PARAMS, expiresAtMs: Date.now() }))
+      .toThrow('expiresAtMs must be in the future')
+  })
+})
+
+describe('grant.ts — buildCleanupInactiveGrantsTx', () => {
+  it('returns a Transaction with grantee addresses', () => {
+    const tx = buildCleanupInactiveGrantsTx({
+      stateObjectId: OBJ('11'),
+      granteeAddresses: [ADDR],
+    })
+    expect(tx).toBeInstanceOf(Transaction)
   })
 })
 
@@ -996,6 +1038,8 @@ describe('memory.ts — buildAppendMemoryAsGrantedAgentTx', () => {
 import {
   buildAppendSkillVersionTx,
   buildDeleteSkillVersionTx,
+  buildInitSkillsAndAppendAsOwnerTx,
+  buildPurgeDeletedSkillVersionTx,
 } from '../../web/lib/soulidity/tx/skills'
 
 describe('skills.ts — buildAppendSkillVersionTx', () => {
@@ -1046,6 +1090,28 @@ describe('skills.ts — buildDeleteSkillVersionTx', () => {
     const tx = buildDeleteSkillVersionTx({
       ...VALID_PARAMS,
       grantObjectId: OBJ('g1'),
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+})
+
+describe('skills.ts — cleanup and root init', () => {
+  it('builds purge deleted skill version tx', () => {
+    const tx = buildPurgeDeletedSkillVersionTx({
+      stateObjectId: OBJ('11'),
+      skillsObjectId: OBJ('s1'),
+      skillName: 'reporter',
+      versionIndex: 2,
+    })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('builds init skills and append tx', () => {
+    const tx = buildInitSkillsAndAppendAsOwnerTx({
+      stateObjectId: OBJ('11'),
+      skillName: 'reporter',
+      blobObjectId: OBJ('b1'),
+      visibility: 'private',
     })
     expect(tx).toBeInstanceOf(Transaction)
   })
@@ -1143,6 +1209,7 @@ import { buildPersonalJoinSoulTx } from '../../web/lib/soulidity/tx/personal-joi
 import {
   buildAppendAssetVersionTx,
   buildDeleteAssetVersionTx,
+  buildPurgeDeletedAssetVersionTx,
 } from '../../web/lib/soulidity/tx/assets'
 
 describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
@@ -1294,6 +1361,18 @@ describe('assets.ts — asset version transactions', () => {
       assetName: 'persona-sprite',
       versionIndex: 1,
       grantObjectId: OBJ('44'),
+    })
+
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('builds purge deleted asset version tx', () => {
+    const tx = buildPurgeDeletedAssetVersionTx({
+      stateObjectId: OBJ('11'),
+      metadataObjectId: OBJ('99'),
+      assetsObjectId: OBJ('22'),
+      assetName: 'persona-sprite',
+      versionIndex: 1,
     })
 
     expect(tx).toBeInstanceOf(Transaction)

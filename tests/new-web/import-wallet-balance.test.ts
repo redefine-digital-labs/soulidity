@@ -20,28 +20,24 @@ describe('import wallet balance upload counting', () => {
       charFile: { ...upload('0xchar'), sealMaterial: null },
       memorySeed: { ...upload('0xmemory'), sealMaterial: null },
       skillsFile: { ...upload('0xskills'), sealMaterial: null },
-      spriteSheet: upload('0xsprite'),
     }
 
     expect(txBoundImportUploadObjectIds(reusableUploadResults)).toEqual([
       '0xchar',
       '0xmemory',
       '0xskills',
-      '0xsprite',
     ])
 
     expect(countPendingImportUploads({
       reusableUploadResults,
       hasSkillsFile: true,
-      hasSpriteSheetFile: true,
       verifiedReusableBlobObjectIds: null,
-    })).toBe(4)
+    })).toBe(3)
 
     expect(countPendingImportUploads({
       reusableUploadResults,
       hasSkillsFile: true,
-      hasSpriteSheetFile: true,
-      verifiedReusableBlobObjectIds: new Set(['0xchar', '0xmemory', '0xskills', '0xsprite']),
+      verifiedReusableBlobObjectIds: new Set(['0xchar', '0xmemory', '0xskills']),
     })).toBe(0)
   })
 })

@@ -160,6 +160,7 @@ interface ParsedArgs {
   dryRunTransferOnly: boolean
   resumeCapTransferFromManifest: boolean
   useEnvKey: boolean
+  mainnetE2e: boolean
   gasBudget: string | null
   paymentCoinType: string | null
   transferCapsTo: string | null
@@ -173,6 +174,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     dryRunTransferOnly: false,
     resumeCapTransferFromManifest: false,
     useEnvKey: false,
+    mainnetE2e: false,
     gasBudget: null,
     paymentCoinType: null,
     transferCapsTo: null,
@@ -187,6 +189,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     if (arg === '--dry-run-transfer-only') { result.dryRunTransferOnly = true; continue }
     if (arg === '--resume-cap-transfer-from-manifest') { result.resumeCapTransferFromManifest = true; continue }
     if (arg === '--use-env-key') { result.useEnvKey = true; continue }
+    if (arg === '--mainnet-e2e') { result.mainnetE2e = true; continue }
     if (arg === '--track-upgrade-cap') { result.trackUpgradeCap = true; continue }
     if (arg === '--no-track-upgrade-cap') { result.trackUpgradeCap = false; continue }
 
@@ -390,6 +393,66 @@ export function buildCapTransferPtb(
   return tx
 }
 
+/**
+ * Walk the on-chain `linkage_table` of every immediate dep (and recursively of
+ * each newly-discovered package) and return the full transitive closure as a
+ * deduplicated list of normalized package addresses. Sui's publish verifier
+ * requires every transitively-reachable package to be declared in the publish
+ * PTB's dependency list, but `sui move build --dump-bytecode-as-base64` only
+ * surfaces the immediate deps from Move.lock. We invoke `sui client object`
+ * via the CLI because the JSON-RPC `getObject({ showContent: true })` response
+ * omits `linkage_table` for packages (it ships disassembled bytecode instead).
+ */
+export function expandTransitiveDependencies(
+  suiBin: string,
+  network: 'mainnet' | 'testnet',
+  immediateDeps: string[],
+): string[] {
+  const seen = new Set<string>()
+  const queue: string[] = []
+  const enqueue = (id: string) => {
+    let normalized: string
+    try {
+      normalized = normalizeSuiAddress(id)
+    } catch {
+      return
+    }
+    if (!seen.has(normalized)) {
+      seen.add(normalized)
+      queue.push(normalized)
+    }
+  }
+  for (const dep of immediateDeps) enqueue(dep)
+
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    let raw: string
+    try {
+      raw = execFileSync(
+        suiBin,
+        ['client', '--client.env', network, 'object', id, '--json'],
+        { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] },
+      )
+    } catch {
+      continue
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    const pkg = (parsed as { content?: { Package?: { linkage_table?: Record<string, unknown> } } })?.content?.Package
+    const linkageTable = pkg?.linkage_table
+    if (!linkageTable || typeof linkageTable !== 'object') continue
+    for (const linkedKey of Object.keys(linkageTable)) {
+      enqueue(linkedKey)
+    }
+  }
+
+  return [...seen]
+}
+
 async function executeCapTransferPtb(
   client: SuiJsonRpcClient,
   keypair: Ed25519Keypair,
@@ -488,8 +551,20 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
   const deployerAddr = keypair.toSuiAddress()
 
   // Pre-flight 2: required flags for mainnet
-  if (network === 'mainnet' && !args.transferCapsTo) {
-    exitWithError(EXIT_PREFLIGHT_FAILED, 'Pre-flight: --transfer-caps-to is required for mainnet publish')
+  if (args.mainnetE2e && args.transferCapsTo) {
+    exitWithError(
+      EXIT_PREFLIGHT_FAILED,
+      'Pre-flight: --mainnet-e2e and --transfer-caps-to are mutually exclusive. '
+        + 'Use --mainnet-e2e for the publish-only e2e step, then resume with '
+        + '--resume-cap-transfer-from-manifest --transfer-caps-to=<multisig> for the handoff.',
+    )
+  }
+  if (network === 'mainnet' && !args.transferCapsTo && !args.mainnetE2e) {
+    exitWithError(
+      EXIT_PREFLIGHT_FAILED,
+      'Pre-flight: --transfer-caps-to is required for mainnet publish '
+        + '(or pass --mainnet-e2e to publish without cap handoff and resume the transfer later)',
+    )
   }
   if (args.transferCapsTo) {
     try {
@@ -526,17 +601,33 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
     cpSync(sourcePackageDir, tempPackageDir, { recursive: true })
     rmSync(join(tempPackageDir, 'Published.toml'), { force: true })
 
+    // Force the build to resolve deps against the target network so vendored
+    // and Published.toml-declared addresses (e.g. mainnet vs testnet kiosk
+    // extensions, Walrus mainnet-contracts vs testnet-contracts) pick the
+    // right [published.<env>] section. Without this the build would fall back
+    // to the operator's `sui client active-env`, which is often testnet even
+    // when we're publishing to mainnet.
     const buildOut = execFileSync(suiBin, [
-      'move', 'build',
+      'move',
+      '--client.env', network,
+      'build',
       '--dump-bytecode-as-base64',
       '--path', tempPackageDir,
     ], { encoding: 'utf8' })
     const built = JSON.parse(buildOut) as { modules: string[]; dependencies: string[] }
 
+    // Sui CLI 1.70 build only reports the immediate deps declared in Move.toml /
+    // Move.lock; it does NOT include transitive packages reachable via each dep's
+    // on-chain linkage_table. Sui chain's publish verifier rejects the PTB with
+    // `PublishUpgradeMissingDependency` if any transitively-reachable package is
+    // missing from the dep list (e.g. USDC → stablecoin → two_step_role on
+    // mainnet). Walk the linkage tables and union them in.
+    const fullDependencies = expandTransitiveDependencies(suiBin, network, built.dependencies)
+
     // Publish PTB
     const gasBudget = args.gasBudget ? BigInt(args.gasBudget) : DEFAULT_PUBLISH_GAS_BUDGET
     const publishTx = new Transaction()
-    const upgradeCap = publishTx.publish({ modules: built.modules, dependencies: built.dependencies })
+    const upgradeCap = publishTx.publish({ modules: built.modules, dependencies: fullDependencies })
     publishTx.transferObjects([upgradeCap], publishTx.pure.address(deployerAddr))
     publishTx.setSender(deployerAddr)
     publishTx.setGasBudget(gasBudget)
@@ -625,6 +716,12 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
         console.error(`Resume with: npm run publish:soulidity -- --resume-cap-transfer-from-manifest --transfer-caps-to=${args.transferCapsTo}`)
         process.exit(EXIT_TRANSFER_FAILED)
       }
+    } else if (args.mainnetE2e) {
+      console.warn(
+        `SOULIDITY_MAINNET_E2E_PUBLISH_ONLY=${deployment.packageId}\n`
+          + `Caps remain with deployer ${deployerAddr}. After smoke passes, run cap handoff:\n`
+          + `  npm run publish:soulidity -- --resume-cap-transfer-from-manifest --transfer-caps-to=<multisig>`,
+      )
     }
 
     console.log(JSON.stringify({

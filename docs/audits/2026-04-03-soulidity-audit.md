@@ -123,7 +123,7 @@ A follow-up audit pass flagged a UX-trap variant of L-1: `ensure_personal_kiosk_
 
 **Changes** (`move/soulidity/sources/market.move`):
 
-- `insert_or_assert_personal_kiosk_registration` — renamed from `upsert_personal_kiosk_registration`. Inserts on first call; subsequent calls with the same `(kiosk_id, kiosk_cap_id)` are no-ops; mismatched re-registration aborts with `EPersonalKioskMismatch`. Backs both `register_existing_personal_kiosk` and `ensure_personal_kiosk_registered`.
+- `insert_or_assert_personal_kiosk_registration` — renamed from `upsert_personal_kiosk_registration`. Inserts on first call; subsequent calls with the same `(kiosk_id, kiosk_cap_id)` are no-ops; mismatched re-registration aborts with `EPersonalKioskMismatch`. The public existing-kiosk path is now `ensure_personal_kiosk_registered`; the older `register_existing_personal_kiosk` wrapper was removed before fresh deploy.
 - `rebind_primary_kiosk(config, registry, old_kiosk: &Kiosk, new_personal_kiosk_cap, ctx)` — new public recovery path. Enforces:
   - caller already has a registration (`EPersonalKioskNotInitialized`),
   - `old_kiosk` matches the currently-registered kiosk id (`EOldKioskMismatch`),

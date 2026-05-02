@@ -399,6 +399,66 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(guardBlock).not.toContain('onMintTxExecuted')
   })
 
+  it('rejects failed import and wrap mint digests before persisting recovery', () => {
+    // signAndExecute returns the raw wallet execution result. These flows must
+    // reject failed Move effects before writing txDigest/recovery state, or a
+    // failed digest is replayed forever on retry.
+    const importSource = readFileSync('web/lib/hooks/use-import.ts', 'utf8')
+    const importSignStart = importSource.indexOf('const result = await signAndExecute(tx)')
+    const importSetDigest = importSource.indexOf('setTxDigest(executedDigest)', importSignStart)
+    const importPersist = importSource.indexOf('persistImportRecovery(recovery)', importSignStart)
+    expect(importSignStart).toBeGreaterThanOrEqual(0)
+    expect(importSetDigest).toBeGreaterThan(importSignStart)
+    expect(importPersist).toBeGreaterThan(importSetDigest)
+
+    const importGuardBlock = importSource.slice(importSignStart, importSetDigest)
+    expect(importGuardBlock).toContain("assertSuiTxSucceeded(result, 'Soul import transaction')")
+    expect(importGuardBlock).not.toContain('setTxDigest')
+    expect(importGuardBlock).not.toContain('persistImportRecovery')
+
+    const wrapSource = readFileSync('web/lib/hooks/use-wrap-publish.ts', 'utf8')
+    const wrapSignStart = wrapSource.indexOf('const txResult = await signAndExecute(tx)')
+    const wrapSetDigest = wrapSource.indexOf('setTxDigest(executedDigest)', wrapSignStart)
+    const wrapPersist = wrapSource.indexOf('persistWrapRecovery(recovery)', wrapSignStart)
+    expect(wrapSignStart).toBeGreaterThanOrEqual(0)
+    expect(wrapSetDigest).toBeGreaterThan(wrapSignStart)
+    expect(wrapPersist).toBeGreaterThan(wrapSetDigest)
+
+    const wrapGuardBlock = wrapSource.slice(wrapSignStart, wrapSetDigest)
+    expect(wrapGuardBlock).toContain("assertSuiTxSucceeded(txResult, 'Soul personal join transaction')")
+    expect(wrapGuardBlock).not.toContain('setTxDigest')
+    expect(wrapGuardBlock).not.toContain('persistWrapRecovery')
+  })
+
+  it('rejects failed collection transaction digests before persisting collection recovery', () => {
+    const source = readFileSync('web/lib/hooks/use-collection-publish.ts', 'utf8')
+
+    const createSignStart = source.indexOf('const result = await signAndExecute(tx)')
+    const createSetDigest = source.indexOf('setTxDigest(digest)', createSignStart)
+    expect(createSignStart).toBeGreaterThanOrEqual(0)
+    expect(createSetDigest).toBeGreaterThan(createSignStart)
+    const createGuardBlock = source.slice(createSignStart, createSetDigest)
+    expect(createGuardBlock).toContain("assertSuiTxSucceeded(result, 'Collection create transaction')")
+    expect(createGuardBlock).not.toContain('setTxDigest')
+    expect(createGuardBlock).not.toContain('recovery.txDigest')
+
+    const mintSignStart = source.indexOf('const mintResult = await signAndExecute(mintTx)')
+    const mintPersist = source.indexOf('soulState.mintDigest = mintDigest', mintSignStart)
+    expect(mintSignStart).toBeGreaterThan(createSetDigest)
+    expect(mintPersist).toBeGreaterThan(mintSignStart)
+    const mintGuardBlock = source.slice(mintSignStart, mintPersist)
+    expect(mintGuardBlock).toContain("assertSuiTxSucceeded(mintResult, 'Collection soul mint transaction')")
+    expect(mintGuardBlock).not.toContain('soulState.mintDigest')
+
+    const bindSignStart = source.indexOf('const addResult = await signAndExecute(addTx)')
+    const bindPersist = source.indexOf('soulState.bindDigest = bindDigest', bindSignStart)
+    expect(bindSignStart).toBeGreaterThan(mintPersist)
+    expect(bindPersist).toBeGreaterThan(bindSignStart)
+    const bindGuardBlock = source.slice(bindSignStart, bindPersist)
+    expect(bindGuardBlock).toContain("assertSuiTxSucceeded(addResult, 'Collection bind transaction')")
+    expect(bindGuardBlock).not.toContain('soulState.bindDigest')
+  })
+
   it('persists mint recovery before invoking onMintTxExecuted (clears batch recovery)', () => {
     // Pre-fix: usePublish() called `params.onMintTxExecuted?.()` (which clears
     // the persisted batch register-recovery row in the create flow) BEFORE it
@@ -555,6 +615,31 @@ describe('wallet-paid Walrus upload quote guards', () => {
     const onMintExecutedBlock = source.slice(onMintExecutedIdx, onMintExecutedIdx + 200)
     expect(onMintExecutedBlock).toContain('prepared.clearBatchRecovery')
     expect(onMintExecutedBlock).toContain('preparedBatchRef.current = null')
+  })
+
+  it('uses live assets-root state before paid post-mint sprite upload and retries stale root creation with the uploaded blob', () => {
+    // Post-mint sprite uploads are wallet-paid before the SoulAssets PTB signs.
+    // The append hook must not choose the first-root creation branch from stale
+    // mirrored DB state after paying Walrus storage. It should refresh the live
+    // SoulState root first, and if a concurrent tab creates the root between
+    // that refresh and this PTB, retry the existing-root append with the
+    // already-uploaded Blob object instead of abandoning it.
+    const source = readFileSync('web/lib/hooks/use-assets.ts', 'utf8')
+    const appendStart = source.indexOf('async function appendAndActivateSprite')
+    const liveRead = source.indexOf('resolveLiveSoulAssetsOnChainId(', appendStart)
+    const uploadCall = source.indexOf('const uploaded = await uploadAssetFile', appendStart)
+    expect(appendStart).toBeGreaterThanOrEqual(0)
+    expect(liveRead).toBeGreaterThan(appendStart)
+    expect(uploadCall).toBeGreaterThan(liveRead)
+
+    const appendBlock = source.slice(appendStart, source.indexOf('\n  async function deleteVersion', appendStart))
+    expect(appendBlock).toContain('const initialAssetsOnChainId = await resolveLiveSoulAssetsOnChainId')
+    expect(appendBlock).toContain('buildSpriteAppendTransaction({')
+    expect(appendBlock).toContain('assetsOnChainId: initialAssetsOnChainId')
+    expect(appendBlock).toContain('isAssetsRootAlreadyExistsError(txError)')
+    expect(appendBlock).toContain('const retryAssetsOnChainId = await resolveLiveSoulAssetsOnChainId')
+    expect(appendBlock).toContain('assetsOnChainId: retryAssetsOnChainId')
+    expect(appendBlock).toContain('blobObjectId: uploaded.blobObjectId')
   })
 
   it('maps duplicate expected blobIds to distinct created Blob objects via a per-blobId queue', () => {

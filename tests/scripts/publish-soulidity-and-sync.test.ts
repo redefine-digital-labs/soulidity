@@ -166,12 +166,18 @@ describe('parseArgs', () => {
       dryRunTransferOnly: false,
       resumeCapTransferFromManifest: false,
       useEnvKey: false,
+      mainnetE2e: false,
       gasBudget: null,
       paymentCoinType: null,
       transferCapsTo: null,
       trackUpgradeCap: true,
       privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
     })
+  })
+
+  it('parses --mainnet-e2e', () => {
+    expect(parseArgs(['--mainnet-e2e']).mainnetE2e).toBe(true)
+    expect(parseArgs([]).mainnetE2e).toBe(false)
   })
 
   it('parses --transfer-caps-to in both = and space forms', () => {

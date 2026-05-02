@@ -1851,8 +1851,8 @@ cd /Users/admin/Desktop/nao/clawnews/move/soulidity && \
    ```
    记录 `DEV_KIOSK_B_CAP_ID`，然后：
    ```bash
-   sui client call --package $PACKAGE_ID --module market \
-     --function register_existing_personal_kiosk \
+  sui client call --package $PACKAGE_ID --module market \
+    --function ensure_personal_kiosk_registered \
      --args $MARKET_CONFIG_ID $KIOSK_REGISTRY_OBJ $DEV_KIOSK_B_CAP_ID \
      --gas-budget 20000000 --dry-run 2>&1 | grep -E "abort"
    ```
@@ -2520,7 +2520,7 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 24. **Grant capacity 调整**：默认 `grant_capacity = 1`；`grant::set_grant_capacity(state, capacity, clock, ctx)` 要求 `capacity >= active_grant_count` + `capacity <= MAX_GRANT_CAPACITY`。GrantModal 不暴露此控件；Test 5.2a 通过 `window.__e2eSoulidity.setGrantCapacity` 由 Buyer owner stub 钱包签名完成；helper 内部已自动 POST `/api/souls/[id]/grant-capacity` 同步 mirror（无需测试侧再单独 cURL）。
 25. **SoulGrant 僵尸回收**：Test 5.6 revoke 后 `SoulGrant` owned object 仍留在 grantee 钱包；`grant::destroy_invalidated_grant` 无额外身份校验，但 Sui 在 Move 执行前做 owned-object 归属校验，sender 必须持有该对象。Test 5.8 切到 Agent Alpha 地址签名；Active grant 负向断言由 `protocol_tests.move::destroy_invalidated_grant_rejects_active_grant` 固化。
 26. **Listing 回收**：`market::delete_soul_listing` / `delete_collection_listing` 要求 `!is_active`。Test 11.0a / 11.0b 正向回收；负向 `EListingStillActive = 30` 由 `protocol_tests.move::delete_active_soul_listing_fails` 固化。
-27. **KioskRegistry insert-or-assert + rebind 全矩阵**：`register_existing_personal_kiosk` / `ensure_personal_kiosk_registered` 语义为 insert-or-assert，同 cap 幂等、不同 cap abort `EPersonalKioskMismatch`。换 kiosk 唯一合法路径 `market::rebind_primary_kiosk`，要求旧 kiosk `item_count == 0`（`EOldKioskNotEmpty = 31` / `EOldKioskMismatch = 32` / `ERebindSameKiosk = 33`）。Test 7.10h 由 dev 账户 `sui client call` 覆盖；`buildRebindPrimaryKioskTx` 不对终端用户暴露（无 `window.__e2eSoulidity` helper，设计如此）。
+27. **KioskRegistry insert-or-assert + rebind 全矩阵**：`ensure_personal_kiosk_registered` 是唯一现有 kiosk 登记入口，同 cap 幂等、不同 cap abort `EPersonalKioskMismatch`；旧 `register_existing_personal_kiosk` 已删除。换 kiosk 唯一合法路径 `market::rebind_primary_kiosk`，要求旧 kiosk `item_count == 0`（`EOldKioskNotEmpty = 31` / `EOldKioskMismatch = 32` / `ERebindSameKiosk = 33`）。Test 7.10h 由 dev 账户 `sui client call` 覆盖；`buildRebindPrimaryKioskTx` 不对终端用户暴露（无 `window.__e2eSoulidity` helper，设计如此）。
 28. **ContentAccess epoch-pinned**：`ContentAccessEntry.ownership_epoch_snapshot` 与 `SoulState.ownership_epoch` 必须相等才有效；Soul 转售后旧 subscriber 的 `has_access` 立即翻 false，stale 条目保留作审计；re-purchase 在新 owner 下覆盖 stale 行（TX 成功 + entry 刷新）。`ContentAccessGranted` 事件含 `ownership_epoch_snapshot`；Prisma / mirror / `asset-version-access.ts` / agent access route 全链路按 `ownershipEpochSnapshot = state.ownershipEpoch` 过滤，stale 直接 403 不触发 Seal round-trip。Test 7.10g 覆盖。
 29. **Seal document id 长度严格 `==`**：`seal_policy` / `skills` / `assets` 的 `assert_matching_document_id` 拒绝尾部多余字节；TS SDK 已对齐精确字节长度，E2E 无额外断言需求。
 30. **Category → Tags taxonomy**：Create 页无 Category 下拉，Market 页无 category filter，仅 Tags 自由输入 + `/api/souls/tags`（top 50 tag cloud）。Prisma `soul_assets.category` 仍保留 `@default("Other")` 但全程不暴露。Phase 1.2 / 2.7-2.8 / 10 不涉及 Category 断言。
