@@ -143,7 +143,7 @@ public(package) fun assert_matches_state(
     assert!(soul::metadata_id(state).contains(&object::id(metadata)), EMetadataStateMismatch);
 }
 
-public fun set_active_sprite(
+public(package) fun set_active_sprite(
     metadata: &mut SoulMetadata,
     state: &SoulState,
     binding: Option<AssetBinding>,
@@ -163,7 +163,7 @@ public fun set_active_sprite(
     });
 }
 
-public fun clear_active_sprite(
+public(package) fun clear_active_sprite(
     metadata: &mut SoulMetadata,
     state: &SoulState,
     ctx: &TxContext,
@@ -171,7 +171,7 @@ public fun clear_active_sprite(
     set_active_sprite(metadata, state, option::none(), ctx);
 }
 
-public fun set_active_voice(
+public(package) fun set_active_voice(
     metadata: &mut SoulMetadata,
     state: &SoulState,
     binding: Option<AssetBinding>,
@@ -191,7 +191,7 @@ public fun set_active_voice(
     });
 }
 
-public fun clear_active_voice(
+public(package) fun clear_active_voice(
     metadata: &mut SoulMetadata,
     state: &SoulState,
     ctx: &TxContext,

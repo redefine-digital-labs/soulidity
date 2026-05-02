@@ -68,14 +68,6 @@ public struct SoulGrantExpired has copy, drop {
     grantee: address,
 }
 
-public struct SoulGrantInvalidated has copy, drop {
-    grant_id: ID,
-    soul_id: ID,
-    grantee: address,
-    invalidated_by: address,
-    new_owner: address,
-}
-
 public struct GrantCapacityUpdated has copy, drop {
     soul_id: ID,
     old_capacity: u64,
@@ -141,12 +133,12 @@ public fun issue(
     assert!(grantee != @0x0, EInvalidGrantee);
     assert!(grantee != ctx.sender(), EInvalidGrantee);
     assert_valid_scope_mask(scope_mask);
+    assert_future_expiry(expires_at_ms, clock);
 
-    cleanup_expired_impl(state, clock);
+    cleanup_inactive_grant_for_grantee(state, grantee, clock);
 
-    let mut existing_index = soul::active_grant_index_by_grantee(state, grantee);
-    let mut replaced_slot = if (existing_index.is_some()) {
-        option::some(soul::remove_active_grant_at(state, option::extract(&mut existing_index)))
+    let mut replaced_slot = if (soul::active_grant_contains_grantee(state, grantee)) {
+        option::some(soul::remove_active_grant_for_grantee(state, grantee))
     } else {
         assert!(soul::active_grant_count(state) < soul::grant_capacity(state), EGrantCapacityExceeded);
         option::none()
@@ -162,8 +154,16 @@ public fun issue(
         expires_at_ms,
     };
     let grant_id = object::id(&grant);
+    let ownership_epoch_snapshot = soul::ownership_epoch(state);
 
-    soul::push_active_grant(state, grant_id, grantee, scope_mask, expires_at_ms);
+    soul::push_active_grant(
+        state,
+        grant_id,
+        grantee,
+        scope_mask,
+        expires_at_ms,
+        ownership_epoch_snapshot,
+    );
     if (replaced_slot.is_some()) {
         let old_slot = option::extract(&mut replaced_slot);
         event::emit(SoulGrantSuperseded {
@@ -193,10 +193,9 @@ public fun revoke(
     ctx: &TxContext,
 ) {
     soul::assert_owner(state, ctx.sender());
-    cleanup_expired_impl(state, clock);
-    let mut index = soul::active_grant_index_by_grantee(state, grantee);
-    assert!(index.is_some(), EGrantNotFound);
-    let slot = soul::remove_active_grant_at(state, option::extract(&mut index));
+    cleanup_inactive_grant_for_grantee(state, grantee, clock);
+    assert!(soul::active_grant_contains_grantee(state, grantee), EGrantNotFound);
+    let slot = soul::remove_active_grant_for_grantee(state, grantee);
     event::emit(SoulGrantRevoked {
         grant_id: soul::active_grant_slot_grant_id(&slot),
         soul_id: soul::soul_id(state),
@@ -214,11 +213,10 @@ public fun revoke_scope(
 ): SoulGrant {
     soul::assert_owner(state, ctx.sender());
     assert_valid_scope_mask(revoked_scope_mask);
-    cleanup_expired_impl(state, clock);
+    cleanup_inactive_grant_for_grantee(state, grantee, clock);
 
-    let mut index = soul::active_grant_index_by_grantee(state, grantee);
-    assert!(index.is_some(), EGrantNotFound);
-    let slot = soul::remove_active_grant_at(state, option::extract(&mut index));
+    assert!(soul::active_grant_contains_grantee(state, grantee), EGrantNotFound);
+    let slot = soul::remove_active_grant_for_grantee(state, grantee);
     let slot_scope_mask = soul::active_grant_slot_scope_mask(&slot);
     let retained_scope_mask = slot_scope_mask ^ (slot_scope_mask & revoked_scope_mask);
     assert!(retained_scope_mask != 0, EGrantScopeWouldRemoveAll);
@@ -233,12 +231,14 @@ public fun revoke_scope(
         expires_at_ms: *soul::active_grant_slot_expires_at_ms(&slot),
     };
     let new_grant_id = object::id(&new_grant);
+    let ownership_epoch_snapshot = soul::ownership_epoch(state);
     soul::push_active_grant(
         state,
         new_grant_id,
         grantee,
         retained_scope_mask,
         *soul::active_grant_slot_expires_at_ms(&slot),
+        ownership_epoch_snapshot,
     );
 
     event::emit(SoulGrantSuperseded {
@@ -260,18 +260,26 @@ public fun revoke_scope(
     new_grant
 }
 
-public fun cleanup_expired(state: &mut SoulState, clock: &Clock) {
-    cleanup_expired_impl(state, clock);
+public fun cleanup_inactive_grants(
+    state: &mut SoulState,
+    grantees: vector<address>,
+    clock: &Clock,
+) {
+    let mut grantees = grantees;
+    while (!grantees.is_empty()) {
+        let grantee = grantees.pop_back();
+        cleanup_inactive_grant_for_grantee(state, grantee, clock);
+    };
+    grantees.destroy_empty();
 }
 
 public fun set_grant_capacity(
     state: &mut SoulState,
     capacity: u64,
-    clock: &Clock,
+    _clock: &Clock,
     ctx: &TxContext,
 ) {
     soul::assert_owner(state, ctx.sender());
-    cleanup_expired_impl(state, clock);
     assert!(capacity >= soul::active_grant_count(state), EGrantCapacityTooLow);
     assert!(capacity <= MAX_GRANT_CAPACITY, EGrantCapacityTooHigh);
     let old_capacity = soul::grant_capacity(state);
@@ -292,7 +300,7 @@ public fun set_grant_capacity(
 /// must still own/provide the grant object for Sui input validation to pass.
 public fun destroy_invalidated_grant(
     grant: SoulGrant,
-    state: &SoulState,
+    state: &mut SoulState,
     clock: &Clock,
     ctx: &TxContext,
 ) {
@@ -300,10 +308,22 @@ public fun destroy_invalidated_grant(
 
     let grant_id = object::id(&grant);
     let epoch_mismatch = grant.ownership_epoch_snapshot != soul::ownership_epoch(state);
-    let not_in_active = soul::active_grant_index_by_id(state, grant_id).is_none();
+    let mut active_grantee = soul::active_grant_grantee_by_id(state, grant_id);
+    let not_in_active = active_grantee.is_none();
     let expired = grant.expires_at_ms.is_some()
-        && clock.timestamp_ms() > *grant.expires_at_ms.borrow();
+        && clock.timestamp_ms() >= *grant.expires_at_ms.borrow();
     assert!(epoch_mismatch || not_in_active || expired, EGrantStillActive);
+    if (active_grantee.is_some()) {
+        let grantee_for_active_slot = option::extract(&mut active_grantee);
+        let slot = soul::active_grant_slot_for_grantee(state, grantee_for_active_slot);
+        if (
+            soul::active_grant_slot_grant_id(slot) == grant_id
+                && soul::active_grant_slot_ownership_epoch_snapshot(slot) != soul::ownership_epoch(state)
+                || expired
+        ) {
+            let _ = soul::remove_active_grant_for_grantee(state, grantee_for_active_slot);
+        };
+    };
 
     let SoulGrant {
         id,
@@ -329,17 +349,9 @@ public(package) fun invalidate_all_for_owner_rotation(
     new_owner: address,
     invalidated_by: address,
 ) {
-    while (soul::active_grant_count(state) > 0) {
-        let last_index = soul::active_grant_count(state) - 1;
-        let slot = soul::remove_active_grant_at(state, last_index);
-        event::emit(SoulGrantInvalidated {
-            grant_id: soul::active_grant_slot_grant_id(&slot),
-            soul_id: soul::soul_id(state),
-            grantee: soul::active_grant_slot_grantee(&slot),
-            invalidated_by,
-            new_owner,
-        });
-    };
+    let _ = new_owner;
+    let _ = invalidated_by;
+    soul::clear_active_grant_count_for_owner_rotation(state);
 }
 
 public fun assert_active_with_scope(
@@ -355,36 +367,46 @@ public fun assert_active_with_scope(
     assert!(required_scope_mask != 0, EEmptyScopeMask);
 
     if (self.expires_at_ms.is_some()) {
-        assert!(clock.timestamp_ms() <= *self.expires_at_ms.borrow(), EGrantExpired);
+        assert!(clock.timestamp_ms() < *self.expires_at_ms.borrow(), EGrantExpired);
     };
 
-    let mut index = soul::active_grant_index_by_id(state, object::id(self));
-    assert!(index.is_some(), EGrantNotActive);
-    let slot = soul::active_grant_slot_at(state, option::extract(&mut index));
+    let mut grantee = soul::active_grant_grantee_by_id(state, object::id(self));
+    assert!(grantee.is_some(), EGrantNotActive);
+    let slot_grantee = option::extract(&mut grantee);
+    let slot = soul::active_grant_slot_for_grantee(state, slot_grantee);
     assert!(soul::active_grant_slot_grantee(slot) == self.grantee, EGrantIdMismatch);
     assert!(soul::active_grant_slot_scope_mask(slot) == self.scope_mask, EGrantIdMismatch);
+    assert!(
+        soul::active_grant_slot_ownership_epoch_snapshot(slot) == self.ownership_epoch_snapshot,
+        EGrantIdMismatch,
+    );
     assert!(has_required_scope(self.scope_mask, required_scope_mask), EGrantScopeMissing);
 }
 
-fun cleanup_expired_impl(state: &mut SoulState, clock: &Clock) {
-    let mut i = 0;
-    while (i < soul::active_grant_count(state)) {
-        let expired = {
-            let slot = soul::active_grant_slot_at(state, i);
-            soul::active_grant_slot_expires_at_ms(slot).is_some()
-                && clock.timestamp_ms() > *soul::active_grant_slot_expires_at_ms(slot).borrow()
-        };
+fun cleanup_inactive_grant_for_grantee(state: &mut SoulState, grantee: address, clock: &Clock) {
+    if (!soul::active_grant_has_grantee_row(state, grantee)) {
+        return
+    };
 
+    let slot = soul::active_grant_slot_for_grantee(state, grantee);
+    let expired = soul::active_grant_slot_expires_at_ms(slot).is_some()
+        && clock.timestamp_ms() >= *soul::active_grant_slot_expires_at_ms(slot).borrow();
+    let epoch_mismatch = soul::active_grant_slot_ownership_epoch_snapshot(slot) != soul::ownership_epoch(state);
+    if (expired || epoch_mismatch) {
+        let removed = soul::remove_active_grant_for_grantee(state, grantee);
         if (expired) {
-            let slot = soul::remove_active_grant_at(state, i);
             event::emit(SoulGrantExpired {
-                grant_id: soul::active_grant_slot_grant_id(&slot),
+                grant_id: soul::active_grant_slot_grant_id(&removed),
                 soul_id: soul::soul_id(state),
-                grantee: soul::active_grant_slot_grantee(&slot),
+                grantee: soul::active_grant_slot_grantee(&removed),
             });
-        } else {
-            i = i + 1;
         };
+    };
+}
+
+fun assert_future_expiry(expires_at_ms: Option<u64>, clock: &Clock) {
+    if (expires_at_ms.is_some()) {
+        assert!(*expires_at_ms.borrow() > clock.timestamp_ms(), EGrantExpired);
     };
 }
 

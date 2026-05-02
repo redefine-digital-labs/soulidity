@@ -61,6 +61,9 @@ const EListingStillActive: u64 = 30;
 const EOldKioskNotEmpty: u64 = 31;
 const EOldKioskMismatch: u64 = 32;
 const ERebindSameKiosk: u64 = 33;
+const EAssetsRootAlreadyExists: u64 = 34;
+const EContentAccessOwnerCannotPurchase: u64 = 35;
+const ESkillsRootAlreadyExists: u64 = 36;
 
 const ASSET_TYPE_SPRITE: u8 = 0;
 const ASSET_TYPE_AUDIO: u8 = 2;
@@ -583,18 +586,6 @@ public fun init_personal_kiosk(
     kiosk_id
 }
 
-public fun register_existing_personal_kiosk(
-    config: &MarketConfig,
-    registry: &mut KioskRegistry,
-    personal_kiosk_cap: &PersonalKioskCap,
-    ctx: &TxContext,
-) {
-    assert!(!config.paused, EMarketPaused);
-    let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
-    let kiosk_cap_id = object::id(personal_kiosk_cap);
-    insert_or_assert_personal_kiosk_registration(registry, ctx.sender(), kiosk_id, kiosk_cap_id);
-}
-
 public fun ensure_personal_kiosk_registered(
     config: &MarketConfig,
     registry: &mut KioskRegistry,
@@ -613,7 +604,7 @@ public fun ensure_personal_kiosk_registered(
 /// This is the ONLY public path that may change which `(kiosk_id, kiosk_cap_id)`
 /// is recorded under `PersonalKioskOwnerKey { owner }`. The caller must:
 ///   1. Already have an existing registration (otherwise use
-///      `register_existing_personal_kiosk` or `init_personal_kiosk`).
+///      `ensure_personal_kiosk_registered` or `init_personal_kiosk`).
 ///   2. Pass the currently-registered `old_kiosk` as proof; it must match the
 ///      on-chain registration.
 ///   3. Ensure the old kiosk holds zero items — any Soul still locked there
@@ -909,9 +900,13 @@ public fun create_collection_in_personal_kiosk(
     ctx: &mut TxContext,
 ): ID {
     assert!(!config.paused, EMarketPaused);
+    assert!(
+        ((config.platform_fee_bps as u64) + (extra_royalty_bps as u64)) <= (MAX_BPS as u64),
+        ECombinedFeesTooHigh,
+    );
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
 
-    let owner = kiosk_obj.owner();
+    let owner = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, owner, kiosk_id, object::id(personal_kiosk_cap));
 
@@ -990,6 +985,78 @@ public fun clear_active_voice(
     metadata::clear_active_voice(metadata_obj, state, ctx);
 }
 
+/// Atomically create the SoulAssets root for a Soul that minted without
+/// initial sprite assets, append the first sprite version, write the
+/// sprite config + mood map metadata blobs, and bind the sprite as the
+/// active version — all in one PTB.
+///
+/// Required when the Soul was minted via the bare-mint path (no sprite
+/// blob at mint time) and the owner is now uploading the first sprite.
+/// The legacy `assets::append_version_as_owner` path requires an existing
+/// `SoulAssets` root and is unreachable in this case.
+public fun init_assets_and_append_sprite_as_owner(
+    state: &mut SoulState,
+    metadata_obj: &mut SoulMetadata,
+    asset_name: std::string::String,
+    is_public: bool,
+    content_blob: Blob,
+    sprite_config: vector<u8>,
+    sprite_mood_map: vector<u8>,
+    sprite_config_key: std::string::String,
+    sprite_mood_map_key: std::string::String,
+    download_policy: u8,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    soul::assert_owner(state, ctx.sender());
+    assert!(soul::assets_id(state).is_none(), EAssetsRootAlreadyExists);
+
+    let mut assets_book = assets::create(soul::soul_id(state), ctx);
+    let version_index = assets::append_initial_version(
+        &mut assets_book,
+        asset_name,
+        is_public,
+        ASSET_TYPE_SPRITE,
+        content_blob,
+        clock,
+        ctx,
+    );
+
+    metadata::upsert_metadata_blob(metadata_obj, state, sprite_config_key, sprite_config, ctx);
+    metadata::upsert_metadata_blob(metadata_obj, state, sprite_mood_map_key, sprite_mood_map, ctx);
+
+    let binding = metadata::new_asset_binding(asset_name, version_index, download_policy);
+    assert_binding_matches_assets(&binding, &assets_book, ASSET_TYPE_SPRITE);
+    metadata::set_active_sprite(metadata_obj, state, option::some(binding), ctx);
+
+    soul::set_assets_id(state, object::id(&assets_book));
+    assets::share_assets(assets_book);
+}
+
+public fun init_skills_and_append_as_owner(
+    state: &mut SoulState,
+    skill_name: std::string::String,
+    is_public: bool,
+    content_blob: Blob,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    soul::assert_owner(state, ctx.sender());
+    assert!(soul::skills_id(state).is_none(), ESkillsRootAlreadyExists);
+
+    let mut skills_book = skills::create(soul::soul_id(state), ctx);
+    let _ = skills::append_initial_version(
+        &mut skills_book,
+        skill_name,
+        is_public,
+        content_blob,
+        clock,
+        ctx,
+    );
+    soul::set_skills_id(state, object::id(&skills_book));
+    skills::share_skills(skills_book);
+}
+
 #[allow(lint(share_owned))]
 public fun list_soul_fixed_price(
     config: &MarketConfig,
@@ -1002,13 +1069,17 @@ public fun list_soul_fixed_price(
     ctx: &mut TxContext,
 ): ID {
     assert!(!config.paused, EMarketPaused);
+    assert!(
+        ((config.platform_fee_bps as u64) + (soul::creator_royalty_bps(state) as u64)) <= (MAX_BPS as u64),
+        ECombinedFeesTooHigh,
+    );
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
     assert!(soul::current_owner(state) == ctx.sender(), EUnauthorizedKioskAccess);
     assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), EPersonalKioskMismatch);
 
-    let seller = kiosk_obj.owner();
+    let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
 
@@ -1050,6 +1121,14 @@ public fun list_soul_fixed_price_with_collection(
     ctx: &mut TxContext,
 ): ID {
     assert!(!config.paused, EMarketPaused);
+    assert!(
+        (
+            (config.platform_fee_bps as u64)
+                + (soul::creator_royalty_bps(state) as u64)
+                + (collection::extra_royalty_bps(collection_obj) as u64)
+        ) <= (MAX_BPS as u64),
+        ECombinedFeesTooHigh,
+    );
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     let collection_id = object::id(collection_obj);
@@ -1057,7 +1136,7 @@ public fun list_soul_fixed_price_with_collection(
     assert!(soul::current_owner(state) == ctx.sender(), EUnauthorizedKioskAccess);
     assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), EPersonalKioskMismatch);
 
-    let seller = kiosk_obj.owner();
+    let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
 
@@ -1094,7 +1173,7 @@ public fun cancel_soul_listing(
     assert!(listing.is_active, EInactiveListing);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(object::id(kiosk_obj) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(kiosk_obj.owner() == listing.seller, EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EUnauthorizedKioskAccess);
 
     let purchase_cap = take_soul_purchase_cap(listing);
     kiosk::return_purchase_cap<Soul>(kiosk_obj, purchase_cap);
@@ -1142,7 +1221,7 @@ public fun buy_soul_fixed_price_with_collection(
     config: &MarketConfig,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
-    collection_obj: &mut SoulCollection,
+    collection_obj: &SoulCollection,
     seller_kiosk: &mut Kiosk,
     buyer_kiosk: &mut Kiosk,
     buyer_personal_kiosk_cap: &PersonalKioskCap,
@@ -1189,7 +1268,7 @@ public fun list_collection_right_fixed_price(
     assert!(collection::current_holder_kiosk_id(collection_obj) == object::id(kiosk_obj), ECollectionMismatch);
     assert!(right_id == collection::right_id(collection_obj), ECollectionRightMismatch);
 
-    let seller = kiosk_obj.owner();
+    let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
 
@@ -1217,7 +1296,7 @@ public fun cancel_collection_listing(
     assert!(listing.is_active, EInactiveListing);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(object::id(kiosk_obj) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(kiosk_obj.owner() == listing.seller, EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EUnauthorizedKioskAccess);
 
     let purchase_cap = take_collection_purchase_cap(listing);
     kiosk::return_purchase_cap<SoulCollectionRight>(kiosk_obj, purchase_cap);
@@ -1247,7 +1326,7 @@ public fun buy_collection_right_fixed_price(
     assert!(listing.collection_id == object::id(collection_obj), ECollectionMismatch);
     assert!(listing.right_id == collection::right_id(collection_obj), ECollectionRightMismatch);
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(seller_kiosk.owner() == listing.seller, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingKioskMismatch);
     assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EUnauthorizedKioskAccess);
     collection::assert_tradeable(collection_obj);
@@ -1321,6 +1400,7 @@ public fun purchase_content_access(
 
     let price = content_access::price_atomic(access_list);
     assert!(price > 0, EContentAccessNotPurchasable);
+    assert!(ctx.sender() != soul::current_owner(state), EContentAccessOwnerCannotPurchase);
     let (platform_fee, _, total) = quote_content_access_purchase(config, price);
     assert!(payment.value() == total, EIncorrectPaymentAmount);
 
@@ -1435,9 +1515,13 @@ fun mint_soul_in_personal_kiosk_impl(
     ctx: &mut TxContext,
 ): ID {
     assert!(!config.paused, EMarketPaused);
+    assert!(
+        ((config.platform_fee_bps as u64) + (creator_royalty_bps as u64)) <= (MAX_BPS as u64),
+        ECombinedFeesTooHigh,
+    );
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
 
-    let owner = kiosk_obj.owner();
+    let owner = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, owner, kiosk_id, object::id(personal_kiosk_cap));
 
@@ -1708,7 +1792,7 @@ fun create_soul_listing(
         id: object::new(ctx),
         soul_id,
         state_id: object::id(state),
-        seller: kiosk_obj.owner(),
+        seller: personal_kiosk::owner(kiosk_obj),
         seller_kiosk_id: object::id(kiosk_obj),
         price,
         creator: soul::state_creator(state),
@@ -1744,7 +1828,7 @@ fun create_collection_listing(
         id: object::new(ctx),
         collection_id: object::id(collection_obj),
         right_id,
-        seller: kiosk_obj.owner(),
+        seller: personal_kiosk::owner(kiosk_obj),
         seller_kiosk_id: object::id(kiosk_obj),
         price,
         purchase_cap: option::some(purchase_cap),
@@ -1771,7 +1855,7 @@ fun buy_soul_impl(
     assert!(listing.state_id == object::id(state), EStateMismatch);
     assert!(listing.soul_id == soul::soul_id(state), EStateMismatch);
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(seller_kiosk.owner() == listing.seller, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingKioskMismatch);
     assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EUnauthorizedKioskAccess);
 

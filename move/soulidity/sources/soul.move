@@ -4,6 +4,7 @@ use std::string::String;
 use sui::display::{Self as display, Display};
 use sui::event;
 use sui::package::{Self as package, Publisher};
+use sui::table::{Self as table, Table};
 use walrus::blob::{Self as blob, Blob};
 
 const MAX_BPS: u16 = 10_000;
@@ -42,6 +43,7 @@ public struct ActiveGrantSlot has copy, drop, store {
     grantee: address,
     scope_mask: u64,
     expires_at_ms: Option<u64>,
+    ownership_epoch_snapshot: u64,
 }
 
 public struct SoulState has key {
@@ -53,7 +55,9 @@ public struct SoulState has key {
     current_kiosk_id: ID,
     ownership_epoch: u64,
     grant_capacity: u64,
-    active_grants: vector<ActiveGrantSlot>,
+    active_grants: Table<address, ActiveGrantSlot>,
+    active_grant_ids: Table<ID, address>,
+    active_grant_count: u64,
     memory_id: Option<ID>,
     metadata_id: Option<ID>,
     skills_id: Option<ID>,
@@ -146,12 +150,8 @@ public fun grant_capacity(self: &SoulState): u64 {
     self.grant_capacity
 }
 
-public fun active_grants(self: &SoulState): &vector<ActiveGrantSlot> {
-    &self.active_grants
-}
-
 public fun active_grant_count(self: &SoulState): u64 {
-    self.active_grants.length()
+    self.active_grant_count
 }
 
 public fun memory_id(self: &SoulState): &Option<ID> {
@@ -192,6 +192,10 @@ public fun active_grant_slot_scope_mask(self: &ActiveGrantSlot): u64 {
 
 public fun active_grant_slot_expires_at_ms(self: &ActiveGrantSlot): &Option<u64> {
     &self.expires_at_ms
+}
+
+public fun active_grant_slot_ownership_epoch_snapshot(self: &ActiveGrantSlot): u64 {
+    self.ownership_epoch_snapshot
 }
 
 public(package) fun mint(
@@ -240,7 +244,9 @@ public(package) fun create_state(
         current_kiosk_id: kiosk_id,
         ownership_epoch: 0,
         grant_capacity: DEFAULT_GRANT_CAPACITY,
-        active_grants: vector[],
+        active_grants: table::new(ctx),
+        active_grant_ids: table::new(ctx),
+        active_grant_count: 0,
         memory_id,
         metadata_id: option::none(),
         skills_id: option::none(),
@@ -316,52 +322,86 @@ public(package) fun set_grant_capacity(state: &mut SoulState, cap: u64) {
     state.grant_capacity = cap;
 }
 
-public(package) fun active_grant_index_by_grantee(
-    state: &SoulState,
-    grantee: address,
-): Option<u64> {
-    let mut i = 0;
-    while (i < state.active_grants.length()) {
-        if (state.active_grants.borrow(i).grantee == grantee) {
-            return option::some(i)
-        };
-        i = i + 1;
-    };
-    option::none()
-}
-
-public(package) fun active_grant_index_by_id(state: &SoulState, grant_id: ID): Option<u64> {
-    let mut i = 0;
-    while (i < state.active_grants.length()) {
-        if (state.active_grants.borrow(i).grant_id == grant_id) {
-            return option::some(i)
-        };
-        i = i + 1;
-    };
-    option::none()
-}
-
-public(package) fun active_grant_slot_at(state: &SoulState, index: u64): &ActiveGrantSlot {
-    state.active_grants.borrow(index)
-}
-
 public(package) fun push_active_grant(
     state: &mut SoulState,
     grant_id: ID,
     grantee: address,
     scope_mask: u64,
     expires_at_ms: Option<u64>,
+    ownership_epoch_snapshot: u64,
 ) {
-    state.active_grants.push_back(ActiveGrantSlot {
+    state.active_grants.add(grantee, ActiveGrantSlot {
         grant_id,
         grantee,
         scope_mask,
         expires_at_ms,
+        ownership_epoch_snapshot,
     });
+    state.active_grant_ids.add(grant_id, grantee);
+    state.active_grant_count = state.active_grant_count + 1;
 }
 
-public(package) fun remove_active_grant_at(state: &mut SoulState, index: u64): ActiveGrantSlot {
-    state.active_grants.swap_remove(index)
+public(package) fun active_grant_contains_grantee(
+    state: &SoulState,
+    grantee: address,
+): bool {
+    if (!state.active_grants.contains(grantee)) {
+        return false
+    };
+    let slot = &state.active_grants[grantee];
+    slot.ownership_epoch_snapshot == state.ownership_epoch && state.active_grant_count > 0
+}
+
+public(package) fun active_grant_contains_id(state: &SoulState, grant_id: ID): bool {
+    if (!state.active_grant_ids.contains(grant_id)) {
+        return false
+    };
+    let grantee = *state.active_grant_ids.borrow(grant_id);
+    if (!state.active_grants.contains(grantee)) {
+        return false
+    };
+    let slot = &state.active_grants[grantee];
+    slot.grant_id == grant_id
+        && slot.ownership_epoch_snapshot == state.ownership_epoch
+        && state.active_grant_count > 0
+}
+
+public(package) fun active_grant_has_grantee_row(
+    state: &SoulState,
+    grantee: address,
+): bool {
+    state.active_grants.contains(grantee)
+}
+
+public(package) fun active_grant_grantee_by_id(state: &SoulState, grant_id: ID): Option<address> {
+    if (state.active_grant_ids.contains(grant_id)) {
+        option::some(*state.active_grant_ids.borrow(grant_id))
+    } else {
+        option::none()
+    }
+}
+
+public(package) fun active_grant_slot_for_grantee(
+    state: &SoulState,
+    grantee: address,
+): &ActiveGrantSlot {
+    &state.active_grants[grantee]
+}
+
+public(package) fun remove_active_grant_for_grantee(
+    state: &mut SoulState,
+    grantee: address,
+): ActiveGrantSlot {
+    let slot = state.active_grants.remove(grantee);
+    state.active_grant_ids.remove(slot.grant_id);
+    if (slot.ownership_epoch_snapshot == state.ownership_epoch && state.active_grant_count > 0) {
+        state.active_grant_count = state.active_grant_count - 1;
+    };
+    slot
+}
+
+public(package) fun clear_active_grant_count_for_owner_rotation(state: &mut SoulState) {
+    state.active_grant_count = 0;
 }
 
 public(package) fun rotate_owner(
@@ -394,6 +434,8 @@ fun create_display(publisher: &Publisher, ctx: &mut TxContext): Display<Soul> {
     soul_display.add(b"description".to_string(), b"{description}".to_string());
     soul_display.add(b"image_url".to_string(), b"{image_url}".to_string());
     soul_display.add(b"creator".to_string(), b"{creator}".to_string());
+    soul_display.add(b"link".to_string(), b"{origin_ref}".to_string());
+    soul_display.add(b"project_url".to_string(), b"{origin_ref}".to_string());
     soul_display.update_version();
     soul_display
 }
@@ -448,7 +490,9 @@ public fun destroy_state_for_testing(self: SoulState) {
         current_kiosk_id: _,
         ownership_epoch: _,
         grant_capacity: _,
-        active_grants: _,
+        active_grants,
+        active_grant_ids,
+        active_grant_count: _,
         memory_id: _,
         metadata_id: _,
         skills_id: _,
@@ -456,5 +500,7 @@ public fun destroy_state_for_testing(self: SoulState) {
         collection_id: _,
         access_list_id: _,
     } = self;
+    table::drop(active_grants);
+    table::drop(active_grant_ids);
     id.delete();
 }

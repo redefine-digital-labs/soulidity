@@ -16,6 +16,8 @@ const EVersionOutOfBounds: u64 = 3;
 const EAssetVersionDeleted: u64 = 4;
 const EEmptyAssetName: u64 = 5;
 const EDocumentIdInvalidLength: u64 = 6;
+const EAssetVersionNotDeleted: u64 = 7;
+const EAssetVersionPurged: u64 = 8;
 
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
@@ -26,6 +28,7 @@ public struct AssetSlot has copy, drop, store {
     blob_object_id: ID,
     is_public: bool,
     deleted: bool,
+    purged: bool,
     asset_type: u8,
     created_at_ms: u64,
 }
@@ -68,6 +71,14 @@ public struct AssetVersionDeleted has copy, drop {
     deleted_by: address,
 }
 
+public struct AssetVersionPurged has copy, drop {
+    assets_id: ID,
+    soul_id: ID,
+    asset_name: String,
+    version_index: u64,
+    purged_by: address,
+}
+
 // ── Getters ──
 
 public fun soul_id(self: &SoulAssets): ID { self.soul_id }
@@ -95,6 +106,10 @@ public fun version_is_public(self: &SoulAssets, asset_name: String, version_inde
 
 public fun version_is_deleted(self: &SoulAssets, asset_name: String, version_index: u64): bool {
     borrow_slot(self, asset_name, version_index).deleted
+}
+
+public fun version_is_purged(self: &SoulAssets, asset_name: String, version_index: u64): bool {
+    borrow_slot(self, asset_name, version_index).purged
 }
 
 public fun version_asset_type(self: &SoulAssets, asset_name: String, version_index: u64): u8 {
@@ -200,6 +215,42 @@ public fun delete_version_as_owner(
     });
 }
 
+public fun purge_deleted_version_as_owner(
+    assets: &mut SoulAssets,
+    metadata_obj: &SoulMetadata,
+    state: &SoulState,
+    asset_name: String,
+    version_index: u64,
+    ctx: &mut TxContext,
+) {
+    assert_assets_matches_state(assets, state);
+    metadata::assert_matches_state(metadata_obj, state);
+    soul::assert_owner(state, ctx.sender());
+    metadata::assert_asset_version_not_active(metadata_obj, copy asset_name, version_index);
+    {
+        let slot = borrow_slot(assets, copy asset_name, version_index);
+        assert!(slot.deleted, EAssetVersionNotDeleted);
+        assert!(!slot.purged, EAssetVersionPurged);
+    };
+    let content_blob: Blob = dof::remove(
+        &mut assets.id,
+        AssetBlobKey {
+            asset_name: copy asset_name,
+            version_index,
+        },
+    );
+    blob::burn(content_blob);
+    let slot = borrow_slot_mut(assets, copy asset_name, version_index);
+    slot.purged = true;
+    event::emit(AssetVersionPurged {
+        assets_id: object::id(assets),
+        soul_id: assets.soul_id,
+        asset_name,
+        version_index,
+        purged_by: ctx.sender(),
+    });
+}
+
 public fun delete_version_as_granted_agent(
     assets: &mut SoulAssets,
     metadata_obj: &SoulMetadata,
@@ -241,6 +292,7 @@ entry fun seal_approve_asset_read_owner(
     assert_assets_matches_state(assets, state);
     let slot = borrow_slot(assets, asset_name, version_index);
     assert!(!slot.deleted, EAssetVersionDeleted);
+    assert!(!slot.purged, EAssetVersionPurged);
 }
 
 entry fun seal_approve_asset_read_granted_agent(
@@ -257,6 +309,7 @@ entry fun seal_approve_asset_read_granted_agent(
     assert_assets_matches_state(assets, state);
     let slot = borrow_slot(assets, asset_name, version_index);
     assert!(!slot.deleted, EAssetVersionDeleted);
+    assert!(!slot.purged, EAssetVersionPurged);
     grant::assert_active_with_scope(state, soul_grant, grant::scope_assets(), clock, ctx);
 }
 
@@ -297,6 +350,7 @@ fun append_version_impl(
         blob_object_id,
         is_public,
         deleted: false,
+        purged: false,
         asset_type,
         created_at_ms,
     };
@@ -402,6 +456,7 @@ public(package) fun assert_valid_asset_seal_request(
     assert_assets_matches_state(assets, state);
     let slot = borrow_slot(assets, asset_name, version_index);
     assert!(!slot.deleted, EAssetVersionDeleted);
+    assert!(!slot.purged, EAssetVersionPurged);
 }
 
 // ── Test helpers ──

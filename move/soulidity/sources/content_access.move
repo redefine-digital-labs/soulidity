@@ -39,7 +39,6 @@ public struct ContentAccessList has key {
     default_scope_mask: u64,
     default_access_duration_ms: Option<u64>,
     entries: table::Table<address, ContentAccessEntry>,
-    entry_count: u64,
 }
 
 // ── Events ──
@@ -83,12 +82,20 @@ public struct ContentAccessDurationUpdated has copy, drop {
     new_duration_ms: Option<u64>,
 }
 
+public struct ContentAccessScopeUpdated has copy, drop {
+    soul_id: ID,
+    access_list_id: ID,
+    old_scope_mask: u64,
+    new_scope_mask: u64,
+}
+
 // ── Getters ──
 
 public fun soul_id(self: &ContentAccessList): ID { self.soul_id }
 public fun creator(self: &ContentAccessList): address { self.creator }
 public fun price_atomic(self: &ContentAccessList): u64 { self.price_atomic }
-public fun entry_count(self: &ContentAccessList): u64 { self.entry_count }
+public fun default_scope_mask(self: &ContentAccessList): u64 { self.default_scope_mask }
+public fun entry_count(self: &ContentAccessList): u64 { self.entries.length() }
 public fun default_access_duration_ms(self: &ContentAccessList): Option<u64> { self.default_access_duration_ms }
 public fun entry_expires_at_ms(self: &ContentAccessList, addr: address): Option<u64> {
     if (!self.entries.contains(addr)) { return option::none() };
@@ -114,7 +121,7 @@ public fun has_access(
     required_scope: u64,
     clock: &Clock,
 ): bool {
-    assert!(self.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(self, state);
     if (!self.entries.contains(addr)) { return false };
     let entry = &self.entries[addr];
     if (entry.scope_mask & required_scope != required_scope) { return false };
@@ -145,7 +152,6 @@ public(package) fun create(
         default_scope_mask,
         default_access_duration_ms,
         entries: table::new(ctx),
-        entry_count: 0,
     };
     event::emit(ContentAccessListCreated {
         access_list_id: object::id(&list),
@@ -171,7 +177,7 @@ public(package) fun record_purchase(
     price_paid_atomic: u64,
     clock: &Clock,
 ) {
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(access_list, state);
     let current_epoch = soul::ownership_epoch(state);
     if (access_list.entries.contains(buyer)) {
         let entry = &access_list.entries[buyer];
@@ -181,12 +187,10 @@ public(package) fun record_purchase(
             // overwrite regardless of expiry, since `has_access` already treats
             // it as inactive.
             access_list.entries.remove(buyer);
-            access_list.entry_count = access_list.entry_count - 1;
         } else if (entry.expires_at_ms.is_some()) {
             let expires = *entry.expires_at_ms.borrow();
             assert!(clock.timestamp_ms() >= expires, EAlreadyHasAccess);
             access_list.entries.remove(buyer);
-            access_list.entry_count = access_list.entry_count - 1;
         } else {
             abort EAlreadyHasAccess
         };
@@ -202,7 +206,6 @@ public(package) fun record_purchase(
         ownership_epoch_snapshot: current_epoch,
     };
     access_list.entries.add(buyer, entry);
-    access_list.entry_count = access_list.entry_count + 1;
 
     event::emit(ContentAccessGranted {
         soul_id: access_list.soul_id,
@@ -236,7 +239,8 @@ public fun add_access(
 ) {
     let sender = ctx.sender();
     assert!(sender == soul::current_owner(state), ENotOwner);
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(access_list, state);
+    grant::assert_valid_scope_mask(scope_mask);
     let current_epoch = soul::ownership_epoch(state);
     if (access_list.entries.contains(grantee)) {
         let entry = &access_list.entries[grantee];
@@ -244,12 +248,10 @@ public fun add_access(
         if (stale_epoch) {
             // Pre-rotation entry — invalid, safe to overwrite.
             access_list.entries.remove(grantee);
-            access_list.entry_count = access_list.entry_count - 1;
         } else if (entry.expires_at_ms.is_some()) {
             let expires = *entry.expires_at_ms.borrow();
             assert!(clock.timestamp_ms() >= expires, EAlreadyHasAccess);
             access_list.entries.remove(grantee);
-            access_list.entry_count = access_list.entry_count - 1;
         } else {
             abort EAlreadyHasAccess
         };
@@ -264,7 +266,6 @@ public fun add_access(
         ownership_epoch_snapshot: current_epoch,
     };
     access_list.entries.add(grantee, entry);
-    access_list.entry_count = access_list.entry_count + 1;
 
     event::emit(ContentAccessGranted {
         soul_id: access_list.soul_id,
@@ -287,11 +288,10 @@ public fun revoke_access(
 ) {
     let sender = ctx.sender();
     assert!(sender == soul::current_owner(state), ENotOwner);
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(access_list, state);
     assert!(access_list.entries.contains(grantee), ENoAccessEntry);
 
     access_list.entries.remove(grantee);
-    access_list.entry_count = access_list.entry_count - 1;
 
     event::emit(ContentAccessRevoked {
         soul_id: access_list.soul_id,
@@ -310,7 +310,7 @@ public fun set_content_price(
 ) {
     let sender = ctx.sender();
     assert!(sender == soul::current_owner(state), ENotOwner);
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(access_list, state);
     let old_price = access_list.price_atomic;
     access_list.price_atomic = new_price_atomic;
     event::emit(ContentAccessPriceUpdated {
@@ -333,7 +333,7 @@ public fun set_content_access_duration(
 ) {
     let sender = ctx.sender();
     assert!(sender == soul::current_owner(state), ENotOwner);
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(access_list, state);
     let old_duration = access_list.default_access_duration_ms;
     access_list.default_access_duration_ms = new_duration_ms;
     event::emit(ContentAccessDurationUpdated {
@@ -342,6 +342,47 @@ public fun set_content_access_duration(
         old_duration_ms: old_duration,
         new_duration_ms,
     });
+}
+
+public fun set_default_scope_mask(
+    access_list: &mut ContentAccessList,
+    state: &SoulState,
+    new_scope_mask: u64,
+    ctx: &TxContext,
+) {
+    let sender = ctx.sender();
+    assert!(sender == soul::current_owner(state), ENotOwner);
+    assert_access_list_matches_state(access_list, state);
+    grant::assert_valid_scope_mask(new_scope_mask);
+    let old_scope_mask = access_list.default_scope_mask;
+    access_list.default_scope_mask = new_scope_mask;
+    event::emit(ContentAccessScopeUpdated {
+        soul_id: access_list.soul_id,
+        access_list_id: object::id(access_list),
+        old_scope_mask,
+        new_scope_mask,
+    });
+}
+
+public fun cleanup_stale_entries(
+    access_list: &mut ContentAccessList,
+    state: &SoulState,
+    addrs: vector<address>,
+    _ctx: &TxContext,
+) {
+    assert_access_list_matches_state(access_list, state);
+    let current_epoch = soul::ownership_epoch(state);
+    let mut addrs = addrs;
+    while (!addrs.is_empty()) {
+        let addr = addrs.pop_back();
+        if (access_list.entries.contains(addr)) {
+            let entry = &access_list.entries[addr];
+            if (entry.ownership_epoch_snapshot != current_epoch) {
+                access_list.entries.remove(addr);
+            };
+        };
+    };
+    addrs.destroy_empty();
 }
 
 // ── Seal approval for allowlisted users (skills) ──
@@ -356,10 +397,10 @@ entry fun seal_approve_skill_allowlisted(
     clock: &Clock,
     ctx: &TxContext,
 ) {
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(access_list, state);
     skills::assert_valid_skill_seal_request(id, state, skill_store, skill_name, version_index);
     let sender = ctx.sender();
-    assert!(has_access(access_list, state, sender, 4, clock), EScopeMismatch); // SCOPE_SKILLS = 4
+    assert!(has_access(access_list, state, sender, grant::scope_skills(), clock), EScopeMismatch);
 }
 
 // ── Seal approval for allowlisted users (assets) ──
@@ -374,10 +415,18 @@ entry fun seal_approve_asset_allowlisted(
     clock: &Clock,
     ctx: &TxContext,
 ) {
-    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert_access_list_matches_state(access_list, state);
     assets::assert_valid_asset_seal_request(id, state, asset_store, asset_name, version_index);
     let sender = ctx.sender();
-    assert!(has_access(access_list, state, sender, 8, clock), EScopeMismatch); // SCOPE_ASSETS = 8
+    assert!(has_access(access_list, state, sender, grant::scope_assets(), clock), EScopeMismatch);
+}
+
+public fun assert_access_list_matches_state(
+    access_list: &ContentAccessList,
+    state: &SoulState,
+) {
+    assert!(access_list.soul_id == soul::soul_id(state), EAccessListMismatch);
+    assert!(soul::access_list_id(state).contains(&object::id(access_list)), EAccessListMismatch);
 }
 
 // ── Test helpers ──
@@ -392,7 +441,6 @@ public fun destroy_for_testing(self: ContentAccessList) {
         default_scope_mask: _,
         default_access_duration_ms: _,
         entries,
-        entry_count: _,
     } = self;
     table::drop(entries);
     id.delete();

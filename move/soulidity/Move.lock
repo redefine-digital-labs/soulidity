@@ -4,44 +4,182 @@
 [move]
 version = 4
 
+[pinned.mainnet.Kiosk]
+source = { git = "https://github.com/MystenLabs/apps.git", subdir = "kiosk", rev = "7a07937149c0af057be8f6747e60d0f1acd88fde" }
+use_environment = "mainnet"
+manifest_digest = "BA49968BFF7C4A4D9F013B59535CF8B89D935A7C6D63C121606B1FE844829B72"
+deps = { Sui = "Sui" }
+
+[pinned.mainnet.MoveStdlib]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "6d4ec0b0621dd9555753c9ecd5be021b25a0d267" }
+use_environment = "mainnet"
+manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
+deps = {}
+
+[pinned.mainnet.MoveStdlib_1]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "75515e79e182c37b135a9984c6c1f08a2c383736" }
+use_environment = "mainnet"
+manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
+deps = {}
+
+[pinned.mainnet.MoveStdlib_2]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "eddf9c94dfcc9b86e5c4966748252148d73bb217" }
+use_environment = "mainnet"
+manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
+deps = {}
+
+[pinned.mainnet.MoveStdlib_3]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "a4185da5659d8d299d34e1bb2515ff1f7e32a20a" }
+use_environment = "mainnet"
+manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
+deps = {}
+
+[pinned.mainnet.Sui]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "6d4ec0b0621dd9555753c9ecd5be021b25a0d267" }
+use_environment = "mainnet"
+manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
+deps = { MoveStdlib = "MoveStdlib" }
+
+[pinned.mainnet.Sui_1]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736" }
+use_environment = "mainnet"
+manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
+deps = { MoveStdlib = "MoveStdlib_1" }
+
+[pinned.mainnet.Sui_2]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "eddf9c94dfcc9b86e5c4966748252148d73bb217" }
+use_environment = "mainnet"
+manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
+deps = { MoveStdlib = "MoveStdlib_2" }
+
+[pinned.mainnet.Sui_3]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "a4185da5659d8d299d34e1bb2515ff1f7e32a20a" }
+use_environment = "mainnet"
+manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
+deps = { MoveStdlib = "MoveStdlib_3" }
+
+[pinned.mainnet.WAL]
+source = { git = "https://github.com/MystenLabs/walrus.git", subdir = "mainnet-contracts/wal", rev = "a19764ff77f501a79db88dc6d922a2c73848e989" }
+use_environment = "mainnet"
+manifest_digest = "08D7F4F08A90745595084EF351C2DC663EB302DA8C5AAE8A4E23B508AF951A80"
+deps = { Sui = "Sui_2" }
+
+[pinned.mainnet.Walrus]
+source = { git = "https://github.com/MystenLabs/walrus.git", subdir = "mainnet-contracts/walrus", rev = "a19764ff77f501a79db88dc6d922a2c73848e989" }
+use_environment = "mainnet"
+manifest_digest = "F5EE3601B0F0F292A09B1CF6BFF941E8BCD70C7624692070796849E0B7FB337B"
+deps = { Sui = "Sui_2", WAL = "WAL" }
+
+[pinned.mainnet.soulidity]
+source = { root = true }
+use_environment = "mainnet"
+manifest_digest = "778DB37FA808DDD70C4EE585D70483F35E9697E67B6C9D2864D81E0E7A280B92"
+deps = { Kiosk = "Kiosk", Sui = "Sui_1", Walrus = "Walrus", stablecoin = "stablecoin", sui_extensions = "sui_extensions", usdc = "usdc" }
+
+[pinned.mainnet.stablecoin]
+source = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/stablecoin", rev = "d0904aec1bbe46b38f811654070032363a5a2966" }
+use_environment = "mainnet"
+manifest_digest = "D1FE50C597BE535CA6E8A169082748AB89005284E0D8263275A45A017CFA40D9"
+deps = { Sui = "Sui_3", sui_extensions = "sui_extensions" }
+
+[pinned.mainnet.sui_extensions]
+source = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/sui_extensions", rev = "d0904aec1bbe46b38f811654070032363a5a2966" }
+use_environment = "mainnet"
+manifest_digest = "A441490BFF45892FF2D2F51A362331BAB479ECDAF138E673D20F5D457D2F65B9"
+deps = { Sui = "Sui_3" }
+
+[pinned.mainnet.usdc]
+source = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/usdc", rev = "d0904aec1bbe46b38f811654070032363a5a2966" }
+use_environment = "mainnet"
+manifest_digest = "BF0D9AE6518F5174EE87CBF91CFDB3F76B83EF440B11AC27486B1448973CD02B"
+deps = { Sui = "Sui_3", stablecoin = "stablecoin", sui_extensions = "sui_extensions" }
+
 [pinned.testnet.Kiosk]
-source = { local = "../vendor/kiosk" }
+source = { git = "https://github.com/MystenLabs/apps.git", subdir = "kiosk", rev = "7a07937149c0af057be8f6747e60d0f1acd88fde" }
 use_environment = "testnet"
-manifest_digest = "32841847BCFC634978ECD6E58C32EB22D00642C80BDA51B63540C4802D3C4984"
-deps = { MoveStdlib = "MoveStdlib", Sui = "Sui" }
+manifest_digest = "DEE42C89BB3F8EC67C17BC4AE0CEBE14A28F4FA787E857046EAF0FA38D556496"
+deps = { Sui = "Sui" }
 
 [pinned.testnet.MoveStdlib]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "6d4ec0b0621dd9555753c9ecd5be021b25a0d267" }
+use_environment = "testnet"
+manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
+deps = {}
+
+[pinned.testnet.MoveStdlib_1]
 source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "75515e79e182c37b135a9984c6c1f08a2c383736" }
 use_environment = "testnet"
 manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
 deps = {}
 
+[pinned.testnet.MoveStdlib_2]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "eddf9c94dfcc9b86e5c4966748252148d73bb217" }
+use_environment = "testnet"
+manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
+deps = {}
+
+[pinned.testnet.MoveStdlib_3]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "a4185da5659d8d299d34e1bb2515ff1f7e32a20a" }
+use_environment = "testnet"
+manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
+deps = {}
+
 [pinned.testnet.Sui]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "6d4ec0b0621dd9555753c9ecd5be021b25a0d267" }
 use_environment = "testnet"
 manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D01C"
 deps = { MoveStdlib = "MoveStdlib" }
 
-[pinned.testnet.WAL]
-source = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/wal", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }
+[pinned.testnet.Sui_1]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "75515e79e182c37b135a9984c6c1f08a2c383736" }
 use_environment = "testnet"
-manifest_digest = "CB0E989DC0CE284D021BBD9D8815A6973E1291F0DE7FDEFC0CA58B159CA34685"
-deps = { Sui = "Sui" }
+manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D01C"
+deps = { MoveStdlib = "MoveStdlib_1" }
+
+[pinned.testnet.Sui_2]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "eddf9c94dfcc9b86e5c4966748252148d73bb217" }
+use_environment = "testnet"
+manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D01C"
+deps = { MoveStdlib = "MoveStdlib_2" }
+
+[pinned.testnet.Sui_3]
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "a4185da5659d8d299d34e1bb2515ff1f7e32a20a" }
+use_environment = "testnet"
+manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D01C"
+deps = { MoveStdlib = "MoveStdlib_3" }
+
+[pinned.testnet.WAL]
+source = { git = "https://github.com/MystenLabs/walrus.git", subdir = "mainnet-contracts/wal", rev = "a19764ff77f501a79db88dc6d922a2c73848e989" }
+use_environment = "testnet"
+manifest_digest = "16A0A56D2106505227D18ABC1405E8A5934D13F6BBE678F8FB857C0D364BAFC8"
+deps = { Sui = "Sui_2" }
 
 [pinned.testnet.Walrus]
-source = { git = "https://github.com/MystenLabs/walrus.git", subdir = "testnet-contracts/walrus", rev = "65b7dde1482dc666f8414ea83e010cd4e9900024" }
+source = { git = "https://github.com/MystenLabs/walrus.git", subdir = "mainnet-contracts/walrus", rev = "a19764ff77f501a79db88dc6d922a2c73848e989" }
 use_environment = "testnet"
-manifest_digest = "32BBB223F0C45185398F10007FAF8D85A66E696B8090E8E44CAA492E377A5740"
-deps = { Sui = "Sui", WAL = "WAL" }
+manifest_digest = "8C46F2A9A10425E18570F04D7E2A96351FEC389DD4AA0225C5B29DA79478AA03"
+deps = { Sui = "Sui_2", WAL = "WAL" }
 
 [pinned.testnet.soulidity]
 source = { root = true }
 use_environment = "testnet"
-manifest_digest = "F427813C1C174E0EE3FDE4FDA8F2FA3CCE518ED4F44AE565A527B913D33A8B59"
-deps = { Kiosk = "Kiosk", Sui = "Sui", Walrus = "Walrus", usdc = "usdc" }
+manifest_digest = "EACB867933214CEEF71C415BA5B4C1C9490D8A1ECAFCB6875BA1D54025B514D6"
+deps = { Kiosk = "Kiosk", Sui = "Sui_1", Walrus = "Walrus", stablecoin = "stablecoin", sui_extensions = "sui_extensions", usdc = "usdc" }
+
+[pinned.testnet.stablecoin]
+source = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/stablecoin", rev = "d0904aec1bbe46b38f811654070032363a5a2966" }
+use_environment = "testnet"
+manifest_digest = "CA8A8C98A033B13B98F0E9D48DA2051BB8943A549EE1F9C080A84F7B9FAF0F0C"
+deps = { Sui = "Sui_3", sui_extensions = "sui_extensions" }
+
+[pinned.testnet.sui_extensions]
+source = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/sui_extensions", rev = "d0904aec1bbe46b38f811654070032363a5a2966" }
+use_environment = "testnet"
+manifest_digest = "1AD09726AC05F000A00A1E0CB700C2036E67E05ACD42D402DD6B54FF2EFBB1E9"
+deps = { Sui = "Sui_3" }
 
 [pinned.testnet.usdc]
-source = { local = "../test_usdc" }
+source = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/usdc", rev = "d0904aec1bbe46b38f811654070032363a5a2966" }
 use_environment = "testnet"
-manifest_digest = "23FA03E72C4D9E8368DB7DB27AB4276CF575F1C2275D5592EF047A67F233C0EA"
-deps = { Sui = "Sui" }
+manifest_digest = "ABCB372881B4AA0562116087311A98C504CD81780C15E124BB70CD13E5A21CE4"
+deps = { Sui = "Sui_3", stablecoin = "stablecoin", sui_extensions = "sui_extensions" }

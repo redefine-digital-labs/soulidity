@@ -15,6 +15,8 @@ const ESkillsStateMismatch: u64 = 2;
 const ESkillSlotMissing: u64 = 3;
 const ESkillVersionDeleted: u64 = 4;
 const EEmptySkillName: u64 = 5;
+const ESkillVersionNotDeleted: u64 = 6;
+const ESkillVersionPurged: u64 = 7;
 
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
@@ -23,6 +25,7 @@ public struct SkillSlot has copy, drop, store {
     blob_object_id: ID,
     is_public: bool,
     deleted: bool,
+    purged: bool,
     created_at_ms: u64,
 }
 
@@ -61,6 +64,14 @@ public struct SkillVersionDeleted has copy, drop {
     deleted_by: address,
 }
 
+public struct SkillVersionPurged has copy, drop {
+    skills_id: ID,
+    soul_id: ID,
+    skill_name: String,
+    version_index: u64,
+    purged_by: address,
+}
+
 public fun soul_id(self: &SoulSkills): ID {
     self.soul_id
 }
@@ -94,6 +105,10 @@ public fun version_is_public(self: &SoulSkills, skill_name: String, version_inde
 
 public fun version_is_deleted(self: &SoulSkills, skill_name: String, version_index: u64): bool {
     borrow_slot(self, skill_name, version_index).deleted
+}
+
+public fun version_is_purged(self: &SoulSkills, skill_name: String, version_index: u64): bool {
+    borrow_slot(self, skill_name, version_index).purged
 }
 
 public fun version_created_at_ms(self: &SoulSkills, skill_name: String, version_index: u64): u64 {
@@ -177,6 +192,39 @@ public fun delete_version_as_owner(
     });
 }
 
+public fun purge_deleted_version_as_owner(
+    skills: &mut SoulSkills,
+    state: &SoulState,
+    skill_name: String,
+    version_index: u64,
+    ctx: &mut TxContext,
+) {
+    soul::assert_owner(state, ctx.sender());
+    assert_skills_matches_state(skills, state);
+    {
+        let slot = borrow_slot(skills, copy skill_name, version_index);
+        assert!(slot.deleted, ESkillVersionNotDeleted);
+        assert!(!slot.purged, ESkillVersionPurged);
+    };
+    let content_blob: Blob = dof::remove(
+        &mut skills.id,
+        SkillBlobKey {
+            skill_name: copy skill_name,
+            version_index,
+        },
+    );
+    blob::burn(content_blob);
+    let slot = borrow_slot_mut(skills, copy skill_name, version_index);
+    slot.purged = true;
+    event::emit(SkillVersionPurged {
+        skills_id: object::id(skills),
+        soul_id: soul::soul_id(state),
+        skill_name,
+        version_index,
+        purged_by: ctx.sender(),
+    });
+}
+
 public fun delete_version_as_granted_agent(
     skills: &mut SoulSkills,
     state: &SoulState,
@@ -213,6 +261,7 @@ entry fun seal_approve_private_read_owner(
     assert_skills_matches_state(skills, state);
     let slot = borrow_slot(skills, skill_name, version_index);
     assert!(!slot.deleted, ESkillVersionDeleted);
+    assert!(!slot.purged, ESkillVersionPurged);
 }
 
 entry fun seal_approve_private_read_granted_agent(
@@ -229,6 +278,7 @@ entry fun seal_approve_private_read_granted_agent(
     assert_skills_matches_state(skills, state);
     let slot = borrow_slot(skills, skill_name, version_index);
     assert!(!slot.deleted, ESkillVersionDeleted);
+    assert!(!slot.purged, ESkillVersionPurged);
     grant::assert_active_with_scope(state, soul_grant, grant::scope_skills(), clock, ctx);
 }
 
@@ -248,6 +298,7 @@ fun append_version_impl(
         blob_object_id,
         is_public,
         deleted: false,
+        purged: false,
         created_at_ms,
     };
 
@@ -370,6 +421,7 @@ public(package) fun assert_valid_skill_seal_request(
     assert_skills_matches_state(skills, state);
     let slot = borrow_slot(skills, skill_name, version_index);
     assert!(!slot.deleted, ESkillVersionDeleted);
+    assert!(!slot.purged, ESkillVersionPurged);
 }
 
 #[test_only]
