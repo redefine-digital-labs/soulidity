@@ -99,7 +99,7 @@ describe('web personal kiosk resolution', () => {
     })
   })
 
-  it('falls back to the wallet-owned kiosk when the registry is stale but only one kiosk is still owned', async () => {
+  it('throws a conflict error when the registry is stale and the wallet owns a non-matching kiosk', async () => {
     mockedListOwnedPersonalKioskCaps.mockResolvedValueOnce([{
       ownerAddress: OWNER_ADDRESS,
       currentKioskId: ACTIVE_KIOSK_ID,
@@ -112,13 +112,26 @@ describe('web personal kiosk resolution', () => {
 
     const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
 
-    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
-      status: 'ready',
-      kiosk: {
-        ownerAddress: OWNER_ADDRESS,
-        currentKioskId: ACTIVE_KIOSK_ID,
-        currentKioskCapOnChainId: ACTIVE_CAP_ID,
-      },
+    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toMatchObject({
+      name: 'SoulidityPersonalKioskInvariantError',
+      kind: 'conflict',
+      message: expect.stringContaining(STALE_KIOSK_ID),
+    })
+  })
+
+  it('throws a conflict error when the wallet owns no caps but the registry has a stale entry', async () => {
+    mockedListOwnedPersonalKioskCaps.mockResolvedValueOnce([])
+    mockedGetRegisteredPersonalKiosk.mockResolvedValueOnce({
+      kioskId: STALE_KIOSK_ID,
+      kioskCapOnChainId: STALE_CAP_ID,
+    })
+
+    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+
+    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toMatchObject({
+      name: 'SoulidityPersonalKioskInvariantError',
+      kind: 'conflict',
+      message: expect.stringContaining(STALE_CAP_ID),
     })
   })
 
@@ -149,7 +162,7 @@ describe('web personal kiosk resolution', () => {
     })
   })
 
-  it('picks the lowest kiosk id when the registry is stale and the wallet owns multiple kiosks', async () => {
+  it('throws a conflict error when the registry is stale and the wallet owns multiple non-matching kiosks', async () => {
     mockedListOwnedPersonalKioskCaps.mockResolvedValueOnce([
       {
         ownerAddress: OWNER_ADDRESS,
@@ -169,13 +182,10 @@ describe('web personal kiosk resolution', () => {
 
     const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
 
-    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
-      status: 'ready',
-      kiosk: {
-        ownerAddress: OWNER_ADDRESS,
-        currentKioskId: ACTIVE_KIOSK_ID,
-        currentKioskCapOnChainId: ACTIVE_CAP_ID,
-      },
+    await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toMatchObject({
+      name: 'SoulidityPersonalKioskInvariantError',
+      kind: 'conflict',
+      message: expect.stringContaining(STALE_KIOSK_ID),
     })
   })
 
@@ -199,10 +209,7 @@ describe('web personal kiosk resolution', () => {
         currentKioskCapOnChainId: SECOND_CAP_ID,
       },
     ])
-    mockedGetRegisteredPersonalKiosk.mockResolvedValueOnce({
-      kioskId: STALE_KIOSK_ID,
-      kioskCapOnChainId: ACTIVE_CAP_ID,
-    })
+    mockedGetRegisteredPersonalKiosk.mockResolvedValueOnce(null)
 
     const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
 
@@ -214,5 +221,6 @@ describe('web personal kiosk resolution', () => {
         currentKioskCapOnChainId: SECOND_CAP_ID,
       },
     })
+    expect(mockedFilterExistingPersonalKiosks).toHaveBeenCalled()
   })
 })

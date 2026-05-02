@@ -7,7 +7,7 @@ import { selectCoinObjectIdsForAmountAcrossPages } from '@/lib/soulidity/coin-se
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getMarketConfig, quoteSoulPurchase } from '@/lib/soulidity/queries'
-import { resolveOwnedPersonalKiosk } from '@/lib/soulidity/personal-kiosk'
+import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@/lib/soulidity/personal-kiosk'
 import { buildBuySoulTx } from '@/lib/soulidity/tx/buy'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
@@ -171,6 +171,9 @@ export async function POST(
       },
     })
   } catch (error) {
+    if (error instanceof SoulidityPersonalKioskInvariantError && error.kind === 'conflict') {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
     console.error('[agent-purchase-prepare] Failed', {
       agentMemberId: auth.agent.agentMemberId,
       soulId: soul.onChainId,

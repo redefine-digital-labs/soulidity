@@ -58,18 +58,23 @@ export async function resolveOwnedPersonalKiosk(params: {
 }): Promise<ResolvePersonalKioskResult> {
   const ownerAddresses = params.ownerAddresses
     .map((ownerAddress) => normalizeOwnerAddress(ownerAddress))
-  const kiosks = await Promise.all(ownerAddresses.map((ownerAddress) => listOwnedPersonalKioskCaps(ownerAddress)))
-  const flattened = dedupeAndSortOwnedPersonalKiosks(await filterExistingPersonalKiosks(kiosks.flat()))
-
-  if (flattened.length === 0) {
-    return { status: 'missing' }
-  }
+  const kiosks = await Promise.all(
+    ownerAddresses.map((ownerAddress) => listOwnedPersonalKioskCaps(ownerAddress)),
+  )
+  const flattened = dedupeAndSortOwnedPersonalKiosks(
+    await filterExistingPersonalKiosks(kiosks.flat()),
+  )
 
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const marketPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   await getCachedMarketConfig(marketConfigId, marketPackageId)
 
+  // Registry lookup runs before the missing-flattened check: a stale entry from a
+  // previously-lost cap will block any future TX that tries to register a new kiosk
+  // for this owner (market::insert_or_assert_personal_kiosk_registration aborts with
+  // EPersonalKioskMismatch). Surface that as a conflict instead of letting it abort
+  // on-chain.
   for (const ownerAddress of ownerAddresses) {
     const registered = await getRegisteredPersonalKiosk({
       marketConfigId,
@@ -79,20 +84,26 @@ export async function resolveOwnedPersonalKiosk(params: {
     })
     if (!registered) continue
 
-    const ownedByOwner = flattened.filter((kiosk) => sameSuiValue(kiosk.ownerAddress, ownerAddress))
-
-    const matched = ownedByOwner.find((kiosk) => (
-      sameSuiValue(kiosk.currentKioskId, registered.kioskId)
+    const matched = flattened.find((kiosk) => (
+      sameSuiValue(kiosk.ownerAddress, ownerAddress)
+      && sameSuiValue(kiosk.currentKioskId, registered.kioskId)
       && sameSuiValue(kiosk.currentKioskCapOnChainId, registered.kioskCapOnChainId)
     ))
     if (matched) {
       return { status: 'ready', kiosk: matched }
     }
 
-    if (ownedByOwner.length > 0) {
-      return { status: 'ready', kiosk: ownedByOwner[0]! }
-    }
+    throw new SoulidityPersonalKioskInvariantError(
+      `Wallet ${ownerAddress} has a Soulidity kiosk registration `
+      + `(kiosk ${registered.kioskId}, cap ${registered.kioskCapOnChainId}) `
+      + `but does not own the matching PersonalKioskCap. `
+      + `Locate the original cap (search both IDs on Sui Explorer) or use a different wallet.`,
+      'conflict',
+    )
   }
 
+  if (flattened.length === 0) {
+    return { status: 'missing' }
+  }
   return { status: 'ready', kiosk: flattened[0]! }
 }

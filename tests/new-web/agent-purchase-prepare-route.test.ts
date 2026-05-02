@@ -16,6 +16,16 @@ const mockedGetRequiredSoulidityEnv = vi.hoisted(() => vi.fn())
 const mockedGetMarketConfig = vi.hoisted(() => vi.fn())
 const mockedQuoteSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
+const MockSoulidityPersonalKioskInvariantError = vi.hoisted(
+  () => class MockSoulidityPersonalKioskInvariantError extends Error {
+    kind: 'conflict' | 'service'
+
+    constructor(message: string, kind: 'conflict' | 'service' = 'service') {
+      super(message)
+      this.kind = kind
+    }
+  },
+)
 const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulPreparedPurchase: {
@@ -51,6 +61,7 @@ vi.mock('@/lib/soulidity/queries', () => ({
 
 vi.mock('@/lib/soulidity/personal-kiosk', () => ({
   resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
+  SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
 }))
 
 vi.mock('@/lib/soulidity/tx/buy', () => ({
@@ -135,6 +146,41 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     expect(tx.setSender).not.toHaveBeenCalled()
     expect(mockedPrisma.soulPreparedPurchase.create).not.toHaveBeenCalled()
     await expect(response.json()).resolves.toEqual({ error: 'Soul is not listed for sale' })
+  })
+
+  it('surfaces a stale Soulidity kiosk registration as 409 with the conflict message', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      onChainId: SOUL_ID,
+      listingStatus: 'listed',
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '2000000',
+      creatorRoyaltyBps: 0,
+      collection: null,
+      collectionOnChainId: null,
+      currentKioskId: KIOSK_ID,
+      stateOnChainId: STATE_ID,
+    })
+    mockedQuoteSoulPurchase.mockReturnValueOnce({
+      platformFeeAtomic: '0',
+      creatorRoyaltyAtomic: '0',
+      totalAtomic: '2000000',
+    })
+    mockedResolveOwnedPersonalKiosk.mockRejectedValueOnce(
+      new MockSoulidityPersonalKioskInvariantError(
+        'Wallet 0xabc has a Soulidity kiosk registration (kiosk 0xkiosk, cap 0xcap) but does not own the matching PersonalKioskCap.',
+        'conflict',
+      ),
+    )
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Wallet 0xabc has a Soulidity kiosk registration (kiosk 0xkiosk, cap 0xcap) but does not own the matching PersonalKioskCap.',
+    })
+    expect(mockedSelectCoinObjectIdsForAmountAcrossPages).not.toHaveBeenCalled()
+    expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+    expect(mockedPrisma.soulPreparedPurchase.create).not.toHaveBeenCalled()
   })
 
   it('returns an existing prepared purchase when retrying the same tx bytes', async () => {
