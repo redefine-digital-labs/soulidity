@@ -12,26 +12,25 @@ import {
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
 import { normalizeTags } from '@/lib/soulidity/tags'
-import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   extractSoulMintedToKioskEvent,
-  tryExtractAssetVersionAppendedEvent,
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
 } from '@/lib/soulidity/events'
 import {
-  createAssetSealSidecarFromMaterial,
   createMemorySealSidecarFromMaterial,
   createSkillSealSidecarFromMaterial,
   createSoulSealSidecarFromMaterial,
   type PendingSealMaterial,
 } from '@/lib/upload/client-seal'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
+import { getSuiTxErrorProperties } from '@/lib/sui/tx-result'
 import {
-  assertSuiTxSucceeded,
-  getSuiTxErrorProperties,
-} from '@/lib/sui/tx-result'
+  createLegacyInitialAssetSealSidecar,
+  hasValidOptionalLegacyAssetsSealMaterial,
+} from '@/lib/hooks/legacy-mint-asset-recovery'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
@@ -72,7 +71,6 @@ type PublishSyncMaterial = Pick<
   | 'sealMaterial'
   | 'memorySealMaterial'
   | 'skillsSealMaterial'
-  | 'assetsSealMaterial'
 >
 
 export interface PublishParams {
@@ -87,29 +85,11 @@ export interface PublishParams {
   skillsBlobObjectId?: string | null
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
-  initialSprite?: {
-    blobObjectId: string
-    assetName?: string | null
-    versionIndex?: number | null
-    visibility?: 'public' | 'private'
-    downloadPolicy?: SoulDownloadPolicy | null
-    spriteConfigJson: string
-    spriteMoodMapJson?: string | null
-  } | null
-  initialVoice?: {
-    blobObjectId: string
-    assetName: string
-    versionIndex?: number | null
-    visibility?: 'public' | 'private'
-    downloadPolicy?: SoulDownloadPolicy | null
-    voiceConfigJson?: string | null
-  } | null
   contentAccessPriceAtomic?: number
   contentAccessDefaultScopeMask?: number
   contentAccessDefaultDurationMs?: number | null
   skillsSealMaterial?: PendingSealMaterial | null
   memorySealMaterial?: PendingSealMaterial | null
-  assetsSealMaterial?: PendingSealMaterial | null
   creatorRoyaltyBps: number
   sealMaterial?: PendingSealMaterial | null
   /**
@@ -183,7 +163,7 @@ function isPublishSyncMaterial(value: unknown): value is PublishSyncMaterial {
     && isOptionalPendingSealMaterial(candidate.sealMaterial)
     && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
     && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
-    && isOptionalPendingSealMaterial(candidate.assetsSealMaterial)
+    && hasValidOptionalLegacyAssetsSealMaterial(value)
 }
 
 function buildPublishSyncMaterial(params: PublishParams): PublishSyncMaterial {
@@ -194,7 +174,6 @@ function buildPublishSyncMaterial(params: PublishParams): PublishSyncMaterial {
     sealMaterial: params.sealMaterial ?? null,
     memorySealMaterial: params.memorySealMaterial ?? null,
     skillsSealMaterial: params.skillsSealMaterial ?? null,
-    assetsSealMaterial: params.assetsSealMaterial ?? null,
   }
 }
 
@@ -219,7 +198,6 @@ async function buildPublishSyncBody(params: {
   const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
   const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
   const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
-  const initialAsset = tryExtractAssetVersionAppendedEvent(params.txResult as never, packageId)
 
   const sealSidecar = params.publishParams.sealMaterial
     ? await createSoulSealSidecarFromMaterial({
@@ -248,17 +226,12 @@ async function buildPublishSyncBody(params: {
         material: params.publishParams.skillsSealMaterial,
       })
     : null
-  const assetsSealSidecar = params.publishParams.assetsSealMaterial && initialAsset
-    ? await createAssetSealSidecarFromMaterial({
-        suiClient: params.suiClient as never,
-        packageId,
-        assetsObjectId: initialAsset.assetsId,
-        assetName: initialAsset.assetName,
-        versionIndex: initialAsset.versionIndex,
-        material: params.publishParams.assetsSealMaterial,
-      })
-    : null
-
+  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
+    txResult: params.txResult,
+    syncMaterial: params.publishParams,
+    packageId,
+    suiClient: params.suiClient,
+  })
   return {
     txDigest: params.txDigest,
     tags: normalizeTags(params.publishParams.tags),
@@ -335,7 +308,6 @@ export function usePublish() {
           'Soul character blob': params.protectedBlobObjectId,
           'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
           'Skills blob': params.skillsBlobObjectId ?? null,
-          'Persona sprite blob': params.initialSprite?.blobObjectId ?? null,
         })
         const tx: Transaction = await buildPublishSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -348,8 +320,6 @@ export function usePublish() {
           skillsBlobObjectId: params.skillsBlobObjectId ?? null,
           initialSkillName: params.initialSkillName ?? null,
           skillsVisibility: params.skillsVisibility ?? 'private',
-          initialSprite: params.initialSprite ?? null,
-          initialVoice: params.initialVoice ?? null,
           contentAccessPriceAtomic: params.contentAccessPriceAtomic,
           contentAccessDefaultScopeMask: params.contentAccessDefaultScopeMask,
           contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
@@ -360,7 +330,7 @@ export function usePublish() {
         setStatus('signing')
         const result = await signAndExecute(tx)
         const executedDigest = result.digest
-        assertSuiTxSucceeded(result, 'Soul mint transaction')
+        assertSoulidityTxSucceeded(result, 'Soul mint transaction')
         digest = executedDigest
         setTxDigest(executedDigest)
         // Persist raw Seal material BEFORE clearing batch recovery so a tab

@@ -2,17 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import {
-  buildPersonaSpriteMoodMap,
-  validatePersonaSpriteDraft,
-  type PersonaSpriteVisibility,
-} from '@/lib/soulidity/persona-sprite'
 import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import {
-  createAssetSealSidecarFromMaterial,
   createMemorySealSidecarFromMaterial,
   createSkillSealSidecarFromMaterial,
   createSoulSealSidecarFromMaterial,
@@ -28,11 +22,15 @@ import {
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   extractSoulMintedToKioskEvent,
-  tryExtractAssetVersionAppendedEvent,
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
 } from '@/lib/soulidity/events'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
+import {
+  createLegacyInitialAssetSealSidecar,
+  hasValidOptionalLegacyAssetsSealMaterial,
+} from '@/lib/hooks/legacy-mint-asset-recovery'
 
 const WRAP_MINT_RECOVERY_KEY = 'soul-wrap-personal-recovery'
 
@@ -56,7 +54,6 @@ interface WrapSyncMaterial {
   sealMaterial?: PendingSealMaterial | null
   memorySealMaterial?: PendingSealMaterial | null
   skillsSealMaterial?: PendingSealMaterial | null
-  assetsSealMaterial?: PendingSealMaterial | null
 }
 
 export type WrapPublishStatus = 'idle' | 'uploading' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -66,9 +63,6 @@ export interface WrapPublishParams {
   charFile: File
   memoryFile: File
   skillsFile?: File | null
-  spriteSheetFile?: File | null
-  spriteConfigFile?: File | null
-  spriteVisibility?: PersonaSpriteVisibility
   royalty: number
 }
 
@@ -104,7 +98,7 @@ function isWrapSyncMaterial(value: unknown): value is WrapSyncMaterial {
   return isOptionalPendingSealMaterial(candidate.sealMaterial)
     && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
     && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
-    && isOptionalPendingSealMaterial(candidate.assetsSealMaterial)
+    && hasValidOptionalLegacyAssetsSealMaterial(value)
 }
 
 export function sanitizeWrapRecoveryState(raw: string | null, userId: string | null | undefined): WrapRecoveryState | null {
@@ -157,7 +151,13 @@ async function buildWrapSyncBody(params: {
   const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
   const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
   const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
-  const initialAsset = tryExtractAssetVersionAppendedEvent(params.txResult as never, packageId)
+
+  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
+    txResult: params.txResult,
+    syncMaterial: params.material,
+    packageId,
+    suiClient: params.suiClient,
+  })
 
   return {
     txDigest: params.txDigest,
@@ -188,16 +188,7 @@ async function buildWrapSyncBody(params: {
           material: params.material.skillsSealMaterial,
         })
       : null,
-    assetsSealSidecar: params.material.assetsSealMaterial && initialAsset
-      ? await createAssetSealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          assetsObjectId: initialAsset.assetsId,
-          assetName: initialAsset.assetName,
-          versionIndex: initialAsset.versionIndex,
-          material: params.material.assetsSealMaterial,
-        })
-      : null,
+    assetsSealSidecar,
   }
 }
 
@@ -339,33 +330,6 @@ export function useWrapPublish() {
           skillsUpload = await uploadFile(params.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
         }
 
-        let spriteUpload = null
-        const spriteValidation = await validatePersonaSpriteDraft({
-          sheetFile: params.spriteSheetFile ?? null,
-          configFile: params.spriteConfigFile ?? null,
-        })
-        if (!spriteValidation.ok) {
-          throw new Error(spriteValidation.error)
-        }
-
-        if (params.spriteSheetFile && spriteValidation.config) {
-          const visibility = params.spriteVisibility ?? 'private'
-          spriteUpload = await uploadFile(
-            params.spriteSheetFile,
-            visibility === 'public' ? 'public' : 'encrypted',
-            authHeaders,
-            walletUpload,
-            walletAddress,
-          )
-          if (!spriteUpload.blobObjectId) {
-            throw new Error('Persona sprite upload is missing blobObjectId.')
-          }
-          if (visibility === 'private' && !spriteUpload.sealMaterial) {
-            throw new Error('Persona sprite upload is missing Seal recovery data.')
-          }
-
-        }
-
         // 4. Resolve kiosk + build TX
         setStatus('building')
         const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
@@ -375,7 +339,6 @@ export function useWrapPublish() {
           'Wrapped soul character blob': charUpload.blobObjectId,
           'Wrapped founding memory blob': memUpload.blobObjectId,
           'Wrapped skills blob': skillsUpload?.blobObjectId ?? null,
-          'Wrapped persona sprite blob': spriteUpload?.blobObjectId ?? null,
           'Source NFT': params.nft.objectId,
         })
 
@@ -391,21 +354,6 @@ export function useWrapPublish() {
           foundingMemoryBlobObjectId: memUpload.blobObjectId,
           skillsBlobObjectId: skillsUpload?.blobObjectId ?? null,
           initialSkillName: skillsUpload?.skillName ?? null,
-          initialSprite: spriteUpload && spriteValidation.config
-            ? {
-                blobObjectId: spriteUpload.blobObjectId,
-                assetName: 'persona-sprite',
-                visibility: params.spriteVisibility ?? 'private',
-                downloadPolicy: (params.spriteVisibility ?? 'private') === 'public' ? 'public' : 'owner_only',
-                spriteConfigJson: JSON.stringify({
-                  frameWidth: spriteValidation.config.frameWidth,
-                  frameHeight: spriteValidation.config.frameHeight,
-                  columns: spriteValidation.config.columns,
-                  animations: spriteValidation.config.animations,
-                }),
-                spriteMoodMapJson: JSON.stringify(buildPersonaSpriteMoodMap(spriteValidation.config.animations)),
-              }
-            : null,
           originRef: `sui:${params.nft.objectId}`,
           creatorRoyaltyBps: params.royalty,
         })
@@ -414,6 +362,7 @@ export function useWrapPublish() {
         setStatus('signing')
         const txResult = await signAndExecute(tx)
         const executedDigest = txResult.digest
+        assertSoulidityTxSucceeded(txResult, 'Soul personal join transaction')
         digest = executedDigest
         setTxDigest(executedDigest)
 
@@ -421,7 +370,6 @@ export function useWrapPublish() {
           sealMaterial: charUpload.sealMaterial ?? null,
           memorySealMaterial: memUpload.sealMaterial ?? null,
           skillsSealMaterial: skillsUpload?.sealMaterial ?? null,
-          assetsSealMaterial: spriteUpload?.sealMaterial ?? null,
         }
         const recovery: WrapRecoveryState = attachSoulidityDeploymentSignature({
           userId: user?.id ?? '',

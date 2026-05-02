@@ -15,6 +15,9 @@ export function buildIssueGrantTx(params: {
   if (!Number.isInteger(params.scopeMask) || params.scopeMask <= 0) {
     throw new Error('scopeMask must be a positive integer')
   }
+  if (params.expiresAtMs != null && params.expiresAtMs <= Date.now()) {
+    throw new Error('expiresAtMs must be in the future')
+  }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const tx = new Transaction()
@@ -63,6 +66,32 @@ export function buildDestroyInvalidatedGrantTx(params: {
     arguments: [
       tx.object(params.grantObjectId),
       tx.object(params.stateObjectId),
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ],
+  })
+  return tx
+}
+
+export function buildCleanupInactiveGrantsTx(params: {
+  stateObjectId: string
+  granteeAddresses: string[]
+}) {
+  if (params.granteeAddresses.length === 0) {
+    throw new Error('granteeAddresses must contain at least one address')
+  }
+  for (const granteeAddress of params.granteeAddresses) {
+    if (granteeAddress.trim().length === 0) {
+      throw new Error('granteeAddresses cannot contain empty addresses')
+    }
+  }
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::grant::cleanup_inactive_grants`,
+    arguments: [
+      tx.object(params.stateObjectId),
+      tx.pure.vector('address', params.granteeAddresses),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })

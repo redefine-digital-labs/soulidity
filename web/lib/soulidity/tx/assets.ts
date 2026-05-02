@@ -91,3 +91,25 @@ export function buildDeleteAssetVersionTx(params: {
 
   return tx
 }
+
+export function buildPurgeDeletedAssetVersionTx(params: {
+  stateObjectId: string
+  metadataObjectId: string
+  assetsObjectId: string
+  assetName: string
+  versionIndex: number
+}) {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::assets::purge_deleted_version_as_owner`,
+    arguments: [
+      tx.object(params.assetsObjectId),
+      tx.object(params.metadataObjectId),
+      tx.object(params.stateObjectId),
+      tx.pure.string(params.assetName),
+      tx.pure.u64(params.versionIndex),
+    ],
+  })
+  return tx
+}

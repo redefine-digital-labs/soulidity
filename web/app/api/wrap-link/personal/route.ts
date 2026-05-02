@@ -87,6 +87,14 @@ export async function POST(request: Request) {
     const initialSkill = tryExtractSkillVersionAppendedEvent(transaction, packageId)
     const initialAsset = tryExtractAssetVersionAppendedEvent(transaction, packageId)
     const contentAccessList = tryExtractContentAccessListCreatedEvent(transaction, packageId)
+
+    if (initialAsset?.assetType === 'audio') {
+      return NextResponse.json(
+        { error: 'Mint-time voice assets are disabled; add voice assets after mint' },
+        { status: 422 },
+      )
+    }
+
     const providedSoulSidecar = parseProvidedSidecar(body?.sealSidecar, 'sealSidecar')
     const providedMemorySidecar = parseProvidedSidecar(body?.memorySealSidecar, 'memorySealSidecar')
     const providedSkillsSidecar = parseProvidedSidecar(body?.skillsSealSidecar, 'skillsSealSidecar')
@@ -129,6 +137,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message }, { status: 503 })
       }
       throw error
+    }
+    if (initialAsset?.visibility === 'private' && !assetsSidecar) {
+      return NextResponse.json(
+        { error: 'assetsSealSidecar is required for private initial asset versions' },
+        { status: 422 },
+      )
     }
 
     const mirrored = await syncSoulProjectionFromChain({

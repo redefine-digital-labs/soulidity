@@ -4,17 +4,21 @@ export const KIOSK_PACKAGE_ENV_KEY = 'NEXT_PUBLIC_KIOSK_PACKAGE_ID'
 
 export const OFFICIAL_MAINNET_KIOSK_PACKAGE_ID =
   '0xdfb4f1d4e43e0c3ad834dcd369f0d39005c872e118c9dc1c5da9765bb93ee5f3'
-export const OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID =
+
+// Type origin for the `personal_kiosk::PersonalKioskCap` struct on mainnet.
+// The callable package is `0xdfb4...`, but normalized mainnet modules still
+// report PersonalKioskCap with this original type address.
+export const OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID =
   '0x434b5bd8f6a7b05fede0ff46c6e511d71ea326ed38056e3bcd681d2d7c2a7879'
 
-// Vendored kiosk package linked into the testnet Soulidity deployment
-// (see move/vendor/kiosk/Move.toml). The personal_kiosk cap struct lives in
-// the same package, so no separate type-package override is needed for testnet.
+// Kiosk package linked into the testnet Soulidity deployment. The
+// personal_kiosk cap struct lives in the same package, so no separate
+// type-package override is needed for testnet.
 export const OFFICIAL_TESTNET_KIOSK_PACKAGE_ID =
   '0xc9f6a531d5f4e11ef38dd782c9ab5403fb3c011595384c429285952ff6b31839'
 
-const KIOSK_TYPE_PACKAGE_OVERRIDES = new Map<string, string>([
-  [OFFICIAL_MAINNET_KIOSK_PACKAGE_ID, OFFICIAL_MAINNET_KIOSK_TYPE_PACKAGE_ID],
+const PERSONAL_KIOSK_CAP_TYPE_PACKAGE_OVERRIDES = new Map<string, string>([
+  [OFFICIAL_MAINNET_KIOSK_PACKAGE_ID, OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID],
 ])
 
 function normalizePackageAddress(value: string, label: string) {
@@ -47,7 +51,7 @@ export function getKioskPackageAddress() {
 
 export function getPersonalKioskCapTypePackageAddress() {
   const packageId = getKioskPackageAddress()
-  return KIOSK_TYPE_PACKAGE_OVERRIDES.get(packageId) ?? packageId
+  return PERSONAL_KIOSK_CAP_TYPE_PACKAGE_OVERRIDES.get(packageId) ?? packageId
 }
 
 export function getPersonalKioskCapStructType() {

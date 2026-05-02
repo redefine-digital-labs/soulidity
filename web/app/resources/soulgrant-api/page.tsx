@@ -77,10 +77,10 @@ export default function SoulGrantApiPage() {
             <strong className="text-foreground">Revoke:</strong> Owner calls <code>grant::revoke</code> to remove a grantee&apos;s slot entirely. Emits <code>SoulGrantRevoked</code>.
           </li>
           <li>
-            <strong className="text-foreground">Expiry:</strong> If <code>expires_at_ms</code> is set, the grant silently fails validation once the Sui clock passes that timestamp. Expired grants are cleaned up lazily on the next write operation. Emits <code>SoulGrantExpired</code>.
+            <strong className="text-foreground">Expiry:</strong> If <code>expires_at_ms</code> is set, it must be in the future at issue time. The grant fails validation once the Sui clock reaches that timestamp. Expired rows are cleaned by targeted grantee cleanup or by destroying the invalid grant object.
           </li>
           <li>
-            <strong className="text-foreground">Ownership invalidation:</strong> All active grants are invalidated automatically when the Soul changes hands (buy, transfer). Each slot emits <code>SoulGrantInvalidated</code>. The <code>ownership_epoch_snapshot</code> on the grant object must match the current <code>SoulState.ownership_epoch</code> for validation to pass.
+            <strong className="text-foreground">Ownership invalidation:</strong> All active grants are invalidated automatically when the Soul changes hands. Rotation is lazy: the state active count is reset and old rows fail through <code>ownership_epoch_snapshot</code> mismatch instead of emitting one event per grant.
           </li>
         </ul>
       </div>
@@ -129,9 +129,9 @@ export default function SoulGrantApiPage() {
           When a viewer calls an access route (Soul content, memory, skills), the server runs <code>resolveSoulAccessPayload</code> / <code>resolveMemoryAccessPayload</code>:
         </p>
         <ol className="text-sm text-muted space-y-1 list-decimal ml-5">
-          <li>Fetch live <code>SoulState</code> from chain to get the current owner and active grant list.</li>
+          <li>Fetch live <code>SoulState</code> from chain to get the current owner and active grant Table rows.</li>
           <li>If the viewer address matches the owner → issue <code>seal_approve_owner</code> approval params.</li>
-          <li>Otherwise scan <code>activeGrants</code> for a slot whose <code>granteeAddress</code> matches and whose <code>scopes</code> includes the required scope.</li>
+          <li>Otherwise resolve active grant rows keyed by grantee / grant ID and find a slot whose scopes include the required scope.</li>
           <li>Fetch the <code>SoulGrant</code> object from chain and validate expiry and ownership epoch.</li>
           <li>If valid → issue <code>seal_approve_granted_agent</code> approval params with the grant object ID.</li>
           <li>The client uses these params to construct a Seal session key + approval transaction, then decrypts the blob client-side.</li>

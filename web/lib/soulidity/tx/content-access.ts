@@ -133,3 +133,50 @@ export function buildSetContentAccessDurationTx(params: {
   })
   return tx
 }
+
+export function buildSetContentAccessDefaultScopeTx(params: {
+  accessListOnChainId: string
+  stateOnChainId: string
+  scopeMask: number
+}) {
+  if (!Number.isInteger(params.scopeMask) || params.scopeMask <= 0) {
+    throw new Error('scopeMask must be a positive integer')
+  }
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::content_access::set_default_scope_mask`,
+    arguments: [
+      tx.object(params.accessListOnChainId),
+      tx.object(params.stateOnChainId),
+      tx.pure.u64(params.scopeMask),
+    ],
+  })
+  return tx
+}
+
+export function buildCleanupStaleContentAccessEntriesTx(params: {
+  accessListOnChainId: string
+  stateOnChainId: string
+  addresses: string[]
+}) {
+  if (params.addresses.length === 0) {
+    throw new Error('addresses must contain at least one address')
+  }
+  for (const address of params.addresses) {
+    if (address.trim().length === 0) {
+      throw new Error('addresses cannot contain empty values')
+    }
+  }
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::content_access::cleanup_stale_entries`,
+    arguments: [
+      tx.object(params.accessListOnChainId),
+      tx.object(params.stateOnChainId),
+      tx.pure.vector('address', params.addresses),
+    ],
+  })
+  return tx
+}

@@ -45,6 +45,7 @@ export interface ActiveGrantSlotObject {
   scopeMask: number
   scopes: SoulGrantScope[]
   expiresAtMs: number | null
+  ownershipEpochSnapshot: number | null
 }
 
 export interface SoulStateObject {
@@ -59,6 +60,7 @@ export interface SoulStateObject {
   grantCapacity: number
   activeGrantCount: number
   activeGrants: ActiveGrantSlotObject[]
+  activeGrantsTableId?: string | null
   memoryId?: string | null
   metadataId: string | null
   skillsId: string | null

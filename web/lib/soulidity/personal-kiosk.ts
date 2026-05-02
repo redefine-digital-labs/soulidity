@@ -73,7 +73,8 @@ export async function resolveOwnedPersonalKiosk(params: {
   // Registry lookup runs before the missing-flattened check: a stale entry from a
   // previously-lost cap will block any future TX that tries to register a new kiosk
   // for this owner (market::insert_or_assert_personal_kiosk_registration aborts with
-  // EPersonalKioskMismatch). Surface that as a conflict instead of letting it abort
+  // EPersonalKioskMismatch when kiosk_id differs, or EPersonalKioskCapMismatch when
+  // only cap_id differs). Surface that as a conflict instead of letting it abort
   // on-chain.
   for (const ownerAddress of ownerAddresses) {
     const registered = await getRegisteredPersonalKiosk({
@@ -93,11 +94,25 @@ export async function resolveOwnedPersonalKiosk(params: {
       return { status: 'ready', kiosk: matched }
     }
 
+    // Distinguish two failure modes so the user sees the right recovery path:
+    //   - same kiosk_id, different cap_id  → user rebuilt their PersonalKioskCap
+    //     (rare; happens if the user manually unwrapped + re-wrapped the cap).
+    //   - different kiosk_id               → user owns caps for a different kiosk
+    //     than the one in the registry (lost original cap, or wrong wallet).
+    const sameKioskDifferentCap = flattened.some((kiosk) => (
+      sameSuiValue(kiosk.ownerAddress, ownerAddress)
+      && sameSuiValue(kiosk.currentKioskId, registered.kioskId)
+      && !sameSuiValue(kiosk.currentKioskCapOnChainId, registered.kioskCapOnChainId)
+    ))
+    const recoveryHint = sameKioskDifferentCap
+      ? 'Use the original PersonalKioskCap you registered with. If you cannot recover it, you must rebind to a fresh kiosk via /settings (only allowed once the original kiosk is empty).'
+      : 'Locate the original cap (search both IDs on Sui Explorer) or use a different wallet. If the registered kiosk is empty, you can rebind to a new kiosk via /settings.'
+
     throw new SoulidityPersonalKioskInvariantError(
       `Wallet ${ownerAddress} has a Soulidity kiosk registration `
       + `(kiosk ${registered.kioskId}, cap ${registered.kioskCapOnChainId}) `
       + `but does not own the matching PersonalKioskCap. `
-      + `Locate the original cap (search both IDs on Sui Explorer) or use a different wallet.`,
+      + recoveryHint,
       'conflict',
     )
   }

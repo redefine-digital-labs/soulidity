@@ -381,20 +381,6 @@ export function extractSoulGrantExpiredEvent(transaction: TransactionLike, packa
   }
 }
 
-export function extractSoulGrantInvalidatedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantInvalidated`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('SoulGrantInvalidated event is missing from the transaction')
-  }
-  return {
-    grantId: readObjectId(event.grant_id, 'SoulGrantInvalidated grant_id'),
-    soulId: readObjectId(event.soul_id, 'SoulGrantInvalidated soul_id'),
-    granteeAddress: readAddress(event.grantee, 'SoulGrantInvalidated grantee'),
-    invalidatedByAddress: readAddress(event.invalidated_by, 'SoulGrantInvalidated invalidated_by'),
-    newOwnerAddress: readAddress(event.new_owner, 'SoulGrantInvalidated new_owner'),
-  }
-}
-
 export function extractSoulMemoryCreatedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
   const event = extractTypedEvent(transaction, `${packageId}::memory::SoulMemoryCreated`, trustedPackageIds)
   if (!event) {

@@ -53,8 +53,6 @@ export interface SoulFolderFiles {
   memoryFile: File       // memory.md — required
   imageFile?: File       // first image found in subfolder
   skillsFile?: File      // skills.zip
-  spriteSheetFile?: File
-  spriteConfigFile?: File
 }
 
 /** Files from numbered subfolders, keyed by 1-indexed folder number */
@@ -91,8 +89,6 @@ interface CreateCollectionContextValue {
   setSoulFolders: (folders: SoulFolderMap) => void
   folderErrors: string[]
   setFolderErrors: (errors: string[]) => void
-  spriteVisibility: 'public' | 'private'
-  setSpriteVisibility: (visibility: 'public' | 'private') => void
 
   // Publish result (set after on-chain TX + mirror sync)
   publishResult: CollectionSyncResponse | null
@@ -129,7 +125,6 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
   const [batchErrors, setBatchErrors] = useState<string[]>([])
   const [soulFolders, setSoulFolders] = useState<SoulFolderMap>(new Map())
   const [folderErrors, setFolderErrors] = useState<string[]>([])
-  const [spriteVisibility, setSpriteVisibility] = useState<'public' | 'private'>('private')
 
   // Publish result
   const [publishResult, setPublishResultRaw] = useState<CollectionSyncResponse | null>(null)
@@ -196,7 +191,6 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
             setDescription(meta.description ?? '')
             setExtraRoyaltyBps(meta.extraRoyaltyBps ?? 500)
             setTradeable(meta.tradeable ?? true)
-            setSpriteVisibility(meta.spriteVisibility === 'public' ? 'public' : 'private')
             if (recovery.floorPriceAtomic) {
               // Convert atomic back to display string (inverse of parseDisplayAmountToAtomic)
               const v = BigInt(recovery.floorPriceAtomic)
@@ -250,7 +244,6 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
     setBatchData(null, [], [])
     setSoulFolders(new Map())
     setFolderErrors([])
-    setSpriteVisibility('private')
     setPublishResultRaw(null)
     setSuccessSnapshot(null)
     setHasRecoveryTx(false)
@@ -273,7 +266,6 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
       batchFile, batchSouls, batchErrors, setBatchData,
       soulFolders, setSoulFolders,
       folderErrors, setFolderErrors,
-      spriteVisibility, setSpriteVisibility,
       publishResult, setPublishResult,
       successSnapshot,
       isHydrated,

@@ -12,6 +12,7 @@ import {
   resolveSuiTxResultWithEffects,
   type SuiTxResultWithEffects,
 } from '@/lib/sui/tx-result'
+import { enhanceMarketError } from '@/lib/soulidity/market-errors'
 
 async function waitForTransactionBestEffort(
   client: ReturnType<typeof useSuiClient>,
@@ -47,24 +48,30 @@ export function useWalletSign() {
     // safe hardcoded budget; the wallet's own dry-run is the authoritative
     // gas estimator for the signing flow.
 
-    const { bytes, signature } = await signTransaction({
-      transaction: tx,
-      account: currentAccount,
-    })
+    try {
+      const { bytes, signature } = await signTransaction({
+        transaction: tx,
+        account: currentAccount,
+      })
 
-    const result = await resolveSuiTxResultWithEffects(suiClient, await suiClient.executeTransactionBlock({
-      transactionBlock: bytes,
-      signature,
-      options: {
-        showEffects: true,
-        showInput: true,
-        showObjectChanges: true,
-        showEvents: true,
-      },
-    }))
+      const result = await resolveSuiTxResultWithEffects(suiClient, await suiClient.executeTransactionBlock({
+        transactionBlock: bytes,
+        signature,
+        options: {
+          showEffects: true,
+          showInput: true,
+          showObjectChanges: true,
+          showEvents: true,
+        },
+      }))
 
-    await waitForTransactionBestEffort(suiClient, result.digest)
-    return result
+      await waitForTransactionBestEffort(suiClient, result.digest)
+      return result
+    } catch (error) {
+      // Re-throw market-module aborts with a user-facing message + recovery
+      // hint. Non-market errors pass through unchanged.
+      throw enhanceMarketError(error)
+    }
   }, [currentAccount, signTransaction, suiClient])
 
   const signPersonalMessage = useCallback(async (message: Uint8Array): Promise<string> => {

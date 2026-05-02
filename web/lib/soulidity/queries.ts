@@ -55,6 +55,11 @@ const MAX_BPS = 10_000n
 const MAX_U64 = 18_446_744_073_709_551_615n
 const OPTIONAL_VECTOR_MAX_DEPTH = 4
 const MAX_KIOSK_CAP_PAGES = 5
+const ACTIVE_GRANT_TABLE_PAGE_LIMIT = 50
+
+type SoulStateReadOptions = {
+  includeActiveGrants?: boolean
+}
 
 export class OnChainVerificationError extends Error {
   constructor(message: string, readonly status = 422) {
@@ -257,6 +262,171 @@ function readObjectIdVector(value: unknown, fieldName: string): string[] {
   return readVectorItems(value, fieldName).map((item, index) =>
     readObjectId(item, `${fieldName}[${index}]`),
   )
+}
+
+function readActiveGrantSlot(value: unknown, fieldName: string): ActiveGrantSlotObject {
+  const slot = readStructFields(value, fieldName)
+  const scopeMask = readNumber(slot.scope_mask, `${fieldName}.scope_mask`)
+  return {
+    grantId: readObjectId(slot.grant_id, `${fieldName}.grant_id`),
+    granteeAddress: readAddress(slot.grantee, `${fieldName}.grantee`),
+    scopeMask,
+    scopes: scopeMaskToScopes(scopeMask),
+    expiresAtMs: readOptionalNumber(slot.expires_at_ms, `${fieldName}.expires_at_ms`),
+    ownershipEpochSnapshot: slot.ownership_epoch_snapshot == null
+      ? null
+      : readNumber(slot.ownership_epoch_snapshot, `${fieldName}.ownership_epoch_snapshot`),
+  }
+}
+
+function isCurrentOwnershipGrantSlot(slot: ActiveGrantSlotObject, ownershipEpoch: number) {
+  return slot.ownershipEpochSnapshot == null || slot.ownershipEpochSnapshot === ownershipEpoch
+}
+
+function readActiveGrantSlotFromDynamicFieldContent(
+  content: unknown,
+  fieldName: string,
+): ActiveGrantSlotObject | null {
+  const dynamicFields = content && typeof content === 'object' && 'fields' in content
+    ? asRecord((content as { fields?: unknown }).fields)
+    : null
+  const dynamicInnerFields = dynamicFields ? asRecord(dynamicFields.fields) : null
+  const rawValue = dynamicFields?.value ?? dynamicInnerFields?.value
+  if (rawValue == null) return null
+  return readActiveGrantSlot(rawValue, fieldName)
+}
+
+async function readActiveGrantSlotsFromTable(
+  tableId: string,
+  ownershipEpoch: number,
+  expectedActiveGrantCount: number,
+): Promise<ActiveGrantSlotObject[]> {
+  if (expectedActiveGrantCount <= 0) {
+    return []
+  }
+
+  const slots: ActiveGrantSlotObject[] = []
+  let cursor: string | null | undefined = null
+  let slotIndex = 0
+
+  do {
+    const page = await suiClient.getDynamicFields({
+      parentId: tableId,
+      cursor: cursor ?? undefined,
+      limit: ACTIVE_GRANT_TABLE_PAGE_LIMIT,
+    })
+
+    for (const field of page.data ?? []) {
+      const fieldObject = await suiClient.getDynamicFieldObject({
+        parentId: tableId,
+        name: field.name,
+      })
+      const slot = readActiveGrantSlotFromDynamicFieldContent(
+        fieldObject.data?.content,
+        `SoulState active_grants table ${slotIndex}`,
+      )
+      if (!slot) continue
+      slotIndex += 1
+      if (isCurrentOwnershipGrantSlot(slot, ownershipEpoch)) {
+        slots.push(slot)
+        if (slots.length >= expectedActiveGrantCount) {
+          break
+        }
+      }
+    }
+
+    cursor = page.hasNextPage ? page.nextCursor : null
+  } while (cursor && slots.length < expectedActiveGrantCount)
+
+  return slots
+}
+
+async function readActiveGrantSlots(
+  fields: Record<string, unknown>,
+  ownershipEpoch: number,
+  activeGrantCount: number | null,
+): Promise<ActiveGrantSlotObject[]> {
+  if (!('active_grant_count' in fields)) {
+    return readVectorItems(fields.active_grants, 'SoulState active_grants')
+      .map((item, index) => readActiveGrantSlot(item, `SoulState active_grants[${index}]`))
+      .filter((slot) => isCurrentOwnershipGrantSlot(slot, ownershipEpoch))
+  }
+
+  const tableId = readNestedObjectId(fields.active_grants, 'SoulState active_grants')
+  if (!tableId) {
+    return []
+  }
+  return readActiveGrantSlotsFromTable(tableId, ownershipEpoch, activeGrantCount ?? 0)
+}
+
+async function readActiveGrantSlotFromTableByGrantee(
+  tableId: string,
+  ownershipEpoch: number,
+  granteeAddress: string,
+): Promise<ActiveGrantSlotObject | null> {
+  try {
+    const fieldObject = await suiClient.getDynamicFieldObject({
+      parentId: tableId,
+      name: {
+        type: 'address',
+        value: granteeAddress,
+      },
+    })
+    if (isMissingObjectResponse(fieldObject)) {
+      return null
+    }
+    const slot = readActiveGrantSlotFromDynamicFieldContent(
+      fieldObject.data?.content,
+      `SoulState active_grants[${granteeAddress}]`,
+    )
+    return slot && isCurrentOwnershipGrantSlot(slot, ownershipEpoch) ? slot : null
+  } catch (error) {
+    if (isDynamicFieldNotFound(error)) {
+      return null
+    }
+    throw error
+  }
+}
+
+export async function getActiveGrantSlotForGrantee(
+  state: SoulStateObject,
+  granteeAddress: string,
+): Promise<ActiveGrantSlotObject | null> {
+  const normalizedGrantee = normalizeSuiValue(granteeAddress)
+  if (!normalizedGrantee || state.activeGrantCount <= 0) {
+    return null
+  }
+
+  const inMemorySlot = state.activeGrants.find((slot) =>
+    sameSuiValue(slot.granteeAddress, normalizedGrantee)
+      && isCurrentOwnershipGrantSlot(slot, state.ownershipEpoch),
+  )
+  if (inMemorySlot) {
+    return inMemorySlot
+  }
+
+  if (!state.activeGrantsTableId) {
+    return null
+  }
+  return readActiveGrantSlotFromTableByGrantee(
+    state.activeGrantsTableId,
+    state.ownershipEpoch,
+    normalizedGrantee,
+  )
+}
+
+export async function findActiveGrantSlotForViewer(params: {
+  state: SoulStateObject
+  viewerAddresses: string[]
+  scope: SoulGrantScope
+}): Promise<ActiveGrantSlotObject | null> {
+  for (const address of params.viewerAddresses) {
+    const slot = await getActiveGrantSlotForGrantee(params.state, address)
+    if (slot?.scopes.includes(params.scope)) {
+      return slot
+    }
+  }
+  return null
 }
 
 function readNestedObjectId(value: unknown, fieldName: string, depth = 0): string | null {
@@ -619,7 +789,11 @@ export async function getSoulObject(objectId: string, packageId: string): Promis
   }
 }
 
-export async function getSoulStateObject(objectId: string, packageId: string): Promise<SoulStateObject> {
+export async function getSoulStateObject(
+  objectId: string,
+  packageId: string,
+  options: SoulStateReadOptions = {},
+): Promise<SoulStateObject> {
   const response = await suiClient.getObject({
     id: objectId,
     options: {
@@ -629,17 +803,18 @@ export async function getSoulStateObject(objectId: string, packageId: string): P
   })
   const expectedTypePrefix = `${normalizePackageId(packageId)}::soul::SoulState`
   const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  const activeGrants: ActiveGrantSlotObject[] = readVectorItems(fields.active_grants, 'SoulState active_grants').map((item, index) => {
-    const slot = readStructFields(item, `SoulState active_grants[${index}]`)
-    const scopeMask = readNumber(slot.scope_mask, `SoulState active_grants[${index}].scope_mask`)
-    return {
-      grantId: readObjectId(slot.grant_id, `SoulState active_grants[${index}].grant_id`),
-      granteeAddress: readAddress(slot.grantee, `SoulState active_grants[${index}].grantee`),
-      scopeMask,
-      scopes: scopeMaskToScopes(scopeMask),
-      expiresAtMs: readOptionalNumber(slot.expires_at_ms, `SoulState active_grants[${index}].expires_at_ms`),
-    }
-  })
+  const ownershipEpoch = readNumber(fields.ownership_epoch, 'SoulState ownership_epoch')
+  const hasTableBackedActiveGrants = 'active_grant_count' in fields
+  const activeGrantCount = hasTableBackedActiveGrants
+    ? readNumber(fields.active_grant_count, 'SoulState active_grant_count')
+    : null
+  const activeGrantsTableId = hasTableBackedActiveGrants
+    ? readNestedObjectId(fields.active_grants, 'SoulState active_grants')
+    : null
+  const shouldMaterializeActiveGrants = options.includeActiveGrants !== false || !hasTableBackedActiveGrants
+  const activeGrants = shouldMaterializeActiveGrants
+    ? await readActiveGrantSlots(fields, ownershipEpoch, activeGrantCount)
+    : []
   return {
     objectId,
     packageId: resolvedPackageId,
@@ -648,10 +823,11 @@ export async function getSoulStateObject(objectId: string, packageId: string): P
     creatorRoyaltyBps: readNumber(fields.creator_royalty_bps, 'SoulState creator_royalty_bps'),
     currentOwnerAddress: readAddress(fields.current_owner, 'SoulState current_owner'),
     currentKioskId: readObjectId(fields.current_kiosk_id, 'SoulState current_kiosk_id'),
-    ownershipEpoch: readNumber(fields.ownership_epoch, 'SoulState ownership_epoch'),
+    ownershipEpoch,
     grantCapacity: readNumber(fields.grant_capacity, 'SoulState grant_capacity'),
-    activeGrantCount: activeGrants.length,
+    activeGrantCount: activeGrantCount ?? activeGrants.length,
     activeGrants,
+    activeGrantsTableId,
     memoryId: readNestedObjectId(fields.memory_id, 'SoulState memory_id'),
     metadataId: readNestedObjectId(fields.metadata_id, 'SoulState metadata_id'),
     skillsId: readNestedObjectId(fields.skills_id, 'SoulState skills_id'),

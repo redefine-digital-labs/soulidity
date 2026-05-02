@@ -36,6 +36,7 @@ public struct SkillSlot has copy, drop, store {
     blob_object_id: ID,
     is_public: bool,
     deleted: bool,
+    purged: bool,
     created_at_ms: u64,
 }
 
@@ -46,7 +47,7 @@ public struct SkillBlobKey has copy, drop, store {
 }`}</code>
         </pre>
         <p className="text-sm text-muted">
-          The <code>skills</code> table maps a <code>skillName</code> string to a vector of <code>SkillSlot</code> values. Each append pushes a new slot; the index into the vector is the <code>versionIndex</code>. Both are required to address a specific version.
+          The <code>skills</code> table maps a <code>skillName</code> string to a vector of <code>SkillSlot</code> values. Each append pushes a new slot; the index into the vector is the <code>versionIndex</code>. Soft delete keeps the slot, and owner purge burns the stored blob while preserving the version record.
         </p>
       </div>
 

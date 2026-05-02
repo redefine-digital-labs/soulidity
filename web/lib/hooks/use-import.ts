@@ -12,22 +12,24 @@ import {
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
 import { normalizeTags } from '@/lib/soulidity/tags'
-import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   extractSoulMintedToKioskEvent,
-  tryExtractAssetVersionAppendedEvent,
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
 } from '@/lib/soulidity/events'
 import {
-  createAssetSealSidecarFromMaterial,
   createMemorySealSidecarFromMaterial,
   createSkillSealSidecarFromMaterial,
   createSoulSealSidecarFromMaterial,
   type PendingSealMaterial,
 } from '@/lib/upload/client-seal'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
+import {
+  createLegacyInitialAssetSealSidecar,
+  hasValidOptionalLegacyAssetsSealMaterial,
+} from '@/lib/hooks/legacy-mint-asset-recovery'
 
 const IMPORT_RECOVERY_KEY = 'soul-import-recovery'
 
@@ -67,7 +69,6 @@ type ImportSyncMaterial = Pick<
   | 'sealMaterial'
   | 'memorySealMaterial'
   | 'skillsSealMaterial'
-  | 'assetsSealMaterial'
 >
 
 export interface ImportParams {
@@ -82,23 +83,6 @@ export interface ImportParams {
   skillsBlobObjectId?: string | null
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
-  initialSprite?: {
-    blobObjectId: string
-    assetName?: string | null
-    versionIndex?: number | null
-    visibility?: 'public' | 'private'
-    downloadPolicy?: SoulDownloadPolicy | null
-    spriteConfigJson: string
-    spriteMoodMapJson?: string | null
-  } | null
-  initialVoice?: {
-    blobObjectId: string
-    assetName: string
-    versionIndex?: number | null
-    visibility?: 'public' | 'private'
-    downloadPolicy?: SoulDownloadPolicy | null
-    voiceConfigJson?: string | null
-  } | null
   contentAccessPriceAtomic?: number
   contentAccessDefaultScopeMask?: number
   contentAccessDefaultDurationMs?: number | null
@@ -107,7 +91,6 @@ export interface ImportParams {
   sealMaterial?: PendingSealMaterial | null
   memorySealMaterial?: PendingSealMaterial | null
   skillsSealMaterial?: PendingSealMaterial | null
-  assetsSealMaterial?: PendingSealMaterial | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -160,7 +143,7 @@ function isImportSyncMaterial(value: unknown): value is ImportSyncMaterial {
     && isOptionalPendingSealMaterial(candidate.sealMaterial)
     && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
     && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
-    && isOptionalPendingSealMaterial(candidate.assetsSealMaterial)
+    && hasValidOptionalLegacyAssetsSealMaterial(value)
 }
 
 function buildImportSyncMaterial(params: ImportParams): ImportSyncMaterial {
@@ -171,7 +154,6 @@ function buildImportSyncMaterial(params: ImportParams): ImportSyncMaterial {
     sealMaterial: params.sealMaterial ?? null,
     memorySealMaterial: params.memorySealMaterial ?? null,
     skillsSealMaterial: params.skillsSealMaterial ?? null,
-    assetsSealMaterial: params.assetsSealMaterial ?? null,
   }
 }
 
@@ -196,7 +178,13 @@ async function buildImportSyncBody(params: {
   const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
   const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
   const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
-  const initialAsset = tryExtractAssetVersionAppendedEvent(params.txResult as never, packageId)
+
+  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
+    txResult: params.txResult,
+    syncMaterial: params.importParams,
+    packageId,
+    suiClient: params.suiClient,
+  })
 
   return {
     txDigest: params.txDigest,
@@ -230,16 +218,7 @@ async function buildImportSyncBody(params: {
           material: params.importParams.skillsSealMaterial,
         })
       : null,
-    assetsSealSidecar: params.importParams.assetsSealMaterial && initialAsset
-      ? await createAssetSealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          assetsObjectId: initialAsset.assetsId,
-          assetName: initialAsset.assetName,
-          versionIndex: initialAsset.versionIndex,
-          material: params.importParams.assetsSealMaterial,
-        })
-      : null,
+    assetsSealSidecar,
   }
 }
 
@@ -298,7 +277,6 @@ export function useImport() {
           'Soul character blob': params.protectedBlobObjectId,
           'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
           'Skills blob': params.skillsBlobObjectId ?? null,
-          'Persona sprite blob': params.initialSprite?.blobObjectId ?? null,
         })
         const tx: Transaction = buildImportSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -311,8 +289,6 @@ export function useImport() {
           skillsBlobObjectId: params.skillsBlobObjectId ?? null,
           initialSkillName: params.initialSkillName ?? null,
           skillsVisibility: params.skillsVisibility ?? 'private',
-          initialSprite: params.initialSprite ?? null,
-          initialVoice: params.initialVoice ?? null,
           contentAccessPriceAtomic: params.contentAccessPriceAtomic,
           contentAccessDefaultScopeMask: params.contentAccessDefaultScopeMask,
           contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
@@ -323,6 +299,7 @@ export function useImport() {
         setStatus('signing')
         const result = await signAndExecute(tx)
         const executedDigest = result.digest
+        assertSoulidityTxSucceeded(result, 'Soul import transaction')
         digest = executedDigest
         setTxDigest(executedDigest)
         posthog.capture('soul_import_sui_signed', {

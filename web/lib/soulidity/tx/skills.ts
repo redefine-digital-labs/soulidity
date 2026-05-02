@@ -76,3 +76,44 @@ export function buildDeleteSkillVersionTx(params: {
 
   return tx
 }
+
+export function buildPurgeDeletedSkillVersionTx(params: {
+  stateObjectId: string
+  skillsObjectId: string
+  skillName: string
+  versionIndex: number
+}) {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::skills::purge_deleted_version_as_owner`,
+    arguments: [
+      tx.object(params.skillsObjectId),
+      tx.object(params.stateObjectId),
+      tx.pure.string(params.skillName),
+      tx.pure.u64(params.versionIndex),
+    ],
+  })
+  return tx
+}
+
+export function buildInitSkillsAndAppendAsOwnerTx(params: {
+  stateObjectId: string
+  skillName: string
+  blobObjectId: string
+  visibility: 'public' | 'private'
+}) {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::market::init_skills_and_append_as_owner`,
+    arguments: [
+      tx.object(params.stateObjectId),
+      tx.pure.string(params.skillName),
+      tx.pure.bool(params.visibility === 'public'),
+      tx.object(params.blobObjectId),
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ],
+  })
+  return tx
+}

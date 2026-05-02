@@ -29,10 +29,6 @@ import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
 import { getSuiTxErrorProperties } from '@/lib/sui/tx-result'
-import {
-  buildPersonaSpriteMoodMap,
-  validatePersonaSpriteDraft,
-} from '@/lib/soulidity/persona-sprite'
 import { buildListSoulTx } from '@/lib/soulidity/tx/list'
 import { buildIssueGrantTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
 import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
@@ -317,19 +313,11 @@ export default function CreateGasPage() {
     const walletAddress = suiWallet.address
 
     try {
-      const spriteValidation = await validatePersonaSpriteDraft({
-        sheetFile: ctx.spriteSheetFile,
-        configFile: ctx.spriteConfigFile,
-      })
-      if (!spriteValidation.ok) {
-        throw new Error(spriteValidation.error)
-      }
-
       // Build a single batch: cover (public) + char/memory/skills (encrypted)
-      // + optional sprite. The batch publishes via 1 register PTB + parallel
+      // files. The batch publishes via 1 register PTB + parallel
       // HTTP uploads, then mint+certify lands in 1 more PTB inside `publish`,
       // for 2 wallet signatures total regardless of how many files.
-      const fileIndex = { cover: -1, char: -1, memory: -1, skills: -1, sprite: -1 }
+      const fileIndex = { cover: -1, char: -1, memory: -1, skills: -1 }
       const batchFiles: BatchSoulUploadFile[] = []
 
       fileIndex.cover = batchFiles.length
@@ -361,16 +349,6 @@ export default function CreateGasPage() {
           file: withMime(ctx.skillsFile),
           uploadType: 'encrypted',
           kind: 'soul-content',
-          sendObjectTo: walletAddress,
-        })
-      }
-
-      if (ctx.spriteSheetFile && spriteValidation.config) {
-        fileIndex.sprite = batchFiles.length
-        batchFiles.push({
-          file: withMime(ctx.spriteSheetFile),
-          uploadType: ctx.spriteVisibility === 'public' ? 'public' : 'encrypted',
-          kind: 'persona-sprite',
           sendObjectTo: walletAddress,
         })
       }
@@ -456,7 +434,6 @@ export default function CreateGasPage() {
       const char = prepared.files[fileIndex.char]
       const memory = prepared.files[fileIndex.memory]
       const skills = fileIndex.skills >= 0 ? prepared.files[fileIndex.skills] : null
-      const sprite = fileIndex.sprite >= 0 ? prepared.files[fileIndex.sprite] : null
 
       if (!char.sealMaterial) {
         throw new Error('Character file upload is missing Seal recovery data. Please retry.')
@@ -467,9 +444,6 @@ export default function CreateGasPage() {
       if (skills && !skills.sealMaterial) {
         throw new Error('Skills bundle upload is missing Seal recovery data. Please retry.')
       }
-      if (sprite && ctx.spriteVisibility === 'private' && !sprite.sealMaterial) {
-        throw new Error('Persona sprite upload is missing Seal recovery data. Please retry.')
-      }
       if (!char.blobObjectId) {
         throw new Error('Character file upload was deduplicated by Walrus and no owned Blob object was created. Please modify your character file slightly and retry.')
       }
@@ -478,9 +452,6 @@ export default function CreateGasPage() {
       }
       if (skills && !skills.blobObjectId) {
         throw new Error('Skills bundle upload was deduplicated by Walrus and no owned Blob object was created. Please modify your skills file slightly and retry.')
-      }
-      if (sprite && !sprite.blobObjectId) {
-        throw new Error('Persona sprite upload was deduplicated by Walrus and no owned Blob object was created. Please modify your sprite sheet slightly and retry.')
       }
 
       const results: UploadResults = {
@@ -516,15 +487,6 @@ export default function CreateGasPage() {
               skillName: skills.skillName ?? null,
             }
           : undefined,
-        spriteSheet: sprite
-          ? {
-              blobId: sprite.blobId,
-              blobObjectId: sprite.blobObjectId,
-              contentHash: sprite.contentHash,
-              blobUrl: sprite.blobUrl,
-              sealMaterial: sprite.sealMaterial ?? null,
-            }
-          : undefined,
       }
       ctx.setUploadResults(results)
       setUploadPhase('done')
@@ -534,7 +496,6 @@ export default function CreateGasPage() {
           char: char.sealMaterial,
           memory: memory.sealMaterial,
           skills: skills?.sealMaterial ?? null,
-          sprite: sprite?.sealMaterial ?? null,
         }
       }
 
@@ -555,26 +516,10 @@ export default function CreateGasPage() {
         skillsBlobObjectId: skills?.blobObjectId ?? null,
         initialSkillName: skills?.skillName ?? null,
         skillsVisibility: 'private',
-        initialSprite: sprite && spriteValidation.config
-          ? {
-              blobObjectId: sprite.blobObjectId,
-              assetName: 'persona-sprite',
-              visibility: ctx.spriteVisibility,
-              downloadPolicy: ctx.spriteVisibility === 'public' ? 'public' : 'owner_only',
-              spriteConfigJson: JSON.stringify({
-                frameWidth: spriteValidation.config.frameWidth,
-                frameHeight: spriteValidation.config.frameHeight,
-                columns: spriteValidation.config.columns,
-                animations: spriteValidation.config.animations,
-              }),
-              spriteMoodMapJson: JSON.stringify(buildPersonaSpriteMoodMap(spriteValidation.config.animations)),
-            }
-          : null,
         creatorRoyaltyBps: ctx.royalty,
         sealMaterial: char.sealMaterial,
         memorySealMaterial: memory.sealMaterial,
         skillsSealMaterial: skills?.sealMaterial ?? null,
-        assetsSealMaterial: sprite?.sealMaterial ?? null,
         attachBeforeMint: prepared.attachCertifyCalls,
         onMintTxExecuted: () => {
           prepared.clearBatchRecovery()
@@ -742,12 +687,6 @@ export default function CreateGasPage() {
               <span className="text-foreground">{ctx.memoryFile?.name}</span>
               <span className="text-muted ml-1.5">(encrypted founding entry)</span>
             </TxRow>
-            {ctx.spriteSheetFile && ctx.spriteConfigFile && (
-              <TxRow label="Persona Sprite">
-                <span className="text-foreground">{ctx.spriteSheetFile.name}</span>
-                <span className="text-muted ml-1.5">({ctx.spriteVisibility === 'public' ? 'public metadata' : 'protected asset'} · {ctx.spriteConfigFile.name})</span>
-              </TxRow>
-            )}
             {ctx.skillsFile && (
               <TxRow label="Skills & Docs">
                 <span className="text-foreground">{ctx.skillsFile.name}</span>
@@ -761,7 +700,7 @@ export default function CreateGasPage() {
             </TxRow>
             <TxRow label="Soul Policy" align="top">
               <span className="text-muted leading-relaxed">
-                Character locked after mint · Grant-gated memory writes · Skills private by default · {ctx.spriteSheetFile && ctx.spriteConfigFile ? `Persona sprite ${ctx.spriteVisibility === 'public' ? 'publicly resolvable' : 'grant/owner gated'} · ` : ''}Revocable
+                Character locked after mint · Grant-gated memory writes · Skills private by default · Revocable
               </span>
             </TxRow>
             <TxRow label="Estimated Gas">

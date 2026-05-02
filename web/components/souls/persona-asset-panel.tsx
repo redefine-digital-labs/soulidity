@@ -131,8 +131,8 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Tag color={soul.assetsOnChainId ? 'teal' : 'muted'}>
-            {soul.assetsOnChainId ? 'root ready' : 'no root'}
+          <Tag color={soul.assetsOnChainId ? 'teal' : 'gold'}>
+            {soul.assetsOnChainId ? 'root ready' : 'ready to create root'}
           </Tag>
           {activeVersionIndex != null && <Tag color="teal">active v{activeVersionIndex}</Tag>}
           {activePolicy && <Tag color={activePolicy === 'public' ? 'gold' : 'purple'}>{activePolicy}</Tag>}
@@ -198,10 +198,14 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
               type="button"
               variant="teal"
               size="sm"
-              disabled={!sheetFile || !configFile || isLoading || pending === 'append' || Boolean(selectionError)}
+              disabled={!sheetFile || !configFile || isLoading || pending === 'append' || pending === 'recovering' || Boolean(selectionError)}
               onClick={() => { void handleAppend() }}
             >
-              {pending === 'append' ? 'Publishing…' : 'Upload & Set Active'}
+              {pending === 'recovering'
+                ? 'Resuming…'
+                : pending === 'append'
+                ? 'Publishing…'
+                : soul.assetsOnChainId ? 'Upload & Set Active' : 'Create root & set active'}
             </Button>
             {activeVersionIndex != null && (
               <Button
@@ -216,10 +220,8 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
             )}
           </div>
         </div>
-      ) : soul.assetsOnChainId ? (
-        <p className="text-sm text-muted">Sprite management is limited to the current Soul owner.</p>
       ) : (
-        <p className="text-sm text-muted">This Soul was minted without a sprite assets root.</p>
+        <p className="text-sm text-muted">Sprite management is limited to the current Soul owner.</p>
       )}
 
       {spriteVersions.length === 0 ? (

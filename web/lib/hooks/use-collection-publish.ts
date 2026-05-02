@@ -4,17 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import posthog from 'posthog-js'
 import { useSuiClient } from '@mysten/dapp-kit'
 import { buildCreateCollectionTx, buildAddSoulToCollectionTx } from '@/lib/soulidity/tx/collection'
-import {
-  buildPersonaSpriteMoodMap,
-  validatePersonaSpriteDraft,
-  type PersonaSpriteVisibility,
-} from '@/lib/soulidity/persona-sprite'
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import {
-  createAssetSealSidecarFromMaterial,
   createMemorySealSidecarFromMaterial,
   createSkillSealSidecarFromMaterial,
   createSoulSealSidecarFromMaterial,
@@ -30,11 +24,15 @@ import { assertObjectInputsExist, findMissingObjectIds } from '@/lib/soulidity/o
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   extractSoulMintedToKioskEvent,
-  tryExtractAssetVersionAppendedEvent,
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
 } from '@/lib/soulidity/events'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
+import {
+  createLegacyInitialAssetSealSidecar,
+  hasValidOptionalLegacyAssetsSealMaterial,
+} from '@/lib/hooks/legacy-mint-asset-recovery'
 
 const RECOVERY_KEY = 'collection-mint-recovery'
 
@@ -48,11 +46,7 @@ interface SoulUploadRecovery {
   skillsBlobObjectId: string | null
   initialSkillName: string | null
   skillsSealMaterial: PendingSealMaterial | null
-  assetBlobObjectId: string | null
-  assetVisibility: PersonaSpriteVisibility | null
-  assetsSealMaterial: PendingSealMaterial | null
-  spriteConfigJson: string | null
-  spriteMoodMapJson: string | null
+  assetsSealMaterial?: PendingSealMaterial | null
   imageUrl: string
 }
 
@@ -72,7 +66,6 @@ interface CollectionRecoveryMeta {
   description: string
   extraRoyaltyBps: number
   tradeable: boolean
-  spriteVisibility: PersonaSpriteVisibility
 }
 
 interface RecoveryState {
@@ -138,7 +131,6 @@ export interface CollectionPublishParams {
   description: string
   extraRoyaltyBps: number
   tradeable: boolean
-  spriteVisibility?: PersonaSpriteVisibility
   /** Floor price in atomic USDC — minimum listing price for souls in this collection */
   floorPriceAtomic?: string | null
   /** Batch souls to mint and bind to the new collection */
@@ -192,14 +184,13 @@ function buildRecoverySouls(paramsSouls: BatchSoulToMint[] | undefined, existing
 
 export function buildCollectionDraftSignature(params: Pick<
   CollectionPublishParams,
-  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'spriteVisibility' | 'floorPriceAtomic' | 'souls'
+  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'floorPriceAtomic' | 'souls'
 >) {
   return JSON.stringify({
     name: params.name.trim(),
     description: params.description.trim(),
     extraRoyaltyBps: params.extraRoyaltyBps,
     tradeable: params.tradeable,
-    spriteVisibility: params.spriteVisibility ?? 'private',
     floorPriceAtomic: params.floorPriceAtomic ?? null,
     souls: (params.souls ?? []).map((soul) => ({
       name: soul.name.trim(),
@@ -229,6 +220,9 @@ function sanitizeRecoveryState(raw: string | null, userId: string | undefined): 
       || !Array.isArray(parsed.souls)
       || !hasCurrentSoulidityDeploymentSignature(parsed)
     ) {
+      return null
+    }
+    if (parsed.souls.some((soul) => soul.uploads && !hasValidOptionalLegacyAssetsSealMaterial(soul.uploads))) {
       return null
     }
 
@@ -313,16 +307,12 @@ async function buildSoulPublishSyncBody(params: {
   const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
   const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
   const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
-  const initialAsset = tryExtractAssetVersionAppendedEvent(params.txResult as never, packageId)
 
   if (!foundingMemory) {
     throw new Error(`Soul "${params.soul.name}" mint transaction is missing the founding memory event`)
   }
   if (params.uploads.skillsSealMaterial && !initialSkill) {
     throw new Error(`Soul "${params.soul.name}" mint transaction is missing the initial skill event`)
-  }
-  if (params.uploads.assetsSealMaterial && !initialAsset) {
-    throw new Error(`Soul "${params.soul.name}" mint transaction is missing the persona sprite asset event`)
   }
 
   const sealSidecar = await createSoulSealSidecarFromMaterial({
@@ -348,16 +338,12 @@ async function buildSoulPublishSyncBody(params: {
         material: params.uploads.skillsSealMaterial,
       })
     : null
-  const assetsSealSidecar = params.uploads.assetsSealMaterial && initialAsset
-    ? await createAssetSealSidecarFromMaterial({
-        suiClient: params.suiClient as never,
-        packageId,
-        assetsObjectId: initialAsset.assetsId,
-        assetName: initialAsset.assetName,
-        versionIndex: initialAsset.versionIndex,
-        material: params.uploads.assetsSealMaterial,
-      })
-    : null
+  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
+    txResult: params.txResult,
+    syncMaterial: params.uploads,
+    packageId,
+    suiClient: params.suiClient,
+  })
 
   const previewImageUrl = params.uploads.imageUrl.startsWith('http') ? params.uploads.imageUrl : ''
   return {
@@ -497,7 +483,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
           description: params.description,
           extraRoyaltyBps: params.extraRoyaltyBps,
           tradeable: params.tradeable,
-          spriteVisibility: params.spriteVisibility ?? 'private',
         },
         souls: buildRecoverySouls(params.souls, baseRecovery.souls),
       }
@@ -547,6 +532,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
         setStatus('signing')
         const result = await signAndExecute(tx)
         digest = result.digest
+        assertSoulidityTxSucceeded(result, 'Collection create transaction')
         setTxDigest(digest)
         recovery.txDigest = result.digest
         setRecoveryState({ ...recovery })
@@ -584,7 +570,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
                 soulState.uploads.protectedBlobObjectId,
                 soulState.uploads.foundingMemoryBlobObjectId,
                 soulState.uploads.skillsBlobObjectId,
-                soulState.uploads.assetBlobObjectId,
               ]
             : []
         ))))
@@ -595,7 +580,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
               missingRecoveredObjectIds.has(soulState.uploads.protectedBlobObjectId)
               || missingRecoveredObjectIds.has(soulState.uploads.foundingMemoryBlobObjectId)
               || (soulState.uploads.skillsBlobObjectId && missingRecoveredObjectIds.has(soulState.uploads.skillsBlobObjectId))
-              || (soulState.uploads.assetBlobObjectId && missingRecoveredObjectIds.has(soulState.uploads.assetBlobObjectId))
             ) {
               soulState.uploads = null
             }
@@ -652,46 +636,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
             skillsSealMaterial = skillsUpload.sealMaterial
           }
 
-          let assetBlobObjectId: string | null = null
-          let assetVisibility: PersonaSpriteVisibility | null = null
-          let assetsSealMaterial: PendingSealMaterial | null = null
-          let spriteConfigJson: string | null = null
-          let spriteMoodMapJson: string | null = null
-          const spriteValidation = await validatePersonaSpriteDraft({
-            sheetFile: folder?.spriteSheetFile ?? null,
-            configFile: folder?.spriteConfigFile ?? null,
-          })
-          if (!spriteValidation.ok) {
-            throw new Error(`Soul "${soul.name}" has invalid persona sprite files: ${spriteValidation.error}`)
-          }
-          if (folder?.spriteSheetFile && spriteValidation.config) {
-            const visibility = params.spriteVisibility ?? 'private'
-            const spriteUpload = await uploadFile(
-              folder.spriteSheetFile,
-              visibility === 'public' ? 'public' : 'encrypted',
-              authHeaders,
-              walletUpload,
-              walletAddress,
-            )
-            if (!spriteUpload.blobObjectId) {
-              throw new Error(`Persona sprite upload for Soul "${soul.name}" is missing blobObjectId.`)
-            }
-            if (visibility === 'private' && !spriteUpload.sealMaterial) {
-              throw new Error(`Persona sprite upload for Soul "${soul.name}" is missing Seal recovery data.`)
-            }
-
-            assetBlobObjectId = spriteUpload.blobObjectId
-            assetVisibility = visibility
-            assetsSealMaterial = spriteUpload.sealMaterial ?? null
-            spriteConfigJson = JSON.stringify({
-              frameWidth: spriteValidation.config.frameWidth,
-              frameHeight: spriteValidation.config.frameHeight,
-              columns: spriteValidation.config.columns,
-              animations: spriteValidation.config.animations,
-            })
-            spriteMoodMapJson = JSON.stringify(buildPersonaSpriteMoodMap(spriteValidation.config.animations))
-          }
-
           // Image — from folder's image file, fallback to collection cover URL
           let resolvedImageUrl = fallbackImageUrl
           if (folder?.imageFile) {
@@ -707,11 +651,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
             skillsBlobObjectId,
             initialSkillName,
             skillsSealMaterial,
-            assetBlobObjectId,
-            assetVisibility,
-            assetsSealMaterial,
-            spriteConfigJson,
-            spriteMoodMapJson,
             imageUrl: resolvedImageUrl,
           }
           setRecoveryState({ ...recovery, souls: [...recovery.souls] })
@@ -744,7 +683,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
               'Soul character blob': soulState.uploads.protectedBlobObjectId,
               'Founding memory blob': soulState.uploads.foundingMemoryBlobObjectId,
               'Skills blob': soulState.uploads.skillsBlobObjectId,
-              'Persona sprite blob': soulState.uploads.assetBlobObjectId,
             })
             const mintTx = await buildPublishSoulTx({
               currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -757,21 +695,12 @@ export function useCollectionPublish(draftSignature?: string | null) {
               skillsBlobObjectId: soulState.uploads.skillsBlobObjectId,
               initialSkillName: soulState.uploads.initialSkillName,
               skillsVisibility: 'private',
-              initialSprite: soulState.uploads.assetBlobObjectId && soulState.uploads.spriteConfigJson
-                ? {
-                    blobObjectId: soulState.uploads.assetBlobObjectId,
-                    assetName: 'persona-sprite',
-                    visibility: soulState.uploads.assetVisibility ?? 'private',
-                    downloadPolicy: (soulState.uploads.assetVisibility ?? 'private') === 'public' ? 'public' : 'owner_only',
-                    spriteConfigJson: soulState.uploads.spriteConfigJson,
-                    spriteMoodMapJson: soulState.uploads.spriteMoodMapJson,
-                  }
-                : null,
               creatorRoyaltyBps: soul.creatorRoyaltyBps,
             })
             const mintResult = await signAndExecute(mintTx)
             mintDigest = mintResult.digest
             mintTxResult = mintResult
+            assertSoulidityTxSucceeded(mintResult, 'Collection soul mint transaction')
 
             // Persist digest to recovery BEFORE sync — prevents duplicate mint on retry
             soulState.mintDigest = mintDigest
@@ -836,6 +765,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
             })
             const addResult = await signAndExecute(addTx)
             bindDigest = addResult.digest
+            assertSoulidityTxSucceeded(addResult, 'Collection bind transaction')
 
             // Persist digest to recovery BEFORE mirror — prevents duplicate bind on retry
             soulState.bindDigest = bindDigest

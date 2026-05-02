@@ -27,10 +27,6 @@ import {
   countPendingImportUploads,
   txBoundImportUploadObjectIds,
 } from '@/lib/import/import-wallet-balance'
-import {
-  buildPersonaSpriteMoodMap,
-  validatePersonaSpriteDraft,
-} from '@/lib/soulidity/persona-sprite'
 import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
 import { findMissingObjectIds } from '@/lib/soulidity/object-inputs'
 import {
@@ -61,8 +57,6 @@ type UploadPhase =
   | 'uploading-character'
   | 'uploading-memory'
   | 'uploading-skills'
-  | 'uploading-sprite'
-  | 'uploading-sprite-metadata'
   | 'done'
 
 const uploadPhaseLabels: Record<UploadPhase, string> = {
@@ -71,8 +65,6 @@ const uploadPhaseLabels: Record<UploadPhase, string> = {
   'uploading-character': 'Encrypting & uploading character file\u2026',
   'uploading-memory': 'Encrypting & uploading memory\u2026',
   'uploading-skills': 'Encrypting & uploading skills bundle\u2026',
-  'uploading-sprite': 'Uploading persona sprite sheet\u2026',
-  'uploading-sprite-metadata': 'Generating & uploading persona sprite metadata\u2026',
   done: 'Uploads complete',
 }
 
@@ -221,7 +213,6 @@ export default function ImportGasPage() {
   const pendingImportUploadCount = countPendingImportUploads({
     reusableUploadResults,
     hasSkillsFile: Boolean(ctx.skillsFile),
-    hasSpriteSheetFile: Boolean(ctx.spriteSheetFile),
     verifiedReusableBlobObjectIds,
   })
   const importWalletTransactionCount = 1 + pendingImportUploadCount * 2
@@ -318,7 +309,6 @@ export default function ImportGasPage() {
         results.charFile?.blobObjectId,
         results.memorySeed?.blobObjectId,
         results.skillsFile?.blobObjectId,
-        results.spriteSheet?.blobObjectId,
       ]))
       if (results.charFile && missingCachedObjectIds.has(results.charFile.blobObjectId)) {
         results.charFile = undefined
@@ -328,17 +318,6 @@ export default function ImportGasPage() {
       }
       if (results.skillsFile && missingCachedObjectIds.has(results.skillsFile.blobObjectId)) {
         results.skillsFile = undefined
-      }
-      if (results.spriteSheet && missingCachedObjectIds.has(results.spriteSheet.blobObjectId)) {
-        results.spriteSheet = undefined
-      }
-
-      const spriteValidation = await validatePersonaSpriteDraft({
-        sheetFile: ctx.spriteSheetFile,
-        configFile: ctx.spriteConfigFile,
-      })
-      if (!spriteValidation.ok) {
-        throw new Error(spriteValidation.error)
       }
 
       // 1. Upload cover image
@@ -365,13 +344,6 @@ export default function ImportGasPage() {
         results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
       }
 
-      if (ctx.spriteSheetFile && spriteValidation.config && !results.spriteSheet) {
-        setUploadPhase('uploading-sprite')
-        results.spriteSheet = ctx.spriteVisibility === 'public'
-          ? await uploadFile(ctx.spriteSheetFile, 'public', authHeaders, walletUpload, walletAddress)
-          : await uploadFile(ctx.spriteSheetFile, 'encrypted', authHeaders, walletUpload, walletAddress)
-      }
-
       ctx.setUploadResults(results)
       setUploadPhase('done')
 
@@ -380,7 +352,6 @@ export default function ImportGasPage() {
           char: results.charFile?.sealMaterial ?? null,
           memory: results.memorySeed?.sealMaterial ?? null,
           skills: results.skillsFile?.sealMaterial ?? null,
-          sprite: results.spriteSheet?.sealMaterial ?? null,
         }
       }
 
@@ -402,12 +373,6 @@ export default function ImportGasPage() {
       if (results.skillsFile && !results.skillsFile.blobObjectId) {
         throw new Error('Skills bundle was deduplicated by Walrus. Please modify your skills file slightly and retry.')
       }
-      if (results.spriteSheet && !results.spriteSheet.blobObjectId) {
-        throw new Error('Persona sprite upload was deduplicated by Walrus. Please modify your sprite sheet slightly and retry.')
-      }
-      if (ctx.spriteVisibility === 'private' && results.spriteSheet && !results.spriteSheet.sealMaterial) {
-        throw new Error('Persona sprite upload is missing Seal recovery data. Please retry.')
-      }
 
       const parsedTags = ctx.tags.split(',').map((t) => t.trim()).filter(Boolean)
 
@@ -422,27 +387,11 @@ export default function ImportGasPage() {
         skillsBlobObjectId: results.skillsFile?.blobObjectId ?? null,
         initialSkillName: results.skillsFile?.skillName ?? null,
         skillsVisibility: 'private',
-        initialSprite: results.spriteSheet && spriteValidation.config
-          ? {
-              blobObjectId: results.spriteSheet.blobObjectId,
-              assetName: 'persona-sprite',
-              visibility: ctx.spriteVisibility,
-              downloadPolicy: ctx.spriteVisibility === 'public' ? 'public' : 'owner_only',
-              spriteConfigJson: JSON.stringify({
-                frameWidth: spriteValidation.config.frameWidth,
-                frameHeight: spriteValidation.config.frameHeight,
-                columns: spriteValidation.config.columns,
-                animations: spriteValidation.config.animations,
-              }),
-              spriteMoodMapJson: JSON.stringify(buildPersonaSpriteMoodMap(spriteValidation.config.animations)),
-            }
-          : null,
         originRef: ctx.originRef,
         creatorRoyaltyBps: ctx.royalty,
         sealMaterial: results.charFile.sealMaterial ?? null,
         memorySealMaterial: results.memorySeed.sealMaterial ?? null,
         skillsSealMaterial: results.skillsFile?.sealMaterial ?? null,
-        assetsSealMaterial: results.spriteSheet?.sealMaterial ?? null,
       })
     } catch (err) {
       if (!(err instanceof WalrusUploadCancelledError)) {
@@ -568,12 +517,6 @@ export default function ImportGasPage() {
                   <span className="text-foreground">{ctx.memoryFile?.name}</span>
                   <span className="ml-1.5 text-muted">(encrypted founding entry)</span>
                 </TxRow>
-                {ctx.spriteSheetFile && ctx.spriteConfigFile && (
-                  <TxRow label="Persona Sprite">
-                    <span className="text-foreground">{ctx.spriteSheetFile.name}</span>
-                    <span className="ml-1.5 text-muted">({ctx.spriteVisibility === 'public' ? 'public metadata' : 'protected asset'} · {ctx.spriteConfigFile.name})</span>
-                  </TxRow>
-                )}
                 {ctx.skillsFile && (
                   <TxRow label="Skills & Docs">
                     <span className="text-foreground">{ctx.skillsFile.name}</span>
@@ -587,7 +530,7 @@ export default function ImportGasPage() {
                 </TxRow>
                 <TxRow label="Soul Policy" align="top">
                   <span className="text-muted leading-relaxed">
-                    Character locked after mint · Grant-gated memory writes · Skills private by default · {ctx.spriteSheetFile && ctx.spriteConfigFile ? `Persona sprite ${ctx.spriteVisibility === 'public' ? 'publicly resolvable' : 'grant/owner gated'} · ` : ''}Revocable
+                    Character locked after mint · Grant-gated memory writes · Skills private by default · Revocable
                   </span>
                 </TxRow>
                 <TxRow label="Estimated Gas">

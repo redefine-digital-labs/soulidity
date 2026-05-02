@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Transaction } from '@mysten/sui/transactions'
+import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -15,6 +16,8 @@ import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import { createAssetSealSidecarFromMaterial, type PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { extractAssetVersionAppendedEvent } from '@/lib/soulidity/events'
+import { assertSoulidityTxSucceeded, getMarketAbortInfo } from '@/lib/soulidity/market-errors'
+import { SuiTxExecutionError } from '@/lib/sui/tx-result'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
@@ -32,6 +35,11 @@ const SPRITE_MOOD_MAP_KEY = 'sprite.mood_map.v1'
 const SPRITE_APPEND_RECOVERY_KEY_PREFIX = 'soul-sprite-append-recovery:'
 
 type PendingAssetAction = 'append' | 'delete' | 'clear' | 'recovering' | null
+type SuiObjectReadClient = {
+  getObject: (input: { id: string; options: { showContent: true } }) => Promise<{
+    data?: { content?: unknown } | null
+  }>
+}
 
 interface SpriteAppendSyncBody {
   txDigest: string
@@ -137,6 +145,67 @@ function policyToU8(policy: SoulDownloadPolicy): number {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function normalizeObjectId(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  try {
+    const normalized = normalizeSuiAddress(trimmed)
+    return isValidSuiAddress(normalized) ? normalized : null
+  } catch {
+    return null
+  }
+}
+
+function readOptionalLiveObjectId(value: unknown): string | null {
+  if (value == null) return null
+  if (typeof value === 'string') return normalizeObjectId(value)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null
+    return readOptionalLiveObjectId(value[0])
+  }
+
+  const record = asRecord(value)
+  if (!record) return null
+  if (typeof record.id === 'string') return normalizeObjectId(record.id)
+  if (typeof record.bytes === 'string') return normalizeObjectId(record.bytes)
+  if (Array.isArray(record.vec)) return readOptionalLiveObjectId(record.vec)
+  if (record.fields != null) return readOptionalLiveObjectId(record.fields)
+  if (record.value != null) return readOptionalLiveObjectId(record.value)
+  return null
+}
+
+async function resolveLiveSoulAssetsOnChainId(
+  client: SuiObjectReadClient,
+  stateObjectId: string,
+): Promise<string | null> {
+  const response = await client.getObject({
+    id: stateObjectId,
+    options: { showContent: true },
+  })
+  const content = response.data?.content
+  const contentRecord = asRecord(content)
+  const fields = asRecord(contentRecord?.fields)
+  if (!fields) {
+    throw new Error('Soul state object is missing on-chain fields')
+  }
+  return readOptionalLiveObjectId(fields.assets_id)
+}
+
+function isAssetsRootAlreadyExistsError(error: unknown) {
+  const marketAbort = getMarketAbortInfo(error)
+  if (marketAbort?.entry?.name === 'EAssetsRootAlreadyExists' || marketAbort?.code === 34) {
+    return true
+  }
+  if (!(error instanceof SuiTxExecutionError)) return false
+  const detail = `${error.executionError ?? ''} ${error.message}`
+  return /MoveAbort|abort|init_assets_and_append_sprite_as_owner/i.test(detail)
+    && /(^|[\s,(:])34($|[\s,):])/i.test(detail)
+}
+
 function serializeSpriteConfig(raw: ReturnType<typeof parsePersonaSpriteConfig>) {
   if (!raw) return null
   return JSON.stringify({
@@ -146,6 +215,84 @@ function serializeSpriteConfig(raw: ReturnType<typeof parsePersonaSpriteConfig>)
     columns: raw.columns,
     animations: raw.animations,
   })
+}
+
+function buildSpriteAppendTransaction(params: {
+  packageId: string
+  stateObjectId: string
+  metadataObjectId: string
+  assetsOnChainId: string | null
+  blobObjectId: string
+  visibility: 'public' | 'private'
+  spriteConfigJson: string
+  spriteMoodMapJson: string
+  downloadPolicy: SoulDownloadPolicy
+}) {
+  const tx = new Transaction()
+  if (!params.assetsOnChainId) {
+    tx.moveCall({
+      target: `${params.packageId}::market::init_assets_and_append_sprite_as_owner`,
+      arguments: [
+        tx.object(params.stateObjectId),
+        tx.object(params.metadataObjectId),
+        tx.pure.string(SPRITE_ASSET_NAME),
+        tx.pure.bool(params.visibility === 'public'),
+        tx.object(params.blobObjectId),
+        tx.pure.vector('u8', Array.from(new TextEncoder().encode(params.spriteConfigJson))),
+        tx.pure.vector('u8', Array.from(new TextEncoder().encode(params.spriteMoodMapJson))),
+        tx.pure.string(SPRITE_CONFIG_KEY),
+        tx.pure.string(SPRITE_MOOD_MAP_KEY),
+        tx.pure.u8(policyToU8(params.downloadPolicy)),
+        tx.object('0x6'),
+      ],
+    })
+    return tx
+  }
+
+  const [appendedVersionIndex] = tx.moveCall({
+    target: `${params.packageId}::assets::append_version_as_owner`,
+    arguments: [
+      tx.object(params.assetsOnChainId),
+      tx.object(params.stateObjectId),
+      tx.pure.string(SPRITE_ASSET_NAME),
+      tx.pure.bool(params.visibility === 'public'),
+      tx.pure.u8(0), // asset_type = sprite
+      tx.object(params.blobObjectId),
+      tx.object('0x6'),
+    ],
+  })
+
+  tx.moveCall({
+    target: `${params.packageId}::metadata::upsert_metadata_blob`,
+    arguments: [
+      tx.object(params.metadataObjectId),
+      tx.object(params.stateObjectId),
+      tx.pure.string(SPRITE_CONFIG_KEY),
+      tx.pure.vector('u8', Array.from(new TextEncoder().encode(params.spriteConfigJson))),
+    ],
+  })
+  tx.moveCall({
+    target: `${params.packageId}::metadata::upsert_metadata_blob`,
+    arguments: [
+      tx.object(params.metadataObjectId),
+      tx.object(params.stateObjectId),
+      tx.pure.string(SPRITE_MOOD_MAP_KEY),
+      tx.pure.vector('u8', Array.from(new TextEncoder().encode(params.spriteMoodMapJson))),
+    ],
+  })
+
+  tx.moveCall({
+    target: `${params.packageId}::market::set_active_sprite`,
+    arguments: [
+      tx.object(params.metadataObjectId),
+      tx.object(params.stateObjectId),
+      tx.object(params.assetsOnChainId),
+      tx.pure.string(SPRITE_ASSET_NAME),
+      appendedVersionIndex,
+      tx.pure.u8(policyToU8(params.downloadPolicy)),
+    ],
+  })
+  return tx
 }
 
 async function fetchSoulAssetVersions(soulId: string): Promise<SoulAssetVersionsResponse> {
@@ -213,12 +360,14 @@ export function useAssets(soul: SoulAssetDetail | null) {
     }
   }, [suiClient])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const soulOnChainId = soul?.onChainId
-    const userId = user?.id
-    if (!soulOnChainId || !userId) return
-    if (pendingRecoveryRef.current[soulOnChainId]) return
+  const resumePendingSpriteAppendMirror = useCallback(async (
+    soulOnChainId: string,
+    userId: string | null | undefined,
+  ) => {
+    if (typeof window === 'undefined' || !userId) return false
+    if (pendingRecoveryRef.current[soulOnChainId]) {
+      return true
+    }
 
     const storageKey = spriteAppendRecoveryStorageKey(soulOnChainId)
     const recovery = sanitizeSpriteAppendRecoveryState(
@@ -229,47 +378,56 @@ export function useAssets(soul: SoulAssetDetail | null) {
     if (!recovery) {
       // Either no pending recovery, or it belongs to a different user/deployment — drop it.
       try { sessionStorage.removeItem(storageKey) } catch {}
-      return
+      return false
     }
 
     pendingRecoveryRef.current[soulOnChainId] = true
-    void (async () => {
-      setPending('recovering')
-      setError(null)
-      try {
-        let syncBody = recovery.syncBody ?? null
-        if (!syncBody && recovery.pendingSync) {
-          syncBody = await buildSpriteAppendSyncBody({
-            txDigest: recovery.pendingSync.txDigest,
-            txResult: await suiClient.getTransactionBlock({
-              digest: recovery.pendingSync.txDigest,
-              options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
-            }),
-            sealMaterial: recovery.pendingSync.sealMaterial,
-          })
-          recovery.syncBody = syncBody
-          persistSpriteAppendRecovery(storageKey, recovery)
-        }
-        if (!syncBody) {
-          throw new Error('Pending sprite append recovery is missing sync data')
-        }
-        await postAppendMirror(soulOnChainId, syncBody)
-        persistSpriteAppendRecovery(storageKey, null)
-        await queryClient.invalidateQueries({ queryKey: ['soul', soulOnChainId] })
-        await queryClient.invalidateQueries({ queryKey: ['soul-asset-versions', soulOnChainId] })
-      } catch (nextError) {
+    setPending('recovering')
+    setError(null)
+    try {
+      let syncBody = recovery.syncBody ?? null
+      if (!syncBody && recovery.pendingSync) {
+        syncBody = await buildSpriteAppendSyncBody({
+          txDigest: recovery.pendingSync.txDigest,
+          txResult: await suiClient.getTransactionBlock({
+            digest: recovery.pendingSync.txDigest,
+            options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
+          }),
+          sealMaterial: recovery.pendingSync.sealMaterial,
+        })
+        recovery.syncBody = syncBody
+        persistSpriteAppendRecovery(storageKey, recovery)
+      }
+      if (!syncBody) {
+        throw new Error('Pending sprite append recovery is missing sync data')
+      }
+      await postAppendMirror(soulOnChainId, syncBody)
+      persistSpriteAppendRecovery(storageKey, null)
+      await queryClient.invalidateQueries({ queryKey: ['soul', soulOnChainId] })
+      await queryClient.invalidateQueries({ queryKey: ['soul-asset-versions', soulOnChainId] })
+      return true
+    } finally {
+      pendingRecoveryRef.current[soulOnChainId] = false
+      setPending(null)
+    }
+  }, [buildSpriteAppendSyncBody, postAppendMirror, queryClient, suiClient])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const soulOnChainId = soul?.onChainId
+    const userId = user?.id
+    if (!soulOnChainId || !userId) return
+    void Promise.resolve()
+      .then(() => resumePendingSpriteAppendMirror(soulOnChainId, userId))
+      .catch((nextError) => {
         // Leave the recovery row in place so the user can retry via a subsequent append/reload.
         setError(
           nextError instanceof Error
             ? `Pending sprite append mirror failed: ${nextError.message}`
             : 'Pending sprite append mirror failed',
         )
-      } finally {
-        pendingRecoveryRef.current[soulOnChainId] = false
-        setPending(null)
-      }
-    })()
-  }, [soul?.onChainId, user?.id, buildSpriteAppendSyncBody, postAppendMirror, queryClient, suiClient])
+      })
+  }, [soul?.onChainId, user?.id, resumePendingSpriteAppendMirror])
 
   const assetsQuery = useQuery<SoulAssetVersionsResponse>({
     queryKey: ['soul-asset-versions', soul?.onChainId ?? null],
@@ -287,7 +445,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
       .sort((a, b) => a.versionIndex - b.versionIndex)
   }, [assetsQuery.data?.assets])
 
-  const canManage = Boolean(soul?.isOwner && soul?.assetsOnChainId && soul?.metadataOnChainId)
+  const canManage = Boolean(soul?.isOwner && soul?.metadataOnChainId)
 
   async function uploadAssetFile(file: File, visibility: 'public' | 'private'): Promise<AppendUploadResult> {
     if (!suiWallet) throw new Error('Bind a Sui wallet before uploading sprite assets')
@@ -319,87 +477,98 @@ export function useAssets(soul: SoulAssetDetail | null) {
   }) {
     if (!soul || !suiWallet) throw new Error('Sign in and load the Soul before uploading a sprite')
     if (!soul.isOwner) throw new Error('Only the Soul owner can update sprite versions')
-    if (!soul.assetsOnChainId || !soul.metadataOnChainId) {
-      throw new Error('Soul is missing on-chain assets/metadata roots')
+    if (!soul.metadataOnChainId) {
+      throw new Error('Soul is missing on-chain metadata root')
     }
+    try {
+      const resumedPendingMirror = await resumePendingSpriteAppendMirror(soul.onChainId, user?.id)
+      if (resumedPendingMirror) return
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? `Pending sprite append mirror failed: ${nextError.message}`
+          : 'Pending sprite append mirror failed',
+      )
+      throw nextError
+    }
+
     const config = parsePersonaSpriteConfig(await params.configFile.text())
     if (!config) throw new Error('Sprite config JSON is invalid')
 
     setPending('append')
     setError(null)
     try {
-      const uploaded = await uploadAssetFile(params.sheetFile, params.visibility)
+      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      const initialAssetsOnChainId = await resolveLiveSoulAssetsOnChainId(suiClient, soul.stateOnChainId)
       await assertObjectInputsExist(suiClient, {
         'Soul state': soul.stateOnChainId,
         'Soul metadata': soul.metadataOnChainId,
-        'Soul assets': soul.assetsOnChainId,
+        'Soul assets': initialAssetsOnChainId,
+      })
+
+      const uploaded = await uploadAssetFile(params.sheetFile, params.visibility)
+      // Reject before signing — burning a Soul mint of gas on a private upload
+      // that has no Seal material to ship to the mirror route is wasteful and
+      // would leave an on-chain version with no readable encryption envelope.
+      if (params.visibility === 'private' && !uploaded.sealMaterial) {
+        throw new Error('Private sprite upload is missing Seal material')
+      }
+      await assertObjectInputsExist(suiClient, {
         'Uploaded sprite blob': uploaded.blobObjectId,
       })
 
-      // One PTB: append_version + upsert sprite metadata blobs + set_active_sprite.
-      // The mirror route picks up AssetVersionAppendedEvent, and
-      // `syncSoulProjectionFromChain` then reads SoulMetadata (which includes
-      // the newly upserted blobs + active binding) so the DB row ends up in
-      // the same shape as if we had called /assets and /metadata separately.
-      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-      const tx = new Transaction()
-      // `append_version_as_owner` returns the `u64` version index assigned at
-      // execution time by `versions.length()`. Capture it and thread it into
-      // `set_active_sprite` within the same PTB so the activation always
-      // targets the version this call actually appended, even if a concurrent
-      // append from another tab or external writer allocates a different
-      // index after we read the DB snapshot.
-      const [appendedVersionIndex] = tx.moveCall({
-        target: `${packageId}::assets::append_version_as_owner`,
-        arguments: [
-          tx.object(soul.assetsOnChainId),
-          tx.object(soul.stateOnChainId),
-          tx.pure.string(SPRITE_ASSET_NAME),
-          tx.pure.bool(params.visibility === 'public'),
-          tx.pure.u8(0), // asset_type = sprite
-          tx.object(uploaded.blobObjectId),
-          tx.object('0x6'),
-        ],
-      })
-
+      // One PTB. Two shapes:
+      //   * No assets root yet → market::init_assets_and_append_sprite_as_owner
+      //     atomically creates the SoulAssets root, appends version 0, upserts
+      //     both sprite metadata blobs, and binds the active sprite.
+      //   * Assets root present → append_version_as_owner returns the new
+      //     version index, threaded into set_active_sprite within the same
+      //     PTB so the activation targets the version this call appended.
+      // Both shapes emit the same AssetVersionAppended event, so the mirror
+      // route handles them identically.
+      const downloadPolicy: SoulDownloadPolicy = params.visibility === 'public' ? 'public' : 'owner_only'
       const spriteConfigJson = serializeSpriteConfig(config) ?? '{}'
       const moodMap = buildPersonaSpriteMoodMap(config.animations)
       const spriteMoodMapJson = JSON.stringify(moodMap)
-      tx.moveCall({
-        target: `${packageId}::metadata::upsert_metadata_blob`,
-        arguments: [
-          tx.object(soul.metadataOnChainId),
-          tx.object(soul.stateOnChainId),
-          tx.pure.string(SPRITE_CONFIG_KEY),
-          tx.pure.vector('u8', Array.from(new TextEncoder().encode(spriteConfigJson))),
-        ],
-      })
-      tx.moveCall({
-        target: `${packageId}::metadata::upsert_metadata_blob`,
-        arguments: [
-          tx.object(soul.metadataOnChainId),
-          tx.object(soul.stateOnChainId),
-          tx.pure.string(SPRITE_MOOD_MAP_KEY),
-          tx.pure.vector('u8', Array.from(new TextEncoder().encode(spriteMoodMapJson))),
-        ],
-      })
 
-      const downloadPolicy: SoulDownloadPolicy = params.visibility === 'public' ? 'public' : 'owner_only'
-      tx.moveCall({
-        target: `${packageId}::market::set_active_sprite`,
-        arguments: [
-          tx.object(soul.metadataOnChainId),
-          tx.object(soul.stateOnChainId),
-          tx.object(soul.assetsOnChainId),
-          tx.pure.string(SPRITE_ASSET_NAME),
-          appendedVersionIndex,
-          tx.pure.u8(policyToU8(downloadPolicy)),
-        ],
-      })
-
-      const result = await signAndExecute(tx)
-      if (params.visibility === 'private' && !uploaded.sealMaterial) {
-        throw new Error('Private sprite upload is missing Seal material')
+      let result
+      try {
+        result = await signAndExecute(buildSpriteAppendTransaction({
+          packageId,
+          stateObjectId: soul.stateOnChainId,
+          metadataObjectId: soul.metadataOnChainId!,
+          assetsOnChainId: initialAssetsOnChainId,
+          blobObjectId: uploaded.blobObjectId,
+          visibility: params.visibility,
+          spriteConfigJson,
+          spriteMoodMapJson,
+          downloadPolicy,
+        }))
+        assertSoulidityTxSucceeded(result, 'Soul sprite asset transaction')
+      } catch (txError) {
+        if (initialAssetsOnChainId || !isAssetsRootAlreadyExistsError(txError)) {
+          throw txError
+        }
+        const retryAssetsOnChainId = await resolveLiveSoulAssetsOnChainId(suiClient, soul.stateOnChainId)
+        if (!retryAssetsOnChainId) {
+          throw txError
+        }
+        await assertObjectInputsExist(suiClient, {
+          'Soul assets': retryAssetsOnChainId,
+          'Uploaded sprite blob': uploaded.blobObjectId,
+        })
+        result = await signAndExecute(buildSpriteAppendTransaction({
+          packageId,
+          stateObjectId: soul.stateOnChainId,
+          metadataObjectId: soul.metadataOnChainId!,
+          assetsOnChainId: retryAssetsOnChainId,
+          blobObjectId: uploaded.blobObjectId,
+          visibility: params.visibility,
+          spriteConfigJson,
+          spriteMoodMapJson,
+          downloadPolicy,
+        }))
+        assertSoulidityTxSucceeded(result, 'Soul sprite asset transaction retry')
       }
       const pendingSync: SpriteAppendSyncMaterial = {
         txDigest: result.digest,

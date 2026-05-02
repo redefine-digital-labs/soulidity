@@ -7,7 +7,13 @@ import { takeRateLimitToken } from '@/lib/rate-limit'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { SOUL_GRANT_SCOPE_SKILLS } from '@/lib/soulidity/grant-scopes'
-import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
+import {
+  findActiveGrantSlotForViewer,
+  getSoulGrantObject,
+  getSoulStateObject,
+  normalizeSuiValue,
+  sameSuiValue,
+} from '@/lib/soulidity/queries'
 import { requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'
@@ -93,7 +99,9 @@ export async function GET(
     return NextResponse.json({ error: 'Soul skills root is missing' }, { status: 409 })
   }
 
-  const state = await getSoulStateObject(soul.stateOnChainId, getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'))
+  const state = await getSoulStateObject(soul.stateOnChainId, getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'), {
+    includeActiveGrants: false,
+  })
   const resolvedPackageId = state.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const viewerAddresses = auth.walletAddresses
     .map((address) => normalizeSuiValue(address))
@@ -128,13 +136,17 @@ export async function GET(
     })
   }
 
-  const activeSkillsSlot = state.activeGrants.find((slot) =>
-    slot.scopes.includes('skills')
-      && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
-  )
+  const activeSkillsSlot = await findActiveGrantSlotForViewer({
+    state,
+    viewerAddresses,
+    scope: 'skills',
+  })
   if (activeSkillsSlot) {
     const grant = await getSoulGrantObject(activeSkillsSlot.grantId, resolvedPackageId)
     const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
+    if (grant.ownershipEpochSnapshot !== state.ownershipEpoch) {
+      return NextResponse.json({ error: 'The active skills grant is no longer valid for this Soul owner' }, { status: 403 })
+    }
     if (!viewerMatch) {
       return NextResponse.json({ error: 'The active skills grant does not belong to this wallet' }, { status: 403 })
     }

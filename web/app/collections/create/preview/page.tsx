@@ -115,12 +115,6 @@ function SoulRow({
             <path d="M2 11l3-3 2 2 3-3 4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </span>
-        <span title="Persona sprite" className={folder?.spriteSheetFile && folder?.spriteConfigFile ? 'text-teal' : 'text-muted/40'}>
-          <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4">
-            <path d="M3 5.25h10M3 8h10M3 10.75h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            <path d="M4.25 3.5v9M8 3.5v9M11.75 3.5v9" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.7" />
-          </svg>
-        </span>
 
         {ready ? (
           <Tag color="success" className="ml-1 text-[10px]">Ready</Tag>
@@ -197,7 +191,6 @@ export default function PreviewPage() {
         description: ctx.description,
         extraRoyaltyBps: ctx.extraRoyaltyBps,
         tradeable: ctx.tradeable,
-        spriteVisibility: ctx.spriteVisibility,
         floorPriceAtomic: ctx.floorPrice ? parseDisplayAmountToAtomic(ctx.floorPrice).toString() : null,
         souls: ctx.batchSouls.map((s) => ({
           name: s.name,
@@ -291,7 +284,6 @@ export default function PreviewPage() {
       description: ctx.description,
       extraRoyaltyBps: ctx.extraRoyaltyBps,
       tradeable: ctx.tradeable,
-      spriteVisibility: ctx.spriteVisibility,
       floorPriceAtomic,
       soulFolders: ctx.soulFolders.size > 0 ? ctx.soulFolders : undefined,
       souls: ctx.batchSouls.map((s) => ({
@@ -418,11 +410,7 @@ export default function PreviewPage() {
               />
               <SettingRow
                 label="Persona Sprite"
-                value={ctx.hasRecoveryTx && ctx.soulFolders.size === 0
-                  ? 'Resume from persisted recovery'
-                  : Array.from(ctx.soulFolders.values()).some((folder) => folder.spriteSheetFile && folder.spriteConfigFile)
-                    ? `${ctx.spriteVisibility === 'public' ? 'Public' : 'Private'} when provided`
-                    : 'Not included'}
+                value="Post-mint from each Soul detail page"
                 bold
               />
               <SettingRow label="Estimated Gas" value="~0.032 SUI" bold />

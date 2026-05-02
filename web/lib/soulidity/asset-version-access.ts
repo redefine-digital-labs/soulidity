@@ -10,6 +10,7 @@ import {
 import { prisma } from '@/lib/prisma'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
+  findActiveGrantSlotForViewer,
   getSoulGrantObject,
   getSoulStateObject,
   normalizeSuiValue,
@@ -146,7 +147,9 @@ export async function resolveSoulAssetVersionAccessPayload(params: {
     .map((address) => normalizeSuiValue(address))
     .filter((value): value is string => value != null)
   const packageId = params.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const state = await getSoulStateObject(soul.stateOnChainId, packageId)
+  const state = await getSoulStateObject(soul.stateOnChainId, packageId, {
+    includeActiveGrants: false,
+  })
   const resolvedPackageId = state.packageId ?? packageId
 
   const ownerMatch = viewerAddresses.find((address) => sameSuiValue(address, state.currentOwnerAddress))
@@ -168,14 +171,20 @@ export async function resolveSoulAssetVersionAccessPayload(params: {
     })
   }
 
-  const activeAssetsSlot = state.activeGrants.find((slot) =>
-    slot.scopes.includes('assets')
-      && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
-  )
+  const activeAssetsSlot = await findActiveGrantSlotForViewer({
+    state,
+    viewerAddresses,
+    scope: 'assets',
+  })
   if (activeAssetsSlot) {
     const grant = await getSoulGrantObject(activeAssetsSlot.grantId, resolvedPackageId)
     const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
-    if (viewerMatch && (grant.expiresAtMs == null || grant.expiresAtMs >= Date.now()) && grant.scopes.includes('assets')) {
+    if (
+      viewerMatch
+      && grant.ownershipEpochSnapshot === state.ownershipEpoch
+      && (grant.expiresAtMs == null || grant.expiresAtMs >= Date.now())
+      && grant.scopes.includes('assets')
+    ) {
       return buildPrivateAssetAccessResponse({
         walrusBlobId: version.blobId,
         blobObjectId: version.blobObjectId,

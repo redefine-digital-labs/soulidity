@@ -2,7 +2,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@/lib/soulidity/metadata'
 import { resolveWalrusBlobType } from '@/lib/soulidity/walrus-blob'
-import { buildBuyerKioskArgs, finishBuyerKioskArgs, validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
+import { assertNoMintTimeVoiceAsset, buildBuyerKioskArgs, finishBuyerKioskArgs, validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
 import type { AssetType, SoulDownloadPolicy } from '@/lib/soulidity/types'
 
 type InitialSpriteInput = {
@@ -13,15 +13,6 @@ type InitialSpriteInput = {
   downloadPolicy?: SoulDownloadPolicy | null
   spriteConfigJson: string
   spriteMoodMapJson?: string | null
-}
-
-type InitialVoiceInput = {
-  blobObjectId: string
-  assetName: string
-  versionIndex?: number | null
-  visibility?: 'public' | 'private'
-  downloadPolicy?: SoulDownloadPolicy | null
-  voiceConfigJson?: string | null
 }
 
 type ImportSoulTxParams = {
@@ -36,7 +27,6 @@ type ImportSoulTxParams = {
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
   initialSprite?: InitialSpriteInput | null
-  initialVoice?: InitialVoiceInput | null
   assetBlobObjectId?: string | null
   initialAssetName?: string | null
   assetVisibility?: 'public' | 'private'
@@ -101,13 +91,8 @@ function resolveInitialSprite(params: ImportSoulTxParams) {
   return params.initialSprite ?? null
 }
 
-function resolveInitialVoice(params: ImportSoulTxParams) {
-  return params.initialVoice ?? null
-}
-
 function resolveAssetBlobObjectId(params: ImportSoulTxParams) {
   return resolveInitialSprite(params)?.blobObjectId
-    ?? resolveInitialVoice(params)?.blobObjectId
     ?? params.assetBlobObjectId
     ?? null
 }
@@ -116,10 +101,6 @@ function resolveAssetName(params: ImportSoulTxParams) {
   const initialSprite = resolveInitialSprite(params)
   if (initialSprite?.assetName) {
     return initialSprite.assetName
-  }
-  const initialVoice = resolveInitialVoice(params)
-  if (initialVoice?.assetName) {
-    return initialVoice.assetName
   }
   if (params.initialAssetName) {
     return params.initialAssetName
@@ -132,14 +113,12 @@ function resolveAssetName(params: ImportSoulTxParams) {
 
 function resolveAssetVisibility(params: ImportSoulTxParams) {
   return resolveInitialSprite(params)?.visibility
-    ?? resolveInitialVoice(params)?.visibility
     ?? params.assetVisibility
     ?? 'private'
 }
 
 function resolveAssetType(params: ImportSoulTxParams): AssetType | undefined {
   if (resolveInitialSprite(params)) return 'sprite'
-  if (resolveInitialVoice(params)) return 'audio'
   return params.assetType
 }
 
@@ -155,6 +134,7 @@ function resolveDownloadPolicy(
 
 export function buildImportSoulTx(params: ImportSoulTxParams) {
   validateSoulPublishArgs(params)
+  assertNoMintTimeVoiceAsset(params)
   if (params.originRef.trim().length === 0) {
     throw new Error('originRef is required for imported Souls')
   }
@@ -169,7 +149,6 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
   const initialSprite = resolveInitialSprite(params)
-  const initialVoice = resolveInitialVoice(params)
 
   tx.moveCall({
     target: `${packageId}::market::mint_imported_in_personal_kiosk`,
@@ -196,10 +175,10 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
       tx.pure.option('u8', initialSprite ? downloadPolicyToU8(resolveDownloadPolicy(initialSprite.downloadPolicy, initialSprite.visibility)) : null),
       tx.pure.option('vector<u8>', initialSprite ? utf8Bytes(initialSprite.spriteConfigJson) : null),
       tx.pure.option('vector<u8>', initialSprite ? utf8Bytes(initialSprite.spriteMoodMapJson ?? null) : null),
-      tx.pure.option('string', initialVoice?.assetName ?? null),
-      tx.pure.option('u64', initialVoice?.versionIndex ?? (initialVoice ? 0 : null)),
-      tx.pure.option('u8', initialVoice ? downloadPolicyToU8(resolveDownloadPolicy(initialVoice.downloadPolicy, initialVoice.visibility)) : null),
-      tx.pure.option('vector<u8>', initialVoice ? utf8Bytes(initialVoice.voiceConfigJson ?? null) : null),
+      tx.pure.option('string', null),
+      tx.pure.option('u64', null),
+      tx.pure.option('u8', null),
+      tx.pure.option('vector<u8>', null),
       tx.pure.u64(params.contentAccessPriceAtomic ?? 0),
       tx.pure.u64(params.contentAccessDefaultScopeMask ?? ALL_ACCESS_SCOPES),
       tx.pure.option('u64', params.contentAccessDefaultDurationMs ?? null),

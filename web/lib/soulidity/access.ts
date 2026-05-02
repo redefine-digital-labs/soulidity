@@ -1,7 +1,13 @@
 import { getBlobUrl } from '@/lib/services/walrus'
 import { getSealRuntimeConfig, getSealSessionTtlMinutes } from '@/lib/services/seal'
 import type { SoulAccessResponse } from '@/lib/soulidity/types'
-import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
+import {
+  findActiveGrantSlotForViewer,
+  getSoulGrantObject,
+  getSoulStateObject,
+  normalizeSuiValue,
+  sameSuiValue,
+} from '@/lib/soulidity/queries'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
 
 export class SoulAccessDeniedError extends Error {
@@ -19,7 +25,9 @@ export async function resolveSoulAccessPayload(params: {
   const viewerAddresses = params.viewerAddresses
     .map((address) => normalizeSuiValue(address))
     .filter((value): value is string => value != null)
-  const state = await getSoulStateObject(params.soul.stateOnChainId, params.packageId)
+  const state = await getSoulStateObject(params.soul.stateOnChainId, params.packageId, {
+    includeActiveGrants: false,
+  })
   // Prefer the on-chain resolved package — after a Sui package upgrade the env
   // package may differ from the type-defining package that Seal ciphertext is bound to.
   const resolvedPackageId = state.packageId ?? params.packageId
@@ -56,10 +64,11 @@ export async function resolveSoulAccessPayload(params: {
     }
   }
 
-  const activeSealSlot = state.activeGrants.find((slot) =>
-    slot.scopes.includes('seal')
-      && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
-  )
+  const activeSealSlot = await findActiveGrantSlotForViewer({
+    state,
+    viewerAddresses,
+    scope: 'seal',
+  })
 
   if (!activeSealSlot) {
     throw new SoulAccessDeniedError('Only the owner or the active granted agent can access this Soul')
@@ -71,6 +80,9 @@ export async function resolveSoulAccessPayload(params: {
   }
 
   const grant = await getSoulGrantObject(activeSealSlot.grantId, resolvedPackageId)
+  if (grant.ownershipEpochSnapshot !== state.ownershipEpoch) {
+    throw new SoulAccessDeniedError('The active SoulGrant is no longer valid for this Soul owner')
+  }
   if (!sameSuiValue(grant.granteeAddress, granteeMatch)) {
     throw new SoulAccessDeniedError('The active SoulGrant does not belong to this wallet')
   }

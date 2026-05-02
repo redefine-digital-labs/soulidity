@@ -31,18 +31,12 @@ interface EncryptedUploadResult {
   skillName?: string | null
 }
 
-interface SpriteAssetUploadResult extends PublicUploadResult {
-  sealMaterial?: PendingSealMaterial | null
-}
-
 export interface UploadResults {
   ownerAddress?: string
   coverImage?: PublicUploadResult
   charFile?: EncryptedUploadResult
   memorySeed?: EncryptedUploadResult
   skillsFile?: EncryptedUploadResult
-  spriteSheet?: SpriteAssetUploadResult
-  spriteMetadata?: PublicUploadResult
 }
 
 export function selectReusableUploadResults(
@@ -57,8 +51,6 @@ export function selectReusableUploadResults(
     charFile: canReuse ? existing.charFile : undefined,
     memorySeed: canReuse ? existing.memorySeed : undefined,
     skillsFile: canReuse ? existing.skillsFile : undefined,
-    spriteSheet: canReuse ? existing.spriteSheet : undefined,
-    spriteMetadata: canReuse ? existing.spriteMetadata : undefined,
   }
 }
 
@@ -130,12 +122,6 @@ interface ImportSoulContextValue {
   setMemoryFile: (f: File | null) => void
   skillsFile: File | null
   setSkillsFile: (f: File | null) => void
-  spriteSheetFile: File | null
-  setSpriteSheetFile: (f: File | null) => void
-  spriteConfigFile: File | null
-  setSpriteConfigFile: (f: File | null) => void
-  spriteVisibility: 'public' | 'private'
-  setSpriteVisibility: (visibility: 'public' | 'private') => void
   coverImageFile: File | null
   coverImagePreviewUrl: string | null
   setCoverImage: (f: File | null) => void
@@ -206,9 +192,6 @@ function ImportSoulProviderInner({
   const [charFile, setCharFileRaw] = useState<File | null>(null)
   const [memoryFile, setMemoryFileRaw] = useState<File | null>(null)
   const [skillsFile, setSkillsFileRaw] = useState<File | null>(null)
-  const [spriteSheetFile, setSpriteSheetFileRaw] = useState<File | null>(null)
-  const [spriteConfigFile, setSpriteConfigFileRaw] = useState<File | null>(null)
-  const [spriteVisibility, setSpriteVisibilityRaw] = useState<'public' | 'private'>('private')
   const [coverImageFile, setCoverImageFileRaw] = useState<File | null>(null)
   const [coverImagePreviewUrl, setCoverImagePreviewUrl] = useState<string | null>(null)
   const previewUrlRef = useRef<string | null>(null)
@@ -283,29 +266,6 @@ function ImportSoulProviderInner({
     setUploadResultsRaw((prev) => (prev ? { ...prev, skillsFile: undefined } : prev))
   }, [])
 
-  const setSpriteSheetFile = useCallback((f: File | null) => {
-    setSpriteSheetFileRaw(f)
-    setUploadResultsRaw((prev) => (prev ? {
-      ...prev,
-      spriteSheet: undefined,
-      spriteMetadata: undefined,
-    } : prev))
-  }, [])
-
-  const setSpriteConfigFile = useCallback((f: File | null) => {
-    setSpriteConfigFileRaw(f)
-    setUploadResultsRaw((prev) => (prev ? { ...prev, spriteMetadata: undefined } : prev))
-  }, [])
-
-  const setSpriteVisibility = useCallback((visibility: 'public' | 'private') => {
-    setSpriteVisibilityRaw(visibility)
-    setUploadResultsRaw((prev) => (prev ? {
-      ...prev,
-      spriteSheet: undefined,
-      spriteMetadata: undefined,
-    } : prev))
-  }, [])
-
   const setRawFile = useCallback((f: File | null) => {
     setRawFileRaw(f)
     // Clear all downstream state derived from the previous source file
@@ -319,9 +279,6 @@ function ImportSoulProviderInner({
     setCharFileRaw(null)
     setMemoryFileRaw(null)
     setSkillsFileRaw(null)
-    setSpriteSheetFileRaw(null)
-    setSpriteConfigFileRaw(null)
-    setSpriteVisibilityRaw('private')
     setCoverImage(null)
     setUploadResultsRaw(null)
     setImportResultRaw(null)
@@ -381,9 +338,6 @@ function ImportSoulProviderInner({
     setCharFileRaw(null)
     setMemoryFileRaw(null)
     setSkillsFileRaw(null)
-    setSpriteSheetFileRaw(null)
-    setSpriteConfigFileRaw(null)
-    setSpriteVisibilityRaw('private')
     setCoverImage(null)
     setRoyalty(500)
     setTags('')
@@ -409,9 +363,6 @@ function ImportSoulProviderInner({
       charFile, setCharFile,
       memoryFile, setMemoryFile,
       skillsFile, setSkillsFile,
-      spriteSheetFile, setSpriteSheetFile,
-      spriteConfigFile, setSpriteConfigFile,
-      spriteVisibility, setSpriteVisibility,
       coverImageFile, coverImagePreviewUrl, setCoverImage,
       royalty, setRoyalty,
       tags, setTags,

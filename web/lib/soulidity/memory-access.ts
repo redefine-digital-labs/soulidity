@@ -2,7 +2,13 @@ import { getBlobUrl } from '@/lib/services/walrus'
 import { getSealSessionTtlMinutes, getSealRuntimeConfig } from '@/lib/services/seal'
 import { generateMemoryDocumentId } from '@/lib/services/seal-crypto'
 import type { MemoryAccessResponse, SoulAssetDetail, SoulMemoryEntryRecord } from '@/lib/soulidity/types'
-import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
+import {
+  findActiveGrantSlotForViewer,
+  getSoulGrantObject,
+  getSoulStateObject,
+  normalizeSuiValue,
+  sameSuiValue,
+} from '@/lib/soulidity/queries'
 
 export class MemoryAccessDeniedError extends Error {
   constructor(message: string, readonly status = 403) {
@@ -20,7 +26,9 @@ export async function resolveMemoryAccessPayload(params: {
   const viewerAddresses = params.viewerAddresses
     .map((address) => normalizeSuiValue(address))
     .filter((value): value is string => value != null)
-  const state = await getSoulStateObject(params.soul.stateOnChainId, params.packageId)
+  const state = await getSoulStateObject(params.soul.stateOnChainId, params.packageId, {
+    includeActiveGrants: false,
+  })
   const resolvedPackageId = state.packageId ?? params.packageId
 
   if (!params.entry.sealSidecar) {
@@ -56,10 +64,11 @@ export async function resolveMemoryAccessPayload(params: {
     }
   }
 
-  const activeMemorySlot = state.activeGrants.find((slot) =>
-    slot.scopes.includes('memory')
-      && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
-  )
+  const activeMemorySlot = await findActiveGrantSlotForViewer({
+    state,
+    viewerAddresses,
+    scope: 'memory',
+  })
   if (!activeMemorySlot) {
     throw new MemoryAccessDeniedError('Only the owner or the active granted agent can access this memory entry')
   }
@@ -70,6 +79,9 @@ export async function resolveMemoryAccessPayload(params: {
   }
 
   const grant = await getSoulGrantObject(activeMemorySlot.grantId, resolvedPackageId)
+  if (grant.ownershipEpochSnapshot !== state.ownershipEpoch) {
+    throw new MemoryAccessDeniedError('The active SoulGrant is no longer valid for this Soul owner')
+  }
   if (!sameSuiValue(grant.granteeAddress, viewerMatch)) {
     throw new MemoryAccessDeniedError('The active SoulGrant does not belong to this wallet')
   }

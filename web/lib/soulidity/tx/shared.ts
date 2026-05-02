@@ -46,6 +46,12 @@ export function validateSoulPublishArgs(params: {
   }
 }
 
+export function assertNoMintTimeVoiceAsset(params: { initialVoice?: unknown; assetType?: unknown }) {
+  if (params.initialVoice != null || params.assetType === 'audio') {
+    throw new Error('Mint-time voice assets are disabled; add voice assets after mint so private asset sidecars can be mirrored safely')
+  }
+}
+
 export function validateCollectionArgs(params: {
   name: string
   description: string
@@ -117,7 +123,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
   })
 
   tx.moveCall({
-    target: `${packageId}::market::register_existing_personal_kiosk`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

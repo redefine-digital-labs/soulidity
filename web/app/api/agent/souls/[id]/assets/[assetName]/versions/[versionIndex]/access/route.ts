@@ -6,7 +6,13 @@ import { prisma } from '@/lib/prisma'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { getSoulGrantObject, getSoulStateObject, normalizeSuiValue, sameSuiValue } from '@/lib/soulidity/queries'
+import {
+  findActiveGrantSlotForViewer,
+  getSoulGrantObject,
+  getSoulStateObject,
+  normalizeSuiValue,
+  sameSuiValue,
+} from '@/lib/soulidity/queries'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
 export const dynamic = 'force-dynamic'
@@ -89,7 +95,9 @@ export async function GET(
     return NextResponse.json({ error: 'Soul assets root is missing' }, { status: 409 })
   }
 
-  const state = await getSoulStateObject(soul.stateOnChainId, getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'))
+  const state = await getSoulStateObject(soul.stateOnChainId, getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'), {
+    includeActiveGrants: false,
+  })
   const resolvedPackageId = state.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const viewerAddresses = auth.walletAddresses
     .map((address) => normalizeSuiValue(address))
@@ -127,14 +135,18 @@ export async function GET(
   }
 
   // 2. Active grant with assets scope (Move contract checks SCOPE_ASSETS=8 in grant)
-  const activeAssetsSlot = state.activeGrants.find((slot) =>
-    slot.scopes.includes('assets')
-      && viewerAddresses.some((address) => sameSuiValue(address, slot.granteeAddress)),
-  )
+  const activeAssetsSlot = await findActiveGrantSlotForViewer({
+    state,
+    viewerAddresses,
+    scope: 'assets',
+  })
   if (activeAssetsSlot) {
     const grant = await getSoulGrantObject(activeAssetsSlot.grantId, resolvedPackageId)
     const viewerMatch = viewerAddresses.find((address) => sameSuiValue(address, grant.granteeAddress))
     if (viewerMatch) {
+      if (grant.ownershipEpochSnapshot !== state.ownershipEpoch) {
+        return NextResponse.json({ error: 'The active asset grant is no longer valid for this Soul owner' }, { status: 403 })
+      }
       if (grant.expiresAtMs == null || grant.expiresAtMs >= Date.now()) {
         if (grant.scopes.includes('assets')) {
           return NextResponse.json({

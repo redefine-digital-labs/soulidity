@@ -250,58 +250,14 @@ export default function AddSoulsPage() {
     soul.md            ← character file (required)
     memory.md          ← memory (required)
     image.png          ← preview image (optional)
-    persona-sprite.png ← sprite sheet (optional)
-    persona-sprite-config.json
   2/                   ← Row 2
     soul.md
     memory.md
   ...`}
                 </pre>
                 <p className="mt-3 text-[12px] leading-5 text-muted">
-                  Optional sprite files must come as a pair in each numbered folder:
-                  <code className="mx-1 rounded bg-black/25 px-1 font-mono text-[11px]">persona-sprite.(png|jpg|jpeg|webp|gif)</code>
-                  +
-                  <code className="mx-1 rounded bg-black/25 px-1 font-mono text-[11px]">persona-sprite-config.json</code>
-                  or
-                  <code className="mx-1 rounded bg-black/25 px-1 font-mono text-[11px]">sprite-config.json</code>.
+                  Persona sprites are added after mint from each Soul detail page, so batch folders only prepare locked Soul content.
                 </p>
-              </div>
-
-              <div className="rounded-2xl border border-purple/25 bg-card2/45 px-5 py-4">
-                <p className="text-[12px] font-semibold text-foreground">Persona sprite visibility</p>
-                <p className="mt-1 text-[12px] leading-5 text-muted">
-                  Applies to every Soul folder that includes optional persona sprite files.
-                </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => ctx.setSpriteVisibility('private')}
-                    className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
-                      ctx.spriteVisibility === 'private'
-                        ? 'border-purple bg-purple/15 text-foreground'
-                        : 'border-border bg-card/40 text-muted hover:border-purple/40'
-                    }`}
-                  >
-                    Private
-                    <div className="mt-1 text-[10px] leading-4 text-muted">
-                      Mint protected `persona-sprite` assets. Desktop resolves them via owner/grant access.
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => ctx.setSpriteVisibility('public')}
-                    className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
-                      ctx.spriteVisibility === 'public'
-                        ? 'border-purple bg-purple/15 text-foreground'
-                        : 'border-border bg-card/40 text-muted hover:border-purple/40'
-                    }`}
-                  >
-                    Public
-                    <div className="mt-1 text-[10px] leading-4 text-muted">
-                      Mint metadata that points directly to the public Walrus sprite sheet URL.
-                    </div>
-                  </button>
-                </div>
               </div>
 
               {/* Download template */}
@@ -466,9 +422,6 @@ export default function AddSoulsPage() {
                         </span>
                         <span className={folder?.imageFile ? 'text-purple' : 'text-muted/40'}>
                           {folder?.imageFile ? '✓' : '—'} img
-                        </span>
-                        <span className={folder?.spriteSheetFile && folder?.spriteConfigFile ? 'text-teal' : 'text-muted/40'}>
-                          {folder?.spriteSheetFile && folder?.spriteConfigFile ? '✓' : '—'} sprite
                         </span>
                       </div>
                     )

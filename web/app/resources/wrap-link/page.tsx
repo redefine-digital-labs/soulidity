@@ -71,7 +71,6 @@ export default function WrapLinkPage() {
   initialSkillName?,           // defaults to "default"
   skillsVisibility?,           // "public" | "private", defaults to "private"
   initialSprite?,              // optional active sprite binding + sprite config JSON
-  initialVoice?,               // optional active voice binding + voice config JSON
   originRef,                   // provenance string — typically "type::objectId"
   creatorRoyaltyBps,           // 0–10000
 })`}</code>

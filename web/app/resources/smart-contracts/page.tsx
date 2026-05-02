@@ -79,8 +79,10 @@ public struct SoulState has key {
     current_owner: address,
     current_kiosk_id: ID,          // personal kiosk holding the Soul
     ownership_epoch: u64,          // increments on every ownership change
-    grant_capacity: u64,           // max concurrent grants (default 1)
-    active_grants: vector<ActiveGrantSlot>,
+    grant_capacity: u64,           // max concurrent active grants
+    active_grants: Table<address, ActiveGrantSlot>,
+    active_grant_ids: Table<ID, address>,
+    active_grant_count: u64,
     memory_id: Option<ID>,         // bound SoulMemory object ID
     metadata_id: Option<ID>,       // bound SoulMetadata object ID
     skills_id: Option<ID>,         // bound SoulSkills object ID
@@ -88,7 +90,7 @@ public struct SoulState has key {
 }`}</code>
         </pre>
         <p className="text-xs text-muted">
-          Persona / voice presentation metadata now lives in a separate shared <code>SoulMetadata</code> object. The owner updates active bindings via <code>market::set_active_sprite</code> / <code>set_active_voice</code> and writes JSON config blobs via <code>metadata::upsert_metadata_blob</code>.
+          Persona / voice presentation metadata now lives in a separate shared <code>SoulMetadata</code> object. The owner updates active bindings via <code>market::set_active_sprite</code> / <code>set_active_voice</code>; the lower-level active binding setters are package-only so every external update keeps the asset/type/policy checks.
         </p>
       </div>
 
@@ -124,6 +126,7 @@ public struct SkillSlot has copy, drop, store {
     blob_object_id: ID,
     is_public: bool,
     deleted: bool,
+    purged: bool,
     created_at_ms: u64,
 }
 // Walrus Blob stored as dynamic object field keyed by SkillBlobKey
@@ -133,7 +136,7 @@ public struct SkillBlobKey has copy, drop, store {
 }`}</code>
         </pre>
         <p className="text-xs text-muted">
-          Skills use append-only versioning. The <code>versionIndex</code> is the 0-based index into the slot vector. Soft delete sets <code>deleted = true</code> but keeps the slot. Public versions are readable without a grant; private versions require SCOPE_SKILLS.
+          Skills use append-only versioning. The <code>versionIndex</code> is the 0-based index into the slot vector. Soft delete sets <code>deleted = true</code>; owner purge burns the stored Walrus Blob and sets <code>purged = true</code>. Public versions are readable without a grant; private versions require SCOPE_SKILLS.
         </p>
       </div>
 
@@ -163,9 +166,10 @@ public struct SoulCollectionRight has key, store { ... }`}</code>
         <ul className="text-sm text-muted space-y-1.5">
           <li><code className="text-xs text-foreground">SoulCreated</code> — emitted by <code>market</code> after any mint variant (native, import, personal-join).</li>
           <li><code className="text-xs text-foreground">SoulOwnershipRotated</code> — emitted by <code>soul::rotate_owner</code> on every purchase or transfer. Increments <code>ownership_epoch</code>.</li>
-          <li><code className="text-xs text-foreground">SoulGrantIssued / Revoked / Superseded / Expired / Invalidated</code> — full lifecycle from <code>grant</code> module.</li>
+          <li><code className="text-xs text-foreground">SoulGrantIssued / Revoked / Superseded / Expired / Destroyed</code> — grant rows are indexed by Table; ownership rotation uses epoch mismatch instead of per-grant invalidation events.</li>
           <li><code className="text-xs text-foreground">MemoryEntryAppended</code> — includes <code>timestamp_key</code>, <code>writer_kind</code>, and <code>blob_object_id</code>.</li>
-          <li><code className="text-xs text-foreground">SkillVersionAppended / SkillVersionDeleted</code> — includes <code>skill_name</code>, <code>version_index</code>, and <code>is_public</code>.</li>
+          <li><code className="text-xs text-foreground">SkillVersionAppended / Deleted / Purged</code> — includes <code>skill_name</code>, <code>version_index</code>, and <code>is_public</code>.</li>
+          <li><code className="text-xs text-foreground">ContentAccessGranted / Revoked / ScopeUpdated</code> — entries are epoch-pinned; stale rows can be cleaned permissionlessly.</li>
           <li><code className="text-xs text-foreground">SoulCollectionCreated / SoulAddedToCollection / CollectionHolderUpdated</code> — from <code>collection</code> module.</li>
         </ul>
       </div>
