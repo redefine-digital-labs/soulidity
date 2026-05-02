@@ -64,6 +64,12 @@ const ERebindSameKiosk: u64 = 33;
 const EAssetsRootAlreadyExists: u64 = 34;
 const EContentAccessOwnerCannotPurchase: u64 = 35;
 const ESkillsRootAlreadyExists: u64 = 36;
+const EPersonalKioskCapMismatch: u64 = 37;
+const ESoulCurrentKioskMismatch: u64 = 38;
+const ESoulOwnerMismatch: u64 = 39;
+const EKioskOwnerMismatch: u64 = 40;
+const EListingSellerMismatch: u64 = 41;
+const EListingStateMismatch: u64 = 42;
 
 const ASSET_TYPE_SPRITE: u8 = 0;
 const ASSET_TYPE_AUDIO: u8 = 2;
@@ -1076,8 +1082,8 @@ public fun list_soul_fixed_price(
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
-    assert!(soul::current_owner(state) == ctx.sender(), EUnauthorizedKioskAccess);
-    assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), EPersonalKioskMismatch);
+    assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
+    assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
 
     let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
@@ -1133,8 +1139,8 @@ public fun list_soul_fixed_price_with_collection(
     assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     let collection_id = object::id(collection_obj);
     assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
-    assert!(soul::current_owner(state) == ctx.sender(), EUnauthorizedKioskAccess);
-    assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), EPersonalKioskMismatch);
+    assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
+    assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
 
     let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
@@ -1173,7 +1179,7 @@ public fun cancel_soul_listing(
     assert!(listing.is_active, EInactiveListing);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(object::id(kiosk_obj) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EKioskOwnerMismatch);
 
     let purchase_cap = take_soul_purchase_cap(listing);
     kiosk::return_purchase_cap<Soul>(kiosk_obj, purchase_cap);
@@ -1264,7 +1270,7 @@ public fun list_collection_right_fixed_price(
     assert!(price > 0, EInvalidPrice);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     collection::assert_tradeable(collection_obj);
-    assert!(collection::current_holder(collection_obj) == ctx.sender(), EUnauthorizedKioskAccess);
+    assert!(collection::current_holder(collection_obj) == ctx.sender(), ESoulOwnerMismatch);
     assert!(collection::current_holder_kiosk_id(collection_obj) == object::id(kiosk_obj), ECollectionMismatch);
     assert!(right_id == collection::right_id(collection_obj), ECollectionRightMismatch);
 
@@ -1296,7 +1302,7 @@ public fun cancel_collection_listing(
     assert!(listing.is_active, EInactiveListing);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(object::id(kiosk_obj) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EKioskOwnerMismatch);
 
     let purchase_cap = take_collection_purchase_cap(listing);
     kiosk::return_purchase_cap<SoulCollectionRight>(kiosk_obj, purchase_cap);
@@ -1326,9 +1332,9 @@ public fun buy_collection_right_fixed_price(
     assert!(listing.collection_id == object::id(collection_obj), ECollectionMismatch);
     assert!(listing.right_id == collection::right_id(collection_obj), ECollectionRightMismatch);
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
     assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
-    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
     collection::assert_tradeable(collection_obj);
 
     let buyer_kiosk_id = object::id(buyer_kiosk);
@@ -1852,12 +1858,12 @@ fun buy_soul_impl(
 ) {
     assert!(!config.paused, EMarketPaused);
     assert!(listing.is_active, EInactiveListing);
-    assert!(listing.state_id == object::id(state), EStateMismatch);
-    assert!(listing.soul_id == soul::soul_id(state), EStateMismatch);
+    assert!(listing.state_id == object::id(state), EListingStateMismatch);
+    assert!(listing.soul_id == soul::soul_id(state), EListingStateMismatch);
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
-    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
     assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
-    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
 
     let buyer_kiosk_id = object::id(buyer_kiosk);
     assert_registered_personal_kiosk(
@@ -1977,7 +1983,7 @@ fun insert_or_assert_personal_kiosk_registration(
             key,
         );
         assert!(existing.kiosk_id == kiosk_id, EPersonalKioskMismatch);
-        assert!(existing.kiosk_cap_id == kiosk_cap_id, EPersonalKioskMismatch);
+        assert!(existing.kiosk_cap_id == kiosk_cap_id, EPersonalKioskCapMismatch);
     } else {
         df::add(
             &mut registry.id,
@@ -2012,7 +2018,7 @@ fun assert_registered_personal_kiosk(
 ) {
     let registration = borrow_personal_kiosk_registration(registry, owner);
     assert!(registration.kiosk_id == kiosk_id, EPersonalKioskMismatch);
-    assert!(registration.kiosk_cap_id == kiosk_cap_id, EPersonalKioskMismatch);
+    assert!(registration.kiosk_cap_id == kiosk_cap_id, EPersonalKioskCapMismatch);
 }
 
 fun assert_tracked_upgrade_cap(upgrade_state: &MarketUpgradeState, upgrade_cap_id: ID) {

@@ -117,6 +117,63 @@ describe('memory encryption regressions', () => {
     expect(readSource('web/app/import/preview/page.tsx')).toMatch(/persona sprites are added after mint/i)
   })
 
+  it('keeps legacy private mint-time asset recoveries resumable without re-enabling new mint-time sprites', () => {
+    const publishHookSource = readSource('web/lib/hooks/use-publish.ts')
+    const importHookSource = readSource('web/lib/hooks/use-import.ts')
+    const wrapHookSource = readSource('web/lib/hooks/use-wrap-publish.ts')
+    let helperSource = ''
+    try {
+      helperSource = readSource('web/lib/hooks/legacy-mint-asset-recovery.ts')
+    } catch {}
+
+    for (const source of [publishHookSource, importHookSource, wrapHookSource]) {
+      expect(source).toContain("from '@/lib/hooks/legacy-mint-asset-recovery'")
+      expect(source).toContain('hasValidOptionalLegacyAssetsSealMaterial')
+      expect(source).toContain('createLegacyInitialAssetSealSidecar')
+      expect(source).not.toContain('initialSprite:')
+      expect(source).not.toContain('assetsSealMaterial: params')
+    }
+
+    expect(helperSource).toContain("const LEGACY_ASSETS_SEAL_MATERIAL_KEY = 'assetsSealMaterial'")
+    expect(helperSource).toContain('tryExtractAssetVersionAppendedEvent')
+    expect(helperSource).toContain("initialAsset.visibility !== 'private'")
+    expect(helperSource).toContain('createAssetSealSidecarFromMaterial')
+  })
+
+  it('keeps mint-time voice assets disabled until private asset sidecars are supported', () => {
+    const publishHookSource = readSource('web/lib/hooks/use-publish.ts')
+    const importHookSource = readSource('web/lib/hooks/use-import.ts')
+    const publishTxSource = readSource('web/lib/soulidity/tx/publish.ts')
+    const importTxSource = readSource('web/lib/soulidity/tx/import.ts')
+    const wrapTxSource = readSource('web/lib/soulidity/tx/personal-join.ts')
+    const sharedTxSource = readSource('web/lib/soulidity/tx/shared.ts')
+    const wrapLinkResourceSource = readSource('web/app/resources/wrap-link/page.tsx')
+
+    expect(publishHookSource).not.toContain('initialVoice')
+    expect(importHookSource).not.toContain('initialVoice')
+    expect(wrapLinkResourceSource).not.toContain('initialVoice?')
+
+    for (const source of [publishTxSource, importTxSource, wrapTxSource]) {
+      expect(source).toContain('assertNoMintTimeVoiceAsset')
+      expect(source).not.toContain('InitialVoiceInput')
+      expect(source).not.toContain('voiceConfigJson')
+      expect(source).toContain("tx.pure.option('string', null)")
+    }
+    expect(sharedTxSource).toContain('Mint-time voice assets are disabled')
+
+    for (const routePath of [
+      'web/app/api/souls/publish/route.ts',
+      'web/app/api/import/route.ts',
+      'web/app/api/wrap-link/personal/route.ts',
+    ]) {
+      const routeSource = readSource(routePath)
+      expect(routeSource).toContain("initialAsset?.assetType === 'audio'")
+      expect(routeSource).toContain('Mint-time voice assets are disabled')
+      expect(routeSource).toContain("initialAsset?.visibility === 'private' && !assetsSidecar")
+      expect(routeSource).toContain('assetsSealSidecar is required for private initial asset versions')
+    }
+  })
+
   it('keeps provider upload state typed as encrypted for founding memory', () => {
     const createProviderSource = readSource('web/components/providers/create-soul-provider.tsx')
     const importProviderSource = readSource('web/components/providers/import-soul-provider.tsx')

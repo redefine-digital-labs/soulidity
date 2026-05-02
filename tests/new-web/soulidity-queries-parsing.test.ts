@@ -274,6 +274,9 @@ describe('getVendoredKioskPackageAddress', () => {
   it('resolves the official mainnet kiosk type origin for PersonalKioskCap filters', () => {
     process.env[ENV_KEY] = OFFICIAL_MAINNET_KIOSK_PACKAGE_ID
     expect(getVendoredKioskPackageAddress()).toBe(OFFICIAL_MAINNET_KIOSK_PACKAGE_ID)
+    expect(OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID).toBe(
+      '0x434b5bd8f6a7b05fede0ff46c6e511d71ea326ed38056e3bcd681d2d7c2a7879',
+    )
     expect(getPersonalKioskCapTypePackageAddress()).toBe(OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID)
   })
 

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
 const mockedGetSoulGrantObject = vi.hoisted(() => vi.fn())
+const mockedFindActiveGrantSlotForViewer = vi.hoisted(() => vi.fn())
 
 const mockedNormalizeSuiValue = vi.hoisted(
   () =>
@@ -32,6 +33,7 @@ const mockedSameSuiValue = vi.hoisted(
 vi.mock('@/lib/soulidity/queries', () => ({
   getSoulStateObject: mockedGetSoulStateObject,
   getSoulGrantObject: mockedGetSoulGrantObject,
+  findActiveGrantSlotForViewer: mockedFindActiveGrantSlotForViewer,
   normalizeSuiValue: mockedNormalizeSuiValue,
   sameSuiValue: mockedSameSuiValue,
 }))
@@ -186,6 +188,18 @@ function makeGrantObject(overrides: Record<string, unknown> = {}) {
 describe('resolveSoulAccessPayload', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    mockedFindActiveGrantSlotForViewer.mockImplementation(async ({
+      state,
+      viewerAddresses,
+      scope,
+    }: {
+      state: { activeGrants?: Array<{ granteeAddress: string; scopes: string[] }> }
+      viewerAddresses: string[]
+      scope: string
+    }) => state.activeGrants?.find((slot) =>
+      slot.scopes.includes(scope)
+        && viewerAddresses.some((address) => mockedSameSuiValue(address, slot.granteeAddress)),
+    ) ?? null)
   })
 
   // ── Owner access ────────────────────────────────────────────────────
@@ -208,6 +222,9 @@ describe('resolveSoulAccessPayload', () => {
     expect(result.seal).toEqual(MOCK_SEAL_CONFIG)
     expect(result.sessionTtlMin).toBe(10)
     expect(result.sealSidecar).toEqual(MOCK_SIDECAR)
+    expect(mockedGetSoulStateObject).toHaveBeenCalledWith(STATE_ID, PKG, {
+      includeActiveGrants: false,
+    })
   })
 
   it('grants owner access when one of multiple viewer addresses matches the owner', async () => {
@@ -240,6 +257,7 @@ describe('resolveSoulAccessPayload', () => {
     expect(result.accessKind).toBe('owner')
     // getSoulGrantObject should NOT be called since owner path short-circuits
     expect(mockedGetSoulGrantObject).not.toHaveBeenCalled()
+    expect(mockedFindActiveGrantSlotForViewer).not.toHaveBeenCalled()
   })
 
   // ── Granted agent access ────────────────────────────────────────────
@@ -301,6 +319,25 @@ describe('resolveSoulAccessPayload', () => {
     })
 
     expect(result.accessKind).toBe('granted-agent')
+  })
+
+  it('throws when a leaked active grant was issued under an older ownership epoch', async () => {
+    mockedGetSoulStateObject.mockResolvedValue(
+      makeSoulStateObject({
+        ownershipEpoch: 2,
+        activeGrantCount: 0,
+        activeGrants: [makeGrantSlot({ ownershipEpochSnapshot: 1 })],
+      }),
+    )
+    mockedGetSoulGrantObject.mockResolvedValue(makeGrantObject({ ownershipEpochSnapshot: 1 }))
+
+    await expect(
+      resolveSoulAccessPayload({
+        soul: makeSoulAssetDetail(),
+        viewerAddresses: [GRANTEE_ADDR],
+        packageId: PKG,
+      }),
+    ).rejects.toThrow('The active SoulGrant is no longer valid for this Soul owner')
   })
 
   // ── Access denied ───────────────────────────────────────────────────

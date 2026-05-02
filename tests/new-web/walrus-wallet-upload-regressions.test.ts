@@ -390,9 +390,9 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(onMintIdx).toBeGreaterThan(setDigestIdx)
 
     const guardBlock = source.slice(signStart, setDigestIdx)
-    // Uses the shared Sui result assertion instead of hand-reading
+    // Uses the shared Soulidity result assertion instead of hand-reading
     // effects.status.status at each call site.
-    expect(guardBlock).toContain("assertSuiTxSucceeded(result, 'Soul mint transaction')")
+    expect(guardBlock).toContain("assertSoulidityTxSucceeded(result, 'Soul mint transaction')")
     // Throws on non-success BEFORE setTxDigest / onMintTxExecuted runs, so a
     // failed digest cannot clear batch recovery.
     expect(guardBlock).not.toContain('setTxDigest')
@@ -412,7 +412,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(importPersist).toBeGreaterThan(importSetDigest)
 
     const importGuardBlock = importSource.slice(importSignStart, importSetDigest)
-    expect(importGuardBlock).toContain("assertSuiTxSucceeded(result, 'Soul import transaction')")
+    expect(importGuardBlock).toContain("assertSoulidityTxSucceeded(result, 'Soul import transaction')")
     expect(importGuardBlock).not.toContain('setTxDigest')
     expect(importGuardBlock).not.toContain('persistImportRecovery')
 
@@ -425,7 +425,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(wrapPersist).toBeGreaterThan(wrapSetDigest)
 
     const wrapGuardBlock = wrapSource.slice(wrapSignStart, wrapSetDigest)
-    expect(wrapGuardBlock).toContain("assertSuiTxSucceeded(txResult, 'Soul personal join transaction')")
+    expect(wrapGuardBlock).toContain("assertSoulidityTxSucceeded(txResult, 'Soul personal join transaction')")
     expect(wrapGuardBlock).not.toContain('setTxDigest')
     expect(wrapGuardBlock).not.toContain('persistWrapRecovery')
   })
@@ -438,7 +438,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(createSignStart).toBeGreaterThanOrEqual(0)
     expect(createSetDigest).toBeGreaterThan(createSignStart)
     const createGuardBlock = source.slice(createSignStart, createSetDigest)
-    expect(createGuardBlock).toContain("assertSuiTxSucceeded(result, 'Collection create transaction')")
+    expect(createGuardBlock).toContain("assertSoulidityTxSucceeded(result, 'Collection create transaction')")
     expect(createGuardBlock).not.toContain('setTxDigest')
     expect(createGuardBlock).not.toContain('recovery.txDigest')
 
@@ -447,7 +447,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(mintSignStart).toBeGreaterThan(createSetDigest)
     expect(mintPersist).toBeGreaterThan(mintSignStart)
     const mintGuardBlock = source.slice(mintSignStart, mintPersist)
-    expect(mintGuardBlock).toContain("assertSuiTxSucceeded(mintResult, 'Collection soul mint transaction')")
+    expect(mintGuardBlock).toContain("assertSoulidityTxSucceeded(mintResult, 'Collection soul mint transaction')")
     expect(mintGuardBlock).not.toContain('soulState.mintDigest')
 
     const bindSignStart = source.indexOf('const addResult = await signAndExecute(addTx)')
@@ -455,7 +455,7 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(bindSignStart).toBeGreaterThan(mintPersist)
     expect(bindPersist).toBeGreaterThan(bindSignStart)
     const bindGuardBlock = source.slice(bindSignStart, bindPersist)
-    expect(bindGuardBlock).toContain("assertSuiTxSucceeded(addResult, 'Collection bind transaction')")
+    expect(bindGuardBlock).toContain("assertSoulidityTxSucceeded(addResult, 'Collection bind transaction')")
     expect(bindGuardBlock).not.toContain('soulState.bindDigest')
   })
 
@@ -640,6 +640,42 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(appendBlock).toContain('const retryAssetsOnChainId = await resolveLiveSoulAssetsOnChainId')
     expect(appendBlock).toContain('assetsOnChainId: retryAssetsOnChainId')
     expect(appendBlock).toContain('blobObjectId: uploaded.blobObjectId')
+  })
+
+  it('recognizes enhanced market aborts before abandoning the same-blob sprite root retry', () => {
+    const source = readFileSync('web/lib/hooks/use-assets.ts', 'utf8')
+    const helperStart = source.indexOf('function isAssetsRootAlreadyExistsError')
+    const helperEnd = source.indexOf('\n}\n', helperStart)
+    expect(helperStart).toBeGreaterThanOrEqual(0)
+    expect(helperEnd).toBeGreaterThan(helperStart)
+
+    const helperBlock = source.slice(helperStart, helperEnd)
+    expect(helperBlock).toMatch(/marketAbort|parseMarketAbort/)
+    expect(helperBlock).toContain('EAssetsRootAlreadyExists')
+
+    const appendStart = source.indexOf('async function appendAndActivateSprite')
+    const appendBlock = source.slice(appendStart, source.indexOf('\n  async function deleteVersion', appendStart))
+    expect(appendBlock).toContain('isAssetsRootAlreadyExistsError(txError)')
+    expect(appendBlock).toContain('blobObjectId: uploaded.blobObjectId')
+  })
+
+  it('resumes a pending sprite append mirror before same-tab retry can sign a new append', () => {
+    const source = readFileSync('web/lib/hooks/use-assets.ts', 'utf8')
+    const panelSource = readFileSync('web/components/souls/persona-asset-panel.tsx', 'utf8')
+    const helperStart = source.indexOf('const resumePendingSpriteAppendMirror')
+    const appendStart = source.indexOf('async function appendAndActivateSprite')
+    const resumeCall = source.indexOf('resumePendingSpriteAppendMirror(soul.onChainId, user?.id)', appendStart)
+    const uploadCall = source.indexOf('const uploaded = await uploadAssetFile', appendStart)
+
+    expect(helperStart).toBeGreaterThanOrEqual(0)
+    expect(appendStart).toBeGreaterThan(helperStart)
+    expect(resumeCall).toBeGreaterThan(appendStart)
+    expect(uploadCall).toBeGreaterThan(resumeCall)
+
+    const appendPreamble = source.slice(appendStart, uploadCall)
+    expect(appendPreamble).toContain('if (resumedPendingMirror) return')
+    expect(panelSource).toContain("pending === 'recovering'")
+    expect(panelSource).toContain('Resuming…')
   })
 
   it('maps duplicate expected blobIds to distinct created Blob objects via a per-blobId queue', () => {

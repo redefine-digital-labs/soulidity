@@ -374,6 +374,14 @@ describe('publish.ts — buildPublishSoulTx', () => {
     expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
   })
 
+  it('rejects legacy audio asset params before signing', async () => {
+    await expect(buildPublishSoulTx({
+      ...VALID_PARAMS,
+      assetBlobObjectId: OBJ('77'),
+      assetType: 'audio',
+    })).rejects.toThrow('Mint-time voice assets are disabled')
+  })
+
   it('invokes attachBeforeMint between kiosk setup and the mint call', async () => {
     const calls: string[] = []
     const tx = await buildPublishSoulTx({
@@ -1177,6 +1185,14 @@ describe('import.ts — buildImportSoulTx', () => {
     expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
   })
 
+  it('rejects legacy audio asset params before signing', () => {
+    expect(() => buildImportSoulTx({
+      ...VALID_PARAMS,
+      assetBlobObjectId: OBJ('77'),
+      assetType: 'audio',
+    })).toThrow('Mint-time voice assets are disabled')
+  })
+
   it('returns a Transaction when creating new kiosk', () => {
     const tx = buildImportSoulTx({
       ...VALID_PARAMS,
@@ -1267,6 +1283,14 @@ describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
     })
 
     expect(getPureInputBytes(tx)).toContain(encodeBcsString('persona-sprite'))
+  })
+
+  it('rejects legacy audio asset params before signing', () => {
+    expect(() => buildPersonalJoinSoulTx({
+      ...VALID_PARAMS,
+      assetBlobObjectId: OBJ('77'),
+      assetType: 'audio',
+    })).toThrow('Mint-time voice assets are disabled')
   })
 
   it('returns a Transaction when creating new kiosk', () => {

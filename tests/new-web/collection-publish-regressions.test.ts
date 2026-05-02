@@ -60,4 +60,14 @@ describe('collection publish regression guards', () => {
     expect(source).toContain("return NextResponse.json({ error: 'Failed to mirror Soulidity collection creation transaction' }, { status: 500 })")
     expect(source).not.toContain('Failed to mirror Soulidity collection creation transaction: ${message}')
   })
+
+  it('keeps legacy collection mint-time private asset recoveries resumable', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+
+    expect(source).toContain("from '@/lib/hooks/legacy-mint-asset-recovery'")
+    expect(source).toContain('hasValidOptionalLegacyAssetsSealMaterial')
+    expect(source).toContain('createLegacyInitialAssetSealSidecar')
+    expect(source).toContain('const assetsSealSidecar = await createLegacyInitialAssetSealSidecar')
+    expect(source).not.toContain('assetsSealSidecar: null')
+  })
 })
