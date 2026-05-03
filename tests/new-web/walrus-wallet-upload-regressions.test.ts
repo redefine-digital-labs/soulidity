@@ -150,8 +150,11 @@ describe('wallet-paid Walrus upload quote guards', () => {
     //     and silently orphan the prior paid PTB1.
     // The fix re-queries the stored `registerTxDigest` using the *stored*
     // blob ids before deciding what to do.
+    //
+    // After the 3-phase split this resume / mismatch / fresh decision lives
+    // in `prepareBatchWalrusRegisterIntent` (pre-signature phase).
     const source = readFileSync('web/lib/upload/client-upload.ts', 'utf8')
-    const batchStart = source.indexOf('export async function prepareSoulBlobsForBatchPublish')
+    const batchStart = source.indexOf('export async function prepareBatchWalrusRegisterIntent')
     const recoveryStart = source.indexOf(
       'matchingRecovery.blobs.every((b) => !!b.blobObjectId)',
       batchStart,
@@ -433,30 +436,43 @@ describe('wallet-paid Walrus upload quote guards', () => {
   it('rejects failed collection transaction digests before persisting collection recovery', () => {
     const source = readFileSync('web/lib/hooks/use-collection-publish.ts', 'utf8')
 
-    const createSignStart = source.indexOf('const result = await signAndExecute(tx)')
-    const createSetDigest = source.indexOf('setTxDigest(digest)', createSignStart)
-    expect(createSignStart).toBeGreaterThanOrEqual(0)
-    expect(createSetDigest).toBeGreaterThan(createSignStart)
-    const createGuardBlock = source.slice(createSignStart, createSetDigest)
-    expect(createGuardBlock).toContain("assertSoulidityTxSucceeded(result, 'Collection create transaction')")
-    expect(createGuardBlock).not.toContain('setTxDigest')
-    expect(createGuardBlock).not.toContain('recovery.txDigest')
+    // PTB1 (register + create_collection): assert success before persisting
+    // recovery.collectionPtb1Digest.
+    const ptb1SignStart = source.indexOf('const result = await signAndExecute(tx)')
+    const ptb1SetDigest = source.indexOf('recovery.collectionPtb1Digest = ptb1Digest', ptb1SignStart)
+    expect(ptb1SignStart).toBeGreaterThanOrEqual(0)
+    expect(ptb1SetDigest).toBeGreaterThan(ptb1SignStart)
+    const ptb1GuardBlock = source.slice(ptb1SignStart, ptb1SetDigest)
+    expect(ptb1GuardBlock).toContain("assertSoulidityTxSucceeded(result, 'Collection PTB1 (register + create) transaction')")
+    expect(ptb1GuardBlock).not.toContain('recovery.collectionPtb1Digest = ')
 
-    const mintSignStart = source.indexOf('const mintResult = await signAndExecute(mintTx)')
-    const mintPersist = source.indexOf('soulState.mintDigest = mintDigest', mintSignStart)
-    expect(mintSignStart).toBeGreaterThan(createSetDigest)
+    // Cover-only PTB2 for empty collections: same guard.
+    const coverSignStart = source.indexOf('const coverResult = await signAndExecute(coverTx)', ptb1SetDigest)
+    const coverPersist = source.indexOf('recovery.coverCertifyDigest = coverResult.digest', coverSignStart)
+    expect(coverSignStart).toBeGreaterThan(ptb1SetDigest)
+    expect(coverPersist).toBeGreaterThan(coverSignStart)
+    const coverGuardBlock = source.slice(coverSignStart, coverPersist)
+    expect(coverGuardBlock).toContain("assertSoulidityTxSucceeded(coverResult, 'Empty collection cover certify transaction')")
+    expect(coverGuardBlock).not.toContain('recovery.coverCertifyDigest = ')
+
+    // PTB3 (chunked mint fallback): same guard against persisting a failed
+    // chunk digest.
+    const mintSignStart = source.indexOf('const mintResult = await signAndExecute(tx)', coverPersist)
+    const mintPersist = source.indexOf('chunk.digest = chunkDigest', mintSignStart)
+    expect(mintSignStart).toBeGreaterThan(coverPersist)
     expect(mintPersist).toBeGreaterThan(mintSignStart)
     const mintGuardBlock = source.slice(mintSignStart, mintPersist)
-    expect(mintGuardBlock).toContain("assertSoulidityTxSucceeded(mintResult, 'Collection soul mint transaction')")
-    expect(mintGuardBlock).not.toContain('soulState.mintDigest')
+    expect(mintGuardBlock).toContain("assertSoulidityTxSucceeded(mintResult, 'Collection batch mint transaction')")
+    expect(mintGuardBlock).not.toContain('chunk.digest = chunkDigest')
 
-    const bindSignStart = source.indexOf('const addResult = await signAndExecute(addTx)')
-    const bindPersist = source.indexOf('soulState.bindDigest = bindDigest', bindSignStart)
+    // PTB4 (chunked bind): same guard.
+    const bindSignStart = source.indexOf('const addResult = await signAndExecute(tx)', mintPersist)
+    const bindPersist = source.indexOf('chunk.digest = chunkDigest', bindSignStart)
     expect(bindSignStart).toBeGreaterThan(mintPersist)
     expect(bindPersist).toBeGreaterThan(bindSignStart)
     const bindGuardBlock = source.slice(bindSignStart, bindPersist)
-    expect(bindGuardBlock).toContain("assertSoulidityTxSucceeded(addResult, 'Collection bind transaction')")
-    expect(bindGuardBlock).not.toContain('soulState.bindDigest')
+    expect(bindGuardBlock).toContain("assertSoulidityTxSucceeded(addResult, 'Collection batch bind transaction')")
+    expect(bindGuardBlock).not.toContain('chunk.digest = chunkDigest')
   })
 
   it('persists mint recovery before invoking onMintTxExecuted (clears batch recovery)', () => {
@@ -482,33 +498,26 @@ describe('wallet-paid Walrus upload quote guards', () => {
   it('rejects a failed batch register PTB before persisting batch recovery', () => {
     // Pre-fix: prepareSoulBlobsForBatchPublish read registerResult.digest and
     // immediately persisted a batch recovery row before checking
-    // effects.status. The wallet helper (useWalletSign) returns the raw
-    // executeTransactionBlock result and does NOT reject on Move aborts, so a
-    // submitted register PTB with effects.status.status === 'failure' still
-    // wrote a recovery row pointing at a digest that created no Blob objects.
-    // The next Deploy click then loaded that record and the re-derivation
-    // block tried to resolve Blob objects from a failed digest before the
-    // fresh-register branch could run, wedging the draft until the user
-    // manually cleared session storage. The fix verifies effects.status
-    // BEFORE assigning the digest or persisting recovery, clears any stale
-    // record under the same key, and throws a descriptive error.
+    // effects.status. The fix is preserved across the 3-phase split: the
+    // wrapper signs the register PTB and asserts success BEFORE invoking
+    // completeBatchWalrusUploadAfterRegister (where persistence lives).
     const source = readFileSync('web/lib/upload/client-upload.ts', 'utf8')
     const batchStart = source.indexOf('export async function prepareSoulBlobsForBatchPublish')
-    const signCall = source.indexOf('await params.signAndExecute(tx)', batchStart)
-    const persistCall = source.indexOf('persistWalrusBatchRecovery(recoveryKey, {\n      walletAddress: params.walletAddress', signCall)
+    const signCall = source.indexOf('const registerResult = await params.signAndExecute(tx)', batchStart)
+    const completionCall = source.indexOf('return completeBatchWalrusUploadAfterRegister(', signCall)
     expect(batchStart).toBeGreaterThanOrEqual(0)
     expect(signCall).toBeGreaterThan(batchStart)
-    expect(persistCall).toBeGreaterThan(signCall)
+    expect(completionCall).toBeGreaterThan(signCall)
 
-    const guardBlock = source.slice(signCall, persistCall)
+    const guardBlock = source.slice(signCall, completionCall)
     // Uses the shared Sui result assertion instead of duplicating
     // effects.status parsing at each Walrus call site.
     expect(guardBlock).toContain("assertSuiTxSucceeded(registerResult, 'Walrus batch register transaction')")
     // Clears any stale recovery row so a retry can register from a clean state.
-    expect(guardBlock).toContain('clearWalrusBatchRecovery(recoveryKey)')
-    // Throws BEFORE persistWalrusBatchRecovery runs and BEFORE the digest
-    // is assigned to registerDigest (which is consumed by the persist call).
-    expect(guardBlock).not.toContain('persistWalrusBatchRecovery')
+    expect(guardBlock).toContain('clearWalrusBatchRecovery')
+    // Throws BEFORE the completion call runs (so persistWalrusBatchRecovery
+    // inside complete cannot record a failed digest).
+    expect(guardBlock).not.toMatch(/persistWalrusBatchRecovery\s*\(/)
   })
 
   it('rejects a failed single-blob register PTB before persisting upload recovery', () => {
@@ -678,6 +687,20 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(panelSource).toContain('Resuming…')
   })
 
+  it('routes first sprite root plus N selected sprite versions through the batch builder', () => {
+    const source = readFileSync('web/lib/hooks/use-assets.ts', 'utf8')
+    const panelSource = readFileSync('web/components/souls/persona-asset-panel.tsx', 'utf8')
+
+    expect(source).toContain('async function appendAndActivateSprites')
+    expect(source).toContain('const uploadedSprites = await Promise.all(drafts.map((draft) => uploadAssetFile(draft.sheetFile, params.visibility)))')
+    expect(source).toContain('additionalSprites: uploadedSprites.slice(1).map')
+    expect(source).toContain('rebindActiveSprite: uploadedSprites.length > 1')
+    expect(source).toContain('buildInitAndBatchAppendAssetsTx({')
+    expect(panelSource).toContain('spriteDrafts')
+    expect(panelSource).toContain('onFilesSelect')
+    expect(panelSource).toContain('appendAndActivateSprites({ drafts: spriteDrafts, visibility })')
+  })
+
   it('maps duplicate expected blobIds to distinct created Blob objects via a per-blobId queue', () => {
     // `resolveCreatedBlobObjectIds` previously stored `Map<string, string>`,
     // which meant a single batch containing the same public payload twice (e.g.
@@ -717,11 +740,13 @@ describe('wallet-paid Walrus upload quote guards', () => {
     expect(helperBlock).toContain('client.getStorageConfirmations')
     expect(helperBlock).toContain('client.certificateFromConfirmations')
 
-    const batchStart = source.indexOf('export async function prepareSoulBlobsForBatchPublish')
-    const uploadStart = source.indexOf('const uploaded = await Promise.all', batchStart)
-    const uploadEnd = source.indexOf('// 8. Materialize per-file results', uploadStart)
-    expect(batchStart).toBeGreaterThanOrEqual(0)
-    expect(uploadStart).toBeGreaterThan(batchStart)
+    // After the 3-phase split the parallel sliver-upload + cert build runs
+    // inside `completeBatchWalrusUploadAfterRegister`.
+    const completeStart = source.indexOf('export async function completeBatchWalrusUploadAfterRegister')
+    const uploadStart = source.indexOf('const uploaded = await Promise.all', completeStart)
+    const uploadEnd = source.indexOf('const files: SoulUploadResult[] = prepared.map((p, i) => {', uploadStart)
+    expect(completeStart).toBeGreaterThanOrEqual(0)
+    expect(uploadStart).toBeGreaterThan(completeStart)
     expect(uploadEnd).toBeGreaterThan(uploadStart)
     const uploadBlock = source.slice(uploadStart, uploadEnd)
     expect(uploadBlock).toContain('writeEncodedBlobAndBuildCertificate')

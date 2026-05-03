@@ -13,7 +13,7 @@
     "sourceMap": true,
     "paths": {
       "@db/*": ["./src/db/*"],
-      "@/*": ["./src/*"],
+      "@/*": ["./src/*", "./web/*"],
       "@shared/*": ["./src/shared/*"],
       "@web/*": ["./web/*"]
     }

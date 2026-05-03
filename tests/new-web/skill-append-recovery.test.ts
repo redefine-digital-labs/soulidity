@@ -122,4 +122,17 @@ describe('skill append recovery regressions', () => {
     // Successful mirror clears the recovery row.
     expect(source).toContain('persistSkillAppendRecovery(storageKey, null)')
   })
+
+  it('routes first skills root plus N selected versions through the batch builder', () => {
+    const source = readSource('web/lib/hooks/use-skills.ts')
+    const panel = readSource('web/components/souls/skills-panel.tsx')
+
+    expect(source).toContain('async function appendSkillVersions')
+    expect(source).toContain('const uploadedVersions = await Promise.all(files.map((file) => uploadSkillFile(file, visibility)))')
+    expect(source).toContain('additionalVersions: uploadedVersions.slice(1).map')
+    expect(source).toContain('buildInitAndBatchAppendSkillsTx({')
+    expect(panel).toContain('selectedFiles')
+    expect(panel).toContain('onFilesSelect')
+    expect(panel).toContain('appendSkillVersions(selectedFiles, visibility)')
+  })
 })

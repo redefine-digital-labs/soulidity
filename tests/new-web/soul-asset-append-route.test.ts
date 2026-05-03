@@ -21,7 +21,7 @@ const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
 const mockedReadTransactionSender = vi.hoisted(() => vi.fn())
 const mockedWaitForTransactionBestEffort = vi.hoisted(() => vi.fn())
 const mockedResolveWalrusBlobId = vi.hoisted(() => vi.fn())
-const mockedExtractAssetVersionAppendedEvent = vi.hoisted(() => vi.fn())
+const mockedExtractAllAssetVersionAppendedEvents = vi.hoisted(() => vi.fn())
 const mockedSyncSoulProjectionFromChain = vi.hoisted(() => vi.fn())
 const mockedBuildSyncSealSidecars = vi.hoisted(() => vi.fn())
 const mockedUpsertAssetVersionProjection = vi.hoisted(() => vi.fn())
@@ -55,7 +55,7 @@ vi.mock('@/lib/soulidity/env', () => ({
 }))
 
 vi.mock('@/lib/soulidity/events', () => ({
-  extractAssetVersionAppendedEvent: mockedExtractAssetVersionAppendedEvent,
+  extractAllAssetVersionAppendedEvents: mockedExtractAllAssetVersionAppendedEvents,
 }))
 
 vi.mock('@/lib/soulidity/queries', () => ({
@@ -185,7 +185,7 @@ describe('POST /api/souls/[id]/assets (append)', () => {
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: TX_DIGEST })
     mockedReadTransactionSender.mockReturnValue(AUTHOR_ADDRESS)
     mockedAssertTransactionSender.mockReturnValue(null)
-    mockedExtractAssetVersionAppendedEvent.mockReturnValue({
+    mockedExtractAllAssetVersionAppendedEvents.mockReturnValue([{
       assetsId: ASSETS_ID,
       soulId: SOUL_ID,
       assetName: 'avatar',
@@ -194,7 +194,7 @@ describe('POST /api/souls/[id]/assets (append)', () => {
       assetType: 'sprite',
       createdAtMs: 1700000000000,
       blobObjectId: BLOB_OBJECT_ID,
-    })
+    }])
     mockedSyncSoulProjectionFromChain.mockResolvedValue({ onChainId: SOUL_ID })
     mockedBuildSyncSealSidecars.mockResolvedValue({
       soulSidecar: null,
@@ -279,7 +279,7 @@ describe('POST /api/souls/[id]/assets (append)', () => {
   })
 
   it('returns 422 when event soul ID does not match', async () => {
-    mockedExtractAssetVersionAppendedEvent.mockReturnValueOnce({
+    mockedExtractAllAssetVersionAppendedEvents.mockReturnValueOnce([{
       assetsId: ASSETS_ID,
       soulId: `0x${'f'.repeat(64)}`,
       assetName: 'avatar',
@@ -288,7 +288,7 @@ describe('POST /api/souls/[id]/assets (append)', () => {
       assetType: 'sprite',
       createdAtMs: 1700000000000,
       blobObjectId: BLOB_OBJECT_ID,
-    })
+    }])
 
     const response = await callRoute()
 

@@ -806,6 +806,7 @@ describe('list.ts — buildListCollectionTx', () => {
 // =========================================================================
 import { buildDelistSoulTx, buildDelistCollectionTx } from '../../web/lib/soulidity/tx/delist'
 import { buildUpdateListingPriceTx } from '../../web/lib/soulidity/tx/update-price'
+import { buildUpdateCollectionListingPriceTx } from '../../web/lib/soulidity/tx/update-collection-price'
 
 describe('delist.ts — buildDelistSoulTx', () => {
   const VALID_PARAMS = {
@@ -838,12 +839,11 @@ describe('update-price.ts — buildUpdateListingPriceTx', () => {
     currentKioskId: OBJ('22'),
     currentKioskCapOnChainId: OBJ('33'),
     stateObjectId: OBJ('11'),
-    soulObjectId: OBJ('44'),
     listingObjectId: OBJ('55'),
     newPriceAtomic: 2_000_000n,
   }
 
-  it('ensures the kiosk is registered again before relisting', () => {
+  it('ensures the kiosk is registered again and finalizes the relisted Soul listing', () => {
     const tx = buildUpdateListingPriceTx(VALID_PARAMS)
     const commands = tx.getData().commands
       .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
@@ -853,11 +853,41 @@ describe('update-price.ts — buildUpdateListingPriceTx', () => {
       'cancel_soul_listing',
       'ensure_personal_kiosk_registered',
       'list_soul_fixed_price',
+      'finalize_soul_listing',
     ])
   })
 
   it('throws when newPriceAtomic is zero', () => {
     expect(() => buildUpdateListingPriceTx({ ...VALID_PARAMS, newPriceAtomic: 0n }))
+      .toThrow('newPriceAtomic must be positive')
+  })
+})
+
+describe('update-collection-price.ts — buildUpdateCollectionListingPriceTx', () => {
+  const VALID_PARAMS = {
+    currentKioskId: OBJ('22'),
+    currentKioskCapOnChainId: OBJ('33'),
+    collectionObjectId: OBJ('c0'),
+    listingObjectId: OBJ('55'),
+    newPriceAtomic: 2_000_000n,
+  }
+
+  it('ensures the kiosk is registered again and finalizes the relisted Collection listing', () => {
+    const tx = buildUpdateCollectionListingPriceTx(VALID_PARAMS)
+    const commands = tx.getData().commands
+      .map((command) => ('MoveCall' in command ? command.MoveCall.function : null))
+      .filter(Boolean)
+
+    expect(commands).toEqual([
+      'cancel_collection_listing',
+      'ensure_personal_kiosk_registered',
+      'list_collection_right_fixed_price',
+      'finalize_collection_listing',
+    ])
+  })
+
+  it('throws when newPriceAtomic is zero', () => {
+    expect(() => buildUpdateCollectionListingPriceTx({ ...VALID_PARAMS, newPriceAtomic: 0n }))
       .toThrow('newPriceAtomic must be positive')
   })
 })
@@ -1017,13 +1047,13 @@ describe('collection.ts — buildCreateCollectionTx', () => {
     currentKioskCapOnChainId: OBJ('33'),
   }
 
-  it('returns a Transaction with existing kiosk', () => {
-    const tx = buildCreateCollectionTx(VALID_PARAMS)
+  it('returns a Transaction with existing kiosk', async () => {
+    const tx = await buildCreateCollectionTx(VALID_PARAMS)
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('returns a Transaction with new kiosk (no kiosk IDs)', () => {
-    const tx = buildCreateCollectionTx({
+  it('returns a Transaction with new kiosk (no kiosk IDs)', async () => {
+    const tx = await buildCreateCollectionTx({
       ...VALID_PARAMS,
       currentKioskId: null,
       currentKioskCapOnChainId: null,
@@ -1031,34 +1061,49 @@ describe('collection.ts — buildCreateCollectionTx', () => {
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('returns a Transaction with tradeable=false', () => {
-    const tx = buildCreateCollectionTx({ ...VALID_PARAMS, tradeable: false })
+  it('returns a Transaction with tradeable=false', async () => {
+    const tx = await buildCreateCollectionTx({ ...VALID_PARAMS, tradeable: false })
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('throws on invalid name', () => {
-    expect(() => buildCreateCollectionTx({ ...VALID_PARAMS, name: '' }))
-      .toThrow('Collection name is required')
+  it('throws on invalid name', async () => {
+    await expect(buildCreateCollectionTx({ ...VALID_PARAMS, name: '' }))
+      .rejects.toThrow('Collection name is required')
   })
 
-  it('throws on invalid extraRoyaltyBps', () => {
-    expect(() => buildCreateCollectionTx({ ...VALID_PARAMS, extraRoyaltyBps: 3000 }))
-      .toThrow('extraRoyaltyBps must be between 0 and')
+  it('throws on invalid extraRoyaltyBps', async () => {
+    await expect(buildCreateCollectionTx({ ...VALID_PARAMS, extraRoyaltyBps: 3000 }))
+      .rejects.toThrow('extraRoyaltyBps must be between 0 and')
   })
 
-  it('passes maxSupply: null (unlimited) without throwing', () => {
-    const tx = buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: null })
+  it('passes maxSupply: null (unlimited) without throwing', async () => {
+    const tx = await buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: null })
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('passes positive maxSupply without throwing', () => {
-    const tx = buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: 10000 })
+  it('passes positive maxSupply without throwing', async () => {
+    const tx = await buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: 10000 })
     expect(tx).toBeInstanceOf(Transaction)
   })
 
-  it('rejects maxSupply = 0 (caught by validateCollectionArgs)', () => {
-    expect(() => buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: 0 }))
-      .toThrow('maxSupply must be an integer between 1 and')
+  it('rejects maxSupply = 0 (caught by validateCollectionArgs)', async () => {
+    await expect(buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: 0 }))
+      .rejects.toThrow('maxSupply must be an integer between 1 and')
+  })
+
+  it('invokes attachBeforeCreate between kiosk setup and the create call', async () => {
+    const calls: string[] = []
+    const tx = await buildCreateCollectionTx({
+      ...VALID_PARAMS,
+      attachBeforeCreate: (transaction) => {
+        calls.push('attachBeforeCreate')
+        // Splicing a custom moveCall here proves the hook can mutate the tx
+        // before the create_collection command is appended.
+        transaction.moveCall({ target: '0x2::tx_context::sender', arguments: [] })
+      },
+    })
+    expect(calls).toEqual(['attachBeforeCreate'])
+    expect(tx).toBeInstanceOf(Transaction)
   })
 })
 
@@ -1491,5 +1536,313 @@ describe('kiosk-management.ts — buildRebindPrimaryKioskTx', () => {
       oldKioskId: OBJ('22'),
       newKioskCapOnChainId: OBJ('22'),
     })).toThrow('oldKioskId and newKioskCapOnChainId must differ')
+  })
+})
+
+// =========================================================================
+// 2-signature fast path builders
+// =========================================================================
+
+import {
+  buildPublishSoulWithBindTx,
+  buildPublishSoulWithListTx,
+  buildPublishSoulWithCollectionAndListTx,
+  buildBatchPublishSoulTx,
+  buildCollectionFastPathPtb2Tx,
+} from '../../web/lib/soulidity/tx/publish'
+import {
+  buildCollectionCoverCertifyTx,
+  buildCreateCollectionWithListTx,
+} from '../../web/lib/soulidity/tx/collection'
+import {
+  buildInitAndBatchAppendSkillsTx,
+} from '../../web/lib/soulidity/tx/skills'
+import {
+  buildInitAndBatchAppendAssetsTx,
+} from '../../web/lib/soulidity/tx/assets'
+
+function getMoveCallTargets(tx: Transaction): string[] {
+  return tx.getData().commands.flatMap((cmd) => 'MoveCall' in cmd
+    ? [`${cmd.MoveCall.module}::${cmd.MoveCall.function}`]
+    : [])
+}
+
+const FAST_PATH_PUBLISH_BASE = {
+  ...VALID_SOUL_PUBLISH_ARGS,
+  protectedBlobObjectId: OBJ('44'),
+  currentKioskId: OBJ('22'),
+  currentKioskCapOnChainId: OBJ('33'),
+}
+
+describe('publish.ts — buildPublishSoulTx finalizes SoulState', () => {
+  it('emits mint_native_in_personal_kiosk followed by finalize_soul_state', async () => {
+    const tx = await buildPublishSoulTx(FAST_PATH_PUBLISH_BASE)
+    const targets = getMoveCallTargets(tx)
+    const mintIdx = targets.indexOf('market::mint_native_in_personal_kiosk')
+    const finalizeIdx = targets.indexOf('market::finalize_soul_state')
+    expect(mintIdx).toBeGreaterThanOrEqual(0)
+    expect(finalizeIdx).toBeGreaterThan(mintIdx)
+  })
+})
+
+describe('publish.ts — buildPublishSoulWithBindTx', () => {
+  it('emits mint, add_soul, then finalize_soul_state', async () => {
+    const tx = await buildPublishSoulWithBindTx({
+      ...FAST_PATH_PUBLISH_BASE,
+      collectionOnChainId: OBJ('77'),
+    })
+    const targets = getMoveCallTargets(tx)
+    const mintIdx = targets.indexOf('market::mint_native_in_personal_kiosk')
+    const addSoulIdx = targets.indexOf('collection::add_soul')
+    const finalizeIdx = targets.indexOf('market::finalize_soul_state')
+    expect(mintIdx).toBeGreaterThanOrEqual(0)
+    expect(addSoulIdx).toBeGreaterThan(mintIdx)
+    expect(finalizeIdx).toBeGreaterThan(addSoulIdx)
+  })
+
+  it('rejects empty collectionOnChainId', async () => {
+    await expect(buildPublishSoulWithBindTx({
+      ...FAST_PATH_PUBLISH_BASE,
+      collectionOnChainId: '',
+    })).rejects.toThrow('collectionOnChainId')
+  })
+})
+
+describe('publish.ts — buildPublishSoulWithListTx', () => {
+  it('emits mint, list_soul_fixed_price, finalize_soul_listing, finalize_soul_state', async () => {
+    const tx = await buildPublishSoulWithListTx({
+      ...FAST_PATH_PUBLISH_BASE,
+      listingPriceAtomic: 1_000_000n,
+    })
+    const targets = getMoveCallTargets(tx)
+    const mintIdx = targets.indexOf('market::mint_native_in_personal_kiosk')
+    const listIdx = targets.indexOf('market::list_soul_fixed_price')
+    const finalizeListingIdx = targets.indexOf('market::finalize_soul_listing')
+    const finalizeStateIdx = targets.indexOf('market::finalize_soul_state')
+    expect(mintIdx).toBeGreaterThanOrEqual(0)
+    expect(listIdx).toBeGreaterThan(mintIdx)
+    expect(finalizeListingIdx).toBeGreaterThan(listIdx)
+    expect(finalizeStateIdx).toBeGreaterThan(finalizeListingIdx)
+  })
+
+  it('rejects priceAtomic <= 0', async () => {
+    await expect(buildPublishSoulWithListTx({
+      ...FAST_PATH_PUBLISH_BASE,
+      listingPriceAtomic: 0n,
+    })).rejects.toThrow('listingPriceAtomic')
+  })
+})
+
+describe('publish.ts — buildPublishSoulWithCollectionAndListTx', () => {
+  it('emits mint, add_soul, list_with_collection, finalize_listing, finalize_state in order', async () => {
+    const tx = await buildPublishSoulWithCollectionAndListTx({
+      ...FAST_PATH_PUBLISH_BASE,
+      collectionOnChainId: OBJ('77'),
+      listingPriceAtomic: 1_000_000n,
+    })
+    const targets = getMoveCallTargets(tx)
+    const mintIdx = targets.indexOf('market::mint_native_in_personal_kiosk')
+    const addSoulIdx = targets.indexOf('collection::add_soul')
+    const listIdx = targets.indexOf('market::list_soul_fixed_price_with_collection')
+    const finalizeListingIdx = targets.indexOf('market::finalize_soul_listing')
+    const finalizeStateIdx = targets.indexOf('market::finalize_soul_state')
+    expect(mintIdx).toBeGreaterThanOrEqual(0)
+    expect(addSoulIdx).toBeGreaterThan(mintIdx)
+    expect(listIdx).toBeGreaterThan(addSoulIdx)
+    expect(finalizeListingIdx).toBeGreaterThan(listIdx)
+    expect(finalizeStateIdx).toBeGreaterThan(finalizeListingIdx)
+  })
+})
+
+describe('publish.ts — buildBatchPublishSoulTx finalizes per mint', () => {
+  it('emits N×{mint, finalize_soul_state} for an N-soul batch', async () => {
+    const tx = await buildBatchPublishSoulTx({
+      currentKioskId: OBJ('22'),
+      currentKioskCapOnChainId: OBJ('33'),
+      souls: [
+        { ...VALID_SOUL_PUBLISH_ARGS, name: 'A', protectedBlobObjectId: OBJ('41') },
+        { ...VALID_SOUL_PUBLISH_ARGS, name: 'B', protectedBlobObjectId: OBJ('42') },
+        { ...VALID_SOUL_PUBLISH_ARGS, name: 'C', protectedBlobObjectId: OBJ('43') },
+      ],
+    })
+    const targets = getMoveCallTargets(tx)
+    const mintCount = targets.filter((t) => t === 'market::mint_native_in_personal_kiosk').length
+    const finalizeCount = targets.filter((t) => t === 'market::finalize_soul_state').length
+    expect(mintCount).toBe(3)
+    expect(finalizeCount).toBe(3)
+    // For every mint there must be a matching finalize_soul_state after it.
+    let lastFinalize = -1
+    for (let i = 0; i < targets.length; i++) {
+      if (targets[i] === 'market::finalize_soul_state') {
+        lastFinalize = i
+      }
+    }
+    expect(lastFinalize).toBeGreaterThan(targets.lastIndexOf('market::mint_native_in_personal_kiosk'))
+  })
+})
+
+describe('publish.ts — buildCollectionFastPathPtb2Tx', () => {
+  it('emits cover-cert + N certs first, then N×{mint, add_soul, finalize_state}', async () => {
+    const certCalls: number[] = []
+    const tx = await buildCollectionFastPathPtb2Tx({
+      collectionOnChainId: OBJ('77'),
+      currentKioskId: OBJ('22'),
+      currentKioskCapOnChainId: OBJ('33'),
+      souls: [
+        { ...VALID_SOUL_PUBLISH_ARGS, name: 'A', protectedBlobObjectId: OBJ('41') },
+        { ...VALID_SOUL_PUBLISH_ARGS, name: 'B', protectedBlobObjectId: OBJ('42') },
+      ],
+      attachCertifyCalls: (innerTx) => {
+        // Stand-in for client.certifyBlob — just emit a synthetic move call so
+        // we can assert ordering. Walrus emits one call per blob.
+        innerTx.moveCall({ target: '0xff::walrus::certify_blob', arguments: [] })
+        innerTx.moveCall({ target: '0xff::walrus::certify_blob', arguments: [] })
+        innerTx.moveCall({ target: '0xff::walrus::certify_blob', arguments: [] })
+        certCalls.push(3)
+      },
+    })
+    const targets = getMoveCallTargets(tx)
+    const firstCert = targets.indexOf('walrus::certify_blob')
+    const lastCert = targets.lastIndexOf('walrus::certify_blob')
+    const firstMint = targets.indexOf('market::mint_native_in_personal_kiosk')
+    expect(firstCert).toBeGreaterThanOrEqual(0)
+    expect(lastCert).toBeGreaterThan(firstCert)
+    expect(firstMint).toBeGreaterThan(lastCert)
+    const mintCount = targets.filter((t) => t === 'market::mint_native_in_personal_kiosk').length
+    const bindCount = targets.filter((t) => t === 'collection::add_soul').length
+    const finalizeStateCount = targets.filter((t) => t === 'market::finalize_soul_state').length
+    expect(mintCount).toBe(2)
+    expect(bindCount).toBe(2)
+    expect(finalizeStateCount).toBe(2)
+  })
+
+  it('rejects an empty soul list', async () => {
+    await expect(buildCollectionFastPathPtb2Tx({
+      collectionOnChainId: OBJ('77'),
+      souls: [],
+      attachCertifyCalls: () => {},
+    })).rejects.toThrow('at least one soul')
+  })
+})
+
+describe('collection.ts — buildCollectionCoverCertifyTx', () => {
+  it('contains only the caller-attached cert calls (no Soulidity Move calls)', async () => {
+    const tx = await buildCollectionCoverCertifyTx({
+      attachCertifyCalls: (innerTx) => {
+        innerTx.moveCall({ target: '0xff::walrus::certify_blob', arguments: [] })
+      },
+    })
+    const targets = getMoveCallTargets(tx)
+    expect(targets).toEqual(['walrus::certify_blob'])
+    expect(targets.find((t) => t.startsWith('market::') || t.startsWith('collection::'))).toBeUndefined()
+  })
+})
+
+describe('collection.ts — buildCreateCollectionWithListTx', () => {
+  const BASE = {
+    name: 'Coll',
+    description: 'desc',
+    imageUrl: 'https://example.com/c.png',
+    extraRoyaltyBps: 500,
+    tradeable: true,
+    currentKioskId: OBJ('22'),
+    currentKioskCapOnChainId: OBJ('33'),
+    collectionRightListingPriceAtomic: 1_000_000n,
+  }
+  it('emits create, list_collection_right, finalize_listing, finalize_collection in order', async () => {
+    const tx = await buildCreateCollectionWithListTx(BASE)
+    const targets = getMoveCallTargets(tx)
+    const createIdx = targets.indexOf('market::create_collection_in_personal_kiosk')
+    const listIdx = targets.indexOf('market::list_collection_right_fixed_price')
+    const finalizeListingIdx = targets.indexOf('market::finalize_collection_listing')
+    const finalizeCollectionIdx = targets.indexOf('market::finalize_collection')
+    expect(createIdx).toBeGreaterThanOrEqual(0)
+    expect(listIdx).toBeGreaterThan(createIdx)
+    expect(finalizeListingIdx).toBeGreaterThan(listIdx)
+    expect(finalizeCollectionIdx).toBeGreaterThan(finalizeListingIdx)
+  })
+  it('rejects price <= 0', async () => {
+    await expect(buildCreateCollectionWithListTx({ ...BASE, collectionRightListingPriceAtomic: 0n }))
+      .rejects.toThrow('collectionRightListingPriceAtomic')
+  })
+  it('rejects non-tradeable collections', async () => {
+    await expect(buildCreateCollectionWithListTx({ ...BASE, tradeable: false }))
+      .rejects.toThrow('non-tradeable')
+  })
+})
+
+describe('list.ts — finalizes listing after list call', () => {
+  it('buildListSoulTx emits list_soul_fixed_price followed by finalize_soul_listing', () => {
+    const tx = buildListSoulTx({
+      currentKioskId: OBJ('22'),
+      currentKioskCapOnChainId: OBJ('33'),
+      stateObjectId: OBJ('44'),
+      priceAtomic: 1_000_000n,
+    })
+    const targets = getMoveCallTargets(tx)
+    const listIdx = targets.indexOf('market::list_soul_fixed_price')
+    const finalizeIdx = targets.indexOf('market::finalize_soul_listing')
+    expect(listIdx).toBeGreaterThanOrEqual(0)
+    expect(finalizeIdx).toBeGreaterThan(listIdx)
+  })
+  it('buildListCollectionTx emits list_collection_right_fixed_price followed by finalize_collection_listing', () => {
+    const tx = buildListCollectionTx({
+      currentKioskId: OBJ('22'),
+      currentKioskCapOnChainId: OBJ('33'),
+      collectionObjectId: OBJ('77'),
+      priceAtomic: 1_000_000n,
+    })
+    const targets = getMoveCallTargets(tx)
+    const listIdx = targets.indexOf('market::list_collection_right_fixed_price')
+    const finalizeIdx = targets.indexOf('market::finalize_collection_listing')
+    expect(listIdx).toBeGreaterThanOrEqual(0)
+    expect(finalizeIdx).toBeGreaterThan(listIdx)
+  })
+})
+
+describe('skills.ts / assets.ts — batch builders finalize root', () => {
+  it('buildInitAndBatchAppendSkillsTx emits init + N appends + finalize_soul_skills', () => {
+    const tx = buildInitAndBatchAppendSkillsTx({
+      stateObjectId: OBJ('44'),
+      initialVersion: { skillName: 'v0', blobObjectId: OBJ('51'), visibility: 'public' },
+      additionalVersions: [
+        { skillName: 'v0', blobObjectId: OBJ('52'), visibility: 'public' },
+        { skillName: 'v0', blobObjectId: OBJ('53'), visibility: 'public' },
+      ],
+    })
+    const targets = getMoveCallTargets(tx)
+    const initIdx = targets.indexOf('market::init_skills_and_append_as_owner')
+    const appendCount = targets.filter((t) => t === 'skills::append_version_as_owner').length
+    const finalizeIdx = targets.indexOf('market::finalize_soul_skills')
+    expect(initIdx).toBeGreaterThanOrEqual(0)
+    expect(appendCount).toBe(2)
+    expect(finalizeIdx).toBeGreaterThan(initIdx)
+  })
+
+  it('buildInitAndBatchAppendAssetsTx emits init + N appends + finalize_soul_assets', () => {
+    const tx = buildInitAndBatchAppendAssetsTx({
+      stateObjectId: OBJ('44'),
+      metadataObjectId: OBJ('45'),
+      initialSprite: {
+        assetName: 'sprite',
+        visibility: 'public',
+        blobObjectId: OBJ('51'),
+        spriteConfigJson: '{"fps":12}',
+        spriteMoodMapJson: '{"happy":"a"}',
+        spriteConfigKey: 'sprite.config.v1',
+        spriteMoodMapKey: 'sprite.mood_map.v1',
+        downloadPolicy: 'public',
+      },
+      additionalSprites: [
+        { assetName: 'sprite', visibility: 'public', blobObjectId: OBJ('52') },
+      ],
+    })
+    const targets = getMoveCallTargets(tx)
+    const initIdx = targets.indexOf('market::init_assets_and_append_sprite_as_owner')
+    const appendCount = targets.filter((t) => t === 'assets::append_version_as_owner').length
+    const finalizeIdx = targets.indexOf('market::finalize_soul_assets')
+    expect(initIdx).toBeGreaterThanOrEqual(0)
+    expect(appendCount).toBe(1)
+    expect(finalizeIdx).toBeGreaterThan(initIdx)
   })
 })

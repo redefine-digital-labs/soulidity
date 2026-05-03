@@ -62,7 +62,11 @@ describe('memory encryption regressions', () => {
     expect(wrapHookSource).toContain('memorySealSidecar: params.material.memorySealMaterial && foundingMemory')
 
     expect(collectionHookSource).toContain('memorySealMaterial: PendingSealMaterial')
-    expect(collectionHookSource).toContain("const memUpload = await uploadFile(memFile, 'encrypted', authHeaders, walletUpload, walletAddress)")
+    // Memory file is registered as `encrypted` inside the unified
+    // batch-upload PTB and its DEK survives in the per-soul recovery,
+    // exactly mirroring the wrap path's encrypted founding memory.
+    expect(collectionHookSource).toContain("uploadType: 'encrypted'")
+    expect(collectionHookSource).toContain('memorySealMaterial: memFile.sealMaterial')
     expect(collectionHookSource).toContain('createMemorySealSidecarFromMaterial')
   })
 

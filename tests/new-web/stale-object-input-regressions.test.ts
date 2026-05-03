@@ -27,11 +27,24 @@ describe('stale object input regression guards', () => {
     expect(importGas).toContain('results.memorySeed = undefined')
   })
 
-  it('drops cached collection soul uploads whose blob objects no longer exist', () => {
+  it('routes collection publish through the v12 fast-path / chunked-fallback pipeline', () => {
+    // Collection mint v12 bundles register + create_collection [+ optional
+    // collection-right list] in PTB1; certify cover + soul blobs + N×
+    // {mint, bind, finalize_state} in fast PTB2. On dry-run fail the hook
+    // falls through to chunked mint (with cover cert in the first chunk)
+    // and chunked add_soul. Mirror uses /api/souls/publish/batch in fast
+    // path; chunked uses /api/souls/publish + /api/collections/:id/add-soul.
     const source = readSource('web/lib/hooks/use-collection-publish.ts')
 
-    expect(source).toContain('findMissingObjectIds')
-    expect(source).toContain('soulState.uploads = null')
+    expect(source).toContain('prepareBatchWalrusRegisterIntent')
+    expect(source).toContain('completeBatchWalrusUploadAfterRegister')
+    expect(source).toContain('appendCreateCollectionMoveCalls')
+    expect(source).toContain('buildCollectionFastPathPtb2Tx')
+    expect(source).toContain('buildCollectionCoverCertifyTx')
+    expect(source).toContain('buildBatchPublishSoulTx')
+    expect(source).toContain('buildBatchAddSoulToCollectionTx')
+    expect(source).toContain('attachBeforeMints')
+    expect(source).toContain('attachCertifyCalls')
   })
 
   it('preflights mint transaction object inputs after upload resolution', () => {

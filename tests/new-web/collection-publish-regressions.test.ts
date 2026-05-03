@@ -7,11 +7,15 @@ function readSource(relativePath: string) {
 }
 
 describe('collection publish regression guards', () => {
-  it('re-resolves the personal kiosk after the first soul mint when the batch started without one', () => {
+  it('resolves the personal kiosk before the batched mint phase', () => {
     const source = readSource('web/lib/hooks/use-collection-publish.ts')
 
-    expect(source).toContain('let personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)')
-    expect(source).toContain('if (!personalKiosk && i === 0)')
+    // The hook now mints souls in chunked PTBs, so the kiosk only needs to be
+    // resolved once per launch (right before the mint phase) — there is no
+    // first-soul fallback. Guard against a regression that re-introduces
+    // per-soul kiosk fetches mid-loop.
+    expect(source).toContain('const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)')
+    expect(source).not.toContain('if (!personalKiosk && i === 0)')
   })
 
   it('treats add-soul mirror failures as bind failures instead of recording success', () => {
@@ -51,7 +55,7 @@ describe('collection publish regression guards', () => {
     expect(source).toContain('const completedDigestRef = useRef<string | null>(null)')
     expect(source).toContain('if (completedDigestRef.current === syncData.txDigest) return')
     expect(source).not.toContain('[status, syncData, ctx, router, showToast]')
-    expect(source).toContain('[status, syncData, setPublishResult, name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, router, showToast]')
+    expect(source).toContain('[status, syncData, setPublishResult, name, floorPrice, extraRoyaltyBps, tradeable, collectionRightListingPrice, batchSouls, router, showToast]')
   })
 
   it('keeps collection create API errors generic for clients', () => {
@@ -71,9 +75,11 @@ describe('collection publish regression guards', () => {
     expect(source).not.toContain('assetsSealSidecar: null')
   })
 
-  it('bumps RECOVERY_VERSION when supply cap is added to the draft signature (so v9 drafts are dropped)', () => {
+  it('bumps RECOVERY_VERSION when collection publish switches to the v12 fast-path schema (drops v11 drafts)', () => {
     const source = readSource('web/lib/hooks/use-collection-publish.ts')
-    expect(source).toContain('const RECOVERY_VERSION = 10 as const')
+    expect(source).toContain('const RECOVERY_VERSION = 12 as const')
+    // v11 schema is incompatible with v12 — drafts must be dropped on hydrate.
+    expect(source).toContain('// v11 (or earlier) drafts are discarded — schema is incompatible.')
   })
 
   it('includes maxSupply in the draft signature so a different cap invalidates an in-flight draft', () => {
@@ -85,6 +91,23 @@ describe('collection publish regression guards', () => {
     const source = readSource('web/lib/hooks/use-collection-publish.ts')
     expect(source).toContain('maxSupply: params.maxSupply ?? null')
     expect(source).toContain('maxSupply: number | null')
+  })
+
+  it('persists floorPriceAtomic in collectionMeta recovery and hydrates from that meta snapshot', () => {
+    const hookSource = readSource('web/lib/hooks/use-collection-publish.ts')
+    const metaStart = hookSource.indexOf('interface CollectionRecoveryMeta')
+    const metaBlock = hookSource.slice(metaStart, hookSource.indexOf('interface ChunkRecovery', metaStart))
+    expect(metaBlock).toContain('floorPriceAtomic: string | null')
+
+    const recoveryStart = hookSource.indexOf('collectionMeta: baseRecovery.collectionMeta ?? {')
+    const recoveryBlock = hookSource.slice(recoveryStart, hookSource.indexOf('},', recoveryStart) + 2)
+    expect(recoveryBlock).toContain('floorPriceAtomic: params.floorPriceAtomic ?? null')
+
+    const providerSource = readSource('web/components/providers/create-collection-provider.tsx')
+    const hydrateStart = providerSource.indexOf('// Hydrate draft inputs from recovery state')
+    const hydrateBlock = providerSource.slice(hydrateStart, providerSource.indexOf('setIsHydrated(true)', hydrateStart))
+    expect(hydrateBlock).toContain('meta.floorPriceAtomic')
+    expect(hydrateBlock).not.toContain('recovery.floorPriceAtomic')
   })
 
   it('captures maxSupply / unlimited / emptyCollection in publish telemetry', () => {
