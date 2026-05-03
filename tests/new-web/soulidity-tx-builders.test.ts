@@ -1314,6 +1314,15 @@ describe('import.ts — buildImportSoulTx', () => {
     expect(() => buildImportSoulTx({ ...VALID_PARAMS, name: '' }))
       .toThrow('Soul name is required')
   })
+
+  it('emits mint_imported_in_personal_kiosk followed by finalize_soul_state', () => {
+    const tx = buildImportSoulTx(VALID_PARAMS)
+    const targets = getMoveCallTargets(tx)
+    const mintIdx = targets.indexOf('market::mint_imported_in_personal_kiosk')
+    const finalizeIdx = targets.indexOf('market::finalize_soul_state')
+    expect(mintIdx).toBeGreaterThanOrEqual(0)
+    expect(finalizeIdx).toBeGreaterThan(mintIdx)
+  })
 })
 
 // =========================================================================
@@ -1418,6 +1427,15 @@ describe('personal-join.ts — buildPersonalJoinSoulTx', () => {
   it('propagates validation errors from validateSoulPublishArgs', () => {
     expect(() => buildPersonalJoinSoulTx({ ...VALID_PARAMS, description: '' }))
       .toThrow('Soul description is required')
+  })
+
+  it('emits mint_joined_in_personal_kiosk followed by finalize_soul_state', () => {
+    const tx = buildPersonalJoinSoulTx(VALID_PARAMS)
+    const targets = getMoveCallTargets(tx)
+    const mintIdx = targets.indexOf('market::mint_joined_in_personal_kiosk')
+    const finalizeIdx = targets.indexOf('market::finalize_soul_state')
+    expect(mintIdx).toBeGreaterThanOrEqual(0)
+    expect(finalizeIdx).toBeGreaterThan(mintIdx)
   })
 })
 

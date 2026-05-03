@@ -538,6 +538,18 @@ describe('/api/souls/publish/batch enforces per-soul Seal sidecars (R-001)', () 
     expect(src).toMatch(/memorySealSidecar is required for \$\{sb\.soulOnChainId\}.*founding memory blob is encrypted/)
   })
 
+  it('rejects syncBodies entries that omit skillsSealSidecar when the PTB appends a private initial skill', () => {
+    // Skills uploaded with `skillsVisibility: 'private'` by
+    // web/lib/hooks/use-collection-publish.ts emit a private
+    // SkillVersionAppended event. Without a per-soul `skillsSealSidecar` the
+    // mirror would persist a private skill blob the app can never decrypt.
+    // Mirrors the single-Soul gate in /api/souls/publish.
+    const src = readSource(BATCH_ROUTE)
+    expect(src).toContain('skillByEventSoulId')
+    expect(src).toContain("initialSkillForSoul?.visibility === 'private' && !sb.skillsSealSidecar")
+    expect(src).toMatch(/skillsSealSidecar is required for \$\{sb\.soulOnChainId\}.*private initial skill/)
+  })
+
   it('keeps the existing assetsSealSidecar visibility gate (private initial asset only)', () => {
     // Asset sidecar requirement is event-visibility driven (initial asset can
     // legitimately be public), unlike Soul content / memory which are always
