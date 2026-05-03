@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -295,5 +295,80 @@ describe('fast-path bench requires distinct live blob inputs', () => {
     expect(src).toContain('protectedBlobObjectIds')
     expect(src).toContain('protectedBlobObjectId: ins.protectedBlobObjectIds[i]')
     expect(src).not.toMatch(/protectedBlobObjectId:\s*ins\.protectedBlobObjectId(?!s)/)
+  })
+})
+
+describe('smoke matrix example scenario references live API routes (R-001)', () => {
+  // R-001: the example matrix at scripts/scenarios/soulidity-smoke-matrix.example.json
+  // is the operator template for scripts/smoke-soulidity.ts. Every mirror.path must
+  // resolve to an actual route handler under web/app/api/**/route.ts; otherwise the
+  // harness 404s before downstream assertions run.
+  type SmokeMirror = { path: string }
+  type SmokeStep = { mirror?: SmokeMirror | SmokeMirror[] }
+  type SmokeRow = { steps: SmokeStep[] }
+  type SmokeScenario = { rows: SmokeRow[] }
+
+  function loadScenario(): SmokeScenario {
+    const raw = readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')
+    return JSON.parse(raw) as SmokeScenario
+  }
+
+  function mirrorPaths(scenario: SmokeScenario): string[] {
+    const out: string[] = []
+    for (const row of scenario.rows) {
+      for (const step of row.steps) {
+        const mirrors = Array.isArray(step.mirror)
+          ? step.mirror
+          : step.mirror
+            ? [step.mirror]
+            : []
+        for (const m of mirrors) {
+          if (typeof m.path === 'string' && m.path.startsWith('/api/')) {
+            out.push(m.path)
+          }
+        }
+      }
+    }
+    return out
+  }
+
+  function resolveRouteFile(apiPath: string): string | null {
+    // Drop any querystring; smoke matrix doesn't use one but normalise defensively.
+    const [pathOnly] = apiPath.split('?', 1)
+    // Strip the leading "/api/" so the remaining segments map to web/app/api/.
+    const segments = pathOnly.replace(/^\/api\/?/, '').split('/').filter(Boolean)
+    let dir = resolve(process.cwd(), 'web/app/api')
+    for (const seg of segments) {
+      // Operator placeholders in the example (e.g. __SOUL_ON_CHAIN_ID__) stand
+      // in for dynamic ids. They map to a single Next.js [id] segment under the
+      // current route layout.
+      const literal = resolve(dir, seg)
+      if (existsSync(literal)) {
+        dir = literal
+        continue
+      }
+      const dynamic = resolve(dir, '[id]')
+      if (/^__[A-Z0-9_]+__$/.test(seg) && existsSync(dynamic)) {
+        dir = dynamic
+        continue
+      }
+      return null
+    }
+    const route = resolve(dir, 'route.ts')
+    return existsSync(route) ? route : null
+  }
+
+  it('every mirror.path resolves to a route.ts under web/app/api', () => {
+    const scenario = loadScenario()
+    const paths = mirrorPaths(scenario)
+    expect(paths.length).toBeGreaterThan(0)
+    const missing = paths.filter((p) => resolveRouteFile(p) === null)
+    expect(missing).toEqual([])
+  })
+
+  it('does not reference the legacy /api/collections/sync route (replaced by /api/collections/create)', () => {
+    const raw = readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')
+    expect(raw).not.toContain('/api/collections/sync')
+    expect(raw).toContain('/api/collections/create')
   })
 })
