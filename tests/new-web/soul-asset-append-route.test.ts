@@ -318,4 +318,148 @@ describe('POST /api/souls/[id]/assets (append)', () => {
       sealSidecar: null,
     })
   })
+
+  it('rejects multi-event append when later private events have no sidecar (R-002)', async () => {
+    // Two private appended events but `assetsSealSidecars` only covers index 0:
+    // the legacy aggregate-existence check would let this through and silently
+    // mirror the second version with a null sidecar. Per-event validation must
+    // reject with 422 before any DB write.
+    mockedExtractAllAssetVersionAppendedEvents.mockReturnValueOnce([
+      {
+        assetsId: ASSETS_ID,
+        soulId: SOUL_ID,
+        assetName: 'avatar',
+        versionIndex: 1,
+        visibility: 'private',
+        assetType: 'sprite',
+        createdAtMs: 1700000000000,
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+      {
+        assetsId: ASSETS_ID,
+        soulId: SOUL_ID,
+        assetName: 'avatar',
+        versionIndex: 2,
+        visibility: 'private',
+        assetType: 'sprite',
+        createdAtMs: 1700000000001,
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+    ])
+
+    const validSidecar = { ciphertext: 'aaaa', dekEnvelope: 'bbbb' }
+    const response = await callRoute({
+      txDigest: TX_DIGEST,
+      assetsSealSidecars: [validSidecar],
+    })
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'assetsSealSidecars[1] is required for private asset version at index 1',
+    })
+    expect(mockedUpsertAssetVersionProjection).not.toHaveBeenCalled()
+  })
+
+  it('rejects multi-event append when only the legacy single sidecar is provided (R-002)', async () => {
+    // Legacy `assetsSealSidecar` is a single envelope, valid only for a
+    // single-event append. A multi-event request that supplies only the legacy
+    // field cannot satisfy index >= 1 and must be rejected.
+    mockedExtractAllAssetVersionAppendedEvents.mockReturnValueOnce([
+      {
+        assetsId: ASSETS_ID,
+        soulId: SOUL_ID,
+        assetName: 'avatar',
+        versionIndex: 1,
+        visibility: 'private',
+        assetType: 'sprite',
+        createdAtMs: 1700000000000,
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+      {
+        assetsId: ASSETS_ID,
+        soulId: SOUL_ID,
+        assetName: 'avatar',
+        versionIndex: 2,
+        visibility: 'private',
+        assetType: 'sprite',
+        createdAtMs: 1700000000001,
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+    ])
+
+    const validSidecar = { ciphertext: 'aaaa', dekEnvelope: 'bbbb' }
+    const response = await callRoute({
+      txDigest: TX_DIGEST,
+      assetsSealSidecar: validSidecar,
+    })
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'assetsSealSidecars[0] is required for private asset version at index 0',
+    })
+    expect(mockedUpsertAssetVersionProjection).not.toHaveBeenCalled()
+  })
+
+  it('accepts single-event append with the legacy sidecar shape', async () => {
+    mockedExtractAllAssetVersionAppendedEvents.mockReturnValueOnce([
+      {
+        assetsId: ASSETS_ID,
+        soulId: SOUL_ID,
+        assetName: 'avatar',
+        versionIndex: 1,
+        visibility: 'private',
+        assetType: 'sprite',
+        createdAtMs: 1700000000000,
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+    ])
+    mockedUpsertAssetVersionProjection.mockResolvedValueOnce({ assetName: 'avatar', versionIndex: 1 })
+
+    const validSidecar = { ciphertext: 'aaaa', dekEnvelope: 'bbbb' }
+    const response = await callRoute({
+      txDigest: TX_DIGEST,
+      assetsSealSidecar: validSidecar,
+    })
+
+    expect(response.status).toBe(200)
+    expect(mockedUpsertAssetVersionProjection).toHaveBeenCalledTimes(1)
+  })
+
+  it('accepts multi-event append when assetsSealSidecars covers each private event', async () => {
+    mockedExtractAllAssetVersionAppendedEvents.mockReturnValueOnce([
+      {
+        assetsId: ASSETS_ID,
+        soulId: SOUL_ID,
+        assetName: 'avatar',
+        versionIndex: 1,
+        visibility: 'private',
+        assetType: 'sprite',
+        createdAtMs: 1700000000000,
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+      {
+        assetsId: ASSETS_ID,
+        soulId: SOUL_ID,
+        assetName: 'avatar',
+        versionIndex: 2,
+        visibility: 'private',
+        assetType: 'sprite',
+        createdAtMs: 1700000000001,
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+    ])
+    mockedUpsertAssetVersionProjection
+      .mockResolvedValueOnce({ assetName: 'avatar', versionIndex: 1 })
+      .mockResolvedValueOnce({ assetName: 'avatar', versionIndex: 2 })
+
+    const sidecarA = { ciphertext: 'aa', dekEnvelope: 'bb' }
+    const sidecarB = { ciphertext: 'cc', dekEnvelope: 'dd' }
+    const response = await callRoute({
+      txDigest: TX_DIGEST,
+      assetsSealSidecars: [sidecarA, sidecarB],
+    })
+
+    expect(response.status).toBe(200)
+    expect(mockedUpsertAssetVersionProjection).toHaveBeenCalledTimes(2)
+  })
 })
