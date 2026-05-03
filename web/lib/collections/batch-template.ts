@@ -70,8 +70,6 @@ export function normalizeBatchTemplateRows(
 
   if (supplyCap !== undefined && souls.length > supplyCap) {
     errors.push(`Template has ${souls.length} Souls but Supply Cap is ${supplyCap} — remove ${souls.length - supplyCap} row(s)`)
-  } else if (supplyCap !== undefined && souls.length < supplyCap) {
-    errors.push(`Template has ${souls.length} Soul(s) but Supply Cap is ${supplyCap} — add ${supplyCap - souls.length} more row(s) or adjust the Supply Cap in Step 1`)
   }
 
   return { souls, errors }

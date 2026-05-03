@@ -1,9 +1,17 @@
 import { prisma } from '@/lib/prisma'
+import { assertBigIntFitsPrismaInt } from '@/lib/soulidity/projection-scalars'
 import type { SoulCollectionObject, SoulCollectionRightObject } from '@/lib/soulidity/types'
 
 export async function upsertCollectionProjection(params: {
   collection: SoulCollectionObject
   right: SoulCollectionRightObject
+  // Required: must come from on-chain SoulCollection.current_supply. The DB
+  // column was previously rebuilt via prisma.soulAsset.count which raced with
+  // ownership transfers. Now soulCount mirrors current_supply 1:1 and is
+  // monotonically increasing.
+  currentSupply: bigint
+  // null = unlimited. BigInt mirrors Move Option<u64>.
+  maxSoulSupply: bigint | null
   creatorMemberId?: string | null
   currentHolderMemberId?: string | null
   listingObjectOnChainId?: string | null
@@ -11,9 +19,8 @@ export async function upsertCollectionProjection(params: {
   listingStatus?: 'held' | 'listed'
   floorPriceAtomic?: bigint | null
 }) {
-  const soulCount = await prisma.soulAsset.count({
-    where: { collectionOnChainId: params.collection.objectId },
-  })
+  assertBigIntFitsPrismaInt(params.currentSupply, 'SoulCollectionAsset.soulCount')
+  const soulCount = Number(params.currentSupply)
 
   return prisma.soulCollectionAsset.upsert({
     where: { onChainId: params.collection.objectId },
@@ -33,6 +40,7 @@ export async function upsertCollectionProjection(params: {
       listedPriceAtomic: params.listedPriceAtomic?.toString() ?? null,
       listingStatus: params.listingStatus ?? 'held',
       soulCount,
+      maxSoulSupply: params.maxSoulSupply,
       ...(params.floorPriceAtomic != null ? { floorPriceAtomic: params.floorPriceAtomic.toString() } : {}),
     },
     create: {
@@ -52,8 +60,8 @@ export async function upsertCollectionProjection(params: {
       listedPriceAtomic: params.listedPriceAtomic?.toString() ?? null,
       listingStatus: params.listingStatus ?? 'held',
       soulCount,
+      maxSoulSupply: params.maxSoulSupply,
       ...(params.floorPriceAtomic != null ? { floorPriceAtomic: params.floorPriceAtomic.toString() } : {}),
     },
   })
 }
-

@@ -903,6 +903,7 @@ public fun create_collection_in_personal_kiosk(
     image_url: std::string::String,
     extra_royalty_bps: u16,
     tradeable: bool,
+    max_supply: Option<u64>,
     ctx: &mut TxContext,
 ): ID {
     assert!(!config.paused, EMarketPaused);
@@ -922,6 +923,7 @@ public fun create_collection_in_personal_kiosk(
         image_url,
         extra_royalty_bps,
         tradeable,
+        max_supply,
         owner,
         kiosk_id,
         ctx,

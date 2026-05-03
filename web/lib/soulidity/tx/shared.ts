@@ -7,6 +7,10 @@ export const MAX_DESCRIPTION_BYTES = 4096
 export const MAX_IMAGE_URL_BYTES = 1024
 export const MAX_CREATOR_ROYALTY_BPS = 2_500
 export const MAX_COLLECTION_ROYALTY_BPS = 2_500
+// Web/SDK soft cap on a collection's max_supply. The on-chain contract only
+// rejects `Some(0)` (ESupplyCapInvalid); any positive u64 is accepted on chain.
+// This 1M ceiling is a UX guardrail, not a security boundary.
+export const MAX_COLLECTION_SUPPLY = 1_000_000
 
 export function getUtf8ByteLength(value: string) {
   return new TextEncoder().encode(value).length
@@ -57,6 +61,8 @@ export function validateCollectionArgs(params: {
   description: string
   imageUrl: string
   extraRoyaltyBps: number
+  tradeable: boolean
+  maxSupply?: number | null
 }) {
   if (params.name.trim().length === 0) {
     throw new Error('Collection name is required')
@@ -77,6 +83,20 @@ export function validateCollectionArgs(params: {
     || params.extraRoyaltyBps > MAX_COLLECTION_ROYALTY_BPS
   ) {
     throw new Error(`extraRoyaltyBps must be between 0 and ${MAX_COLLECTION_ROYALTY_BPS}`)
+  }
+
+  if (typeof params.tradeable !== 'boolean') {
+    throw new Error('tradeable must be a boolean')
+  }
+
+  if (params.maxSupply != null) {
+    if (
+      !Number.isSafeInteger(params.maxSupply)
+      || params.maxSupply < 1
+      || params.maxSupply > MAX_COLLECTION_SUPPLY
+    ) {
+      throw new Error(`maxSupply must be an integer between 1 and ${MAX_COLLECTION_SUPPLY}, or null for unlimited`)
+    }
   }
 }
 

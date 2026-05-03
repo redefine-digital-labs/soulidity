@@ -10,6 +10,10 @@ type CreateCollectionTxParams = {
   imageUrl: string
   extraRoyaltyBps: number
   tradeable: boolean
+  // null/undefined = unlimited supply (Move Option<u64>::none).
+  // Positive integer = on-chain supply cap. Soft Web limit lives in
+  // validateCollectionArgs (MAX_COLLECTION_SUPPLY).
+  maxSupply?: number | null
 }
 
 type AddSoulToCollectionTxParams = {
@@ -29,6 +33,9 @@ export function buildCreateCollectionTx(params: CreateCollectionTxParams) {
     buyerKioskId: params.currentKioskId,
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
+  const maxSupplyArg = params.maxSupply == null
+    ? tx.pure.option('u64', null)
+    : tx.pure.option('u64', params.maxSupply)
   tx.moveCall({
     target: `${packageId}::market::create_collection_in_personal_kiosk`,
     arguments: [
@@ -42,6 +49,7 @@ export function buildCreateCollectionTx(params: CreateCollectionTxParams) {
       tx.pure.string(params.imageUrl),
       tx.pure.u16(params.extraRoyaltyBps),
       tx.pure.bool(params.tradeable),
+      maxSupplyArg,
     ],
   })
 

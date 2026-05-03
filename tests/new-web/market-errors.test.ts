@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COLLECTION_ERROR_CATALOG,
   MARKET_ERROR_CATALOG,
   assertSoulidityTxSucceeded,
+  enhanceCollectionError,
   enhanceMarketError,
+  enhanceSoulidityError,
+  formatCollectionAbortMessage,
   formatMarketAbortMessage,
+  getCollectionAbortInfo,
   getMarketAbortInfo,
+  parseCollectionAbort,
   parseMarketAbort,
 } from '../../web/lib/soulidity/market-errors'
 
@@ -174,6 +180,37 @@ describe('assertSoulidityTxSucceeded', () => {
       expect(wrapped.cause?.name).toBe('SuiTxExecutionError')
     }
   })
+
+  it('enhances collection aborts carried by failed transaction effects', () => {
+    expect(() => assertSoulidityTxSucceeded({
+      digest: '9YsFailedCollectionDigest',
+      effects: {
+        status: {
+          status: 'failure',
+          error:
+            "Transaction resolution failed: MoveAbort in 1st command, abort code: 4, in '0xab::collection::add_soul' (instruction 7)",
+        },
+      },
+    }, 'Collection bind transaction')).toThrow('ECollectionSupplyExceeded')
+
+    try {
+      assertSoulidityTxSucceeded({
+        digest: '9YsFailedCollectionDigest',
+        effects: {
+          status: {
+            status: 'failure',
+            error:
+              "Transaction resolution failed: MoveAbort in 1st command, abort code: 4, in '0xab::collection::add_soul' (instruction 7)",
+          },
+        },
+      }, 'Collection bind transaction')
+    } catch (error) {
+      const wrapped = error as Error & { collectionAbort?: { code: number }; cause?: Error }
+      expect(wrapped.name).toBe('SoulidityCollectionAbortError')
+      expect(wrapped.collectionAbort?.code).toBe(4)
+      expect(wrapped.cause?.name).toBe('SuiTxExecutionError')
+    }
+  })
 })
 
 describe('getMarketAbortInfo', () => {
@@ -196,5 +233,75 @@ describe('getMarketAbortInfo', () => {
     const wrapper = new Error('wallet wrapper', { cause })
 
     expect(getMarketAbortInfo(wrapper)?.entry.name).toBe('ESkillsRootAlreadyExists')
+  })
+})
+
+describe('collection error catalog + abort parser', () => {
+  it('covers all collection.move codes 0..5', () => {
+    for (const code of [0, 1, 2, 3, 4, 5]) {
+      expect(COLLECTION_ERROR_CATALOG[code], `missing entry for code ${code}`).toBeDefined()
+    }
+    expect(COLLECTION_ERROR_CATALOG[6]).toBeUndefined()
+  })
+
+  it('maps ECollectionSupplyExceeded (4) to HTTP 409', () => {
+    expect(COLLECTION_ERROR_CATALOG[4]?.name).toBe('ECollectionSupplyExceeded')
+    expect(COLLECTION_ERROR_CATALOG[4]?.httpStatus).toBe(409)
+  })
+
+  it('maps ESupplyCapInvalid (5) to HTTP 400', () => {
+    expect(COLLECTION_ERROR_CATALOG[5]?.name).toBe('ESupplyCapInvalid')
+    expect(COLLECTION_ERROR_CATALOG[5]?.httpStatus).toBe(400)
+  })
+
+  it('parseCollectionAbort identifies the collection module from short-form messages', () => {
+    const raw =
+      "Transaction resolution failed: MoveAbort in 1st command, abort code: 4, in '0xab::collection::add_soul' (instruction 7)"
+    const info = parseCollectionAbort(new Error(raw))
+    expect(info?.module).toBe('collection')
+    expect(info?.code).toBe(4)
+    expect(info?.entry.name).toBe('ECollectionSupplyExceeded')
+    expect(info?.functionName).toBe('add_soul')
+  })
+
+  it('parseCollectionAbort identifies the collection module from full SDK messages', () => {
+    const raw = `Error: MoveAbort(MoveLocation { module: ModuleId { address: ${'0x' + 'ab'.repeat(32)}, name: Identifier("collection") }, function: 1, instruction: 4, function_name: Some("create") }, 5)`
+    const info = parseCollectionAbort(new Error(raw))
+    expect(info?.module).toBe('collection')
+    expect(info?.code).toBe(5)
+    expect(info?.entry.name).toBe('ESupplyCapInvalid')
+  })
+
+  it('returns null for market aborts (clean separation)', () => {
+    const raw =
+      "Transaction resolution failed: MoveAbort in 1st command, abort code: 4, in '0xab::market::buy_soul' (instruction 9)"
+    expect(parseCollectionAbort(new Error(raw))).toBeNull()
+  })
+
+  it('formatCollectionAbortMessage carries the recovery hint', () => {
+    const info = parseCollectionAbort(
+      new Error("MoveAbort in 1st, abort code: 4, in '0xab::collection::add_soul'"),
+    )!
+    expect(formatCollectionAbortMessage(info)).toContain('Collection at maximum capacity')
+    expect(formatCollectionAbortMessage(info)).toContain('ECollectionSupplyExceeded')
+  })
+
+  it('enhanceCollectionError attaches the parsed abort info', () => {
+    const original = new Error(
+      "MoveAbort in 1st command, abort code: 4, in '0xab::collection::add_soul' (instruction 7)",
+    )
+    const enhanced = enhanceCollectionError(original) as Error & { collectionAbort?: { code: number } }
+    expect(enhanced.name).toBe('SoulidityCollectionAbortError')
+    expect(enhanced.collectionAbort?.code).toBe(4)
+    expect(getCollectionAbortInfo(enhanced)?.entry.name).toBe('ECollectionSupplyExceeded')
+  })
+
+  it('enhanceSoulidityError handles collection aborts, not only market aborts', () => {
+    const original = new Error(
+      "MoveAbort in 1st command, abort code: 4, in '0xab::collection::add_soul' (instruction 7)",
+    )
+    const enhanced = enhanceSoulidityError(original) as Error & { collectionAbort?: { code: number } }
+    expect(enhanced.name).toBe('SoulidityCollectionAbortError')
+    expect(enhanced.collectionAbort?.code).toBe(4)
   })
 })

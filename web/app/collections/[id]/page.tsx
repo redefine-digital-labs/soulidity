@@ -111,16 +111,47 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
 
       {/* Souls in this collection */}
       <section>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
           <h2 className="font-display text-xl font-bold">Souls in this collection</h2>
-          <span className="text-xs text-muted">{collection.souls.length} Souls</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted">
+              {collection.maxSoulSupply == null
+                ? `${collection.currentSoulSupply} Souls`
+                : `${collection.currentSoulSupply} / ${collection.maxSoulSupply} Souls`}
+            </span>
+            {collection.isCreator && (
+              (() => {
+                const cap = collection.maxSoulSupply == null ? null : Number(collection.maxSoulSupply)
+                const atCapacity = cap != null && collection.currentSoulSupply >= cap
+                if (atCapacity) {
+                  return (
+                    <span className="rounded-full border border-border bg-card2/60 px-3 py-1 text-[11px] font-semibold text-muted">
+                      Supply reached
+                    </span>
+                  )
+                }
+                return (
+                  <Link
+                    href={`/create?collectionId=${encodeURIComponent(collection.onChainId)}`}
+                    className="rounded-full border border-purple/40 bg-purple/12 px-3 py-1 text-[11px] font-semibold text-purple hover:bg-purple/20"
+                  >
+                    + Add Soul
+                  </Link>
+                )
+              })()
+            )}
+          </div>
         </div>
 
         {collection.souls.length === 0 ? (
           <EmptyState
             icon={'\uD83E\uDEE5'}
-            label="No Souls mirrored yet"
-            sublabel="Souls will appear here after mint or sync."
+            label={collection.isCreator ? 'No Souls yet' : 'No Souls mirrored yet'}
+            sublabel={
+              collection.isCreator
+                ? 'Mint your first Soul and bind it to this collection from the create flow.'
+                : 'Souls will appear here after mint or sync.'
+            }
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

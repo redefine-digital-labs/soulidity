@@ -125,17 +125,9 @@ export async function upsertSoulProjection(params: {
     },
   })
 
-  // Keep collection soulCount in sync when a Soul belongs to a collection
-  const collectionId = params.state.collectionId
-  if (collectionId) {
-    const count = await prisma.soulAsset.count({
-      where: { collectionOnChainId: collectionId },
-    })
-    await prisma.soulCollectionAsset.updateMany({
-      where: { onChainId: collectionId },
-      data: { soulCount: count },
-    })
-  }
-
+  // SoulCollection.soulCount is owned by SoulCollection.current_supply on-chain
+  // and mirrored only by upsertCollectionProjection / the add-soul mirror.
+  // Do NOT recount via prisma.soulAsset.count here — that races with ownership
+  // transfers (an in-flight transfer can briefly leave a Soul unmirrored).
   return result
 }

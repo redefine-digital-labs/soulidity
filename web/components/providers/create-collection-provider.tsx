@@ -28,6 +28,11 @@ export interface CollectionSuccessSnapshot {
   extraRoyaltyBps: number
   tradeable: boolean
   soulNames: string[]
+  // Atomic-safe representation. null = unlimited, otherwise a positive integer
+  // string mirroring the on-chain cap.
+  maxSoulSupply: string | null
+  /** True when the collection was launched with no Souls (`Add Souls when ready` flow). */
+  emptyCollection: boolean
 }
 
 interface StoredCollectionPublishResult {
@@ -71,6 +76,8 @@ interface CreateCollectionContextValue {
   setCoverImage: (file: File | null) => void
   supplyCap: string
   setSupplyCap: (v: string) => void
+  unlimitedSupply: boolean
+  setUnlimitedSupply: (v: boolean) => void
   floorPrice: string
   setFloorPrice: (v: string) => void
   extraRoyaltyBps: number
@@ -78,9 +85,11 @@ interface CreateCollectionContextValue {
   tradeable: boolean
   setTradeable: (v: boolean) => void
 
-  // Step 2 — Add Souls (batch upload)
-  addSoulsMethod: 'batch-upload' | null
-  setAddSoulsMethod: (v: 'batch-upload' | null) => void
+  // Step 2 — Add Souls (batch upload | skip)
+  // null = no method picked yet (legacy meaning preserved); 'skip' = launch
+  // with zero Souls and add later from the collection detail page.
+  addSoulsMethod: 'batch-upload' | 'skip' | null
+  setAddSoulsMethod: (v: 'batch-upload' | 'skip' | null) => void
   batchFile: File | null
   batchSouls: BatchSoulEntry[]
   batchErrors: string[]
@@ -113,13 +122,15 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
   const [coverImageFile, setCoverImageFileRaw] = useState<File | null>(null)
   const [coverImagePreviewUrl, setCoverImagePreviewUrl] = useState<string | null>(null)
   const previewUrlRef = useRef<string | null>(null)
-  const [supplyCap, setSupplyCap] = useState('')
+  // Default 10000 mirrors the marketing copy. Locked on launch.
+  const [supplyCap, setSupplyCap] = useState('10000')
+  const [unlimitedSupply, setUnlimitedSupply] = useState(false)
   const [floorPrice, setFloorPrice] = useState('')
   const [extraRoyaltyBps, setExtraRoyaltyBps] = useState(500)
   const [tradeable, setTradeable] = useState(true)
 
   // Step 2
-  const [addSoulsMethod, setAddSoulsMethod] = useState<'batch-upload' | null>(null)
+  const [addSoulsMethod, setAddSoulsMethod] = useState<'batch-upload' | 'skip' | null>(null)
   const [batchFile, setBatchFile] = useState<File | null>(null)
   const [batchSouls, setBatchSouls] = useState<BatchSoulEntry[]>([])
   const [batchErrors, setBatchErrors] = useState<string[]>([])
@@ -191,6 +202,12 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
             setDescription(meta.description ?? '')
             setExtraRoyaltyBps(meta.extraRoyaltyBps ?? 500)
             setTradeable(meta.tradeable ?? true)
+            if (typeof meta.maxSupply === 'number' && meta.maxSupply > 0) {
+              setSupplyCap(String(meta.maxSupply))
+              setUnlimitedSupply(false)
+            } else if (meta.maxSupply === null) {
+              setUnlimitedSupply(true)
+            }
             if (recovery.floorPriceAtomic) {
               // Convert atomic back to display string (inverse of parseDisplayAmountToAtomic)
               const v = BigInt(recovery.floorPriceAtomic)
@@ -236,7 +253,8 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
     setName('')
     setDescription('')
     setCoverImage(null)
-    setSupplyCap('')
+    setSupplyCap('10000')
+    setUnlimitedSupply(false)
     setFloorPrice('')
     setExtraRoyaltyBps(500)
     setTradeable(true)
@@ -259,6 +277,7 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
       description, setDescription,
       coverImageFile, coverImagePreviewUrl, setCoverImage,
       supplyCap, setSupplyCap,
+      unlimitedSupply, setUnlimitedSupply,
       floorPrice, setFloorPrice,
       extraRoyaltyBps, setExtraRoyaltyBps,
       tradeable, setTradeable,

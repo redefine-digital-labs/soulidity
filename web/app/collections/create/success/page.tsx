@@ -67,11 +67,15 @@ export default function LaunchedPage() {
   const snapshot = ctx.successSnapshot
   const floor = snapshot?.floorPrice ?? (ctx.floorPrice || '0')
   const royaltyDisplay = formatRoyalty(snapshot?.extraRoyaltyBps ?? ctx.extraRoyaltyBps)
-  const soulNames = (snapshot?.soulNames ?? ctx.batchSouls.map((s) => s.name)).join(' & ')
+  const soulNamesArr = snapshot?.soulNames ?? ctx.batchSouls.map((s) => s.name)
+  const soulNames = soulNamesArr.join(' & ')
   const collectionName = snapshot?.name || ctx.name || 'Collection'
   const tradeable = snapshot?.tradeable ?? ctx.tradeable
-  const soulCount = snapshot?.soulNames?.length ?? ctx.batchSouls.length
+  const soulCount = soulNamesArr.length
   const collectionId = result.collectionOnChainId
+  const maxSoulSupply = snapshot?.maxSoulSupply ?? result.maxSoulSupply ?? null
+  const isEmpty = soulCount === 0
+  const capacityLabel = maxSoulSupply == null ? 'Unlimited' : maxSoulSupply
 
   return (
     <>
@@ -89,7 +93,9 @@ export default function LaunchedPage() {
             <p className="page-kicker mb-2 text-purple">Soul Collection</p>
             <h2 className="page-title mb-3">Collection Born</h2>
             <p className="page-copy mx-auto max-w-md">
-              Your collection is live on Sui. Souls are minted and bound — ready for the market.
+              {isEmpty
+                ? 'Collection created. Add Souls when ready.'
+                : 'Your collection is live on Sui. Souls are minted and bound — ready for the market.'}
             </p>
           </div>
 
@@ -106,7 +112,11 @@ export default function LaunchedPage() {
               />
               <ConfirmRow
                 label="Souls minted"
-                value={`${soulCount} · ${soulNames}`}
+                value={
+                  isEmpty
+                    ? `0 now · capacity ${capacityLabel}`
+                    : `${soulCount}${maxSoulSupply == null ? '' : ' / ' + maxSoulSupply} · ${soulNames}`
+                }
                 bold
               />
               <ConfirmRow

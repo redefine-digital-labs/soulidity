@@ -54,6 +54,8 @@ import {
   extractSkillVersionAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
   extractSkillVersionDeletedEvent,
+  extractSoulAddedToCollectionEvent,
+  extractSoulCollectionCreatedEvent,
   isGrantActive,
 } from '../../web/lib/soulidity/events'
 
@@ -638,6 +640,103 @@ describe('edge cases', () => {
   it('handles transactions with undefined events', () => {
     expect(() => extractSoulMintedToKioskEvent({}, PKG)).toThrow(
       'SoulMintedToKiosk event is missing',
+    )
+  })
+})
+
+describe('extractSoulAddedToCollectionEvent', () => {
+  const eventType = `${PKG}::collection::SoulAddedToCollection`
+
+  it('parses currentSupply / maxSupply on a capped collection', () => {
+    const tx = makeTx(eventType, {
+      collection_id: addr('1'),
+      soul_id: addr('2'),
+      current_supply: '3',
+      max_supply: ['10'],
+    })
+    const result = extractSoulAddedToCollectionEvent(tx, PKG)
+    expect(result.currentSupply).toBe(3n)
+    expect(result.maxSupply).toBe(10n)
+  })
+
+  it('parses Some(0) without confusing it with None (truthy bug regression)', () => {
+    const tx = makeTx(eventType, {
+      collection_id: addr('1'),
+      soul_id: addr('2'),
+      current_supply: '1',
+      max_supply: { vec: ['0'] },
+    })
+    const result = extractSoulAddedToCollectionEvent(tx, PKG)
+    expect(result.maxSupply).toBe(0n)
+  })
+
+  it('treats empty vec as null (None)', () => {
+    const tx = makeTx(eventType, {
+      collection_id: addr('1'),
+      soul_id: addr('2'),
+      current_supply: '5',
+      max_supply: { vec: [] },
+    })
+    const result = extractSoulAddedToCollectionEvent(tx, PKG)
+    expect(result.maxSupply).toBeNull()
+  })
+
+  it('treats null max_supply as null', () => {
+    const tx = makeTx(eventType, {
+      collection_id: addr('1'),
+      soul_id: addr('2'),
+      current_supply: 0,
+      max_supply: null,
+    })
+    const result = extractSoulAddedToCollectionEvent(tx, PKG)
+    expect(result.currentSupply).toBe(0n)
+    expect(result.maxSupply).toBeNull()
+  })
+})
+
+describe('extractSoulCollectionCreatedEvent', () => {
+  const eventType = `${PKG}::collection::SoulCollectionCreated`
+
+  it('parses the maxSupply Some branch', () => {
+    const tx = makeTx(eventType, {
+      collection_id: addr('1'),
+      right_id: addr('2'),
+      creator: addr('3'),
+      current_holder: addr('3'),
+      tradeable: true,
+      max_supply: ['7'],
+    })
+    const result = extractSoulCollectionCreatedEvent(tx, PKG)
+    expect(result.collectionId).toBe(addr('1'))
+    expect(result.tradeable).toBe(true)
+    expect(result.maxSupply).toBe(7n)
+  })
+
+  it('parses Some(0) and None distinctly', () => {
+    const someZeroTx = makeTx(eventType, {
+      collection_id: addr('1'),
+      right_id: addr('2'),
+      creator: addr('3'),
+      current_holder: addr('3'),
+      tradeable: false,
+      max_supply: { vec: ['0'] },
+    })
+    expect(extractSoulCollectionCreatedEvent(someZeroTx, PKG).maxSupply).toBe(0n)
+
+    const noneTx = makeTx(eventType, {
+      collection_id: addr('1'),
+      right_id: addr('2'),
+      creator: addr('3'),
+      current_holder: addr('3'),
+      tradeable: false,
+      max_supply: { vec: [] },
+    })
+    expect(extractSoulCollectionCreatedEvent(noneTx, PKG).maxSupply).toBeNull()
+  })
+
+  it('throws when the event is missing', () => {
+    expect(() => extractSoulCollectionCreatedEvent(makeEmptyTx(), PKG)).toThrow(
+      'SoulCollectionCreated event is missing',
     )
   })
 })

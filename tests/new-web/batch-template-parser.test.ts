@@ -37,7 +37,7 @@ describe('normalizeBatchTemplateRows', () => {
     expect(result.souls[0].creatorRoyaltyBps).toBe(300)
   })
 
-  it('adds a supply-cap mismatch error without dropping parsed rows', () => {
+  it('allows an initial batch smaller than the collection supply cap', () => {
     const result = normalizeBatchTemplateRows([
       {
         'Soul Name': 'AlphaScout',
@@ -46,6 +46,22 @@ describe('normalizeBatchTemplateRows', () => {
     ], 300, 2)
 
     expect(result.souls).toHaveLength(1)
-    expect(result.errors).toContain('Template has 1 Soul(s) but Supply Cap is 2 — add 1 more row(s) or adjust the Supply Cap in Step 1')
+    expect(result.errors).toEqual([])
+  })
+
+  it('rejects a template that exceeds the collection supply cap', () => {
+    const result = normalizeBatchTemplateRows([
+      {
+        'Soul Name': 'AlphaScout',
+        Description: 'Tracks new Sui pools',
+      },
+      {
+        'Soul Name': 'BetaScout',
+        Description: 'Tracks Sui launch events',
+      },
+    ], 300, 1)
+
+    expect(result.souls).toHaveLength(2)
+    expect(result.errors).toContain('Template has 2 Souls but Supply Cap is 1 — remove 1 row(s)')
   })
 })

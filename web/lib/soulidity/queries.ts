@@ -225,6 +225,12 @@ function readOptionalNumber(value: unknown, fieldName: string): number | null {
   return readNumber(resolved, fieldName)
 }
 
+function readOptionalBigInt(value: unknown, fieldName: string): bigint | null {
+  const resolved = readOptionalVectorValue(value, fieldName)
+  if (!resolved) return null
+  return readBigInt(resolved, fieldName)
+}
+
 function readVectorItems(value: unknown, fieldName: string, depth = 0): unknown[] {
   if (depth > OPTIONAL_VECTOR_MAX_DEPTH) {
     throw new OnChainVerificationError(`${fieldName} nesting exceeds the supported depth`)
@@ -916,6 +922,8 @@ export async function getSoulCollectionObject(objectId: string, packageId: strin
     currentHolderAddress: readAddress(fields.current_holder, 'SoulCollection current_holder'),
     currentHolderKioskId: readObjectId(fields.current_holder_kiosk_id, 'SoulCollection current_holder_kiosk_id'),
     rightId: readObjectId(fields.right_id, 'SoulCollection right_id'),
+    maxSupply: readOptionalBigInt(fields.max_supply, 'SoulCollection max_supply'),
+    currentSupply: readBigInt(fields.current_supply, 'SoulCollection current_supply'),
   }
 }
 

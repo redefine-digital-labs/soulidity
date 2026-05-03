@@ -40,7 +40,11 @@ export function CollectionHeader({ collection, actions }: CollectionHeaderProps)
             <span>&middot;</span>
             <span>Launched {formatDate(collection.createdAt)}</span>
             <span>&middot;</span>
-            <span>{collection.soulCount} Souls</span>
+            <span>
+              {collection.maxSoulSupply == null
+                ? `${collection.currentSoulSupply} Souls`
+                : `${collection.currentSoulSupply} / ${collection.maxSoulSupply} Souls`}
+            </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {!collection.tradeable && <Tag color="danger">Non-tradeable</Tag>}

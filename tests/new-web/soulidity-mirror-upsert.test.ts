@@ -103,6 +103,8 @@ function makeCollectionObject(overrides?: Partial<SoulCollectionObject>): SoulCo
     currentHolderAddress: '0xholder',
     currentHolderKioskId: '0xholderkiosk',
     rightId: '0xright1',
+    maxSupply: null,
+    currentSupply: 0n,
     ...overrides,
   }
 }
@@ -375,6 +377,28 @@ describe('upsertSoulProjection', () => {
     expect(call.create.listingObjectOnChainId).toBeNull()
     expect(call.create.readme).toBeNull()
   })
+
+  it('does NOT recount collection.soulCount when the Soul belongs to a collection', async () => {
+    // Regression: previously upsertSoulProjection called
+    //   prisma.soulAsset.count + prisma.soulCollectionAsset.updateMany
+    // which raced with ownership transfers. SoulCollection.current_supply is
+    // now the only writer of soulCount.
+    mockedPrisma.soulAsset.upsert.mockResolvedValue({ onChainId: '0xsoul123' })
+
+    const { upsertSoulProjection } = await import('../../web/lib/soulidity/mirror/upsert-soul')
+
+    await upsertSoulProjection({
+      soul: makeSoulObject(),
+      state: makeSoulStateObject({ collectionId: '0xcol1' }),
+      memory: makeSoulMemoryObject(),
+      currentKioskCapOnChainId: '0xkioskcap',
+      tags: [],
+      previewImages: [],
+    })
+
+    expect(mockedPrisma.soulAsset.count).not.toHaveBeenCalled()
+    expect(mockedPrisma.soulCollectionAsset.updateMany).not.toHaveBeenCalled()
+  })
 })
 
 // =========================================================================
@@ -590,7 +614,6 @@ describe('upsertCollectionProjection', () => {
   beforeEach(() => vi.resetAllMocks())
 
   it('calls prisma.soulCollectionAsset.upsert with correct where and field mapping', async () => {
-    mockedPrisma.soulAsset.count.mockResolvedValue(5)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
     const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
@@ -600,6 +623,8 @@ describe('upsertCollectionProjection', () => {
       right: makeCollectionRightObject(),
       creatorMemberId: 'member-creator',
       currentHolderMemberId: 'member-holder',
+      currentSupply: 0n,
+      maxSoulSupply: null,
     })
 
     expect(mockedPrisma.soulCollectionAsset.upsert).toHaveBeenCalledOnce()
@@ -610,7 +635,6 @@ describe('upsertCollectionProjection', () => {
   })
 
   it('maps name, description, imageUrl from the right object (not collection)', async () => {
-    mockedPrisma.soulAsset.count.mockResolvedValue(0)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
     const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
@@ -624,6 +648,8 @@ describe('upsertCollectionProjection', () => {
     await upsertCollectionProjection({
       collection: makeCollectionObject(),
       right,
+      currentSupply: 0n,
+      maxSoulSupply: null,
     })
 
     const call = mockedPrisma.soulCollectionAsset.upsert.mock.calls[0][0]
@@ -636,28 +662,62 @@ describe('upsertCollectionProjection', () => {
     }
   })
 
-  it('counts existing souls for the collection', async () => {
-    mockedPrisma.soulAsset.count.mockResolvedValue(42)
+  it('mirrors currentSupply / maxSoulSupply directly from on-chain (no prisma count)', async () => {
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
     const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
 
     await upsertCollectionProjection({
-      collection: makeCollectionObject(),
+      collection: makeCollectionObject({ currentSupply: 7n, maxSupply: 100n }),
       right: makeCollectionRightObject(),
+      currentSupply: 7n,
+      maxSoulSupply: 100n,
     })
 
-    expect(mockedPrisma.soulAsset.count).toHaveBeenCalledWith({
-      where: { collectionOnChainId: '0xcol1' },
+    expect(mockedPrisma.soulAsset.count).not.toHaveBeenCalled()
+
+    const call = mockedPrisma.soulCollectionAsset.upsert.mock.calls[0][0]
+    expect(call.create.soulCount).toBe(7)
+    expect(call.update.soulCount).toBe(7)
+    expect(call.create.maxSoulSupply).toBe(100n)
+    expect(call.update.maxSoulSupply).toBe(100n)
+  })
+
+  it('writes maxSoulSupply = null for unlimited collections', async () => {
+    mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
+
+    const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
+
+    await upsertCollectionProjection({
+      collection: makeCollectionObject({ currentSupply: 4n, maxSupply: null }),
+      right: makeCollectionRightObject(),
+      currentSupply: 4n,
+      maxSoulSupply: null,
     })
 
     const call = mockedPrisma.soulCollectionAsset.upsert.mock.calls[0][0]
-    expect(call.create.soulCount).toBe(42)
-    expect(call.update.soulCount).toBe(42)
+    expect(call.create.maxSoulSupply).toBeNull()
+    expect(call.update.maxSoulSupply).toBeNull()
+  })
+
+  it('rejects currentSupply outside the Prisma Int range (fail-closed)', async () => {
+    mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
+
+    const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
+
+    await expect(
+      upsertCollectionProjection({
+        collection: makeCollectionObject({ currentSupply: 2_147_483_648n, maxSupply: null }),
+        right: makeCollectionRightObject(),
+        currentSupply: 2_147_483_648n,
+        maxSoulSupply: null,
+      }),
+    ).rejects.toThrow(/SoulCollectionAsset.soulCount/)
+
+    expect(mockedPrisma.soulCollectionAsset.upsert).not.toHaveBeenCalled()
   })
 
   it('converts listedPriceAtomic bigint to string', async () => {
-    mockedPrisma.soulAsset.count.mockResolvedValue(0)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
     const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
@@ -668,6 +728,8 @@ describe('upsertCollectionProjection', () => {
       listedPriceAtomic: 2_500_000_000n,
       listingStatus: 'listed',
       listingObjectOnChainId: '0xcolListing',
+      currentSupply: 0n,
+      maxSoulSupply: null,
     })
 
     const call = mockedPrisma.soulCollectionAsset.upsert.mock.calls[0][0]
@@ -678,7 +740,6 @@ describe('upsertCollectionProjection', () => {
   })
 
   it('maps collection structural fields correctly', async () => {
-    mockedPrisma.soulAsset.count.mockResolvedValue(0)
     mockedPrisma.soulCollectionAsset.upsert.mockResolvedValue({ onChainId: '0xcol1' })
 
     const { upsertCollectionProjection } = await import('../../web/lib/soulidity/mirror/upsert-collection')
@@ -686,6 +747,8 @@ describe('upsertCollectionProjection', () => {
     await upsertCollectionProjection({
       collection: makeCollectionObject({ extraRoyaltyBps: 300, tradeable: false }),
       right: makeCollectionRightObject(),
+      currentSupply: 0n,
+      maxSoulSupply: null,
     })
 
     const call = mockedPrisma.soulCollectionAsset.upsert.mock.calls[0][0]

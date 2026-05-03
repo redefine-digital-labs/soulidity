@@ -117,6 +117,7 @@ function makeCollectionRow(overrides: Record<string, unknown> = {}) {
     listedPriceAtomic: null,
     listingStatus: 'held',
     soulCount: 3,
+    maxSoulSupply: null as bigint | null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -360,9 +361,20 @@ describe('toSoulCollectionSummary', () => {
     expect(result.listedPriceAtomic).toBeNull()
     expect(result.listingStatus).toBe('held')
     expect(result.soulCount).toBe(3)
+    expect(result.currentSoulSupply).toBe(3)
+    expect(result.maxSoulSupply).toBeNull()
     expect(result.tradeable).toBe(true)
     expect(result.extraRoyaltyBps).toBe(200)
     expect(result.createdAt).toBe('2024-06-15T12:00:00.000Z')
+  })
+
+  it('serializes maxSoulSupply BigInt as a string', () => {
+    const row = makeCollectionRow({ maxSoulSupply: 10000n, soulCount: 7 })
+    const result = toSoulCollectionSummary(row as never)
+    expect(result.maxSoulSupply).toBe('10000')
+    expect(typeof result.maxSoulSupply).toBe('string')
+    expect(result.currentSoulSupply).toBe(7)
+    expect(result.soulCount).toBe(result.currentSoulSupply) // legacy alias parity
   })
 
   it('converts Decimal listedPriceAtomic to string', () => {

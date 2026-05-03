@@ -10,6 +10,7 @@ import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 
 const PUBLISH_RESULT_KEY = 'soul-publish-result'
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
+const COLLECTION_BIND_TARGET_KEY = 'soul-create-collection-bind-target'
 
 // ── Upload result shapes ──
 
@@ -62,12 +63,29 @@ export interface PublishResult {
   stateOnChainId: string
   memoryOnChainId: string
   listingStatus: string
+  collectionOnChainId?: string | null
+  collectionAddTxDigest?: string | null
 }
 
 interface StoredPublishResult {
   userId?: string
   result?: PublishResult
   deploymentSignature?: string
+}
+
+export interface CollectionBindTarget {
+  collectionOnChainId: string
+}
+
+interface StoredCollectionBindTarget {
+  userId?: string
+  target?: CollectionBindTarget | null
+  deploymentSignature?: string
+}
+
+function normalizeCollectionBindTarget(target: CollectionBindTarget | null | undefined): CollectionBindTarget | null {
+  const collectionOnChainId = target?.collectionOnChainId?.trim()
+  return collectionOnChainId ? { collectionOnChainId } : null
 }
 
 function readStoredPublishResult(userId: string | null): PublishResult | null {
@@ -84,6 +102,26 @@ function readStoredPublishResult(userId: string | null): PublishResult | null {
     const stored = JSON.parse(raw) as StoredPublishResult
     return stored.userId === userId && stored.result && hasCurrentSoulidityDeploymentSignature(stored)
       ? stored.result
+      : null
+  } catch {
+    return null
+  }
+}
+
+function readStoredCollectionBindTarget(userId: string | null): CollectionBindTarget | null {
+  if (!userId || typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = sessionStorage.getItem(COLLECTION_BIND_TARGET_KEY)
+    if (!raw) {
+      return null
+    }
+
+    const stored = JSON.parse(raw) as StoredCollectionBindTarget
+    return stored.userId === userId && stored.target && hasCurrentSoulidityDeploymentSignature(stored)
+      ? normalizeCollectionBindTarget(stored.target)
       : null
   } catch {
     return null
@@ -121,6 +159,8 @@ interface CreateSoulContextValue {
   // Publish results (populated after successful TX)
   publishResult: PublishResult | null
   setPublishResult: (result: PublishResult | null) => void
+  collectionBindTarget: CollectionBindTarget | null
+  setCollectionBindTarget: (target: CollectionBindTarget | null) => void
 
   // True after sessionStorage hydration is complete (safe to evaluate publishResult guards)
   isHydrated: boolean
@@ -190,6 +230,7 @@ function CreateSoulProviderInner({
     setUploadResultsRaw(prev => prev ? { ...prev, memorySeed: undefined } : prev)
   }, [])
   const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(null)
+  const [collectionBindTarget, setCollectionBindTargetRaw] = useState<CollectionBindTarget | null>(null)
   const [isHydrated, setIsHydrated] = useState(false)
   // Tracks the userId we've already hydrated for, so we can re-hydrate on
   // userId change without calling setState inside a useEffect (which React
@@ -201,6 +242,7 @@ function CreateSoulProviderInner({
   if (!authLoading && hydratedForUserId !== userId) {
     setHydratedForUserId(userId)
     setPublishResultRaw(readStoredPublishResult(userId))
+    setCollectionBindTargetRaw(readStoredCollectionBindTarget(userId))
     setIsHydrated(true)
   }
 
@@ -211,6 +253,21 @@ function CreateSoulProviderInner({
         sessionStorage.setItem(PUBLISH_RESULT_KEY, JSON.stringify(attachSoulidityDeploymentSignature({ userId, result })))
       } else {
         sessionStorage.removeItem(PUBLISH_RESULT_KEY)
+      }
+    } catch { /* storage quota exceeded */ }
+  }, [userId])
+
+  const setCollectionBindTarget = useCallback((target: CollectionBindTarget | null) => {
+    const normalized = normalizeCollectionBindTarget(target)
+    setCollectionBindTargetRaw(normalized)
+    try {
+      if (normalized && userId) {
+        sessionStorage.setItem(
+          COLLECTION_BIND_TARGET_KEY,
+          JSON.stringify(attachSoulidityDeploymentSignature({ userId, target: normalized })),
+        )
+      } else {
+        sessionStorage.removeItem(COLLECTION_BIND_TARGET_KEY)
       }
     } catch { /* storage quota exceeded */ }
   }, [userId])
@@ -251,9 +308,11 @@ function CreateSoulProviderInner({
     setSkillsFileRaw(null)
     setUploadResultsRaw(null)
     setPublishResultRaw(null)
+    setCollectionBindTargetRaw(null)
     try {
       sessionStorage.removeItem(PUBLISH_RESULT_KEY)
       sessionStorage.removeItem(MINT_RECOVERY_KEY)
+      sessionStorage.removeItem(COLLECTION_BIND_TARGET_KEY)
     } catch {}
   }, [setCoverImage])
 
@@ -269,6 +328,7 @@ function CreateSoulProviderInner({
       skillsFile, setSkillsFile,
       uploadResults, setUploadResults,
       publishResult, setPublishResult,
+      collectionBindTarget, setCollectionBindTarget,
       isHydrated,
       reset,
     }}>

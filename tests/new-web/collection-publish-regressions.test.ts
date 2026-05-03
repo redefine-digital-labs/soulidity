@@ -70,4 +70,28 @@ describe('collection publish regression guards', () => {
     expect(source).toContain('const assetsSealSidecar = await createLegacyInitialAssetSealSidecar')
     expect(source).not.toContain('assetsSealSidecar: null')
   })
+
+  it('bumps RECOVERY_VERSION when supply cap is added to the draft signature (so v9 drafts are dropped)', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+    expect(source).toContain('const RECOVERY_VERSION = 10 as const')
+  })
+
+  it('includes maxSupply in the draft signature so a different cap invalidates an in-flight draft', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+    expect(source).toMatch(/buildCollectionDraftSignature[\s\S]*maxSupply: params\.maxSupply \?\? null/)
+  })
+
+  it('persists maxSupply in collectionMeta recovery so refresh restores the supply selector', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+    expect(source).toContain('maxSupply: params.maxSupply ?? null')
+    expect(source).toContain('maxSupply: number | null')
+  })
+
+  it('captures maxSupply / unlimited / emptyCollection in publish telemetry', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+    expect(source).toContain('collection_publish_started')
+    expect(source).toMatch(/maxSupply: params\.maxSupply \?\? null/)
+    expect(source).toMatch(/unlimited: params\.maxSupply == null/)
+    expect(source).toMatch(/emptyCollection: \(params\.souls\?\.length \?\? 0\) === 0/)
+  })
 })

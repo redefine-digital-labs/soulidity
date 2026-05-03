@@ -36,7 +36,9 @@ import {
 
 const RECOVERY_KEY = 'collection-mint-recovery'
 
-const RECOVERY_VERSION = 9 as const
+// v10 adds maxSupply to draftSignature + collectionMeta. Bumping invalidates
+// any v9 draft so old recoveries don't bind a 10000-cap collection by accident.
+const RECOVERY_VERSION = 10 as const
 
 interface SoulUploadRecovery {
   protectedBlobObjectId: string
@@ -66,6 +68,8 @@ interface CollectionRecoveryMeta {
   description: string
   extraRoyaltyBps: number
   tradeable: boolean
+  /** null = unlimited supply. Persisted into recovery for refresh-resume. */
+  maxSupply: number | null
 }
 
 interface RecoveryState {
@@ -97,6 +101,11 @@ export interface CollectionSyncResponse {
   collectionOnChainId: string
   rightOnChainId: string
   listingStatus: string
+  // soulCount/currentSoulSupply mirror SoulCollection.current_supply 1:1; both
+  // names exposed for legacy and new callers respectively.
+  soulCount?: number
+  currentSoulSupply?: number
+  maxSoulSupply?: string | null
 }
 
 interface PublishSyncResponse {
@@ -133,6 +142,8 @@ export interface CollectionPublishParams {
   tradeable: boolean
   /** Floor price in atomic USDC — minimum listing price for souls in this collection */
   floorPriceAtomic?: string | null
+  /** On-chain SoulCollection.max_supply. null/undefined = unlimited (Move Option::none). */
+  maxSupply?: number | null
   /** Batch souls to mint and bind to the new collection */
   souls?: BatchSoulToMint[]
   /** Files from numbered subfolders, keyed by 1-indexed folder number */
@@ -184,7 +195,7 @@ function buildRecoverySouls(paramsSouls: BatchSoulToMint[] | undefined, existing
 
 export function buildCollectionDraftSignature(params: Pick<
   CollectionPublishParams,
-  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'floorPriceAtomic' | 'souls'
+  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'floorPriceAtomic' | 'maxSupply' | 'souls'
 >) {
   return JSON.stringify({
     name: params.name.trim(),
@@ -192,6 +203,9 @@ export function buildCollectionDraftSignature(params: Pick<
     extraRoyaltyBps: params.extraRoyaltyBps,
     tradeable: params.tradeable,
     floorPriceAtomic: params.floorPriceAtomic ?? null,
+    // null = unlimited; including this in the signature ensures recovery
+    // never resumes a stale draft with a different cap.
+    maxSupply: params.maxSupply ?? null,
     souls: (params.souls ?? []).map((soul) => ({
       name: soul.name.trim(),
       description: soul.description.trim(),
@@ -446,6 +460,9 @@ export function useCollectionPublish(draftSignature?: string | null) {
     const startedAt = Date.now()
     posthog.capture('collection_publish_started', {
       soulCount: params.souls?.length ?? 0,
+      maxSupply: params.maxSupply ?? null,
+      unlimited: params.maxSupply == null,
+      emptyCollection: (params.souls?.length ?? 0) === 0,
     })
     try {
       setError(null)
@@ -483,6 +500,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
           description: params.description,
           extraRoyaltyBps: params.extraRoyaltyBps,
           tradeable: params.tradeable,
+          maxSupply: params.maxSupply ?? null,
         },
         souls: buildRecoverySouls(params.souls, baseRecovery.souls),
       }
@@ -527,6 +545,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
           imageUrl,
           extraRoyaltyBps: params.extraRoyaltyBps,
           tradeable: params.tradeable,
+          maxSupply: params.maxSupply ?? null,
         })
 
         setStatus('signing')
@@ -792,6 +811,9 @@ export function useCollectionPublish(draftSignature?: string | null) {
       setStatus('done')
       posthog.capture('collection_publish_completed', {
         soulCount: params.souls?.length ?? 0,
+        maxSupply: params.maxSupply ?? null,
+        unlimited: params.maxSupply == null,
+        emptyCollection: (params.souls?.length ?? 0) === 0,
         elapsedMs: Date.now() - startedAt,
       })
 

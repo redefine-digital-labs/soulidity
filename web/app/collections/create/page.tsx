@@ -10,6 +10,8 @@ import { Input, Textarea } from '@/components/ui/input'
 import { CoverImagePicker } from '@/components/ui/cover-image-picker'
 import { buttonStyles } from '@/components/ui/button'
 import { parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
+import { MAX_COLLECTION_SUPPLY } from '@/lib/soulidity/tx/shared'
+import { parseCollectionSupplyCapInput } from '@/lib/collections/supply-cap'
 import { useCreateCollection, collectionSteps } from '@/components/providers/create-collection-provider'
 
 const royaltyOptions = [
@@ -62,8 +64,12 @@ export default function CreateCollectionPage() {
         nextErrors.floorPrice = e instanceof Error ? e.message : 'Invalid amount'
       }
     }
-    if (ctx.supplyCap && (isNaN(Number(ctx.supplyCap)) || Number(ctx.supplyCap) < 1)) {
-      nextErrors.supplyCap = 'Must be a positive integer'
+    if (!ctx.unlimitedSupply) {
+      try {
+        parseCollectionSupplyCapInput(ctx.supplyCap)
+      } catch (e) {
+        nextErrors.supplyCap = e instanceof Error ? e.message : 'Invalid supply cap'
+      }
     }
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
@@ -126,15 +132,32 @@ export default function CreateCollectionPage() {
 
             {/* Total Supply Cap */}
             <div className="space-y-2">
-              <FieldLabel label="Total Supply Cap" hint="template validation only" />
-              <Input
-                type="number"
-                min={0}
-                value={ctx.supplyCap}
-                className="h-11 w-32 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                onChange={(e) => ctx.setSupplyCap(e.target.value)}
-              />
-              <p className="text-xs text-muted">Validates batch template row count. Leave blank for unlimited.</p>
+              <FieldLabel label="Total Supply Cap" required={!ctx.unlimitedSupply} />
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={1}
+                  max={MAX_COLLECTION_SUPPLY}
+                  step={1}
+                  value={ctx.unlimitedSupply ? '' : ctx.supplyCap}
+                  placeholder="10000"
+                  disabled={ctx.unlimitedSupply}
+                  className={`h-11 w-32 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    ctx.unlimitedSupply ? 'opacity-50' : ''
+                  }`}
+                  onChange={(e) => ctx.setSupplyCap(e.target.value)}
+                />
+                <label className="flex items-center gap-2 text-[13px] text-muted">
+                  <input
+                    type="checkbox"
+                    checked={ctx.unlimitedSupply}
+                    onChange={(e) => ctx.setUnlimitedSupply(e.target.checked)}
+                    className="h-4 w-4 rounded border-purple/40 bg-card2/80 text-purple focus:ring-purple"
+                  />
+                  Unlimited (no on-chain cap)
+                </label>
+              </div>
+              <p className="text-xs text-muted">Enforced on-chain. Created after launch and locked — no later edits.</p>
               {errors.supplyCap && <p className="text-[11px] font-medium text-danger">{errors.supplyCap}</p>}
             </div>
 

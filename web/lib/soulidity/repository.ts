@@ -178,6 +178,7 @@ export const soulCollectionSummarySelect = {
   listedPriceAtomic: true,
   listingStatus: true,
   soulCount: true,
+  maxSoulSupply: true,
   createdAt: true,
   updatedAt: true,
 } as const
@@ -331,6 +332,10 @@ export function toSoulSkillVersionRecord(record: SoulSkillVersionRecordRow): Sou
 }
 
 export function toSoulCollectionSummary(record: SoulCollectionSummaryRecord): SoulCollectionAssetSummary {
+  // Naming pipeline: Move `max_supply / current_supply` ↔ Prisma
+  // `maxSoulSupply / soulCount` ↔ API `maxSoulSupply / currentSoulSupply`.
+  // soulCount is preserved as a legacy alias of currentSoulSupply, NOT a
+  // separate truth.
   return {
     id: record.id,
     onChainId: record.onChainId,
@@ -350,6 +355,8 @@ export function toSoulCollectionSummary(record: SoulCollectionSummaryRecord): So
     listedPriceAtomic: asAtomicString(record.listedPriceAtomic),
     listingStatus: asListingStatus(record.listingStatus),
     soulCount: record.soulCount,
+    currentSoulSupply: record.soulCount,
+    maxSoulSupply: record.maxSoulSupply == null ? null : record.maxSoulSupply.toString(),
     createdAt: asIso(record.createdAt),
     updatedAt: asIso(record.updatedAt),
   }

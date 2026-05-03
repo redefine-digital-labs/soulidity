@@ -427,6 +427,10 @@ export function enhanceMarketError(error: unknown): unknown {
   return enhanced
 }
 
+export function enhanceSoulidityError(error: unknown): unknown {
+  return enhanceCollectionError(enhanceMarketError(error))
+}
+
 export function assertSoulidityTxSucceeded(
   result: unknown,
   label: string,
@@ -434,6 +438,174 @@ export function assertSoulidityTxSucceeded(
   try {
     return assertSuiTxSucceeded(result, label)
   } catch (error) {
-    throw enhanceMarketError(error)
+    throw enhanceSoulidityError(error)
   }
+}
+
+// ── Collection module aborts ─────────────────────────────────────────────────
+// Mirrors `move/soulidity/sources/collection.move` constants. Keep in sync
+// when adding or splitting error codes. The HTTP status is what API routes
+// should return; UI hooks read `code` / `entry.name` for localized copy.
+
+export type CollectionErrorName =
+  | 'EExtraRoyaltyTooHigh'
+  | 'ENotCollectionCreator'
+  | 'ECollectionLocked'
+  | 'ECreatorMismatch'
+  | 'ECollectionSupplyExceeded'
+  | 'ESupplyCapInvalid'
+
+export interface CollectionErrorEntry {
+  readonly name: CollectionErrorName
+  readonly summary: string
+  readonly recoveryHint: string
+  readonly httpStatus: number
+}
+
+export const COLLECTION_ERROR_CATALOG: { readonly [code: number]: CollectionErrorEntry } = {
+  0: {
+    name: 'EExtraRoyaltyTooHigh',
+    summary: 'Collection extra royalty exceeds the protocol cap.',
+    recoveryHint: 'Lower the collection royalty to within the cap (≤ 25%) and retry.',
+    httpStatus: 400,
+  },
+  1: {
+    name: 'ENotCollectionCreator',
+    summary: 'Only the collection creator can perform this action.',
+    recoveryHint: 'Sign in with the wallet that created this collection.',
+    httpStatus: 403,
+  },
+  2: {
+    name: 'ECollectionLocked',
+    summary: 'This collection is locked and not tradeable.',
+    recoveryHint: 'Locked collections cannot be re-listed or transferred.',
+    httpStatus: 409,
+  },
+  3: {
+    name: 'ECreatorMismatch',
+    summary: 'Soul creator does not match the collection creator.',
+    recoveryHint: 'Add a Soul minted by the same wallet that owns the collection.',
+    httpStatus: 400,
+  },
+  4: {
+    name: 'ECollectionSupplyExceeded',
+    summary: 'Collection at maximum capacity',
+    recoveryHint: 'This collection has reached its supply cap; no more Souls can be added.',
+    httpStatus: 409,
+  },
+  5: {
+    name: 'ESupplyCapInvalid',
+    summary: 'Collection supply cap is invalid',
+    recoveryHint: 'Supply cap must be at least 1, or unset for unlimited.',
+    httpStatus: 400,
+  },
+}
+
+export interface CollectionAbortInfo {
+  readonly code: number
+  readonly module: 'collection'
+  readonly functionName: string | null
+  readonly entry: CollectionErrorEntry
+  readonly raw: string
+}
+
+export function parseCollectionAbort(error: unknown): CollectionAbortInfo | null {
+  const raw = getErrorMessage(error)
+  if (!raw) return null
+
+  let code: number | null = null
+  let functionName: string | null = null
+  let isCollectionModule = false
+
+  const matchFull = raw.match(MOVE_ABORT_PATTERN_FUNCTION)
+  if (matchFull) {
+    functionName = matchFull[1] ?? null
+    const parsedCode = Number.parseInt(matchFull[2] ?? '', 10)
+    if (Number.isFinite(parsedCode)) {
+      code = parsedCode
+    }
+    isCollectionModule = /name:\s*Identifier\("collection"\)/.test(raw)
+      || /::collection::/.test(raw)
+  }
+
+  if (code === null) {
+    const matchShort = raw.match(MOVE_ABORT_PATTERN_INSTRUCTION)
+    if (matchShort) {
+      const parsedCode = Number.parseInt(matchShort[1] ?? '', 10)
+      if (Number.isFinite(parsedCode)) {
+        code = parsedCode
+      }
+      const moduleName = matchShort[2]
+      const fn = matchShort[3]
+      if (moduleName === 'collection') {
+        isCollectionModule = true
+        functionName = fn ?? null
+      }
+    }
+  }
+
+  if (code === null || !isCollectionModule) return null
+
+  const entry = COLLECTION_ERROR_CATALOG[code]
+  if (!entry) return null
+
+  return {
+    code,
+    module: 'collection',
+    functionName,
+    entry,
+    raw,
+  }
+}
+
+function readEnhancedCollectionAbortInfo(error: unknown): CollectionAbortInfo | null {
+  if (!error || typeof error !== 'object' || !('collectionAbort' in error)) return null
+  const abort = (error as { collectionAbort?: unknown }).collectionAbort
+  if (!abort || typeof abort !== 'object') return null
+
+  const candidate = abort as Partial<CollectionAbortInfo>
+  if (candidate.module !== 'collection' || typeof candidate.code !== 'number') return null
+
+  const entry = COLLECTION_ERROR_CATALOG[candidate.code]
+  if (!entry) return null
+
+  return {
+    code: candidate.code,
+    module: 'collection',
+    functionName: typeof candidate.functionName === 'string' ? candidate.functionName : null,
+    entry,
+    raw: typeof candidate.raw === 'string' ? candidate.raw : getErrorMessage(error),
+  }
+}
+
+export function getCollectionAbortInfo(error: unknown): CollectionAbortInfo | null {
+  const enhanced = readEnhancedCollectionAbortInfo(error)
+  if (enhanced) return enhanced
+  const parsed = parseCollectionAbort(error)
+  if (parsed) return parsed
+  if (error instanceof Error && error.cause && error.cause !== error) {
+    return getCollectionAbortInfo(error.cause)
+  }
+  return null
+}
+
+export function formatCollectionAbortMessage(info: CollectionAbortInfo): string {
+  const head = `${info.entry.summary} (collection::${info.entry.name}, code ${info.code})`
+  if (info.entry.recoveryHint) {
+    return `${head} ${info.entry.recoveryHint}`
+  }
+  return head
+}
+
+export function enhanceCollectionError(error: unknown): unknown {
+  const info = parseCollectionAbort(error)
+  if (!info) return error
+  const enhanced = new Error(formatCollectionAbortMessage(info), { cause: error })
+  enhanced.name = 'SoulidityCollectionAbortError'
+  Object.defineProperty(enhanced, 'collectionAbort', {
+    value: info,
+    enumerable: false,
+    writable: false,
+  })
+  return enhanced
 }

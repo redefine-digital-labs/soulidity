@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import posthog from 'posthog-js'
 import type { Transaction } from '@mysten/sui/transactions'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
+import { buildAddSoulToCollectionTx } from '@/lib/soulidity/tx/collection'
 import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
+import { preflightCollectionBindTarget } from '@/lib/soulidity/collection-bind-preflight'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import {
@@ -39,10 +41,11 @@ interface MintRecoveryState {
   txDigest: string
   syncBody?: PublishSyncBody | null
   pendingSync?: PublishSyncMaterial | null
+  collectionBind?: CollectionBindRecovery | null
   deploymentSignature: string
 }
 
-export type PublishStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
+export type PublishStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'binding' | 'done' | 'error'
 
 export interface PublishSyncResponse {
   txDigest: string
@@ -50,6 +53,17 @@ export interface PublishSyncResponse {
   stateOnChainId: string
   memoryOnChainId: string
   listingStatus: string
+  collectionOnChainId?: string | null
+  collectionAddTxDigest?: string | null
+}
+
+export interface PublishCollectionBindTarget {
+  collectionOnChainId: string
+}
+
+interface CollectionBindRecovery {
+  collectionOnChainId: string
+  txDigest?: string | null
 }
 
 interface PublishSyncBody {
@@ -111,6 +125,8 @@ export interface PublishParams {
    * `assertObjectInputsExist`.
    */
   prefetchedPersonalKiosk?: { currentKioskId: string | null; currentKioskCapOnChainId: string | null } | null
+  /** Optional existing collection to bind the newly minted Soul into after publish sync. */
+  collectionBindTarget?: PublishCollectionBindTarget | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -164,6 +180,11 @@ function isPublishSyncMaterial(value: unknown): value is PublishSyncMaterial {
     && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
     && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
     && hasValidOptionalLegacyAssetsSealMaterial(value)
+}
+
+function normalizeCollectionBindTarget(target: PublishCollectionBindTarget | null | undefined): CollectionBindRecovery | null {
+  const collectionOnChainId = target?.collectionOnChainId?.trim()
+  return collectionOnChainId ? { collectionOnChainId } : null
 }
 
 function buildPublishSyncMaterial(params: PublishParams): PublishSyncMaterial {
@@ -288,9 +309,14 @@ export function usePublish() {
     try {
       setError(null)
       const authHeaders = await getAuthHeaders()
+      const requestedCollectionBind = normalizeCollectionBindTarget(params.collectionBindTarget)
 
       // Resume sync for an already-executed mint TX (e.g. after a transient sync failure or page refresh)
       let digest = txDigest
+      if (!digest && requestedCollectionBind?.collectionOnChainId) {
+        await preflightCollectionBindTarget(authHeaders, requestedCollectionBind.collectionOnChainId)
+      }
+
       if (!digest) {
         setStatus('building')
         // Reuse the caller's preflight kiosk when supplied; this is the
@@ -345,6 +371,7 @@ export function usePublish() {
           txDigest: executedDigest,
           pendingSync,
           syncBody: null,
+          collectionBind: requestedCollectionBind,
         })
         recoveryRef.current = recovery
         persistMintRecovery(recovery)
@@ -406,10 +433,67 @@ export function usePublish() {
       }
 
       const syncData: PublishSyncResponse = await syncRes.json()
-      setPublishData(syncData)
+      const recoveredCollectionBind = recoveryRef.current?.txDigest === digest
+        ? recoveryRef.current.collectionBind ?? null
+        : null
+      const collectionBind = recoveredCollectionBind ?? requestedCollectionBind
+      let completedData: PublishSyncResponse = syncData
+      if (collectionBind?.collectionOnChainId) {
+        const collectionOnChainId = collectionBind.collectionOnChainId
+        let collectionAddTxDigest = collectionBind.txDigest ?? null
+
+        if (!collectionAddTxDigest) {
+          setStatus('binding')
+          await assertObjectInputsExist(suiClient, {
+            Collection: collectionOnChainId,
+            'Soul state': syncData.stateOnChainId,
+          })
+          const addTx = buildAddSoulToCollectionTx({
+            collectionObjectId: collectionOnChainId,
+            stateObjectId: syncData.stateOnChainId,
+          })
+          setStatus('signing')
+          const addResult = await signAndExecute(addTx)
+          collectionAddTxDigest = addResult.digest
+          assertSoulidityTxSucceeded(addResult, 'Collection bind transaction')
+
+          const activeRecovery = recoveryRef.current?.txDigest === digest ? recoveryRef.current : null
+          if (activeRecovery) {
+            const recoveryWithBind = {
+              ...activeRecovery,
+              collectionBind: { collectionOnChainId, txDigest: collectionAddTxDigest },
+            }
+            recoveryRef.current = recoveryWithBind
+            persistMintRecovery(recoveryWithBind)
+          }
+        }
+
+        if (!collectionAddTxDigest) {
+          throw new Error('Collection bind transaction digest is missing')
+        }
+        setStatus('syncing')
+        const addRes = await fetch(`/api/collections/${encodeURIComponent(collectionOnChainId)}/add-soul`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ txDigest: collectionAddTxDigest }),
+        })
+        if (!addRes.ok) {
+          const body = await addRes.json().catch(() => ({}))
+          throw new Error(body.error || 'Failed to mirror collection bind')
+        }
+        const addData = await addRes.json().catch(() => ({})) as { collectionOnChainId?: string | null }
+        completedData = {
+          ...syncData,
+          collectionOnChainId: addData.collectionOnChainId ?? collectionOnChainId,
+          collectionAddTxDigest,
+        }
+      }
+
+      setPublishData(completedData)
       setStatus('done')
       posthog.capture('soul_publish_completed', {
         txDigest: digest,
+        collectionOnChainId: completedData.collectionOnChainId ?? null,
         elapsedMs: Date.now() - startedAt,
       })
 

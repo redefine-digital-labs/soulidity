@@ -34,6 +34,7 @@ import { buildIssueGrantTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
 import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
 import { validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
+import { preflightCollectionBindTarget } from '@/lib/soulidity/collection-bind-preflight'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
   useCreateSoul,
@@ -379,6 +380,9 @@ export default function CreateGasPage() {
         'Your personal kiosk': prefetchedPersonalKiosk?.currentKioskId ?? null,
         'Your personal kiosk capability': prefetchedPersonalKiosk?.currentKioskCapOnChainId ?? null,
       })
+      if (ctx.collectionBindTarget?.collectionOnChainId) {
+        await preflightCollectionBindTarget(preflightAuthHeaders, ctx.collectionBindTarget.collectionOnChainId)
+      }
       // The real imageUrl is filled in after PTB1 succeeds; use a placeholder
       // that satisfies the non-empty + ≤1024-byte byte-length guards so the
       // rest of `validateSoulPublishArgs` can still trip on bad name /
@@ -525,6 +529,7 @@ export default function CreateGasPage() {
           prepared.clearBatchRecovery()
           preparedBatchRef.current = null
         },
+        collectionBindTarget: ctx.collectionBindTarget,
       })
     } catch (err) {
       if (err instanceof WalrusUploadResumeMismatchError) {
@@ -608,7 +613,7 @@ export default function CreateGasPage() {
 
   const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
   const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
-  const isBusy = reclaimingOrphans || uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing'
+  const isBusy = reclaimingOrphans || uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing' || status === 'binding'
   const combinedError = deployError || error
   const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
   const walletActionState = getWalletActionState({

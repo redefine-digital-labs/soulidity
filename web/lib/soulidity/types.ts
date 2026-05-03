@@ -104,6 +104,9 @@ export interface SoulCollectionObject {
   currentHolderAddress: string
   currentHolderKioskId: string
   rightId: string
+  // null = unlimited; bigint reflects on-chain Option<u64> exactly.
+  maxSupply: bigint | null
+  currentSupply: bigint
 }
 
 export interface SoulCollectionRightObject {
@@ -336,7 +339,12 @@ export interface SoulCollectionAssetSummary {
   listingObjectOnChainId: string | null
   listedPriceAtomic: string | null
   listingStatus: SoulListingStatus
+  // soulCount mirrors SoulCollection.current_supply 1:1; kept as alias for
+  // legacy callers. New code should read currentSoulSupply.
   soulCount: number
+  currentSoulSupply: number
+  // null = unlimited supply. Atomic string to avoid bigint-in-JSON.
+  maxSoulSupply: string | null
   createdAt: string
   updatedAt: string
 }

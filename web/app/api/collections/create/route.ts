@@ -86,6 +86,11 @@ export async function POST(request: Request) {
       collectionOnChainId: mirrored.onChainId,
       rightOnChainId: mirrored.rightOnChainId,
       listingStatus: mirrored.listingStatus,
+      // soulCount/currentSoulSupply mirror the same on-chain counter; both
+      // names are exposed for legacy and new clients respectively.
+      soulCount: mirrored.soulCount,
+      currentSoulSupply: mirrored.soulCount,
+      maxSoulSupply: mirrored.maxSoulSupply == null ? null : mirrored.maxSoulSupply.toString(),
     }
 
     await storeSoulidityTxSync({

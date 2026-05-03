@@ -12,6 +12,8 @@ const EExtraRoyaltyTooHigh: u64 = 0;
 const ENotCollectionCreator: u64 = 1;
 const ECollectionLocked: u64 = 2;
 const ECreatorMismatch: u64 = 3;
+const ECollectionSupplyExceeded: u64 = 4;
+const ESupplyCapInvalid: u64 = 5;
 
 public struct COLLECTION has drop {}
 
@@ -23,6 +25,8 @@ public struct SoulCollection has key {
     current_holder: address,
     current_holder_kiosk_id: ID,
     right_id: ID,
+    max_supply: Option<u64>,
+    current_supply: u64,
 }
 
 public struct SoulCollectionRight has key, store {
@@ -42,11 +46,14 @@ public struct SoulCollectionCreated has copy, drop {
     creator: address,
     current_holder: address,
     tradeable: bool,
+    max_supply: Option<u64>,
 }
 
 public struct SoulAddedToCollection has copy, drop {
     collection_id: ID,
     soul_id: ID,
+    current_supply: u64,
+    max_supply: Option<u64>,
 }
 
 public struct CollectionHolderUpdated has copy, drop {
@@ -87,6 +94,14 @@ public fun right_id(self: &SoulCollection): ID {
     self.right_id
 }
 
+public fun max_supply(self: &SoulCollection): Option<u64> {
+    self.max_supply
+}
+
+public fun current_supply(self: &SoulCollection): u64 {
+    self.current_supply
+}
+
 public fun collection_id(self: &SoulCollectionRight): ID {
     self.collection_id
 }
@@ -101,11 +116,13 @@ public(package) fun create(
     image_url: String,
     extra_royalty_bps: u16,
     tradeable: bool,
+    max_supply: Option<u64>,
     holder: address,
     holder_kiosk_id: ID,
     ctx: &mut TxContext,
 ): (SoulCollection, SoulCollectionRight) {
     assert!(extra_royalty_bps <= MAX_BPS, EExtraRoyaltyTooHigh);
+    assert!(max_supply.is_none() || *max_supply.borrow() >= 1, ESupplyCapInvalid);
 
     let creator = ctx.sender();
     let collection_uid = object::new(ctx);
@@ -129,6 +146,8 @@ public(package) fun create(
         current_holder: holder,
         current_holder_kiosk_id: holder_kiosk_id,
         right_id,
+        max_supply,
+        current_supply: 0,
     };
 
     event::emit(SoulCollectionCreated {
@@ -137,13 +156,14 @@ public(package) fun create(
         creator,
         current_holder: holder,
         tradeable,
+        max_supply,
     });
 
     (collection, right)
 }
 
 public fun add_soul(
-    collection: &SoulCollection,
+    collection: &mut SoulCollection,
     state: &mut SoulState,
     ctx: &TxContext,
 ) {
@@ -151,10 +171,18 @@ public fun add_soul(
     assert!(soul::state_creator(state) == collection.creator, ECreatorMismatch);
     soul::assert_owner(state, ctx.sender());
 
+    if (collection.max_supply.is_some()) {
+        let cap = *collection.max_supply.borrow();
+        assert!(collection.current_supply < cap, ECollectionSupplyExceeded);
+    };
+    collection.current_supply = collection.current_supply + 1;
+
     soul::bind_collection(state, object::id(collection));
     event::emit(SoulAddedToCollection {
         collection_id: object::id(collection),
         soul_id: soul::soul_id(state),
+        current_supply: collection.current_supply,
+        max_supply: collection.max_supply,
     });
 }
 
@@ -209,6 +237,8 @@ public fun destroy_collection_for_testing(self: SoulCollection) {
         current_holder: _,
         current_holder_kiosk_id: _,
         right_id: _,
+        max_supply: _,
+        current_supply: _,
     } = self;
     id.delete();
 }

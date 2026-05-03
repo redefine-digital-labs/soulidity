@@ -14,11 +14,12 @@ import {
   type BatchSoulEntry,
   type SoulFolderMap,
 } from '@/components/providers/create-collection-provider'
+import { parseCollectionSupplyCapInput } from '@/lib/collections/supply-cap'
 import { downloadTemplate, processFolderUpload } from './batch-utils'
 
 // ── Method card definitions ──
 
-type MethodId = 'create-new' | 'batch-upload' | 'add-souls'
+type MethodId = 'create-new' | 'batch-upload' | 'add-souls' | 'skip'
 
 const methods: { id: MethodId; icon: string; title: string; desc: string; enabled: boolean }[] = [
   {
@@ -41,6 +42,13 @@ const methods: { id: MethodId; icon: string; title: string; desc: string; enable
     title: 'Add Souls',
     desc: 'Link on-chain Souls you already own — permission-checked before binding',
     enabled: false,
+  },
+  {
+    id: 'skip',
+    icon: '⏭',
+    title: 'Skip for now',
+    desc: 'Launch the collection empty. Mint Souls one-by-one later from the detail page.',
+    enabled: true,
   },
 ]
 
@@ -78,11 +86,11 @@ export default function AddSoulsPage() {
     setParsing(true)
     setError(null)
     try {
-      const cap = ctx.supplyCap ? parseInt(ctx.supplyCap, 10) : undefined
+      const cap = ctx.unlimitedSupply ? undefined : parseCollectionSupplyCapInput(ctx.supplyCap)
       const result = await processFolderUpload(
         files,
         ctx.extraRoyaltyBps,
-        Number.isFinite(cap) ? cap : undefined,
+        cap,
       )
       // Show confirmation modal instead of committing directly
       setPending(result)
@@ -113,6 +121,15 @@ export default function AddSoulsPage() {
   function handleNext() {
     if (!ctx.addSoulsMethod) {
       setError('Please choose a method above before continuing.')
+      return
+    }
+    if (ctx.addSoulsMethod === 'skip') {
+      // Empty-collection launch: clear any stale batch state then advance.
+      ctx.setBatchData(null, [], [])
+      ctx.setSoulFolders(new Map())
+      ctx.setFolderErrors([])
+      setError(null)
+      router.push('/collections/create/preview')
       return
     }
     if (!ctx.batchFile) {
@@ -170,7 +187,7 @@ export default function AddSoulsPage() {
           <SectionHeader
             label="Create Soul Collection"
             title="Step 2 — Add Souls"
-            subtitle="Add Souls to your collection. Choose one method — this applies to all Souls in this collection."
+            subtitle="Pick how Souls join this collection. You can also launch empty and add Souls later from the detail page."
             className="mb-2"
           />
 
@@ -180,15 +197,16 @@ export default function AddSoulsPage() {
               <p className="text-[13px] leading-6 text-muted">
                 Choose how to add Souls to this Collection — you can only use one method per collection:
               </p>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {methods.map((m) => (
                   <button
                     key={m.id}
                     type="button"
                     disabled={!m.enabled}
                     onClick={() => {
-                      if (m.enabled) {
-                        ctx.setAddSoulsMethod(m.id as 'batch-upload')
+                      if (!m.enabled) return
+                      if (m.id === 'batch-upload' || m.id === 'skip') {
+                        ctx.setAddSoulsMethod(m.id)
                         setError(null)
                       }
                     }}

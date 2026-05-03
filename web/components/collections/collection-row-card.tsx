@@ -48,7 +48,10 @@ export function CollectionRowCard({ collection, section, onAction }: CollectionR
               {isListed && <Tag color="gold" className="text-[10px]">Listed</Tag>}
             </div>
             <div className="mt-0.5 text-xs text-muted">
-              Launched {formatDate(collection.createdAt)} &middot; {collection.soulCount} Souls
+              Launched {formatDate(collection.createdAt)} &middot;{' '}
+              {collection.maxSoulSupply == null
+                ? `${collection.currentSoulSupply} Souls`
+                : `${collection.currentSoulSupply} / ${collection.maxSoulSupply} Souls`}
               {collection.extraRoyaltyBps > 0 && <> &middot; Royalty {(collection.extraRoyaltyBps / 100).toFixed(0)}%</>}
             </div>
           </div>

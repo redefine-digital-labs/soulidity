@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import { extractSoulAddedToCollectionEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { getCollectionAbortInfo } from '@/lib/soulidity/market-errors'
+import { syncCollectionProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { findSoulCollectionDetailByRouteId } from '@/lib/soulidity/repository'
@@ -94,20 +96,29 @@ export async function POST(
       }
     }
 
-    // Recount souls in this collection
-    const soulCount = await prisma.soulAsset.count({
-      where: { collectionOnChainId: collection.onChainId },
+    // Re-read the shared SoulCollection object instead of trusting this
+    // transaction's event snapshot. Concurrent add-soul mirror calls can land
+    // out of order; the live object read keeps the DB projection monotonic.
+    const mirrored = await syncCollectionProjectionFromChain({
+      packageId,
+      collectionObjectId: collection.onChainId,
+      creatorMemberId: collection.creatorMemberId,
+      currentHolderMemberId: collection.currentHolderMemberId,
+      listingObjectOnChainId: collection.listingObjectOnChainId,
+      listedPriceAtomic: collection.listedPriceAtomic == null ? null : BigInt(collection.listedPriceAtomic.toString()),
+      listingStatus: collection.listingStatus === 'listed' ? 'listed' : 'held',
+      floorPriceAtomic: collection.floorPriceAtomic == null ? null : BigInt(collection.floorPriceAtomic.toString()),
     })
-    await prisma.soulCollectionAsset.updateMany({
-      where: { onChainId: collection.onChainId },
-      data: { soulCount },
-    })
+    const soulCount = mirrored.soulCount
+    const maxSoulSupply = mirrored.maxSoulSupply == null ? null : mirrored.maxSoulSupply.toString()
 
     const responseBody = {
       txDigest,
       collectionOnChainId: collection.onChainId,
       soulOnChainId: added.soulId,
       soulCount,
+      currentSoulSupply: soulCount,
+      maxSoulSupply,
     }
 
     // Best-effort cache — a failure here should not mask a successful mirror sync.
@@ -129,6 +140,22 @@ export async function POST(
 
     return NextResponse.json(responseBody)
   } catch (error) {
+    // Map collection-module aborts to specific HTTP codes so the UI can render
+    // localized copy. This catches the defensive case where a failed-tx digest
+    // is replayed against the route — wallet pre-flight would normally have
+    // caught the abort, but the API still answers correctly if it slips
+    // through.
+    const collectionAbort = getCollectionAbortInfo(error)
+    if (collectionAbort) {
+      return NextResponse.json(
+        {
+          code: collectionAbort.entry.name,
+          error: collectionAbort.entry.summary,
+        },
+        { status: collectionAbort.entry.httpStatus },
+      )
+    }
+
     const errorMsg = error instanceof Error ? error.message : String(error)
     const isVerification = error instanceof OnChainVerificationError
     console.error('[collection-add-soul] Mirror failed', {

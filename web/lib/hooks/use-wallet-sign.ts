@@ -12,7 +12,7 @@ import {
   resolveSuiTxResultWithEffects,
   type SuiTxResultWithEffects,
 } from '@/lib/sui/tx-result'
-import { enhanceMarketError } from '@/lib/soulidity/market-errors'
+import { enhanceSoulidityError } from '@/lib/soulidity/market-errors'
 
 async function waitForTransactionBestEffort(
   client: ReturnType<typeof useSuiClient>,
@@ -68,9 +68,9 @@ export function useWalletSign() {
       await waitForTransactionBestEffort(suiClient, result.digest)
       return result
     } catch (error) {
-      // Re-throw market-module aborts with a user-facing message + recovery
-      // hint. Non-market errors pass through unchanged.
-      throw enhanceMarketError(error)
+      // Re-throw Soulidity aborts with a user-facing message + recovery
+      // hint. Non-Soulidity errors pass through unchanged.
+      throw enhanceSoulidityError(error)
     }
   }, [currentAccount, signTransaction, suiClient])
 

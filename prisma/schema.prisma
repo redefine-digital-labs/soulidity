@@ -418,7 +418,10 @@ model SoulCollectionAsset {
   listingObjectOnChainId String? @map("listing_object_on_chain_id")
   listedPriceAtomic    Decimal? @map("listed_price_atomic") @db.Decimal(20, 0)
   listingStatus        String   @default("held") @map("listing_status")
+  // Mirrors SoulCollection.current_supply (monotonic; not decremented by burn).
   soulCount            Int      @default(0) @map("soul_count")
+  // Mirrors SoulCollection.max_supply: null = unlimited, BigInt = on-chain cap.
+  maxSoulSupply        BigInt?  @map("max_soul_supply")
   souls                SoulAsset[] @relation("CollectionSouls")
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz

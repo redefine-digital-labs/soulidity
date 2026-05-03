@@ -1530,6 +1530,7 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
             string::utf8(b"https://example.com/collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -1542,9 +1543,9 @@ fun collection_holder_receives_extra_royalty_on_soul_resale() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
         ts::return_shared(collection_obj);
         ts::return_shared(state);
     };
@@ -1865,6 +1866,7 @@ fun creator_cannot_bind_collection_after_soul_sale() {
             string::utf8(b"https://example.com/late-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -1877,9 +1879,9 @@ fun creator_cannot_bind_collection_after_soul_sale() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
 
         abort 0
     }
@@ -1955,6 +1957,7 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
             string::utf8(b"https://example.com/high-fee-collection.png"),
             high_collection_royalty_bps,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -1967,9 +1970,9 @@ fun bound_soul_listing_rejects_unbuyable_combined_fees() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
         ts::return_shared(collection_obj);
         ts::return_shared(state);
     };
@@ -2274,6 +2277,7 @@ fun collection_creation_and_binding_track_current_holder_and_state() {
             string::utf8(b"https://example.com/collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -2286,10 +2290,10 @@ fun collection_creation_and_binding_track_current_holder_and_state() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
 
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
 
         assert!(collection::current_holder(&collection_obj) == creator, 7);
         assert!(collection::tradeable(&collection_obj), 8);
@@ -2333,6 +2337,7 @@ fun non_tradeable_collection_cannot_be_listed() {
             string::utf8(b"https://example.com/locked.png"),
             COLLECTION_ROYALTY_BPS,
             false,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -3575,6 +3580,7 @@ fun collection_holder_cannot_append_memory_as_owner() {
             string::utf8(b"https://example.com/access-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -3587,9 +3593,9 @@ fun collection_holder_cannot_append_memory_as_owner() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
         ts::return_shared(collection_obj);
         ts::return_shared(state);
     };
@@ -3752,6 +3758,7 @@ fun collection_holder_cannot_approve_seal_as_owner() {
             string::utf8(b"https://example.com/seal-access-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -3764,9 +3771,9 @@ fun collection_holder_cannot_approve_seal_as_owner() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
         ts::return_shared(collection_obj);
         ts::return_shared(state);
     };
@@ -3918,6 +3925,7 @@ fun non_creator_cannot_add_soul_to_collection() {
             string::utf8(b"https://example.com/strict.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -3930,9 +3938,9 @@ fun non_creator_cannot_add_soul_to_collection() {
 
     ts::next_tx(&mut scenario, intruder);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
 
         abort 0
     }
@@ -3976,6 +3984,7 @@ fun collection_creator_cannot_add_soul_from_other_creator() {
             string::utf8(b"https://example.com/match.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -4020,9 +4029,9 @@ fun collection_creator_cannot_add_soul_from_other_creator() {
 
     ts::next_tx(&mut scenario, collection_creator);
     {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
+        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&collection_obj, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
 
         abort 0
     }
@@ -4097,6 +4106,7 @@ fun soul_cannot_bind_collection_twice() {
             string::utf8(b"https://example.com/first.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -4126,6 +4136,7 @@ fun soul_cannot_bind_collection_twice() {
             string::utf8(b"https://example.com/second.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -4138,18 +4149,18 @@ fun soul_cannot_bind_collection_twice() {
 
     ts::next_tx(&mut scenario, creator);
     {
-        let first_collection: SoulCollection = ts::take_shared_by_id(&scenario, first_collection_id);
+        let mut first_collection: SoulCollection = ts::take_shared_by_id(&scenario, first_collection_id);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&first_collection, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut first_collection, &mut state, ts::ctx(&mut scenario));
         ts::return_shared(first_collection);
         ts::return_shared(state);
     };
 
     ts::next_tx(&mut scenario, creator);
     {
-        let second_collection: SoulCollection = ts::take_shared_by_id(&scenario, second_collection_id);
+        let mut second_collection: SoulCollection = ts::take_shared_by_id(&scenario, second_collection_id);
         let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&second_collection, &mut state, ts::ctx(&mut scenario));
+        collection::add_soul(&mut second_collection, &mut state, ts::ctx(&mut scenario));
 
         abort 0
     }
@@ -4367,6 +4378,7 @@ fun collection_listing_rejects_mismatched_right_id() {
             string::utf8(b"https://example.com/first-listing.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -4396,6 +4408,7 @@ fun collection_listing_rejects_mismatched_right_id() {
             string::utf8(b"https://example.com/second-listing.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -9386,6 +9399,7 @@ fun extra_royalty_too_high_fails() {
             string::utf8(b"https://example.com/coll.png"),
             10_001, // exceeds 10_000
             true,
+            option::none<u64>(),
             @0xC0DE,
             dummy_kiosk_id,
             ts::ctx(&mut scenario),
@@ -11410,6 +11424,7 @@ fun cancelled_collection_listing_can_be_relisted() {
             string::utf8(b"https://example.com/relist-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -11763,6 +11778,7 @@ fun list_collection_right_zero_price_fails() {
             string::utf8(b"https://example.com/zero-price-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -11829,6 +11845,7 @@ fun buy_collection_right_wrong_payment_fails() {
             string::utf8(b"https://example.com/wrong-payment-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -11977,6 +11994,7 @@ fun cancel_collection_listing_inactive_fails() {
             string::utf8(b"https://example.com/cancel-twice-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -12081,6 +12099,7 @@ fun collection_purchase_with_platform_fee_branch_works() {
             string::utf8(b"https://example.com/fee-split-collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -13058,6 +13077,7 @@ fun delete_cancelled_collection_listing_succeeds() {
             string::utf8(b"https://example.com/collection.png"),
             COLLECTION_ROYALTY_BPS,
             true,
+            option::none<u64>(),
             ts::ctx(&mut scenario),
         );
 
@@ -14974,6 +14994,339 @@ fun cleanup_stale_content_access_entries_removes_only_old_epoch_rows() {
         content_access::destroy_for_testing(access_list);
         soul::destroy_state_for_testing(state);
         ts::return_shared(clock_obj);
+    };
+
+    ts::end(scenario);
+}
+
+// ── Collection supply cap tests ──────────────────────────────────────────────
+
+fun mint_supply_test_blobs(
+    scenario: &mut ts::Scenario,
+    admin: address,
+    creator: address,
+    count: u64,
+) {
+    ts::next_tx(scenario, admin);
+    {
+        let ctx = ts::ctx(scenario);
+        let mut walrus_system = system::new_for_testing(ctx);
+        let mut i: u64 = 0;
+        while (i < count) {
+            let root_hash: u256 = (0xABC0u256) + (i as u256);
+            let blob = register_test_blob_with_root(&mut walrus_system, root_hash, ctx);
+            transfer::public_transfer(blob, creator);
+            i = i + 1;
+        };
+        std::unit_test::destroy(walrus_system);
+    };
+}
+
+fun create_collection_with_supply_for_test(
+    scenario: &mut ts::Scenario,
+    creator: address,
+    creator_kiosk_id: ID,
+    name: vector<u8>,
+    max_supply: Option<u64>,
+): ID {
+    let collection_id: ID;
+    ts::next_tx(scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(scenario);
+        let registry: KioskRegistry = ts::take_shared(scenario);
+        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(scenario, creator_kiosk_id);
+        collection_id = market::create_collection_in_personal_kiosk(
+            &config,
+            &registry,
+            &collection_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(name),
+            string::utf8(b"supply cap test"),
+            string::utf8(b"https://example.com/cap.png"),
+            COLLECTION_ROYALTY_BPS,
+            true,
+            max_supply,
+            ts::ctx(scenario),
+        );
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(collection_policy);
+        ts::return_shared(creator_kiosk);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(scenario));
+    };
+    collection_id
+}
+
+fun mint_one_soul_for_supply_test(
+    scenario: &mut ts::Scenario,
+    creator: address,
+    creator_kiosk_id: ID,
+    name: vector<u8>,
+): ID {
+    ts::next_tx(scenario, creator);
+    {
+        let config: MarketConfig = ts::take_shared(scenario);
+        let registry: KioskRegistry = ts::take_shared(scenario);
+        let soul_policy: TransferPolicy<Soul> = ts::take_shared(scenario);
+        let personal_cap: PersonalKioskCap = ts::take_from_sender(scenario);
+        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(scenario, creator_kiosk_id);
+        let protected_blob: blob::Blob = ts::take_from_sender(scenario);
+        let _ = mint_native_in_personal_kiosk_no_skills(
+            &config,
+            &registry,
+            &soul_policy,
+            &mut creator_kiosk,
+            &personal_cap,
+            string::utf8(name),
+            string::utf8(b"supply test soul"),
+            string::utf8(b"https://example.com/soul.png"),
+            option::none(),
+            protected_blob,
+            option::none(),
+            CREATOR_ROYALTY_BPS,
+            scenario,
+        );
+        ts::return_shared(config);
+        ts::return_shared(registry);
+        ts::return_shared(soul_policy);
+        ts::return_shared(creator_kiosk);
+        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(scenario));
+    };
+    // advance one more tx so the just-shared SoulState is visible to most_recent_id_shared
+    ts::next_tx(scenario, creator);
+    let state_opt = ts::most_recent_id_shared<SoulState>();
+    state_opt.destroy_some()
+}
+
+fun add_soul_to_collection_by_id(
+    scenario: &mut ts::Scenario,
+    creator: address,
+    collection_id: ID,
+    state_id: ID,
+) {
+    ts::next_tx(scenario, creator);
+    {
+        let mut collection_obj = ts::take_shared_by_id<SoulCollection>(scenario, collection_id);
+        let mut state = ts::take_shared_by_id<SoulState>(scenario, state_id);
+        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(scenario));
+        ts::return_shared(collection_obj);
+        ts::return_shared(state);
+    };
+}
+
+#[test]
+fun collection_with_supply_cap_accepts_within_limit() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    init_protocol_for_testing(&mut scenario, admin);
+    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    mint_supply_test_blobs(&mut scenario, admin, creator, 2);
+
+    let state_id_a = mint_one_soul_for_supply_test(
+        &mut scenario, creator, creator_kiosk_id, b"Alpha",
+    );
+    let state_id_b = mint_one_soul_for_supply_test(
+        &mut scenario, creator, creator_kiosk_id, b"Beta",
+    );
+
+    let collection_id = create_collection_with_supply_for_test(
+        &mut scenario, creator, creator_kiosk_id, b"Capped Collection", option::some(2),
+    );
+
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        assert!(collection::current_supply(&collection_obj) == 2, 1);
+        let cap_opt = collection::max_supply(&collection_obj);
+        assert!(cap_opt.is_some(), 2);
+        assert!(*cap_opt.borrow() == 2, 3);
+        ts::return_shared(collection_obj);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = soulidity::collection::ECollectionSupplyExceeded)]
+fun collection_with_supply_cap_rejects_exceeding() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    init_protocol_for_testing(&mut scenario, admin);
+    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    mint_supply_test_blobs(&mut scenario, admin, creator, 3);
+
+    let state_id_a = mint_one_soul_for_supply_test(
+        &mut scenario, creator, creator_kiosk_id, b"Alpha",
+    );
+    let state_id_b = mint_one_soul_for_supply_test(
+        &mut scenario, creator, creator_kiosk_id, b"Beta",
+    );
+    let state_id_c = mint_one_soul_for_supply_test(
+        &mut scenario, creator, creator_kiosk_id, b"Gamma",
+    );
+
+    let collection_id = create_collection_with_supply_for_test(
+        &mut scenario, creator, creator_kiosk_id, b"Tight Cap", option::some(2),
+    );
+
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_c);
+
+    abort 99
+}
+
+#[test]
+fun collection_unlimited_supply_accepts_many() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    init_protocol_for_testing(&mut scenario, admin);
+    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    mint_supply_test_blobs(&mut scenario, admin, creator, 4);
+
+    let state_id_a = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"A");
+    let state_id_b = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"B");
+    let state_id_c = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"C");
+    let state_id_d = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"D");
+
+    let collection_id = create_collection_with_supply_for_test(
+        &mut scenario, creator, creator_kiosk_id, b"Unlimited", option::none(),
+    );
+
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_c);
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_d);
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        assert!(collection::current_supply(&collection_obj) == 4, 1);
+        assert!(collection::max_supply(&collection_obj).is_none(), 2);
+        ts::return_shared(collection_obj);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = soulidity::collection::ESupplyCapInvalid)]
+fun collection_max_supply_zero_rejects_create() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    init_protocol_for_testing(&mut scenario, admin);
+    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    let _collection_id = create_collection_with_supply_for_test(
+        &mut scenario, creator, creator_kiosk_id, b"Zero Cap", option::some(0),
+    );
+
+    abort 99
+}
+
+#[test]
+fun collection_supply_counter_increments() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let mut scenario = ts::begin(@0x0);
+    init_protocol_for_testing(&mut scenario, admin);
+    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+
+    mint_supply_test_blobs(&mut scenario, admin, creator, 3);
+
+    let state_id_a = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"A");
+    let state_id_b = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"B");
+    let state_id_c = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"C");
+
+    let collection_id = create_collection_with_supply_for_test(
+        &mut scenario, creator, creator_kiosk_id, b"Counter", option::some(5),
+    );
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        assert!(collection::current_supply(&collection_obj) == 0, 1);
+        ts::return_shared(collection_obj);
+    };
+
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
+    ts::next_tx(&mut scenario, creator);
+    {
+        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        assert!(collection::current_supply(&collection_obj) == 1, 2);
+        ts::return_shared(collection_obj);
+    };
+
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
+    ts::next_tx(&mut scenario, creator);
+    {
+        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        assert!(collection::current_supply(&collection_obj) == 2, 3);
+        ts::return_shared(collection_obj);
+    };
+
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_c);
+    ts::next_tx(&mut scenario, creator);
+    {
+        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        assert!(collection::current_supply(&collection_obj) == 3, 4);
+        ts::return_shared(collection_obj);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun collection_holder_change_preserves_supply() {
+    let admin = @0xA11CE;
+    let creator = @0xC0DE;
+    let new_holder = @0xBEEF;
+    let mut scenario = ts::begin(@0x0);
+    init_protocol_for_testing(&mut scenario, admin);
+    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    let new_holder_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, new_holder);
+
+    mint_supply_test_blobs(&mut scenario, admin, creator, 2);
+
+    let state_id_a = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"A");
+    let state_id_b = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"B");
+
+    let collection_id = create_collection_with_supply_for_test(
+        &mut scenario, creator, creator_kiosk_id, b"Holder Change", option::some(3),
+    );
+
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
+    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
+
+    ts::next_tx(&mut scenario, creator);
+    {
+        let mut collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        collection::update_holder(&mut collection_obj, new_holder, new_holder_kiosk_id);
+        ts::return_shared(collection_obj);
+    };
+
+    ts::next_tx(&mut scenario, new_holder);
+    {
+        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
+        assert!(collection::current_supply(&collection_obj) == 2, 1);
+        let cap_opt = collection::max_supply(&collection_obj);
+        assert!(cap_opt.is_some(), 2);
+        assert!(*cap_opt.borrow() == 3, 3);
+        assert!(collection::current_holder(&collection_obj) == new_holder, 4);
+        ts::return_shared(collection_obj);
     };
 
     ts::end(scenario);

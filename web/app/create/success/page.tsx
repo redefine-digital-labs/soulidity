@@ -35,7 +35,8 @@ export default function CreateSuccessPage() {
 
   if (!ctx.publishResult) return null
 
-  const { txDigest, soulOnChainId } = ctx.publishResult
+  const { txDigest, soulOnChainId, collectionOnChainId } = ctx.publishResult
+  const collectionHref = collectionOnChainId ? `/collections/${encodeURIComponent(collectionOnChainId)}` : null
 
   return (
     <div className="relative z-10 border-t border-purple/20">
@@ -52,7 +53,9 @@ export default function CreateSuccessPage() {
 
         <h1 className="text-3xl font-bold mb-2">✦ Your Soul is Awake</h1>
         <p className="mx-auto mb-10 max-w-[380px] text-sm leading-relaxed text-muted">
-          Your Soul is now live on Sui. Its existence is permanent and immutable on-chain.
+          {collectionOnChainId
+            ? 'Your Soul is now live on Sui and bound to the selected collection.'
+            : 'Your Soul is now live on Sui. Its existence is permanent and immutable on-chain.'}
         </p>
 
         {/* Transaction details */}
@@ -65,6 +68,12 @@ export default function CreateSuccessPage() {
             <span className="text-muted">Tx Hash</span>
             <span className="font-mono text-xs text-teal">{truncateId(txDigest)}</span>
           </div>
+          {collectionOnChainId ? (
+            <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+              <span className="text-muted">Collection</span>
+              <span className="font-mono text-xs text-teal">{truncateId(collectionOnChainId)}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between py-2.5 text-sm">
             <span className="text-muted">Status</span>
             <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
@@ -91,16 +100,18 @@ export default function CreateSuccessPage() {
           </Link>
 
           <Link
-            href="/my-souls"
+            href={collectionHref ?? '/my-souls'}
             className="group rounded-xl border border-border bg-card p-5 transition hover:border-purple"
           >
             <span className="mb-2.5 block text-2xl">🔐</span>
-            <span className="block text-sm font-bold">Manage in My Souls</span>
+            <span className="block text-sm font-bold">{collectionHref ? 'Back to Collection' : 'Manage in My Souls'}</span>
             <p className="mt-1.5 text-xs leading-relaxed text-muted">
-              Go to your dashboard to authorize an AI agent, manage versions, or list for sale later.
+              {collectionHref
+                ? 'Return to the collection detail page and confirm the new Soul appears under its supply count.'
+                : 'Go to your dashboard to authorize an AI agent, manage versions, or list for sale later.'}
             </p>
             <span className="mt-3 block text-xs font-semibold text-muted group-hover:text-purple">
-              Go to My Souls →
+              {collectionHref ? 'View Collection →' : 'Go to My Souls →'}
             </span>
           </Link>
         </div>

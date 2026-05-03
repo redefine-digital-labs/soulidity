@@ -167,6 +167,11 @@ export async function syncCollectionProjectionFromChain(params: {
   return upsertCollectionProjection({
     collection,
     right,
+    // current_supply / max_supply are read directly from the on-chain
+    // SoulCollection object so the mirror always reflects truth, not a
+    // potentially-stale event payload.
+    currentSupply: collection.currentSupply,
+    maxSoulSupply: collection.maxSupply,
     creatorMemberId: params.creatorMemberId ?? null,
     currentHolderMemberId: params.currentHolderMemberId ?? null,
     listingObjectOnChainId: params.listingObjectOnChainId ?? null,

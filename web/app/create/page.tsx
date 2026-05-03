@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { Input, Textarea } from '@/components/ui/input'
@@ -40,8 +40,17 @@ function FieldLabel({
 
 export default function CreateSoulPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const ctx = useCreateSoul()
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const collectionOnChainId = searchParams.get('collectionId')?.trim() ?? ''
+  const { setCollectionBindTarget } = ctx
+
+  useEffect(() => {
+    setCollectionBindTarget(
+      collectionOnChainId ? { collectionOnChainId } : null,
+    )
+  }, [collectionOnChainId, setCollectionBindTarget])
 
   function handleNext() {
     const nextErrors: Record<string, string> = {}
@@ -61,7 +70,8 @@ export default function CreateSoulPage() {
       <PageContainer size="sm" className="space-y-6 pt-7 sm:pt-9">
         <SectionHeader
           label="Create Soul"
-          title="Step 1 — Basic Info"
+          title={ctx.collectionBindTarget ? 'Step 1 — Add Soul to Collection' : 'Step 1 — Basic Info'}
+          subtitle={ctx.collectionBindTarget ? 'This Soul will be bound to the selected collection after mint.' : undefined}
           className="mb-2"
         />
 

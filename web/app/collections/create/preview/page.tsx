@@ -15,6 +15,7 @@ import { parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
+import { parseCollectionSupplyCapInput } from '@/lib/collections/supply-cap'
 import {
   useCreateCollection,
   collectionSteps,
@@ -184,7 +185,9 @@ export default function PreviewPage() {
   // When recovery state has a committed collection TX, bypass File-dependent guards
   // (File objects cannot survive page refresh, but recovery has all uploaded asset refs)
   const missingStep1 = !ctx.hasRecoveryTx && (!ctx.name.trim() || !ctx.description.trim() || !ctx.coverImageFile)
-  const missingStep2 = !ctx.hasRecoveryTx && (!ctx.batchFile || ctx.batchSouls.length === 0 || ctx.batchErrors.length > 0 || ctx.folderErrors.length > 0)
+  const isSkipFlow = ctx.addSoulsMethod === 'skip'
+  const missingStep2 = !ctx.hasRecoveryTx && !isSkipFlow && (!ctx.batchFile || ctx.batchSouls.length === 0 || ctx.batchErrors.length > 0 || ctx.folderErrors.length > 0)
+  const maxSupplyParam = ctx.unlimitedSupply ? null : parseCollectionSupplyCapInput(ctx.supplyCap)
   const draftSignature = !missingStep1 && !missingStep2
     ? buildCollectionDraftSignature({
         name: ctx.name,
@@ -192,6 +195,7 @@ export default function PreviewPage() {
         extraRoyaltyBps: ctx.extraRoyaltyBps,
         tradeable: ctx.tradeable,
         floorPriceAtomic: ctx.floorPrice ? parseDisplayAmountToAtomic(ctx.floorPrice).toString() : null,
+        maxSupply: maxSupplyParam,
         souls: ctx.batchSouls.map((s) => ({
           name: s.name,
           description: s.description,
@@ -242,6 +246,8 @@ export default function PreviewPage() {
         extraRoyaltyBps,
         tradeable,
         soulNames: batchSouls.map((s) => s.name),
+        maxSoulSupply: syncData.maxSoulSupply ?? null,
+        emptyCollection: batchSouls.length === 0,
       })
       showToast('Collection launched successfully!', 'success')
       router.push('/collections/create/success')
@@ -285,6 +291,7 @@ export default function PreviewPage() {
       extraRoyaltyBps: ctx.extraRoyaltyBps,
       tradeable: ctx.tradeable,
       floorPriceAtomic,
+      maxSupply: maxSupplyParam,
       soulFolders: ctx.soulFolders.size > 0 ? ctx.soulFolders : undefined,
       souls: ctx.batchSouls.map((s) => ({
         name: s.name,
@@ -385,7 +392,11 @@ export default function PreviewPage() {
               <SettingRow label="Soul Collection" value={ctx.name || 'Untitled'} bold />
               <SettingRow
                 label="Souls to mint"
-                value={`${ctx.batchSouls.length} (${soulNames})`}
+                value={
+                  ctx.batchSouls.length === 0
+                    ? `0 now · capacity ${ctx.unlimitedSupply ? 'Unlimited' : (ctx.supplyCap || 'Unlimited')}`
+                    : `${ctx.batchSouls.length} (${soulNames})`
+                }
                 bold
               />
               <SettingRow
@@ -439,7 +450,9 @@ export default function PreviewPage() {
           {/* ── Warning ── */}
           <div className="rounded-xl border border-border bg-card2/55 px-4 py-3">
             <p className="text-[13px] leading-6 text-muted">
-              🔒 After signing: Collection metadata locked · Soul list locked · Soul–Collection binding permanent (does not affect Soul trading)
+              {ctx.batchSouls.length === 0
+                ? '🔒 After signing: Collection metadata + supply cap locked · Soul list opens for later additions up to the capacity'
+                : '🔒 After signing: Collection metadata + supply cap locked · Soul–Collection binding permanent (does not affect Soul trading)'}
             </p>
           </div>
 

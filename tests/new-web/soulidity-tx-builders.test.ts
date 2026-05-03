@@ -179,6 +179,8 @@ describe('shared.ts — validateCollectionArgs', () => {
     description: 'Desc',
     imageUrl: 'https://example.com/img.png',
     extraRoyaltyBps: 100,
+    tradeable: true,
+    maxSupply: 1000,
   }
 
   it('passes with valid arguments', () => {
@@ -218,6 +220,42 @@ describe('shared.ts — validateCollectionArgs', () => {
 
   it('accepts boundary: extraRoyaltyBps = MAX', () => {
     expect(() => validateCollectionArgs({ ...VALID, extraRoyaltyBps: MAX_COLLECTION_ROYALTY_BPS })).not.toThrow()
+  })
+
+  it('rejects non-boolean tradeable', () => {
+    expect(() => validateCollectionArgs({ ...VALID, tradeable: 'yes' as unknown as boolean }))
+      .toThrow('tradeable must be a boolean')
+  })
+
+  it('accepts maxSupply = null (unlimited)', () => {
+    expect(() => validateCollectionArgs({ ...VALID, maxSupply: null })).not.toThrow()
+  })
+
+  it('accepts maxSupply = undefined (unlimited)', () => {
+    expect(() => validateCollectionArgs({ ...VALID, maxSupply: undefined })).not.toThrow()
+  })
+
+  it('rejects maxSupply = 0', () => {
+    expect(() => validateCollectionArgs({ ...VALID, maxSupply: 0 }))
+      .toThrow('maxSupply must be an integer between 1 and')
+  })
+
+  it('rejects maxSupply > 1_000_000', () => {
+    expect(() => validateCollectionArgs({ ...VALID, maxSupply: 1_000_001 }))
+      .toThrow('maxSupply must be an integer between 1 and')
+  })
+
+  it('rejects non-integer maxSupply', () => {
+    expect(() => validateCollectionArgs({ ...VALID, maxSupply: 1.5 }))
+      .toThrow('maxSupply must be an integer between 1 and')
+  })
+
+  it('accepts boundary: maxSupply = 1', () => {
+    expect(() => validateCollectionArgs({ ...VALID, maxSupply: 1 })).not.toThrow()
+  })
+
+  it('accepts boundary: maxSupply = 1_000_000', () => {
+    expect(() => validateCollectionArgs({ ...VALID, maxSupply: 1_000_000 })).not.toThrow()
   })
 })
 
@@ -1006,6 +1044,21 @@ describe('collection.ts — buildCreateCollectionTx', () => {
   it('throws on invalid extraRoyaltyBps', () => {
     expect(() => buildCreateCollectionTx({ ...VALID_PARAMS, extraRoyaltyBps: 3000 }))
       .toThrow('extraRoyaltyBps must be between 0 and')
+  })
+
+  it('passes maxSupply: null (unlimited) without throwing', () => {
+    const tx = buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: null })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('passes positive maxSupply without throwing', () => {
+    const tx = buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: 10000 })
+    expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('rejects maxSupply = 0 (caught by validateCollectionArgs)', () => {
+    expect(() => buildCreateCollectionTx({ ...VALID_PARAMS, maxSupply: 0 }))
+      .toThrow('maxSupply must be an integer between 1 and')
   })
 })
 

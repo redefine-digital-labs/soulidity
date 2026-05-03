@@ -46,10 +46,10 @@ function readOptionalObjectId(value: unknown, fieldName: string): string | null 
   if (Array.isArray(record.vec)) {
     return readOptionalObjectId(record.vec, fieldName)
   }
-  if (record.value) {
+  if (record.value !== undefined) {
     return readOptionalObjectId(record.value, fieldName)
   }
-  if (record.fields) {
+  if (record.fields !== undefined) {
     return readOptionalObjectId(record.fields, fieldName)
   }
   if (typeof record.id === 'string') {
@@ -90,11 +90,43 @@ function readOptionalNumber(value: unknown, fieldName: string): number | null {
   if (Array.isArray(record.vec)) {
     return readOptionalNumber(record.vec, fieldName)
   }
-  if (record.value) {
+  if (record.value !== undefined) {
     return readOptionalNumber(record.value, fieldName)
   }
-  if (record.fields) {
+  if (record.fields !== undefined) {
     return readOptionalNumber(record.fields, fieldName)
+  }
+  return null
+}
+
+// Parse a Move `Option<u64>` payload.
+//
+// Move Option serialises as a vector of length 0 (None) or 1 (Some).
+// Parser shape examples returned by the SDK:
+//   None              -> [] | { vec: [] } | null
+//   Some(0)           -> [0] | { vec: [0] } | { vec: ["0"] } | { value: 0 }
+//   Some(3)           -> [3] | { vec: ["3"] } | { value: "3" }
+//
+// We must distinguish `Some(0)` from `None`; truthy fallback (`if (record.value)`)
+// would erase Some(0). All branches use explicit `!== undefined` checks.
+function readOptionalBigInt(value: unknown, fieldName: string): bigint | null {
+  if (value == null) return null
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null
+    return readOptionalBigInt(value[0], fieldName)
+  }
+  const record = asRecord(value)
+  if (!record) {
+    return readBigInt(value, fieldName)
+  }
+  if (Array.isArray(record.vec)) {
+    return readOptionalBigInt(record.vec, fieldName)
+  }
+  if (record.value !== undefined) {
+    return readOptionalBigInt(record.value, fieldName)
+  }
+  if (record.fields !== undefined) {
+    return readOptionalBigInt(record.fields, fieldName)
   }
   return null
 }
@@ -119,10 +151,10 @@ function readOptionalString(value: unknown, fieldName: string): string | null {
   if (Array.isArray(record.vec)) {
     return readOptionalString(record.vec, fieldName)
   }
-  if (record.value) {
+  if (record.value !== undefined) {
     return readOptionalString(record.value, fieldName)
   }
-  if (record.fields) {
+  if (record.fields !== undefined) {
     return readOptionalString(record.fields, fieldName)
   }
   return null
@@ -265,6 +297,23 @@ export function extractSoulAddedToCollectionEvent(transaction: TransactionLike, 
   return {
     collectionId: readObjectId(event.collection_id, 'SoulAddedToCollection collection_id'),
     soulId: readObjectId(event.soul_id, 'SoulAddedToCollection soul_id'),
+    currentSupply: readBigInt(event.current_supply, 'SoulAddedToCollection current_supply'),
+    maxSupply: readOptionalBigInt(event.max_supply, 'SoulAddedToCollection max_supply'),
+  }
+}
+
+export function extractSoulCollectionCreatedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::collection::SoulCollectionCreated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulCollectionCreated event is missing from the transaction')
+  }
+  return {
+    collectionId: readObjectId(event.collection_id, 'SoulCollectionCreated collection_id'),
+    rightId: readObjectId(event.right_id, 'SoulCollectionCreated right_id'),
+    creatorAddress: readAddress(event.creator, 'SoulCollectionCreated creator'),
+    currentHolderAddress: readAddress(event.current_holder, 'SoulCollectionCreated current_holder'),
+    tradeable: Boolean(event.tradeable),
+    maxSupply: readOptionalBigInt(event.max_supply, 'SoulCollectionCreated max_supply'),
   }
 }
 

@@ -186,6 +186,8 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
     imageFile?: File | null
     extraRoyaltyBps: number
     tradeable: boolean
+    /** null/undefined = unlimited supply. */
+    maxSupply?: number | null
   }): Promise<CreateCollectionSyncResult> {
     if (!suiWallet) {
       const nextError = new Error('Sign in before creating a collection')
@@ -230,6 +232,7 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
         imageUrl: resolvedImageUrl,
         extraRoyaltyBps: params.extraRoyaltyBps,
         tradeable: params.tradeable,
+        maxSupply: params.maxSupply ?? null,
       })
       setCreateStatus('signing')
       const result = await signAndExecute(tx)
