@@ -63,6 +63,9 @@ export interface PublishResult {
   stateOnChainId: string
   memoryOnChainId: string
   listingStatus: string
+  listingTxDigest?: string | null
+  listingObjectOnChainId?: string | null
+  listedPriceAtomic?: string | null
   collectionOnChainId?: string | null
   collectionAddTxDigest?: string | null
 }
@@ -162,6 +165,13 @@ interface CreateSoulContextValue {
   collectionBindTarget: CollectionBindTarget | null
   setCollectionBindTarget: (target: CollectionBindTarget | null) => void
 
+  /** When true, list the soul on publish at `listingPriceAtomic`. */
+  listOnPublish: boolean
+  setListOnPublish: (value: boolean) => void
+  /** USDC atomic price string. Required when listOnPublish is true. */
+  listingPriceAtomic: string | null
+  setListingPriceAtomic: (value: string | null) => void
+
   // True after sessionStorage hydration is complete (safe to evaluate publishResult guards)
   isHydrated: boolean
 
@@ -231,6 +241,8 @@ function CreateSoulProviderInner({
   }, [])
   const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(null)
   const [collectionBindTarget, setCollectionBindTargetRaw] = useState<CollectionBindTarget | null>(null)
+  const [listOnPublish, setListOnPublish] = useState<boolean>(false)
+  const [listingPriceAtomic, setListingPriceAtomic] = useState<string | null>(null)
   const [isHydrated, setIsHydrated] = useState(false)
   // Tracks the userId we've already hydrated for, so we can re-hydrate on
   // userId change without calling setState inside a useEffect (which React
@@ -309,6 +321,8 @@ function CreateSoulProviderInner({
     setUploadResultsRaw(null)
     setPublishResultRaw(null)
     setCollectionBindTargetRaw(null)
+    setListOnPublish(false)
+    setListingPriceAtomic(null)
     try {
       sessionStorage.removeItem(PUBLISH_RESULT_KEY)
       sessionStorage.removeItem(MINT_RECOVERY_KEY)
@@ -329,6 +343,8 @@ function CreateSoulProviderInner({
       uploadResults, setUploadResults,
       publishResult, setPublishResult,
       collectionBindTarget, setCollectionBindTarget,
+      listOnPublish, setListOnPublish,
+      listingPriceAtomic, setListingPriceAtomic,
       isHydrated,
       reset,
     }}>

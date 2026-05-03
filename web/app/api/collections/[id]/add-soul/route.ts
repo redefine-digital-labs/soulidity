@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { extractSoulAddedToCollectionEvent } from '@/lib/soulidity/events'
+import { extractAllSoulAddedToCollectionEvents, extractSoulAddedToCollectionEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getCollectionAbortInfo } from '@/lib/soulidity/market-errors'
 import { syncCollectionProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
 import { findSoulCollectionDetailByRouteId } from '@/lib/soulidity/repository'
-import { getSuccessfulTransactionBlock, OnChainVerificationError, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, normalizeSuiValue, OnChainVerificationError, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'
@@ -47,11 +47,27 @@ export async function POST(
     return NextResponse.json({ error: 'txDigest must be a valid Sui transaction digest' }, { status: 400 })
   }
 
+  // Optional `soulOnChainId` disambiguates which `SoulAddedToCollection`
+  // event in the TX to mirror. Required when the TX bundles multiple
+  // add_soul calls (collection batch bind), optional otherwise. When
+  // provided, the dedup resource key includes it so each soul in the same
+  // TX gets its own cache slot.
+  const requestedSoulOnChainIdRaw = typeof body?.soulOnChainId === 'string'
+    ? normalizeSuiValue(body.soulOnChainId)
+    : null
+  if (typeof body?.soulOnChainId === 'string' && !requestedSoulOnChainIdRaw) {
+    return NextResponse.json({ error: 'soulOnChainId is malformed' }, { status: 400 })
+  }
+  const requestedSoulOnChainId = requestedSoulOnChainIdRaw ?? null
+  const dedupResourceKey = requestedSoulOnChainId
+    ? `${collection.onChainId}:${requestedSoulOnChainId}`
+    : collection.onChainId
+
   const stored = await getStoredSoulidityTxSync({
     routeKey: 'collection:add-soul',
     txDigest,
     actorKey: auth.identity.memberId,
-    resourceKey: collection.onChainId,
+    resourceKey: dedupResourceKey,
   })
   if (stored) {
     return NextResponse.json(stored.responseBody, { status: stored.statusCode })
@@ -66,7 +82,20 @@ export async function POST(
       return senderError
     }
 
-    const added = extractSoulAddedToCollectionEvent(transaction, packageId)
+    let added
+    if (requestedSoulOnChainId) {
+      const all = extractAllSoulAddedToCollectionEvents(transaction, packageId)
+      const match = all.find((event) => event.soulId === requestedSoulOnChainId)
+      if (!match) {
+        return NextResponse.json(
+          { error: `Transaction ${txDigest} does not include a SoulAddedToCollection event for ${requestedSoulOnChainId}` },
+          { status: 404 },
+        )
+      }
+      added = match
+    } else {
+      added = extractSoulAddedToCollectionEvent(transaction, packageId)
+    }
     if (added.collectionId.toLowerCase() !== collection.onChainId.toLowerCase()) {
       return NextResponse.json({ error: 'Transaction targeted a different collection' }, { status: 422 })
     }
@@ -127,7 +156,7 @@ export async function POST(
         routeKey: 'collection:add-soul',
         txDigest,
         actorKey: auth.identity.memberId,
-        resourceKey: collection.onChainId,
+        resourceKey: dedupResourceKey,
         statusCode: 200,
         responseBody,
       })

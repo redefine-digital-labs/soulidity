@@ -76,7 +76,6 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
         currentKioskId: soulKioskId,
         currentKioskCapOnChainId: soulKioskCapId,
         stateObjectId: soul.stateOnChainId,
-        soulObjectId: soul.onChainId,
         listingObjectId: soul.listingObjectOnChainId,
         newPriceAtomic: priceAtomic,
         collectionObjectId: soul.collectionOnChainId,

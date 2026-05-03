@@ -6,7 +6,6 @@ export function buildUpdateCollectionListingPriceTx(params: {
   currentKioskId: string
   currentKioskCapOnChainId: string
   collectionObjectId: string
-  rightObjectId: string
   listingObjectId: string
   newPriceAtomic: bigint
 }) {
@@ -39,8 +38,8 @@ export function buildUpdateCollectionListingPriceTx(params: {
     ],
   })
 
-  // Step 3: Relist at new price
-  tx.moveCall({
+  // Step 3: Relist at new price and share the returned listing object.
+  const listing = tx.moveCall({
     target: `${packageId}::market::list_collection_right_fixed_price`,
     arguments: [
       tx.object(marketConfigId),
@@ -48,9 +47,12 @@ export function buildUpdateCollectionListingPriceTx(params: {
       tx.object(params.collectionObjectId),
       tx.object(params.currentKioskId),
       tx.object(params.currentKioskCapOnChainId),
-      tx.pure.id(params.rightObjectId),
       tx.pure.u64(params.newPriceAtomic),
     ],
+  })
+  tx.moveCall({
+    target: `${packageId}::market::finalize_collection_listing`,
+    arguments: [listing],
   })
 
   return tx

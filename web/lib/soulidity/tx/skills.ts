@@ -105,7 +105,7 @@ export function buildInitSkillsAndAppendAsOwnerTx(params: {
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const tx = new Transaction()
-  tx.moveCall({
+  const skills = tx.moveCall({
     target: `${packageId}::market::init_skills_and_append_as_owner`,
     arguments: [
       tx.object(params.stateObjectId),
@@ -114,6 +114,63 @@ export function buildInitSkillsAndAppendAsOwnerTx(params: {
       tx.object(params.blobObjectId),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
+  })
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_skills`,
+    arguments: [skills],
+  })
+  return tx
+}
+
+/**
+ * Build a single PTB that initializes the SoulSkills root with a first
+ * version and appends N more versions to it before finalizing — all in
+ * one wallet signature. Used when the user uploads "first skills root +
+ * N additional versions" in the same action.
+ *
+ * The caller MUST own the soul (Move enforces `soul::assert_owner`).
+ */
+export function buildInitAndBatchAppendSkillsTx(params: {
+  stateObjectId: string
+  initialVersion: {
+    skillName: string
+    blobObjectId: string
+    visibility: 'public' | 'private'
+  }
+  additionalVersions?: ReadonlyArray<{
+    skillName: string
+    blobObjectId: string
+    visibility: 'public' | 'private'
+  }>
+}) {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const tx = new Transaction()
+  const skills = tx.moveCall({
+    target: `${packageId}::market::init_skills_and_append_as_owner`,
+    arguments: [
+      tx.object(params.stateObjectId),
+      tx.pure.string(params.initialVersion.skillName),
+      tx.pure.bool(params.initialVersion.visibility === 'public'),
+      tx.object(params.initialVersion.blobObjectId),
+      tx.object(SUI_CLOCK_OBJECT_ID),
+    ],
+  })
+  for (const extra of params.additionalVersions ?? []) {
+    tx.moveCall({
+      target: `${packageId}::skills::append_version_as_owner`,
+      arguments: [
+        skills,
+        tx.object(params.stateObjectId),
+        tx.pure.string(extra.skillName),
+        tx.pure.bool(extra.visibility === 'public'),
+        tx.object(extra.blobObjectId),
+        tx.object(SUI_CLOCK_OBJECT_ID),
+      ],
+    })
+  }
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_skills`,
+    arguments: [skills],
   })
   return tx
 }

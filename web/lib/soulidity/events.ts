@@ -189,11 +189,40 @@ function extractTypedEvent(
   return fallback ? asRecord(fallback.parsedJson) : null
 }
 
-export function extractSoulMintedToKioskEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::market::SoulMintedToKiosk`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('SoulMintedToKiosk event is missing from the transaction')
+/**
+ * Returns all parsed event payloads matching `type` (preserving emission
+ * order). Used by the collection-publish flow where one PTB mints N souls
+ * and emits N copies of each per-soul event.
+ */
+function extractAllTypedEvents(
+  transaction: TransactionLike,
+  type: string,
+  trustedPackageIds?: string[],
+): Array<Record<string, unknown>> {
+  const direct = (transaction.events ?? []).filter((item) => item?.type === type)
+  if (direct.length > 0) {
+    return direct
+      .map((item) => asRecord(item.parsedJson))
+      .filter((value): value is Record<string, unknown> => value !== null)
   }
+
+  const trustedPackages = getTrustedPackageIds(...(trustedPackageIds ?? []))
+  if (trustedPackages.length === 0) return []
+
+  const suffix = type.replace(/^0x[0-9a-fA-F]+/, '')
+  const fallback = (transaction.events ?? []).filter((item) => {
+    if (typeof item?.type !== 'string' || !item.type.endsWith(suffix)) {
+      return false
+    }
+    const fallbackPackageId = readPackageIdFromType(item.type)
+    return fallbackPackageId ? trustedPackages.includes(fallbackPackageId) : false
+  })
+  return fallback
+    .map((item) => asRecord(item.parsedJson))
+    .filter((value): value is Record<string, unknown> => value !== null)
+}
+
+function parseSoulMintedToKioskEvent(event: Record<string, unknown>) {
   return {
     soulId: readObjectId(event.soul_id, 'SoulMintedToKiosk soul_id'),
     stateId: readObjectId(event.state_id, 'SoulMintedToKiosk state_id'),
@@ -205,11 +234,25 @@ export function extractSoulMintedToKioskEvent(transaction: TransactionLike, pack
   }
 }
 
-export function extractSoulListedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::market::SoulListed`, trustedPackageIds)
+export function extractSoulMintedToKioskEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::market::SoulMintedToKiosk`, trustedPackageIds)
   if (!event) {
-    throw new OnChainVerificationError('SoulListed event is missing from the transaction')
+    throw new OnChainVerificationError('SoulMintedToKiosk event is missing from the transaction')
   }
+  return parseSoulMintedToKioskEvent(event)
+}
+
+/**
+ * Extracts every `SoulMintedToKiosk` event in emission order. Used when one
+ * PTB batches N mints — caller pairs each event with the corresponding soul
+ * by `soul_id` (mint events are emitted in moveCall order).
+ */
+export function extractAllSoulMintedToKioskEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::market::SoulMintedToKiosk`, trustedPackageIds)
+  return events.map(parseSoulMintedToKioskEvent)
+}
+
+function parseSoulListedEvent(event: Record<string, unknown>) {
   return {
     listingId: readObjectId(event.listing_id, 'SoulListed listing_id'),
     soulId: readObjectId(event.soul_id, 'SoulListed soul_id'),
@@ -217,6 +260,25 @@ export function extractSoulListedEvent(transaction: TransactionLike, packageId: 
     kioskId: readObjectId(event.kiosk_id, 'SoulListed kiosk_id'),
     priceAtomic: readBigInt(event.price, 'SoulListed price'),
   }
+}
+
+export function extractSoulListedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::market::SoulListed`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulListed event is missing from the transaction')
+  }
+  return parseSoulListedEvent(event)
+}
+
+/**
+ * Extracts every `SoulListed` event in emission order. Used when one PTB
+ * combines mint + bind + list (or mint + list, or chunked mint+list batches),
+ * so a route mirroring a specific soul's listing must filter by `soulId`
+ * rather than picking the first event in the digest.
+ */
+export function extractAllSoulListedEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::market::SoulListed`, trustedPackageIds)
+  return events.map(parseSoulListedEvent)
 }
 
 export function extractSoulPurchasedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
@@ -289,17 +351,31 @@ export function extractSoulMetadataMutationEvent(transaction: TransactionLike, p
   throw new OnChainVerificationError('Soul metadata mutation event is missing from the transaction')
 }
 
-export function extractSoulAddedToCollectionEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::collection::SoulAddedToCollection`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('SoulAddedToCollection event is missing from the transaction')
-  }
+function parseSoulAddedToCollectionEvent(event: Record<string, unknown>) {
   return {
     collectionId: readObjectId(event.collection_id, 'SoulAddedToCollection collection_id'),
     soulId: readObjectId(event.soul_id, 'SoulAddedToCollection soul_id'),
     currentSupply: readBigInt(event.current_supply, 'SoulAddedToCollection current_supply'),
     maxSupply: readOptionalBigInt(event.max_supply, 'SoulAddedToCollection max_supply'),
   }
+}
+
+export function extractSoulAddedToCollectionEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::collection::SoulAddedToCollection`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulAddedToCollection event is missing from the transaction')
+  }
+  return parseSoulAddedToCollectionEvent(event)
+}
+
+/**
+ * Extracts every `SoulAddedToCollection` event in emission order. Used when
+ * one PTB chains N add_soul calls — caller pairs each event with the
+ * corresponding soul by `soulId`.
+ */
+export function extractAllSoulAddedToCollectionEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::collection::SoulAddedToCollection`, trustedPackageIds)
+  return events.map(parseSoulAddedToCollectionEvent)
 }
 
 export function extractSoulCollectionCreatedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
@@ -331,11 +407,7 @@ export function extractCollectionMintedToKioskEvent(transaction: TransactionLike
   }
 }
 
-export function extractCollectionListedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::market::CollectionListed`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('CollectionListed event is missing from the transaction')
-  }
+function parseCollectionListedEvent(event: Record<string, unknown>) {
   return {
     listingId: readObjectId(event.listing_id, 'CollectionListed listing_id'),
     collectionId: readObjectId(event.collection_id, 'CollectionListed collection_id'),
@@ -344,6 +416,25 @@ export function extractCollectionListedEvent(transaction: TransactionLike, packa
     kioskId: readObjectId(event.kiosk_id, 'CollectionListed kiosk_id'),
     priceAtomic: readBigInt(event.price, 'CollectionListed price'),
   }
+}
+
+/**
+ * Extracts every `CollectionListed` event in emission order. Used when one
+ * PTB combines create_collection + list_collection_right (collection
+ * launch fast path), so a mirror route must filter by `collectionId`
+ * rather than picking the first event in the digest.
+ */
+export function extractAllCollectionListedEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::market::CollectionListed`, trustedPackageIds)
+  return events.map(parseCollectionListedEvent)
+}
+
+export function extractCollectionListedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::market::CollectionListed`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('CollectionListed event is missing from the transaction')
+  }
+  return parseCollectionListedEvent(event)
 }
 
 export function extractCollectionPurchasedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
@@ -460,6 +551,10 @@ export function extractMemoryEntryAppendedEvent(transaction: TransactionLike, pa
 export function tryExtractMemoryEntryAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
   const event = extractTypedEvent(transaction, `${packageId}::memory::MemoryEntryAppended`, trustedPackageIds)
   if (!event) return null
+  return parseMemoryEntryAppendedEvent(event)
+}
+
+function parseMemoryEntryAppendedEvent(event: Record<string, unknown>) {
   return {
     memoryId: readObjectId(event.memory_id, 'MemoryEntryAppended memory_id'),
     soulId: readObjectId(event.soul_id, 'MemoryEntryAppended soul_id'),
@@ -469,6 +564,16 @@ export function tryExtractMemoryEntryAppendedEvent(transaction: TransactionLike,
     createdAtMs: readNumber(event.created_at_ms, 'MemoryEntryAppended created_at_ms'),
     blobObjectId: readObjectId(event.blob_object_id, 'MemoryEntryAppended blob_object_id'),
   }
+}
+
+/**
+ * Extracts every `MemoryEntryAppended` event in emission order. Batched mint
+ * PTBs emit one per soul (founding memory). Caller pairs events to souls by
+ * `soulId`.
+ */
+export function extractAllMemoryEntryAppendedEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::memory::MemoryEntryAppended`, trustedPackageIds)
+  return events.map(parseMemoryEntryAppendedEvent)
 }
 
 export function extractSkillVersionAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
@@ -487,9 +592,7 @@ export function extractSkillVersionAppendedEvent(transaction: TransactionLike, p
   }
 }
 
-export function tryExtractSkillVersionAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::skills::SkillVersionAppended`, trustedPackageIds)
-  if (!event) return null
+function parseSkillVersionAppendedEvent(event: Record<string, unknown>) {
   return {
     skillsId: readObjectId(event.skills_id, 'SkillVersionAppended skills_id'),
     soulId: readObjectId(event.soul_id, 'SkillVersionAppended soul_id'),
@@ -501,12 +604,41 @@ export function tryExtractSkillVersionAppendedEvent(transaction: TransactionLike
   }
 }
 
+export function tryExtractSkillVersionAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::skills::SkillVersionAppended`, trustedPackageIds)
+  if (!event) return null
+  return parseSkillVersionAppendedEvent(event)
+}
+
+/**
+ * Extracts every `SkillVersionAppended` event in emission order. Batched
+ * mint PTBs emit zero-or-one per soul (only souls minted with a skills
+ * blob produce an entry). Caller pairs events to souls by `soulId`.
+ */
+export function extractAllSkillVersionAppendedEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::skills::SkillVersionAppended`, trustedPackageIds)
+  return events.map(parseSkillVersionAppendedEvent)
+}
+
 function mapAssetType(value: number): AssetType {
   switch (value) {
     case 0: return 'sprite'
     case 1: return 'live2d'
     case 2: return 'audio'
     default: return 'sprite'
+  }
+}
+
+function parseAssetVersionAppendedEvent(event: Record<string, unknown>) {
+  return {
+    assetsId: readObjectId(event.assets_id, 'AssetVersionAppended assets_id'),
+    soulId: readObjectId(event.soul_id, 'AssetVersionAppended soul_id'),
+    assetName: readString(event.asset_name, 'AssetVersionAppended asset_name'),
+    versionIndex: readNumber(event.version_index, 'AssetVersionAppended version_index'),
+    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
+    assetType: mapAssetType(readNumber(event.asset_type, 'AssetVersionAppended asset_type')),
+    createdAtMs: readNumber(event.created_at_ms, 'AssetVersionAppended created_at_ms'),
+    blobObjectId: readObjectId(event.blob_object_id, 'AssetVersionAppended blob_object_id'),
   }
 }
 
@@ -519,16 +651,16 @@ export function extractAssetVersionAppendedEvent(
   if (!event) {
     throw new OnChainVerificationError('AssetVersionAppended event is missing from the transaction')
   }
-  return {
-    assetsId: readObjectId(event.assets_id, 'AssetVersionAppended assets_id'),
-    soulId: readObjectId(event.soul_id, 'AssetVersionAppended soul_id'),
-    assetName: readString(event.asset_name, 'AssetVersionAppended asset_name'),
-    versionIndex: readNumber(event.version_index, 'AssetVersionAppended version_index'),
-    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
-    assetType: mapAssetType(readNumber(event.asset_type, 'AssetVersionAppended asset_type')),
-    createdAtMs: readNumber(event.created_at_ms, 'AssetVersionAppended created_at_ms'),
-    blobObjectId: readObjectId(event.blob_object_id, 'AssetVersionAppended blob_object_id'),
-  }
+  return parseAssetVersionAppendedEvent(event)
+}
+
+export function extractAllAssetVersionAppendedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::assets::AssetVersionAppended`, trustedPackageIds)
+  return events.map(parseAssetVersionAppendedEvent)
 }
 
 export function tryExtractAssetVersionAppendedEvent(
@@ -538,16 +670,7 @@ export function tryExtractAssetVersionAppendedEvent(
 ) {
   const event = extractTypedEvent(transaction, `${packageId}::assets::AssetVersionAppended`, trustedPackageIds)
   if (!event) return null
-  return {
-    assetsId: readObjectId(event.assets_id, 'AssetVersionAppended assets_id'),
-    soulId: readObjectId(event.soul_id, 'AssetVersionAppended soul_id'),
-    assetName: readString(event.asset_name, 'AssetVersionAppended asset_name'),
-    versionIndex: readNumber(event.version_index, 'AssetVersionAppended version_index'),
-    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
-    assetType: mapAssetType(readNumber(event.asset_type, 'AssetVersionAppended asset_type')),
-    createdAtMs: readNumber(event.created_at_ms, 'AssetVersionAppended created_at_ms'),
-    blobObjectId: readObjectId(event.blob_object_id, 'AssetVersionAppended blob_object_id'),
-  }
+  return parseAssetVersionAppendedEvent(event)
 }
 
 export function extractAssetVersionDeletedEvent(
@@ -568,15 +691,7 @@ export function extractAssetVersionDeletedEvent(
   }
 }
 
-export function extractContentAccessListCreatedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessListCreated`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('ContentAccessListCreated event is missing from the transaction')
-  }
+function parseContentAccessListCreatedEvent(event: Record<string, unknown>) {
   return {
     accessListId: readObjectId(event.access_list_id, 'ContentAccessListCreated access_list_id'),
     soulId: readObjectId(event.soul_id, 'ContentAccessListCreated soul_id'),
@@ -590,6 +705,18 @@ export function extractContentAccessListCreatedEvent(
   }
 }
 
+export function extractContentAccessListCreatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessListCreated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentAccessListCreated event is missing from the transaction')
+  }
+  return parseContentAccessListCreatedEvent(event)
+}
+
 export function tryExtractContentAccessListCreatedEvent(
   transaction: TransactionLike,
   packageId: string,
@@ -597,17 +724,25 @@ export function tryExtractContentAccessListCreatedEvent(
 ) {
   const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessListCreated`, trustedPackageIds)
   if (!event) return null
-  return {
-    accessListId: readObjectId(event.access_list_id, 'ContentAccessListCreated access_list_id'),
-    soulId: readObjectId(event.soul_id, 'ContentAccessListCreated soul_id'),
-    creator: readAddress(event.creator, 'ContentAccessListCreated creator'),
-    priceAtomic: readNumber(event.price_atomic, 'ContentAccessListCreated price_atomic'),
-    defaultScopeMask: readNumber(event.default_scope_mask, 'ContentAccessListCreated default_scope_mask'),
-    defaultAccessDurationMs: readOptionalNumber(
-      event.default_access_duration_ms,
-      'ContentAccessListCreated default_access_duration_ms',
-    ),
-  }
+  return parseContentAccessListCreatedEvent(event)
+}
+
+/**
+ * Extracts every `ContentAccessListCreated` event in emission order. Batched
+ * mint PTBs emit one per soul (mint_native_in_personal_kiosk creates one
+ * ContentAccessList per soul). Caller pairs events to souls by `soulId`.
+ */
+export function extractAllContentAccessListCreatedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(
+    transaction,
+    `${packageId}::content_access::ContentAccessListCreated`,
+    trustedPackageIds,
+  )
+  return events.map(parseContentAccessListCreatedEvent)
 }
 
 export function extractContentAccessGrantedEvent(

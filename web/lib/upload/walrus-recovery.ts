@@ -1,5 +1,7 @@
 'use client'
 
+import type { PendingSealMaterial } from '@/lib/upload/client-seal'
+
 /**
  * sessionStorage-backed recovery for wallet-paid Walrus uploads.
  *
@@ -174,6 +176,18 @@ export interface WalrusBatchRecoveryBlob {
   /** On-chain Blob object id resolved from the register tx; null until
    *  `resolveCreatedBlobObjectIds` succeeds. */
   blobObjectId: string | null
+  /**
+   * AES-GCM key/IV used for the prior encryption of this file. Persisted only
+   * when the file's uploadType was `'encrypted'` so the resume path can re-run
+   * `encryptClientSide` deterministically and reproduce the same blobId. Null
+   * for public (plaintext) blobs whose blobId is already deterministic.
+   *
+   * Without this field, a fresh re-encryption on resume generates a new
+   * AES-GCM key + IV — and therefore a different ciphertext and a different
+   * Walrus blobId — which strands the already-paid Blob objects via
+   * `WalrusUploadResumeMismatchError`.
+   */
+  sealMaterial?: PendingSealMaterial | null
 }
 
 export interface WalrusBatchRecoveryRecord {
@@ -221,15 +235,33 @@ export async function buildWalrusBatchRecoveryKey(parts: WalrusBatchRecoveryKeyP
   ].join('|')
 }
 
+function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Partial<PendingSealMaterial>
+  return (
+    c.version === 1
+    && typeof c.dek === 'string'
+    && typeof c.iv === 'string'
+    && typeof c.contentHash === 'string'
+    && typeof c.mimeType === 'string'
+    && typeof c.fileName === 'string'
+  )
+}
+
 function isBatchBlob(value: unknown): value is WalrusBatchRecoveryBlob {
   if (!value || typeof value !== 'object') return false
   const c = value as Partial<WalrusBatchRecoveryBlob>
+  const sealMaterialOk =
+    c.sealMaterial === undefined
+    || c.sealMaterial === null
+    || isPendingSealMaterial(c.sealMaterial)
   return (
     typeof c.contentHash === 'string'
     && typeof c.sendObjectTo === 'string'
     && typeof c.payloadByteLength === 'number'
     && typeof c.blobId === 'string'
     && (c.blobObjectId === null || typeof c.blobObjectId === 'string')
+    && sealMaterialOk
   )
 }
 

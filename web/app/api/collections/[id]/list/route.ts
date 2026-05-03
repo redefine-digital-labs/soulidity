@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { extractCollectionListedEvent, extractCollectionListingCancelledEvent } from '@/lib/soulidity/events'
+import { extractAllCollectionListedEvents, extractCollectionListingCancelledEvent } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { syncCollectionProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
@@ -83,8 +83,12 @@ export async function POST(
           })
         })()
       : await (async () => {
-          const listed = extractCollectionListedEvent(transaction, packageId)
-          if (listed.collectionId !== collection.onChainId) {
+          // The TX may contain unrelated CollectionListed events (e.g.
+          // create_collection + list_collection_right bundled). Select
+          // the event whose collection_id matches the route collection.
+          const listedEvents = extractAllCollectionListedEvents(transaction, packageId)
+          const listed = listedEvents.find((e) => e.collectionId === collection.onChainId)
+          if (!listed) {
             return null
           }
           return syncCollectionProjectionFromChain({

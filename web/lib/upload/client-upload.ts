@@ -382,8 +382,17 @@ export interface PreparedSoulBlobs {
   files: SoulUploadResult[]
   /** Digest of PTB1 (the register transaction). */
   registerTxDigest: string
-  /** Splices N `certify_blob` calls into the caller's mint PTB. Must be called before signing PTB2. */
-  attachCertifyCalls: (tx: Transaction) => Promise<void>
+  /**
+   * Splices `certify_blob` calls into the caller's mint PTB. Must be called
+   * before signing the PTB. When `indices` is omitted, certifies every file
+   * in the batch (legacy single-mint path). When provided, only certifies the
+   * specified subset — used by the collection-publish flow which splits
+   * certifies across multiple downstream PTBs (one for create_collection,
+   * one per chunked mint batch). Each blob can only be certified once on
+   * chain, so the caller is responsible for ensuring every index appears in
+   * exactly one `attachCertifyCalls` invocation.
+   */
+  attachCertifyCalls: (tx: Transaction, indices?: ReadonlyArray<number>) => Promise<void>
   /**
    * MUST be invoked by the caller after the certify+mint PTB executes successfully.
    * Drops the persisted register-recovery state so the next publish does not try
@@ -401,6 +410,98 @@ export interface PrepareSoulBlobsForBatchPublishParams {
   storageEpochs?: number
 }
 
+// ---------------------------------------------------------------------------
+// 3-phase batch helper:
+//   1. prepareBatchWalrusRegisterIntent        — validate, encrypt, encode,
+//      compute blob URLs, build the cost quote, and expose
+//      `appendRegisterCalls(tx)` for the caller to splice into PTB1
+//      (alongside e.g. collection creation calls). No wallet signature yet.
+//   2. completeBatchWalrusUploadAfterRegister  — accept the signed PTB1
+//      digest, persist batch recovery, resolve Blob object ids, upload
+//      slivers, build certificates, and return `files` +
+//      `attachCertifyCalls(tx, indices)` + `clearBatchRecovery()`.
+//   3. prepareSoulBlobsForBatchPublish         — thin wrapper over (1)+(2)
+//      for callers that still want the legacy single-step shape.
+//
+// Resume semantics (matching recovery, blobIds line up):
+//   intent.mode === 'resume', appendRegisterCalls is a no-op,
+//   intent.resumedRegisterTxDigest carries the prior register digest, and
+//   complete() reuses the recovered Blob object ids without writing PTB1.
+// ---------------------------------------------------------------------------
+
+export interface BatchWalrusRegisterIntent {
+  mode: 'fresh' | 'resume'
+  fileCount: number
+  /** Stable blob URLs derived from each file's blobId (no signature needed). */
+  blobUrls: string[]
+  /** sha256 of plaintext per file (no signature needed). */
+  contentHashes: string[]
+  /** Skill bundle metadata per file (null if not a skill bundle). */
+  skillBundleMetadata: Array<ReturnType<typeof extractSkillBundleMetadata> | null>
+  /** Aggregate cost quote already approved by the user. */
+  quote: WalrusUploadQuote
+  /**
+   * Prior register tx digest when `mode === 'resume'`; null otherwise. The
+   * resume path skips PTB1 and reuses these Blob objects for cert + mint.
+   */
+  resumedRegisterTxDigest: string | null
+  /**
+   * Splices N `client.registerBlob(...)` + N `tx.transferObjects(...)` calls
+   * into the caller's PTB1. No-op when `mode === 'resume'`. Idempotent across
+   * different `Transaction` instances (calling with two different tx objects
+   * produces structurally identical command sequences).
+   */
+  appendRegisterCalls: (tx: Transaction) => void
+  /**
+   * Internal continuation state consumed by
+   * `completeBatchWalrusUploadAfterRegister`. Treat as opaque.
+   */
+  readonly __continuation: BatchWalrusContinuation
+}
+
+interface BatchWalrusContinuation {
+  network: 'testnet' | 'mainnet'
+  walletAddress: string
+  storageEpochs: number
+  suiClient: unknown
+  walrusClient: Awaited<ReturnType<typeof createWalrusClient>>
+  prepared: PreparedFile[]
+  encodedList: Array<{
+    blobId: string
+    rootHash: Uint8Array
+    metadata: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['metadata']
+    sliversByNode: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['sliversByNode']
+  }>
+  recoveryKey: string
+  resumedBlobObjectIds: string[] | null
+  quote: WalrusUploadQuote
+}
+
+export interface CompleteBatchWalrusUploadAfterRegisterParams {
+  intent: BatchWalrusRegisterIntent
+  /**
+   * Digest of the PTB containing the register calls. When the intent is in
+   * `'resume'` mode, this is ignored — the prior digest is used. When in
+   * `'fresh'` mode, this is required.
+   */
+  registerTxDigest?: string | null
+}
+
+export interface CompleteBatchWalrusUploadResult {
+  files: SoulUploadResult[]
+  registerTxDigest: string
+  attachCertifyCalls: (tx: Transaction, indices?: ReadonlyArray<number>) => Promise<void>
+  clearBatchRecovery: () => void
+}
+
+export interface PrepareBatchWalrusRegisterIntentParams {
+  files: BatchSoulUploadFile[]
+  walletAddress: string
+  suiClient: unknown
+  confirmQuote: (quote: WalrusUploadQuote) => Promise<boolean>
+  storageEpochs?: number
+}
+
 interface PreparedFile {
   index: number
   item: BatchSoulUploadFile
@@ -413,10 +514,14 @@ interface PreparedFile {
   skillBundleMetadata: ReturnType<typeof extractSkillBundleMetadata> | null
 }
 
-async function preparePayload(
-  item: BatchSoulUploadFile,
-  index: number,
-): Promise<PreparedFile> {
+interface ReadFileResult {
+  plaintext: Uint8Array
+  contentHash: string
+  contentType: string
+  normalizedFile: File
+}
+
+async function readAndHashUploadFile(item: BatchSoulUploadFile): Promise<ReadFileResult> {
   const contentType = inferSoulUploadContentType(item.file, item.uploadType)
   const normalizedFile =
     item.file.type === contentType
@@ -427,28 +532,52 @@ async function preparePayload(
   const plaintext = new Uint8Array(await normalizedFile.arrayBuffer())
   const signatureError = validateSoulUploadSignature(plaintext, item.uploadType, contentType)
   if (signatureError) throw new Error(signatureError)
-  const skillBundleMetadata = hasZipSignature(plaintext)
-    ? extractSkillBundleMetadata(plaintext)
-    : null
   const contentHash = await sha256Hex(plaintext)
+  return { plaintext, contentHash, contentType, normalizedFile }
+}
+
+async function preparePayload(
+  item: BatchSoulUploadFile,
+  index: number,
+  base: ReadFileResult,
+  /**
+   * Optional persisted DEK/IV for this slot. When provided AND the file's
+   * content hash still matches, the encryption reuses the prior key/IV so the
+   * Walrus blobId is byte-identical to the prior attempt. This is how a
+   * partially-paid PTB1 register can resume on the next page load instead of
+   * tripping `WalrusUploadResumeMismatchError`.
+   */
+  materialOverride?: PendingSealMaterial | null,
+): Promise<PreparedFile> {
+  const skillBundleMetadata = hasZipSignature(base.plaintext)
+    ? extractSkillBundleMetadata(base.plaintext)
+    : null
+  // Only reuse the persisted material when the plaintext fingerprint still
+  // matches — guards against the user swapping the file under the same draft
+  // key (different bytes, same recovery slot).
+  const reusableMaterial =
+    materialOverride && materialOverride.contentHash === base.contentHash
+      ? materialOverride
+      : null
   const encrypted =
     item.uploadType === 'encrypted'
       ? await encryptClientSide({
-          plaintext,
-          mimeType: contentType,
-          fileName: normalizedFile.name || 'bundle',
+          plaintext: base.plaintext,
+          mimeType: base.contentType,
+          fileName: base.normalizedFile.name || 'bundle',
+          material: reusableMaterial,
         })
       : null
-  const payload = encrypted ? encrypted.ciphertext : plaintext
+  const payload = encrypted ? encrypted.ciphertext : base.plaintext
   return {
     index,
     item,
-    contentType,
-    normalizedFile,
-    plaintext,
+    contentType: base.contentType,
+    normalizedFile: base.normalizedFile,
+    plaintext: base.plaintext,
     payload,
     encrypted,
-    contentHash,
+    contentHash: base.contentHash,
     skillBundleMetadata,
   }
 }
@@ -642,9 +771,9 @@ function buildAggregateUploadPlan(prepared: PreparedFile[], network: 'testnet' |
   })
 }
 
-export async function prepareSoulBlobsForBatchPublish(
-  params: PrepareSoulBlobsForBatchPublishParams,
-): Promise<PreparedSoulBlobs> {
+export async function prepareBatchWalrusRegisterIntent(
+  params: PrepareBatchWalrusRegisterIntentParams,
+): Promise<BatchWalrusRegisterIntent> {
   if (params.files.length === 0) {
     throw new Error('At least one file is required for a batch Soul publish')
   }
@@ -653,18 +782,55 @@ export async function prepareSoulBlobsForBatchPublish(
   const relayUrl = getUploadRelayUrl(network)
   const storageEpochs = params.storageEpochs ?? DEFAULT_STORAGE_EPOCHS
 
-  // 1. Validate, encrypt, and hash all payloads in parallel.
+  // 1a. Read + hash every file in parallel (no encryption yet) so we can
+  //     look up any prior recovery record keyed on `(contentHash,
+  //     sendObjectTo)` BEFORE generating fresh AES-GCM keys. When a matching
+  //     record carries persisted DEK/IV for an encrypted slot, the next step
+  //     reuses that material so the resulting ciphertext (and therefore the
+  //     Walrus blobId) is byte-identical to the prior attempt. Without this,
+  //     a tab/browser/machine death between PTB1 sign and certify would
+  //     re-encrypt with a fresh key, bake a different blobId, and strand the
+  //     already-paid Blob objects via `WalrusUploadResumeMismatchError`.
+  const baseFiles = await Promise.all(params.files.map(readAndHashUploadFile))
+
+  const lookupRecoveryKey = await buildWalrusBatchRecoveryKey({
+    network,
+    walletAddress: params.walletAddress,
+    storageEpochs,
+    files: baseFiles.map((h, i) => ({
+      contentHash: h.contentHash,
+      sendObjectTo: params.files[i].sendObjectTo?.trim() || params.walletAddress,
+    })),
+  })
+  const priorRecovery = readWalrusBatchRecovery(lookupRecoveryKey)
+  const priorMatches =
+    !!priorRecovery
+    && priorRecovery.walletAddress.toLowerCase() === params.walletAddress.toLowerCase()
+    && priorRecovery.network === network
+    && priorRecovery.storageEpochs === storageEpochs
+    && priorRecovery.blobs.length === params.files.length
+    && priorRecovery.blobs.every((b, i) => b.contentHash === baseFiles[i].contentHash)
+  const materialOverrides: Array<PendingSealMaterial | null> = params.files.map((item, i) => {
+    if (!priorMatches || !priorRecovery) return null
+    if (item.uploadType !== 'encrypted') return null
+    const rec = priorRecovery.blobs[i]
+    return rec?.sealMaterial ?? null
+  })
+
+  // 1b. Encrypt (with cached material when available) and finalise prepared
+  //     state in parallel.
   const prepared = await Promise.all(
-    params.files.map((item, index) => preparePayload(item, index)),
+    params.files.map((item, index) =>
+      preparePayload(item, index, baseFiles[index], materialOverrides[index]),
+    ),
   )
 
   // 2. Build a single aggregate quote and confirm with the user.
   //
-  // The batch path bypasses the upload relay: the relay server only validates
-  // the auth payload at `ptb.inputs.first()`, which makes a single PTB
-  // unsuitable for registering N blobs (only one auth payload can occupy slot
-  // 0). Direct storage-node uploads have no PTB-shape constraint, so we encode
-  // each blob client-side and write the slivers directly. Relay tip is 0n.
+  // Batch path bypasses the upload relay (the relay server validates the auth
+  // payload at `ptb.inputs.first()`, which only fits one auth payload per
+  // PTB). Direct storage-node uploads have no PTB-shape constraint; we encode
+  // each blob client-side and write slivers directly. Relay tip is 0n.
   const plan = buildAggregateUploadPlan(prepared, network, storageEpochs, relayUrl)
   const quoteClient = await createWalrusClient({
     suiClient: params.suiClient,
@@ -682,18 +848,17 @@ export async function prepareSoulBlobsForBatchPublish(
     throw new Error('Walrus upload quote expired before wallet signing')
   }
 
-  // 3. Same no-relay client; encode every blob into its full sliver set so the
-  // direct upload step has the bytes ready (heavier than computeBlobMetadata
-  // but unavoidable when bypassing the relay).
+  // 3. Encode every blob into its full sliver set so the direct upload step
+  // has the bytes ready.
   const client = quoteClient
   const encodedList = await Promise.all(
     prepared.map((p) => client.encodeBlob(p.payload)),
   )
 
-  // 3a. Batch recovery: PTB1 has been wallet-paid on a previous attempt if a
-  // matching record exists. Resume direct upload + cert (no fresh register PTB)
-  // when the new encoded blobIds line up; otherwise surface the orphan so the
-  // user knows the prior register's Blob objects can be reclaimed/cleaned.
+  // 3a. Batch recovery — same orphan / resume / fresh decision tree as
+  // before. We freeze it here (pre-signature) so the caller's PTB1 either
+  // skips register (resume) or appends register (fresh). On orphan-mismatch
+  // we throw before any signature.
   const recoveryKey = await buildWalrusBatchRecoveryKey({
     network,
     walletAddress: params.walletAddress,
@@ -712,12 +877,8 @@ export async function prepareSoulBlobsForBatchPublish(
     && record.blobs.length === prepared.length
   const matchingRecovery = intentMatches(existingRecovery) ? existingRecovery : null
   if (existingRecovery && !matchingRecovery) {
-    // Different intent under the same key (corrupt or unrelated state) — drop.
     clearWalrusBatchRecovery(recoveryKey)
   }
-
-  let registerDigest: string
-  let blobObjectIds: string[]
 
   const blobIdsMatch =
     matchingRecovery
@@ -727,19 +888,9 @@ export async function prepareSoulBlobsForBatchPublish(
         && b.payloadByteLength === prepared[i].payload.byteLength,
     )
 
-  // Recover missing on-chain Blob object ids from a partially-persisted prior
-  // attempt. PTB1 succeeded and was persisted with all blobObjectId=null
-  // (the "initial" persist below the fresh-register branch), but the
-  // subsequent resolve + re-persist never ran because the browser, RPC, or
-  // getTransactionBlock() failed in that gap. Without this re-derivation:
-  //   - blobIdsMatch + missing object ids falls through to the fresh-register
-  //     branch and silently orphans the prior paid PTB1.
-  //   - !blobIdsMatch + missing object ids hits the mismatch branch with
-  //     `orphanBlobObjectId: null` AND clears the only pointer to the orphan.
-  // Re-query the stored register digest using the stored (prior) blob ids and
-  // persist the resolved ids back into the recovery record before deciding
-  // resume vs mismatch vs fresh. If the re-query itself fails we propagate
-  // the error without clearing the record, so a future retry can try again.
+  // Re-derive missing on-chain Blob object ids from a prior partially-persisted
+  // attempt before deciding resume vs mismatch vs fresh. If re-query fails we
+  // propagate without clearing the record so a future retry can try again.
   if (matchingRecovery && !matchingRecovery.blobs.every((b) => !!b.blobObjectId)) {
     const resolvedIds = await resolveCreatedBlobObjectIds({
       suiClient: params.suiClient,
@@ -757,23 +908,15 @@ export async function prepareSoulBlobsForBatchPublish(
     })
   }
 
+  let mode: 'fresh' | 'resume'
+  let resumedRegisterTxDigest: string | null = null
+  let resumedBlobObjectIds: string[] | null = null
+
   if (matchingRecovery && blobIdsMatch) {
-    // 4a. Resume path — skip PTB1 entirely; the wallet-paid Blob objects from the
-    // previous attempt are reused for the upload + cert + mint chain.
-    registerDigest = matchingRecovery.registerTxDigest
-    blobObjectIds = matchingRecovery.blobs.map((b) => b.blobObjectId as string)
+    mode = 'resume'
+    resumedRegisterTxDigest = matchingRecovery.registerTxDigest
+    resumedBlobObjectIds = matchingRecovery.blobs.map((b) => b.blobObjectId as string)
   } else if (matchingRecovery && !blobIdsMatch) {
-    // The new encoded payload doesn't line up with the previously registered
-    // blobs (typical for encrypted batches because each prepare regenerates the
-    // AES-GCM key). Surface an orphan error rather than silently signing a new
-    // register PTB, which would burn another wallet payment for the same user
-    // intent and orphan the prior Blob objects forever. Object ids are
-    // guaranteed non-null here because the re-derivation block above either
-    // populated them or threw before reaching this branch.
-    //
-    // Snapshot every orphan descriptor BEFORE clearing the recovery record so
-    // the thrown error carries every blobObjectId — the deletable-blob flow
-    // needs each one, not just the first.
     const orphanBlobs = matchingRecovery.blobs.map((b) => ({
       blobId: b.blobId,
       blobObjectId: b.blobObjectId,
@@ -789,10 +932,24 @@ export async function prepareSoulBlobsForBatchPublish(
       orphanTxDigest: matchingRecovery.registerTxDigest,
     })
   } else {
-    // 4b. Fresh path — PTB1: N register_blob calls + per-file transferObjects.
-    // No auth payload, no relay tip — direct storage-node uploads carry their
-    // own auth.
-    const tx = new Transaction()
+    mode = 'fresh'
+  }
+
+  const continuation: BatchWalrusContinuation = {
+    network,
+    walletAddress: params.walletAddress,
+    storageEpochs,
+    suiClient: params.suiClient,
+    walrusClient: client,
+    prepared,
+    encodedList,
+    recoveryKey,
+    resumedBlobObjectIds,
+    quote,
+  }
+
+  const appendRegisterCalls = (tx: Transaction) => {
+    if (mode === 'resume') return
     tx.setSenderIfNotSet(params.walletAddress)
     const blobArgs = []
     for (let i = 0; i < prepared.length; i++) {
@@ -813,57 +970,82 @@ export async function prepareSoulBlobsForBatchPublish(
       const recipient = prepared[i].item.sendObjectTo?.trim() || params.walletAddress
       tx.transferObjects([blobArgs[i]], recipient)
     }
+  }
 
-    // 5. Sign PTB1.
-    const registerResult = await params.signAndExecute(tx)
-    try {
-      assertSuiTxSucceeded(registerResult, 'Walrus batch register transaction')
-    } catch (error) {
-      clearWalrusBatchRecovery(recoveryKey)
-      throw error
+  return {
+    mode,
+    fileCount: prepared.length,
+    blobUrls: encodedList.map((m) => getBlobUrl(m.blobId, network)),
+    contentHashes: prepared.map((p) => p.contentHash),
+    skillBundleMetadata: prepared.map((p) => p.skillBundleMetadata),
+    quote,
+    resumedRegisterTxDigest,
+    appendRegisterCalls,
+    __continuation: continuation,
+  }
+}
+
+export async function completeBatchWalrusUploadAfterRegister(
+  params: CompleteBatchWalrusUploadAfterRegisterParams,
+): Promise<CompleteBatchWalrusUploadResult> {
+  const intent = params.intent
+  const ctx = intent.__continuation
+  const { walrusClient: client, prepared, encodedList, recoveryKey, network } = ctx
+
+  let registerDigest: string
+  let blobObjectIds: string[]
+
+  if (intent.mode === 'resume') {
+    if (!intent.resumedRegisterTxDigest || !ctx.resumedBlobObjectIds) {
+      throw new Error('Resume intent missing recovered register digest or Blob object ids')
     }
-    registerDigest = registerResult.digest
+    registerDigest = intent.resumedRegisterTxDigest
+    blobObjectIds = ctx.resumedBlobObjectIds
+  } else {
+    if (!params.registerTxDigest) {
+      throw new Error('completeBatchWalrusUploadAfterRegister requires registerTxDigest for a fresh intent')
+    }
+    registerDigest = params.registerTxDigest
 
-    // 5a. Persist register state IMMEDIATELY after sign — before any upload /
-    // resolve / certificate work — so a failure between here and the mint PTB
-    // does not silently re-register the same batch on the next attempt.
+    // Persist register state IMMEDIATELY (resolve hasn't run yet) so a failure
+    // between here and certify does not silently re-register on the next try.
+    // The persisted `sealMaterial` lets the resume path re-encrypt
+    // deterministically and reproduce the same blobIds — without it, the next
+    // attempt would generate a fresh AES-GCM key/IV, hit
+    // `WalrusUploadResumeMismatchError`, and strand the already-paid Blob
+    // objects.
     const initialBlobs: WalrusBatchRecoveryBlob[] = prepared.map((p, i) => ({
       contentHash: p.contentHash,
-      sendObjectTo: p.item.sendObjectTo?.trim() || params.walletAddress,
+      sendObjectTo: p.item.sendObjectTo?.trim() || ctx.walletAddress,
       payloadByteLength: p.payload.byteLength,
       blobId: encodedList[i].blobId,
       blobObjectId: null,
+      sealMaterial: p.encrypted?.material ?? null,
     }))
     persistWalrusBatchRecovery(recoveryKey, {
-      walletAddress: params.walletAddress,
+      walletAddress: ctx.walletAddress,
       network,
-      storageEpochs,
+      storageEpochs: ctx.storageEpochs,
       registerTxDigest: registerDigest,
       blobs: initialBlobs,
     })
 
-    // 6. Resolve every newly-created Blob object id, ordered by input.
     blobObjectIds = await resolveCreatedBlobObjectIds({
-      suiClient: params.suiClient,
+      suiClient: ctx.suiClient,
       walrusClient: client,
       digest: registerDigest,
       expectedBlobIds: encodedList.map((m) => m.blobId),
     })
 
-    // 6a. Refresh recovery with the resolved on-chain Blob object ids so a
-    // failure between here and certify+mint can resume direct uploads without
-    // re-querying the digest.
     persistWalrusBatchRecovery(recoveryKey, {
-      walletAddress: params.walletAddress,
+      walletAddress: ctx.walletAddress,
       network,
-      storageEpochs,
+      storageEpochs: ctx.storageEpochs,
       registerTxDigest: registerDigest,
       blobs: initialBlobs.map((b, i) => ({ ...b, blobObjectId: blobObjectIds[i] })),
     })
   }
 
-  // 7. Parallel direct uploads to storage nodes; build certificates from
-  // returned confirmations.
   const uploaded = await Promise.all(
     prepared.map(async (_p, i) => {
       const m = encodedList[i]
@@ -878,7 +1060,6 @@ export async function prepareSoulBlobsForBatchPublish(
     }),
   )
 
-  // 8. Materialize per-file results and the certify-attach helper.
   const files: SoulUploadResult[] = prepared.map((p, i) => {
     p.plaintext.fill(0)
     if (p.encrypted) p.payload.fill(0)
@@ -890,15 +1071,17 @@ export async function prepareSoulBlobsForBatchPublish(
       sealMaterial: p.encrypted?.material ?? null,
       skillName: p.skillBundleMetadata?.skillName ?? null,
       storageTxDigest: registerDigest,
-      // certifyTxDigest is filled in by the caller after PTB2 signs (it equals
-      // the mint transaction digest because certify is co-bundled with mint).
       certifyTxDigest: '',
-      quoteId: quote.id,
+      quoteId: ctx.quote.id,
     }
   })
 
-  const attachCertifyCalls = async (mintTx: Transaction) => {
-    for (let i = 0; i < uploaded.length; i++) {
+  const attachCertifyCalls = async (mintTx: Transaction, indices?: ReadonlyArray<number>) => {
+    const targetIndices = indices ?? uploaded.map((_, i) => i)
+    for (const i of targetIndices) {
+      if (i < 0 || i >= uploaded.length) {
+        throw new Error(`attachCertifyCalls index ${i} is out of range (have ${uploaded.length} files)`)
+      }
       mintTx.add(
         client.certifyBlob({
           blobId: uploaded[i].blobId,
@@ -916,6 +1099,38 @@ export async function prepareSoulBlobsForBatchPublish(
     attachCertifyCalls,
     clearBatchRecovery: () => clearWalrusBatchRecovery(recoveryKey),
   }
+}
+
+export async function prepareSoulBlobsForBatchPublish(
+  params: PrepareSoulBlobsForBatchPublishParams,
+): Promise<PreparedSoulBlobs> {
+  const intent = await prepareBatchWalrusRegisterIntent({
+    files: params.files,
+    walletAddress: params.walletAddress,
+    suiClient: params.suiClient,
+    confirmQuote: params.confirmQuote,
+    storageEpochs: params.storageEpochs,
+  })
+
+  let registerTxDigest: string | null = null
+  if (intent.mode === 'fresh') {
+    const tx = new Transaction()
+    intent.appendRegisterCalls(tx)
+    const registerResult = await params.signAndExecute(tx)
+    try {
+      assertSuiTxSucceeded(registerResult, 'Walrus batch register transaction')
+    } catch (error) {
+      intent.__continuation.recoveryKey
+        && clearWalrusBatchRecovery(intent.__continuation.recoveryKey)
+      throw error
+    }
+    registerTxDigest = registerResult.digest
+  }
+
+  return completeBatchWalrusUploadAfterRegister({
+    intent,
+    registerTxDigest,
+  })
 }
 
 // ---------------------------------------------------------------------------

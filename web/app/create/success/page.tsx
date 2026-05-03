@@ -35,8 +35,17 @@ export default function CreateSuccessPage() {
 
   if (!ctx.publishResult) return null
 
-  const { txDigest, soulOnChainId, collectionOnChainId } = ctx.publishResult
+  const { txDigest, soulOnChainId, collectionOnChainId, listingObjectOnChainId, listedPriceAtomic } = ctx.publishResult
   const collectionHref = collectionOnChainId ? `/collections/${encodeURIComponent(collectionOnChainId)}` : null
+  const isListed = ctx.publishResult.listingStatus === 'listed'
+  const isBound = !!collectionOnChainId
+  const outcomeLabel = isBound && isListed
+    ? 'Bound and listed'
+    : isListed
+      ? 'Listed on marketplace'
+      : isBound
+        ? 'Bound to collection'
+        : 'Live on Sui'
 
   return (
     <div className="relative z-10 border-t border-purple/20">
@@ -53,9 +62,13 @@ export default function CreateSuccessPage() {
 
         <h1 className="text-3xl font-bold mb-2">✦ Your Soul is Awake</h1>
         <p className="mx-auto mb-10 max-w-[380px] text-sm leading-relaxed text-muted">
-          {collectionOnChainId
-            ? 'Your Soul is now live on Sui and bound to the selected collection.'
-            : 'Your Soul is now live on Sui. Its existence is permanent and immutable on-chain.'}
+          {isBound && isListed
+            ? 'Your Soul is live on Sui, bound to the selected collection, and listed on the marketplace.'
+            : isListed
+              ? 'Your Soul is live on Sui and listed on the marketplace.'
+              : isBound
+                ? 'Your Soul is now live on Sui and bound to the selected collection.'
+                : 'Your Soul is now live on Sui. Its existence is permanent and immutable on-chain.'}
         </p>
 
         {/* Transaction details */}
@@ -74,30 +87,58 @@ export default function CreateSuccessPage() {
               <span className="font-mono text-xs text-teal">{truncateId(collectionOnChainId)}</span>
             </div>
           ) : null}
+          {isListed && listingObjectOnChainId ? (
+            <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+              <span className="text-muted">Listing</span>
+              <span className="font-mono text-xs text-teal">{truncateId(listingObjectOnChainId)}</span>
+            </div>
+          ) : null}
+          {isListed && listedPriceAtomic ? (
+            <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+              <span className="text-muted">Listed Price</span>
+              <span className="font-mono text-xs text-teal">{listedPriceAtomic} atomic USDC</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between py-2.5 text-sm">
             <span className="text-muted">Status</span>
             <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
-              Live on {networkLabel}
+              {outcomeLabel} · {networkLabel}
             </span>
           </div>
         </div>
 
         {/* Action cards */}
         <div className="mb-6 grid grid-cols-2 gap-3 text-left">
-          <Link
-            href={`/souls/${soulOnChainId}`}
-            className="group rounded-xl border-2 border-gold bg-card p-5 transition hover:bg-card2"
-          >
-            <span className="mb-2.5 block text-2xl">💰</span>
-            <span className="block text-sm font-bold">List for Sale Now</span>
-            <p className="mt-1.5 text-xs leading-relaxed text-muted">
-              Set a price and list your Soul in the marketplace immediately. Buyers can discover and purchase it right away.
-            </p>
-            <span className="mt-3 block text-xs font-semibold text-teal">
-              Set Price → List →
-            </span>
-          </Link>
+          {!isListed ? (
+            <Link
+              href={`/souls/${soulOnChainId}`}
+              className="group rounded-xl border-2 border-gold bg-card p-5 transition hover:bg-card2"
+            >
+              <span className="mb-2.5 block text-2xl">💰</span>
+              <span className="block text-sm font-bold">List for Sale Now</span>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                Set a price and list your Soul in the marketplace immediately. Buyers can discover and purchase it right away.
+              </p>
+              <span className="mt-3 block text-xs font-semibold text-teal">
+                Set Price → List →
+              </span>
+            </Link>
+          ) : (
+            <Link
+              href={`/souls/${soulOnChainId}`}
+              className="group rounded-xl border-2 border-gold bg-card p-5 transition hover:bg-card2"
+            >
+              <span className="mb-2.5 block text-2xl">💰</span>
+              <span className="block text-sm font-bold">Listed on marketplace</span>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                Buyers can discover this Soul from the marketplace. Open the Soul page to manage or delist it.
+              </p>
+              <span className="mt-3 block text-xs font-semibold text-teal">
+                Manage Listing →
+              </span>
+            </Link>
+          )}
 
           <Link
             href={collectionHref ?? '/my-souls'}
@@ -116,9 +157,11 @@ export default function CreateSuccessPage() {
           </Link>
         </div>
 
-        <p className="mb-3 text-xs text-muted">
-          Unlisted Souls live in <Link href="/my-souls" className="font-semibold text-foreground underline underline-offset-4 hover:text-purple">My Souls</Link> — you can list them any time.
-        </p>
+        {!isListed && (
+          <p className="mb-3 text-xs text-muted">
+            Unlisted Souls live in <Link href="/my-souls" className="font-semibold text-foreground underline underline-offset-4 hover:text-purple">My Souls</Link> — you can list them any time.
+          </p>
+        )}
 
         {/* Ghost link */}
         <Link

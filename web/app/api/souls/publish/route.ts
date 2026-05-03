@@ -7,7 +7,11 @@ import {
   tryExtractAssetVersionAppendedEvent,
   tryExtractContentAccessListCreatedEvent,
   extractSoulMintedToKioskEvent,
+  extractAllSoulMintedToKioskEvents,
+  extractAllMemoryEntryAppendedEvents,
+  extractAllSkillVersionAppendedEvents,
 } from '@/lib/soulidity/events'
+import { normalizeSuiValue } from '@/lib/soulidity/queries'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import { upsertMemoryEntryProjection } from '@/lib/soulidity/mirror/upsert-memory'
@@ -64,10 +68,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'txDigest must be a valid Sui transaction digest' }, { status: 400 })
   }
 
+  // Optional `soulOnChainId` disambiguates which `SoulMintedToKiosk` event in
+  // the TX to mirror. Required when the TX bundles multiple mints
+  // (collection batch publish), optional otherwise (single-soul publish).
+  // When provided, it is also the dedup resource key so each soul in the
+  // same TX gets its own cache slot.
+  const requestedSoulOnChainIdRaw = typeof body?.soulOnChainId === 'string'
+    ? normalizeSuiValue(body.soulOnChainId)
+    : null
+  if (typeof body?.soulOnChainId === 'string' && !requestedSoulOnChainIdRaw) {
+    return NextResponse.json({ error: 'soulOnChainId is malformed' }, { status: 400 })
+  }
+  const requestedSoulOnChainId = requestedSoulOnChainIdRaw ?? null
+
   const stored = await getStoredSoulidityTxSync({
     routeKey: 'publish',
     txDigest,
     actorKey: auth.identity.memberId,
+    resourceKey: requestedSoulOnChainId,
   })
   if (stored) {
     return NextResponse.json(stored.responseBody, { status: stored.statusCode })
@@ -82,9 +100,28 @@ export async function POST(request: Request) {
       return senderError
     }
 
-    const minted = extractSoulMintedToKioskEvent(transaction, packageId)
-    const foundingMemory = tryExtractMemoryEntryAppendedEvent(transaction, packageId)
-    const initialSkill = tryExtractSkillVersionAppendedEvent(transaction, packageId)
+    let minted
+    let foundingMemory
+    let initialSkill
+    if (requestedSoulOnChainId) {
+      const allMinted = extractAllSoulMintedToKioskEvents(transaction, packageId)
+      const match = allMinted.find((event) => event.soulId === requestedSoulOnChainId)
+      if (!match) {
+        return NextResponse.json(
+          { error: `Transaction ${txDigest} does not include a SoulMintedToKiosk event for ${requestedSoulOnChainId}` },
+          { status: 404 },
+        )
+      }
+      minted = match
+      foundingMemory = extractAllMemoryEntryAppendedEvents(transaction, packageId)
+        .find((event) => event.soulId === requestedSoulOnChainId) ?? null
+      initialSkill = extractAllSkillVersionAppendedEvents(transaction, packageId)
+        .find((event) => event.soulId === requestedSoulOnChainId) ?? null
+    } else {
+      minted = extractSoulMintedToKioskEvent(transaction, packageId)
+      foundingMemory = tryExtractMemoryEntryAppendedEvent(transaction, packageId)
+      initialSkill = tryExtractSkillVersionAppendedEvent(transaction, packageId)
+    }
     const initialAsset = tryExtractAssetVersionAppendedEvent(transaction, packageId)
     const contentAccessList = tryExtractContentAccessListCreatedEvent(transaction, packageId)
 
@@ -99,6 +136,37 @@ export async function POST(request: Request) {
     const providedMemorySidecar = parseProvidedSidecar(body?.memorySealSidecar, 'memorySealSidecar')
     const providedSkillsSidecar = parseProvidedSidecar(body?.skillsSealSidecar, 'skillsSealSidecar')
     const providedAssetsSidecar = parseProvidedSidecar(body?.assetsSealSidecar, 'assetsSealSidecar')
+
+    // Fail-closed contract gates, mirroring `/api/souls/publish/batch`.
+    // The single-Soul publish flow (`web/app/create/gas/page.tsx` →
+    // `web/lib/hooks/use-publish.ts`) ALWAYS uploads the Soul character
+    // file as `uploadType: 'encrypted'` and the founding-memory file the
+    // same way; private skills carry a Seal envelope whenever an initial
+    // skill version is appended at mint. Without this gate a misconfigured
+    // caller (smoke template, third-party integration) could mirror the
+    // mint with `sealSidecar`/`memorySealSidecar` left null and the app
+    // would silently persist Souls / founding memories the Seal access
+    // path can never decrypt. The asset sidecar requirement is event-
+    // visibility driven below (initial assets can legitimately be public)
+    // and is checked after `buildSyncSealSidecars`.
+    if (!providedSoulSidecar) {
+      return NextResponse.json(
+        { error: `sealSidecar is required for ${minted.soulId} (single-Soul publish always encrypts Soul content)` },
+        { status: 422 },
+      )
+    }
+    if (foundingMemory && !providedMemorySidecar) {
+      return NextResponse.json(
+        { error: `memorySealSidecar is required for ${minted.soulId} (founding memory blob is encrypted)` },
+        { status: 422 },
+      )
+    }
+    if (initialSkill?.visibility === 'private' && !providedSkillsSidecar) {
+      return NextResponse.json(
+        { error: `skillsSealSidecar is required for ${minted.soulId} (private initial skill version)` },
+        { status: 422 },
+      )
+    }
 
     let soulSidecar = null
     let memorySidecar = null

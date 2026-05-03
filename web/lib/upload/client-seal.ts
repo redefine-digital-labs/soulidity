@@ -88,9 +88,27 @@ export async function encryptClientSide(params: {
   plaintext: Uint8Array
   mimeType: string
   fileName: string
+  /**
+   * Optional pre-existing key/IV to reuse for deterministic re-encryption on
+   * resume. When provided, the returned ciphertext is byte-identical to the
+   * prior attempt — which keeps the Walrus blobId stable across retries so a
+   * partially-paid PTB1 register can still resume instead of mismatching.
+   * Omit on the first attempt; pass the persisted recovery material on resume.
+   */
+  material?: PendingSealMaterial | null
 }): Promise<{ ciphertext: Uint8Array; material: PendingSealMaterial }> {
-  const dek = getCrypto().getRandomValues(new Uint8Array(DEK_BYTES))
-  const iv = getCrypto().getRandomValues(new Uint8Array(IV_BYTES))
+  const dek = params.material
+    ? base64ToBytes(params.material.dek)
+    : getCrypto().getRandomValues(new Uint8Array(DEK_BYTES))
+  const iv = params.material
+    ? base64ToBytes(params.material.iv)
+    : getCrypto().getRandomValues(new Uint8Array(IV_BYTES))
+  if (dek.length !== DEK_BYTES) {
+    throw new Error(`Invalid DEK length ${dek.length} (expected ${DEK_BYTES})`)
+  }
+  if (iv.length !== IV_BYTES) {
+    throw new Error(`Invalid IV length ${iv.length} (expected ${IV_BYTES})`)
+  }
   try {
     const key = await importAesKey(dek)
     const ciphertext = new Uint8Array(
@@ -100,16 +118,19 @@ export async function encryptClientSide(params: {
         toCryptoBytes(params.plaintext),
       ),
     )
+    const contentHash = await sha256Hex(params.plaintext)
     return {
       ciphertext,
-      material: {
-        version: 1,
-        dek: bytesToBase64(dek),
-        iv: bytesToBase64(iv),
-        contentHash: await sha256Hex(params.plaintext),
-        mimeType: params.mimeType || 'application/octet-stream',
-        fileName: params.fileName || 'bundle',
-      },
+      material: params.material
+        ? { ...params.material, contentHash }
+        : {
+            version: 1,
+            dek: bytesToBase64(dek),
+            iv: bytesToBase64(iv),
+            contentHash,
+            mimeType: params.mimeType || 'application/octet-stream',
+            fileName: params.fileName || 'bundle',
+          },
     }
   } finally {
     dek.fill(0)

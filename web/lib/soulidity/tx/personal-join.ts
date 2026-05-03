@@ -176,7 +176,7 @@ export function buildPersonalJoinSoulTx(params: PersonalJoinTxParams) {
 
   const initialSprite = resolveInitialSprite(params)
 
-  tx.moveCall({
+  const soulState = tx.moveCall({
     target: `${packageId}::market::mint_joined_in_personal_kiosk`,
     typeArguments: [params.sourceObjectType],
     arguments: [
@@ -214,6 +214,11 @@ export function buildPersonalJoinSoulTx(params: PersonalJoinTxParams) {
       tx.pure.u16(params.creatorRoyaltyBps),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
+  })
+
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_state`,
+    arguments: [soulState],
   })
 
   finishBuyerKioskArgs(tx, personalKiosk)

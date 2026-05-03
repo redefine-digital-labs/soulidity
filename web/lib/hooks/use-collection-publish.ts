@@ -2,12 +2,28 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import posthog from 'posthog-js'
+import type { Transaction } from '@mysten/sui/transactions'
+import { Transaction as TransactionCtor } from '@mysten/sui/transactions'
 import { useSuiClient } from '@mysten/dapp-kit'
-import { buildCreateCollectionTx, buildAddSoulToCollectionTx } from '@/lib/soulidity/tx/collection'
-import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
+import {
+  appendCreateCollectionMoveCalls,
+  buildBatchAddSoulToCollectionTx,
+  buildCollectionCoverCertifyTx,
+} from '@/lib/soulidity/tx/collection'
+import {
+  buildBatchPublishSoulTx,
+  buildCollectionFastPathPtb2Tx,
+} from '@/lib/soulidity/tx/publish'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
-import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import {
+  prepareBatchWalrusRegisterIntent,
+  completeBatchWalrusUploadAfterRegister,
+  type BatchSoulUploadFile,
+  type BatchWalrusRegisterIntent,
+  type CompleteBatchWalrusUploadResult,
+  type SoulUploadResult,
+} from '@/lib/upload/client-upload'
 import {
   createMemorySealSidecarFromMaterial,
   createSkillSealSidecarFromMaterial,
@@ -20,12 +36,12 @@ import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
-import { assertObjectInputsExist, findMissingObjectIds } from '@/lib/soulidity/object-inputs'
+import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
-  extractSoulMintedToKioskEvent,
-  tryExtractMemoryEntryAppendedEvent,
-  tryExtractSkillVersionAppendedEvent,
+  extractAllMemoryEntryAppendedEvents,
+  extractAllSkillVersionAppendedEvents,
+  extractAllSoulMintedToKioskEvents,
 } from '@/lib/soulidity/events'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
@@ -36,9 +52,23 @@ import {
 
 const RECOVERY_KEY = 'collection-mint-recovery'
 
-// v10 adds maxSupply to draftSignature + collectionMeta. Bumping invalidates
-// any v9 draft so old recoveries don't bind a 10000-cap collection by accident.
-const RECOVERY_VERSION = 10 as const
+// v12 — 2-signature fast path (PTB1 register + create [+ list]; PTB2 cover cert
+// + N × {mint, bind, finalize_state}). v11 drafts are discarded on hydrate.
+const RECOVERY_VERSION = 12 as const
+
+const BATCH_CHUNK_SIZE = 10
+
+const FAST_PATH_BYTES_CAP = (() => {
+  const raw = process.env.NEXT_PUBLIC_SOULIDITY_FAST_PATH_BYTES_CAP
+  const parsed = raw ? Number(raw) : NaN
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 96_000
+})()
+
+const FAST_PATH_GAS_CAP_MIST = (() => {
+  const raw = process.env.NEXT_PUBLIC_SOULIDITY_FAST_PATH_GAS_CAP_MIST
+  const parsed = raw ? Number(raw) : NaN
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5_000_000_000
+})()
 
 interface SoulUploadRecovery {
   protectedBlobObjectId: string
@@ -55,11 +85,10 @@ interface SoulUploadRecovery {
 interface RecoverySoulState {
   input: BatchSoulToMint
   uploads: SoulUploadRecovery | null
-  /** Digest from successful signAndExecute — persisted before sync to prevent duplicate mints on retry */
-  mintDigest: string | null
+  mintChunkIndex: number
+  bindChunkIndex: number
+  /** Mirror response for this soul (set after the chunk's mirror call). */
   mintSync: PublishSyncResponse | null
-  /** Digest from successful signAndExecute(addTx) — persisted before mirror to prevent duplicate bind on retry */
-  bindDigest: string | null
   bindTxDigest: string | null
 }
 
@@ -68,26 +97,49 @@ interface CollectionRecoveryMeta {
   description: string
   extraRoyaltyBps: number
   tradeable: boolean
-  /** null = unlimited supply. Persisted into recovery for refresh-resume. */
+  floorPriceAtomic: string | null
   maxSupply: number | null
+}
+
+interface ChunkRecovery {
+  soulIndices: number[]
+  digest: string | null
+}
+
+interface FastPathAttempt {
+  count: number
+  lastError: string | null
 }
 
 interface RecoveryState {
   version: typeof RECOVERY_VERSION
   userId: string
   draftSignature: string | null
-  txDigest: string | null
-  floorPriceAtomic: string | null
-  uploadedImageUrl: string | null
+  /** PTB1 digest: register all blobs + create_collection [+ optional collection-right list]. */
+  collectionPtb1Digest: string | null
+  /** Set when the cover blob has been certified on-chain (in fastPathPtb2, in
+   *  the first chunked mint TX, or as a cover-only PTB2 for empty collections). */
+  coverCertifyDigest: string | null
   collectionData: CollectionSyncResponse | null
+  /**
+   * Collection-right listing intent. When `priceAtomic` is set, PTB1 included
+   * `list_collection_right`; the resulting CollectionListed event lives at
+   * `collectionPtb1Digest`. `priceAtomic === null` means listing was not
+   * requested for this draft.
+   */
+  collectionRightListing: { priceAtomic: string; includedInPtb1: true } | null
+  fastPathPtb2Digest: string | null
+  fastPathAttempt: FastPathAttempt | null
+  uploadedImageUrl: string | null
   collectionMeta: CollectionRecoveryMeta | null
   souls: RecoverySoulState[]
+  mintChunks: ChunkRecovery[]
+  bindChunks: ChunkRecovery[]
 }
 
 export type CollectionPublishStatus =
   | 'idle'
   | 'uploading'
-  | 'preparing-souls'
   | 'building'
   | 'signing'
   | 'syncing'
@@ -101,8 +153,6 @@ export interface CollectionSyncResponse {
   collectionOnChainId: string
   rightOnChainId: string
   listingStatus: string
-  // soulCount/currentSoulSupply mirror SoulCollection.current_supply 1:1; both
-  // names exposed for legacy and new callers respectively.
   soulCount?: number
   currentSoulSupply?: number
   maxSoulSupply?: string | null
@@ -118,6 +168,7 @@ interface PublishSyncResponse {
 
 interface PublishSyncBody {
   txDigest: string
+  soulOnChainId: string
   tags: string[]
   previewImages: string[]
   sealSidecar: SealEnvelopeSidecar | null
@@ -126,7 +177,6 @@ interface PublishSyncBody {
   assetsSealSidecar: SealEnvelopeSidecar | null
 }
 
-/** Soul defined in the batch template — metadata only, files come from soulFolders */
 export interface BatchSoulToMint {
   name: string
   description: string
@@ -144,10 +194,15 @@ export interface CollectionPublishParams {
   floorPriceAtomic?: string | null
   /** On-chain SoulCollection.max_supply. null/undefined = unlimited (Move Option::none). */
   maxSupply?: number | null
-  /** Batch souls to mint and bind to the new collection */
+  /** Batch souls to mint and bind to the new collection. Empty = empty collection launch. */
   souls?: BatchSoulToMint[]
-  /** Files from numbered subfolders, keyed by 1-indexed folder number */
   soulFolders?: SoulFolderMap
+  /**
+   * When set, list the collection-right at `priceAtomic` in the SAME PTB as
+   * create_collection. The resulting CollectionListed event lives at the
+   * PTB1 digest; mirror via `/api/collections/:id/list`.
+   */
+  collectionRightListing?: { priceAtomic: string } | null
 }
 
 export interface CollectionPublishProgress {
@@ -156,17 +211,51 @@ export interface CollectionPublishProgress {
   boundSouls: number
 }
 
+class FastPathFallback extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'FastPathFallback'
+  }
+}
+
+class FastPathMirrorFailed extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'FastPathMirrorFailed'
+  }
+}
+
+class FastPathSessionExpired extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'FastPathSessionExpired'
+  }
+}
+
+function chunkSoulIndices(soulCount: number, chunkSize: number): number[][] {
+  const chunks: number[][] = []
+  for (let i = 0; i < soulCount; i += chunkSize) {
+    chunks.push(Array.from({ length: Math.min(chunkSize, soulCount - i) }, (_, j) => i + j))
+  }
+  return chunks
+}
+
 function createEmptyRecoveryState(userId: string): RecoveryState {
   return {
     version: RECOVERY_VERSION,
     userId,
     draftSignature: null,
-    txDigest: null,
-    floorPriceAtomic: null,
-    uploadedImageUrl: null,
+    collectionPtb1Digest: null,
+    coverCertifyDigest: null,
     collectionData: null,
+    collectionRightListing: null,
+    fastPathPtb2Digest: null,
+    fastPathAttempt: null,
+    uploadedImageUrl: null,
     collectionMeta: null,
     souls: [],
+    mintChunks: [],
+    bindChunks: [],
   }
 }
 
@@ -178,24 +267,35 @@ function countBoundSouls(souls: RecoverySoulState[]) {
   return souls.filter((soul) => soul.bindTxDigest).length
 }
 
-function buildRecoverySouls(paramsSouls: BatchSoulToMint[] | undefined, existing: RecoverySoulState[]) {
+function buildRecoverySouls(
+  paramsSouls: BatchSoulToMint[] | undefined,
+  existing: RecoverySoulState[],
+): RecoverySoulState[] {
   if (existing.length > 0) {
     return existing
   }
-
-  return (paramsSouls ?? []).map((input) => ({
+  const souls = paramsSouls ?? []
+  const chunkAssignments = souls.map((_, i) => Math.floor(i / BATCH_CHUNK_SIZE))
+  return souls.map((input, i) => ({
     input,
     uploads: null,
-    mintDigest: null,
+    mintChunkIndex: chunkAssignments[i],
+    bindChunkIndex: chunkAssignments[i],
     mintSync: null,
-    bindDigest: null,
     bindTxDigest: null,
+  }))
+}
+
+function buildEmptyChunks(soulCount: number): ChunkRecovery[] {
+  return chunkSoulIndices(soulCount, BATCH_CHUNK_SIZE).map((soulIndices) => ({
+    soulIndices,
+    digest: null,
   }))
 }
 
 export function buildCollectionDraftSignature(params: Pick<
   CollectionPublishParams,
-  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'floorPriceAtomic' | 'maxSupply' | 'souls'
+  'name' | 'description' | 'extraRoyaltyBps' | 'tradeable' | 'floorPriceAtomic' | 'maxSupply' | 'souls' | 'collectionRightListing'
 >) {
   return JSON.stringify({
     name: params.name.trim(),
@@ -203,9 +303,8 @@ export function buildCollectionDraftSignature(params: Pick<
     extraRoyaltyBps: params.extraRoyaltyBps,
     tradeable: params.tradeable,
     floorPriceAtomic: params.floorPriceAtomic ?? null,
-    // null = unlimited; including this in the signature ensures recovery
-    // never resumes a stale draft with a different cap.
     maxSupply: params.maxSupply ?? null,
+    listingPriceAtomic: params.collectionRightListing?.priceAtomic ?? null,
     souls: (params.souls ?? []).map((soul) => ({
       name: soul.name.trim(),
       description: soul.description.trim(),
@@ -215,23 +314,26 @@ export function buildCollectionDraftSignature(params: Pick<
   })
 }
 
-/** Returns true when recovery contains any on-chain digest that cannot be safely discarded. */
 function hasCommittedOnChainState(recovery: RecoveryState): boolean {
-  if (recovery.txDigest) return true
-  return recovery.souls.some((s) => s.mintDigest != null || s.mintSync != null)
+  if (recovery.collectionPtb1Digest) return true
+  if (recovery.fastPathPtb2Digest) return true
+  if (recovery.coverCertifyDigest) return true
+  if (recovery.mintChunks.some((c) => c.digest != null)) return true
+  if (recovery.bindChunks.some((c) => c.digest != null)) return true
+  return recovery.souls.some((s) => s.mintSync != null)
 }
 
 function sanitizeRecoveryState(raw: string | null, userId: string | undefined): RecoveryState | null {
-  if (!raw || !userId) {
-    return null
-  }
-
+  if (!raw || !userId) return null
   try {
     const parsed = JSON.parse(raw) as RecoveryState
+    // v11 (or earlier) drafts are discarded — schema is incompatible.
+    if (parsed.version !== RECOVERY_VERSION) return null
     if (
-      parsed.version !== RECOVERY_VERSION
-      || parsed.userId !== userId
+      parsed.userId !== userId
       || !Array.isArray(parsed.souls)
+      || !Array.isArray(parsed.mintChunks)
+      || !Array.isArray(parsed.bindChunks)
       || !hasCurrentSoulidityDeploymentSignature(parsed)
     ) {
       return null
@@ -239,7 +341,6 @@ function sanitizeRecoveryState(raw: string | null, userId: string | undefined): 
     if (parsed.souls.some((soul) => soul.uploads && !hasValidOptionalLegacyAssetsSealMaterial(soul.uploads))) {
       return null
     }
-
     return parsed
   } catch {
     return null
@@ -271,43 +372,150 @@ function withMime(file: File): File {
   return new File([file], file.name, { type: expected })
 }
 
-async function uploadFile(
-  file: File,
-  type: 'public' | 'encrypted',
-  headers: Record<string, string>,
-  wallet: {
-    walletAddress: string
-    suiClient: unknown
-    signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
-    confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
-  },
-  sendObjectTo?: string,
-) {
-  return uploadSoulPayload({
-    file: withMime(file),
-    uploadType: type,
-    kind: 'soul-content',
-    authHeaders: headers,
-    sendObjectTo: sendObjectTo ?? null,
-    walletAddress: wallet.walletAddress,
-    suiClient: wallet.suiClient,
-    signAndExecute: wallet.signAndExecute,
-    confirmQuote: wallet.confirmQuote,
-  })
-}
-
-/** Fallback: auto-generate character file from soul metadata (when no folder files) */
 function createCharacterFile(soul: BatchSoulToMint): File {
   const content = `# ${soul.name}\n\n${soul.description}\n`
   const blob = new Blob([content], { type: 'text/markdown' })
   return new File([blob], `${soul.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`, { type: 'text/markdown' })
 }
 
-/** Fallback: auto-generate memory file (when no folder files) */
 function createMemorySeedFile(soul: BatchSoulToMint): File {
   const content = `${soul.name} memory.\n`
   const blob = new Blob([content], { type: 'text/plain' })
   return new File([blob], 'memory-seed.txt', { type: 'text/plain' })
+}
+
+interface BatchFileLayout {
+  cover: number
+  perSoul: Array<{
+    char: number
+    memory: number
+    skills: number | null
+    image: number | null
+  }>
+}
+
+interface BuildBatchPlanResult {
+  files: BatchSoulUploadFile[]
+  layout: BatchFileLayout
+}
+
+function buildBatchUploadPlan(params: {
+  coverImageFile: File
+  souls: BatchSoulToMint[]
+  folders: SoulFolderMap
+  walletAddress: string
+}): BuildBatchPlanResult {
+  const files: BatchSoulUploadFile[] = []
+  const perSoul: BatchFileLayout['perSoul'] = []
+
+  const coverIndex = files.length
+  files.push({ file: withMime(params.coverImageFile), uploadType: 'public', kind: 'persona-sprite' })
+
+  for (let i = 0; i < params.souls.length; i++) {
+    const soul = params.souls[i]
+    const folder = params.folders.get(i + 1)
+
+    const charFile = withMime(folder?.characterFile ?? createCharacterFile(soul))
+    const charIndex = files.length
+    files.push({
+      file: charFile,
+      uploadType: 'encrypted',
+      kind: 'soul-content',
+      sendObjectTo: params.walletAddress,
+    })
+
+    const memFile = withMime(folder?.memoryFile ?? createMemorySeedFile(soul))
+    const memoryIndex = files.length
+    files.push({
+      file: memFile,
+      uploadType: 'encrypted',
+      kind: 'soul-content',
+      sendObjectTo: params.walletAddress,
+    })
+
+    let skillsIndex: number | null = null
+    if (folder?.skillsFile) {
+      skillsIndex = files.length
+      files.push({
+        file: withMime(folder.skillsFile),
+        uploadType: 'encrypted',
+        kind: 'soul-content',
+        sendObjectTo: params.walletAddress,
+      })
+    }
+
+    let imageIndex: number | null = null
+    if (folder?.imageFile) {
+      imageIndex = files.length
+      files.push({
+        file: withMime(folder.imageFile),
+        uploadType: 'public',
+        kind: 'persona-sprite',
+      })
+    }
+
+    perSoul.push({ char: charIndex, memory: memoryIndex, skills: skillsIndex, image: imageIndex })
+  }
+
+  return { files, layout: { cover: coverIndex, perSoul } }
+}
+
+function resolveSoulUploadRecovery(
+  files: SoulUploadResult[],
+  layout: BatchFileLayout,
+  soulIndex: number,
+  fallbackImageUrl: string,
+): SoulUploadRecovery {
+  const slot = layout.perSoul[soulIndex]
+  if (!slot) {
+    throw new Error(`Soul layout slot ${soulIndex} is missing`)
+  }
+  const charFile = files[slot.char]
+  const memFile = files[slot.memory]
+  if (!charFile?.blobObjectId || !charFile.sealMaterial) {
+    throw new Error(`Soul #${soulIndex + 1} character file is missing blob object id or seal material after upload`)
+  }
+  if (!memFile?.blobObjectId || !memFile.sealMaterial) {
+    throw new Error(`Soul #${soulIndex + 1} memory file is missing blob object id or seal material after upload`)
+  }
+  let skillsBlobObjectId: string | null = null
+  let initialSkillName: string | null = null
+  let skillsSealMaterial: PendingSealMaterial | null = null
+  if (slot.skills != null) {
+    const skillsFile = files[slot.skills]
+    if (!skillsFile?.blobObjectId || !skillsFile.sealMaterial) {
+      throw new Error(`Soul #${soulIndex + 1} skills bundle is missing blob object id or seal material after upload`)
+    }
+    skillsBlobObjectId = skillsFile.blobObjectId
+    initialSkillName = typeof skillsFile.skillName === 'string' ? skillsFile.skillName : null
+    skillsSealMaterial = skillsFile.sealMaterial
+  }
+  const imageUrl = slot.image != null ? files[slot.image].blobUrl : fallbackImageUrl
+  return {
+    protectedBlobObjectId: charFile.blobObjectId,
+    sealMaterial: charFile.sealMaterial,
+    foundingMemoryBlobObjectId: memFile.blobObjectId,
+    memorySealMaterial: memFile.sealMaterial,
+    skillsBlobObjectId,
+    initialSkillName,
+    skillsSealMaterial,
+    imageUrl,
+  }
+}
+
+function collectCertifyIndicesForChunk(layout: BatchFileLayout, soulIndices: number[]): number[] {
+  const indices: number[] = []
+  for (const soulIdx of soulIndices) {
+    const slot = layout.perSoul[soulIdx]
+    indices.push(slot.char, slot.memory)
+    if (slot.skills != null) indices.push(slot.skills)
+    if (slot.image != null) indices.push(slot.image)
+  }
+  return indices
+}
+
+function findEventForSoulId<T extends { soulId: string }>(events: T[], soulId: string): T | null {
+  return events.find((e) => e.soulId === soulId) ?? null
 }
 
 async function buildSoulPublishSyncBody(params: {
@@ -315,40 +523,40 @@ async function buildSoulPublishSyncBody(params: {
   txResult: unknown
   soul: BatchSoulToMint
   uploads: SoulUploadRecovery
+  mintEvent: { soulId: string }
+  memoryEvent: { memoryId: string; timestampKey: number } | null
+  skillEvent: { skillsId: string; skillName: string; versionIndex: number } | null
   suiClient: unknown
 }): Promise<PublishSyncBody> {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
-  const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
-  const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
 
-  if (!foundingMemory) {
+  if (!params.memoryEvent) {
     throw new Error(`Soul "${params.soul.name}" mint transaction is missing the founding memory event`)
   }
-  if (params.uploads.skillsSealMaterial && !initialSkill) {
+  if (params.uploads.skillsSealMaterial && !params.skillEvent) {
     throw new Error(`Soul "${params.soul.name}" mint transaction is missing the initial skill event`)
   }
 
   const sealSidecar = await createSoulSealSidecarFromMaterial({
     suiClient: params.suiClient as never,
     packageId,
-    soulObjectId: minted.soulId,
+    soulObjectId: params.mintEvent.soulId,
     material: params.uploads.sealMaterial,
   })
   const memorySealSidecar = await createMemorySealSidecarFromMaterial({
     suiClient: params.suiClient as never,
     packageId,
-    memoryObjectId: foundingMemory.memoryId,
-    timestampKey: foundingMemory.timestampKey,
+    memoryObjectId: params.memoryEvent.memoryId,
+    timestampKey: params.memoryEvent.timestampKey,
     material: params.uploads.memorySealMaterial,
   })
-  const skillsSealSidecar = params.uploads.skillsSealMaterial && initialSkill
+  const skillsSealSidecar = params.uploads.skillsSealMaterial && params.skillEvent
     ? await createSkillSealSidecarFromMaterial({
         suiClient: params.suiClient as never,
         packageId,
-        skillsObjectId: initialSkill.skillsId,
-        skillName: initialSkill.skillName,
-        versionIndex: initialSkill.versionIndex,
+        skillsObjectId: params.skillEvent.skillsId,
+        skillName: params.skillEvent.skillName,
+        versionIndex: params.skillEvent.versionIndex,
         material: params.uploads.skillsSealMaterial,
       })
     : null
@@ -362,6 +570,7 @@ async function buildSoulPublishSyncBody(params: {
   const previewImageUrl = params.uploads.imageUrl.startsWith('http') ? params.uploads.imageUrl : ''
   return {
     txDigest: params.txDigest,
+    soulOnChainId: params.mintEvent.soulId,
     tags: params.soul.tags,
     previewImages: previewImageUrl ? [previewImageUrl] : [],
     sealSidecar,
@@ -369,6 +578,117 @@ async function buildSoulPublishSyncBody(params: {
     skillsSealSidecar,
     assetsSealSidecar,
   }
+}
+
+async function mirrorFastPathPtb2(args: {
+  recovery: RecoveryState
+  authHeaders: Record<string, string>
+  authoredCollectionData: CollectionSyncResponse
+  txResultForMirror: unknown
+  ptb2Digest: string
+  suiClient: unknown
+  persistRecovery: (state: RecoveryState) => void
+  updateProgress: (updater: (current: CollectionPublishProgress) => CollectionPublishProgress) => void
+}) {
+  const {
+    recovery,
+    authHeaders,
+    authoredCollectionData,
+    txResultForMirror,
+    ptb2Digest,
+    suiClient,
+    persistRecovery,
+    updateProgress,
+  } = args
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const mintEvents = extractAllSoulMintedToKioskEvents(txResultForMirror as never, packageId)
+  const memoryEvents = extractAllMemoryEntryAppendedEvents(txResultForMirror as never, packageId)
+  const skillEvents = extractAllSkillVersionAppendedEvents(txResultForMirror as never, packageId)
+  if (mintEvents.length !== recovery.souls.length) {
+    throw new FastPathMirrorFailed(
+      `fast-path TX produced ${mintEvents.length} mints, expected ${recovery.souls.length}`,
+    )
+  }
+  const syncBodies = []
+  for (let i = 0; i < recovery.souls.length; i++) {
+    const soul = recovery.souls[i]
+    if (!soul.uploads) throw new Error(`Soul "${soul.input.name}" missing uploads at fast-path mirror`)
+    const mintEvent = mintEvents[i]
+    const memoryEvent = findEventForSoulId(memoryEvents, mintEvent.soulId)
+    const skillEvent = findEventForSoulId(skillEvents, mintEvent.soulId)
+    syncBodies.push(await buildSoulPublishSyncBody({
+      txDigest: ptb2Digest,
+      txResult: txResultForMirror,
+      soul: soul.input,
+      uploads: soul.uploads,
+      mintEvent,
+      memoryEvent,
+      skillEvent,
+      suiClient,
+    }))
+  }
+  const batchRes = await fetch('/api/souls/publish/batch', {
+    method: 'POST',
+    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      txDigest: ptb2Digest,
+      collectionOnChainId: authoredCollectionData.collectionOnChainId,
+      expectedSoulCount: recovery.souls.length,
+      expectedBindCount: recovery.souls.length,
+      syncBodies,
+    }),
+  })
+  if (!batchRes.ok) {
+    const body = await batchRes.json().catch(() => ({}))
+    throw new FastPathMirrorFailed(
+      `batch mirror failed: ${
+        body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
+          ? (body as { error: string }).error
+          : batchRes.statusText
+      }`,
+    )
+  }
+  const batchData = await batchRes.json() as {
+    syncs?: Array<{
+      soulOnChainId: string
+      stateOnChainId: string
+      memoryOnChainId: string | null
+    }>
+  }
+  if (!Array.isArray(batchData.syncs) || batchData.syncs.length < recovery.souls.length) {
+    throw new FastPathMirrorFailed('Fast-path batch mirror returned fewer syncs than minted souls')
+  }
+  for (let i = 0; i < recovery.souls.length; i++) {
+    const sync = batchData.syncs[i]
+    if (!sync.memoryOnChainId) {
+      throw new FastPathMirrorFailed(`Fast-path batch mirror missing founding memory for Soul #${i + 1}`)
+    }
+    recovery.souls[i].mintSync = {
+      txDigest: ptb2Digest,
+      soulOnChainId: sync.soulOnChainId,
+      stateOnChainId: sync.stateOnChainId,
+      memoryOnChainId: sync.memoryOnChainId,
+      listingStatus: 'unlisted',
+    }
+    recovery.souls[i].bindTxDigest = ptb2Digest
+  }
+  persistRecovery({ ...recovery, souls: [...recovery.souls] })
+  updateProgress(() => ({
+    totalSouls: recovery.souls.length,
+    mintedSouls: countMintedSouls(recovery.souls),
+    boundSouls: countBoundSouls(recovery.souls),
+  }))
+}
+
+function installBeforeUnloadGuard(message: string): () => void {
+  if (typeof window === 'undefined') return () => {}
+  const handler = (event: BeforeUnloadEvent) => {
+    event.preventDefault()
+    event.returnValue = message
+    return message
+  }
+  window.addEventListener('beforeunload', handler)
+  return () => window.removeEventListener('beforeunload', handler)
 }
 
 export function useCollectionPublish(draftSignature?: string | null) {
@@ -383,9 +703,9 @@ export function useCollectionPublish(draftSignature?: string | null) {
   const { requestUploadCostApproval } = useUploadCostReview()
   const recoveryRef = useRef<RecoveryState | null>(null)
   const uploadedImageUrlRef = useRef<string | null>(null)
+
   const setRecoveryState = (nextState: RecoveryState | null) => {
     recoveryRef.current = nextState
-
     try {
       if (!nextState) {
         sessionStorage.removeItem(RECOVERY_KEY)
@@ -404,27 +724,21 @@ export function useCollectionPublish(draftSignature?: string | null) {
     setRecoveryState(null)
   }, [])
 
-  // Hydrate recovery state from sessionStorage
   useEffect(() => {
-    if (!user?.id) {
-      return
-    }
+    if (!user?.id) return
     let cancelled = false
     Promise.resolve().then(() => {
       if (cancelled) return
-
       const recovery = sanitizeRecoveryState(sessionStorage.getItem(RECOVERY_KEY), user?.id)
       if (!recovery) {
         clearRecoveryState()
         return
       }
-
       if (draftSignature && recovery.draftSignature && recovery.draftSignature !== draftSignature) {
         if (hasCommittedOnChainState(recovery)) {
-          // On-chain state exists — keep recovery to prevent duplicate mints/collections
           recoveryRef.current = recovery
           uploadedImageUrlRef.current = recovery.uploadedImageUrl
-          setTxDigest(recovery.txDigest)
+          setTxDigest(recovery.collectionPtb1Digest)
           setSyncData(recovery.collectionData)
           setProgress({
             totalSouls: recovery.souls.length,
@@ -436,10 +750,9 @@ export function useCollectionPublish(draftSignature?: string | null) {
         clearRecoveryState()
         return
       }
-
       recoveryRef.current = recovery
       uploadedImageUrlRef.current = recovery.uploadedImageUrl
-      setTxDigest(recovery.txDigest)
+      setTxDigest(recovery.collectionPtb1Digest)
       setSyncData(recovery.collectionData)
       setProgress({
         totalSouls: recovery.souls.length,
@@ -463,21 +776,17 @@ export function useCollectionPublish(draftSignature?: string | null) {
       maxSupply: params.maxSupply ?? null,
       unlimited: params.maxSupply == null,
       emptyCollection: (params.souls?.length ?? 0) === 0,
+      includesListing: !!params.collectionRightListing,
     })
+
+    let removeBeforeUnloadGuard: (() => void) | null = null
     try {
       setError(null)
       const authHeaders = await getAuthHeaders()
       const walletAddress = suiWallet.address
-      const walletUpload = {
-        walletAddress,
-        suiClient,
-        signAndExecute,
-        confirmQuote: requestUploadCostApproval,
-      }
       const currentDraftSignature = buildCollectionDraftSignature(params)
       const hydratedRecovery = recoveryRef.current
 
-      // Block launch when draft changed but on-chain state already committed
       if (hydratedRecovery && hydratedRecovery.draftSignature !== currentDraftSignature && hasCommittedOnChainState(hydratedRecovery)) {
         throw new Error('Collection already committed on-chain. Cannot change metadata after launch has started. Use "Start Over" to abandon the current launch.')
       }
@@ -490,19 +799,38 @@ export function useCollectionPublish(draftSignature?: string | null) {
         clearRecoveryState()
       }
 
+      const collectionRightListingPriceAtomic = params.collectionRightListing?.priceAtomic
+        ? BigInt(params.collectionRightListing.priceAtomic)
+        : null
+      if (collectionRightListingPriceAtomic != null && collectionRightListingPriceAtomic <= 0n) {
+        throw new Error('collectionRightListing.priceAtomic must be > 0')
+      }
+      if (collectionRightListingPriceAtomic != null && !params.tradeable) {
+        throw new Error('Cannot list a non-tradeable collection right')
+      }
+
       const recovery: RecoveryState = {
         ...baseRecovery,
         userId: user?.id ?? baseRecovery.userId,
         draftSignature: currentDraftSignature,
-        floorPriceAtomic: params.floorPriceAtomic ?? baseRecovery.floorPriceAtomic,
         collectionMeta: baseRecovery.collectionMeta ?? {
           name: params.name,
           description: params.description,
           extraRoyaltyBps: params.extraRoyaltyBps,
           tradeable: params.tradeable,
+          floorPriceAtomic: params.floorPriceAtomic ?? null,
           maxSupply: params.maxSupply ?? null,
         },
+        collectionRightListing: collectionRightListingPriceAtomic != null
+          ? { priceAtomic: collectionRightListingPriceAtomic.toString(), includedInPtb1: true }
+          : baseRecovery.collectionRightListing,
         souls: buildRecoverySouls(params.souls, baseRecovery.souls),
+      }
+      if (recovery.mintChunks.length === 0) {
+        recovery.mintChunks = buildEmptyChunks(recovery.souls.length)
+      }
+      if (recovery.bindChunks.length === 0) {
+        recovery.bindChunks = buildEmptyChunks(recovery.souls.length)
       }
 
       setRecoveryState(recovery)
@@ -512,59 +840,149 @@ export function useCollectionPublish(draftSignature?: string | null) {
         boundSouls: countBoundSouls(recovery.souls),
       })
 
-      // ── Phase 1: Create the collection ──
+      // ── Phase 1: Prepare batch walrus register intent (no signature) ──
+      // The intent exposes appendRegisterCalls(tx), which we splice into PTB1
+      // alongside create_collection.
+      let intent: BatchWalrusRegisterIntent | null = null
+      let layout: BatchFileLayout | null = null
+      let completion: CompleteBatchWalrusUploadResult | null = null
 
-      let digest = recovery.txDigest
-      if (!digest) {
-        // Upload cover image
-        let imageUrl: string = recovery.uploadedImageUrl ?? ''
-        if (!imageUrl) {
-          if (!params.coverImageFile) {
-            throw new Error('Missing cover image for collection recovery. Restart from Step 1.')
+      const needsWalrusIntent = !recovery.collectionPtb1Digest
+        || (!recovery.coverCertifyDigest && !recovery.fastPathPtb2Digest)
+        || (recovery.souls.length > 0 && recovery.souls.some((s) => {
+          const chunk = recovery.mintChunks[s.mintChunkIndex]
+          return !s.mintSync && !chunk?.digest && !recovery.fastPathPtb2Digest
+        }))
+
+      if (needsWalrusIntent) {
+        if (!params.coverImageFile) {
+          throw new Error('Missing cover image. Restart the collection launch from Step 1.')
+        }
+        if (recovery.collectionPtb1Digest && recovery.souls.length > 0) {
+          for (let i = 0; i < recovery.souls.length; i++) {
+            const folder = params.soulFolders?.get(i + 1)
+            const soul = recovery.souls[i]
+            const chunk = recovery.mintChunks[soul.mintChunkIndex]
+            if (chunk?.digest) continue
+            if (!folder?.characterFile || !folder?.memoryFile) {
+              throw new Error(
+                `Soul "${soul.input.name}" is missing local batch files after refresh. `
+                + 'Return to Step 2 and re-upload the collection folder before resuming.',
+              )
+            }
           }
-          setStatus('uploading')
-          const uploaded = await uploadFile(params.coverImageFile, 'public', authHeaders, walletUpload)
-          imageUrl = uploaded.blobUrl
-          uploadedImageUrlRef.current = imageUrl
-          recovery.uploadedImageUrl = imageUrl
-          setRecoveryState({ ...recovery })
         }
 
-        // Resolve kiosk + build TX
-        setStatus('building')
+        setStatus('uploading')
+        const plan = buildBatchUploadPlan({
+          coverImageFile: params.coverImageFile,
+          souls: recovery.souls.map((s) => s.input),
+          folders: params.soulFolders ?? new Map(),
+          walletAddress,
+        })
+        intent = await prepareBatchWalrusRegisterIntent({
+          files: plan.files,
+          walletAddress,
+          suiClient,
+          confirmQuote: requestUploadCostApproval,
+        })
+        layout = plan.layout
+      }
+
+      // ── Phase 2: PTB1 — register all blobs + create_collection [+ list_collection_right] ──
+      if (!recovery.collectionPtb1Digest) {
+        if (!intent || !layout) {
+          throw new Error('Internal error: walrus register intent missing')
+        }
         const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
         await assertObjectInputsExist(suiClient, {
           'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
           'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
         })
-        const tx = buildCreateCollectionTx({
+
+        const coverImageUrl = intent.blobUrls[layout.cover]
+        if (!coverImageUrl) {
+          throw new Error('Cover image URL missing from register intent')
+        }
+        recovery.uploadedImageUrl = coverImageUrl
+        uploadedImageUrlRef.current = coverImageUrl
+
+        setStatus('building')
+        const tx = new TransactionCtor()
+        intent.appendRegisterCalls(tx)
+        const created = appendCreateCollectionMoveCalls(tx, {
           currentKioskId: personalKiosk?.currentKioskId ?? null,
           currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
           name: params.name,
           description: params.description,
-          imageUrl,
+          imageUrl: coverImageUrl,
           extraRoyaltyBps: params.extraRoyaltyBps,
           tradeable: params.tradeable,
           maxSupply: params.maxSupply ?? null,
         })
+        if (collectionRightListingPriceAtomic != null) {
+          const listing = tx.moveCall({
+            target: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')}::market::list_collection_right_fixed_price`,
+            arguments: [
+              tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')),
+              tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')),
+              created.collection,
+              created.personalKiosk.buyerKiosk,
+              created.personalKiosk.buyerKioskCap,
+              tx.pure.u64(collectionRightListingPriceAtomic),
+            ],
+          })
+          tx.moveCall({
+            target: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')}::market::finalize_collection_listing`,
+            arguments: [listing],
+          })
+        }
+        created.finalizeCollection()
+        created.finalizePersonalKiosk()
 
         setStatus('signing')
         const result = await signAndExecute(tx)
-        digest = result.digest
-        assertSoulidityTxSucceeded(result, 'Collection create transaction')
-        setTxDigest(digest)
-        recovery.txDigest = result.digest
+        const ptb1Digest = result.digest
+        assertSoulidityTxSucceeded(result, 'Collection PTB1 (register + create) transaction')
+        recovery.collectionPtb1Digest = ptb1Digest
+        setTxDigest(ptb1Digest)
         setRecoveryState({ ...recovery })
       }
 
-      // Mirror collection
+      // ── Phase 3: Complete walrus upload (sliver upload + cert build) ──
+      // Install beforeunload guard for the sliver phase. Uploads can take
+      // tens of seconds; closing the tab here orphans the just-paid Blob
+      // objects.
+      removeBeforeUnloadGuard = installBeforeUnloadGuard(
+        'Walrus is uploading slivers for your new collection. Closing this tab now will orphan the registered Blob objects on-chain.',
+      )
+      if (intent) {
+        // Use the live intent (mode='fresh' or 'resume') with the recorded
+        // PTB1 digest. Resume mode internally reuses prior register data.
+        completion = await completeBatchWalrusUploadAfterRegister({
+          intent,
+          registerTxDigest: recovery.collectionPtb1Digest,
+        })
+      }
+
+      // ── Phase 4: Wait PTB1 finality + mirror collection create [+ listing] ──
+      if (recovery.collectionPtb1Digest) {
+        await suiClient.waitForTransaction({
+          digest: recovery.collectionPtb1Digest,
+          options: { showEffects: true } as never,
+        })
+      }
+
       let collectionData = recovery.collectionData
-      if (!collectionData) {
+      if (!collectionData && recovery.collectionPtb1Digest) {
         setStatus('syncing')
         const syncRes = await fetch('/api/collections/create', {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ txDigest: digest, floorPriceAtomic: recovery.floorPriceAtomic }),
+          body: JSON.stringify({
+            txDigest: recovery.collectionPtb1Digest,
+            floorPriceAtomic: recovery.collectionMeta?.floorPriceAtomic ?? null,
+          }),
         })
         if (!syncRes.ok) {
           const body = await syncRes.json().catch(() => ({}))
@@ -578,230 +996,362 @@ export function useCollectionPublish(draftSignature?: string | null) {
         throw new Error('Failed to recover collection sync state')
       }
 
-      // ── Phase 2: Prepare soul uploads before any mint ──
-
-      if (recovery.souls.length > 0) {
-        const folders = params.soulFolders ?? new Map()
-        const fallbackImageUrl = recovery.uploadedImageUrl ?? uploadedImageUrlRef.current ?? ''
-        const missingRecoveredObjectIds = new Set(await findMissingObjectIds(suiClient, recovery.souls.flatMap((soulState) => (
-          soulState.uploads
-            ? [
-                soulState.uploads.protectedBlobObjectId,
-                soulState.uploads.foundingMemoryBlobObjectId,
-                soulState.uploads.skillsBlobObjectId,
-              ]
-            : []
-        ))))
-        if (missingRecoveredObjectIds.size > 0) {
-          for (const soulState of recovery.souls) {
-            if (!soulState.uploads) continue
-            if (
-              missingRecoveredObjectIds.has(soulState.uploads.protectedBlobObjectId)
-              || missingRecoveredObjectIds.has(soulState.uploads.foundingMemoryBlobObjectId)
-              || (soulState.uploads.skillsBlobObjectId && missingRecoveredObjectIds.has(soulState.uploads.skillsBlobObjectId))
-            ) {
-              soulState.uploads = null
-            }
-          }
-          setRecoveryState({ ...recovery, souls: [...recovery.souls] })
-        }
-
-        setStatus('preparing-souls')
-        for (let i = 0; i < recovery.souls.length; i++) {
-          const soulState = recovery.souls[i]
-          if (soulState.uploads) {
-            continue
-          }
-
-          const folder = folders.get(i + 1)
-          const soul = soulState.input
-          if (recovery.txDigest && (!folder?.characterFile || !folder?.memoryFile)) {
-            throw new Error(`Soul "${soul.name}" is missing local batch files after refresh. Return to Step 2 and re-upload the collection folder before resuming.`)
-          }
-
-          // Character file — from folder's soul.md, fallback to auto-generated
-          const charFile = folder?.characterFile ?? createCharacterFile(soul)
-          const charUpload = await uploadFile(charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
-          if (!charUpload.blobObjectId) {
-            throw new Error(`Character file upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
-          }
-          if (!charUpload.sealMaterial) {
-            throw new Error(`Character file upload for Soul "${soul.name}" is missing Seal recovery data.`)
-          }
-
-          // Memory — from folder's memory.md, fallback to auto-generated
-          const memFile = folder?.memoryFile ?? createMemorySeedFile(soul)
-          const memUpload = await uploadFile(memFile, 'encrypted', authHeaders, walletUpload, walletAddress)
-          if (!memUpload.blobObjectId) {
-            throw new Error(`Memory upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
-          }
-          if (!memUpload.sealMaterial) {
-            throw new Error(`Memory upload for Soul "${soul.name}" is missing Seal recovery data.`)
-          }
-
-          let skillsBlobObjectId: string | null = null
-          let initialSkillName: string | null = null
-          let skillsSealMaterial: PendingSealMaterial | null = null
-          if (folder?.skillsFile) {
-            const skillsUpload = await uploadFile(folder.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
-            if (!skillsUpload.blobObjectId) {
-              throw new Error(`Skills bundle upload was deduplicated for Soul "${soul.name}". Please modify the content to make it unique.`)
-            }
-            if (!skillsUpload.sealMaterial) {
-              throw new Error(`Skills bundle upload for Soul "${soul.name}" is missing Seal recovery data.`)
-            }
-            skillsBlobObjectId = skillsUpload.blobObjectId
-            initialSkillName = typeof skillsUpload.skillName === 'string' ? skillsUpload.skillName : null
-            skillsSealMaterial = skillsUpload.sealMaterial
-          }
-
-          // Image — from folder's image file, fallback to collection cover URL
-          let resolvedImageUrl = fallbackImageUrl
-          if (folder?.imageFile) {
-            const imgUpload = await uploadFile(folder.imageFile, 'public', authHeaders, walletUpload)
-            resolvedImageUrl = imgUpload.blobUrl
-          }
-
-          soulState.uploads = {
-            protectedBlobObjectId: charUpload.blobObjectId,
-            sealMaterial: charUpload.sealMaterial,
-            foundingMemoryBlobObjectId: memUpload.blobObjectId,
-            memorySealMaterial: memUpload.sealMaterial,
-            skillsBlobObjectId,
-            initialSkillName,
-            skillsSealMaterial,
-            imageUrl: resolvedImageUrl,
-          }
-          setRecoveryState({ ...recovery, souls: [...recovery.souls] })
-        }
-
-        // ── Phase 3: Mint each soul ──
-
-        setStatus('minting-souls')
-
-        // Resolve kiosk once for all souls
-        let personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
-
-        for (let i = 0; i < recovery.souls.length; i++) {
-          const soulState = recovery.souls[i]
-          const soul = soulState.input
-          if (soulState.mintSync) {
-            continue
-          }
-          if (!soulState.uploads) {
-            throw new Error(`Soul "${soul.name}" is missing uploaded assets. Restart the collection launch from Step 2.`)
-          }
-
-          // Build + sign mint TX (skip if we already have a digest from a previous attempt)
-          let mintDigest = soulState.mintDigest
-          let mintTxResult: unknown | null = null
-          if (!mintDigest) {
-            await assertObjectInputsExist(suiClient, {
-              'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
-              'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
-              'Soul character blob': soulState.uploads.protectedBlobObjectId,
-              'Founding memory blob': soulState.uploads.foundingMemoryBlobObjectId,
-              'Skills blob': soulState.uploads.skillsBlobObjectId,
-            })
-            const mintTx = await buildPublishSoulTx({
-              currentKioskId: personalKiosk?.currentKioskId ?? null,
-              currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
-              name: soul.name,
-              description: soul.description,
-              imageUrl: soulState.uploads.imageUrl,
-              protectedBlobObjectId: soulState.uploads.protectedBlobObjectId,
-              foundingMemoryBlobObjectId: soulState.uploads.foundingMemoryBlobObjectId,
-              skillsBlobObjectId: soulState.uploads.skillsBlobObjectId,
-              initialSkillName: soulState.uploads.initialSkillName,
-              skillsVisibility: 'private',
-              creatorRoyaltyBps: soul.creatorRoyaltyBps,
-            })
-            const mintResult = await signAndExecute(mintTx)
-            mintDigest = mintResult.digest
-            mintTxResult = mintResult
-            assertSoulidityTxSucceeded(mintResult, 'Collection soul mint transaction')
-
-            // Persist digest to recovery BEFORE sync — prevents duplicate mint on retry
-            soulState.mintDigest = mintDigest
-            setRecoveryState({ ...recovery, souls: [...recovery.souls] })
-          }
-          if (!mintDigest) {
-            throw new Error(`Soul "${soul.name}" mint transaction digest is missing`)
-          }
-          if (!mintTxResult) {
-            mintTxResult = await suiClient.getTransactionBlock({
-              digest: mintDigest,
-              options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
-            })
-          }
-
-          // Mirror publish (uses stored or fresh digest)
-          const syncBody = await buildSoulPublishSyncBody({
-            txDigest: mintDigest,
-            txResult: mintTxResult,
-            soul,
-            uploads: soulState.uploads,
-            suiClient,
-          })
-          const publishRes = await fetch('/api/souls/publish', {
+      // Mirror the collection-right listing if it was bundled into PTB1.
+      if (
+        recovery.collectionRightListing
+        && recovery.collectionPtb1Digest
+        && collectionData.listingStatus !== 'listed'
+      ) {
+        const listRes = await fetch(
+          `/api/collections/${encodeURIComponent(collectionData.collectionOnChainId)}/list`,
+          {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify(syncBody),
-          })
-          if (!publishRes.ok) {
-            const body = await publishRes.json().catch(() => ({}))
-            throw new Error(body.error || `Failed to mirror Soul "${soul.name}" publish`)
+            body: JSON.stringify({ txDigest: recovery.collectionPtb1Digest, action: 'list' }),
+          },
+        )
+        if (!listRes.ok) {
+          const body = await listRes.json().catch(() => ({}))
+          throw new Error(body.error || 'Failed to mirror collection-right listing')
+        }
+        const listData = await listRes.json().catch(() => ({})) as { listingStatus?: string }
+        collectionData = { ...collectionData, listingStatus: listData.listingStatus ?? collectionData.listingStatus }
+        recovery.collectionData = collectionData
+        setRecoveryState({ ...recovery })
+      }
+
+      // Resolve per-soul upload recovery once PTB1 is finalized.
+      if (intent && layout && completion) {
+        const fallbackImageUrl = recovery.uploadedImageUrl ?? completion.files[layout.cover]?.blobUrl
+        if (!fallbackImageUrl) {
+          throw new Error('Cover image URL missing after PTB1 settlement')
+        }
+        for (let i = 0; i < recovery.souls.length; i++) {
+          recovery.souls[i].uploads = resolveSoulUploadRecovery(completion.files, layout, i, fallbackImageUrl)
+        }
+        setRecoveryState({ ...recovery, souls: [...recovery.souls] })
+      }
+
+      // ── Phase 5: Empty-collection branch (cover-only PTB2) ──
+      if (recovery.souls.length === 0) {
+        if (!recovery.coverCertifyDigest) {
+          if (!completion || !layout) {
+            throw new Error('Cannot certify cover: walrus completion missing')
           }
+          setStatus('building')
+          const coverIdx = layout.cover
+          const coverTx = await buildCollectionCoverCertifyTx({
+            attachCertifyCalls: (tx) => completion!.attachCertifyCalls(tx, [coverIdx]),
+          })
+          setStatus('signing')
+          const coverResult = await signAndExecute(coverTx)
+          assertSoulidityTxSucceeded(coverResult, 'Empty collection cover certify transaction')
+          recovery.coverCertifyDigest = coverResult.digest
+          setRecoveryState({ ...recovery })
+        }
+        try { completion?.clearBatchRecovery() } catch { /* ignore */ }
+        setSyncData(collectionData)
+        setStatus('done')
+        posthog.capture('collection_publish_completed', {
+          soulCount: 0,
+          maxSupply: params.maxSupply ?? null,
+          unlimited: params.maxSupply == null,
+          emptyCollection: true,
+          path: 'cover-only',
+          elapsedMs: Date.now() - startedAt,
+        })
+        uploadedImageUrlRef.current = null
+        setRecoveryState(null)
+        return
+      }
 
-          const publishData: PublishSyncResponse = await publishRes.json()
-          soulState.mintSync = publishData
-          setRecoveryState({ ...recovery, souls: [...recovery.souls] })
-          setProgress((p) => ({ ...p, mintedSouls: countMintedSouls(recovery.souls) }))
+      if (recovery.fastPathPtb2Digest && recovery.souls.some((s) => !s.mintSync || !s.bindTxDigest)) {
+        setStatus('syncing')
+        await mirrorFastPathPtb2({
+          recovery,
+          authHeaders,
+          authoredCollectionData: collectionData,
+          txResultForMirror: await suiClient.getTransactionBlock({
+            digest: recovery.fastPathPtb2Digest,
+            options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true } as never,
+          }),
+          ptb2Digest: recovery.fastPathPtb2Digest,
+          suiClient,
+          persistRecovery: setRecoveryState,
+          updateProgress: setProgress,
+        })
+        setSyncData(collectionData)
+        setStatus('done')
+        uploadedImageUrlRef.current = null
+        try { completion?.clearBatchRecovery() } catch { /* ignore */ }
+        setRecoveryState(null)
+        return
+      }
 
-          if (!personalKiosk && i === 0) {
-            personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
+      // ── Phase 6: PTB2 fast path (when first attempt and not already failed) ──
+      const fastPathBlocked = (recovery.fastPathAttempt?.count ?? 0) >= 1
+      if (!recovery.coverCertifyDigest && !fastPathBlocked && completion && layout) {
+        try {
+          await tryFastPathPtb2({
+            recovery,
+            completion,
+            layout,
+            authHeaders,
+            walletAddress,
+            authoredCollectionData: collectionData,
+            params,
+            suiClient,
+            signAndExecute,
+            persistRecovery: setRecoveryState,
+            updateProgress: setProgress,
+            startedAt,
+          })
+          // Fast path completed end-to-end; mirror calls already made.
+          setSyncData(collectionData)
+          setStatus('done')
+          uploadedImageUrlRef.current = null
+          try { completion.clearBatchRecovery() } catch { /* ignore */ }
+          setRecoveryState(null)
+          return
+        } catch (e) {
+          if (e instanceof FastPathSessionExpired) {
+            recovery.fastPathPtb2Digest = null
+            setRecoveryState({ ...recovery })
+            throw e
+          }
+          if (e instanceof FastPathFallback) {
+            recovery.fastPathAttempt = {
+              count: (recovery.fastPathAttempt?.count ?? 0) + 1,
+              lastError: e.message,
+            }
+            setRecoveryState({ ...recovery })
+            posthog.capture('collection_fast_path_fallback', {
+              reason: e.message,
+              attempt: recovery.fastPathAttempt.count,
+            })
+            // fall through to chunked
+          } else {
+            throw e
           }
         }
+      }
 
-        // ── Phase 4: Bind each minted soul to the collection ──
+      // ── Phase 7: Chunked fallback ──
+      setStatus('minting-souls')
+      const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
+      await assertObjectInputsExist(suiClient, {
+        'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+        'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+      })
 
-        setStatus('binding-souls')
-        for (let i = 0; i < recovery.souls.length; i++) {
-          const soulState = recovery.souls[i]
-          if (soulState.bindTxDigest) {
-            continue
+      for (let chunkIndex = 0; chunkIndex < recovery.mintChunks.length; chunkIndex++) {
+        const chunk = recovery.mintChunks[chunkIndex]
+        let chunkDigest = chunk.digest
+        let chunkTxResult: unknown | null = null
+        const includeCoverCert = !recovery.coverCertifyDigest
+
+        if (!chunkDigest) {
+          if (!completion || !layout) {
+            throw new Error(
+              'Cannot resume mint: blob certificates were lost on refresh. '
+              + 'Return to Step 2, re-upload the collection folder, and retry the launch.',
+            )
           }
-          if (!soulState.mintSync) {
-            throw new Error(`Soul "${soulState.input.name}" was not mirrored after mint. Retry the launch.`)
+          const blobObjectIds: Record<string, string | null> = {}
+          for (const soulIdx of chunk.soulIndices) {
+            const uploads = recovery.souls[soulIdx].uploads
+            if (!uploads) {
+              throw new Error(`Soul "${recovery.souls[soulIdx].input.name}" is missing uploaded assets. Restart from Step 2.`)
+            }
+            blobObjectIds[`Soul #${soulIdx + 1} character blob`] = uploads.protectedBlobObjectId
+            blobObjectIds[`Soul #${soulIdx + 1} memory blob`] = uploads.foundingMemoryBlobObjectId
+            if (uploads.skillsBlobObjectId) {
+              blobObjectIds[`Soul #${soulIdx + 1} skills blob`] = uploads.skillsBlobObjectId
+            }
           }
+          blobObjectIds['Your personal kiosk'] = personalKiosk?.currentKioskId ?? null
+          blobObjectIds['Your personal kiosk capability'] = personalKiosk?.currentKioskCapOnChainId ?? null
+          await assertObjectInputsExist(suiClient, blobObjectIds)
 
-          // Build + sign bind TX (skip if we already have a digest from a previous attempt)
-          let bindDigest = soulState.bindDigest
-          if (!bindDigest) {
-            const addTx = buildAddSoulToCollectionTx({
-              collectionObjectId: collectionData.collectionOnChainId,
-              stateObjectId: soulState.mintSync.stateOnChainId,
+          const chunkCertIndices = collectCertifyIndicesForChunk(layout, chunk.soulIndices)
+          const certIndices = includeCoverCert
+            ? [layout.cover, ...chunkCertIndices]
+            : chunkCertIndices
+          const completionLocal = completion
+          const tx = await buildBatchPublishSoulTx({
+            currentKioskId: personalKiosk?.currentKioskId ?? null,
+            currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
+            souls: chunk.soulIndices.map((soulIdx) => {
+              const soul = recovery.souls[soulIdx]
+              const uploads = soul.uploads
+              if (!uploads) {
+                throw new Error(`Soul "${soul.input.name}" is missing uploaded assets`)
+              }
+              return {
+                name: soul.input.name,
+                description: soul.input.description,
+                imageUrl: uploads.imageUrl,
+                protectedBlobObjectId: uploads.protectedBlobObjectId,
+                foundingMemoryBlobObjectId: uploads.foundingMemoryBlobObjectId,
+                skillsBlobObjectId: uploads.skillsBlobObjectId,
+                initialSkillName: uploads.initialSkillName,
+                skillsVisibility: 'private',
+                creatorRoyaltyBps: soul.input.creatorRoyaltyBps,
+              }
+            }),
+            attachBeforeMints: (mintTx: Transaction) => completionLocal.attachCertifyCalls(mintTx, certIndices),
+          })
+          const mintResult = await signAndExecute(tx)
+          chunkDigest = mintResult.digest
+          chunkTxResult = mintResult
+          assertSoulidityTxSucceeded(mintResult, 'Collection batch mint transaction')
+
+          chunk.digest = chunkDigest
+          if (includeCoverCert) {
+            recovery.coverCertifyDigest = chunkDigest
+          }
+          setRecoveryState({ ...recovery, mintChunks: [...recovery.mintChunks] })
+        }
+
+        if (!chunkDigest) {
+          throw new Error('Mint chunk digest is missing after sign')
+        }
+
+        // Mirror via /api/souls/publish/batch — one RPC per chunk regardless of N.
+        // We still need per-soul sealSidecar bodies, so we resolve the events
+        // from the chunk TX and build syncBodies in JS.
+        const chunkNeedsMirror = chunk.soulIndices.some((idx) => !recovery.souls[idx].mintSync)
+        if (chunkNeedsMirror) {
+          if (!chunkTxResult) {
+            chunkTxResult = await suiClient.getTransactionBlock({
+              digest: chunkDigest,
+              options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true } as never,
             })
-            const addResult = await signAndExecute(addTx)
-            bindDigest = addResult.digest
-            assertSoulidityTxSucceeded(addResult, 'Collection bind transaction')
-
-            // Persist digest to recovery BEFORE mirror — prevents duplicate bind on retry
-            soulState.bindDigest = bindDigest
-            setRecoveryState({ ...recovery, souls: [...recovery.souls] })
+          }
+          const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+          const mintEvents = extractAllSoulMintedToKioskEvents(chunkTxResult as never, packageId)
+          const memoryEvents = extractAllMemoryEntryAppendedEvents(chunkTxResult as never, packageId)
+          const skillEvents = extractAllSkillVersionAppendedEvents(chunkTxResult as never, packageId)
+          if (mintEvents.length !== chunk.soulIndices.length) {
+            throw new Error(
+              `Batch mint chunk produced ${mintEvents.length} mint events but expected ${chunk.soulIndices.length}`,
+            )
           }
 
+          const syncBodies = []
+          for (let i = 0; i < chunk.soulIndices.length; i++) {
+            const soulIdx = chunk.soulIndices[i]
+            const soul = recovery.souls[soulIdx]
+            const mintEvent = mintEvents[i]
+            const memoryEvent = findEventForSoulId(memoryEvents, mintEvent.soulId)
+            const skillEvent = findEventForSoulId(skillEvents, mintEvent.soulId)
+            if (!soul.uploads) {
+              throw new Error(`Soul "${soul.input.name}" is missing uploaded assets during mirror sync`)
+            }
+            syncBodies.push(await buildSoulPublishSyncBody({
+              txDigest: chunkDigest,
+              txResult: chunkTxResult,
+              soul: soul.input,
+              uploads: soul.uploads,
+              mintEvent,
+              memoryEvent,
+              skillEvent,
+              suiClient,
+            }))
+          }
+          const batchRes = await fetch('/api/souls/publish/batch', {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              txDigest: chunkDigest,
+              collectionOnChainId: collectionData.collectionOnChainId,
+              expectedSoulCount: chunk.soulIndices.length,
+              expectedBindCount: 0,
+              syncBodies,
+            }),
+          })
+          if (!batchRes.ok) {
+            const body = await batchRes.json().catch(() => ({}))
+            throw new Error(body.error || 'Failed to mirror chunked publish batch')
+          }
+          const batchData = await batchRes.json() as {
+            syncs?: Array<{
+              soulOnChainId: string
+              stateOnChainId: string
+              memoryOnChainId: string | null
+            }>
+          }
+          if (!Array.isArray(batchData.syncs) || batchData.syncs.length < chunk.soulIndices.length) {
+            throw new Error('Chunked publish batch mirror returned fewer syncs than minted souls')
+          }
+          for (let i = 0; i < chunk.soulIndices.length; i++) {
+            const soulIdx = chunk.soulIndices[i]
+            const sync = batchData.syncs[i]
+            if (!sync?.memoryOnChainId) {
+              throw new Error(`Chunked publish batch mirror missing founding memory for Soul #${soulIdx + 1}`)
+            }
+            recovery.souls[soulIdx].mintSync = {
+              txDigest: chunkDigest,
+              soulOnChainId: sync.soulOnChainId,
+              stateOnChainId: sync.stateOnChainId,
+              memoryOnChainId: sync.memoryOnChainId,
+              listingStatus: 'unlisted',
+            }
+          }
+          setRecoveryState({ ...recovery, souls: [...recovery.souls] })
+          setProgress((p) => ({ ...p, mintedSouls: countMintedSouls(recovery.souls) }))
+        }
+      }
+
+      // ── Phase 8: Chunked bind ──
+      setStatus('binding-souls')
+      for (let chunkIndex = 0; chunkIndex < recovery.bindChunks.length; chunkIndex++) {
+        const chunk = recovery.bindChunks[chunkIndex]
+        let chunkDigest = chunk.digest
+
+        if (!chunkDigest) {
+          const stateIds: string[] = []
+          for (const soulIdx of chunk.soulIndices) {
+            const soul = recovery.souls[soulIdx]
+            if (!soul.mintSync) {
+              throw new Error(`Soul "${soul.input.name}" was not mirrored after mint. Retry the launch.`)
+            }
+            stateIds.push(soul.mintSync.stateOnChainId)
+          }
+          const tx = buildBatchAddSoulToCollectionTx({
+            collectionObjectId: collectionData.collectionOnChainId,
+            binds: stateIds.map((stateObjectId) => ({ stateObjectId })),
+          })
+          const addResult = await signAndExecute(tx)
+          chunkDigest = addResult.digest
+          assertSoulidityTxSucceeded(addResult, 'Collection batch bind transaction')
+          chunk.digest = chunkDigest
+          setRecoveryState({ ...recovery, bindChunks: [...recovery.bindChunks] })
+        }
+
+        if (!chunkDigest) {
+          throw new Error('Bind chunk digest is missing after sign')
+        }
+
+        for (const soulIdx of chunk.soulIndices) {
+          const soul = recovery.souls[soulIdx]
+          if (soul.bindTxDigest) continue
+          if (!soul.mintSync) {
+            throw new Error(`Soul "${soul.input.name}" mint mirror missing during bind sync`)
+          }
           const addRes = await fetch(`/api/collections/${encodeURIComponent(collectionData.collectionOnChainId)}/add-soul`, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ txDigest: bindDigest }),
+            body: JSON.stringify({
+              txDigest: chunkDigest,
+              soulOnChainId: soul.mintSync.soulOnChainId,
+            }),
           })
           if (!addRes.ok) {
             const body = await addRes.json().catch(() => ({}))
-            throw new Error(body.error || `Failed to bind Soul "${soulState.input.name}" to collection`)
+            throw new Error(body.error || `Failed to bind Soul "${soul.input.name}" to collection`)
           }
-
-          soulState.bindTxDigest = bindDigest
+          soul.bindTxDigest = chunkDigest
           setRecoveryState({ ...recovery, souls: [...recovery.souls] })
           setProgress((p) => ({ ...p, boundSouls: countBoundSouls(recovery.souls) }))
         }
@@ -813,10 +1363,12 @@ export function useCollectionPublish(draftSignature?: string | null) {
         soulCount: params.souls?.length ?? 0,
         maxSupply: params.maxSupply ?? null,
         unlimited: params.maxSupply == null,
-        emptyCollection: (params.souls?.length ?? 0) === 0,
+        emptyCollection: false,
+        path: 'chunked',
         elapsedMs: Date.now() - startedAt,
       })
 
+      try { completion?.clearBatchRecovery() } catch { /* ignore */ }
       uploadedImageUrlRef.current = null
       setRecoveryState(null)
     } catch (err) {
@@ -831,8 +1383,125 @@ export function useCollectionPublish(draftSignature?: string | null) {
           elapsedMs: Date.now() - startedAt,
         },
       )
+    } finally {
+      removeBeforeUnloadGuard?.()
     }
   }
 
   return { status, error, txDigest, syncData, progress, publish, suiWallet, resetRecovery: clearRecoveryState }
 }
+
+async function tryFastPathPtb2(args: {
+  recovery: RecoveryState
+  completion: CompleteBatchWalrusUploadResult
+  layout: BatchFileLayout
+  authHeaders: Record<string, string>
+  walletAddress: string
+  authoredCollectionData: CollectionSyncResponse
+  params: CollectionPublishParams
+  suiClient: ReturnType<typeof useSuiClient>
+  signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
+  persistRecovery: (recovery: RecoveryState | null) => void
+  updateProgress: (updater: (p: CollectionPublishProgress) => CollectionPublishProgress) => void
+  startedAt: number
+}) {
+  const { recovery, completion, layout, authHeaders, walletAddress, authoredCollectionData, suiClient, signAndExecute, persistRecovery, startedAt } = args
+
+  const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
+  await assertObjectInputsExist(suiClient, {
+    'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+    'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+  })
+
+  const allSoulIndices = recovery.souls.map((_, i) => i)
+  const certIndices = [layout.cover, ...collectCertifyIndicesForChunk(layout, allSoulIndices)]
+
+  const tx = await buildCollectionFastPathPtb2Tx({
+    collectionOnChainId: authoredCollectionData.collectionOnChainId,
+    currentKioskId: personalKiosk?.currentKioskId ?? null,
+    currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
+    souls: recovery.souls.map((soul) => {
+      const uploads = soul.uploads
+      if (!uploads) throw new Error(`Soul "${soul.input.name}" is missing uploaded assets`)
+      return {
+        name: soul.input.name,
+        description: soul.input.description,
+        imageUrl: uploads.imageUrl,
+        protectedBlobObjectId: uploads.protectedBlobObjectId,
+        foundingMemoryBlobObjectId: uploads.foundingMemoryBlobObjectId,
+        skillsBlobObjectId: uploads.skillsBlobObjectId,
+        initialSkillName: uploads.initialSkillName,
+        skillsVisibility: 'private',
+        creatorRoyaltyBps: soul.input.creatorRoyaltyBps,
+      }
+    }),
+    attachCertifyCalls: (ptb) => completion.attachCertifyCalls(ptb, certIndices),
+  })
+
+  tx.setSender(walletAddress)
+  const bytes = await tx.build({ client: suiClient as never, onlyTransactionKind: false })
+
+  const dryRun = await suiClient.dryRunTransactionBlock({ transactionBlock: bytes })
+  if (dryRun.effects.status.status !== 'success') {
+    const errMsg = dryRun.effects.status.error || 'Unknown dry-run failure'
+    if (/missing object|changed object|not exist|version/i.test(errMsg)) {
+      throw new FastPathSessionExpired(`Session expired (${errMsg}); please retry from the start`)
+    }
+    throw new FastPathFallback(`dry-run failed: ${errMsg}`)
+  }
+  if (bytes.length > FAST_PATH_BYTES_CAP) {
+    throw new FastPathFallback(`bytes ${bytes.length} > cap ${FAST_PATH_BYTES_CAP}`)
+  }
+  const computation = Number(dryRun.effects.gasUsed.computationCost)
+  const storage = Number(dryRun.effects.gasUsed.storageCost)
+  if (computation + storage > FAST_PATH_GAS_CAP_MIST) {
+    throw new FastPathFallback(`gas ${computation + storage} > cap ${FAST_PATH_GAS_CAP_MIST}`)
+  }
+
+  let result
+  try {
+    result = await signAndExecute(tx)
+  } catch (error) {
+    throw new FastPathFallback(
+      `signAndExecute failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  const ptb2Digest = result.digest
+  if (result.effects?.status?.status !== 'success') {
+    throw new FastPathFallback('signAndExecute returned failure status')
+  }
+  recovery.fastPathPtb2Digest = ptb2Digest
+  recovery.coverCertifyDigest = ptb2Digest
+  for (const chunk of recovery.mintChunks) {
+    chunk.digest = ptb2Digest
+  }
+  for (const chunk of recovery.bindChunks) {
+    chunk.digest = ptb2Digest
+  }
+  persistRecovery({ ...recovery })
+
+  // Mirror via /api/souls/publish/batch — one RPC for the whole digest.
+  await mirrorFastPathPtb2({
+    recovery,
+    authHeaders,
+    authoredCollectionData,
+    txResultForMirror: result,
+    ptb2Digest,
+    suiClient,
+    persistRecovery,
+    updateProgress: args.updateProgress,
+  })
+
+  posthog.capture('collection_publish_completed', {
+    soulCount: recovery.souls.length,
+    maxSupply: args.params.maxSupply ?? null,
+    unlimited: args.params.maxSupply == null,
+    emptyCollection: false,
+    path: 'fast',
+    elapsedMs: Date.now() - startedAt,
+  })
+}
+
+// Re-exported for legacy callers — used by tests + the upload helper to detect
+// material mismatches across legacy/new mint flows.
+export type { SoulUploadResult }

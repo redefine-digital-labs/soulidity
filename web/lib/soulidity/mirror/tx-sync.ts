@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 
 export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'publish',
+  'publish:batch',
   'buy',
   'list',
   'delist',

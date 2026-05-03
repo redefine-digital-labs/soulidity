@@ -1,11 +1,18 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 
+/**
+ * Build a standalone "list this soul that's already minted and shared" PTB.
+ *
+ * The list ABI no longer takes the soul_id as a u64 — Move now reads it
+ * off the passed `&SoulState`. Both the no-collection and with-collection
+ * branches finalize the returned `SoulListing` by calling
+ * `market::finalize_soul_listing` last so the listing object is shared.
+ */
 export function buildListSoulTx(params: {
   currentKioskId: string
   currentKioskCapOnChainId: string
   stateObjectId: string
-  soulObjectId: string
   priceAtomic: bigint
   collectionObjectId?: string | null
 }) {
@@ -27,43 +34,49 @@ export function buildListSoulTx(params: {
     ],
   })
 
-  if (params.collectionObjectId) {
-    tx.moveCall({
-      target: `${packageId}::market::list_soul_fixed_price_with_collection`,
-      arguments: [
-        tx.object(marketConfigId),
-        tx.object(kioskRegistryId),
-        tx.object(params.collectionObjectId),
-        tx.object(params.currentKioskId),
-        tx.object(params.currentKioskCapOnChainId),
-        tx.object(params.stateObjectId),
-        tx.pure.id(params.soulObjectId),
-        tx.pure.u64(params.priceAtomic),
-      ],
-    })
-  } else {
-    tx.moveCall({
-      target: `${packageId}::market::list_soul_fixed_price`,
-      arguments: [
-        tx.object(marketConfigId),
-        tx.object(kioskRegistryId),
-        tx.object(params.currentKioskId),
-        tx.object(params.currentKioskCapOnChainId),
-        tx.object(params.stateObjectId),
-        tx.pure.id(params.soulObjectId),
-        tx.pure.u64(params.priceAtomic),
-      ],
-    })
-  }
+  const listing = params.collectionObjectId
+    ? tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price_with_collection`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.collectionObjectId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.priceAtomic),
+        ],
+      })
+    : tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.priceAtomic),
+        ],
+      })
+
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_listing`,
+    arguments: [listing],
+  })
 
   return tx
 }
 
+/**
+ * Build a standalone "list collection-right that's already minted and
+ * shared" PTB. Move now derives `right_id` off the passed `&SoulCollection`,
+ * and the returned `CollectionListing` is finalized by
+ * `market::finalize_collection_listing`.
+ */
 export function buildListCollectionTx(params: {
   currentKioskId: string
   currentKioskCapOnChainId: string
   collectionObjectId: string
-  rightObjectId: string
   priceAtomic: bigint
 }) {
   if (params.priceAtomic <= 0n) {
@@ -83,7 +96,7 @@ export function buildListCollectionTx(params: {
       tx.object(params.currentKioskCapOnChainId),
     ],
   })
-  tx.moveCall({
+  const listing = tx.moveCall({
     target: `${packageId}::market::list_collection_right_fixed_price`,
     arguments: [
       tx.object(marketConfigId),
@@ -91,9 +104,12 @@ export function buildListCollectionTx(params: {
       tx.object(params.collectionObjectId),
       tx.object(params.currentKioskId),
       tx.object(params.currentKioskCapOnChainId),
-      tx.pure.id(params.rightObjectId),
       tx.pure.u64(params.priceAtomic),
     ],
+  })
+  tx.moveCall({
+    target: `${packageId}::market::finalize_collection_listing`,
+    arguments: [listing],
   })
 
   return tx

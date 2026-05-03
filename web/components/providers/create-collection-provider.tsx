@@ -27,6 +27,8 @@ export interface CollectionSuccessSnapshot {
   floorPrice: string
   extraRoyaltyBps: number
   tradeable: boolean
+  collectionRightListed?: boolean
+  collectionRightListingPrice?: string | null
   soulNames: string[]
   // Atomic-safe representation. null = unlimited, otherwise a positive integer
   // string mirroring the on-chain cap.
@@ -99,6 +101,14 @@ interface CreateCollectionContextValue {
   folderErrors: string[]
   setFolderErrors: (errors: string[]) => void
 
+  // Step 1.5 — optional collection-right listing on launch (when tradeable)
+  /** When true, list the collection-right at launch (in PTB1). */
+  listCollectionRightOnLaunch: boolean
+  setListCollectionRightOnLaunch: (v: boolean) => void
+  /** Display string in USDC (e.g. "12.5"). Converted to atomic at submit time. */
+  collectionRightListingPrice: string
+  setCollectionRightListingPrice: (v: string) => void
+
   // Publish result (set after on-chain TX + mirror sync)
   publishResult: CollectionSyncResponse | null
   setPublishResult: (v: CollectionSyncResponse | null, snapshot?: CollectionSuccessSnapshot | null) => void
@@ -112,6 +122,19 @@ interface CreateCollectionContextValue {
 }
 
 const CreateCollectionContext = createContext<CreateCollectionContextValue | null>(null)
+
+function formatAtomicUsdcDisplay(raw: unknown): string {
+  if (raw == null) return ''
+  try {
+    const v = BigInt(String(raw))
+    const factor = 10n ** 6n
+    const whole = v / factor
+    const frac = (v % factor).toString().padStart(6, '0').replace(/0+$/, '')
+    return frac ? `${whole}.${frac}` : whole.toString()
+  } catch {
+    return ''
+  }
+}
 
 export function CreateCollectionProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -136,6 +159,9 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
   const [batchErrors, setBatchErrors] = useState<string[]>([])
   const [soulFolders, setSoulFolders] = useState<SoulFolderMap>(new Map())
   const [folderErrors, setFolderErrors] = useState<string[]>([])
+
+  const [listCollectionRightOnLaunch, setListCollectionRightOnLaunch] = useState(false)
+  const [collectionRightListingPrice, setCollectionRightListingPrice] = useState('')
 
   // Publish result
   const [publishResult, setPublishResultRaw] = useState<CollectionSyncResponse | null>(null)
@@ -196,7 +222,8 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
         const recoveryRaw = sessionStorage.getItem(MINT_RECOVERY_KEY)
         if (recoveryRaw) {
           const recovery = JSON.parse(recoveryRaw)
-          if (recovery.userId === user?.id && recovery.txDigest && recovery.collectionMeta && hasCurrentSoulidityDeploymentSignature(recovery)) {
+          const hasCollectionRecoveryTx = typeof recovery.collectionPtb1Digest === 'string' && recovery.collectionPtb1Digest.length > 0
+          if (recovery.userId === user?.id && hasCollectionRecoveryTx && recovery.collectionMeta && hasCurrentSoulidityDeploymentSignature(recovery)) {
             const meta = recovery.collectionMeta
             setName(meta.name ?? '')
             setDescription(meta.description ?? '')
@@ -208,21 +235,24 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
             } else if (meta.maxSupply === null) {
               setUnlimitedSupply(true)
             }
-            if (recovery.floorPriceAtomic) {
+            if (meta.floorPriceAtomic) {
               // Convert atomic back to display string (inverse of parseDisplayAmountToAtomic)
-              const v = BigInt(recovery.floorPriceAtomic)
-              const factor = 10n ** 6n
-              const whole = v / factor
-              const frac = (v % factor).toString().padStart(6, '0').replace(/0+$/, '')
-              setFloorPrice(frac ? `${whole}.${frac}` : whole.toString())
+              setFloorPrice(formatAtomicUsdcDisplay(meta.floorPriceAtomic))
+            }
+            if (recovery.collectionRightListing) {
+              setListCollectionRightOnLaunch(true)
+              setCollectionRightListingPrice(formatAtomicUsdcDisplay(recovery.collectionRightListing.priceAtomic))
             }
             if (Array.isArray(recovery.souls) && recovery.souls.length > 0) {
+              setAddSoulsMethod('batch-upload')
               setBatchSouls(recovery.souls.map((s: { input?: BatchSoulEntry }) => ({
                 name: s.input?.name ?? '',
                 description: s.input?.description ?? '',
                 tags: Array.isArray(s.input?.tags) ? s.input.tags : [],
                 creatorRoyaltyBps: s.input?.creatorRoyaltyBps ?? 0,
               })))
+            } else {
+              setAddSoulsMethod('skip')
             }
             setHasRecoveryTx(true)
           }
@@ -262,6 +292,8 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
     setBatchData(null, [], [])
     setSoulFolders(new Map())
     setFolderErrors([])
+    setListCollectionRightOnLaunch(false)
+    setCollectionRightListingPrice('')
     setPublishResultRaw(null)
     setSuccessSnapshot(null)
     setHasRecoveryTx(false)
@@ -285,6 +317,8 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
       batchFile, batchSouls, batchErrors, setBatchData,
       soulFolders, setSoulFolders,
       folderErrors, setFolderErrors,
+      listCollectionRightOnLaunch, setListCollectionRightOnLaunch,
+      collectionRightListingPrice, setCollectionRightListingPrice,
       publishResult, setPublishResult,
       successSnapshot,
       isHydrated,

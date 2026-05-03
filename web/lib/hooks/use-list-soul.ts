@@ -65,7 +65,6 @@ export function useListSoul(soul: SoulAssetDetail | null) {
         currentKioskId: soulKioskId,
         currentKioskCapOnChainId: soulKioskCapId,
         stateObjectId: soul.stateOnChainId,
-        soulObjectId: soul.onChainId,
         priceAtomic,
         collectionObjectId: soul.collectionOnChainId,
       })

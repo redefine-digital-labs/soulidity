@@ -1,0 +1,255 @@
+{
+  "_comment": "Soulidity 2-sig fast-path acceptance matrix (11 rows). The harness scripts/smoke-soulidity.ts is a PTB replayer: each step's transactionBase64 must be a real, pre-built PTB encoded as base64. The operator builds these PTBs ahead of time using the SDK builders in web/lib/soulidity/tx/ (e.g. via a one-off Node script that wires builders + smoke wallet keypairs against the testnet/mainnet package id from the deployment manifest), then drops the base64 strings into the placeholders below. The {{txDigest}} token in mirror bodies is substituted at runtime with the digest of the just-signed step. Mirror paths must reference live first-party routes under web/app/api (collection PTB1 mirrors hit /api/collections/create which accepts { txDigest, floorPriceAtomic? }; supply floorPriceAtomic when the collection enforces an off-chain floor). Mirror auth is picked per step.signer: publisher rows use SMOKE_PUBLISHER_*, buyer rows use SMOKE_BUYER_*, agent rows use SMOKE_AGENT_* (see .env.soulidity-smoke.example). Replace every __PLACEHOLDER__ before running. /api/souls/publish/batch syncBodies entries must be one-per-soul (length === expectedSoulCount); the operator fills each __SOUL_ON_CHAIN_ID_N__ with the actual minted soul id from the same PTB. The batch route ALWAYS requires a per-soul `sealSidecar` (Soul content is uploaded encrypted by web/lib/hooks/use-collection-publish.ts) and ALWAYS requires `memorySealSidecar` for souls that emit a founding-memory event (memory blob is also uploaded encrypted) — replace the __REPLACE_WITH_*_SEAL_SIDECAR_N__ placeholders with the real Seal envelope sidecars (shape: SealEnvelopeSidecar from web/lib/services/seal-crypto.ts) produced by the Walrus upload pipeline; the route returns 422 if either is missing. Add `assetsSealSidecar` separately on entries whose initial asset version is private (route also returns 422 then). Add `skillsSealSidecar` separately on entries whose initial skill version is private (skills uploaded with `skillsVisibility: 'private'` by use-collection-publish.ts emit a private SkillVersionAppended event and the route returns 422 if the per-soul `skillsSealSidecar` is missing). The single-Soul /api/souls/publish route enforces the same fail-closed contract: every body ALWAYS requires `sealSidecar` (the create flow at web/app/create/gas/page.tsx uploads the Soul character file as encrypted), ALWAYS requires `memorySealSidecar` when the PTB emits a founding-memory event, and ALWAYS requires `skillsSealSidecar` when the PTB appends a private initial skill version — replace the __REPLACE_WITH_SOUL_SEAL_SIDECAR__ / __REPLACE_WITH_MEMORY_SEAL_SIDECAR__ / __REPLACE_WITH_SKILLS_SEAL_SIDECAR__ placeholders below with the real envelopes. Plan source: docs/plans/2026-05-03-soulidity-2sigs-fast-path.md sections 7a/7b.",
+  "rows": [
+    {
+      "name": "empty-collection",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-create-collection",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__",
+          "mirror": [
+            { "path": "/api/collections/create", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        },
+        {
+          "label": "ptb2-cover-cert-only",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__"
+        }
+      ]
+    },
+    {
+      "name": "empty-collection-with-right-listing",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-create-collection-and-list-right",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__",
+          "mirror": [
+            { "path": "/api/collections/create", "body": { "txDigest": "{{txDigest}}" } },
+            { "path": "/api/collections/__COLLECTION_ON_CHAIN_ID__/list", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        },
+        {
+          "label": "ptb2-cover-cert-only",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__"
+        }
+      ]
+    },
+    {
+      "name": "three-soul-collection-fast-path",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-register-and-create",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__",
+          "mirror": [
+            { "path": "/api/collections/create", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        },
+        {
+          "label": "ptb2-mint-bind-cert-finalize",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
+          "mirror": [
+            {
+              "path": "/api/souls/publish/batch",
+              "body": {
+                "txDigest": "{{txDigest}}",
+                "collectionOnChainId": "__COLLECTION_ON_CHAIN_ID__",
+                "expectedSoulCount": 3,
+                "expectedBindCount": 3,
+                "syncBodies": [
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_1__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_1__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_1__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_2__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_2__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_2__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_3__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_3__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_3__": true } }
+                ]
+              },
+              "assertBody": [
+                { "path": "collectionSoulCount", "equals": 3 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "single-soul-publish-with-existing-bind",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-register-walrus-blobs",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__"
+        },
+        {
+          "label": "ptb2-mint-with-bind",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
+          "mirror": [
+            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR__": true } } },
+            { "path": "/api/collections/__COLLECTION_ON_CHAIN_ID__/add-soul", "body": { "txDigest": "{{txDigest}}", "soulOnChainId": "__SOUL_ON_CHAIN_ID__" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "single-soul-publish-with-listing",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-register-walrus-blobs",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__"
+        },
+        {
+          "label": "ptb2-mint-with-list",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
+          "mirror": [
+            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR__": true } } },
+            { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/list", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "single-soul-publish-with-bind-and-listing",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-register-walrus-blobs",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__"
+        },
+        {
+          "label": "ptb2-mint-with-collection-and-list",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
+          "mirror": [
+            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR__": true } } },
+            { "path": "/api/collections/__COLLECTION_ON_CHAIN_ID__/add-soul", "body": { "txDigest": "{{txDigest}}", "soulOnChainId": "__SOUL_ON_CHAIN_ID__" } },
+            { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/list", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "first-skills-root-plus-three-versions",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-register-skill-blobs",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__"
+        },
+        {
+          "label": "ptb2-init-and-append-skills",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
+          "mirror": [
+            { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/skills", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "first-assets-root-plus-three-sprite-versions",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-register-asset-blobs",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__"
+        },
+        {
+          "label": "ptb2-init-and-append-assets",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
+          "mirror": [
+            { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/assets", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "twelve-soul-collection-fast-or-chunked",
+      "_comment": "Fast path: expectedSignatures=2 (PTB1 + PTB2 batched). If the dry-run cap (96000 bytes / 5_000_000_000 MIST) trips, the operator must rebuild this row with chunked PTBs and bump expectedSignatures to (1 PTB1 + 1 mint chunk + 1 bind chunk per chunk). Capture which route was taken in the smoke notes.",
+      "expectedSignatures": 2,
+      "steps": [
+        {
+          "label": "ptb1-register-12-and-create",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB1__",
+          "mirror": [
+            { "path": "/api/collections/create", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        },
+        {
+          "label": "ptb2-batch-mint-bind-cert",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
+          "mirror": [
+            {
+              "path": "/api/souls/publish/batch",
+              "body": {
+                "txDigest": "{{txDigest}}",
+                "collectionOnChainId": "__COLLECTION_ON_CHAIN_ID__",
+                "expectedSoulCount": 12,
+                "expectedBindCount": 12,
+                "syncBodies": [
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_1__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_1__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_1__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_2__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_2__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_2__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_3__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_3__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_3__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_4__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_4__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_4__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_5__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_5__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_5__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_6__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_6__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_6__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_7__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_7__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_7__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_8__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_8__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_8__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_9__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_9__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_9__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_10__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_10__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_10__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_11__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_11__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_11__": true } },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_12__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_12__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_12__": true } }
+                ]
+              },
+              "assertBody": [
+                { "path": "collectionSoulCount", "equals": 12 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "buy-flow-against-published-soul",
+      "expectedSignatures": 1,
+      "steps": [
+        {
+          "label": "buyer-purchase-soul",
+          "signer": "buyer",
+          "transactionBase64": "__REPLACE_WITH_BASE64_PURCHASE_PTB__",
+          "mirror": [
+            { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/purchase", "body": { "txDigest": "{{txDigest}}" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cap-handoff-dry-run",
+      "_comment": "Testnet: build the cap-transfer PTB via scripts/publish-soulidity-and-sync.ts --resume-cap-transfer-from-manifest --transfer-caps-to=<testnet-multisig> in dry-run mode and feed the produced base64 here. Mainnet uses the same row pattern with the production multisig.",
+      "expectedSignatures": 1,
+      "steps": [
+        {
+          "label": "publisher-transfer-caps",
+          "signer": "publisher",
+          "transactionBase64": "__REPLACE_WITH_BASE64_CAP_HANDOFF_PTB__"
+        }
+      ]
+    }
+  ]
+}

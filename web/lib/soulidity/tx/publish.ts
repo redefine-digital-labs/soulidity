@@ -46,6 +46,23 @@ type PublishTxParams = {
   attachBeforeMint?: (tx: Transaction) => void | Promise<void>
 }
 
+/** Per-soul slice for {@link buildBatchPublishSoulTx}. Kiosk handles + the
+ *  pre-mint hook are shared at the batch level, not per soul. */
+type BatchPublishSoulItem = Omit<PublishTxParams, 'currentKioskId' | 'currentKioskCapOnChainId' | 'attachBeforeMint'>
+
+type BatchPublishSoulParams = {
+  currentKioskId?: string | null
+  currentKioskCapOnChainId?: string | null
+  souls: ReadonlyArray<BatchPublishSoulItem>
+  /**
+   * Hook spliced once after kiosk setup and before any mint moveCall. The
+   * collection-publish flow uses this to attach `certify_blob` calls for
+   * every blob owned by the souls in this batch — combining certify + N
+   * mints into a single wallet signature.
+   */
+  attachBeforeMints?: (tx: Transaction) => void | Promise<void>
+}
+
 const SUI_CLOCK_OBJECT_ID = '0x6'
 // SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS | SCOPE_ASSETS (mirrors Move grant::all_scopes)
 const ALL_ACCESS_SCOPES = 15
@@ -99,17 +116,17 @@ function resolveLegacySprite(params: Pick<PublishTxParams, 'assetBlobObjectId' |
   return null
 }
 
-function resolveInitialSprite(params: PublishTxParams) {
+function resolveInitialSprite(params: BatchPublishSoulItem) {
   return params.initialSprite ?? resolveLegacySprite(params)
 }
 
-function resolveAssetBlobObjectId(params: PublishTxParams) {
+function resolveAssetBlobObjectId(params: BatchPublishSoulItem) {
   return resolveInitialSprite(params)?.blobObjectId
     ?? params.assetBlobObjectId
     ?? null
 }
 
-function resolveAssetName(params: PublishTxParams) {
+function resolveAssetName(params: BatchPublishSoulItem) {
   const initialSprite = resolveInitialSprite(params)
   if (initialSprite?.assetName) {
     return initialSprite.assetName
@@ -123,13 +140,13 @@ function resolveAssetName(params: PublishTxParams) {
   return 'default'
 }
 
-function resolveAssetVisibility(params: PublishTxParams) {
+function resolveAssetVisibility(params: BatchPublishSoulItem) {
   return resolveInitialSprite(params)?.visibility
     ?? params.assetVisibility
     ?? 'private'
 }
 
-function resolveAssetType(params: PublishTxParams): AssetType | undefined {
+function resolveAssetType(params: BatchPublishSoulItem): AssetType | undefined {
   if (resolveInitialSprite(params)) return 'sprite'
   return params.assetType
 }
@@ -144,25 +161,32 @@ function resolveDownloadPolicy(
   return visibility === 'public' ? 'public' : 'owner_only'
 }
 
-export async function buildPublishSoulTx(params: PublishTxParams): Promise<Transaction> {
-  validateSoulPublishArgs(params)
-  assertNoMintTimeVoiceAsset(params)
+interface PersonalKioskHandles {
+  buyerKiosk: ReturnType<typeof buildBuyerKioskArgs>['buyerKiosk']
+  buyerKioskCap: ReturnType<typeof buildBuyerKioskArgs>['buyerKioskCap']
+}
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
-  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
-  const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
-  const tx = new Transaction()
-  const personalKiosk = buildBuyerKioskArgs(tx, {
-    buyerKioskId: params.currentKioskId,
-    buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
-  })
-  if (params.attachBeforeMint) {
-    await params.attachBeforeMint(tx)
-  }
-  const initialSprite = resolveInitialSprite(params)
-
-  tx.moveCall({
+/**
+ * Append a `mint_native_in_personal_kiosk` move call and return its result.
+ *
+ * The new ABI returns the unshared `SoulState` by value so the caller can
+ * compose downstream `add_soul` / `list_*` / `finalize_*` calls in the same
+ * PTB. Callers MUST call `market::finalize_soul_state` on the returned
+ * handle (directly or via `appendFinalizeSoulStateCall`) before the PTB is
+ * signed, otherwise the unshared state is dropped which is a Move resource
+ * error at sign time.
+ */
+function appendMintNativeMoveCall(
+  tx: Transaction,
+  personalKiosk: PersonalKioskHandles,
+  packageId: string,
+  marketConfigId: string,
+  kioskRegistryId: string,
+  transferPolicyId: string,
+  soul: BatchPublishSoulItem,
+) {
+  const initialSprite = resolveInitialSprite(soul)
+  return tx.moveCall({
     target: `${packageId}::market::mint_native_in_personal_kiosk`,
     arguments: [
       tx.object(marketConfigId),
@@ -170,18 +194,18 @@ export async function buildPublishSoulTx(params: PublishTxParams): Promise<Trans
       tx.object(transferPolicyId),
       personalKiosk.buyerKiosk,
       personalKiosk.buyerKioskCap,
-      tx.pure.string(params.name),
-      tx.pure.string(params.description),
-      tx.pure.string(params.imageUrl),
-      tx.object(params.protectedBlobObjectId),
-      buildFoundingMemoryArg(tx, params.foundingMemoryBlobObjectId),
-      buildSkillsArg(tx, params.skillsBlobObjectId),
-      tx.pure.string(params.initialSkillName || 'default'),
-      tx.pure.bool((params.skillsVisibility ?? 'private') === 'public'),
-      buildAssetArg(tx, resolveAssetBlobObjectId(params)),
-      tx.pure.string(resolveAssetName(params)),
-      tx.pure.bool(resolveAssetVisibility(params) === 'public'),
-      tx.pure.u8(assetTypeToU8(resolveAssetType(params))),
+      tx.pure.string(soul.name),
+      tx.pure.string(soul.description),
+      tx.pure.string(soul.imageUrl),
+      tx.object(soul.protectedBlobObjectId),
+      buildFoundingMemoryArg(tx, soul.foundingMemoryBlobObjectId),
+      buildSkillsArg(tx, soul.skillsBlobObjectId),
+      tx.pure.string(soul.initialSkillName || 'default'),
+      tx.pure.bool((soul.skillsVisibility ?? 'private') === 'public'),
+      buildAssetArg(tx, resolveAssetBlobObjectId(soul)),
+      tx.pure.string(resolveAssetName(soul)),
+      tx.pure.bool(resolveAssetVisibility(soul) === 'public'),
+      tx.pure.u8(assetTypeToU8(resolveAssetType(soul))),
       tx.pure.option('string', initialSprite?.assetName ?? null),
       tx.pure.option('u64', initialSprite?.versionIndex ?? (initialSprite ? 0 : null)),
       tx.pure.option('u8', initialSprite ? downloadPolicyToU8(resolveDownloadPolicy(initialSprite.downloadPolicy, initialSprite.visibility)) : null),
@@ -191,14 +215,361 @@ export async function buildPublishSoulTx(params: PublishTxParams): Promise<Trans
       tx.pure.option('u64', null),
       tx.pure.option('u8', null),
       tx.pure.option('vector<u8>', null),
-      tx.pure.u64(params.contentAccessPriceAtomic ?? 0),
-      tx.pure.u64(params.contentAccessDefaultScopeMask ?? ALL_ACCESS_SCOPES),
-      tx.pure.option('u64', params.contentAccessDefaultDurationMs ?? null),
-      tx.pure.u16(params.creatorRoyaltyBps),
+      tx.pure.u64(soul.contentAccessPriceAtomic ?? 0),
+      tx.pure.u64(soul.contentAccessDefaultScopeMask ?? ALL_ACCESS_SCOPES),
+      tx.pure.option('u64', soul.contentAccessDefaultDurationMs ?? null),
+      tx.pure.u16(soul.creatorRoyaltyBps),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
+}
 
+type MoveCallResult = ReturnType<Transaction['moveCall']>
+
+function appendFinalizeSoulStateCall(tx: Transaction, packageId: string, state: MoveCallResult) {
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_state`,
+    arguments: [state],
+  })
+}
+
+function appendFinalizeSoulListingCall(tx: Transaction, packageId: string, listing: MoveCallResult) {
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_listing`,
+    arguments: [listing],
+  })
+}
+
+function appendAddSoulToCollectionCall(
+  tx: Transaction,
+  packageId: string,
+  collectionId: string,
+  state: MoveCallResult,
+) {
+  tx.moveCall({
+    target: `${packageId}::collection::add_soul`,
+    arguments: [tx.object(collectionId), state],
+  })
+}
+
+function appendListSoulFixedPriceCall(
+  tx: Transaction,
+  packageId: string,
+  marketConfigId: string,
+  kioskRegistryId: string,
+  personalKiosk: PersonalKioskHandles,
+  state: MoveCallResult,
+  priceAtomic: bigint | number,
+) {
+  return tx.moveCall({
+    target: `${packageId}::market::list_soul_fixed_price`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      personalKiosk.buyerKiosk,
+      personalKiosk.buyerKioskCap,
+      state,
+      tx.pure.u64(priceAtomic),
+    ],
+  })
+}
+
+function appendListSoulFixedPriceWithCollectionCall(
+  tx: Transaction,
+  packageId: string,
+  marketConfigId: string,
+  kioskRegistryId: string,
+  collectionId: string,
+  personalKiosk: PersonalKioskHandles,
+  state: MoveCallResult,
+  priceAtomic: bigint | number,
+) {
+  return tx.moveCall({
+    target: `${packageId}::market::list_soul_fixed_price_with_collection`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(collectionId),
+      personalKiosk.buyerKiosk,
+      personalKiosk.buyerKioskCap,
+      state,
+      tx.pure.u64(priceAtomic),
+    ],
+  })
+}
+
+function loadPublishEnv() {
+  return {
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
+    kioskRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'),
+    transferPolicyId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID'),
+  }
+}
+
+export async function buildPublishSoulTx(params: PublishTxParams): Promise<Transaction> {
+  validateSoulPublishArgs(params)
+  assertNoMintTimeVoiceAsset(params)
+
+  const env = loadPublishEnv()
+  const tx = new Transaction()
+  const personalKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.currentKioskId,
+    buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
+  })
+  if (params.attachBeforeMint) {
+    await params.attachBeforeMint(tx)
+  }
+  const state = appendMintNativeMoveCall(
+    tx,
+    personalKiosk,
+    env.packageId,
+    env.marketConfigId,
+    env.kioskRegistryId,
+    env.transferPolicyId,
+    params,
+  )
+  appendFinalizeSoulStateCall(tx, env.packageId, state)
+  finishBuyerKioskArgs(tx, personalKiosk)
+  return tx
+}
+
+export type PublishSoulWithBindParams = PublishTxParams & {
+  /** On-chain id of the existing collection to bind the new soul to. */
+  collectionOnChainId: string
+}
+
+export async function buildPublishSoulWithBindTx(params: PublishSoulWithBindParams): Promise<Transaction> {
+  validateSoulPublishArgs(params)
+  assertNoMintTimeVoiceAsset(params)
+  if (!params.collectionOnChainId) {
+    throw new Error('buildPublishSoulWithBindTx requires collectionOnChainId')
+  }
+
+  const env = loadPublishEnv()
+  const tx = new Transaction()
+  const personalKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.currentKioskId,
+    buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
+  })
+  if (params.attachBeforeMint) {
+    await params.attachBeforeMint(tx)
+  }
+  const state = appendMintNativeMoveCall(
+    tx,
+    personalKiosk,
+    env.packageId,
+    env.marketConfigId,
+    env.kioskRegistryId,
+    env.transferPolicyId,
+    params,
+  )
+  appendAddSoulToCollectionCall(tx, env.packageId, params.collectionOnChainId, state)
+  appendFinalizeSoulStateCall(tx, env.packageId, state)
+  finishBuyerKioskArgs(tx, personalKiosk)
+  return tx
+}
+
+export type PublishSoulWithListParams = PublishTxParams & {
+  listingPriceAtomic: bigint | number
+}
+
+export async function buildPublishSoulWithListTx(params: PublishSoulWithListParams): Promise<Transaction> {
+  validateSoulPublishArgs(params)
+  assertNoMintTimeVoiceAsset(params)
+  if (!(BigInt(params.listingPriceAtomic) > 0n)) {
+    throw new Error('buildPublishSoulWithListTx requires listingPriceAtomic > 0')
+  }
+
+  const env = loadPublishEnv()
+  const tx = new Transaction()
+  const personalKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.currentKioskId,
+    buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
+  })
+  if (params.attachBeforeMint) {
+    await params.attachBeforeMint(tx)
+  }
+  const state = appendMintNativeMoveCall(
+    tx,
+    personalKiosk,
+    env.packageId,
+    env.marketConfigId,
+    env.kioskRegistryId,
+    env.transferPolicyId,
+    params,
+  )
+  const listing = appendListSoulFixedPriceCall(
+    tx,
+    env.packageId,
+    env.marketConfigId,
+    env.kioskRegistryId,
+    personalKiosk,
+    state,
+    params.listingPriceAtomic,
+  )
+  appendFinalizeSoulListingCall(tx, env.packageId, listing)
+  appendFinalizeSoulStateCall(tx, env.packageId, state)
+  finishBuyerKioskArgs(tx, personalKiosk)
+  return tx
+}
+
+export type PublishSoulWithCollectionAndListParams = PublishTxParams & {
+  collectionOnChainId: string
+  listingPriceAtomic: bigint | number
+}
+
+export async function buildPublishSoulWithCollectionAndListTx(
+  params: PublishSoulWithCollectionAndListParams,
+): Promise<Transaction> {
+  validateSoulPublishArgs(params)
+  assertNoMintTimeVoiceAsset(params)
+  if (!params.collectionOnChainId) {
+    throw new Error('buildPublishSoulWithCollectionAndListTx requires collectionOnChainId')
+  }
+  if (!(BigInt(params.listingPriceAtomic) > 0n)) {
+    throw new Error('buildPublishSoulWithCollectionAndListTx requires listingPriceAtomic > 0')
+  }
+
+  const env = loadPublishEnv()
+  const tx = new Transaction()
+  const personalKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.currentKioskId,
+    buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
+  })
+  if (params.attachBeforeMint) {
+    await params.attachBeforeMint(tx)
+  }
+  const state = appendMintNativeMoveCall(
+    tx,
+    personalKiosk,
+    env.packageId,
+    env.marketConfigId,
+    env.kioskRegistryId,
+    env.transferPolicyId,
+    params,
+  )
+  appendAddSoulToCollectionCall(tx, env.packageId, params.collectionOnChainId, state)
+  const listing = appendListSoulFixedPriceWithCollectionCall(
+    tx,
+    env.packageId,
+    env.marketConfigId,
+    env.kioskRegistryId,
+    params.collectionOnChainId,
+    personalKiosk,
+    state,
+    params.listingPriceAtomic,
+  )
+  appendFinalizeSoulListingCall(tx, env.packageId, listing)
+  appendFinalizeSoulStateCall(tx, env.packageId, state)
+  finishBuyerKioskArgs(tx, personalKiosk)
+  return tx
+}
+
+/**
+ * Builds one PTB that mints N souls into the same personal kiosk in a
+ * single wallet signature. All souls share the same kiosk handles, so the
+ * `buildBuyerKioskArgs` / `finishBuyerKioskArgs` boilerplate runs once;
+ * each mint is followed by `finalize_soul_state` to share the SoulState.
+ *
+ * Mint events (`SoulMintedToKiosk`, `MemoryEntryAppended`,
+ * `SkillVersionAppended`) are emitted in moveCall order — callers should
+ * use `extractAllSoulMintedToKioskEvents` and pair by `soul_id`.
+ */
+export async function buildBatchPublishSoulTx(params: BatchPublishSoulParams): Promise<Transaction> {
+  if (params.souls.length === 0) {
+    throw new Error('buildBatchPublishSoulTx requires at least one soul')
+  }
+  for (const soul of params.souls) {
+    validateSoulPublishArgs(soul)
+    assertNoMintTimeVoiceAsset(soul)
+  }
+  const env = loadPublishEnv()
+  const tx = new Transaction()
+  const personalKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.currentKioskId,
+    buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
+  })
+  if (params.attachBeforeMints) {
+    await params.attachBeforeMints(tx)
+  }
+  for (const soul of params.souls) {
+    const state = appendMintNativeMoveCall(
+      tx,
+      personalKiosk,
+      env.packageId,
+      env.marketConfigId,
+      env.kioskRegistryId,
+      env.transferPolicyId,
+      soul,
+    )
+    appendFinalizeSoulStateCall(tx, env.packageId, state)
+  }
+  finishBuyerKioskArgs(tx, personalKiosk)
+  return tx
+}
+
+export type CollectionFastPathPtb2Params = {
+  /** On-chain id of the SoulCollection produced by PTB1. */
+  collectionOnChainId: string
+  /** Personal kiosk to mint into; same kiosk that owns the collection right. */
+  currentKioskId?: string | null
+  currentKioskCapOnChainId?: string | null
+  /** Per-soul publish params (one mint+bind+finalize per item). */
+  souls: ReadonlyArray<BatchPublishSoulItem>
+  /**
+   * Splices certify_blob calls (cover + every soul) into PTB2. Required —
+   * the fast path certifies all blobs in one signature alongside mint+bind.
+   */
+  attachCertifyCalls: (tx: Transaction) => void | Promise<void>
+}
+
+/**
+ * Builds PTB2 of the collection-publish fast path: certify cover + soul
+ * blobs and mint+bind every soul to the collection in one wallet
+ * signature. PTB1 (register + create_collection [+ optionally
+ * list_collection_right]) must have already been signed and finalized
+ * on-chain — this PTB takes the resulting `SoulCollection` shared object
+ * by id.
+ */
+export async function buildCollectionFastPathPtb2Tx(
+  params: CollectionFastPathPtb2Params,
+): Promise<Transaction> {
+  if (params.souls.length === 0) {
+    throw new Error('buildCollectionFastPathPtb2Tx requires at least one soul (use buildCollectionCoverCertifyTx for empty collections)')
+  }
+  if (!params.collectionOnChainId) {
+    throw new Error('buildCollectionFastPathPtb2Tx requires collectionOnChainId from PTB1')
+  }
+  for (const soul of params.souls) {
+    validateSoulPublishArgs(soul)
+    assertNoMintTimeVoiceAsset(soul)
+  }
+
+  const env = loadPublishEnv()
+  const tx = new Transaction()
+  const personalKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.currentKioskId,
+    buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
+  })
+  // Certify cover + every soul blob first so the certificate calls own the
+  // top of PTB2 (before any mint moves the kiosk slot). The caller is
+  // responsible for ordering: cover index first, then one cert per soul in
+  // the same order as `params.souls`.
+  await params.attachCertifyCalls(tx)
+  for (const soul of params.souls) {
+    const state = appendMintNativeMoveCall(
+      tx,
+      personalKiosk,
+      env.packageId,
+      env.marketConfigId,
+      env.kioskRegistryId,
+      env.transferPolicyId,
+      soul,
+    )
+    appendAddSoulToCollectionCall(tx, env.packageId, params.collectionOnChainId, state)
+    appendFinalizeSoulStateCall(tx, env.packageId, state)
+  }
   finishBuyerKioskArgs(tx, personalKiosk)
   return tx
 }

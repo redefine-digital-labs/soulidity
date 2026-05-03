@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { buildSoulRouteWhere } from '@/lib/soulidity/repository'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { extractAssetVersionAppendedEvent } from '@/lib/soulidity/events'
+import { extractAllAssetVersionAppendedEvents } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
@@ -100,18 +100,41 @@ export async function POST(
       return senderError
     }
 
-    const appended = extractAssetVersionAppendedEvent(transaction, packageId)
-    if (appended.soulId !== soul.onChainId) {
+    const appendedEvents = extractAllAssetVersionAppendedEvents(transaction, packageId)
+    if (appendedEvents.length === 0) {
+      return NextResponse.json({ error: 'AssetVersionAppended event is missing from the transaction' }, { status: 422 })
+    }
+    if (appendedEvents.some((appended) => appended.soulId !== soul.onChainId)) {
       return NextResponse.json({ error: 'Transaction appended an asset version for a different Soul' }, { status: 422 })
     }
 
     const providedAssetsSidecar = parseProvidedSidecar(body?.assetsSealSidecar ?? body?.sealSidecar, 'assetsSealSidecar')
+    const providedAssetsSidecars = Array.isArray(body?.assetsSealSidecars)
+      ? body.assetsSealSidecars.map((value, index) => parseProvidedSidecar(value, `assetsSealSidecars[${index}]`))
+      : null
 
-    if (appended.visibility === 'private' && !providedAssetsSidecar) {
-      return NextResponse.json(
-        { error: 'assetsSealSidecar is required for private asset versions' },
-        { status: 422 },
-      )
+    // Per-event sidecar resolution. The legacy single `assetsSealSidecar` is
+    // ONLY valid for a single-event request — multi-event requests must use
+    // `assetsSealSidecars` so each appended version carries its own envelope.
+    // Without this, two private appended events plus a 1-element array would
+    // mirror the second version with a null sidecar that downloaders cannot
+    // satisfy.
+    const sidecarForIndex = (i: number) =>
+      providedAssetsSidecars?.[i]
+      ?? (i === 0 && appendedEvents.length === 1 ? providedAssetsSidecar : null)
+
+    for (let i = 0; i < appendedEvents.length; i++) {
+      if (appendedEvents[i].visibility !== 'private') continue
+      if (!sidecarForIndex(i)) {
+        return NextResponse.json(
+          {
+            error: appendedEvents.length === 1
+              ? 'assetsSealSidecar is required for private asset versions'
+              : `assetsSealSidecars[${i}] is required for private asset version at index ${i}`,
+          },
+          { status: 422 },
+        )
+      }
     }
 
     const mirroredSoul = await syncSoulProjectionFromChain({
@@ -129,50 +152,66 @@ export async function POST(
       listedPriceAtomic: soul.listedPriceAtomic ? BigInt(soul.listedPriceAtomic.toString()) : null,
       listingStatus: soul.listingStatus as 'held' | 'listed' | 'floor-violation',
     })
-    let assetsSidecar = null
-    try {
-      const builtSidecars = await buildSyncSealSidecars({
-        packageId,
-        soulObjectId: soul.onChainId,
-        stateObjectId: soul.stateOnChainId,
-        assetsSidecar: providedAssetsSidecar,
-        assetBinding: {
-          assetsObjectId: appended.assetsId,
+    const mirroredVersions = []
+    for (let i = 0; i < appendedEvents.length; i++) {
+      const appended = appendedEvents[i]
+      const sidecarForEvent = sidecarForIndex(i)
+      let assetsSidecar = null
+      try {
+        const builtSidecars = await buildSyncSealSidecars({
+          packageId,
+          soulObjectId: soul.onChainId,
+          stateObjectId: soul.stateOnChainId,
+          assetsSidecar: sidecarForEvent,
+          assetBinding: {
+            assetsObjectId: appended.assetsId,
+            assetName: appended.assetName,
+            versionIndex: appended.versionIndex,
+          },
+        })
+        assetsSidecar = builtSidecars.assetsSidecar
+      } catch (error) {
+        if (error instanceof SealSidecarSyncConfigError) {
+          return NextResponse.json({ error: error.message }, { status: 503 })
+        }
+        throw error
+      }
+      const assetBlobId = await resolveWalrusBlobId(appended.blobObjectId)
+      mirroredVersions.push(await upsertAssetVersionProjection({
+        version: {
+          soulId: appended.soulId,
+          assetsId: appended.assetsId,
           assetName: appended.assetName,
           versionIndex: appended.versionIndex,
+          visibility: appended.visibility,
+          assetType: appended.assetType,
+          blobObjectId: appended.blobObjectId,
+          blobId: assetBlobId,
+          createdAtMs: appended.createdAtMs,
         },
-      })
-      assetsSidecar = builtSidecars.assetsSidecar
-    } catch (error) {
-      if (error instanceof SealSidecarSyncConfigError) {
-        return NextResponse.json({ error: error.message }, { status: 503 })
-      }
-      throw error
+        soulOnChainId: soul.onChainId,
+        assetsOnChainId: appended.assetsId,
+        sealSidecar: assetsSidecar,
+      }))
     }
-    const assetBlobId = await resolveWalrusBlobId(appended.blobObjectId)
-    const mirroredVersion = await upsertAssetVersionProjection({
-      version: {
-        soulId: appended.soulId,
-        assetsId: appended.assetsId,
-        assetName: appended.assetName,
-        versionIndex: appended.versionIndex,
-        visibility: appended.visibility,
-        assetType: appended.assetType,
-        blobObjectId: appended.blobObjectId,
-        blobId: assetBlobId,
-        createdAtMs: appended.createdAtMs,
-      },
-      soulOnChainId: soul.onChainId,
-      assetsOnChainId: appended.assetsId,
-      sealSidecar: assetsSidecar,
-    })
+
+    const firstAppended = appendedEvents[0]
+    const firstMirroredVersion = mirroredVersions[0]
 
     const responseBody = {
       txDigest,
       soulOnChainId: mirroredSoul.onChainId,
-      assetsOnChainId: appended.assetsId,
-      assetName: mirroredVersion.assetName,
-      versionIndex: mirroredVersion.versionIndex,
+      assetsOnChainId: firstAppended.assetsId,
+      assetName: firstMirroredVersion.assetName,
+      versionIndex: firstMirroredVersion.versionIndex,
+      ...(mirroredVersions.length > 1
+        ? {
+            versions: mirroredVersions.map((version) => ({
+              assetName: version.assetName,
+              versionIndex: version.versionIndex,
+            })),
+          }
+        : {}),
     }
 
     await storeSoulidityTxSync({

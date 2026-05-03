@@ -76,6 +76,8 @@ export default function LaunchedPage() {
   const maxSoulSupply = snapshot?.maxSoulSupply ?? result.maxSoulSupply ?? null
   const isEmpty = soulCount === 0
   const capacityLabel = maxSoulSupply == null ? 'Unlimited' : maxSoulSupply
+  const collectionRightListed = result.listingStatus === 'listed' || snapshot?.collectionRightListed === true
+  const collectionRightListingPrice = snapshot?.collectionRightListingPrice ?? null
 
   return (
     <>
@@ -126,9 +128,20 @@ export default function LaunchedPage() {
               />
               <ConfirmRow
                 label="Soul Collection"
-                value={tradeable ? 'Tradeable · Not listed yet' : 'Non-tradeable'}
+                value={tradeable ? (collectionRightListed ? 'Tradeable · Listed' : 'Tradeable · Not listed yet') : 'Non-tradeable'}
                 color="teal"
               />
+              {collectionRightListed && (
+                <ConfirmRow
+                  label="Listing"
+                  value={
+                    collectionRightListingPrice
+                      ? `Collection-right listed in launch PTB · ${collectionRightListingPrice} USDC`
+                      : 'Collection-right listed in launch PTB'
+                  }
+                  color="gold"
+                />
+              )}
               <ConfirmRow
                 label="Creator royalty"
                 value={`${royaltyDisplay} · enforced on-chain`}
@@ -150,7 +163,7 @@ export default function LaunchedPage() {
           </div>
 
           {/* List CTA */}
-          {tradeable && (
+          {tradeable && !collectionRightListed && (
             <div className="rounded-2xl border border-gold/25 bg-gold/5 px-5 py-5 text-center">
               <p className="text-sm font-bold text-foreground">
                 🏷 List your Soul Collection for sale

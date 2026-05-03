@@ -6,18 +6,26 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import type { SoulAssetDetail, SoulSkillVersionRecord, SoulSkillVersionsPageResponse } from '@/lib/soulidity/types'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { fetchSkillAccess, loadDecryptedPrivateSkillVersion } from '@/lib/soulidity/skill-access'
-import { buildAppendSkillVersionTx, buildDeleteSkillVersionTx } from '@/lib/soulidity/tx/skills'
+import {
+  buildAppendSkillVersionTx,
+  buildDeleteSkillVersionTx,
+  buildInitAndBatchAppendSkillsTx,
+} from '@/lib/soulidity/tx/skills'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import { createSkillSealSidecarFromMaterial, type PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { extractSkillVersionAppendedEvent } from '@/lib/soulidity/events'
+import {
+  extractAllSkillVersionAppendedEvents,
+  extractSkillVersionAppendedEvent,
+} from '@/lib/soulidity/events'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
+import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 
 type PendingSkillAction = 'append' | 'delete' | 'read' | 'recovering' | null
@@ -34,11 +42,13 @@ type UploadedSkillPayload = {
 interface SkillAppendSyncBody {
   txDigest: string
   skillsSealSidecar: SealEnvelopeSidecar | null
+  skillsSealSidecars?: Array<SealEnvelopeSidecar | null>
 }
 
 interface SkillAppendSyncMaterial {
   txDigest: string
   sealMaterial?: PendingSealMaterial | null
+  sealMaterials?: Array<PendingSealMaterial | null>
 }
 
 interface SkillAppendRecoveryState {
@@ -78,6 +88,11 @@ function isSkillAppendSyncMaterial(value: unknown): value is SkillAppendSyncMate
   return typeof candidate.txDigest === 'string'
     && candidate.txDigest.length > 0
     && (candidate.sealMaterial == null || isPendingSealMaterial(candidate.sealMaterial))
+    && (
+      candidate.sealMaterials == null
+      || (Array.isArray(candidate.sealMaterials)
+        && candidate.sealMaterials.every((material) => material == null || isPendingSealMaterial(material)))
+    )
 }
 
 export function sanitizeSkillAppendRecoveryState(
@@ -182,7 +197,11 @@ export function useSkills(soul: SoulAssetDetail | null) {
     ) ?? null
   }, [soul, suiWallet])
 
-  const canManageSkills = Boolean(soul?.skillsOnChainId) && (soul?.isOwner || skillGrant != null)
+  // Owner can always manage: with a skills root they append; without one the
+  // hook routes through the init+append+finalize PTB. Granted agents still
+  // require an existing root since `init_skills_and_append_as_owner` asserts
+  // ownership on chain.
+  const canManageSkills = Boolean(soul?.isOwner) || (Boolean(soul?.skillsOnChainId) && skillGrant != null)
   const skillVersions = skillVersionsQuery.data?.pages.length
     ? skillVersionsQuery.data.pages.flatMap((page) => page.items)
     : soul?.skillVersions ?? []
@@ -213,10 +232,30 @@ export function useSkills(soul: SoulAssetDetail | null) {
     txDigest: string
     txResult: unknown
     sealMaterial?: PendingSealMaterial | null
+    sealMaterials?: Array<PendingSealMaterial | null>
   }): Promise<SkillAppendSyncBody> => {
     let skillsSealSidecar: SealEnvelopeSidecar | null = null
-    if (params.sealMaterial) {
-      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    let skillsSealSidecars: Array<SealEnvelopeSidecar | null> | undefined
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    if (params.sealMaterials) {
+      const appendedEvents = extractAllSkillVersionAppendedEvents(params.txResult as never, packageId)
+      if (appendedEvents.length < params.sealMaterials.length) {
+        throw new Error('Skill append transaction emitted fewer events than uploaded versions')
+      }
+      skillsSealSidecars = await Promise.all(params.sealMaterials.map(async (material, index) => {
+        if (!material) return null
+        const appended = appendedEvents[index]
+        return createSkillSealSidecarFromMaterial({
+          suiClient: suiClient as never,
+          packageId,
+          skillsObjectId: appended.skillsId,
+          skillName: appended.skillName,
+          versionIndex: appended.versionIndex,
+          material,
+        })
+      }))
+      skillsSealSidecar = skillsSealSidecars[0] ?? null
+    } else if (params.sealMaterial) {
       const appended = extractSkillVersionAppendedEvent(params.txResult as never, packageId)
       skillsSealSidecar = await createSkillSealSidecarFromMaterial({
         suiClient: suiClient as never,
@@ -230,6 +269,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
     return {
       txDigest: params.txDigest,
       skillsSealSidecar,
+      ...(skillsSealSidecars ? { skillsSealSidecars } : {}),
     }
   }, [suiClient])
 
@@ -271,6 +311,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
             txDigest: recovery.pendingSync.txDigest,
             txResult,
             sealMaterial: recovery.pendingSync.sealMaterial,
+            sealMaterials: recovery.pendingSync.sealMaterials,
           })
           recovery.syncBody = syncBody
           persistSkillAppendRecovery(storageKey, recovery)
@@ -325,10 +366,11 @@ export function useSkills(soul: SoulAssetDetail | null) {
     if (!soul || !suiWallet) {
       throw new Error('Sign in and load the Soul before appending a skill version')
     }
-    if (!soul.skillsOnChainId) {
-      throw new Error('This Soul was minted without a skills root')
+    const isInitFlow = !soul.skillsOnChainId
+    if (isInitFlow && !soul.isOwner) {
+      throw new Error('Only the Soul owner can initialize a skills root')
     }
-    if (!soul.isOwner && !skillGrant) {
+    if (!isInitFlow && !soul.isOwner && !skillGrant) {
       throw new Error('Only the owner or a skills-granted wallet can append versions')
     }
 
@@ -346,19 +388,28 @@ export function useSkills(soul: SoulAssetDetail | null) {
       }
       await assertObjectInputsExist(suiClient, {
         'Soul state': soul.stateOnChainId,
-        'Skills root': soul.skillsOnChainId,
+        'Skills root': isInitFlow ? null : soul.skillsOnChainId,
         'Uploaded skill bundle': blobObjectId,
-        'Skills grant': soul.isOwner ? null : skillGrant?.onChainId ?? null,
+        'Skills grant': isInitFlow || soul.isOwner ? null : skillGrant?.onChainId ?? null,
       })
-      const tx = buildAppendSkillVersionTx({
-        stateObjectId: soul.stateOnChainId,
-        skillsObjectId: soul.skillsOnChainId,
-        skillName,
-        blobObjectId,
-        visibility,
-        grantObjectId: soul.isOwner ? null : skillGrant?.onChainId ?? null,
-      })
+      // No skills root yet → use the init+append+finalize batch builder so the
+      // 1-version case is "the same builder" the multi-version case uses (per
+      // 2-sigs-fast-path runbook §4). Existing root → use the append builder.
+      const tx = isInitFlow
+        ? buildInitAndBatchAppendSkillsTx({
+            stateObjectId: soul.stateOnChainId,
+            initialVersion: { skillName, blobObjectId, visibility },
+          })
+        : buildAppendSkillVersionTx({
+            stateObjectId: soul.stateOnChainId,
+            skillsObjectId: soul.skillsOnChainId!,
+            skillName,
+            blobObjectId,
+            visibility,
+            grantObjectId: soul.isOwner ? null : skillGrant?.onChainId ?? null,
+          })
       const result = await signAndExecute(tx)
+      assertSoulidityTxSucceeded(result, 'Soul skill append transaction')
       if (visibility === 'private' && !uploaded.sealMaterial) {
         throw new Error('Private skill upload is missing Seal material')
       }
@@ -402,6 +453,107 @@ export function useSkills(soul: SoulAssetDetail | null) {
       return payload
     } catch (nextError) {
       const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to append skill version'
+      setError(nextMessage)
+      throw nextError
+    } finally {
+      setPending(null)
+    }
+  }
+
+  async function appendSkillVersions(files: File[], visibility: 'public' | 'private') {
+    if (files.length === 0) {
+      throw new Error('Select at least one skill bundle')
+    }
+    if (files.length === 1 || soul?.skillsOnChainId) {
+      let payload: unknown = null
+      for (const file of files) {
+        payload = await appendSkillVersion(file, visibility)
+      }
+      return payload
+    }
+    if (!soul || !suiWallet) {
+      throw new Error('Sign in and load the Soul before appending skill versions')
+    }
+    if (!soul.isOwner) {
+      throw new Error('Only the Soul owner can initialize a skills root')
+    }
+
+    setPending('append')
+    setError(null)
+    try {
+      const uploadedVersions = await Promise.all(files.map((file) => uploadSkillFile(file, visibility)))
+      for (let i = 0; i < uploadedVersions.length; i++) {
+        const uploaded = uploadedVersions[i]
+        if (!uploaded.blobObjectId) {
+          throw new Error(`Uploaded skill bundle #${i + 1} is missing blobObjectId`)
+        }
+        if (!uploaded.skillName?.trim()) {
+          throw new Error(`Uploaded skill bundle #${i + 1} is missing skillName`)
+        }
+        if (visibility === 'private' && !uploaded.sealMaterial) {
+          throw new Error(`Private skill upload #${i + 1} is missing Seal material`)
+        }
+      }
+      const objectInputs: Record<string, string | null> = {
+        'Soul state': soul.stateOnChainId,
+      }
+      uploadedVersions.forEach((uploaded, index) => {
+        objectInputs[`Uploaded skill bundle #${index + 1}`] = uploaded.blobObjectId
+      })
+      await assertObjectInputsExist(suiClient, objectInputs)
+
+      const tx = buildInitAndBatchAppendSkillsTx({
+        stateObjectId: soul.stateOnChainId,
+        initialVersion: {
+          skillName: uploadedVersions[0].skillName!.trim(),
+          blobObjectId: uploadedVersions[0].blobObjectId!,
+          visibility,
+        },
+        additionalVersions: uploadedVersions.slice(1).map((uploaded) => ({
+          skillName: uploaded.skillName!.trim(),
+          blobObjectId: uploaded.blobObjectId!,
+          visibility,
+        })),
+      })
+      const result = await signAndExecute(tx)
+      assertSoulidityTxSucceeded(result, 'Soul skill batch transaction')
+      const pendingSync: SkillAppendSyncMaterial = {
+        txDigest: result.digest,
+        sealMaterials: visibility === 'private'
+          ? uploadedVersions.map((uploaded) => uploaded.sealMaterial ?? null)
+          : uploadedVersions.map(() => null),
+      }
+
+      const storageKey = skillAppendRecoveryStorageKey(soul.onChainId)
+      let recovery: SkillAppendRecoveryState | null = null
+      if (user?.id && typeof window !== 'undefined') {
+        recovery = attachSoulidityDeploymentSignature({
+          userId: user.id,
+          soulOnChainId: soul.onChainId,
+          pendingSync,
+          syncBody: null,
+        })
+        persistSkillAppendRecovery(storageKey, recovery)
+      }
+
+      const syncBody = await buildSkillAppendSyncBody({
+        txDigest: result.digest,
+        txResult: result,
+        sealMaterials: pendingSync.sealMaterials,
+      })
+      if (recovery) {
+        recovery.syncBody = syncBody
+        persistSkillAppendRecovery(storageKey, recovery)
+      }
+
+      const payload = await postAppendMirror(soul.onChainId, syncBody)
+      persistSkillAppendRecovery(storageKey, null)
+
+      await queryClient.invalidateQueries({ queryKey: ['soul', soul.onChainId] })
+      await queryClient.invalidateQueries({ queryKey: ['soul-skill-versions', soul.onChainId] })
+      return payload
+    } catch (nextError) {
+      const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to append skill versions'
       setError(nextMessage)
       throw nextError
     } finally {
@@ -529,6 +681,7 @@ export function useSkills(soul: SoulAssetDetail | null) {
     loadingMoreSkillVersions: skillVersionsQuery.isFetchingNextPage,
     loadMoreSkillVersions: () => skillVersionsQuery.fetchNextPage(),
     appendSkillVersion,
+    appendSkillVersions,
     deleteSkillVersion,
     openSkillVersion,
   }

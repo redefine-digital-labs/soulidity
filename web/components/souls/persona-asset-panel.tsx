@@ -73,16 +73,19 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
     spriteVersions,
     isLoading,
     appendAndActivateSprite,
+    appendAndActivateSprites,
     deleteVersion,
     clearActive,
   } = useAssets(soul)
 
   const [sheetFile, setSheetFile] = useState<File | null>(null)
   const [configFile, setConfigFile] = useState<File | null>(null)
+  const [spriteDrafts, setSpriteDrafts] = useState<Array<{ sheetFile: File; configFile: File }>>([])
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
   const [selectionError, setSelectionError] = useState<string | null>(null)
 
   async function handleSheetSelect(file: File) {
+    setSpriteDrafts([])
     setSheetFile(file)
     setSelectionError(null)
     if (configFile) {
@@ -92,6 +95,7 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
   }
 
   async function handleConfigSelect(file: File) {
+    setSpriteDrafts([])
     setConfigFile(file)
     setSelectionError(null)
     if (sheetFile) {
@@ -100,7 +104,45 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
     }
   }
 
+  async function handleDraftFilesSelect(files: FileList) {
+    const allFiles = Array.from(files)
+    const sheets = allFiles
+      .filter((file) => file.name.toLowerCase().endsWith('.png') || file.type === 'image/png')
+      .sort((a, b) => a.name.localeCompare(b.name))
+    const configs = allFiles
+      .filter((file) => file.name.toLowerCase().endsWith('.json') || file.type === 'application/json')
+      .sort((a, b) => a.name.localeCompare(b.name))
+    if (sheets.length === 0 || sheets.length !== configs.length) {
+      setSpriteDrafts([])
+      setSelectionError('Select matching PNG and JSON files for each sprite version.')
+      return
+    }
+    const drafts = sheets.map((sheet, index) => ({ sheetFile: sheet, configFile: configs[index] }))
+    for (const draft of drafts) {
+      const result = await validatePersonaSpriteDraft(draft)
+      if (!result.ok) {
+        setSpriteDrafts([])
+        setSelectionError(result.error)
+        return
+      }
+    }
+    setSheetFile(null)
+    setConfigFile(null)
+    setSpriteDrafts(drafts)
+    setSelectionError(null)
+  }
+
   async function handleAppend() {
+    if (spriteDrafts.length > 0) {
+      try {
+        await appendAndActivateSprites({ drafts: spriteDrafts, visibility })
+        setSpriteDrafts([])
+        setSelectionError(null)
+      } catch {
+        // error is surfaced via the hook's `error` state
+      }
+      return
+    }
     if (!sheetFile || !configFile) return
     const result = await validatePersonaSpriteDraft({ sheetFile, configFile })
     if (!result.ok) {
@@ -156,6 +198,15 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <UploadZone
+              icon="🗂"
+              label={spriteDrafts.length > 0 ? `${spriteDrafts.length} sprite drafts selected` : 'Batch sprite versions'}
+              sublabel={spriteDrafts.length > 0 ? 'Publishes the first root plus additional versions in one PTB when no assets root exists.' : 'Select matching PNG and JSON files.'}
+              accept="image/png,application/json,.json"
+              multiple
+              onFilesSelect={(files) => { void handleDraftFilesSelect(files) }}
+              className="py-6 sm:col-span-2"
+            />
+            <UploadZone
               icon="🖼"
               label={sheetFile ? sheetFile.name : 'Sprite sheet PNG'}
               sublabel={sheetFile ? `${Math.max(1, Math.round(sheetFile.size / 1024))} KB selected` : SPRITE_SHEET_UPLOAD_HINT}
@@ -198,13 +249,15 @@ export function PersonaAssetPanel({ soul }: { soul: SoulAssetDetail }) {
               type="button"
               variant="teal"
               size="sm"
-              disabled={!sheetFile || !configFile || isLoading || pending === 'append' || pending === 'recovering' || Boolean(selectionError)}
+              disabled={(spriteDrafts.length === 0 && (!sheetFile || !configFile)) || isLoading || pending === 'append' || pending === 'recovering' || Boolean(selectionError)}
               onClick={() => { void handleAppend() }}
             >
               {pending === 'recovering'
                 ? 'Resuming…'
                 : pending === 'append'
                 ? 'Publishing…'
+                : spriteDrafts.length > 1
+                ? 'Publish Versions'
                 : soul.assetsOnChainId ? 'Upload & Set Active' : 'Create root & set active'}
             </Button>
             {activeVersionIndex != null && (

@@ -9,6 +9,7 @@ import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
+import { validateListingPriceAtomic } from '@/lib/soulidity/listing-price'
 
 const steps = [
   { label: 'Basic Info' },
@@ -97,6 +98,17 @@ export default function CreatePreviewPage() {
   }, [missingStep1, missingStep2, router])
 
   if (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile) return null
+
+  // Validate the list-on-publish price BEFORE allowing navigation to /create/gas.
+  // Without this, the user could enable "List immediately" with an empty / non-numeric
+  // / zero price, click through, sign the paid Walrus register PTB on the gas page,
+  // and only then have `usePublish.assertListingPriceAtomic` reject the value —
+  // leaving paid registered blobs orphaned for a preventable form error.
+  const listingPriceCheck = ctx.listOnPublish
+    ? validateListingPriceAtomic(ctx.listingPriceAtomic)
+    : { ok: true as const, value: 0n }
+  const listingPriceBlocked = ctx.listOnPublish && !listingPriceCheck.ok
+  const listingPriceError = listingPriceBlocked && !listingPriceCheck.ok ? listingPriceCheck.error : null
 
   return (
     <div className="relative z-10 border-t border-purple/20">
@@ -234,6 +246,50 @@ export default function CreatePreviewPage() {
           </div>
         </div>
 
+        {/* Marketplace settings (listing/bind) — applied in the same PTB as mint */}
+        <div className="rounded-2xl border border-purple/30 bg-purple/6 p-5 space-y-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-purple">
+            Marketplace settings
+          </div>
+          <p className="text-xs text-muted leading-relaxed">
+            Listing and collection binding are applied in the same on-chain transaction as the mint, so it costs no extra wallet signatures.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={ctx.listOnPublish}
+              onChange={(e) => ctx.setListOnPublish(e.currentTarget.checked)}
+              className="h-4 w-4 accent-purple"
+            />
+            List immediately on the marketplace
+          </label>
+          {ctx.listOnPublish && (
+            <div className="space-y-1 pl-6">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted">USDC price (atomic units, 6 dp)</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={ctx.listingPriceAtomic ?? ''}
+                  onChange={(e) => ctx.setListingPriceAtomic(e.currentTarget.value || null)}
+                  placeholder="e.g. 1000000"
+                  aria-invalid={listingPriceError ? 'true' : 'false'}
+                  data-testid="listing-price-input"
+                  className={cn(
+                    'rounded border bg-transparent px-2 py-1 text-xs text-foreground',
+                    listingPriceError ? 'border-danger/60' : 'border-purple/30',
+                  )}
+                />
+              </div>
+              {listingPriceError && (
+                <p className="text-[11px] text-danger" data-testid="listing-price-error">
+                  {listingPriceError}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Navigation */}
         <div className="flex flex-col-reverse gap-2.5 sm:flex-row">
           <Link
@@ -247,18 +303,38 @@ export default function CreatePreviewPage() {
           >
             ← Back
           </Link>
-          <Link
-            href="/create/gas"
-            className={buttonStyles({
-              variant: 'landing',
-              size: 'lg',
-              full: true,
-              className:
-                'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
-            })}
-          >
-            Next: Pay Gas <span aria-hidden="true">→</span>
-          </Link>
+          {listingPriceBlocked ? (
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              data-testid="next-pay-gas-disabled"
+              title={listingPriceError ?? 'Fix the listing price to continue'}
+              className={buttonStyles({
+                variant: 'landing',
+                size: 'lg',
+                full: true,
+                className:
+                  'rounded-[10px] px-4 py-2.5 text-[13px] opacity-50 cursor-not-allowed shadow-none',
+              })}
+            >
+              Next: Pay Gas <span aria-hidden="true">→</span>
+            </button>
+          ) : (
+            <Link
+              href="/create/gas"
+              data-testid="next-pay-gas"
+              className={buttonStyles({
+                variant: 'landing',
+                size: 'lg',
+                full: true,
+                className:
+                  'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
+              })}
+            >
+              Next: Pay Gas <span aria-hidden="true">→</span>
+            </Link>
+          )}
         </div>
       </PageContainer>
     </div>

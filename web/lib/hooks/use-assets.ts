@@ -8,14 +8,17 @@ import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import { buildDeleteAssetVersionTx } from '@/lib/soulidity/tx/assets'
+import { buildDeleteAssetVersionTx, buildInitAndBatchAppendAssetsTx } from '@/lib/soulidity/tx/assets'
 import { buildClearActiveSpriteTx } from '@/lib/soulidity/tx/metadata'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildPersonaSpriteMoodMap, parsePersonaSpriteConfig } from '@/lib/soulidity/persona-sprite'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
 import { createAssetSealSidecarFromMaterial, type PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
-import { extractAssetVersionAppendedEvent } from '@/lib/soulidity/events'
+import {
+  extractAllAssetVersionAppendedEvents,
+  extractAssetVersionAppendedEvent,
+} from '@/lib/soulidity/events'
 import { assertSoulidityTxSucceeded, getMarketAbortInfo } from '@/lib/soulidity/market-errors'
 import { SuiTxExecutionError } from '@/lib/sui/tx-result'
 import {
@@ -44,6 +47,7 @@ type SuiObjectReadClient = {
 interface SpriteAppendSyncBody {
   txDigest: string
   assetsSealSidecar: import('@/lib/services/seal-crypto').SealEnvelopeSidecar | null
+  assetsSealSidecars?: Array<import('@/lib/services/seal-crypto').SealEnvelopeSidecar | null>
 }
 
 interface SpriteAppendRecoveryState {
@@ -57,6 +61,7 @@ interface SpriteAppendRecoveryState {
 interface SpriteAppendSyncMaterial {
   txDigest: string
   sealMaterial?: PendingSealMaterial | null
+  sealMaterials?: Array<PendingSealMaterial | null>
 }
 
 function spriteAppendRecoveryStorageKey(soulOnChainId: string) {
@@ -88,6 +93,11 @@ function isSpriteAppendSyncMaterial(value: unknown): value is SpriteAppendSyncMa
   return typeof candidate.txDigest === 'string'
     && candidate.txDigest.length > 0
     && (candidate.sealMaterial == null || isPendingSealMaterial(candidate.sealMaterial))
+    && (
+      candidate.sealMaterials == null
+      || (Array.isArray(candidate.sealMaterials)
+        && candidate.sealMaterials.every((material) => material == null || isPendingSealMaterial(material)))
+    )
 }
 
 export function sanitizeSpriteAppendRecoveryState(
@@ -228,27 +238,28 @@ function buildSpriteAppendTransaction(params: {
   spriteMoodMapJson: string
   downloadPolicy: SoulDownloadPolicy
 }) {
-  const tx = new Transaction()
   if (!params.assetsOnChainId) {
-    tx.moveCall({
-      target: `${params.packageId}::market::init_assets_and_append_sprite_as_owner`,
-      arguments: [
-        tx.object(params.stateObjectId),
-        tx.object(params.metadataObjectId),
-        tx.pure.string(SPRITE_ASSET_NAME),
-        tx.pure.bool(params.visibility === 'public'),
-        tx.object(params.blobObjectId),
-        tx.pure.vector('u8', Array.from(new TextEncoder().encode(params.spriteConfigJson))),
-        tx.pure.vector('u8', Array.from(new TextEncoder().encode(params.spriteMoodMapJson))),
-        tx.pure.string(SPRITE_CONFIG_KEY),
-        tx.pure.string(SPRITE_MOOD_MAP_KEY),
-        tx.pure.u8(policyToU8(params.downloadPolicy)),
-        tx.object('0x6'),
-      ],
+    // New ABI: init_assets_and_append_sprite_as_owner returns SoulAssets;
+    // the PTB MUST finalize_soul_assets in the same TX or it aborts. Route
+    // through the batch builder so the finalize is always wired and the
+    // 1-version case is the same code path as the multi-version case.
+    return buildInitAndBatchAppendAssetsTx({
+      stateObjectId: params.stateObjectId,
+      metadataObjectId: params.metadataObjectId,
+      initialSprite: {
+        assetName: SPRITE_ASSET_NAME,
+        visibility: params.visibility,
+        blobObjectId: params.blobObjectId,
+        spriteConfigJson: params.spriteConfigJson,
+        spriteMoodMapJson: params.spriteMoodMapJson,
+        spriteConfigKey: SPRITE_CONFIG_KEY,
+        spriteMoodMapKey: SPRITE_MOOD_MAP_KEY,
+        downloadPolicy: params.downloadPolicy,
+      },
     })
-    return tx
   }
 
+  const tx = new Transaction()
   const [appendedVersionIndex] = tx.moveCall({
     target: `${params.packageId}::assets::append_version_as_owner`,
     arguments: [
@@ -340,10 +351,30 @@ export function useAssets(soul: SoulAssetDetail | null) {
     txDigest: string
     txResult: unknown
     sealMaterial?: PendingSealMaterial | null
+    sealMaterials?: Array<PendingSealMaterial | null>
   }): Promise<SpriteAppendSyncBody> => {
     let assetsSealSidecar = null
-    if (params.sealMaterial) {
-      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    let assetsSealSidecars: Array<import('@/lib/services/seal-crypto').SealEnvelopeSidecar | null> | undefined
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    if (params.sealMaterials) {
+      const appendedEvents = extractAllAssetVersionAppendedEvents(params.txResult as never, packageId)
+      if (appendedEvents.length < params.sealMaterials.length) {
+        throw new Error('Sprite append transaction emitted fewer events than uploaded versions')
+      }
+      assetsSealSidecars = await Promise.all(params.sealMaterials.map(async (material, index) => {
+        if (!material) return null
+        const appended = appendedEvents[index]
+        return createAssetSealSidecarFromMaterial({
+          suiClient: suiClient as never,
+          packageId,
+          assetsObjectId: appended.assetsId,
+          assetName: appended.assetName,
+          versionIndex: appended.versionIndex,
+          material,
+        })
+      }))
+      assetsSealSidecar = assetsSealSidecars[0] ?? null
+    } else if (params.sealMaterial) {
       const appended = extractAssetVersionAppendedEvent(params.txResult as never, packageId)
       assetsSealSidecar = await createAssetSealSidecarFromMaterial({
         suiClient: suiClient as never,
@@ -357,6 +388,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
     return {
       txDigest: params.txDigest,
       assetsSealSidecar,
+      ...(assetsSealSidecars ? { assetsSealSidecars } : {}),
     }
   }, [suiClient])
 
@@ -394,6 +426,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
             options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
           }),
           sealMaterial: recovery.pendingSync.sealMaterial,
+          sealMaterials: recovery.pendingSync.sealMaterials,
         })
         recovery.syncBody = syncBody
         persistSpriteAppendRecovery(storageKey, recovery)
@@ -615,6 +648,146 @@ export function useAssets(soul: SoulAssetDetail | null) {
     }
   }
 
+  async function appendAndActivateSprites(params: {
+    drafts: Array<{ sheetFile: File; configFile: File }>
+    visibility: 'public' | 'private'
+  }) {
+    if (params.drafts.length === 0) {
+      throw new Error('Select at least one sprite draft')
+    }
+    if (params.drafts.length === 1 || soul?.assetsOnChainId) {
+      for (const draft of params.drafts) {
+        await appendAndActivateSprite({ ...draft, visibility: params.visibility })
+      }
+      return
+    }
+    if (!soul || !suiWallet) throw new Error('Sign in and load the Soul before uploading sprites')
+    if (!soul.isOwner) throw new Error('Only the Soul owner can update sprite versions')
+    if (!soul.metadataOnChainId) {
+      throw new Error('Soul is missing on-chain metadata root')
+    }
+
+    const drafts = params.drafts
+    const parsedDrafts = await Promise.all(drafts.map(async (draft, index) => {
+      const config = parsePersonaSpriteConfig(await draft.configFile.text())
+      if (!config) throw new Error(`Sprite config JSON #${index + 1} is invalid`)
+      const spriteConfigJson = serializeSpriteConfig(config) ?? '{}'
+      const moodMap = buildPersonaSpriteMoodMap(config.animations)
+      return {
+        ...draft,
+        spriteConfigJson,
+        spriteMoodMapJson: JSON.stringify(moodMap),
+      }
+    }))
+
+    setPending('append')
+    setError(null)
+    try {
+      const initialAssetsOnChainId = await resolveLiveSoulAssetsOnChainId(suiClient, soul.stateOnChainId)
+      if (initialAssetsOnChainId) {
+        for (const draft of drafts) {
+          await appendAndActivateSprite({ ...draft, visibility: params.visibility })
+        }
+        return
+      }
+
+      await assertObjectInputsExist(suiClient, {
+        'Soul state': soul.stateOnChainId,
+        'Soul metadata': soul.metadataOnChainId,
+      })
+      const uploadedSprites = await Promise.all(drafts.map((draft) => uploadAssetFile(draft.sheetFile, params.visibility)))
+      for (let i = 0; i < uploadedSprites.length; i++) {
+        const uploaded = uploadedSprites[i]
+        if (!uploaded.blobObjectId) {
+          throw new Error(`Uploaded sprite #${i + 1} is missing blobObjectId`)
+        }
+        if (params.visibility === 'private' && !uploaded.sealMaterial) {
+          throw new Error(`Private sprite upload #${i + 1} is missing Seal material`)
+        }
+      }
+      const objectInputs: Record<string, string | null> = {
+        'Soul state': soul.stateOnChainId,
+        'Soul metadata': soul.metadataOnChainId,
+      }
+      uploadedSprites.forEach((uploaded, index) => {
+        objectInputs[`Uploaded sprite blob #${index + 1}`] = uploaded.blobObjectId
+      })
+      await assertObjectInputsExist(suiClient, objectInputs)
+
+      const downloadPolicy: SoulDownloadPolicy = params.visibility === 'public' ? 'public' : 'owner_only'
+      const activeDraft = parsedDrafts[parsedDrafts.length - 1]
+      const result = await signAndExecute(buildInitAndBatchAppendAssetsTx({
+        stateObjectId: soul.stateOnChainId,
+        metadataObjectId: soul.metadataOnChainId,
+        initialSprite: {
+          assetName: SPRITE_ASSET_NAME,
+          visibility: params.visibility,
+          blobObjectId: uploadedSprites[0].blobObjectId,
+          spriteConfigJson: parsedDrafts[0].spriteConfigJson,
+          spriteMoodMapJson: parsedDrafts[0].spriteMoodMapJson,
+          spriteConfigKey: SPRITE_CONFIG_KEY,
+          spriteMoodMapKey: SPRITE_MOOD_MAP_KEY,
+          downloadPolicy,
+        },
+        additionalSprites: uploadedSprites.slice(1).map((uploaded) => ({
+          assetName: SPRITE_ASSET_NAME,
+          visibility: params.visibility,
+          blobObjectId: uploaded.blobObjectId,
+        })),
+        rebindActiveSprite: uploadedSprites.length > 1
+          ? {
+              assetName: SPRITE_ASSET_NAME,
+              versionIndex: uploadedSprites.length - 1,
+              downloadPolicy,
+              metadataUpserts: [
+                { key: SPRITE_CONFIG_KEY, valueJson: activeDraft.spriteConfigJson },
+                { key: SPRITE_MOOD_MAP_KEY, valueJson: activeDraft.spriteMoodMapJson },
+              ],
+            }
+          : null,
+      }))
+      assertSoulidityTxSucceeded(result, 'Soul sprite asset batch transaction')
+
+      const pendingSync: SpriteAppendSyncMaterial = {
+        txDigest: result.digest,
+        sealMaterials: params.visibility === 'private'
+          ? uploadedSprites.map((uploaded) => uploaded.sealMaterial ?? null)
+          : uploadedSprites.map(() => null),
+      }
+      const storageKey = spriteAppendRecoveryStorageKey(soul.onChainId)
+      let recovery: SpriteAppendRecoveryState | null = null
+      if (user?.id && typeof window !== 'undefined') {
+        recovery = attachSoulidityDeploymentSignature({
+          userId: user.id,
+          soulOnChainId: soul.onChainId,
+          pendingSync,
+          syncBody: null,
+        })
+        persistSpriteAppendRecovery(storageKey, recovery)
+      }
+
+      const syncBody = await buildSpriteAppendSyncBody({
+        txDigest: result.digest,
+        txResult: result,
+        sealMaterials: pendingSync.sealMaterials,
+      })
+      if (recovery) {
+        recovery.syncBody = syncBody
+        persistSpriteAppendRecovery(storageKey, recovery)
+      }
+
+      await postAppendMirror(soul.onChainId, syncBody)
+      persistSpriteAppendRecovery(storageKey, null)
+      await queryClient.invalidateQueries({ queryKey: ['soul', soul.onChainId] })
+      await queryClient.invalidateQueries({ queryKey: ['soul-asset-versions', soul.onChainId] })
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to upload sprite versions')
+      throw nextError
+    } finally {
+      setPending(null)
+    }
+  }
+
   async function deleteVersion(version: SoulAssetVersionRecord) {
     if (!soul || !suiWallet) throw new Error('Sign in and load the Soul before deleting a sprite version')
     if (!soul.isOwner) throw new Error('Only the Soul owner can delete sprite versions')
@@ -718,6 +891,7 @@ export function useAssets(soul: SoulAssetDetail | null) {
     spriteVersions,
     isLoading: assetsQuery.isLoading,
     appendAndActivateSprite,
+    appendAndActivateSprites,
     deleteVersion,
     clearActive,
   }

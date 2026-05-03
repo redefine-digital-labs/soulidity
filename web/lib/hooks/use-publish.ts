@@ -4,8 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import posthog from 'posthog-js'
 import type { Transaction } from '@mysten/sui/transactions'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import { buildAddSoulToCollectionTx } from '@/lib/soulidity/tx/collection'
-import { buildPublishSoulTx } from '@/lib/soulidity/tx/publish'
+import {
+  buildPublishSoulTx,
+  buildPublishSoulWithBindTx,
+  buildPublishSoulWithListTx,
+  buildPublishSoulWithCollectionAndListTx,
+} from '@/lib/soulidity/tx/publish'
 import { preflightCollectionBindTarget } from '@/lib/soulidity/collection-bind-preflight'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -16,7 +20,7 @@ import {
 import { normalizeTags } from '@/lib/soulidity/tags'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import {
-  extractSoulMintedToKioskEvent,
+  extractAllSoulMintedToKioskEvents,
   tryExtractMemoryEntryAppendedEvent,
   tryExtractSkillVersionAppendedEvent,
 } from '@/lib/soulidity/events'
@@ -33,19 +37,25 @@ import {
   createLegacyInitialAssetSealSidecar,
   hasValidOptionalLegacyAssetsSealMaterial,
 } from '@/lib/hooks/legacy-mint-asset-recovery'
+import { assertListingPriceAtomic } from '@/lib/soulidity/listing-price'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
 interface MintRecoveryState {
   userId: string
   txDigest: string
+  /** PTB combined mint+bind / mint+list / mint+bind+list — same digest for all mirror calls. */
+  publishMode: PublishMode
+  collectionBindOnChainId: string | null
+  listingPriceAtomic: string | null
   syncBody?: PublishSyncBody | null
   pendingSync?: PublishSyncMaterial | null
-  collectionBind?: CollectionBindRecovery | null
   deploymentSignature: string
 }
 
-export type PublishStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'binding' | 'done' | 'error'
+export type PublishStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
+
+export type PublishMode = 'plain' | 'with-bind' | 'with-list' | 'with-bind-and-list'
 
 export interface PublishSyncResponse {
   txDigest: string
@@ -54,20 +64,21 @@ export interface PublishSyncResponse {
   memoryOnChainId: string
   listingStatus: string
   collectionOnChainId?: string | null
+  /** Always equals txDigest now — bind is in the same PTB. */
   collectionAddTxDigest?: string | null
+  /** Always equals txDigest now — list is in the same PTB. */
+  listingTxDigest?: string | null
+  listingObjectOnChainId?: string | null
+  listedPriceAtomic?: string | null
 }
 
 export interface PublishCollectionBindTarget {
   collectionOnChainId: string
 }
 
-interface CollectionBindRecovery {
-  collectionOnChainId: string
-  txDigest?: string | null
-}
-
 interface PublishSyncBody {
   txDigest: string
+  soulOnChainId: string
   tags: string[]
   previewImages: string[]
   readme: string | null
@@ -106,27 +117,15 @@ export interface PublishParams {
   memorySealMaterial?: PendingSealMaterial | null
   creatorRoyaltyBps: number
   sealMaterial?: PendingSealMaterial | null
-  /**
-   * Splices N `certify_blob` calls into the mint PTB before `mint_native_in_personal_kiosk`.
-   * Provided by `prepareSoulBlobsForBatchPublish`; lets register/certify+mint cost 2 signatures total.
-   */
   attachBeforeMint?: (tx: Transaction) => void | Promise<void>
-  /**
-   * Invoked once `signAndExecute(mintTx)` succeeds. Used by callers to drop
-   * batch register-recovery state so the next deploy does not surface a now
-   * stale orphan record. No-op if the mint TX never executes.
-   */
   onMintTxExecuted?: () => void
-  /**
-   * Personal kiosk pre-resolved by the caller's preflight. When set, the hook
-   * skips the in-line `/api/souls/personal-kiosk` fetch so a transient 5xx
-   * cannot strand a freshly-paid batch register PTB. The caller is expected to
-   * have already confirmed the kiosk objects exist on-chain via
-   * `assertObjectInputsExist`.
-   */
   prefetchedPersonalKiosk?: { currentKioskId: string | null; currentKioskCapOnChainId: string | null } | null
-  /** Optional existing collection to bind the newly minted Soul into after publish sync. */
+  /** Optional existing collection to bind the newly minted Soul into in the SAME PTB as mint. */
   collectionBindTarget?: PublishCollectionBindTarget | null
+  /** When true, list the soul at `listingPriceAtomic` in the SAME PTB as mint. */
+  listOnPublish: boolean
+  /** USDC atomic price string. Required when `listOnPublish` is true. */
+  listingPriceAtomic?: string | null
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -144,6 +143,7 @@ function isPublishSyncBody(value: unknown): value is PublishSyncBody {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Partial<PublishSyncBody>
   return typeof candidate.txDigest === 'string'
+    && typeof candidate.soulOnChainId === 'string'
     && Array.isArray(candidate.tags)
     && Array.isArray(candidate.previewImages)
     && (candidate.readme === null || typeof candidate.readme === 'string')
@@ -182,11 +182,6 @@ function isPublishSyncMaterial(value: unknown): value is PublishSyncMaterial {
     && hasValidOptionalLegacyAssetsSealMaterial(value)
 }
 
-function normalizeCollectionBindTarget(target: PublishCollectionBindTarget | null | undefined): CollectionBindRecovery | null {
-  const collectionOnChainId = target?.collectionOnChainId?.trim()
-  return collectionOnChainId ? { collectionOnChainId } : null
-}
-
 function buildPublishSyncMaterial(params: PublishParams): PublishSyncMaterial {
   return {
     tags: params.tags,
@@ -209,14 +204,33 @@ function persistMintRecovery(recovery: MintRecoveryState | null) {
   } catch {}
 }
 
+function resolvePublishMode(params: PublishParams): PublishMode {
+  const hasBind = !!params.collectionBindTarget?.collectionOnChainId?.trim()
+  const wantsListing = params.listOnPublish === true
+  if (hasBind && wantsListing) return 'with-bind-and-list'
+  if (hasBind) return 'with-bind'
+  if (wantsListing) return 'with-list'
+  return 'plain'
+}
+
 async function buildPublishSyncBody(params: {
   txDigest: string
   txResult: unknown
+  soulOnChainId: string | null
   publishParams: PublishSyncMaterial
   suiClient: unknown
 }): Promise<PublishSyncBody> {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
+  // The PTB may bundle multiple events when bind/list are co-signed; pick
+  // by route soulId when known (single-soul publish always emits exactly one
+  // SoulMintedToKiosk in the new ABI but we still filter for safety).
+  const allMinted = extractAllSoulMintedToKioskEvents(params.txResult as never, packageId)
+  if (allMinted.length === 0) {
+    throw new Error('No SoulMintedToKiosk event in publish transaction')
+  }
+  const minted = params.soulOnChainId
+    ? allMinted.find((e) => e.soulId === params.soulOnChainId) ?? allMinted[0]
+    : allMinted[0]
   const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
   const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
 
@@ -255,6 +269,7 @@ async function buildPublishSyncBody(params: {
   })
   return {
     txDigest: params.txDigest,
+    soulOnChainId: minted.soulId,
     tags: normalizeTags(params.publishParams.tags),
     previewImages: params.publishParams.previewImages,
     readme: params.publishParams.readme ?? null,
@@ -309,22 +324,18 @@ export function usePublish() {
     try {
       setError(null)
       const authHeaders = await getAuthHeaders()
-      const requestedCollectionBind = normalizeCollectionBindTarget(params.collectionBindTarget)
+      const publishMode = resolvePublishMode(params)
+      const collectionBindOnChainId = params.collectionBindTarget?.collectionOnChainId?.trim() ?? null
+      const listingPriceAtomic = params.listOnPublish ? assertListingPriceAtomic(params.listingPriceAtomic) : null
 
       // Resume sync for an already-executed mint TX (e.g. after a transient sync failure or page refresh)
       let digest = txDigest
-      if (!digest && requestedCollectionBind?.collectionOnChainId) {
-        await preflightCollectionBindTarget(authHeaders, requestedCollectionBind.collectionOnChainId)
+      if (!digest && collectionBindOnChainId) {
+        await preflightCollectionBindTarget(authHeaders, collectionBindOnChainId)
       }
 
       if (!digest) {
         setStatus('building')
-        // Reuse the caller's preflight kiosk when supplied; this is the
-        // contract for batch publishes that pay PTB1 before reaching the hook
-        // and would orphan the registered Blob objects on a fresh-fetch 5xx.
-        // `null` is a legitimate preflight result (first-time creator: 404 →
-        // no kiosk yet), so we must NOT fall back on it — only `undefined`
-        // (no preflight supplied) triggers the resolvePersonalKiosk fetch.
         const personalKiosk = Object.prototype.hasOwnProperty.call(params, 'prefetchedPersonalKiosk')
           ? params.prefetchedPersonalKiosk
           : await resolvePersonalKiosk(authHeaders, suiWallet.address)
@@ -334,8 +345,9 @@ export function usePublish() {
           'Soul character blob': params.protectedBlobObjectId,
           'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
           'Skills blob': params.skillsBlobObjectId ?? null,
+          ...(collectionBindOnChainId ? { 'Bind target collection': collectionBindOnChainId } : {}),
         })
-        const tx: Transaction = await buildPublishSoulTx({
+        const baseBuilderParams = {
           currentKioskId: personalKiosk?.currentKioskId ?? null,
           currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
           name: params.name,
@@ -351,43 +363,68 @@ export function usePublish() {
           contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
           creatorRoyaltyBps: params.creatorRoyaltyBps,
           attachBeforeMint: params.attachBeforeMint,
-        })
+        }
+        let tx: Transaction
+        switch (publishMode) {
+          case 'plain':
+            tx = await buildPublishSoulTx(baseBuilderParams)
+            break
+          case 'with-bind':
+            tx = await buildPublishSoulWithBindTx({
+              ...baseBuilderParams,
+              collectionOnChainId: collectionBindOnChainId!,
+            })
+            break
+          case 'with-list':
+            tx = await buildPublishSoulWithListTx({
+              ...baseBuilderParams,
+              listingPriceAtomic: listingPriceAtomic!,
+            })
+            break
+          case 'with-bind-and-list':
+            tx = await buildPublishSoulWithCollectionAndListTx({
+              ...baseBuilderParams,
+              collectionOnChainId: collectionBindOnChainId!,
+              listingPriceAtomic: listingPriceAtomic!,
+            })
+            break
+        }
 
         setStatus('signing')
+        // CRITICAL: exactly one signAndExecute per publish() invocation. The
+        // bind / list calls live inside the same PTB as mint, so the wallet
+        // signature count is 2 total (Walrus register + this combined PTB)
+        // regardless of how many of {bind, list} are requested.
         const result = await signAndExecute(tx)
         const executedDigest = result.digest
         assertSoulidityTxSucceeded(result, 'Soul mint transaction')
         digest = executedDigest
         setTxDigest(executedDigest)
-        // Persist raw Seal material BEFORE clearing batch recovery so a tab
-        // crash / refresh / OS kill in the window between "mint succeeded"
-        // and "mint recovery written" cannot strand the user with a minted
-        // Soul that has no resumable mirror state on either side. Sidecar
-        // creation can still fail later — refresh rebuilds them from
-        // pendingSync without re-minting.
+
         const pendingSync = buildPublishSyncMaterial(params)
         const recovery: MintRecoveryState = attachSoulidityDeploymentSignature({
           userId: user?.id ?? '',
           txDigest: executedDigest,
+          publishMode,
+          collectionBindOnChainId,
+          listingPriceAtomic: listingPriceAtomic == null ? null : listingPriceAtomic.toString(),
           pendingSync,
           syncBody: null,
-          collectionBind: requestedCollectionBind,
         })
         recoveryRef.current = recovery
         persistMintRecovery(recovery)
 
-        // Mint TX is on-chain AND succeeded AND the resumable mirror state is
-        // durable — the registered Blob objects from PTB1 are now certified,
-        // so the batch register-recovery record is no longer needed.
         try { params.onMintTxExecuted?.() } catch { /* swallow callback errors */ }
         posthog.capture('soul_publish_sui_signed', {
           txDigest: executedDigest,
+          publishMode,
           elapsedMs: Date.now() - startedAt,
         })
 
         const syncBody = await buildPublishSyncBody({
           txDigest: executedDigest,
           txResult: result,
+          soulOnChainId: null,
           publishParams: pendingSync,
           suiClient,
         })
@@ -396,12 +433,13 @@ export function usePublish() {
         persistMintRecovery(recoveryWithSyncBody)
       }
 
-      // Use recovered sync body when available (preserves original metadata after refresh),
-      // otherwise build from caller params (same-tab retry with in-memory txDigest)
       if (!digest) {
         throw new Error('Publish transaction digest is missing')
       }
       const recovery = recoveryRef.current?.txDigest === digest ? recoveryRef.current : null
+      const recoveredPublishMode = recovery?.publishMode ?? publishMode
+      const recoveredBindOnChainId = recovery?.collectionBindOnChainId ?? collectionBindOnChainId
+      const recoveredListingPriceAtomic = recovery?.listingPriceAtomic ?? (listingPriceAtomic == null ? null : listingPriceAtomic.toString())
       let syncBody = recovery?.syncBody ?? null
       if (!syncBody) {
         const pendingSync = recovery?.pendingSync ?? buildPublishSyncMaterial(params)
@@ -411,6 +449,7 @@ export function usePublish() {
             digest,
             options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true },
           }),
+          soulOnChainId: null,
           publishParams: pendingSync,
           suiClient,
         })
@@ -422,70 +461,66 @@ export function usePublish() {
       }
 
       setStatus('syncing')
-      const syncRes = await fetch('/api/souls/publish', {
+      // Mirror in order: publish → add-soul → list — all using the SAME digest.
+      // Each route extracts its own event from the bundled TX by route-id /
+      // soulOnChainId, so unrelated events in the digest are ignored.
+      const publishResp = await fetch('/api/souls/publish', {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify(syncBody),
       })
-      if (!syncRes.ok) {
-        const body = await syncRes.json().catch(() => ({}))
+      if (!publishResp.ok) {
+        const body = await publishResp.json().catch(() => ({}))
         throw new Error(body.error || 'Failed to mirror publish')
       }
-
-      const syncData: PublishSyncResponse = await syncRes.json()
-      const recoveredCollectionBind = recoveryRef.current?.txDigest === digest
-        ? recoveryRef.current.collectionBind ?? null
-        : null
-      const collectionBind = recoveredCollectionBind ?? requestedCollectionBind
+      const syncData: PublishSyncResponse = await publishResp.json()
       let completedData: PublishSyncResponse = syncData
-      if (collectionBind?.collectionOnChainId) {
-        const collectionOnChainId = collectionBind.collectionOnChainId
-        let collectionAddTxDigest = collectionBind.txDigest ?? null
 
-        if (!collectionAddTxDigest) {
-          setStatus('binding')
-          await assertObjectInputsExist(suiClient, {
-            Collection: collectionOnChainId,
-            'Soul state': syncData.stateOnChainId,
-          })
-          const addTx = buildAddSoulToCollectionTx({
-            collectionObjectId: collectionOnChainId,
-            stateObjectId: syncData.stateOnChainId,
-          })
-          setStatus('signing')
-          const addResult = await signAndExecute(addTx)
-          collectionAddTxDigest = addResult.digest
-          assertSoulidityTxSucceeded(addResult, 'Collection bind transaction')
-
-          const activeRecovery = recoveryRef.current?.txDigest === digest ? recoveryRef.current : null
-          if (activeRecovery) {
-            const recoveryWithBind = {
-              ...activeRecovery,
-              collectionBind: { collectionOnChainId, txDigest: collectionAddTxDigest },
-            }
-            recoveryRef.current = recoveryWithBind
-            persistMintRecovery(recoveryWithBind)
-          }
-        }
-
-        if (!collectionAddTxDigest) {
-          throw new Error('Collection bind transaction digest is missing')
-        }
-        setStatus('syncing')
-        const addRes = await fetch(`/api/collections/${encodeURIComponent(collectionOnChainId)}/add-soul`, {
-          method: 'POST',
-          headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ txDigest: collectionAddTxDigest }),
-        })
+      if (recoveredBindOnChainId) {
+        const addRes = await fetch(
+          `/api/collections/${encodeURIComponent(recoveredBindOnChainId)}/add-soul`,
+          {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ txDigest: digest, soulOnChainId: syncData.soulOnChainId }),
+          },
+        )
         if (!addRes.ok) {
           const body = await addRes.json().catch(() => ({}))
           throw new Error(body.error || 'Failed to mirror collection bind')
         }
         const addData = await addRes.json().catch(() => ({})) as { collectionOnChainId?: string | null }
         completedData = {
-          ...syncData,
-          collectionOnChainId: addData.collectionOnChainId ?? collectionOnChainId,
-          collectionAddTxDigest,
+          ...completedData,
+          collectionOnChainId: addData.collectionOnChainId ?? recoveredBindOnChainId,
+          collectionAddTxDigest: digest,
+        }
+      }
+
+      if (recoveredPublishMode === 'with-list' || recoveredPublishMode === 'with-bind-and-list') {
+        const listRes = await fetch(
+          `/api/souls/${encodeURIComponent(syncData.soulOnChainId)}/list`,
+          {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ txDigest: digest }),
+          },
+        )
+        if (!listRes.ok) {
+          const body = await listRes.json().catch(() => ({}))
+          throw new Error(body.error || 'Failed to mirror listing')
+        }
+        const listData = await listRes.json().catch(() => ({})) as {
+          listingObjectOnChainId?: string | null
+          listedPriceAtomic?: string | bigint | null
+          listingStatus?: string
+        }
+        completedData = {
+          ...completedData,
+          listingTxDigest: digest,
+          listingObjectOnChainId: listData.listingObjectOnChainId ?? null,
+          listedPriceAtomic: listData.listedPriceAtomic == null ? recoveredListingPriceAtomic : String(listData.listedPriceAtomic),
+          listingStatus: listData.listingStatus ?? completedData.listingStatus,
         }
       }
 
@@ -493,11 +528,12 @@ export function usePublish() {
       setStatus('done')
       posthog.capture('soul_publish_completed', {
         txDigest: digest,
+        publishMode: recoveredPublishMode,
         collectionOnChainId: completedData.collectionOnChainId ?? null,
+        listed: recoveredPublishMode === 'with-list' || recoveredPublishMode === 'with-bind-and-list',
         elapsedMs: Date.now() - startedAt,
       })
 
-      // Clear recovery state on successful sync
       recoveryRef.current = null
       persistMintRecovery(null)
     } catch (nextError) {

@@ -157,7 +157,6 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
         currentKioskId: personalKiosk.currentKioskId,
         currentKioskCapOnChainId: personalKiosk.currentKioskCapOnChainId,
         collectionObjectId: collection.onChainId,
-        rightObjectId: collection.rightOnChainId,
         priceAtomic,
       })
       const result = await signAndExecute(tx)
@@ -224,7 +223,7 @@ export function useCollectionActions(collection: (SoulCollectionAssetDetail & {
         'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
         'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
       })
-      const tx = buildCreateCollectionTx({
+      const tx = await buildCreateCollectionTx({
         currentKioskId: personalKiosk?.currentKioskId ?? null,
         currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
         name: params.name,
@@ -291,7 +290,6 @@ export function useCollectionListing(collection: { onChainId: string; rightOnCha
         currentKioskId: kiosk.currentKioskId,
         currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
         collectionObjectId: collection.onChainId,
-        rightObjectId: collection.rightOnChainId,
         priceAtomic,
       })
       const result = await signAndExecute(tx)
@@ -373,7 +371,6 @@ export function useCollectionListing(collection: { onChainId: string; rightOnCha
         currentKioskId: kiosk.currentKioskId,
         currentKioskCapOnChainId: kiosk.currentKioskCapOnChainId,
         collectionObjectId: collection.onChainId,
-        rightObjectId: collection.rightOnChainId,
         listingObjectId: collection.listingObjectOnChainId,
         newPriceAtomic,
       })

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { extractSkillVersionAppendedEvent } from '@/lib/soulidity/events'
+import { extractAllSkillVersionAppendedEvents } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
@@ -86,12 +86,42 @@ export async function POST(
       return senderError
     }
 
-    const appended = extractSkillVersionAppendedEvent(transaction, packageId)
-    if (appended.soulId !== soul.onChainId) {
+    const appendedEvents = extractAllSkillVersionAppendedEvents(transaction, packageId)
+    if (appendedEvents.length === 0) {
+      return NextResponse.json({ error: 'SkillVersionAppended event is missing from the transaction' }, { status: 422 })
+    }
+    if (appendedEvents.some((appended) => appended.soulId !== soul.onChainId)) {
       return NextResponse.json({ error: 'Transaction appended a skill version for a different Soul' }, { status: 422 })
     }
 
     const providedSkillsSidecar = parseProvidedSidecar(body?.skillsSealSidecar ?? body?.sealSidecar, 'skillsSealSidecar')
+    const providedSkillsSidecars = Array.isArray(body?.skillsSealSidecars)
+      ? body.skillsSealSidecars.map((value, index) => parseProvidedSidecar(value, `skillsSealSidecars[${index}]`))
+      : null
+
+    // Per-event sidecar resolution. The legacy single `skillsSealSidecar` is
+    // ONLY valid for a single-event request — multi-event requests must use
+    // `skillsSealSidecars` so each appended version carries its own envelope.
+    // Without this, two private appended events plus a 1-element array would
+    // mirror the second version with a null sidecar that downloaders cannot
+    // satisfy. Mirrors the asset route's per-event guard.
+    const sidecarForIndex = (i: number) =>
+      providedSkillsSidecars?.[i]
+      ?? (i === 0 && appendedEvents.length === 1 ? providedSkillsSidecar : null)
+
+    for (let i = 0; i < appendedEvents.length; i++) {
+      if (appendedEvents[i].visibility !== 'private') continue
+      if (!sidecarForIndex(i)) {
+        return NextResponse.json(
+          {
+            error: appendedEvents.length === 1
+              ? 'skillsSealSidecar is required for private skill versions'
+              : `skillsSealSidecars[${i}] is required for private skill version at index ${i}`,
+          },
+          { status: 422 },
+        )
+      }
+    }
 
     const mirroredSoul = await syncSoulProjectionFromChain({
       packageId,
@@ -108,51 +138,67 @@ export async function POST(
       listedPriceAtomic: soul.listedPriceAtomic ? BigInt(soul.listedPriceAtomic.toString()) : null,
       listingStatus: soul.listingStatus as 'held' | 'listed' | 'floor-violation',
     })
-    let skillSidecar = null
-    try {
-      const builtSidecars = await buildSyncSealSidecars({
-        packageId,
-        soulObjectId: soul.onChainId,
-        stateObjectId: soul.stateOnChainId,
-        skillsSidecar: providedSkillsSidecar,
-        skillBinding: {
-          skillsObjectId: appended.skillsId,
+    const mirroredVersions = []
+    for (let i = 0; i < appendedEvents.length; i++) {
+      const appended = appendedEvents[i]
+      const sidecarForEvent = sidecarForIndex(i)
+      let skillSidecar = null
+      try {
+        const builtSidecars = await buildSyncSealSidecars({
+          packageId,
+          soulObjectId: soul.onChainId,
+          stateObjectId: soul.stateOnChainId,
+          skillsSidecar: sidecarForEvent,
+          skillBinding: {
+            skillsObjectId: appended.skillsId,
+            skillName: appended.skillName,
+            versionIndex: appended.versionIndex,
+          },
+        })
+        skillSidecar = builtSidecars.skillsSidecar
+      } catch (error) {
+        if (error instanceof SealSidecarSyncConfigError) {
+          return NextResponse.json({ error: error.message }, { status: 503 })
+        }
+        throw error
+      }
+      const skillBlobId = await resolveWalrusBlobId(appended.blobObjectId)
+      mirroredVersions.push(await upsertSkillVersionProjection({
+        version: {
+          packageId,
+          soulId: appended.soulId,
+          skillsId: appended.skillsId,
           skillName: appended.skillName,
           versionIndex: appended.versionIndex,
+          visibility: appended.visibility,
+          deleted: false,
+          createdAtMs: appended.createdAtMs,
+          blobObjectId: appended.blobObjectId,
+          blobId: skillBlobId,
         },
-      })
-      skillSidecar = builtSidecars.skillsSidecar
-    } catch (error) {
-      if (error instanceof SealSidecarSyncConfigError) {
-        return NextResponse.json({ error: error.message }, { status: 503 })
-      }
-      throw error
+        soulOnChainId: soul.onChainId,
+        skillsOnChainId: appended.skillsId,
+        sealSidecar: skillSidecar,
+      }))
     }
-    const skillBlobId = await resolveWalrusBlobId(appended.blobObjectId)
-    const mirroredVersion = await upsertSkillVersionProjection({
-      version: {
-        packageId,
-        soulId: appended.soulId,
-        skillsId: appended.skillsId,
-        skillName: appended.skillName,
-        versionIndex: appended.versionIndex,
-        visibility: appended.visibility,
-        deleted: false,
-        createdAtMs: appended.createdAtMs,
-        blobObjectId: appended.blobObjectId,
-        blobId: skillBlobId,
-      },
-      soulOnChainId: soul.onChainId,
-      skillsOnChainId: appended.skillsId,
-      sealSidecar: skillSidecar,
-    })
+
+    const firstAppended = appendedEvents[0]
+    const firstMirroredVersion = mirroredVersions[0]
 
     const responseBody = {
       txDigest,
       soulOnChainId: mirroredSoul.onChainId,
-      skillsOnChainId: appended.skillsId,
-      skillName: mirroredVersion.skillName,
-      versionIndex: mirroredVersion.versionIndex,
+      skillsOnChainId: firstAppended.skillsId,
+      skillName: firstMirroredVersion.skillName,
+      versionIndex: firstMirroredVersion.versionIndex,
+      ...(mirroredVersions.length > 1
+        ? {
+            versions: mirroredVersions.map((version) => ({
+              skillName: version.skillName,
+              versionIndex: version.versionIndex,
+            })),
+          }
+        : {}),
     }
 
     await storeSoulidityTxSync({

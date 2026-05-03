@@ -133,7 +133,7 @@ function SkillGroup({ skillName, versions, canManageSkills, pending, onDelete, o
 }
 
 export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null)
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [visibility, setVisibility] = useState<SoulSkillVisibility>('private')
@@ -149,6 +149,7 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
     loadingMoreSkillVersions,
     loadMoreSkillVersions,
     appendSkillVersion,
+    appendSkillVersions,
     deleteSkillVersion,
     openSkillVersion,
   } = useSkills(soul)
@@ -161,9 +162,13 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
       : null
 
   async function handleAppend() {
-    if (!selectedFile) return
-    await appendSkillVersion(selectedFile, visibility)
-    setSelectedFile(null)
+    if (selectedFiles.length === 0) return
+    if (selectedFiles.length === 1) {
+      await appendSkillVersion(selectedFiles[0], visibility)
+    } else {
+      await appendSkillVersions(selectedFiles, visibility)
+    }
+    setSelectedFiles([])
     setSelectedSkillName(null)
     setSelectionError(null)
   }
@@ -171,7 +176,7 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
   async function handleFileSelect(file: File) {
     const result = await validateSelectedSkillBundle(file)
     if (!result.ok) {
-      setSelectedFile(null)
+      setSelectedFiles([])
       setSelectedSkillName(null)
       setSelectionError(result.error)
       return
@@ -179,7 +184,27 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
 
     setSelectionError(null)
     setSelectedSkillName(result.skillName)
-    setSelectedFile(file)
+    setSelectedFiles([file])
+  }
+
+  async function handleFilesSelect(files: FileList) {
+    const nextFiles = Array.from(files)
+    if (nextFiles.length === 0) return
+    const skillNames: string[] = []
+    for (const file of nextFiles) {
+      const result = await validateSelectedSkillBundle(file)
+      if (!result.ok) {
+        setSelectedFiles([])
+        setSelectedSkillName(null)
+        setSelectionError(result.error)
+        return
+      }
+      skillNames.push(result.skillName)
+    }
+
+    setSelectionError(null)
+    setSelectedSkillName(Array.from(new Set(skillNames)).join(', '))
+    setSelectedFiles(nextFiles)
   }
 
   return (
@@ -218,16 +243,22 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
 
           <UploadZone
             icon="🧠"
-            label={selectedFile ? selectedFile.name : 'Upload a ZIP skill bundle'}
-            sublabel={selectedFile ? `${Math.max(1, Math.round(selectedFile.size / 1024))} KB selected · Skill: ${selectedSkillName ?? 'read from SKILL.md'}` : 'Only ZIP bundles with SKILL.md frontmatter are accepted. Private versions are encrypted before upload.'}
+            label={selectedFiles.length > 0 ? `${selectedFiles.length} ZIP bundle${selectedFiles.length === 1 ? '' : 's'} selected` : 'Upload ZIP skill bundle(s)'}
+            sublabel={selectedFiles.length > 0
+              ? `${Math.max(1, Math.round(selectedFiles.reduce((sum, file) => sum + file.size, 0) / 1024))} KB selected · Skill: ${selectedSkillName ?? 'read from SKILL.md'}`
+              : 'Only ZIP bundles with SKILL.md frontmatter are accepted. Private versions are encrypted before upload.'}
             accept=".zip,application/zip,application/x-zip-compressed"
+            multiple
             onFileSelect={(file) => {
               void handleFileSelect(file)
+            }}
+            onFilesSelect={(files) => {
+              void handleFilesSelect(files)
             }}
             className="py-6"
           />
 
-          {(!selectedFile || selectionError) && (
+          {(selectedFiles.length === 0 || selectionError) && (
             <SkillBundleFormatHint error={selectionError} />
           )}
 
@@ -252,12 +283,12 @@ export function SkillsPanel({ soul }: { soul: SoulAssetDetail }) {
               type="button"
               variant="teal"
               size="sm"
-              disabled={!selectedFile || pending === 'append'}
+              disabled={selectedFiles.length === 0 || pending === 'append'}
               onClick={() => {
                 void handleAppend()
               }}
             >
-              {pending === 'append' ? 'Appending…' : 'Append Version'}
+              {pending === 'append' ? 'Appending…' : selectedFiles.length > 1 ? 'Append Versions' : 'Append Version'}
             </Button>
           </div>
         </div>

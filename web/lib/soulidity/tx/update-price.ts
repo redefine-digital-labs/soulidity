@@ -6,7 +6,6 @@ export function buildUpdateListingPriceTx(params: {
   currentKioskId: string
   currentKioskCapOnChainId: string
   stateObjectId: string
-  soulObjectId: string
   listingObjectId: string
   newPriceAtomic: bigint
   collectionObjectId?: string | null
@@ -40,35 +39,36 @@ export function buildUpdateListingPriceTx(params: {
     ],
   })
 
-  // Step 3: Relist at new price
-  if (params.collectionObjectId) {
-    tx.moveCall({
-      target: `${packageId}::market::list_soul_fixed_price_with_collection`,
-      arguments: [
-        tx.object(marketConfigId),
-        tx.object(kioskRegistryId),
-        tx.object(params.collectionObjectId),
-        tx.object(params.currentKioskId),
-        tx.object(params.currentKioskCapOnChainId),
-        tx.object(params.stateObjectId),
-        tx.pure.id(params.soulObjectId),
-        tx.pure.u64(params.newPriceAtomic),
-      ],
-    })
-  } else {
-    tx.moveCall({
-      target: `${packageId}::market::list_soul_fixed_price`,
-      arguments: [
-        tx.object(marketConfigId),
-        tx.object(kioskRegistryId),
-        tx.object(params.currentKioskId),
-        tx.object(params.currentKioskCapOnChainId),
-        tx.object(params.stateObjectId),
-        tx.pure.id(params.soulObjectId),
-        tx.pure.u64(params.newPriceAtomic),
-      ],
-    })
-  }
+  // Step 3: Relist at new price and share the returned listing object.
+  const listing = params.collectionObjectId
+    ? tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price_with_collection`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.collectionObjectId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.newPriceAtomic),
+        ],
+      })
+    : tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.newPriceAtomic),
+        ],
+      })
+
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_listing`,
+    arguments: [listing],
+  })
 
   return tx
 }

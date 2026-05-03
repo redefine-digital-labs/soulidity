@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { extractSoulListedEvent } from '@/lib/soulidity/events'
+import { extractAllSoulListedEvents } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
@@ -65,9 +65,13 @@ export async function POST(
       return senderError
     }
 
-    const listed = extractSoulListedEvent(transaction, packageId)
-    if (listed.soulId !== soul.onChainId) {
-      return NextResponse.json({ error: 'Transaction listed a different Soulidity object' }, { status: 422 })
+    // The TX may contain multiple SoulListed events (e.g. mint + bind +
+    // list bundled, or chunked batches). Select the event whose soul_id
+    // matches the route Soul, not the first one in the digest.
+    const listedEvents = extractAllSoulListedEvents(transaction, packageId)
+    const listed = listedEvents.find((e) => e.soulId === soul.onChainId)
+    if (!listed) {
+      return NextResponse.json({ error: 'Transaction did not list this Soulidity object' }, { status: 422 })
     }
 
     // Always mirror the committed chain state first — on-chain is source of truth.

@@ -179,7 +179,7 @@ const statusLabels: Record<string, string> = {
 export default function PreviewPage() {
   const router = useRouter()
   const ctx = useCreateCollection()
-  const { name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, setPublishResult } = ctx
+  const { name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, collectionRightListingPrice, setPublishResult } = ctx
   const { user } = useAuth()
   const completedDigestRef = useRef<string | null>(null)
   // When recovery state has a committed collection TX, bypass File-dependent guards
@@ -188,6 +188,31 @@ export default function PreviewPage() {
   const isSkipFlow = ctx.addSoulsMethod === 'skip'
   const missingStep2 = !ctx.hasRecoveryTx && !isSkipFlow && (!ctx.batchFile || ctx.batchSouls.length === 0 || ctx.batchErrors.length > 0 || ctx.folderErrors.length > 0)
   const maxSupplyParam = ctx.unlimitedSupply ? null : parseCollectionSupplyCapInput(ctx.supplyCap)
+  // Parse the optional collection-right listing price defensively so render
+  // does not crash on intermediate input (e.g. ".", "abc"), and so toggling
+  // the checkbox without a price blocks launch instead of silently dropping
+  // the listing leg.
+  const collectionRightListingActive = ctx.tradeable && ctx.listCollectionRightOnLaunch
+  const collectionRightListingParse = useMemo(() => {
+    if (!collectionRightListingActive) {
+      return { atomic: null as string | null, error: null as string | null }
+    }
+    const trimmed = collectionRightListingPrice.trim()
+    if (!trimmed) {
+      return { atomic: null, error: 'Listing price is required when listing collection-right at launch' }
+    }
+    try {
+      const atomic = parseDisplayAmountToAtomic(trimmed)
+      if (atomic <= 0n) {
+        return { atomic: null, error: 'Listing price must be greater than zero' }
+      }
+      return { atomic: atomic.toString(), error: null }
+    } catch (err) {
+      return { atomic: null, error: err instanceof Error ? err.message : 'Invalid listing price' }
+    }
+  }, [collectionRightListingActive, collectionRightListingPrice])
+  const collectionRightListingPriceAtomic = collectionRightListingParse.atomic
+  const collectionRightListingPriceError = collectionRightListingParse.error
   const draftSignature = !missingStep1 && !missingStep2
     ? buildCollectionDraftSignature({
         name: ctx.name,
@@ -196,6 +221,7 @@ export default function PreviewPage() {
         tradeable: ctx.tradeable,
         floorPriceAtomic: ctx.floorPrice ? parseDisplayAmountToAtomic(ctx.floorPrice).toString() : null,
         maxSupply: maxSupplyParam,
+        collectionRightListing: collectionRightListingPriceAtomic ? { priceAtomic: collectionRightListingPriceAtomic } : null,
         souls: ctx.batchSouls.map((s) => ({
           name: s.name,
           description: s.description,
@@ -232,7 +258,10 @@ export default function PreviewPage() {
     connectLabel: 'Connect Sui Wallet',
   })
   const missingLaunchInput = !ctx.coverImageFile && !txDigest
-  const launchDisabled = walletActionState.disabled || missingLaunchInput
+  const launchDisabled =
+    walletActionState.disabled
+    || missingLaunchInput
+    || collectionRightListingPriceError !== null
 
   // Store publish result in context and navigate to success when done
   useEffect(() => {
@@ -245,6 +274,8 @@ export default function PreviewPage() {
         floorPrice: floorPrice || '0',
         extraRoyaltyBps,
         tradeable,
+        collectionRightListed: syncData.listingStatus === 'listed',
+        collectionRightListingPrice: collectionRightListingPrice || null,
         soulNames: batchSouls.map((s) => s.name),
         maxSoulSupply: syncData.maxSoulSupply ?? null,
         emptyCollection: batchSouls.length === 0,
@@ -252,7 +283,7 @@ export default function PreviewPage() {
       showToast('Collection launched successfully!', 'success')
       router.push('/collections/create/success')
     }
-  }, [status, syncData, setPublishResult, name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, router, showToast])
+  }, [status, syncData, setPublishResult, name, floorPrice, extraRoyaltyBps, tradeable, collectionRightListingPrice, batchSouls, router, showToast])
 
   useEffect(() => {
     if (status === 'error' && error) {
@@ -283,7 +314,14 @@ export default function PreviewPage() {
 
   async function handleLaunch() {
     if (!ctx.coverImageFile && !txDigest) return
+    if (collectionRightListingPriceError) {
+      showToast(collectionRightListingPriceError, 'danger')
+      return
+    }
     const floorPriceAtomic = ctx.floorPrice ? parseDisplayAmountToAtomic(ctx.floorPrice).toString() : null
+    const collectionRightListing = collectionRightListingPriceAtomic
+      ? { priceAtomic: collectionRightListingPriceAtomic }
+      : null
     await publish({
       coverImageFile: ctx.coverImageFile,
       name: ctx.name,
@@ -299,6 +337,7 @@ export default function PreviewPage() {
         tags: s.tags,
         creatorRoyaltyBps: s.creatorRoyaltyBps,
       })),
+      collectionRightListing,
     })
   }
 
@@ -428,6 +467,48 @@ export default function PreviewPage() {
             </div>
           </div>
 
+          {/* ── Optional collection-right listing on launch ── */}
+          {ctx.tradeable && (
+            <div className="rounded-2xl border border-purple/30 bg-purple/6 p-5 space-y-3">
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-purple">
+                List collection-right on launch
+              </div>
+              <p className="text-xs text-muted leading-relaxed">
+                When enabled, the collection-right is listed at the price below in the same PTB that creates the collection — no extra wallet signature.
+              </p>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={ctx.listCollectionRightOnLaunch}
+                  onChange={(e) => ctx.setListCollectionRightOnLaunch(e.currentTarget.checked)}
+                  className="h-4 w-4 accent-purple"
+                />
+                List collection-right at launch
+              </label>
+              {ctx.listCollectionRightOnLaunch && (
+                <div className="flex flex-col gap-1 pl-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted">USDC price</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={ctx.collectionRightListingPrice}
+                      onChange={(e) => ctx.setCollectionRightListingPrice(e.currentTarget.value)}
+                      placeholder="e.g. 100.00"
+                      aria-invalid={collectionRightListingPriceError !== null}
+                      className={`rounded border bg-transparent px-2 py-1 text-xs text-foreground ${
+                        collectionRightListingPriceError ? 'border-danger/60' : 'border-purple/30'
+                      }`}
+                    />
+                  </div>
+                  {collectionRightListingPriceError && (
+                    <p className="text-[11px] font-medium text-danger">{collectionRightListingPriceError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Error ── */}
           {error && (
             <div className="rounded-xl border border-danger/30 bg-danger/8 px-4 py-3">
@@ -493,8 +574,8 @@ export default function PreviewPage() {
           <div className="mx-4 rounded-2xl border border-purple/40 bg-[linear-gradient(135deg,rgba(28,17,63,0.97),rgba(18,10,41,0.98))] px-14 py-10 text-center shadow-[0_24px_64px_rgba(124,58,237,0.3)]">
             <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-purple/30 border-t-purple" />
             <h3 className="text-lg font-bold text-foreground">
-              {status === 'preparing-souls'
-                ? 'Preparing Soul assets…'
+              {status === 'uploading'
+                ? 'Uploading collection assets…'
                 : status === 'minting-souls'
                 ? `Minting Soul ${progress.mintedSouls + 1} of ${progress.totalSouls}…`
                 : status === 'binding-souls'

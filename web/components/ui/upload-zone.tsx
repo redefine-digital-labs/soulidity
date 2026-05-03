@@ -8,6 +8,7 @@ interface UploadZoneProps {
   label?: string
   sublabel?: string
   accept?: string
+  multiple?: boolean
   /** Enable folder (directory) selection instead of single file */
   directory?: boolean
   onFileSelect?: (file: File) => void
@@ -21,6 +22,7 @@ function UploadZone({
   label = 'Click to upload or drag and drop',
   sublabel,
   accept,
+  multiple,
   directory,
   onFileSelect,
   onFilesSelect,
@@ -36,7 +38,7 @@ function UploadZone({
     const files = e.target.files
     if (!files || files.length === 0) return
 
-    if (directory && onFilesSelect) {
+    if ((directory || multiple) && onFilesSelect) {
       onFilesSelect(files)
     } else if (onFileSelect && files[0]) {
       onFileSelect(files[0])
@@ -54,7 +56,7 @@ function UploadZone({
     const files = e.dataTransfer.files
     if (!files || files.length === 0) return
 
-    if (directory && onFilesSelect) {
+    if ((directory || multiple) && onFilesSelect) {
       onFilesSelect(files)
     } else if (onFileSelect && files[0]) {
       onFileSelect(files[0])
@@ -87,6 +89,7 @@ function UploadZone({
         ref={inputRef}
         type="file"
         accept={directory ? undefined : accept}
+        multiple={Boolean(multiple)}
         onChange={handleChange}
         className="sr-only"
         tabIndex={-1}

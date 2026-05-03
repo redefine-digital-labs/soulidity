@@ -5,13 +5,13 @@ use kiosk::kiosk_lock_rule;
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
 use kiosk::witness_rule;
-use soulidity::assets;
+use soulidity::assets::{Self as assets, SoulAssets};
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
 use soulidity::content_access;
 use soulidity::grant;
 use soulidity::memory;
 use soulidity::metadata::{Self as metadata, AssetBinding, SoulMetadata};
-use soulidity::skills;
+use soulidity::skills::{Self as skills, SoulSkills};
 use soulidity::soul::{Self as soul, Soul, SoulState};
 use sui::clock::Clock;
 use sui::coin::{Self as coin, Coin};
@@ -45,7 +45,6 @@ const EPersonalKioskNotInitialized: u64 = 13;
 const EPersonalKioskMismatch: u64 = 14;
 const ECollectionMismatch: u64 = 15;
 const ECollectionRightMismatch: u64 = 16;
-const EStateMismatch: u64 = 18;
 const EAccessListStateMismatch: u64 = 19;
 const EUpgradeCapNotTracked: u64 = 20;
 const EUpgradeCapMismatch: u64 = 21;
@@ -702,7 +701,7 @@ public fun mint_native_in_personal_kiosk(
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
+): SoulState {
     mint_soul_in_personal_kiosk_impl(
         config,
         registry,
@@ -775,7 +774,7 @@ public fun mint_imported_in_personal_kiosk(
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
+): SoulState {
     mint_soul_in_personal_kiosk_impl(
         config,
         registry,
@@ -849,7 +848,7 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
+): SoulState {
     assert!(kiosk::has_item_with_type<T>(kiosk_obj, source_object_id), ECollectionMismatch);
     let join_key = JoinedSourceKey { source_object_id };
     assert!(!df::exists_(&registry.id, join_key), ESourceAlreadyJoined);
@@ -905,7 +904,7 @@ public fun create_collection_in_personal_kiosk(
     tradeable: bool,
     max_supply: Option<u64>,
     ctx: &mut TxContext,
-): ID {
+): SoulCollection {
     assert!(!config.paused, EMarketPaused);
     assert!(
         ((config.platform_fee_bps as u64) + (extra_royalty_bps as u64)) <= (MAX_BPS as u64),
@@ -937,7 +936,6 @@ public fun create_collection_in_personal_kiosk(
         collection_policy,
         right_obj,
     );
-    collection::share_collection(collection_obj);
     event::emit(CollectionMintedToKiosk {
         collection_id,
         right_id,
@@ -946,7 +944,7 @@ public fun create_collection_in_personal_kiosk(
         tradeable,
     });
 
-    collection_id
+    collection_obj
 }
 
 public fun set_active_sprite(
@@ -1015,7 +1013,7 @@ public fun init_assets_and_append_sprite_as_owner(
     download_policy: u8,
     clock: &Clock,
     ctx: &mut TxContext,
-) {
+): SoulAssets {
     soul::assert_owner(state, ctx.sender());
     assert!(soul::assets_id(state).is_none(), EAssetsRootAlreadyExists);
 
@@ -1038,7 +1036,7 @@ public fun init_assets_and_append_sprite_as_owner(
     metadata::set_active_sprite(metadata_obj, state, option::some(binding), ctx);
 
     soul::set_assets_id(state, object::id(&assets_book));
-    assets::share_assets(assets_book);
+    assets_book
 }
 
 public fun init_skills_and_append_as_owner(
@@ -1048,7 +1046,7 @@ public fun init_skills_and_append_as_owner(
     content_blob: Blob,
     clock: &Clock,
     ctx: &mut TxContext,
-) {
+): SoulSkills {
     soul::assert_owner(state, ctx.sender());
     assert!(soul::skills_id(state).is_none(), ESkillsRootAlreadyExists);
 
@@ -1062,31 +1060,29 @@ public fun init_skills_and_append_as_owner(
         ctx,
     );
     soul::set_skills_id(state, object::id(&skills_book));
-    skills::share_skills(skills_book);
+    skills_book
 }
 
-#[allow(lint(share_owned))]
 public fun list_soul_fixed_price(
     config: &MarketConfig,
     registry: &KioskRegistry,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
     state: &SoulState,
-    soul_id: ID,
     price: u64,
     ctx: &mut TxContext,
-): ID {
+): SoulListing {
     assert!(!config.paused, EMarketPaused);
     assert!(
         ((config.platform_fee_bps as u64) + (soul::creator_royalty_bps(state) as u64)) <= (MAX_BPS as u64),
         ECombinedFeesTooHigh,
     );
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
-    assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
     assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
     assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
 
+    let soul_id = soul::soul_id(state);
     let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
@@ -1104,7 +1100,6 @@ public fun list_soul_fixed_price(
     );
     let listing_id = object::id(&listing);
 
-    transfer::share_object(listing);
     event::emit(SoulListed {
         listing_id,
         soul_id,
@@ -1113,10 +1108,9 @@ public fun list_soul_fixed_price(
         price,
     });
 
-    listing_id
+    listing
 }
 
-#[allow(lint(share_owned))]
 public fun list_soul_fixed_price_with_collection(
     config: &MarketConfig,
     registry: &KioskRegistry,
@@ -1124,10 +1118,9 @@ public fun list_soul_fixed_price_with_collection(
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
     state: &SoulState,
-    soul_id: ID,
     price: u64,
     ctx: &mut TxContext,
-): ID {
+): SoulListing {
     assert!(!config.paused, EMarketPaused);
     assert!(
         (
@@ -1138,12 +1131,12 @@ public fun list_soul_fixed_price_with_collection(
         ECombinedFeesTooHigh,
     );
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
-    assert!(soul::soul_id(state) == soul_id, EStateMismatch);
     let collection_id = object::id(collection_obj);
     assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
     assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
     assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
 
+    let soul_id = soul::soul_id(state);
     let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
@@ -1161,7 +1154,6 @@ public fun list_soul_fixed_price_with_collection(
     );
     let listing_id = object::id(&listing);
 
-    transfer::share_object(listing);
     event::emit(SoulListed {
         listing_id,
         soul_id,
@@ -1170,7 +1162,7 @@ public fun list_soul_fixed_price_with_collection(
         price,
     });
 
-    listing_id
+    listing
 }
 
 public fun cancel_soul_listing(
@@ -1257,25 +1249,23 @@ public fun buy_soul_fixed_price_with_collection(
     )
 }
 
-#[allow(lint(share_owned))]
 public fun list_collection_right_fixed_price(
     config: &MarketConfig,
     registry: &KioskRegistry,
     collection_obj: &SoulCollection,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
-    right_id: ID,
     price: u64,
     ctx: &mut TxContext,
-): ID {
+): CollectionListing {
     assert!(!config.paused, EMarketPaused);
     assert!(price > 0, EInvalidPrice);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     collection::assert_tradeable(collection_obj);
     assert!(collection::current_holder(collection_obj) == ctx.sender(), ESoulOwnerMismatch);
     assert!(collection::current_holder_kiosk_id(collection_obj) == object::id(kiosk_obj), ECollectionMismatch);
-    assert!(right_id == collection::right_id(collection_obj), ECollectionRightMismatch);
 
+    let right_id = collection::right_id(collection_obj);
     let seller = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
@@ -1283,7 +1273,6 @@ public fun list_collection_right_fixed_price(
     let listing = create_collection_listing(kiosk_obj, personal_kiosk_cap, collection_obj, right_id, price, ctx);
     let listing_id = object::id(&listing);
 
-    transfer::share_object(listing);
     event::emit(CollectionListed {
         listing_id,
         collection_id: object::id(collection_obj),
@@ -1293,7 +1282,7 @@ public fun list_collection_right_fixed_price(
         price,
     });
 
-    listing_id
+    listing
 }
 
 public fun cancel_collection_listing(
@@ -1521,7 +1510,7 @@ fun mint_soul_in_personal_kiosk_impl(
     origin_ref: Option<std::string::String>,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
+): SoulState {
     assert!(!config.paused, EMarketPaused);
     assert!(
         ((config.platform_fee_bps as u64) + (creator_royalty_bps as u64)) <= (MAX_BPS as u64),
@@ -1660,7 +1649,6 @@ fun mint_soul_in_personal_kiosk_impl(
         soul_obj,
     );
     soul::emit_created(&state, provenance_kind);
-    soul::share_state(state);
     memory::share_memory(memory_obj);
     event::emit(SoulMintedToKiosk {
         soul_id,
@@ -1672,7 +1660,39 @@ fun mint_soul_in_personal_kiosk_impl(
         provenance_kind,
     });
 
-    soul_id
+    state
+}
+
+// ─── Finalize wrappers ────────────────────────────────────────────────
+// These exist solely to share the unshared root objects produced by the
+// new fast-path mint/create/list/init ABI. PTBs compose primitive object
+// returns first (mint → bind, create → list, init_skills → append_more,
+// etc.) and call the matching finalize_* call last to share the root.
+
+public fun finalize_soul_state(state: SoulState) {
+    soul::share_state(state)
+}
+
+public fun finalize_collection(collection_obj: SoulCollection) {
+    collection::share_collection(collection_obj)
+}
+
+#[allow(lint(share_owned, custom_state_change))]
+public fun finalize_soul_listing(listing: SoulListing) {
+    transfer::share_object(listing)
+}
+
+#[allow(lint(share_owned, custom_state_change))]
+public fun finalize_collection_listing(listing: CollectionListing) {
+    transfer::share_object(listing)
+}
+
+public fun finalize_soul_skills(skills_book: SoulSkills) {
+    skills::share_skills(skills_book)
+}
+
+public fun finalize_soul_assets(assets_book: SoulAssets) {
+    assets::share_assets(assets_book)
 }
 
 fun resolve_initial_binding(

@@ -29,6 +29,7 @@ import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
 import { getSuiTxErrorProperties } from '@/lib/sui/tx-result'
+import { assertListingPriceAtomic } from '@/lib/soulidity/listing-price'
 import { buildListSoulTx } from '@/lib/soulidity/tx/list'
 import { buildIssueGrantTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
 import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
@@ -250,8 +251,13 @@ export default function CreateGasPage() {
       currentKioskId: string; currentKioskCapOnChainId: string;
       stateObjectId: string; soulObjectId: string; priceAtomic: string;
     }) => {
+      // soulObjectId is no longer needed by the new ABI (Move derives it
+      // from the state argument), but keep it in the test helper signature
+      // so existing E2E callers don't have to be edited.
       const tx = buildListSoulTx({
-        ...params,
+        currentKioskId: params.currentKioskId,
+        currentKioskCapOnChainId: params.currentKioskCapOnChainId,
+        stateObjectId: params.stateObjectId,
         priceAtomic: BigInt(params.priceAtomic),
       })
       const result = await signAndExecuteRef.current(tx)
@@ -393,6 +399,13 @@ export default function CreateGasPage() {
         imageUrl: 'preflight://placeholder',
         creatorRoyaltyBps: ctx.royalty,
       })
+      // List-on-publish price must parse before any paid Walrus register PTB.
+      // The preview page already blocks navigation on bad input; this is the
+      // back-button / direct-nav safety net so a creator never signs PTB1
+      // and then has `usePublish.assertListingPriceAtomic` reject the value.
+      if (ctx.listOnPublish === true) {
+        assertListingPriceAtomic(ctx.listingPriceAtomic)
+      }
       // Surface a missing env ahead of the paid PTB rather than after.
       getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
       getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
@@ -530,6 +543,8 @@ export default function CreateGasPage() {
           preparedBatchRef.current = null
         },
         collectionBindTarget: ctx.collectionBindTarget,
+        listOnPublish: ctx.listOnPublish === true,
+        listingPriceAtomic: ctx.listOnPublish === true ? (ctx.listingPriceAtomic ?? null) : null,
       })
     } catch (err) {
       if (err instanceof WalrusUploadResumeMismatchError) {
@@ -593,6 +608,7 @@ export default function CreateGasPage() {
       await publish({
         name: '', description: '', tags: [], imageUrl: '',
         previewImages: [], protectedBlobObjectId: '', creatorRoyaltyBps: 0,
+        listOnPublish: false,
       })
     } catch (err) {
       captureFrontendException(err, {
@@ -613,7 +629,7 @@ export default function CreateGasPage() {
 
   const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
   const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
-  const isBusy = reclaimingOrphans || uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing' || status === 'binding'
+  const isBusy = reclaimingOrphans || uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing'
   const combinedError = deployError || error
   const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
   const walletActionState = getWalletActionState({
