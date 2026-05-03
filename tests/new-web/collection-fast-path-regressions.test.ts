@@ -433,6 +433,29 @@ describe('smoke harness picks mirror auth from step.signer (R-001)', () => {
     expect(src).not.toMatch(/process\.env\.SMOKE_AUTHORIZATION/)
     expect(src).not.toMatch(/process\.env\.SMOKE_COOKIE/)
   })
+
+  it('soulidity-fast-path-smoke.yml exports per-signer auth env, not legacy globals (R-001)', () => {
+    // The CI workflow_dispatch matrix must export the same per-signer auth env
+    // names that scripts/smoke-soulidity.ts reads via SMOKE_AUTH_ENV_KEYS;
+    // otherwise the testnet smoke matrix signs transactions but sends mirror
+    // calls without auth headers and 401s on routes that enforce wallet
+    // identity (e.g. requireSoulCreateWalletIdentity). Legacy global names
+    // SMOKE_AUTHORIZATION / SMOKE_COOKIE are no longer read by the harness
+    // and must not appear as workflow env entries.
+    const src = readSource('.github/workflows/soulidity-fast-path-smoke.yml')
+    // Per-role env keys consumed by smoke-soulidity.ts.
+    expect(src).toMatch(/^\s*SMOKE_PUBLISHER_AUTHORIZATION:/m)
+    expect(src).toMatch(/^\s*SMOKE_PUBLISHER_COOKIE:/m)
+    expect(src).toMatch(/^\s*SMOKE_BUYER_AUTHORIZATION:/m)
+    expect(src).toMatch(/^\s*SMOKE_BUYER_COOKIE:/m)
+    expect(src).toMatch(/^\s*SMOKE_AGENT_AUTHORIZATION:/m)
+    expect(src).toMatch(/^\s*SMOKE_AGENT_COOKIE:/m)
+    // Legacy globals must not be exported as workflow env entries — the
+    // harness no longer reads them, so leaving them in invites silent
+    // mis-binding to the previous global secret.
+    expect(src).not.toMatch(/^\s*SMOKE_AUTHORIZATION:/m)
+    expect(src).not.toMatch(/^\s*SMOKE_COOKIE:/m)
+  })
 })
 
 describe('smoke matrix /api/souls/publish/batch rows ship non-empty syncBodies (R-002)', () => {
