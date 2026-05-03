@@ -303,9 +303,9 @@ describe('smoke matrix example scenario references live API routes (R-001)', () 
   // is the operator template for scripts/smoke-soulidity.ts. Every mirror.path must
   // resolve to an actual route handler under web/app/api/**/route.ts; otherwise the
   // harness 404s before downstream assertions run.
-  type SmokeMirror = { path: string }
-  type SmokeStep = { mirror?: SmokeMirror | SmokeMirror[] }
-  type SmokeRow = { steps: SmokeStep[] }
+  type SmokeMirror = { path: string, body?: Record<string, unknown> }
+  type SmokeStep = { signer: 'publisher' | 'buyer' | 'agent', mirror?: SmokeMirror | SmokeMirror[] }
+  type SmokeRow = { name: string, steps: SmokeStep[] }
   type SmokeScenario = { rows: SmokeRow[] }
 
   function loadScenario(): SmokeScenario {
@@ -370,5 +370,121 @@ describe('smoke matrix example scenario references live API routes (R-001)', () 
     const raw = readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')
     expect(raw).not.toContain('/api/collections/sync')
     expect(raw).toContain('/api/collections/create')
+  })
+})
+
+describe('smoke harness picks mirror auth from step.signer (R-001)', () => {
+  // R-001: each first-party mirror route enforces that the signed-in wallet
+  // identity matches the on-chain transaction sender. A single global cookie
+  // cannot service a matrix that mixes publisher / buyer / agent rows, so the
+  // harness must select Authorization / Cookie headers per-signer.
+  it('smoke-soulidity.ts defines per-signer auth env keys', () => {
+    const src = readSource(SMOKE)
+    expect(src).toContain('SMOKE_AUTH_ENV_KEYS')
+    expect(src).toContain("publisher: { authorization: 'SMOKE_PUBLISHER_AUTHORIZATION', cookie: 'SMOKE_PUBLISHER_COOKIE' }")
+    expect(src).toContain("buyer: { authorization: 'SMOKE_BUYER_AUTHORIZATION', cookie: 'SMOKE_BUYER_COOKIE' }")
+    expect(src).toContain("agent: { authorization: 'SMOKE_AGENT_AUTHORIZATION', cookie: 'SMOKE_AGENT_COOKIE' }")
+  })
+
+  it('smokeHeaders takes the signer role and assertMirrorOk threads it through', () => {
+    const src = readSource(SMOKE)
+    expect(src).toContain('function smokeHeaders(signer: SmokeSigner')
+    expect(src).toContain('assertMirrorOk(c, mirror, result.digest, step.signer)')
+    expect(src).toContain('async function assertMirrorOk(c: RunContext, mirror: SmokeMirrorRequest, txDigest: string, signer: SmokeSigner)')
+    expect(src).toContain('headers: smokeHeaders(signer, mirror.headers)')
+  })
+
+  it('does not silently fall back to global SMOKE_AUTHORIZATION / SMOKE_COOKIE for non-publisher signers', () => {
+    const src = readSource(SMOKE)
+    // The legacy shared globals must not be read for header assignment;
+    // otherwise a buyer-signed mirror silently inherits the publisher cookie.
+    expect(src).not.toContain('process.env.SMOKE_AUTHORIZATION')
+    expect(src).not.toContain('process.env.SMOKE_COOKIE')
+  })
+
+  it('warns the operator when a needed signer has no role-specific auth env set', () => {
+    const src = readSource(SMOKE)
+    expect(src).toContain('function warnMissingMirrorAuth')
+    expect(src).toContain('warnMissingMirrorAuth(scenario)')
+    expect(src).toContain('mirror requests will be rejected as unauthenticated')
+  })
+
+  it('.env.soulidity-smoke.example documents per-signer auth env vars', () => {
+    const src = readSource('.env.soulidity-smoke.example')
+    expect(src).toContain('SMOKE_PUBLISHER_AUTHORIZATION')
+    expect(src).toContain('SMOKE_PUBLISHER_COOKIE')
+    expect(src).toContain('SMOKE_BUYER_AUTHORIZATION')
+    expect(src).toContain('SMOKE_BUYER_COOKIE')
+    expect(src).toContain('SMOKE_AGENT_AUTHORIZATION')
+    expect(src).toContain('SMOKE_AGENT_COOKIE')
+    // Legacy single-role globals must no longer appear as the recommended config.
+    expect(src).not.toMatch(/^# SMOKE_AUTHORIZATION=/m)
+    expect(src).not.toMatch(/^# SMOKE_COOKIE=/m)
+  })
+
+  it('the buyer-signed purchase row exists and reuses no global auth env (R-001)', () => {
+    type ScenarioWithSigner = { rows: Array<{ name: string, steps: Array<{ signer: string }> }> }
+    const scenario = JSON.parse(readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')) as ScenarioWithSigner
+    const buyerRow = scenario.rows.find((r) => r.steps.some((s) => s.signer === 'buyer'))
+    expect(buyerRow).toBeTruthy()
+    // Pin the contract that the harness has no shared global env path which
+    // would let a buyer-signed mirror reuse publisher creds.
+    const src = readSource(SMOKE)
+    expect(src).not.toMatch(/process\.env\.SMOKE_AUTHORIZATION/)
+    expect(src).not.toMatch(/process\.env\.SMOKE_COOKIE/)
+  })
+})
+
+describe('smoke matrix /api/souls/publish/batch rows ship non-empty syncBodies (R-002)', () => {
+  // R-002: the batch publish route rejects empty syncBodies and asserts
+  // syncBodies.length === expectedSoulCount before any chain reads. The
+  // example template must therefore declare one syncBody per expected soul
+  // (with placeholder soulOnChainIds the operator fills before running).
+  type Mirror = { path: string, body?: Record<string, unknown> }
+  type Step = { mirror?: Mirror | Mirror[] }
+  type Row = { name: string, steps: Step[] }
+  type Scenario = { rows: Row[] }
+
+  function loadBatchMirrors(): Array<{ rowName: string, body: Record<string, unknown> }> {
+    const scenario = JSON.parse(readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')) as Scenario
+    const out: Array<{ rowName: string, body: Record<string, unknown> }> = []
+    for (const row of scenario.rows) {
+      for (const step of row.steps) {
+        const mirrors = Array.isArray(step.mirror) ? step.mirror : step.mirror ? [step.mirror] : []
+        for (const m of mirrors) {
+          if (m.path === '/api/souls/publish/batch' && m.body) {
+            out.push({ rowName: row.name, body: m.body })
+          }
+        }
+      }
+    }
+    return out
+  }
+
+  it('finds at least one /api/souls/publish/batch mirror entry', () => {
+    expect(loadBatchMirrors().length).toBeGreaterThan(0)
+  })
+
+  it('each batch mirror body declares syncBodies whose length matches expectedSoulCount', () => {
+    for (const { rowName, body } of loadBatchMirrors()) {
+      const expectedSoulCount = body.expectedSoulCount as number
+      expect(typeof expectedSoulCount, `${rowName} expectedSoulCount must be a number`).toBe('number')
+      expect(expectedSoulCount).toBeGreaterThan(0)
+      const syncBodies = body.syncBodies as unknown
+      expect(Array.isArray(syncBodies), `${rowName} syncBodies must be an array`).toBe(true)
+      const list = syncBodies as Array<Record<string, unknown>>
+      expect(list.length, `${rowName} syncBodies length must equal expectedSoulCount=${expectedSoulCount}`).toBe(expectedSoulCount)
+    }
+  })
+
+  it('each syncBody declares a non-empty soulOnChainId placeholder', () => {
+    for (const { rowName, body } of loadBatchMirrors()) {
+      const list = body.syncBodies as Array<Record<string, unknown>>
+      for (let i = 0; i < list.length; i++) {
+        const sb = list[i]
+        expect(typeof sb.soulOnChainId, `${rowName} syncBodies[${i}].soulOnChainId must be a string`).toBe('string')
+        expect((sb.soulOnChainId as string).length, `${rowName} syncBodies[${i}].soulOnChainId must be non-empty`).toBeGreaterThan(0)
+      }
+    }
   })
 })
