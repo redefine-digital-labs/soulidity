@@ -244,7 +244,10 @@ describe('/api/souls/publish/batch route shape', () => {
 
   it('rejects per-soul body with a soulOnChainId not in the TX', () => {
     const src = readSource(BATCH_ROUTE)
-    expect(src).toContain('mintByEventSoulId.has(sb.soulOnChainId.toLowerCase())')
+    // Either inline `sb.soulOnChainId.toLowerCase()` or the per-iteration
+    // `lower` extraction is acceptable so long as the lookup is lower-cased
+    // and uses the per-soul mint event map.
+    expect(src).toMatch(/mintByEventSoulId\.has\((sb\.soulOnChainId\.toLowerCase\(\)|lower)\)/)
     expect(src).toContain('has no matching SoulMintedToKiosk event in this TX')
   })
 
@@ -509,5 +512,82 @@ describe('smoke matrix /api/souls/publish/batch rows ship non-empty syncBodies (
         expect((sb.soulOnChainId as string).length, `${rowName} syncBodies[${i}].soulOnChainId must be non-empty`).toBeGreaterThan(0)
       }
     }
+  })
+})
+
+describe('/api/souls/publish/batch enforces per-soul Seal sidecars (R-001)', () => {
+  // R-001: the batch publish flow (web/lib/hooks/use-collection-publish.ts)
+  // ALWAYS uploads each Soul's character file and founding-memory file as
+  // `uploadType: 'encrypted'`. Without a server-side gate, a smoke template or
+  // third-party caller can post syncBodies without `sealSidecar` /
+  // `memorySealSidecar` and the route would silently mirror Souls + founding
+  // memories that the app cannot decrypt. Pin the gate.
+  it('rejects syncBodies entries that omit sealSidecar (Soul content always encrypted)', () => {
+    const src = readSource(BATCH_ROUTE)
+    expect(src).toContain('if (!sb.sealSidecar)')
+    expect(src).toMatch(/sealSidecar is required for \$\{sb\.soulOnChainId\}.*batch publish always encrypts Soul content/)
+  })
+
+  it('rejects syncBodies entries that omit memorySealSidecar when a founding-memory event exists', () => {
+    const src = readSource(BATCH_ROUTE)
+    // The route must build a per-soul memory event map and require the
+    // memory sidecar only when the TX actually appended a founding memory
+    // for that soul (some future flows might mint without one).
+    expect(src).toContain('memoryByEventSoulId')
+    expect(src).toContain('memoryByEventSoulId.has(lower) && !sb.memorySealSidecar')
+    expect(src).toMatch(/memorySealSidecar is required for \$\{sb\.soulOnChainId\}.*founding memory blob is encrypted/)
+  })
+
+  it('keeps the existing assetsSealSidecar visibility gate (private initial asset only)', () => {
+    // Asset sidecar requirement is event-visibility driven (initial asset can
+    // legitimately be public), unlike Soul content / memory which are always
+    // encrypted in the batch flow. The two enforcement axes must coexist.
+    const src = readSource(BATCH_ROUTE)
+    expect(src).toContain("initialAsset?.visibility === 'private' && !assetsSidecar")
+    expect(src).toContain('assetsSealSidecar is required for ${minted.soulId} (private initial asset)')
+  })
+
+  it('every batch syncBodies entry in the smoke template ships sealSidecar and memorySealSidecar placeholders', () => {
+    type Mirror = { path: string, body?: Record<string, unknown> }
+    type Step = { mirror?: Mirror | Mirror[] }
+    type Row = { name: string, steps: Step[] }
+    type Scenario = { rows: Row[] }
+    const scenario = JSON.parse(readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')) as Scenario
+    let inspected = 0
+    for (const row of scenario.rows) {
+      for (const step of row.steps) {
+        const mirrors = Array.isArray(step.mirror) ? step.mirror : step.mirror ? [step.mirror] : []
+        for (const m of mirrors) {
+          if (m.path !== '/api/souls/publish/batch' || !m.body) continue
+          const list = m.body.syncBodies as Array<Record<string, unknown>>
+          for (let i = 0; i < list.length; i++) {
+            const sb = list[i]
+            expect(
+              typeof sb.sealSidecar,
+              `${row.name} syncBodies[${i}].sealSidecar must be a placeholder object so the route gate is exercised`,
+            ).toBe('object')
+            expect(sb.sealSidecar, `${row.name} syncBodies[${i}].sealSidecar must not be null`).not.toBeNull()
+            expect(
+              typeof sb.memorySealSidecar,
+              `${row.name} syncBodies[${i}].memorySealSidecar must be a placeholder object`,
+            ).toBe('object')
+            expect(sb.memorySealSidecar, `${row.name} syncBodies[${i}].memorySealSidecar must not be null`).not.toBeNull()
+            inspected++
+          }
+        }
+      }
+    }
+    expect(inspected, 'expected at least one batch syncBodies entry in the smoke template').toBeGreaterThan(0)
+  })
+
+  it('smoke template _comment instructs operators to replace the seal sidecar placeholders before running', () => {
+    const raw = readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')
+    expect(raw).toContain('sealSidecar')
+    expect(raw).toContain('memorySealSidecar')
+    // The comment must surface the contract so a future operator does not
+    // strip the placeholders thinking they are optional.
+    expect(raw).toMatch(/ALWAYS requires.*sealSidecar/i)
+    expect(raw).toMatch(/__REPLACE_WITH_SOUL_SEAL_SIDECAR_/)
+    expect(raw).toMatch(/__REPLACE_WITH_MEMORY_SEAL_SIDECAR_/)
   })
 })
