@@ -591,3 +591,152 @@ describe('/api/souls/publish/batch enforces per-soul Seal sidecars (R-001)', () 
     expect(raw).toMatch(/__REPLACE_WITH_MEMORY_SEAL_SIDECAR_/)
   })
 })
+
+describe('/api/souls/publish enforces single-Soul Seal sidecars (R-002)', () => {
+  // R-002: the single-Soul publish flow (`web/app/create/gas/page.tsx` →
+  // `web/lib/hooks/use-publish.ts`) ALWAYS uploads the Soul character file
+  // and founding-memory file as `uploadType: 'encrypted'`, and the optional
+  // skills bundle is uploaded with `skillsVisibility: 'private'`. Without a
+  // server-side gate, a smoke template / third-party caller could post
+  // `/api/souls/publish` with `sealSidecar: null` (or no field at all) and
+  // the route would silently mirror Souls / founding memories the app
+  // cannot decrypt. Pin the gate.
+  const SOUL_PUBLISH_ROUTE = 'web/app/api/souls/publish/route.ts'
+
+  it('rejects bodies that omit sealSidecar (single-Soul publish always encrypts Soul content)', () => {
+    const src = readSource(SOUL_PUBLISH_ROUTE)
+    expect(src).toContain('if (!providedSoulSidecar)')
+    expect(src).toMatch(/sealSidecar is required for \$\{minted\.soulId\}.*single-Soul publish always encrypts Soul content/)
+  })
+
+  it('rejects bodies that omit memorySealSidecar when a founding-memory event exists', () => {
+    const src = readSource(SOUL_PUBLISH_ROUTE)
+    expect(src).toContain('if (foundingMemory && !providedMemorySidecar)')
+    expect(src).toMatch(/memorySealSidecar is required for \$\{minted\.soulId\}.*founding memory blob is encrypted/)
+  })
+
+  it('rejects bodies that omit skillsSealSidecar when the PTB appends a private initial skill', () => {
+    // Skills are uploaded encrypted with `skillsVisibility: 'private'` in the
+    // create flow, so a private SkillVersionAppended event without a sidecar
+    // would persist a skill version the app can never decrypt. The asset
+    // sidecar requirement lives on the visibility-driven path below the gate.
+    const src = readSource(SOUL_PUBLISH_ROUTE)
+    expect(src).toContain("initialSkill?.visibility === 'private' && !providedSkillsSidecar")
+    expect(src).toMatch(/skillsSealSidecar is required for \$\{minted\.soulId\}.*private initial skill/)
+  })
+
+  it('keeps the existing assetsSealSidecar visibility gate (private initial asset only)', () => {
+    // The asset sidecar gate stays event-visibility driven — initial mint-time
+    // assets can legitimately be public. Soul / memory / skills gates above
+    // are policy-driven (the create flow always encrypts these).
+    const src = readSource(SOUL_PUBLISH_ROUTE)
+    expect(src).toContain("initialAsset?.visibility === 'private' && !assetsSidecar")
+    expect(src).toContain('assetsSealSidecar is required for private initial asset versions')
+  })
+
+  it('every single-Soul /api/souls/publish smoke row ships sealSidecar and memorySealSidecar placeholders', () => {
+    type Mirror = { path: string, body?: Record<string, unknown> }
+    type Step = { mirror?: Mirror | Mirror[] }
+    type Row = { name: string, steps: Step[] }
+    type Scenario = { rows: Row[] }
+    const scenario = JSON.parse(readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')) as Scenario
+    let inspected = 0
+    for (const row of scenario.rows) {
+      for (const step of row.steps) {
+        const mirrors = Array.isArray(step.mirror) ? step.mirror : step.mirror ? [step.mirror] : []
+        for (const m of mirrors) {
+          // Single-Soul publish only — the batch route is covered by the
+          // adjacent describe block.
+          if (m.path !== '/api/souls/publish' || !m.body) continue
+          expect(
+            typeof m.body.sealSidecar,
+            `${row.name} /api/souls/publish.sealSidecar must be a placeholder object so the route gate is exercised`,
+          ).toBe('object')
+          expect(m.body.sealSidecar, `${row.name} /api/souls/publish.sealSidecar must not be null`).not.toBeNull()
+          expect(
+            typeof m.body.memorySealSidecar,
+            `${row.name} /api/souls/publish.memorySealSidecar must be a placeholder object`,
+          ).toBe('object')
+          expect(m.body.memorySealSidecar, `${row.name} /api/souls/publish.memorySealSidecar must not be null`).not.toBeNull()
+          inspected++
+        }
+      }
+    }
+    expect(inspected, 'expected at least one /api/souls/publish mirror entry in the smoke template').toBeGreaterThan(0)
+  })
+
+  it('smoke template _comment documents the single-Soul publish sidecar contract', () => {
+    const raw = readSource('scripts/scenarios/soulidity-smoke-matrix.example.json')
+    expect(raw).toContain('__REPLACE_WITH_SOUL_SEAL_SIDECAR__')
+    expect(raw).toContain('__REPLACE_WITH_MEMORY_SEAL_SIDECAR__')
+    expect(raw).toMatch(/single-Soul \/api\/souls\/publish/i)
+  })
+})
+
+describe('single-Soul list-on-publish price preflight (R-001)', () => {
+  // R-001: the single-Soul preview page must reject empty / non-numeric /
+  // non-positive listing prices BEFORE the gas page calls
+  // `prepareSoulBlobsForBatchPublish(...)` (paid Walrus register PTB1).
+  // Without this, a creator can enable "List immediately" with a bad
+  // price, sign PTB1, and only then have `usePublish.assertListingPriceAtomic`
+  // reject the value — leaving paid registered blobs orphaned.
+  const PRICE_HELPER = 'web/lib/soulidity/listing-price.ts'
+  const PREVIEW_PAGE = 'web/app/create/preview/page.tsx'
+  const GAS_PAGE = 'web/app/create/gas/page.tsx'
+
+  it('shared parser rejects empty / non-numeric / zero prices', async () => {
+    const mod = await import('../../web/lib/soulidity/listing-price')
+    expect(() => mod.assertListingPriceAtomic(null)).toThrow(/required/)
+    expect(() => mod.assertListingPriceAtomic('')).toThrow(/required/)
+    expect(() => mod.assertListingPriceAtomic('   ')).toThrow(/required/)
+    expect(() => mod.assertListingPriceAtomic('abc')).toThrow(/bigint-compatible/)
+    expect(() => mod.assertListingPriceAtomic('1.5')).toThrow(/bigint-compatible/)
+    expect(() => mod.assertListingPriceAtomic('0')).toThrow(/> 0/)
+    expect(() => mod.assertListingPriceAtomic('-1')).toThrow(/> 0/)
+    // Valid case: returns the parsed bigint.
+    expect(mod.assertListingPriceAtomic('1000000')).toBe(1_000_000n)
+  })
+
+  it('non-throwing validateListingPriceAtomic returns ok/error shape for UI gating', async () => {
+    const mod = await import('../../web/lib/soulidity/listing-price')
+    expect(mod.validateListingPriceAtomic('')).toEqual({ ok: false, error: expect.stringMatching(/required/) })
+    expect(mod.validateListingPriceAtomic('0')).toEqual({ ok: false, error: expect.stringMatching(/> 0/) })
+    expect(mod.validateListingPriceAtomic('1000000')).toEqual({ ok: true, value: 1_000_000n })
+  })
+
+  it('use-publish.ts re-uses the shared parser instead of inlining its own', () => {
+    const src = readSource(PUBLISH_HOOK)
+    expect(src).toContain("from '@/lib/soulidity/listing-price'")
+    expect(src).toContain('assertListingPriceAtomic(params.listingPriceAtomic)')
+    // The inline copy that used to live at the top of use-publish.ts must
+    // be gone so there is one source of truth for the parser.
+    expect(src).not.toMatch(/^function assertListingPriceAtomic\(/m)
+  })
+
+  it('preview page imports the shared validator and computes a listingPriceBlocked guard', () => {
+    const src = readSource(PREVIEW_PAGE)
+    expect(src).toContain("from '@/lib/soulidity/listing-price'")
+    expect(src).toContain('validateListingPriceAtomic(ctx.listingPriceAtomic)')
+    expect(src).toContain('listingPriceBlocked')
+  })
+
+  it('preview page renders a disabled Next button when listOnPublish is true and the price is invalid', () => {
+    const src = readSource(PREVIEW_PAGE)
+    expect(src).toContain('listingPriceBlocked ? (')
+    expect(src).toContain('data-testid="next-pay-gas-disabled"')
+    // The non-blocked branch keeps the existing Link to /create/gas.
+    expect(src).toContain("href=\"/create/gas\"")
+  })
+
+  it('gas page preflight calls assertListingPriceAtomic before prepareSoulBlobsForBatchPublish', () => {
+    const src = readSource(GAS_PAGE)
+    expect(src).toContain("from '@/lib/soulidity/listing-price'")
+    const preflightStart = src.indexOf("setUploadPhase('preflight')")
+    const prepareStart = src.indexOf('prepareSoulBlobsForBatchPublish(')
+    expect(preflightStart).toBeGreaterThan(0)
+    expect(prepareStart).toBeGreaterThan(preflightStart)
+    const preflightBlock = src.slice(preflightStart, prepareStart)
+    expect(preflightBlock).toContain('ctx.listOnPublish === true')
+    expect(preflightBlock).toContain('assertListingPriceAtomic(ctx.listingPriceAtomic)')
+  })
+})
