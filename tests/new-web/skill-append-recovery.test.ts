@@ -136,6 +136,36 @@ describe('skill append recovery regressions', () => {
     expect(panel).toContain('appendSkillVersions(selectedFiles, visibility)')
   })
 
+  it('threads pendingSync.sealMaterials through the resume path for batch private appends', () => {
+    // Multi-version private skill batch persists `sealMaterials` (plural).
+    // If a crash/reload happens after the on-chain TX settles but before the
+    // mirror POST, the auto-resume effect must rebuild the sync body with the
+    // plural array — otherwise the API route returns 422 (one Seal sidecar
+    // per private append event is required) and the on-chain versions stay
+    // unmirrored forever.
+    const source = readSource('web/lib/hooks/use-skills.ts')
+    const skillsAssetsRoute = readSource('web/lib/hooks/use-assets.ts')
+
+    // use-skills.ts: resume path forwards both singular and plural material.
+    const skillsResumeStart = source.indexOf('if (!syncBody && recovery.pendingSync) {')
+    expect(skillsResumeStart).toBeGreaterThan(-1)
+    const skillsResumeEnd = source.indexOf('persistSkillAppendRecovery(storageKey, recovery)', skillsResumeStart)
+    expect(skillsResumeEnd).toBeGreaterThan(skillsResumeStart)
+    const skillsResumeBlock = source.slice(skillsResumeStart, skillsResumeEnd)
+    expect(skillsResumeBlock).toContain('sealMaterial: recovery.pendingSync.sealMaterial')
+    expect(skillsResumeBlock).toContain('sealMaterials: recovery.pendingSync.sealMaterials')
+
+    // use-assets.ts: same regression — sprite batch persists `sealMaterials`
+    // and the resume path must rebuild the sync body with the plural array.
+    const spritesResumeStart = skillsAssetsRoute.indexOf('if (!syncBody && recovery.pendingSync) {')
+    expect(spritesResumeStart).toBeGreaterThan(-1)
+    const spritesResumeEnd = skillsAssetsRoute.indexOf('persistSpriteAppendRecovery(storageKey, recovery)', spritesResumeStart)
+    expect(spritesResumeEnd).toBeGreaterThan(spritesResumeStart)
+    const spritesResumeBlock = skillsAssetsRoute.slice(spritesResumeStart, spritesResumeEnd)
+    expect(spritesResumeBlock).toContain('sealMaterial: recovery.pendingSync.sealMaterial')
+    expect(spritesResumeBlock).toContain('sealMaterials: recovery.pendingSync.sealMaterials')
+  })
+
   it('rejects failed skill append digests before persisting recovery (R-001)', () => {
     // signAndExecute() returns the raw wallet execution result. If
     // effects.status.status === 'failure' (Move abort, stale skillsOnChainId,
