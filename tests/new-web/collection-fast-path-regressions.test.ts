@@ -219,6 +219,29 @@ describe('/api/souls/publish/batch route shape', () => {
     expect(src).toContain('but expectedBindCount is')
   })
 
+  it('matches initial asset and content-access events per soul (R-001)', () => {
+    // R-001: batched PTBs can mint multiple souls, each emitting its own
+    // AssetVersionAppended / ContentAccessListCreated event. The route must
+    // build per-soul maps from the multi-event extractors and look up by
+    // `soulId`, not pick the first matching event in the digest.
+    const src = readSource(BATCH_ROUTE)
+    expect(src).toContain('extractAllAssetVersionAppendedEvents(transaction, packageId)')
+    expect(src).toContain('extractAllContentAccessListCreatedEvents(transaction, packageId)')
+    expect(src).toContain('assetByEventSoulId.get(minted.soulId.toLowerCase())')
+    expect(src).toContain('contentAccessByEventSoulId.get(minted.soulId.toLowerCase())')
+    // The previous singleton-extractor pattern must not return.
+    expect(src).not.toContain('tryExtractAssetVersionAppendedEvent(transaction, packageId)')
+    expect(src).not.toContain('tryExtractContentAccessListCreatedEvent(transaction, packageId)')
+    expect(src).not.toContain('initialAssetSingleton')
+    expect(src).not.toContain('contentAccessSingleton')
+  })
+
+  it('events module exports an All-variant for ContentAccessListCreated (R-001)', () => {
+    const src = readSource(EVENTS)
+    expect(src).toContain('export function extractAllContentAccessListCreatedEvents(')
+    expect(src).toContain('parseContentAccessListCreatedEvent')
+  })
+
   it('rejects per-soul body with a soulOnChainId not in the TX', () => {
     const src = readSource(BATCH_ROUTE)
     expect(src).toContain('mintByEventSoulId.has(sb.soulOnChainId.toLowerCase())')
