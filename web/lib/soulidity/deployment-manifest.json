@@ -11,19 +11,19 @@
     "upgradeStateId": "0x616117e725110550e03490bf189e0c5a9a01c2383e819eff2092b58560355f2c"
   },
   "mainnet": {
-    "packageId": "0x9b516890a7cf17e81be2d5018b14f786f7e3f76abd05593e42dc6c910aaa4b35",
-    "marketConfigId": "0x5c8ff3521c60ab4d983c0bf717786a82d2f2b6e348f78bd6fa18fb3ff3d5abee",
-    "kioskRegistryId": "0x2652047a77d16d60a2cfc86e7c656b8f1e67f877f4a70e1ac238fdeba188cd70",
-    "soulTransferPolicyId": "0xbbb21688a6f91a5bd90a4f7df51b25dcb042f2b81e5a57e8b2c74bc54b168335",
-    "collectionTransferPolicyId": "0x7bf022fca0c2e0caa65ce50f34cd525877bbe5b7e85fb643684c2d403f270177",
+    "packageId": "0x6d7d0230f9f87572d80090651f6c99b46f15b016f330642d9b10fbb93b5c41de",
+    "marketConfigId": "0x5528c53a6a75183120ee13dabe62f6fb2c2ecccf4c7071e86bbe7d5c0a1f73de",
+    "kioskRegistryId": "0x1b1e5771bf4f9331c6aad719cc7a1fac8d277f837ed6c4e7ac45a2bf9cb408be",
+    "soulTransferPolicyId": "0x87ffa72cccab6be6f9febf2f4ccc54f220947c0aaf6b412ec88d8a03531cfa76",
+    "collectionTransferPolicyId": "0x2f497e49677da69b680273a483d133f04ca6893f4dfca3328999f76a1b4b9224",
     "paymentCoinType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
-    "publishTxDigest": "4CjqxNmX47CetUstrsja7JVREPbTraP3k9LEkuYU7A5c",
-    "upgradeCapId": "0xc99baa6d61119250ab90bad197551fa8a5a397aab6f5b8bd5329a13b9f3e5f0a",
-    "upgradeStateId": "0x12f43cef6309fec4d3e268e4831562ab7307e5e1c61c9994e46f4af918487c20",
-    "marketAdminCapId": "0x97442e615ca178c0e81b28338ee41e59f9b4a36371da69fc88a517f44fa0ba54",
-    "soulPolicyCapId": "0x43c285aea95c595ac40863fd4907c7173cedcb06f16bb6b06e3d29bbef90b1b8",
-    "collectionPolicyCapId": "0x3362e7bfb3699ae9971d54d79b97c39e719b84bfe9b3ee003c32ec8bd6c6ff75",
-    "soulDisplayId": "0x57cf3a33561e2d4526b45639d66cf0fd0384406a2647fed651152547c8e0b29c",
-    "collectionDisplayId": "0x4129910c6c298c2d4294df619b0eb7e4b3b55afa578eb837b9876f317dd284a6"
+    "publishTxDigest": "GFqzwHHMRRgo36p99etXocpE5vmzYunckN4cKCqdkaDk",
+    "upgradeCapId": "0xd45f1e7647a463be2bac2cc990bf9ce8b91702ccca6a33b414717854a6b0073b",
+    "upgradeStateId": "0xbd7ee8702bf3e363fad93b3c34c2489c4cc82805bd77354f420f37662b686dd4",
+    "marketAdminCapId": "0x619465f10883ef9ec3fcee13554c11d28e4626b5212dd24d8bc30853806c5042",
+    "soulPolicyCapId": "0x9f0f372c64e9f50216109a92ee7a97ecf3ca062d5ea58be3ed7a64aeda46569c",
+    "collectionPolicyCapId": "0x8dbd1b29eccbd31ca611aa9442d405751131d56797d939053d9af70421d321ce",
+    "soulDisplayId": "0xd1a6b7d0b4729d44b7c386d45aa766f0ebc7d2463dce1dbc462e919f3981baa6",
+    "collectionDisplayId": "0x5ea55a74fa1f61fa8dfc6fff7c76027e5d3e75f319c23969f8b3a19fe0e2e95f"
   }
 }
