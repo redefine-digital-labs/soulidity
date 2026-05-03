@@ -500,7 +500,7 @@ describe('Soulidity queries', () => {
   it('uses the official mainnet kiosk type origin when listing upgraded PersonalKioskCap objects', async () => {
     process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID = OFFICIAL_MAINNET_KIOSK_PACKAGE_ID
     expect(OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID).toBe(
-      '0x434b5bd8f6a7b05fede0ff46c6e511d71ea326ed38056e3bcd681d2d7c2a7879',
+      '0x0cb4bcc0560340eb1a1b929cabe56b33fc6449820ec8c1980d69bb98b649b802',
     )
     mockedGetOwnedObjects.mockResolvedValueOnce({
       data: [{

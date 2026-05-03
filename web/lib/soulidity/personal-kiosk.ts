@@ -105,8 +105,8 @@ export async function resolveOwnedPersonalKiosk(params: {
       && !sameSuiValue(kiosk.currentKioskCapOnChainId, registered.kioskCapOnChainId)
     ))
     const recoveryHint = sameKioskDifferentCap
-      ? 'Use the original PersonalKioskCap you registered with. If you cannot recover it, you must rebind to a fresh kiosk via /settings (only allowed once the original kiosk is empty).'
-      : 'Locate the original cap (search both IDs on Sui Explorer) or use a different wallet. If the registered kiosk is empty, you can rebind to a new kiosk via /settings.'
+      ? 'Use the original PersonalKioskCap you registered with. Contact support with this wallet address if you cannot recover it.'
+      : 'Locate the original cap (search both IDs on Sui Explorer) or use a different wallet. Contact support if you cannot recover it.'
 
     throw new SoulidityPersonalKioskInvariantError(
       `Wallet ${ownerAddress} has a Soulidity kiosk registration `

@@ -144,7 +144,7 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
   14: {
     name: 'EPersonalKioskMismatch',
     summary: 'Your wallet is registered with a different personal kiosk.',
-    recoveryHint: 'Use the kiosk recorded in the registry, or rebind via /settings if the old kiosk is empty.',
+    recoveryHint: 'Use the kiosk recorded in the registry. Contact support if you cannot recover the original cap.',
   },
   15: {
     name: 'ECollectionMismatch',
@@ -254,7 +254,7 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
   37: {
     name: 'EPersonalKioskCapMismatch',
     summary: 'A new PersonalKioskCap was created, but the registry still points at the original cap.',
-    recoveryHint: 'Use the original cap recorded in the registry, or rebind to the new kiosk via /settings (only allowed when the old kiosk is empty).',
+    recoveryHint: 'Use the original cap recorded in the registry. Contact support if you cannot recover it.',
   },
   38: {
     name: 'ESoulCurrentKioskMismatch',

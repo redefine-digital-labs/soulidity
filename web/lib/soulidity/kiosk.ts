@@ -5,11 +5,18 @@ export const KIOSK_PACKAGE_ENV_KEY = 'NEXT_PUBLIC_KIOSK_PACKAGE_ID'
 export const OFFICIAL_MAINNET_KIOSK_PACKAGE_ID =
   '0xdfb4f1d4e43e0c3ad834dcd369f0d39005c872e118c9dc1c5da9765bb93ee5f3'
 
-// Type origin for the `personal_kiosk::PersonalKioskCap` struct on mainnet.
-// The callable package is `0xdfb4...`, but normalized mainnet modules still
-// report PersonalKioskCap with this original type address.
+// Type origin for `personal_kiosk::PersonalKioskCap` on mainnet.
+// IMPORTANT: this is the original-id of the `personal_kiosk` package, NOT the
+// `kiosk` package. They are two distinct mysten Move packages from
+// `MystenLabs/apps`:
+//   - `kiosk`          original-id 0x434b5bd8… (used in Move.toml addr_subst)
+//   - `personal_kiosk` original-id 0x0cb4bcc0… (this constant)
+// Verified via `suix_getOwnedObjects` on real PersonalKioskCap objects: the
+// returned `objType` is `0x0cb4bcc0…::personal_kiosk::PersonalKioskCap` on
+// mainnet. Using the kiosk-package id here makes the StructType filter never
+// match, so every wallet appears to own zero PersonalKioskCap.
 export const OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID =
-  '0x434b5bd8f6a7b05fede0ff46c6e511d71ea326ed38056e3bcd681d2d7c2a7879'
+  '0x0cb4bcc0560340eb1a1b929cabe56b33fc6449820ec8c1980d69bb98b649b802'
 
 // Kiosk package linked into the testnet Soulidity deployment. The
 // personal_kiosk cap struct lives in the same package, so no separate
