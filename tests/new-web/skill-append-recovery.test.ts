@@ -135,4 +135,44 @@ describe('skill append recovery regressions', () => {
     expect(panel).toContain('onFilesSelect')
     expect(panel).toContain('appendSkillVersions(selectedFiles, visibility)')
   })
+
+  it('rejects failed skill append digests before persisting recovery (R-001)', () => {
+    // signAndExecute() returns the raw wallet execution result. If
+    // effects.status.status === 'failure' (Move abort, stale skillsOnChainId,
+    // bad root state), the recovery row would otherwise persist a non-success
+    // digest and the auto-resume effect would replay a failed transaction
+    // forever. Both single-version `appendSkillVersion` and batch
+    // `appendSkillVersions` must call `assertSoulidityTxSucceeded(result, ...)`
+    // BEFORE building `pendingSync` / persisting recovery / posting to the
+    // mirror.
+    const source = readSource('web/lib/hooks/use-skills.ts')
+
+    expect(source).toContain("import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'")
+
+    // Single-append path
+    const singleSignStart = source.indexOf(
+      'const result = await signAndExecute(tx)',
+      source.indexOf('async function appendSkillVersion(file: File'),
+    )
+    const singlePendingSync = source.indexOf('const pendingSync: SkillAppendSyncMaterial', singleSignStart)
+    expect(singleSignStart).toBeGreaterThan(0)
+    expect(singlePendingSync).toBeGreaterThan(singleSignStart)
+    const singleGuardBlock = source.slice(singleSignStart, singlePendingSync)
+    expect(singleGuardBlock).toContain("assertSoulidityTxSucceeded(result, 'Soul skill append transaction')")
+    expect(singleGuardBlock).not.toContain('persistSkillAppendRecovery')
+    expect(singleGuardBlock).not.toContain('postAppendMirror')
+
+    // Batch path
+    const batchSignStart = source.indexOf(
+      'const result = await signAndExecute(tx)',
+      source.indexOf('async function appendSkillVersions(files'),
+    )
+    const batchPendingSync = source.indexOf('const pendingSync: SkillAppendSyncMaterial', batchSignStart)
+    expect(batchSignStart).toBeGreaterThan(singleSignStart)
+    expect(batchPendingSync).toBeGreaterThan(batchSignStart)
+    const batchGuardBlock = source.slice(batchSignStart, batchPendingSync)
+    expect(batchGuardBlock).toContain("assertSoulidityTxSucceeded(result, 'Soul skill batch transaction')")
+    expect(batchGuardBlock).not.toContain('persistSkillAppendRecovery')
+    expect(batchGuardBlock).not.toContain('postAppendMirror')
+  })
 })

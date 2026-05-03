@@ -14,6 +14,7 @@
     "typecheck": "npm run typecheck:root && npm run typecheck:web",
     "build:web:production-env": "CLAWNEWS_LOAD_ENV_LOCAL=false npm --prefix web run build",
     "publish:soulidity": "tsx scripts/publish-soulidity-and-sync.ts",
+    "smoke:soulidity": "tsx scripts/smoke-soulidity.ts",
     "collect": "tsx src/collector/run.ts",
     "collect:x": "tsx src/collector/run.ts x",
     "produce": "tsx src/producer/run.ts",
