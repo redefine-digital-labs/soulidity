@@ -47,15 +47,15 @@ vi.mock('@/lib/soulidity/mirror/tx-sync', () => ({
   storeSoulidityTxSync: mockedStoreSoulidityTxSync,
 }))
 
-vi.mock('@/lib/soulidity/env', () => ({
+vi.mock('@soulidity/sdk/env', () => ({
   getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
 }))
 
-vi.mock('@/lib/soulidity/events', () => ({
+vi.mock('@soulidity/sdk/events', () => ({
   extractSoulAddedToCollectionEvent: mockedExtractSoulAddedToCollectionEvent,
 }))
 
-vi.mock('@/lib/soulidity/queries', () => ({
+vi.mock('@soulidity/sdk/queries', () => ({
   getSuccessfulTransactionBlock: mockedGetSuccessfulTransactionBlock,
   readTransactionSender: mockedReadTransactionSender,
   waitForTransactionBestEffort: mockedWaitForTransactionBestEffort,
@@ -66,7 +66,7 @@ vi.mock('@/lib/soulidity/mirror/sync-helpers', () => ({
   syncCollectionProjectionFromChain: mockedSyncCollectionProjectionFromChain,
 }))
 
-vi.mock('@/lib/soulidity/request', () => ({
+vi.mock('@soulidity/sdk/request', () => ({
   parseRequiredTxDigest: mockedParseRequiredTxDigest,
 }))
 

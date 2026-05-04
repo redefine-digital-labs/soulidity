@@ -33,6 +33,7 @@
   "dependencies": {
     "@mysten/sui": "^2.15.0",
     "@prisma/adapter-pg": "^7.7.0",
+    "@soulidity/sdk": "file:./packages/soulidity-sdk",
     "@prisma/client": "^7.7.0",
     "dotenv": "^17.4.2",
     "grammy": "^1.42.0",

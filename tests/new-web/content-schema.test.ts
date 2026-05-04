@@ -4,11 +4,11 @@ import {
   SOUL_ENTRY_TYPES,
   SOUL_WRITER_KINDS,
   parseSkillMd,
-} from '@/lib/soulidity/content-schema'
+} from '@soulidity/sdk'
 import {
   FOUNDING_MEMORY_MD_TEMPLATE,
   SOUL_MD_TEMPLATE,
-} from '@/lib/soulidity/content-templates'
+} from '@soulidity/sdk'
 
 describe('content schema', () => {
   it('parses SKILL.md frontmatter and preserves the markdown body', () => {

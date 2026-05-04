@@ -7,9 +7,13 @@ const AUTH_TAG_BYTES = 16
 vi.mock('@web/lib/services/seal', () => ({
   AccessPolicyDescriptor: {},
 }))
-vi.mock('@web/lib/sui', () => ({
-  suiClient: {},
-}))
+vi.mock('@soulidity/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@soulidity/sdk')>()
+  return {
+    ...actual,
+    suiClient: {},
+  }
+})
 
 function aesGcmEncrypt(plaintext: Buffer, dek: Buffer, iv: Buffer) {
   const cipher = createCipheriv('aes-256-gcm', dek, iv)

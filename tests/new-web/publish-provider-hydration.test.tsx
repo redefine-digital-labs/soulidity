@@ -24,7 +24,7 @@ vi.mock('@/components/providers/auth-provider', () => ({
   useAuth: () => authState,
 }))
 
-vi.mock('@/lib/soulidity/client-session', () => ({
+vi.mock('@soulidity/sdk/client-session', () => ({
   attachSoulidityDeploymentSignature: <T extends object>(payload: T) => ({
     ...payload,
     deploymentSignature: 'test-deployment',

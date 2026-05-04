@@ -58,7 +58,7 @@ function collectMatches(pattern: RegExp) {
 describe('repository contract guards', () => {
   it('documents the Soulidity env contract and repo-level web verification', () => {
     const envExample = readFileSync(join(repoRoot, '.env.example'), 'utf8')
-    const deploymentManifest = JSON.parse(readFileSync(join(webRoot, 'lib', 'soulidity', 'deployment-manifest.json'), 'utf8')) as {
+    const deploymentManifest = JSON.parse(readFileSync(join(repoRoot, 'packages', 'soulidity-sdk', 'src', 'deployment-manifest.json'), 'utf8')) as {
       testnet?: Record<string, string>
       mainnet?: Record<string, string>
     }

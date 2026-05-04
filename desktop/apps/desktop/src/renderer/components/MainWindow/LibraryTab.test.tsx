@@ -29,9 +29,9 @@ vi.mock('../../lib/hooks/use-desktop-wallet', () => ({
   }),
 }))
 
-vi.mock('../../lib/soulidity/asset-access', () => ({
-  loadDecryptedPrivateAssetVersion: vi.fn(),
-  parsePrivateAssetAccess: vi.fn((value) => value),
+vi.mock('../../lib/soulidity/content-access', () => ({
+  loadDecryptedContentVersion: vi.fn(),
+  parseContentAccessResponse: vi.fn((value) => value),
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

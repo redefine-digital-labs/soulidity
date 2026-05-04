@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_COLLECTION_SUPPLY } from '../../web/lib/soulidity/tx/shared'
+import { MAX_COLLECTION_SUPPLY } from '@soulidity/sdk'
 import { parseCollectionSupplyCapInput } from '../../web/lib/collections/supply-cap'
 
 describe('parseCollectionSupplyCapInput', () => {

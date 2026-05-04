@@ -1,11 +1,11 @@
-import { strToU8, zipSync } from '../../web/node_modules/fflate/esm/index.mjs'
+import { strToU8, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 
 import {
   extractSkillBundleMetadata,
   validateSoulUploadFile,
   validateSoulUploadSignature,
-} from '../../web/lib/soulidity/upload-validation'
+} from '@soulidity/sdk'
 
 function createZipWithBrokenNonSkillEntry() {
   const bytes = zipSync({

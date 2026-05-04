@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getCachedMarketConfig,
   resetMarketConfigCacheForTests,
-} from '../../web/lib/soulidity/market-config-cache'
+} from '@soulidity/sdk'
 
 describe('market config cache', () => {
   beforeEach(() => {

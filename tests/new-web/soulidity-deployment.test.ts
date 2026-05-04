@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import deploymentManifest from '../../web/lib/soulidity/deployment-manifest.json'
+import deploymentManifest from '@soulidity/sdk/deployment-manifest.json'
 import {
   MissingSoulidityDeploymentError,
   getConfiguredSoulidityNetwork,
   getSoulidityDeployment,
-} from '@/lib/soulidity/deployment'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+} from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 
 const ORIGINAL_NETWORK = process.env.NEXT_PUBLIC_SUI_NETWORK
 

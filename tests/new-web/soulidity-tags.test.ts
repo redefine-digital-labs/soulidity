@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeTags } from '../../web/lib/soulidity/tags'
+import { normalizeTags } from '@soulidity/sdk'
 
 describe('normalizeTags', () => {
   it('trims whitespace and drops empty', () => {

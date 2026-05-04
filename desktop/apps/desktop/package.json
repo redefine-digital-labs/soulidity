@@ -94,6 +94,7 @@
     "@mysten/seal": "^1.1.1",
     "@mysten/sui": "2.16.0",
     "@soulidity/backend": "workspace:*",
+    "@soulidity/sdk": "workspace:*",
     "@soulidity/shared": "workspace:*",
     "@tanstack/react-query": "5.100.6",
     "chokidar": "^5.0.0",

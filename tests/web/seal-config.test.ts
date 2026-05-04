@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import deploymentManifest from '../../web/lib/soulidity/deployment-manifest.json'
+import deploymentManifest from '@soulidity/sdk/deployment-manifest.json'
 
 const ORIGINAL_ENV = { ...process.env }
 

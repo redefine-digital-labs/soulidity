@@ -54,17 +54,20 @@ vi.mock('@/lib/soulidity/mirror/tx-sync', () => ({
   storeSoulidityTxSync: mockedStoreSoulidityTxSync,
 }))
 
-vi.mock('@web/lib/sui', () => ({
-  suiClient: mockedSuiClient,
-}))
-
-vi.mock('@/lib/soulidity/env', () => ({
-  getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
-}))
-
-vi.mock('@/lib/soulidity/events', () => ({
-  extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
-}))
+vi.mock('@soulidity/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@soulidity/sdk')>()
+  return {
+    ...actual,
+    suiClient: mockedSuiClient,
+    getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
+    extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
+    getSuccessfulTransactionBlock: mockedGetSuccessfulTransactionBlock,
+    readTransactionSender: mockedReadTransactionSender,
+    waitForTransactionBestEffort: mockedWaitForTransactionBestEffort,
+    sameSuiValue: (left: string | null | undefined, right: string | null | undefined) =>
+      String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase(),
+  }
+})
 
 vi.mock('@mysten/sui/transactions', () => ({
   TransactionDataBuilder: mockedTransactionDataBuilder,
@@ -73,14 +76,6 @@ vi.mock('@mysten/sui/transactions', () => ({
 vi.mock('@/lib/soulidity/mirror/sync-helpers', () => ({
   syncSoulProjectionFromChain: mockedSyncSoulProjectionFromChain,
   endActiveSoulGrantProjectionsFromChain: mockedEndActiveSoulGrantProjectionsFromChain,
-}))
-
-vi.mock('@/lib/soulidity/queries', () => ({
-  getSuccessfulTransactionBlock: mockedGetSuccessfulTransactionBlock,
-  readTransactionSender: mockedReadTransactionSender,
-  waitForTransactionBestEffort: mockedWaitForTransactionBestEffort,
-  sameSuiValue: (left: string | null | undefined, right: string | null | undefined) =>
-    String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase(),
 }))
 
 vi.mock('@web/lib/prisma', () => ({

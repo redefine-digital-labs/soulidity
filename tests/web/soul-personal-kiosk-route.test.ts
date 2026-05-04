@@ -26,7 +26,7 @@ vi.mock('@web/lib/rate-limit', () => ({
   takeBestEffortRateLimitToken: mockedTakeBestEffortRateLimitToken,
 }))
 
-vi.mock('@/lib/soulidity/personal-kiosk', () => ({
+vi.mock('@soulidity/sdk/personal-kiosk', () => ({
   resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
   SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
 }))

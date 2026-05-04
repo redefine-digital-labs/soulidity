@@ -38,7 +38,7 @@ const mockedSameSuiValue = vi.hoisted(
     },
 )
 
-vi.mock('@/lib/soulidity/env', () => ({
+vi.mock('@soulidity/sdk/env', () => ({
   getRequiredSoulidityEnv: vi.fn((key: string) => {
     if (key === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID') return MARKET_CONFIG_ID
     if (key === 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID') return MARKET_PACKAGE_ID
@@ -47,7 +47,7 @@ vi.mock('@/lib/soulidity/env', () => ({
   }),
 }))
 
-vi.mock('@/lib/soulidity/queries', () => ({
+vi.mock('@soulidity/sdk/queries', () => ({
   getMarketConfig: mockedGetMarketConfig,
   getRegisteredPersonalKiosk: mockedGetRegisteredPersonalKiosk,
   listOwnedPersonalKioskCaps: mockedListOwnedPersonalKioskCaps,
@@ -69,7 +69,7 @@ describe('web personal kiosk resolution', () => {
   it('returns missing when the wallet owns no personal kiosk caps', async () => {
     mockedListOwnedPersonalKioskCaps.mockResolvedValueOnce([])
 
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+    const { resolveOwnedPersonalKiosk } = await import('@soulidity/sdk')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
       status: 'missing',
@@ -87,7 +87,7 @@ describe('web personal kiosk resolution', () => {
       kioskCapOnChainId: ACTIVE_CAP_ID,
     })
 
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+    const { resolveOwnedPersonalKiosk } = await import('@soulidity/sdk')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
       status: 'ready',
@@ -110,7 +110,7 @@ describe('web personal kiosk resolution', () => {
       kioskCapOnChainId: STALE_CAP_ID,
     })
 
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+    const { resolveOwnedPersonalKiosk } = await import('@soulidity/sdk')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toMatchObject({
       name: 'SoulidityPersonalKioskInvariantError',
@@ -126,7 +126,7 @@ describe('web personal kiosk resolution', () => {
       kioskCapOnChainId: STALE_CAP_ID,
     })
 
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+    const { resolveOwnedPersonalKiosk } = await import('@soulidity/sdk')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toMatchObject({
       name: 'SoulidityPersonalKioskInvariantError',
@@ -150,7 +150,7 @@ describe('web personal kiosk resolution', () => {
     ])
     mockedGetRegisteredPersonalKiosk.mockResolvedValueOnce(null)
 
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+    const { resolveOwnedPersonalKiosk } = await import('@soulidity/sdk')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
       status: 'ready',
@@ -180,7 +180,7 @@ describe('web personal kiosk resolution', () => {
       kioskCapOnChainId: STALE_CAP_ID,
     })
 
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+    const { resolveOwnedPersonalKiosk } = await import('@soulidity/sdk')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).rejects.toMatchObject({
       name: 'SoulidityPersonalKioskInvariantError',
@@ -211,7 +211,7 @@ describe('web personal kiosk resolution', () => {
     ])
     mockedGetRegisteredPersonalKiosk.mockResolvedValueOnce(null)
 
-    const { resolveOwnedPersonalKiosk } = await import('../../web/lib/soulidity/personal-kiosk')
+    const { resolveOwnedPersonalKiosk } = await import('@soulidity/sdk')
 
     await expect(resolveOwnedPersonalKiosk({ ownerAddresses: [OWNER_ADDRESS] })).resolves.toEqual({
       status: 'ready',

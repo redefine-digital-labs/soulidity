@@ -109,7 +109,7 @@ describe('createPrisma', () => {
     expect(firstClient.$disconnect).toHaveBeenCalledTimes(1)
     expect(secondClient.rawItem.findUnique).toHaveBeenCalledTimes(1)
     expect(adapterOptions).toHaveLength(2)
-    expect(warnSpy).toHaveBeenCalledWith('Prisma connection closed; recreated PrismaClient.')
+    expect(warnSpy).toHaveBeenCalledWith('[db]', 'Prisma connection closed; recreated PrismaClient.')
   })
 
   it('reconnects but does not retry write operations on transient connection errors', async () => {
@@ -128,7 +128,7 @@ describe('createPrisma', () => {
     expect(createdClients).toHaveLength(2)
     expect(firstClient.rawItem.create).toHaveBeenCalledTimes(1)
     expect(firstClient.$disconnect).toHaveBeenCalledTimes(1)
-    expect(warnSpy).toHaveBeenCalledWith('Prisma connection closed; recreated PrismaClient.')
+    expect(warnSpy).toHaveBeenCalledWith('[db]', 'Prisma connection closed; recreated PrismaClient.')
   })
 
   it('does not retry non-connection Prisma errors', async () => {

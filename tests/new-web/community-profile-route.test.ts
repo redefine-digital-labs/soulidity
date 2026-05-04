@@ -29,7 +29,7 @@ vi.mock('@web/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
 }))
 
-vi.mock('@/lib/soulidity/serialization', () => ({
+vi.mock('@soulidity/sdk/serialization', () => ({
   serializeSoulPreviewImageList: (value: unknown) => value,
 }))
 

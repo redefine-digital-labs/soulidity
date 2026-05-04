@@ -7,7 +7,7 @@ import {
   getSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
   syncSoulidityDeploymentSession,
-} from '@/lib/soulidity/client-session'
+} from '@soulidity/sdk'
 
 const ORIGINAL_ENV = {
   NEXT_PUBLIC_SUI_NETWORK: process.env.NEXT_PUBLIC_SUI_NETWORK,

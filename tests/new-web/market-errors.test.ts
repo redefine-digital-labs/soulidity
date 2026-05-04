@@ -12,7 +12,7 @@ import {
   getMarketAbortInfo,
   parseCollectionAbort,
   parseMarketAbort,
-} from '../../web/lib/soulidity/market-errors'
+} from '@soulidity/sdk'
 
 describe('market error catalog', () => {
   it('covers every active error code on market.move', () => {

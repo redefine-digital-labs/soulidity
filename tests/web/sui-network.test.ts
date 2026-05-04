@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveSuiNetwork } from '../../web/lib/sui-network.ts'
+import { resolveSuiNetwork } from '@soulidity/sdk'
 
 describe('resolveSuiNetwork', () => {
   it('accepts the supported network names', () => {

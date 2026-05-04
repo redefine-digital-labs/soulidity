@@ -10,7 +10,7 @@ const mockedGetRegisteredPersonalKiosk = vi.hoisted(() => vi.fn())
 const mockedUpsertSoulProjection = vi.hoisted(() => vi.fn())
 const mockedUpsertSkillVersionProjection = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/soulidity/queries', () => ({
+vi.mock('@soulidity/sdk/queries', () => ({
   getSoulObject: mockedGetSoulObject,
   getSoulStateObject: mockedGetSoulStateObject,
   getSoulMemoryObject: mockedGetSoulMemoryObject,
@@ -24,7 +24,7 @@ vi.mock('@/lib/soulidity/queries', () => ({
   getSoulGrantObject: vi.fn(),
 }))
 
-vi.mock('@/lib/soulidity/env', () => ({
+vi.mock('@soulidity/sdk/env', () => ({
   getRequiredSoulidityEnv: vi.fn((name: string) => `0x_mock_${name}`),
   getOptionalSoulidityEnv: vi.fn(),
 }))

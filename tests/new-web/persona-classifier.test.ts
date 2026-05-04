@@ -5,7 +5,7 @@ import {
   inferPersona,
   inferPersonaKind,
   tagMatchesAgentKeyword,
-} from '../../web/lib/soulidity/persona'
+} from '@soulidity/sdk'
 
 describe('tagMatchesAgentKeyword', () => {
   it('matches exact keyword tags', () => {

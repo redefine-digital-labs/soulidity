@@ -46,35 +46,27 @@ vi.mock('@/lib/soulidity/repository', () => ({
   findSoulAssetDetailByRouteId: mockedFindSoulAssetDetailByRouteId,
 }))
 
-vi.mock('@/lib/soulidity/coin-selection', () => ({
+vi.mock('@soulidity/sdk/coin-selection', () => ({
   selectCoinObjectIdsForAmountAcrossPages: mockedSelectCoinObjectIdsForAmountAcrossPages,
-}))
-
-vi.mock('@/lib/soulidity/env', () => ({
-  getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
-}))
-
-vi.mock('@/lib/soulidity/queries', () => ({
-  getMarketConfig: mockedGetMarketConfig,
-  quoteSoulPurchase: mockedQuoteSoulPurchase,
-}))
-
-vi.mock('@/lib/soulidity/personal-kiosk', () => ({
-  resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
-  SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
-}))
-
-vi.mock('@/lib/soulidity/tx/buy', () => ({
-  buildBuySoulTx: mockedBuildBuySoulTx,
 }))
 
 vi.mock('@web/lib/prisma', () => ({
   prisma: mockedPrisma,
 }))
 
-vi.mock('@web/lib/sui', () => ({
-  suiClient: { kind: 'mock-sui-client' },
-}))
+vi.mock('@soulidity/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@soulidity/sdk')>()
+  return {
+    ...actual,
+    suiClient: { kind: 'mock-sui-client' },
+    getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
+    getMarketConfig: mockedGetMarketConfig,
+    quoteSoulPurchase: mockedQuoteSoulPurchase,
+    resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
+    SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
+    buildBuySoulTx: mockedBuildBuySoulTx,
+  }
+})
 
 function makeRequest() {
   return new Request(`http://localhost/api/agent/souls/${SOUL_ID}/purchase`, {

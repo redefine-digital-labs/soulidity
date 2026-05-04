@@ -4,17 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Module-level mocks — prevent real SuiClient instantiation and Walrus config
 // ---------------------------------------------------------------------------
 
-vi.mock('@web/lib/sui', () => ({
-  suiClient: {
-    getObject: vi.fn(),
-    getTransactionBlock: vi.fn(),
-    waitForTransaction: vi.fn(),
-  },
-}))
-
-vi.mock('@web/lib/services/walrus', () => ({
-  normalizeWalrusBlobId: vi.fn((v: unknown) => (typeof v === 'string' ? v : null)),
-}))
+vi.mock('@soulidity/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@soulidity/sdk')>()
+  return {
+    ...actual,
+    suiClient: {
+      getObject: vi.fn(),
+      getTransactionBlock: vi.fn(),
+      waitForTransaction: vi.fn(),
+    },
+    normalizeWalrusBlobId: vi.fn((v: unknown) => (typeof v === 'string' ? v : null)),
+  }
+})
 
 // ---------------------------------------------------------------------------
 // Import the module under test (after mocks are in place)
@@ -32,17 +33,17 @@ import {
   quoteSoulPurchase,
   quoteCollectionPurchase,
   OnChainVerificationError,
-} from '../../web/lib/soulidity/queries'
+} from '@soulidity/sdk'
 import {
   OFFICIAL_MAINNET_KIOSK_PACKAGE_ID,
   OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID,
   OFFICIAL_TESTNET_KIOSK_PACKAGE_ID,
-} from '../../web/lib/soulidity/kiosk'
+} from '@soulidity/sdk'
 import {
   ALL_SOUL_GRANT_SCOPE_MASK,
   DEFAULT_ISSUE_SCOPE_MASK,
-} from '../../web/lib/soulidity/grant-scopes'
-import type { SoulGrantScope } from '../../web/lib/soulidity/types'
+} from '@soulidity/sdk'
+import type { SoulGrantScope } from '@soulidity/sdk'
 
 // Fully padded zero address (64 hex digits after 0x)
 const ZERO_66 = '0x' + '0'.repeat(64)
@@ -282,7 +283,7 @@ describe('getVendoredKioskPackageAddress', () => {
 
   it('resolves the mainnet PersonalKioskCap struct type via network fallback', async () => {
     process.env[NETWORK_KEY] = 'mainnet'
-    const { getPersonalKioskCapStructType } = await import('../../web/lib/soulidity/kiosk')
+    const { getPersonalKioskCapStructType } = await import('@soulidity/sdk')
     expect(getPersonalKioskCapStructType()).toBe(
       `${OFFICIAL_MAINNET_PERSONAL_KIOSK_CAP_TYPE_PACKAGE_ID}::personal_kiosk::PersonalKioskCap`,
     )

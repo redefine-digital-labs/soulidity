@@ -22,6 +22,22 @@ importers:
         specifier: 4.1.5
         version: 4.1.5(@types/node@25.6.0)(vite@7.3.2(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
 
+  ../packages/soulidity-sdk:
+    dependencies:
+      '@mysten/sui':
+        specifier: ^2.15.0
+        version: 2.16.0(typescript@6.0.3)
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   apps/desktop:
     dependencies:
       '@mysten/dapp-kit':
@@ -36,6 +52,9 @@ importers:
       '@soulidity/backend':
         specifier: workspace:*
         version: link:../../packages/backend
+      '@soulidity/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/soulidity-sdk
       '@soulidity/shared':
         specifier: workspace:*
         version: link:../../packages/shared

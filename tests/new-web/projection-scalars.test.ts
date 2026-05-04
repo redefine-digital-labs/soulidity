@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { toProjectionBigInt, toProjectionNumber } from '../../web/lib/soulidity/projection-scalars'
+import { toProjectionBigInt, toProjectionNumber } from '@soulidity/sdk'
 
 describe('projection scalar conversions', () => {
   it('round-trips supported millisecond timestamps across bigint storage', () => {

@@ -19,7 +19,7 @@ describe('Walrus blob validation', () => {
   })
 
   it('accepts bare blob ids and aggregator URLs', async () => {
-    const { normalizeWalrusBlobId } = await import('../../web/lib/services/walrus.ts')
+    const { normalizeWalrusBlobId } = await import('@soulidity/sdk')
 
     expect(normalizeWalrusBlobId('blob-123')).toBe('blob-123')
     expect(
@@ -28,7 +28,7 @@ describe('Walrus blob validation', () => {
   })
 
   it('rejects malformed blob ids', async () => {
-    const { normalizeWalrusBlobId } = await import('../../web/lib/services/walrus.ts')
+    const { normalizeWalrusBlobId } = await import('@soulidity/sdk')
 
     expect(normalizeWalrusBlobId('../escape')).toBeNull()
     expect(normalizeWalrusBlobId('https://example.com/v1/blobs/blob-123')).toBeNull()
@@ -36,7 +36,7 @@ describe('Walrus blob validation', () => {
   })
 
   it('materializes safe Walrus URLs only', async () => {
-    const { materializeWalrusBlobUrls } = await import('../../web/lib/services/walrus.ts')
+    const { materializeWalrusBlobUrls } = await import('@soulidity/sdk')
 
     expect(
       materializeWalrusBlobUrls([
@@ -51,7 +51,7 @@ describe('Walrus blob validation', () => {
   })
 
   it('URL-encodes validated blob ids when building download URLs', async () => {
-    const { getBlobUrl } = await import('../../web/lib/services/walrus.ts')
+    const { getBlobUrl } = await import('@soulidity/sdk')
 
     expect(getBlobUrl('blob_id-123')).toBe(
       'https://aggregator.walrus-testnet.walrus.space/v1/blobs/blob_id-123',
@@ -61,7 +61,7 @@ describe('Walrus blob validation', () => {
   it('switches the default aggregator to mainnet when the Sui network is mainnet', async () => {
     process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
 
-    const { getBlobUrl } = await import('../../web/lib/services/walrus.ts')
+    const { getBlobUrl } = await import('@soulidity/sdk')
 
     expect(getBlobUrl('blob-123')).toBe(
       'https://aggregator.mainnet.walrus.mirai.cloud/v1/blobs/blob-123',
@@ -72,7 +72,7 @@ describe('Walrus blob validation', () => {
     process.env.NODE_ENV = 'development'
     process.env.WALRUS_AGGREGATOR_URL = 'https://aggregator.dev-1.example'
 
-    const { getWalrusRuntimeConfig } = await import('../../web/lib/services/walrus.ts')
+    const { getWalrusRuntimeConfig } = await import('@soulidity/sdk')
 
     expect(getWalrusRuntimeConfig().aggregatorUrl).toBe('https://aggregator.dev-1.example')
 
@@ -85,7 +85,7 @@ describe('Walrus blob validation', () => {
       throw new Error('publisher down')
     }) as typeof fetch
 
-    const { getWalrusRuntimeConfig, uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { getWalrusRuntimeConfig, uploadPublic } = await import('@soulidity/sdk')
     const publisherCount = getWalrusRuntimeConfig().publisherUrls.length
 
     await expect(uploadPublic(Buffer.from('payload'))).rejects.toThrow('publisher down')
@@ -99,7 +99,7 @@ describe('Walrus blob validation', () => {
     })
     global.fetch = fetchMock as typeof fetch
 
-    const { getWalrusRuntimeConfig, uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { getWalrusRuntimeConfig, uploadPublic } = await import('@soulidity/sdk')
     const publisherUrls = getWalrusRuntimeConfig().publisherUrls
     const knownPublisherBlobUrls = new Set(publisherUrls.map((url) => `${url}/v1/blobs`))
 
@@ -117,7 +117,7 @@ describe('Walrus blob validation', () => {
   it('does not retry non-retryable 4xx upload failures', async () => {
     global.fetch = vi.fn(async () => new Response('bad request', { status: 400 })) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     await expect(uploadPublic(Buffer.from('payload'))).rejects.toThrow(
       'Walrus upload failed: 400 bad request',
@@ -145,7 +145,7 @@ describe('Walrus blob validation', () => {
       )
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     await expect(uploadPublic(Buffer.from('payload'))).resolves.toEqual({
       blobId: 'blob-123',
@@ -177,7 +177,7 @@ describe('Walrus blob validation', () => {
       )
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     await expect(uploadPublic(Buffer.from('payload'))).resolves.toEqual({
       blobId: 'blob-123',
@@ -201,7 +201,7 @@ describe('Walrus blob validation', () => {
       )
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     await expect(uploadPublic(Buffer.from('payload'), {
       sendObjectTo: `0x${'1'.repeat(64)}`,
@@ -235,7 +235,7 @@ describe('Walrus blob validation', () => {
       )
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     const uploadPromise = uploadPublic(Buffer.from('payload'))
     expect(global.fetch).toHaveBeenCalledTimes(1)
@@ -275,7 +275,7 @@ describe('Walrus blob validation', () => {
       )
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     const uploadPromise = uploadPublic(Buffer.from('payload'))
     expect(global.fetch).toHaveBeenCalledTimes(1)
@@ -315,7 +315,7 @@ describe('Walrus blob validation', () => {
       )
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     const uploadPromise = uploadPublic(Buffer.from('payload'))
     expect(global.fetch).toHaveBeenCalledTimes(1)
@@ -352,7 +352,7 @@ describe('Walrus blob validation', () => {
       )
     }) as typeof fetch
 
-    const { uploadPublic } = await import('../../web/lib/services/walrus.ts')
+    const { uploadPublic } = await import('@soulidity/sdk')
 
     const uploadPromise = uploadPublic(Buffer.from('payload'))
     expect(global.fetch).toHaveBeenCalledTimes(1)

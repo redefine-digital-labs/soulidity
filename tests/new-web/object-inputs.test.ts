@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { assertObjectInputsExist, findMissingObjectIds } from '@/lib/soulidity/object-inputs'
+import { assertObjectInputsExist, findMissingObjectIds } from '@soulidity/sdk'
 
 describe('findMissingObjectIds', () => {
   it('returns object ids whose RPC responses are missing or report not found', async () => {

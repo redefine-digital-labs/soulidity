@@ -10,7 +10,7 @@ vi.mock('@mysten/dapp-kit', () => ({
 
 describe('wallet sign transaction result normalization', () => {
   it('rejects missing executeTransactionBlock results before callers read effects', async () => {
-    const { normalizeSuiTxResult } = await import('../../web/lib/sui/tx-result.ts')
+    const { normalizeSuiTxResult } = await import('@soulidity/sdk')
 
     expect(() => normalizeSuiTxResult(undefined)).toThrow(
       'Wallet transaction execution did not return a transaction result',
@@ -18,7 +18,7 @@ describe('wallet sign transaction result normalization', () => {
   })
 
   it('accepts digest-only executeTransactionBlock results before effects resolution', async () => {
-    const { normalizeSuiTxResult } = await import('../../web/lib/sui/tx-result.ts')
+    const { normalizeSuiTxResult } = await import('@soulidity/sdk')
 
     expect(normalizeSuiTxResult({ digest: 'abc' })).toMatchObject({ digest: 'abc' })
   })
@@ -40,7 +40,7 @@ describe('wallet sign transaction result normalization', () => {
   })
 
   it('resolves digest-only execute results through waitForTransaction with effects enabled', async () => {
-    const { resolveSuiTxResultWithEffects } = await import('../../web/lib/sui/tx-result.ts')
+    const { resolveSuiTxResultWithEffects } = await import('@soulidity/sdk')
     const waitForTransaction = vi.fn().mockResolvedValue({
       digest: 'abc',
       effects: { status: { status: 'success' } },
@@ -62,7 +62,7 @@ describe('wallet sign transaction result normalization', () => {
   })
 
   it('throws a readable app error when fallback still returns no effects', async () => {
-    const { resolveSuiTxResultWithEffects } = await import('../../web/lib/sui/tx-result.ts')
+    const { resolveSuiTxResultWithEffects } = await import('@soulidity/sdk')
     const waitForTransaction = vi.fn().mockResolvedValue({ digest: 'abc' })
 
     await expect(resolveSuiTxResultWithEffects({ waitForTransaction }, { digest: 'abc' }))
@@ -70,7 +70,7 @@ describe('wallet sign transaction result normalization', () => {
   })
 
   it('preserves digest, status, and chain error for failed transaction effects', async () => {
-    const { SuiTxExecutionError, assertSuiTxSucceeded } = await import('../../web/lib/sui/tx-result.ts')
+    const { SuiTxExecutionError, assertSuiTxSucceeded } = await import('@soulidity/sdk')
 
     try {
       assertSuiTxSucceeded({
