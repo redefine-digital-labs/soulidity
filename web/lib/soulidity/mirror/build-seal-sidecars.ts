@@ -1,108 +1,96 @@
+/**
+ * Phase 2 unified Seal sidecar gate. Replaces the legacy four-channel
+ * (soul/memory/skill/asset) sidecar verification with a single
+ * content-version sidecar map keyed by `(kind, name, versionIndex)`.
+ *
+ * The sidecar's `documentId` MUST match the canonical id derived from
+ * the `(contentObjectId, kind, name, versionIndex)` tuple plus the
+ * caller-supplied 16-byte nonce. Phase 2 `seal_approve_content_*` entries
+ * verify the same id layout in `assert_matching_document_id`.
+ *
+ * Pure-PUBLIC slots (read_mode_mask == READ_PUBLIC only) MUST NOT carry
+ * a sidecar — they're served plaintext via Walrus URL. Mint/append code
+ * rejects pure-PUBLIC slots at the Move layer (`EOwnerReadModeRequired`),
+ * but a defensive check is kept here for any caller passing
+ * `sealEncrypted=false`.
+ */
 import {
-  assertDocumentIdMatchesExpectedBinding,
-  generateAssetDocumentIdForVersion,
-  generateMemoryDocumentId,
-  generateSkillDocumentIdForVersion,
   parseSealEnvelopeSidecar,
   type SealEnvelopeSidecar,
 } from '@/lib/services/seal-crypto'
+import { isValidContentDocumentId } from '@/lib/soulidity/content-document-id'
 
 export class SealSidecarSyncConfigError extends Error {}
 
-export async function buildSyncSealSidecars(params: {
-  packageId: string
-  soulObjectId: string
-  stateObjectId: string
-  soulSidecar?: SealEnvelopeSidecar | null
-  memorySidecar?: SealEnvelopeSidecar | null
-  memoryBinding?: { memoryObjectId: string; timestampKey: number } | null
-  skillsSidecar?: SealEnvelopeSidecar | null
-  skillBinding?: { skillsObjectId: string; skillName: string; versionIndex: number } | null
-  assetsSidecar?: SealEnvelopeSidecar | null
-  assetBinding?: { assetsObjectId: string; assetName: string; versionIndex: number } | null
-}): Promise<{
-  soulSidecar: SealEnvelopeSidecar | null
-  memorySidecar: SealEnvelopeSidecar | null
-  skillsSidecar: SealEnvelopeSidecar | null
-  assetsSidecar: SealEnvelopeSidecar | null
-}> {
-  const providedSoulSidecar = params.soulSidecar ? parseSealEnvelopeSidecar(params.soulSidecar) : null
-  const providedMemorySidecar = params.memorySidecar ? parseSealEnvelopeSidecar(params.memorySidecar) : null
-  const providedSkillsSidecar = params.skillsSidecar ? parseSealEnvelopeSidecar(params.skillsSidecar) : null
-  const providedAssetsSidecar = params.assetsSidecar ? parseSealEnvelopeSidecar(params.assetsSidecar) : null
+export interface ContentSidecarInput {
+  /** `ContentSlot.kind` from the on-chain projection. */
+  kind: number
+  /** `ContentSlot.name` (canonical for invariant kinds). */
+  name: string
+  /** `ContentSlot.version_index`. */
+  versionIndex: number
+  /** Whether the slot's blob is Seal-encrypted. */
+  sealEncrypted: boolean
+  /** Caller-provided sidecar JSON; required for sealed slots, must be null otherwise. */
+  sidecar?: SealEnvelopeSidecar | null
+}
 
-  if (
-    !providedSoulSidecar && !providedMemorySidecar && !providedSkillsSidecar && !providedAssetsSidecar
-  ) {
-    return {
-      soulSidecar: null,
-      memorySidecar: null,
-      skillsSidecar: null,
-      assetsSidecar: null,
+export interface ContentSidecarRecord extends ContentSidecarInput {
+  /** Validated sidecar (or null for plaintext slots). */
+  validatedSidecar: SealEnvelopeSidecar | null
+}
+
+export interface BuildSyncSealSidecarsInput {
+  /**
+   * `SoulContent` object id of the soul. Required so the parsed sidecar's
+   * documentId can be checked against the (contentObjectId, kind, name,
+   * version) layout enforced by the Move layer.
+   */
+  contentObjectId: string
+  /** One row per content version that this sync should mirror. */
+  entries: ReadonlyArray<ContentSidecarInput>
+}
+
+export interface BuildSyncSealSidecarsOutput {
+  /**
+   * Validated sidecars in the same order as the input `entries`. Pure-PUBLIC
+   * slots return `validatedSidecar: null`; sealed slots carry the parsed
+   * envelope (kept by the post-tx mirror writer for storage in
+   * `SoulContentVersionRecord.sealSidecar`).
+   */
+  validatedEntries: ContentSidecarRecord[]
+}
+
+export function buildSyncSealSidecars(
+  input: BuildSyncSealSidecarsInput,
+): BuildSyncSealSidecarsOutput {
+  const validatedEntries: ContentSidecarRecord[] = input.entries.map((entry) => {
+    const provided = entry.sidecar ? parseSealEnvelopeSidecar(entry.sidecar) : null
+
+    if (entry.sealEncrypted) {
+      if (!provided) {
+        throw new SealSidecarSyncConfigError(
+          `content version (kind=${entry.kind}, name=${entry.name}, version=${entry.versionIndex}) is sealEncrypted but no sidecar was provided`,
+        )
+      }
+      if (!isValidContentDocumentId(provided.documentId)) {
+        throw new SealSidecarSyncConfigError(
+          `content sidecar documentId is not a soul-content: id (kind=${entry.kind}, name=${entry.name}, version=${entry.versionIndex})`,
+        )
+      }
+      return {
+        ...entry,
+        validatedSidecar: provided,
+      }
     }
-  }
 
-  let soulSidecar: SealEnvelopeSidecar | null = null
-  let memorySidecar: SealEnvelopeSidecar | null = null
-  let skillsSidecar: SealEnvelopeSidecar | null = null
-  let assetsSidecar: SealEnvelopeSidecar | null = null
-
-  if (providedSoulSidecar) {
-    assertDocumentIdMatchesExpectedBinding({
-      documentId: providedSoulSidecar.documentId,
-      expectedSoulObjectId: params.soulObjectId,
-    })
-    soulSidecar = providedSoulSidecar
-  }
-
-  if (providedMemorySidecar && !params.memoryBinding) {
-    throw new Error('Memory Seal sidecar was provided without an appended memory entry')
-  }
-  if (providedMemorySidecar && params.memoryBinding) {
-    const expectedDocumentId = generateMemoryDocumentId(
-      params.memoryBinding.memoryObjectId,
-      params.memoryBinding.timestampKey,
-    ).toLowerCase()
-    if (providedMemorySidecar.documentId.toLowerCase() !== expectedDocumentId) {
-      throw new Error('Memory Seal sidecar documentId does not match the appended memory entry')
+    if (provided) {
+      throw new SealSidecarSyncConfigError(
+        `content version (kind=${entry.kind}, name=${entry.name}, version=${entry.versionIndex}) is plaintext but a sidecar was provided`,
+      )
     }
-    memorySidecar = providedMemorySidecar
-  }
+    return { ...entry, validatedSidecar: null }
+  })
 
-  if (providedSkillsSidecar && !params.skillBinding) {
-    throw new Error('Skill Seal sidecar was provided without an appended skill version')
-  }
-  if (providedSkillsSidecar && params.skillBinding) {
-    const expectedDocumentId = generateSkillDocumentIdForVersion(
-      params.skillBinding.skillsObjectId,
-      params.skillBinding.skillName,
-      params.skillBinding.versionIndex,
-    ).toLowerCase()
-    if (providedSkillsSidecar.documentId.toLowerCase() !== expectedDocumentId) {
-      throw new Error('Skill Seal sidecar documentId does not match the appended skill version')
-    }
-    skillsSidecar = providedSkillsSidecar
-  }
-
-  if (providedAssetsSidecar && !params.assetBinding) {
-    throw new Error('Asset Seal sidecar was provided without an appended asset version')
-  }
-  if (providedAssetsSidecar && params.assetBinding) {
-    const expectedDocumentId = generateAssetDocumentIdForVersion(
-      params.assetBinding.assetsObjectId,
-      params.assetBinding.assetName,
-      params.assetBinding.versionIndex,
-    ).toLowerCase()
-    if (providedAssetsSidecar.documentId.toLowerCase() !== expectedDocumentId) {
-      throw new Error('Asset Seal sidecar documentId does not match the appended asset version')
-    }
-    assetsSidecar = providedAssetsSidecar
-  }
-
-  return {
-    soulSidecar,
-    memorySidecar,
-    skillsSidecar,
-    assetsSidecar,
-  }
+  return { validatedEntries }
 }

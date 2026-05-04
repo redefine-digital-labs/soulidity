@@ -8,15 +8,34 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tag } from '@/components/ui/tag'
 import { Button, buttonStyles } from '@/components/ui/button'
-import { SkillsPanel } from '@/components/souls/skills-panel'
-import { MemoryPanel } from '@/components/souls/memory-panel'
-import { PersonaAssetPanel } from '@/components/souls/persona-asset-panel'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
 import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
 import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import { KIND_MEMORY, KIND_SKILL } from '@/lib/soulidity/kinds'
 import type { SoulAssetDetail } from '@/lib/soulidity/types'
+
+/**
+ * Phase 2 placeholder for the deleted SkillsPanel / MemoryPanel /
+ * PersonaAssetPanel surfaces. The unified-content panels (kind=KIND_MEMORY /
+ * KIND_SKILL / KIND_SPRITE) will replace these once the new ContentPanel
+ * UI lands. The on-chain data is already mirrored in
+ * `soul.contentVersions` and accessible via the new APIs.
+ */
+function ContentMigrationStub({ kindLabel }: { kindLabel: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card2 p-4 text-sm text-muted">
+      The {kindLabel} panel is migrating to the Phase 2 unified-content surface. The on-chain data
+      is already available via the new <code className="font-mono">/api/souls/[id]/content</code>
+      endpoints; the UI will return after the new ContentPanel ships.
+    </div>
+  )
+}
+
+const SkillsPanel = ({}: { soul: SoulAssetDetail }) => <ContentMigrationStub kindLabel="skills" />
+const MemoryPanel = ({}: { soul: SoulAssetDetail }) => <ContentMigrationStub kindLabel="memory" />
+const PersonaAssetPanel = ({}: { soul: SoulAssetDetail }) => <ContentMigrationStub kindLabel="persona / sprite / voice" />
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -251,20 +270,16 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
                 <span className="font-mono text-xs text-teal">{formatAddress(soul.stateOnChainId)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted">Memory object</span>
-                <span className="font-mono text-xs text-teal">{formatAddress(soul.memoryOnChainId)}</span>
+                <span className="text-muted">Content root</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.contentOnChainId)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted">Metadata object</span>
-                <span className="font-mono text-xs text-teal">{formatAddress(soul.metadataOnChainId)}</span>
+                <span className="text-muted">Paid-access list</span>
+                <span className="font-mono text-xs text-teal">{formatAddress(soul.paidAccessListOnChainId)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted">Content blob</span>
-                <span className="font-mono text-xs text-teal">{formatAddress(soul.contentBlobObjectId)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">Skills root</span>
-                <span className="font-mono text-xs text-teal">{formatAddress(soul.skillsOnChainId)}</span>
+                <span className="text-muted">Memory entries</span>
+                <span>{soul.contentVersions.filter((v) => v.kind === KIND_MEMORY && v.deletedAt == null).length}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Created</span>
@@ -284,7 +299,7 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Skills versions</span>
-                <span>{soul.skillVersionCount}</span>
+                <span>{soul.contentVersions.filter((v) => v.kind === KIND_SKILL && v.deletedAt == null).length}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Creator royalty</span>

@@ -1,8 +1,14 @@
 import type { Prisma } from '@db/prisma-client'
 import { prisma } from '@/lib/prisma'
 import { resolveDesktopSpriteManifest } from '@/lib/desktop/sprite-contract'
+import { downloadPolicyFromU8, KIND_SPRITE } from '@/lib/soulidity/kinds'
 import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@/lib/soulidity/metadata'
-import type { SoulListingStatus } from '@/lib/soulidity/types'
+import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
+import type {
+  SoulContentVersionRecord,
+  SoulDownloadPolicy,
+  SoulListingStatus,
+} from '@/lib/soulidity/types'
 import { materializeWalrusBlobUrls } from '@/lib/services/walrus'
 import type {
   DesktopCatalogItem,
@@ -64,14 +70,19 @@ const starterCatalogSelect = {
   updatedAt: true,
 } as const
 
+// Phase 2: SoulAsset has lost `metadataOnChainId / skillsOnChainId / assetsOnChainId
+// / accessListOnChainId / memoryOnChainId / contentBlobId / contentBlobObjectId`.
+// The single typed-content root id is `contentOnChainId` and the per-Soul
+// SoulPaidAccessList lives on `paidAccessListOnChainId`. Active sprite metadata
+// fields were renamed (assetName → name).
 const soulCatalogSelect = {
   onChainId: true,
   name: true,
   description: true,
   imageUrl: true,
   previewImages: true,
-  metadataOnChainId: true,
-  activeSpriteAssetName: true,
+  contentOnChainId: true,
+  activeSpriteName: true,
   activeSpriteVersionIndex: true,
   activeSpriteDownloadPolicy: true,
   spriteConfigJson: true,
@@ -79,18 +90,34 @@ const soulCatalogSelect = {
   listingStatus: true,
   listedPriceAtomic: true,
   updatedAt: true,
-  assetVersions: {
+  contentVersions: {
     where: {
       deletedAt: null,
-      assetName: CANONICAL_PERSONA_SPRITE_ASSET_NAME,
+      kind: KIND_SPRITE,
+      name: CANONICAL_PERSONA_SPRITE_ASSET_NAME,
     },
     select: {
-      assetName: true,
+      id: true,
+      soulOnChainId: true,
+      contentOnChainId: true,
+      kind: true,
+      kindName: true,
+      name: true,
       versionIndex: true,
-      visibility: true,
-      assetType: true,
-      blobId: true,
       blobObjectId: true,
+      blobId: true,
+      readModeMask: true,
+      opMask: true,
+      grantScopeMask: true,
+      isPublic: true,
+      sealEncrypted: true,
+      downloadPolicy: true,
+      sealSidecar: true,
+      deletedAt: true,
+      purgedAt: true,
+      createdAtMs: true,
+      createdAt: true,
+      updatedAt: true,
     },
     orderBy: {
       versionIndex: 'desc',
@@ -181,6 +208,13 @@ function isUuid(value: string) {
 
 function normalizeListingStatus(value: string): SoulListingStatus | null {
   if (value === 'held' || value === 'listed' || value === 'floor-violation') {
+    return value
+  }
+  return null
+}
+
+function normalizeActiveDownloadPolicy(value: string | null): SoulDownloadPolicy | null {
+  if (value === 'public' || value === 'owner_only' || value === 'allowlist') {
     return value
   }
   return null
@@ -394,18 +428,50 @@ function toStarterPersonaManifest(
   }
 }
 
+/**
+ * Phase 2: project a `SoulContentVersionRecord` Prisma row (sprite kind) into
+ * the SDK shape consumed by `resolveDesktopSpriteManifest`. Mirrors the
+ * column-level normalizers the soulidity repository will eventually expose
+ * once its own Phase 2 migration lands.
+ */
+function projectContentVersionRow(
+  row: SoulCatalogRow['contentVersions'][number],
+): SoulContentVersionRecord {
+  return {
+    id: row.id,
+    soulOnChainId: row.soulOnChainId,
+    contentOnChainId: row.contentOnChainId,
+    kind: row.kind,
+    kindName: row.kindName,
+    name: row.name,
+    versionIndex: row.versionIndex,
+    blobObjectId: row.blobObjectId,
+    blobId: row.blobId,
+    readModeMask: row.readModeMask,
+    opMask: row.opMask,
+    grantScopeMask: row.grantScopeMask,
+    isPublic: row.isPublic,
+    sealEncrypted: row.sealEncrypted,
+    downloadPolicy: downloadPolicyFromU8(row.downloadPolicy),
+    sealSidecar: (row.sealSidecar ?? null) as SoulContentVersionRecord['sealSidecar'],
+    deletedAt: row.deletedAt ? asIso(row.deletedAt) : null,
+    purgedAt: row.purgedAt ? asIso(row.purgedAt) : null,
+    createdAtMs: toProjectionNumber(row.createdAtMs, 'SoulContentVersionRecord.createdAtMs'),
+    createdAt: asIso(row.createdAt),
+    updatedAt: asIso(row.updatedAt),
+  }
+}
+
 async function resolveSoulSpriteManifest(soul: SoulCatalogRow) {
   return resolveDesktopSpriteManifest({
-    metadataOnChainId: soul.metadataOnChainId,
-    activeSpriteAssetName: soul.activeSpriteAssetName,
-    activeSpriteVersionIndex: soul.activeSpriteVersionIndex == null ? null : Number(soul.activeSpriteVersionIndex),
-    activeSpriteDownloadPolicy: soul.activeSpriteDownloadPolicy,
+    contentOnChainId: soul.contentOnChainId,
+    activeSpriteName: soul.activeSpriteName,
+    activeSpriteVersionIndex:
+      soul.activeSpriteVersionIndex == null ? null : Number(soul.activeSpriteVersionIndex),
+    activeSpriteDownloadPolicy: normalizeActiveDownloadPolicy(soul.activeSpriteDownloadPolicy),
     spriteConfigJson: soul.spriteConfigJson,
     spriteMoodMapJson: soul.spriteMoodMapJson,
-    assetVersions: soul.assetVersions.map((version) => ({
-      ...version,
-      versionIndex: Number(version.versionIndex),
-    })),
+    contentVersions: soul.contentVersions.map(projectContentVersionRow),
   })
 }
 

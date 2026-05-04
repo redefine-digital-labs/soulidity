@@ -4,10 +4,10 @@ import { useEffect, useRef } from 'react'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { selectCoinObjectIdsForAmountAcrossPages } from '@/lib/soulidity/coin-selection'
 import {
-  buildPurchaseContentAccessTx,
-  buildSetContentAccessDurationTx,
-  buildSetContentAccessPriceTx,
-} from '@/lib/soulidity/tx/content-access'
+  buildConfigurePaidAccessKindTx,
+  buildPurchasePaidAccessTx,
+  buildUpdatePaidAccessKindTx,
+} from '@/lib/soulidity/tx/paid-access'
 import { buildSetGrantCapacityTx } from '@/lib/soulidity/tx/grant'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -107,41 +107,18 @@ export function E2EWalletHelpers() {
         }
         return selected
       },
-      purchaseContentAccess: async (params: E2EContentAccessPurchaseParams) => {
-        const owner = walletAddressRef.current
-        if (!owner) throw new Error('No Sui wallet found for the current account')
-        const totalAtomic = resolveTotalAtomic(params)
-        const paymentCoinObjectIds = params.paymentCoinObjectIds?.length
-          ? params.paymentCoinObjectIds
-          : await helpers.selectPaymentCoins({ totalAtomic, coinType: params.coinType })
-        const tx = buildPurchaseContentAccessTx({
-          accessListOnChainId: params.accessListOnChainId,
-          stateOnChainId: params.stateOnChainId,
-          paymentCoinObjectIds,
-          totalAtomic,
-        })
-        const result = await signAndExecuteRef.current(tx)
-        const authHeaders = await getAuthHeadersRef.current()
-        const syncRes = await fetch(`/api/souls/${encodeURIComponent(params.soulObjectId)}/access-list/purchase`, {
-          method: 'POST',
-          headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ txDigest: result.digest }),
-        })
-        const syncBody = await syncRes.json().catch(() => null)
-        if (!syncRes.ok) {
-          throw new Error(syncBody?.error || `Content access purchase sync failed: ${syncRes.status}`)
-        }
-        return { digest: result.digest, sync: syncBody, effects: result.effects, events: result.events }
+      // Phase 2: ContentAccessList → per-kind SoulPaidAccessList. The legacy
+      // helpers below were the Phase-1 entry points; rewriting the e2e tests
+      // around per-kind paid access is tracked as part of the Phase-2 test
+      // suite refresh. Stub for now so the global hook still loads in dev.
+      purchaseContentAccess: async () => {
+        throw new Error('purchaseContentAccess: Phase 1 helper is gone — use buildPurchasePaidAccessTx with a kind argument')
       },
-      setContentAccessPrice: async (params: E2EContentAccessOwnerParams & { newPriceAtomic: number }) => {
-        const tx = buildSetContentAccessPriceTx(params)
-        const result = await signAndExecuteRef.current(tx)
-        return { digest: result.digest, effects: result.effects, events: result.events }
+      setContentAccessPrice: async () => {
+        throw new Error('setContentAccessPrice: Phase 1 helper is gone — use buildUpdatePaidAccessKindTx with a kind argument')
       },
-      setContentAccessDuration: async (params: E2EContentAccessOwnerParams & { newDurationMs?: number | null }) => {
-        const tx = buildSetContentAccessDurationTx(params)
-        const result = await signAndExecuteRef.current(tx)
-        return { digest: result.digest, effects: result.effects, events: result.events }
+      setContentAccessDuration: async () => {
+        throw new Error('setContentAccessDuration: Phase 1 helper is gone — use buildUpdatePaidAccessKindTx with a kind argument')
       },
       setGrantCapacity: async (params: { stateObjectId: string; capacity: number }) => {
         const tx = buildSetGrantCapacityTx(params)

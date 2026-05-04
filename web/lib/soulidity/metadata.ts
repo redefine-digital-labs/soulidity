@@ -1,4 +1,34 @@
-import type { SoulDownloadPolicy, SoulMetadataBindingRecord } from '@/lib/soulidity/types'
+import type { SoulContentActiveBinding, SoulDownloadPolicy } from '@/lib/soulidity/types'
+
+/**
+ * Phase 2 mirror of an active sprite/voice binding for the purposes of this
+ * file's sprite-sheet renderer. Carries the same `(name, versionIndex,
+ * downloadPolicy)` triple that the legacy `SoulMetadataBindingRecord` used,
+ * but is sourced from `SoulContent.active_table[KIND_SPRITE / KIND_AUDIO]`
+ * via the unified mirror.
+ */
+export type ActiveSpriteVoiceBinding = Pick<
+  SoulContentActiveBinding,
+  'name' | 'versionIndex' | 'downloadPolicy'
+>
+
+interface ActiveSpriteVoiceBindingForMetadata {
+  /** Asset name — matches `ContentSlot.name` in Move. */
+  assetName: string
+  versionIndex: number
+  downloadPolicy: SoulDownloadPolicy
+}
+
+function toAssetNameBinding(
+  binding: ActiveSpriteVoiceBinding | null | undefined,
+): ActiveSpriteVoiceBindingForMetadata | null {
+  if (!binding) return null
+  return {
+    assetName: binding.name,
+    versionIndex: binding.versionIndex,
+    downloadPolicy: binding.downloadPolicy,
+  }
+}
 
 export type LegacyPersonaState =
   | 'idle'
@@ -499,10 +529,18 @@ export function buildCanonicalSoulMetadata(params: {
   }
 }
 
+/**
+ * Input for the sprite contract resolver. Phase 2: instead of a separate
+ * `SoulMetadata` object, the active sprite/voice binding lives in
+ * `SoulContent.active_table[KIND_SPRITE / KIND_AUDIO]`. Callers pass the
+ * cached `(assetName, versionIndex, downloadPolicy)` triple from the
+ * unified mirror.
+ */
 export interface MirroredSoulMetadataInput {
-  metadataOnChainId: string | null
-  activeSprite: SoulMetadataBindingRecord | null
-  activeVoice?: SoulMetadataBindingRecord | null
+  /** Mirror of `SoulState.content_id` — the typed-content root. */
+  contentOnChainId: string | null
+  activeSprite: ActiveSpriteVoiceBinding | null
+  activeVoice?: ActiveSpriteVoiceBinding | null
   spriteConfigJson: string | null
   spriteMoodMapJson: string | null
   voiceConfigJson?: string | null
@@ -572,17 +610,18 @@ export function resolveMirroredSoulSpriteContract(
     availableVersionIndexes?: number[] | null
   } = {},
 ): ResolvedSoulSpriteContract {
-  if (!metadata.metadataOnChainId) {
+  if (!metadata.contentOnChainId) {
     return {
       policy: 'missing',
       persona: null,
       publicAssets: null,
       protectedAssets: null,
-      issues: ['soul metadata object is missing'],
+      issues: ['soul content root is missing'],
     }
   }
 
-  if (!metadata.activeSprite) {
+  const spriteBinding = toAssetNameBinding(metadata.activeSprite)
+  if (!spriteBinding) {
     return {
       policy: 'missing',
       persona: null,
@@ -610,18 +649,18 @@ export function resolveMirroredSoulSpriteContract(
     moodMap,
   }
 
-  if (metadata.activeSprite.assetName !== CANONICAL_PERSONA_SPRITE_ASSET_NAME) {
+  if (spriteBinding.assetName !== CANONICAL_PERSONA_SPRITE_ASSET_NAME) {
     issues.push(`active sprite assetName must be ${CANONICAL_PERSONA_SPRITE_ASSET_NAME}`)
   }
 
   if (
     options.availableVersionIndexes
-    && !options.availableVersionIndexes.includes(metadata.activeSprite.versionIndex)
+    && !options.availableVersionIndexes.includes(spriteBinding.versionIndex)
   ) {
     issues.push('active sprite asset version is missing')
   }
 
-  if (issues.length > 0 && metadata.activeSprite.downloadPolicy === 'public') {
+  if (issues.length > 0 && spriteBinding.downloadPolicy === 'public') {
     return {
       policy: 'invalid',
       persona,
@@ -631,7 +670,7 @@ export function resolveMirroredSoulSpriteContract(
     }
   }
 
-  if (metadata.activeSprite.downloadPolicy === 'public') {
+  if (spriteBinding.downloadPolicy === 'public') {
     if (!options.publicAssetUrl) {
       issues.push('public active sprite asset URL is missing')
       return {
@@ -662,21 +701,21 @@ export function resolveMirroredSoulSpriteContract(
       publicAssets: null,
       protectedAssets: {
         ...config,
-        assetName: metadata.activeSprite.assetName,
-        versionIndex: metadata.activeSprite.versionIndex,
+        assetName: spriteBinding.assetName,
+        versionIndex: spriteBinding.versionIndex,
       },
       issues,
     }
   }
 
   return {
-    policy: metadata.activeSprite.downloadPolicy,
+    policy: spriteBinding.downloadPolicy,
     persona,
     publicAssets: null,
     protectedAssets: {
       ...config,
-      assetName: metadata.activeSprite.assetName,
-      versionIndex: metadata.activeSprite.versionIndex,
+      assetName: spriteBinding.assetName,
+      versionIndex: spriteBinding.versionIndex,
     },
     issues,
   }

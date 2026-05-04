@@ -6,9 +6,16 @@ import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import { findDesktopPersonaManifestById } from '@/lib/desktop/repository'
 import { prisma } from '@/lib/prisma'
 import {
-  AssetAccessDeniedError,
-  resolveSoulAssetVersionAccessPayload,
-} from '@/lib/soulidity/asset-version-access'
+  ContentAccessDeniedError,
+  resolveContentAccessPayload,
+} from '@/lib/soulidity/access'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import {
+  downloadPolicyFromU8,
+  KIND_SPRITE,
+} from '@/lib/soulidity/kinds'
+import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
+import type { SoulContentVersionRecord } from '@/lib/soulidity/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +26,10 @@ function safeNormalizeSuiAddress(value: string | null | undefined) {
   } catch {
     return null
   }
+}
+
+function asIso(value: Date) {
+  return value.toISOString()
 }
 
 export async function GET(
@@ -109,27 +120,99 @@ export async function GET(
     effectiveViewerAddresses = [viewerAddress]
   }
 
-  try {
-    const privateAccess = await resolveSoulAssetVersionAccessPayload({
-      soulOnChainId: manifest.sourceRef,
-      assetName: sprite.assetName,
+  // Phase 2: load the soul mirror + the active sprite content version from
+  // `soul_content_version_records` (single typed-content table). The legacy
+  // `SoulAssetVersionRecord` table is gone — every kind of slot now lives in
+  // `SoulContentVersionRecord`.
+  const soul = await prisma.soulAsset.findUnique({
+    where: { onChainId: manifest.sourceRef },
+    select: {
+      onChainId: true,
+      stateOnChainId: true,
+      contentOnChainId: true,
+      paidAccessListOnChainId: true,
+    },
+  })
+
+  if (!soul) {
+    return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
+  }
+
+  if (!soul.contentOnChainId) {
+    return NextResponse.json({ error: 'Soul content root is not available' }, { status: 409 })
+  }
+
+  const versionRow = await prisma.soulContentVersionRecord.findFirst({
+    where: {
+      soulOnChainId: soul.onChainId,
+      contentOnChainId: soul.contentOnChainId,
+      kind: KIND_SPRITE,
+      name: sprite.assetName,
       versionIndex: sprite.versionIndex,
+      deletedAt: null,
+    },
+  })
+
+  if (!versionRow) {
+    return NextResponse.json(
+      { error: 'Active sprite content version is missing from the mirror' },
+      { status: 404 },
+    )
+  }
+
+  const version: SoulContentVersionRecord = {
+    id: versionRow.id,
+    soulOnChainId: versionRow.soulOnChainId,
+    contentOnChainId: versionRow.contentOnChainId,
+    kind: versionRow.kind,
+    kindName: versionRow.kindName,
+    name: versionRow.name,
+    versionIndex: versionRow.versionIndex,
+    blobObjectId: versionRow.blobObjectId,
+    blobId: versionRow.blobId,
+    readModeMask: versionRow.readModeMask,
+    opMask: versionRow.opMask,
+    grantScopeMask: versionRow.grantScopeMask,
+    isPublic: versionRow.isPublic,
+    sealEncrypted: versionRow.sealEncrypted,
+    downloadPolicy: downloadPolicyFromU8(versionRow.downloadPolicy),
+    sealSidecar: (versionRow.sealSidecar ?? null) as SoulContentVersionRecord['sealSidecar'],
+    deletedAt: versionRow.deletedAt ? asIso(versionRow.deletedAt) : null,
+    purgedAt: versionRow.purgedAt ? asIso(versionRow.purgedAt) : null,
+    createdAtMs: toProjectionNumber(versionRow.createdAtMs, 'SoulContentVersionRecord.createdAtMs'),
+    createdAt: asIso(versionRow.createdAt),
+    updatedAt: asIso(versionRow.updatedAt),
+  }
+
+  try {
+    const access = await resolveContentAccessPayload({
+      soul: {
+        onChainId: soul.onChainId,
+        stateOnChainId: soul.stateOnChainId,
+        contentOnChainId: soul.contentOnChainId,
+        paidAccessListOnChainId: soul.paidAccessListOnChainId,
+      },
+      version,
       viewerAddresses: effectiveViewerAddresses,
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
     })
 
-    if (privateAccess.visibility !== 'private') {
-      return NextResponse.json({ error: 'Expected private sprite access payload' }, { status: 409 })
+    if (access.visibility !== 'sealed') {
+      return NextResponse.json(
+        { error: 'Expected sealed sprite access payload' },
+        { status: 409 },
+      )
     }
 
     return NextResponse.json({
       ...manifest,
       sprite: {
         ...sprite,
-        privateAccess,
+        privateAccess: access,
       },
     })
   } catch (error) {
-    if (error instanceof AssetAccessDeniedError) {
+    if (error instanceof ContentAccessDeniedError) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
     throw error

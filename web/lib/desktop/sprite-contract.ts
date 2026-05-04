@@ -4,20 +4,15 @@ import {
   buildDesktopSpriteSheetConfig,
   resolveMirroredSoulSpriteContract,
 } from '@/lib/soulidity/metadata'
-import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
+import { KIND_SPRITE, READ_PUBLIC } from '@/lib/soulidity/kinds'
+import type {
+  SoulContentVersionRecord,
+  SoulDownloadPolicy,
+} from '@/lib/soulidity/types'
 import type { DesktopSpriteManifest } from '@/lib/types/desktop'
 
 const CANONICAL_SPRITE_FILE_NAME = 'persona-sprite.png'
 const CANONICAL_SPRITE_CONFIG_FILE_NAME = 'persona-sprite-config.json'
-
-type SpriteAssetVersionLike = {
-  assetName: string
-  versionIndex: number
-  visibility: string
-  assetType?: string | null
-  blobId?: string | null
-  blobObjectId?: string
-}
 
 function normalizeDownloadPolicy(value: string | null): SoulDownloadPolicy | null {
   if (value === 'public' || value === 'owner_only' || value === 'allowlist') {
@@ -27,7 +22,7 @@ function normalizeDownloadPolicy(value: string | null): SoulDownloadPolicy | nul
 }
 
 function buildMissingManifest(params: {
-  metadataOnChainId: string | null
+  contentOnChainId: string | null
   error: string
   status?: 'missing' | 'invalid'
 }): DesktopSpriteManifest {
@@ -38,66 +33,88 @@ function buildMissingManifest(params: {
     configFileName: CANONICAL_SPRITE_CONFIG_FILE_NAME,
     downloadPolicy: params.status ?? 'missing',
     config: null,
-    metadataOnChainId: params.metadataOnChainId,
+    contentOnChainId: params.contentOnChainId,
     error: params.error,
   }
 }
 
+/**
+ * Phase 2: resolve the persona sprite manifest for a desktop catalog entry.
+ *
+ * Inputs come from the unified `SoulContent` mirror:
+ *   - `contentOnChainId` mirrors `SoulState.content_id` (the typed-content root).
+ *   - `activeSpriteName / activeSpriteVersionIndex / activeSpriteDownloadPolicy`
+ *     mirror `SoulContent.active_table[KIND_SPRITE]`.
+ *   - `contentVersions` is the unified slot mirror; this resolver filters it
+ *     to `kind === KIND_SPRITE` rows for the active binding name.
+ */
 export async function resolveDesktopSpriteManifest(params: {
-  metadataOnChainId: string | null
-  activeSpriteAssetName: string | null
+  contentOnChainId: string | null
+  activeSpriteName: string | null
   activeSpriteVersionIndex: number | null
   activeSpriteDownloadPolicy: string | null
   spriteConfigJson: string | null
   spriteMoodMapJson: string | null
-  assetVersions?: SpriteAssetVersionLike[] | null
+  contentVersions?: SoulContentVersionRecord[] | null
 }): Promise<DesktopSpriteManifest> {
-  if (!params.metadataOnChainId) {
+  if (!params.contentOnChainId) {
     return buildMissingManifest({
-      metadataOnChainId: null,
-      error: 'Soul metadata object is missing',
+      contentOnChainId: null,
+      error: 'Soul content root is missing',
     })
   }
 
   const activeSpriteDownloadPolicy = normalizeDownloadPolicy(params.activeSpriteDownloadPolicy)
 
   if (
-    !params.activeSpriteAssetName
+    !params.activeSpriteName
     || params.activeSpriteVersionIndex == null
     || !activeSpriteDownloadPolicy
   ) {
     return buildMissingManifest({
-      metadataOnChainId: params.metadataOnChainId,
+      contentOnChainId: params.contentOnChainId,
       error: 'Active sprite binding is missing',
     })
   }
 
-  const assetVersions = params.assetVersions ?? []
-  const activeVersion = assetVersions.find((version) =>
-    version.assetName === params.activeSpriteAssetName
-      && version.versionIndex === params.activeSpriteVersionIndex,
+  const spriteVersions = (params.contentVersions ?? []).filter(
+    (version) =>
+      version.kind === KIND_SPRITE
+      && version.name === params.activeSpriteName
+      && version.deletedAt == null,
+  )
+  const activeVersion = spriteVersions.find(
+    (version) => version.versionIndex === params.activeSpriteVersionIndex,
   ) ?? null
 
+  // Phase 2: with `kind === KIND_SPRITE` already filtered above, the slot is
+  // intrinsically a sprite — there is no separate `assetType` to validate.
+  // The legacy `visibility: 'public' | 'private'` is replaced by the
+  // `(readModeMask, downloadPolicy)` pair: a slot is considered public iff
+  // its `readModeMask` includes `READ_PUBLIC` AND its `downloadPolicy` is
+  // `public`. Anything else is treated as private.
   const issues: string[] = []
-  if (activeVersion && activeVersion.assetType && activeVersion.assetType !== 'sprite') {
-    issues.push('active sprite binding does not point to a sprite asset')
-  }
-  if (activeSpriteDownloadPolicy === 'public' && activeVersion && activeVersion.visibility !== 'public') {
-    issues.push('public active sprite must point to a public asset version')
-  }
-  if (
-    (activeSpriteDownloadPolicy === 'owner_only' || activeSpriteDownloadPolicy === 'allowlist')
-    && activeVersion
-    && activeVersion.visibility !== 'private'
-  ) {
-    issues.push('private sprite download policies must point to a private asset version')
+  if (activeVersion) {
+    const isPublicSlot =
+      (activeVersion.readModeMask & READ_PUBLIC) !== 0
+      && activeVersion.downloadPolicy === 'public'
+
+    if (activeSpriteDownloadPolicy === 'public' && !isPublicSlot) {
+      issues.push('public active sprite must point to a public asset version')
+    }
+    if (
+      (activeSpriteDownloadPolicy === 'owner_only' || activeSpriteDownloadPolicy === 'allowlist')
+      && isPublicSlot
+    ) {
+      issues.push('private sprite download policies must point to a private asset version')
+    }
   }
 
   const publicAssetUrl = activeVersion?.blobId ? getBlobUrl(activeVersion.blobId) : null
   const contract = resolveMirroredSoulSpriteContract({
-    metadataOnChainId: params.metadataOnChainId,
+    contentOnChainId: params.contentOnChainId,
     activeSprite: {
-      assetName: params.activeSpriteAssetName,
+      name: params.activeSpriteName,
       versionIndex: params.activeSpriteVersionIndex,
       downloadPolicy: activeSpriteDownloadPolicy,
     },
@@ -105,21 +122,19 @@ export async function resolveDesktopSpriteManifest(params: {
     spriteMoodMapJson: params.spriteMoodMapJson,
   }, {
     publicAssetUrl,
-    availableVersionIndexes: assetVersions
-      .filter((version) => version.assetName === params.activeSpriteAssetName)
-      .map((version) => version.versionIndex),
+    availableVersionIndexes: spriteVersions.map((version) => version.versionIndex),
   })
 
   const error = [...issues, ...contract.issues].filter(Boolean).join('; ') || null
   if (issues.length > 0 || contract.policy === 'missing' || contract.policy === 'invalid') {
     return {
-      assetName: contract.protectedAssets?.assetName ?? params.activeSpriteAssetName,
+      assetName: contract.protectedAssets?.assetName ?? params.activeSpriteName,
       versionIndex: contract.protectedAssets?.versionIndex ?? params.activeSpriteVersionIndex,
       fileName: CANONICAL_SPRITE_FILE_NAME,
       configFileName: CANONICAL_SPRITE_CONFIG_FILE_NAME,
       downloadPolicy: issues.length > 0 ? 'invalid' : contract.policy,
       config: buildDesktopSpriteSheetConfig(contract),
-      metadataOnChainId: params.metadataOnChainId,
+      contentOnChainId: params.contentOnChainId,
       error,
     }
   }
@@ -133,7 +148,7 @@ export async function resolveDesktopSpriteManifest(params: {
       downloadPolicy: 'public',
       config: buildDesktopSpriteSheetConfig(contract),
       publicUrl: publicAssetUrl,
-      metadataOnChainId: params.metadataOnChainId,
+      contentOnChainId: params.contentOnChainId,
       error,
     }
   }
@@ -145,7 +160,7 @@ export async function resolveDesktopSpriteManifest(params: {
     configFileName: CANONICAL_SPRITE_CONFIG_FILE_NAME,
     downloadPolicy: contract.policy,
     config: buildDesktopSpriteSheetConfig(contract),
-    metadataOnChainId: params.metadataOnChainId,
+    contentOnChainId: params.contentOnChainId,
     error,
   }
 }

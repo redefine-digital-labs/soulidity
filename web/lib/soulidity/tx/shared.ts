@@ -1,12 +1,24 @@
 import { Transaction, type TransactionArgument } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { getKioskPackageAddress } from '@/lib/soulidity/kiosk'
+import {
+  CANONICAL_MEMORY_NAME,
+  CANONICAL_SOUL_DOC_NAME,
+  KIND_MEMORY,
+  KIND_SOUL_DOC,
+  READ_GRANT,
+  READ_OWNER,
+  assertSlotReadModeAllowed,
+  getBuiltinKindDescriptor,
+} from '@/lib/soulidity/kinds'
+import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
 
 export const MAX_NAME_BYTES = 256
 export const MAX_DESCRIPTION_BYTES = 4096
 export const MAX_IMAGE_URL_BYTES = 1024
 export const MAX_CREATOR_ROYALTY_BPS = 2_500
 export const MAX_COLLECTION_ROYALTY_BPS = 2_500
+export const MAX_STATE_CONFIG_VALUE_BYTES = 64 * 1024
 // Web/SDK soft cap on a collection's max_supply. The on-chain contract only
 // rejects `Some(0)` (ESupplyCapInvalid); any positive u64 is accepted on chain.
 // This 1M ceiling is a UX guardrail, not a security boundary.
@@ -47,12 +59,6 @@ export function validateSoulPublishArgs(params: {
     || params.creatorRoyaltyBps > MAX_CREATOR_ROYALTY_BPS
   ) {
     throw new Error(`creatorRoyaltyBps must be between 0 and ${MAX_CREATOR_ROYALTY_BPS}`)
-  }
-}
-
-export function assertNoMintTimeVoiceAsset(params: { initialVoice?: unknown; assetType?: unknown }) {
-  if (params.initialVoice != null || params.assetType === 'audio') {
-    throw new Error('Mint-time voice assets are disabled; add voice assets after mint so private asset sidecars can be mirrored safely')
   }
 }
 
@@ -99,6 +105,126 @@ export function validateCollectionArgs(params: {
     }
   }
 }
+
+// ── Phase 2: initial content / state-config validation ──────────────────
+
+export interface InitialContentEntryInput {
+  /** Numeric kind id from KindRegistry. */
+  kind: number
+  /** Slot name. For SOUL_DOC must be "soul"; for MEMORY must be "default". */
+  name: string
+  /** Slot read-mode mask (READ_OWNER | READ_GRANT | READ_PAID | READ_PUBLIC subset). */
+  slotReadModeMask: number
+  /** Slot download policy. */
+  downloadPolicy: SoulDownloadPolicy
+  /** Whether to bind this entry as the active version for its kind (only valid for has_active_binding kinds). */
+  setActive: boolean
+  /** Walrus blob object id (consumed by the move call). */
+  blobObjectId: string
+}
+
+export interface StateConfigEntryInput {
+  key: string
+  /** UTF-8 string body; encoded to vector<u8> at PTB build time. */
+  valueUtf8: string
+}
+
+const MINT_INVARIANT_READ_MODE = READ_OWNER | READ_GRANT
+
+/**
+ * Mirrors `market.move::assert_initial_content_well_formed`. Run client-side
+ * before composing the PTB so the user sees a friendly error instead of the
+ * raw Move abort.
+ *
+ * Exactly one `(KIND_SOUL_DOC, "soul")` entry is required. At least one
+ * `(KIND_MEMORY, "default")` entry is required. Custom kinds must have
+ * `OP_APPEND` in their descriptor (this client-side check uses the built-in
+ * descriptors only — admin-registered kinds bypass it and rely on the on-
+ * chain abort).
+ */
+export function validateInitialContentEntries(
+  entries: ReadonlyArray<InitialContentEntryInput>,
+): void {
+  let soulDocCount = 0
+  let memoryCount = 0
+  for (const entry of entries) {
+    if (entry.blobObjectId.trim().length === 0) {
+      throw new Error('initial content entry blobObjectId is required')
+    }
+    if (entry.name.trim().length === 0) {
+      throw new Error('initial content entry name is required')
+    }
+    if (entry.kind === KIND_SOUL_DOC) {
+      if (entry.name !== CANONICAL_SOUL_DOC_NAME) {
+        throw new Error(`SOUL_DOC entry name must be "${CANONICAL_SOUL_DOC_NAME}"`)
+      }
+      if (entry.slotReadModeMask !== MINT_INVARIANT_READ_MODE) {
+        throw new Error('SOUL_DOC slot_read_mode_mask must be READ_OWNER | READ_GRANT')
+      }
+      if (entry.setActive) {
+        throw new Error('SOUL_DOC entry cannot set_active (kind has no active binding)')
+      }
+      soulDocCount += 1
+      continue
+    }
+    if (entry.kind === KIND_MEMORY) {
+      if (entry.name !== CANONICAL_MEMORY_NAME) {
+        throw new Error(`MEMORY entry name must be "${CANONICAL_MEMORY_NAME}"`)
+      }
+      if (entry.slotReadModeMask !== MINT_INVARIANT_READ_MODE) {
+        throw new Error('MEMORY slot_read_mode_mask must be READ_OWNER | READ_GRANT')
+      }
+      if (entry.setActive) {
+        throw new Error('MEMORY entry cannot set_active (kind has no active binding)')
+      }
+      memoryCount += 1
+      continue
+    }
+    // Built-in non-invariant kinds have descriptors we can validate against;
+    // unknown / custom kinds skip the read-mode subset check (the chain
+    // enforces it).
+    const descriptor = getBuiltinKindDescriptor(entry.kind)
+    if (descriptor) {
+      if ((descriptor.opMask & 1 /* OP_APPEND */) === 0) {
+        throw new Error(`kind ${entry.kind} (${descriptor.name}) does not allow append at mint time`)
+      }
+      assertSlotReadModeAllowed({
+        readModeMask: entry.slotReadModeMask,
+        kindReadModeMask: descriptor.readModeMask,
+        downloadPolicy: entry.downloadPolicy,
+      })
+      if (entry.setActive && !descriptor.hasActiveBinding) {
+        throw new Error(`kind ${entry.kind} (${descriptor.name}) does not support set_active`)
+      }
+    }
+  }
+  if (soulDocCount !== 1) {
+    throw new Error(`mint requires exactly 1 SOUL_DOC entry; got ${soulDocCount}`)
+  }
+  if (memoryCount < 1) {
+    throw new Error('mint requires at least 1 MEMORY entry; got 0')
+  }
+}
+
+export function validateInitialStateConfigEntries(
+  entries: ReadonlyArray<StateConfigEntryInput>,
+): void {
+  const seenKeys = new Set<string>()
+  for (const entry of entries) {
+    if (entry.key.trim().length === 0) {
+      throw new Error('state config entry key is required')
+    }
+    if (seenKeys.has(entry.key)) {
+      throw new Error(`duplicate state config key "${entry.key}"`)
+    }
+    seenKeys.add(entry.key)
+    if (getUtf8ByteLength(entry.valueUtf8) > MAX_STATE_CONFIG_VALUE_BYTES) {
+      throw new Error(`state config value for "${entry.key}" exceeds ${MAX_STATE_CONFIG_VALUE_BYTES} bytes`)
+    }
+  }
+}
+
+// ── Buyer kiosk plumbing (unchanged from phase 1) ───────────────────────
 
 export function buildBuyerKioskArgs(tx: Transaction, params: {
   buyerKioskId?: string | null

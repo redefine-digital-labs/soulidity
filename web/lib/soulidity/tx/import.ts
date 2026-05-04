@@ -1,146 +1,50 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@/lib/soulidity/metadata'
-import { resolveWalrusBlobType } from '@/lib/soulidity/walrus-blob'
-import { assertNoMintTimeVoiceAsset, buildBuyerKioskArgs, finishBuyerKioskArgs, validateSoulPublishArgs } from '@/lib/soulidity/tx/shared'
-import type { AssetType, SoulDownloadPolicy } from '@/lib/soulidity/types'
+import {
+  appendFinalizeSoulState,
+  buildInitialContentArgs,
+  type MintPtbInputs,
+} from '@/lib/soulidity/tx/mint-helpers'
+import {
+  buildBuyerKioskArgs,
+  finishBuyerKioskArgs,
+  validateInitialContentEntries,
+  validateInitialStateConfigEntries,
+  validateSoulPublishArgs,
+} from '@/lib/soulidity/tx/shared'
 
-type InitialSpriteInput = {
-  blobObjectId: string
-  assetName?: string | null
-  versionIndex?: number | null
-  visibility?: 'public' | 'private'
-  downloadPolicy?: SoulDownloadPolicy | null
-  spriteConfigJson: string
-  spriteMoodMapJson?: string | null
-}
+const SUI_CLOCK_OBJECT_ID = '0x6'
 
-type ImportSoulTxParams = {
+export interface ImportSoulTxParams extends MintPtbInputs {
   currentKioskId?: string | null
   currentKioskCapOnChainId?: string | null
   name: string
   description: string
   imageUrl: string
-  protectedBlobObjectId: string
-  foundingMemoryBlobObjectId?: string | null
-  skillsBlobObjectId?: string | null
-  initialSkillName?: string | null
-  skillsVisibility?: 'public' | 'private'
-  initialSprite?: InitialSpriteInput | null
-  assetBlobObjectId?: string | null
-  initialAssetName?: string | null
-  assetVisibility?: 'public' | 'private'
-  assetType?: AssetType
-  contentAccessPriceAtomic?: number
-  contentAccessDefaultScopeMask?: number
-  contentAccessDefaultDurationMs?: number | null
+  /**
+   * Free-form, off-chain claim about where this Soul came from. The chain
+   * does not verify this string; UI must label imported Souls as such per
+   * `mint_imported_in_personal_kiosk` doc-comments.
+   */
   originRef: string
   creatorRoyaltyBps: number
 }
 
-const SUI_CLOCK_OBJECT_ID = '0x6'
-// SCOPE_SEAL | SCOPE_MEMORY | SCOPE_SKILLS | SCOPE_ASSETS (mirrors Move grant::all_scopes)
-const ALL_ACCESS_SCOPES = 15
-
-function buildFoundingMemoryArg(tx: Transaction, blobObjectId?: string | null) {
-  return tx.object.option({
-    type: resolveWalrusBlobType(),
-    value: blobObjectId ? tx.object(blobObjectId) : null,
-  })
-}
-
-function buildSkillsArg(tx: Transaction, blobObjectId?: string | null) {
-  return tx.object.option({
-    type: resolveWalrusBlobType(),
-    value: blobObjectId ? tx.object(blobObjectId) : null,
-  })
-}
-
-function buildAssetArg(tx: Transaction, blobObjectId?: string | null) {
-  return tx.object.option({
-    type: resolveWalrusBlobType(),
-    value: blobObjectId ? tx.object(blobObjectId) : null,
-  })
-}
-
-function assetTypeToU8(assetType?: AssetType): number {
-  switch (assetType) {
-    case 'sprite': return 0
-    case 'live2d': return 1
-    case 'audio': return 2
-    default: return 0
-  }
-}
-
-function downloadPolicyToU8(policy: SoulDownloadPolicy): number {
-  switch (policy) {
-    case 'public': return 0
-    case 'owner_only': return 1
-    case 'allowlist': return 2
-  }
-}
-
-function utf8Bytes(value: string | null | undefined) {
-  if (!value) {
-    return null
-  }
-  return Array.from(new TextEncoder().encode(value))
-}
-
-function resolveInitialSprite(params: ImportSoulTxParams) {
-  return params.initialSprite ?? null
-}
-
-function resolveAssetBlobObjectId(params: ImportSoulTxParams) {
-  return resolveInitialSprite(params)?.blobObjectId
-    ?? params.assetBlobObjectId
-    ?? null
-}
-
-function resolveAssetName(params: ImportSoulTxParams) {
-  const initialSprite = resolveInitialSprite(params)
-  if (initialSprite?.assetName) {
-    return initialSprite.assetName
-  }
-  if (params.initialAssetName) {
-    return params.initialAssetName
-  }
-  if (resolveAssetBlobObjectId(params) && resolveAssetType(params) === 'sprite') {
-    return CANONICAL_PERSONA_SPRITE_ASSET_NAME
-  }
-  return 'default'
-}
-
-function resolveAssetVisibility(params: ImportSoulTxParams) {
-  return resolveInitialSprite(params)?.visibility
-    ?? params.assetVisibility
-    ?? 'private'
-}
-
-function resolveAssetType(params: ImportSoulTxParams): AssetType | undefined {
-  if (resolveInitialSprite(params)) return 'sprite'
-  return params.assetType
-}
-
-function resolveDownloadPolicy(
-  policy: SoulDownloadPolicy | null | undefined,
-  visibility: 'public' | 'private' | null | undefined,
-): SoulDownloadPolicy {
-  if (policy) {
-    return policy
-  }
-  return visibility === 'public' ? 'public' : 'owner_only'
-}
-
-export function buildImportSoulTx(params: ImportSoulTxParams) {
+/**
+ * Build a `mint_imported_in_personal_kiosk` PTB. Origin string is stored
+ * as the unverified `Soul.origin_ref` Option<String>.
+ */
+export function buildImportSoulTx(params: ImportSoulTxParams): Transaction {
   validateSoulPublishArgs(params)
-  assertNoMintTimeVoiceAsset(params)
+  validateInitialContentEntries(params.initialContent)
+  validateInitialStateConfigEntries(params.initialStateConfig)
   if (params.originRef.trim().length === 0) {
     throw new Error('originRef is required for imported Souls')
   }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const kindRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
@@ -148,12 +52,17 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
     buyerKioskId: params.currentKioskId,
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
-  const initialSprite = resolveInitialSprite(params)
+
+  const { initialContentVec, initialStateConfigVec } = buildInitialContentArgs(tx, packageId, {
+    initialContent: params.initialContent,
+    initialStateConfig: params.initialStateConfig,
+  })
 
   const soulState = tx.moveCall({
     target: `${packageId}::market::mint_imported_in_personal_kiosk`,
     arguments: [
       tx.object(marketConfigId),
+      tx.object(kindRegistryId),
       tx.object(kioskRegistryId),
       tx.object(transferPolicyId),
       personalKiosk.buyerKiosk,
@@ -161,38 +70,15 @@ export function buildImportSoulTx(params: ImportSoulTxParams) {
       tx.pure.string(params.name),
       tx.pure.string(params.description),
       tx.pure.string(params.imageUrl),
-      tx.object(params.protectedBlobObjectId),
-      buildFoundingMemoryArg(tx, params.foundingMemoryBlobObjectId),
-      buildSkillsArg(tx, params.skillsBlobObjectId),
-      tx.pure.string(params.initialSkillName || 'default'),
-      tx.pure.bool((params.skillsVisibility ?? 'private') === 'public'),
-      buildAssetArg(tx, resolveAssetBlobObjectId(params)),
-      tx.pure.string(resolveAssetName(params)),
-      tx.pure.bool(resolveAssetVisibility(params) === 'public'),
-      tx.pure.u8(assetTypeToU8(resolveAssetType(params))),
-      tx.pure.option('string', initialSprite?.assetName ?? null),
-      tx.pure.option('u64', initialSprite?.versionIndex ?? (initialSprite ? 0 : null)),
-      tx.pure.option('u8', initialSprite ? downloadPolicyToU8(resolveDownloadPolicy(initialSprite.downloadPolicy, initialSprite.visibility)) : null),
-      tx.pure.option('vector<u8>', initialSprite ? utf8Bytes(initialSprite.spriteConfigJson) : null),
-      tx.pure.option('vector<u8>', initialSprite ? utf8Bytes(initialSprite.spriteMoodMapJson ?? null) : null),
-      tx.pure.option('string', null),
-      tx.pure.option('u64', null),
-      tx.pure.option('u8', null),
-      tx.pure.option('vector<u8>', null),
-      tx.pure.u64(params.contentAccessPriceAtomic ?? 0),
-      tx.pure.u64(params.contentAccessDefaultScopeMask ?? ALL_ACCESS_SCOPES),
-      tx.pure.option('u64', params.contentAccessDefaultDurationMs ?? null),
+      initialContentVec,
+      initialStateConfigVec,
       tx.pure.string(params.originRef),
       tx.pure.u16(params.creatorRoyaltyBps),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
 
-  tx.moveCall({
-    target: `${packageId}::market::finalize_soul_state`,
-    arguments: [soulState],
-  })
-
+  appendFinalizeSoulState(tx, packageId, soulState)
   finishBuyerKioskArgs(tx, personalKiosk)
   return tx
 }

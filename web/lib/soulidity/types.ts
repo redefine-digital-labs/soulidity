@@ -1,23 +1,43 @@
+/**
+ * Soulidity Phase 2 type surface. Every legacy type that mirrored the deleted
+ * Move modules (`memory.move`, `skills.move`, `assets.move`, `metadata.move`,
+ * `content_access.move`, `seal_policy.move`) has been removed. All slot-level
+ * content now lives in a single typed-content root (`SoulContent`) addressed by
+ * `(kind, name, versionIndex)`.
+ */
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 
+// ── Listing / grant / provenance enums ───────────────────────────────────
 export type SoulListingStatus = 'held' | 'listed' | 'floor-violation'
 export type SoulGrantStatus = 'active' | 'revoked' | 'expired' | 'superseded' | 'invalidated'
 export type SoulGrantScope = 'seal' | 'memory' | 'skills' | 'assets'
-export type SoulAccessKind = 'owner' | 'granted-agent'
-export type SkillAccessKind = 'owner' | 'granted-agent' | 'allowlisted'
-export type AssetAccessKind = 'owner' | 'granted-agent' | 'allowlisted'
-export type SoulWriterKind = 'founder' | 'owner' | 'granted-agent'
 export type SoulProvenanceKind = 'native' | 'imported' | 'personal-join'
-export type SoulSkillVisibility = 'public' | 'private'
-export type SoulAssetVisibility = 'public' | 'private'
+
+/**
+ * Per-slot download policy. Mirrors `content.move::DOWNLOAD_POLICY_*`.
+ * `public` means the slot blob may be served plaintext (caller still needs
+ * `READ_PUBLIC` in the slot's `read_mode_mask`); `owner_only` and `allowlist`
+ * require Seal session keys.
+ */
 export type SoulDownloadPolicy = 'public' | 'owner_only' | 'allowlist'
 
-export interface SoulMetadataBindingRecord {
-  assetName: string
-  versionIndex: number
-  downloadPolicy: SoulDownloadPolicy
-}
+/**
+ * Persona kind label kept on `SoulAsset.persona_kind`. Mirror of an off-chain
+ * facet only — the protocol itself does not distinguish "characters" vs
+ * "trainers". Used by the marketplace for filtering.
+ */
+export type SoulPersonaKind = 'characters' | 'trainers'
 
+// ── Content slot read-mode helpers ───────────────────────────────────────
+export type ContentReadMode = 'owner' | 'grant' | 'paid' | 'public'
+
+/**
+ * Resolved access channel for a single content version. Computed server-side
+ * after authn/authz checks and before issuing the Seal session payload.
+ */
+export type ContentAccessKind = 'owner' | 'granted-agent' | 'paid' | 'public'
+
+// ── On-chain object projections (read-only mirrors) ──────────────────────
 export interface SoulidityMarketConfig {
   objectId: string
   packageId: string
@@ -33,8 +53,6 @@ export interface SoulObject {
   name: string
   description: string
   imageUrl: string
-  protectedBlobId: string | null
-  protectedBlobObjectId: string
   provenanceKind: SoulProvenanceKind
   originRef: string | null
 }
@@ -48,6 +66,11 @@ export interface ActiveGrantSlotObject {
   ownershipEpochSnapshot: number | null
 }
 
+/**
+ * Phase 2: `SoulState` no longer references `metadata_id` / `skills_id` /
+ * `assets_id` / `memory_id`. The single typed-content root is `content_id`,
+ * and `access_list_id` now points at the per-Soul `SoulPaidAccessList`.
+ */
 export interface SoulStateObject {
   objectId: string
   packageId: string
@@ -61,24 +84,33 @@ export interface SoulStateObject {
   activeGrantCount: number
   activeGrants: ActiveGrantSlotObject[]
   activeGrantsTableId?: string | null
-  memoryId?: string | null
-  metadataId: string | null
-  skillsId: string | null
-  assetsId: string | null
-  accessListId: string | null
+  contentId: string | null
+  paidAccessListId: string | null
   collectionId: string | null
+  isListed: boolean
 }
 
-export interface SoulMetadataObject {
+/**
+ * Active-binding mirror for a kind that supports `OP_ACTIVE_BIND` (sprite,
+ * audio, custom). Snapshot of `SoulContent.active_table[kind]`.
+ */
+export interface SoulContentActiveBinding {
+  kind: number
+  name: string
+  versionIndex: number
+  downloadPolicy: SoulDownloadPolicy
+}
+
+/**
+ * Read-only projection of the single typed-content root attached to a Soul.
+ */
+export interface SoulContentObject {
   objectId: string
   packageId: string
   soulId: string
-  activeSprite: SoulMetadataBindingRecord | null
-  activeVoice: SoulMetadataBindingRecord | null
-  extTableId: string
-  spriteConfigJson: string | null
-  spriteMoodMapJson: string | null
-  voiceConfigJson: string | null
+  versionCount: number
+  /** Active bindings keyed by kind id. Only kinds with `has_active_binding=true` appear. */
+  activeBindings: SoulContentActiveBinding[]
 }
 
 export interface SoulListingObject {
@@ -142,61 +174,100 @@ export interface SoulGrantObject {
   expiresAtMs: number | null
 }
 
-export interface SoulMemoryObject {
+/**
+ * Read-only projection of `SoulPaidAccessList` (per-Soul, 1:1).
+ */
+export interface SoulPaidAccessListObject {
   objectId: string
   packageId: string
   soulId: string
-  entryCount: number
-  entriesTableId: string
+  creatorAddress: string
+  /** kind id → KindPaidConfig snapshot. */
+  kindConfigs: SoulPaidAccessKindConfigSnapshot[]
 }
 
-export interface MemoryEntryObject {
-  packageId: string
-  memoryId: string
-  soulId: string
-  timestampKey: number
-  writerAddress: string
-  writerKind: SoulWriterKind
-  createdAtMs: number
+export interface SoulPaidAccessKindConfigSnapshot {
+  kind: number
+  version: number
+  priceAtomic: bigint
+  scopeMask: number
+  durationMs: bigint | null
+  ownershipEpochSnapshot: number
+}
+
+export interface SoulPaidAccessKindEntrySnapshot {
+  kind: number
+  version: number
+  scopeMask: number
+  expiresAtMs: bigint | null
+  ownershipEpochSnapshot: number
+}
+
+// ── DB-mirror shapes (Prisma row → API JSON) ─────────────────────────────
+export interface SoulContentVersionRecord {
+  id: string
+  soulOnChainId: string
+  contentOnChainId: string
+  kind: number
+  kindName: string
+  name: string
+  versionIndex: number
   blobObjectId: string
   blobId: string | null
-}
-
-export interface SoulSkillsObject {
-  objectId: string
-  packageId: string
-  soulId: string
-  skillCount: number
-  skillsTableId: string
-}
-
-export interface SkillVersionObject {
-  packageId: string
-  soulId: string
-  skillsId: string
-  skillName: string
-  versionIndex: number
-  visibility: SoulSkillVisibility
-  deleted: boolean
+  readModeMask: number
+  opMask: number
+  grantScopeMask: number
+  isPublic: boolean
+  sealEncrypted: boolean
+  downloadPolicy: SoulDownloadPolicy
+  sealSidecar: SealEnvelopeSidecar | null
+  deletedAt: string | null
+  purgedAt: string | null
   createdAtMs: number
-  blobObjectId: string
-  blobId: string | null
+  createdAt: string
+  updatedAt: string
 }
 
-// ── Asset types ──
+export interface SoulContentVersionsResponse {
+  soulOnChainId: string
+  contentOnChainId: string | null
+  kind: number
+  name: string
+  items: SoulContentVersionRecord[]
+  nextCursor: string | null
+  total: number
+}
 
-export type AssetType = 'sprite' | 'live2d' | 'audio'
+export interface SoulPaidAccessKindConfigRecord {
+  id: string
+  soulOnChainId: string
+  paidAccessListOnChainId: string
+  kind: number
+  version: number
+  priceAtomic: string
+  scopeMask: number
+  durationMs: string | null
+  ownershipEpochSnapshot: number
+  deletedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
 
-export interface AssetVersionObject {
-  soulId: string
-  assetsId: string
-  assetName: string
-  versionIndex: number
-  visibility: 'public' | 'private'
-  assetType: AssetType
-  blobObjectId: string
-  blobId?: string | null
+export interface SoulPaidAccessEntryRecord {
+  id: string
+  soulOnChainId: string
+  paidAccessListOnChainId: string
+  buyerAddress: string
+  kind: number
+  version: number
+  scopeMask: number
+  pricePaidAtomic: string
+  expiresAtMs: string | null
+  ownershipEpochSnapshot: number
+  revokedAt: string | null
   createdAtMs: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface SoulQuoteBreakdown {
@@ -207,27 +278,38 @@ export interface SoulQuoteBreakdown {
   totalAtomic: string
 }
 
+/**
+ * Unified Soul row mirror. The active sprite/voice fields cache a subset of
+ * `SoulContent.active_table` for fast persona rendering — they MUST be kept
+ * in sync via `ActiveBindingUpdated` event handlers, not consulted directly
+ * for authorization. Any access decision must read the canonical slot
+ * `(kind, name, versionIndex)` from `soul_content_version_records`.
+ */
 export interface SoulAssetSummary {
   id: string
   onChainId: string
   stateOnChainId: string
-  memoryOnChainId: string
+  /** Mirror of `SoulState.content_id` — the typed-content root object id. */
+  contentOnChainId: string | null
+  /** Mirror of `SoulState.access_list_id` — the per-Soul SoulPaidAccessList. */
+  paidAccessListOnChainId: string | null
   name: string
   description: string
   imageUrl: string
-  metadataOnChainId: string | null
-  activeSpriteAssetName: string | null
+  /** Cached active-sprite binding from `SoulContent.active_table[KIND_SPRITE]`. */
+  activeSpriteName: string | null
   activeSpriteVersionIndex: number | null
   activeSpriteDownloadPolicy: SoulDownloadPolicy | null
-  activeVoiceAssetName: string | null
+  /** Cached active-voice binding from `SoulContent.active_table[KIND_AUDIO]`. */
+  activeVoiceName: string | null
   activeVoiceVersionIndex: number | null
   activeVoiceDownloadPolicy: SoulDownloadPolicy | null
+  /** Cached `SoulState.config_ext['sprite_config_json']`. */
   spriteConfigJson: string | null
   spriteMoodMapJson: string | null
   voiceConfigJson: string | null
-  contentBlobId: string | null
-  contentBlobObjectId: string
   provenanceKind: SoulProvenanceKind
+  personaKind: SoulPersonaKind
   originRef: string | null
   tags: string[]
   previewImages: string[]
@@ -242,9 +324,6 @@ export interface SoulAssetSummary {
   collectionOnChainId: string | null
   grantCapacity: number
   activeGrantCount: number
-  skillsOnChainId: string | null
-  assetsOnChainId: string | null
-  accessListOnChainId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -264,59 +343,6 @@ export interface SoulGrantRecord {
   replacedByGrantOnChainId: string | null
   createdAt: string
   updatedAt: string
-}
-
-export interface SoulMemoryEntryRecord {
-  id: string
-  soulOnChainId: string
-  memoryOnChainId: string
-  timestampKey: number
-  writerAddress: string
-  writerKind: SoulWriterKind
-  blobObjectId: string
-  blobId: string | null
-  sealSidecar?: SealEnvelopeSidecar | null
-  createdAtMs: number
-  createdAt: string
-  updatedAt: string
-}
-
-export interface SoulSkillVersionRecord {
-  id: string
-  soulOnChainId: string
-  skillsOnChainId: string
-  skillName: string
-  versionIndex: number
-  visibility: SoulSkillVisibility
-  deletedAt: string | null
-  blobObjectId: string
-  blobId: string | null
-  sealSidecar: SealEnvelopeSidecar | null
-  createdAtMs: number
-  createdAt: string
-  updatedAt: string
-}
-
-export interface SoulAssetVersionRecord {
-  id: string
-  soulOnChainId: string
-  assetsOnChainId: string
-  assetName: string
-  versionIndex: number
-  visibility: SoulAssetVisibility
-  assetType: AssetType
-  deletedAt: string | null
-  blobObjectId: string
-  blobId: string | null
-  sealSidecar: SealEnvelopeSidecar | null
-  createdAtMs: number
-  createdAt: string
-  updatedAt: string
-}
-
-export interface SoulAssetVersionsResponse {
-  assets: SoulAssetVersionRecord[]
-  nextVersionIndexes?: Record<string, number>
 }
 
 export interface SoulCollectionAssetSummary {
@@ -372,25 +398,22 @@ export interface SoulAssetDetail extends SoulAssetSummary {
   creatorMemberId: string | null
   currentOwnerMemberId: string | null
   readme: string | null
-  sealSidecar: SealEnvelopeSidecar | null
   collection: SoulCollectionAssetSummary | null
   activeGrants: SoulGrantRecord[]
-  memoryEntries: SoulMemoryEntryRecord[]
-  skillVersions: SoulSkillVersionRecord[]
-  skillVersionCount: number
+  /**
+   * Subset of `soul_content_version_records` rows attached to this Soul
+   * (typically: SOUL_DOC v0, latest MEMORY versions, latest SKILL versions
+   * per name, active SPRITE / AUDIO versions). Full lists are paginated via
+   * `/api/souls/[id]/content` endpoints.
+   */
+  contentVersions: SoulContentVersionRecord[]
+  paidAccessKindConfigs: SoulPaidAccessKindConfigRecord[]
+  paidAccessEntries: SoulPaidAccessEntryRecord[]
   isOwner: boolean
   isCreator: boolean
   isGrantedAgent: boolean
   quote: SoulQuoteBreakdown | null
   platformFeeBps: number | null
-}
-
-export interface SoulSkillVersionsPageResponse {
-  soulOnChainId: string
-  skillsOnChainId: string | null
-  items: SoulSkillVersionRecord[]
-  nextCursor: string | null
-  total: number
 }
 
 export interface SoulsListResponse {
@@ -423,39 +446,16 @@ export interface MySoulsResponse {
   grants: SoulGrantRecord[]
 }
 
-export interface SoulAccessResponse {
-  artifact: {
-    walrusBlobUrl: string
-    walrusBlobId: string
-    contentBlobObjectId: string
-  }
-  accessPolicy: {
-    packageId: string
-    soulObjectId: string
-    stateObjectId: string
-    moduleName: 'seal_policy'
-    functionName: 'seal_approve_owner' | 'seal_approve_granted_agent'
-    soulGrantObjectId: string | null
-  }
-  seal: {
-    network: 'testnet' | 'mainnet'
-    threshold: number
-    verifyKeyServers: boolean
-    serverConfigs: Array<{
-      objectId: string
-      weight: number
-      aggregatorUrl?: string
-    }>
-  }
-  sealSidecar: SealEnvelopeSidecar
-  viewerAddress: string
-  accessKind: SoulAccessKind
-  sessionTtlMin: number
-}
-
-export type SkillAccessResponse =
+// ── Access-resolution responses ──────────────────────────────────────────
+//
+// Phase 2 collapses the old per-kind access response shapes (`SoulAccessResponse`,
+// `SkillAccessResponse`, `AssetAccessResponse`, `MemoryAccessResponse`) into a
+// single `ContentAccessResponse`. The protocol entry the caller invokes is
+// always `content::seal_approve_content_*` (or `paid_access::seal_approve_content_paid_access`).
+export type ContentAccessResponse =
   | {
-      visibility: 'public'
+      visibility: 'public-plaintext'
+      slot: ContentSlotDescriptor
       artifact: {
         walrusBlobUrl: string | null
         walrusBlobId: string | null
@@ -463,7 +463,8 @@ export type SkillAccessResponse =
       }
     }
   | {
-      visibility: 'private'
+      visibility: 'sealed'
+      slot: ContentSlotDescriptor
       artifact: {
         walrusBlobUrl: string | null
         walrusBlobId: string | null
@@ -472,16 +473,18 @@ export type SkillAccessResponse =
       accessPolicy: {
         packageId: string
         stateObjectId: string
-        skillsObjectId: string
-        skillName: string
+        contentObjectId: string
+        kind: number
+        name: string
         versionIndex: number
-        moduleName: 'skills' | 'content_access'
+        moduleName: 'content' | 'paid_access'
         functionName:
-          | 'seal_approve_private_read_owner'
-          | 'seal_approve_private_read_granted_agent'
-          | 'seal_approve_skill_allowlisted'
+          | 'seal_approve_content_owner'
+          | 'seal_approve_content_granted_agent'
+          | 'seal_approve_content_paid_access'
+          | 'seal_approve_content_public'
         soulGrantObjectId: string | null
-        accessListOnChainId?: string
+        paidAccessListOnChainId: string | null
         documentIdHex: string
       }
       seal: {
@@ -496,89 +499,26 @@ export type SkillAccessResponse =
       }
       sealSidecar: SealEnvelopeSidecar
       viewerAddress: string
-      accessKind: SkillAccessKind
+      accessKind: ContentAccessKind
       sessionTtlMin: number
     }
 
-export type AssetAccessResponse =
-  | {
-      visibility: 'public'
-      artifact: {
-        walrusBlobUrl: string | null
-        walrusBlobId: string | null
-        blobObjectId: string
-      }
-    }
-  | {
-      visibility: 'private'
-      artifact: {
-        walrusBlobUrl: string | null
-        walrusBlobId: string | null
-        blobObjectId: string
-      }
-      accessPolicy: {
-        packageId: string
-        stateObjectId: string
-        assetsObjectId: string
-        assetName: string
-        versionIndex: number
-        moduleName: 'assets' | 'content_access'
-        functionName:
-          | 'seal_approve_asset_read_owner'
-          | 'seal_approve_asset_read_granted_agent'
-          | 'seal_approve_asset_allowlisted'
-        soulGrantObjectId: string | null
-        accessListOnChainId?: string
-        documentIdHex: string
-      }
-      seal: {
-        network: 'testnet' | 'mainnet'
-        threshold: number
-        verifyKeyServers: boolean
-        serverConfigs: Array<{
-          objectId: string
-          weight: number
-          aggregatorUrl?: string
-        }>
-      }
-      sealSidecar: SealEnvelopeSidecar
-      viewerAddress: string
-      accessKind: AssetAccessKind
-      sessionTtlMin: number
-    }
-
-export interface MemoryAccessResponse {
-  artifact: {
-    walrusBlobUrl: string
-    walrusBlobId: string
-    blobObjectId: string
-  }
-  accessPolicy: {
-    packageId: string
-    stateObjectId: string
-    memoryObjectId: string
-    timestampKey: number
-    moduleName: 'seal_policy'
-    functionName: 'seal_approve_memory_owner' | 'seal_approve_memory_granted_agent'
-    soulGrantObjectId: string | null
-    documentIdHex: string
-  }
-  seal: {
-    network: 'testnet' | 'mainnet'
-    threshold: number
-    verifyKeyServers: boolean
-    serverConfigs: Array<{
-      objectId: string
-      weight: number
-      aggregatorUrl?: string
-    }>
-  }
-  sealSidecar: SealEnvelopeSidecar
-  viewerAddress: string
-  accessKind: SoulAccessKind
-  sessionTtlMin: number
+export interface ContentSlotDescriptor {
+  kind: number
+  kindName: string
+  name: string
+  versionIndex: number
+  readModeMask: number
+  opMask: number
+  grantScopeMask: number
+  isPublic: boolean
+  sealEncrypted: boolean
+  downloadPolicy: SoulDownloadPolicy
+  deletedAt: string | null
+  purgedAt: string | null
 }
 
+// ── Personal kiosk / mint plumbing ───────────────────────────────────────
 export interface ResolvedPersonalKiosk {
   ownerAddress: string
   currentKioskId: string
@@ -589,9 +529,15 @@ export type ResolvePersonalKioskResult =
   | { status: 'ready'; kiosk: ResolvedPersonalKiosk }
   | { status: 'missing' }
 
+/**
+ * Sync payload for the publish/import/personal-join routes after a successful
+ * mint TX. `contentOnChainId` is required; `paidAccessListOnChainId` is the
+ * shared SoulPaidAccessList created at mint time.
+ */
 export interface SoulMintSyncPayload {
   txDigest: string
   soulOnChainId: string
   stateOnChainId: string
-  memoryOnChainId: string
+  contentOnChainId: string
+  paidAccessListOnChainId: string
 }

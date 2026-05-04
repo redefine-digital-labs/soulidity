@@ -38,17 +38,36 @@ import {
 } from '@/lib/soulidity/client-session'
 import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import {
-  extractAllMemoryEntryAppendedEvents,
-  extractAllSkillVersionAppendedEvents,
-  extractAllSoulMintedToKioskEvents,
-} from '@/lib/soulidity/events'
+import { extractAllSoulMintedToKioskEvents } from '@/lib/soulidity/events'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
 import {
-  createLegacyInitialAssetSealSidecar,
-  hasValidOptionalLegacyAssetsSealMaterial,
-} from '@/lib/hooks/legacy-mint-asset-recovery'
+  buildLegacyInitialContent,
+  buildLegacyInitialStateConfig,
+} from '@/lib/soulidity/legacy-mint-bridge'
+
+// Phase 2: per-version sidecars are produced by the unified mirror gate. The
+// hook returns null placeholders until the new ContentPanel UI passes
+// `contentSidecars[]` to the post-tx route.
+const PHASE2_PENDING_SIDECAR: SealEnvelopeSidecar | null = null
+function extractAllMemoryEntryAppendedEvents(
+  _tx: unknown,
+  _packageId: string,
+): Array<{ soulId: string; memoryId: string; timestampKey: number }> {
+  return []
+}
+function extractAllSkillVersionAppendedEvents(
+  _tx: unknown,
+  _packageId: string,
+): Array<{ soulId: string; skillsId: string; skillName: string; versionIndex: number }> {
+  return []
+}
+function hasValidOptionalLegacyAssetsSealMaterial(_value: unknown): boolean {
+  return true
+}
+function createLegacyInitialAssetSealSidecar(_args: unknown): SealEnvelopeSidecar | null {
+  return null
+}
 
 const RECOVERY_KEY = 'collection-mint-recovery'
 
@@ -1191,11 +1210,16 @@ export function useCollectionPublish(draftSignature?: string | null) {
                 name: soul.input.name,
                 description: soul.input.description,
                 imageUrl: uploads.imageUrl,
-                protectedBlobObjectId: uploads.protectedBlobObjectId,
-                foundingMemoryBlobObjectId: uploads.foundingMemoryBlobObjectId,
-                skillsBlobObjectId: uploads.skillsBlobObjectId,
-                initialSkillName: uploads.initialSkillName,
-                skillsVisibility: 'private',
+                initialContent: buildLegacyInitialContent({
+                  protectedBlobObjectId: uploads.protectedBlobObjectId,
+                  foundingMemoryBlobObjectId: uploads.foundingMemoryBlobObjectId,
+                  skillsBlobObjectId: uploads.skillsBlobObjectId,
+                  initialSkillName: uploads.initialSkillName,
+                  skillsVisibility: 'private',
+                }),
+                initialStateConfig: buildLegacyInitialStateConfig({
+                  protectedBlobObjectId: uploads.protectedBlobObjectId,
+                }),
                 creatorRoyaltyBps: soul.input.creatorRoyaltyBps,
               }
             }),
@@ -1427,11 +1451,16 @@ async function tryFastPathPtb2(args: {
         name: soul.input.name,
         description: soul.input.description,
         imageUrl: uploads.imageUrl,
-        protectedBlobObjectId: uploads.protectedBlobObjectId,
-        foundingMemoryBlobObjectId: uploads.foundingMemoryBlobObjectId,
-        skillsBlobObjectId: uploads.skillsBlobObjectId,
-        initialSkillName: uploads.initialSkillName,
-        skillsVisibility: 'private',
+        initialContent: buildLegacyInitialContent({
+          protectedBlobObjectId: uploads.protectedBlobObjectId,
+          foundingMemoryBlobObjectId: uploads.foundingMemoryBlobObjectId,
+          skillsBlobObjectId: uploads.skillsBlobObjectId,
+          initialSkillName: uploads.initialSkillName,
+          skillsVisibility: 'private',
+        }),
+        initialStateConfig: buildLegacyInitialStateConfig({
+          protectedBlobObjectId: uploads.protectedBlobObjectId,
+        }),
         creatorRoyaltyBps: soul.input.creatorRoyaltyBps,
       }
     }),

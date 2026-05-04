@@ -1,26 +1,28 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
-  tryExtractMemoryEntryAppendedEvent,
-  tryExtractSkillVersionAppendedEvent,
-  tryExtractAssetVersionAppendedEvent,
-  tryExtractContentAccessListCreatedEvent,
+  extractAllContentVersionAppendedEvents,
   extractSoulMintedToKioskEvent,
+  tryExtractSoulPaidAccessListCreatedEvent,
 } from '@/lib/soulidity/events'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
-import { upsertMemoryEntryProjection } from '@/lib/soulidity/mirror/upsert-memory'
-import { upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
-import { upsertAssetVersionProjection } from '@/lib/soulidity/mirror/upsert-asset'
-import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
+import {
+  syncContentVersionProjectionFromChain,
+  syncSoulProjectionFromChain,
+} from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
-import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
+import { SealSidecarRequestError } from '@/lib/soulidity/mirror/provided-sidecar'
 import { parseRequiredTxDigest } from '@/lib/soulidity/request'
-import { getSuccessfulTransactionBlock, readTransactionSender, resolveWalrusBlobId, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import {
+  getSuccessfulTransactionBlock,
+  readTransactionSender,
+  resolveWalrusBlobId,
+  waitForTransactionBestEffort,
+} from '@/lib/soulidity/queries'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
 import { normalizeTags } from '@/lib/soulidity/tags'
-import type { SoulWriterKind } from '@/lib/soulidity/types'
+import { parseContentSidecars } from '@/lib/soulidity/mirror/parse-content-sidecars'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,12 +38,6 @@ function parseStringArray(value: unknown, maxItems: number) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, maxItems)
-}
-
-function writerKindToString(kind: number): SoulWriterKind {
-  if (kind === 0) return 'founder'
-  if (kind === 2) return 'granted-agent'
-  return 'owner'
 }
 
 export async function POST(request: Request) {
@@ -73,6 +69,16 @@ export async function POST(request: Request) {
     return NextResponse.json(stored.responseBody, { status: stored.statusCode })
   }
 
+  let contentSidecars: ReturnType<typeof parseContentSidecars>
+  try {
+    contentSidecars = parseContentSidecars(body?.contentSidecars, 'contentSidecars')
+  } catch (error) {
+    if (error instanceof SealSidecarRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+    throw error
+  }
+
   try {
     await waitForTransactionBestEffort(txDigest)
     const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
@@ -83,166 +89,92 @@ export async function POST(request: Request) {
     }
 
     const minted = extractSoulMintedToKioskEvent(transaction, packageId)
-    const foundingMemory = tryExtractMemoryEntryAppendedEvent(transaction, packageId)
-    const initialSkill = tryExtractSkillVersionAppendedEvent(transaction, packageId)
-    const initialAsset = tryExtractAssetVersionAppendedEvent(transaction, packageId)
-    const contentAccessList = tryExtractContentAccessListCreatedEvent(transaction, packageId)
-
-    if (initialAsset?.assetType === 'audio') {
+    const allContentVersions = extractAllContentVersionAppendedEvents(transaction, packageId)
+    const versionsForSoul = allContentVersions.filter((event) => event.soulId === minted.soulId)
+    if (versionsForSoul.length === 0) {
       return NextResponse.json(
-        { error: 'Mint-time voice assets are disabled; add voice assets after mint' },
+        { error: `Transaction ${txDigest} does not include any ContentVersionAppended events for ${minted.soulId}` },
         { status: 422 },
       )
     }
 
-    const providedSoulSidecar = parseProvidedSidecar(body?.sealSidecar, 'sealSidecar')
-    const providedMemorySidecar = parseProvidedSidecar(body?.memorySealSidecar, 'memorySealSidecar')
-    const providedSkillsSidecar = parseProvidedSidecar(body?.skillsSealSidecar, 'skillsSealSidecar')
-    const providedAssetsSidecar = parseProvidedSidecar(body?.assetsSealSidecar, 'assetsSealSidecar')
+    const paidAccessListEvent = (() => {
+      const all = tryExtractSoulPaidAccessListCreatedEvent(transaction, packageId)
+      if (!all) return null
+      return all.soulId === minted.soulId ? all : null
+    })()
 
-    let soulSidecar = null
-    let memorySidecar = null
-    let skillsSidecar = null
-    let assetsSidecar = null
+    const sidecarInputs = versionsForSoul.map((version) => ({
+      kind: version.kind,
+      name: version.name,
+      versionIndex: version.versionIndex,
+      sealEncrypted: version.sealEncrypted,
+      sidecar: contentSidecars.get(`${version.kind}::${version.name}::${version.versionIndex}`) ?? null,
+    }))
+
+    let validatedEntries
     try {
-      const builtSidecars = await buildSyncSealSidecars({
-        packageId,
-        soulObjectId: minted.soulId,
-        stateObjectId: minted.stateId,
-        soulSidecar: providedSoulSidecar,
-        memorySidecar: providedMemorySidecar,
-        memoryBinding: foundingMemory ? {
-          memoryObjectId: foundingMemory.memoryId,
-          timestampKey: foundingMemory.timestampKey,
-        } : null,
-        skillsSidecar: providedSkillsSidecar,
-        skillBinding: initialSkill ? {
-          skillsObjectId: initialSkill.skillsId,
-          skillName: initialSkill.skillName,
-          versionIndex: initialSkill.versionIndex,
-        } : null,
-        assetsSidecar: providedAssetsSidecar,
-        assetBinding: initialAsset ? {
-          assetsObjectId: initialAsset.assetsId,
-          assetName: initialAsset.assetName,
-          versionIndex: initialAsset.versionIndex,
-        } : null,
+      const built = buildSyncSealSidecars({
+        contentObjectId: minted.contentId,
+        entries: sidecarInputs,
       })
-      soulSidecar = builtSidecars.soulSidecar
-      memorySidecar = builtSidecars.memorySidecar
-      skillsSidecar = builtSidecars.skillsSidecar
-      assetsSidecar = builtSidecars.assetsSidecar
+      validatedEntries = built.validatedEntries
     } catch (error) {
       if (error instanceof SealSidecarSyncConfigError) {
-        return NextResponse.json({ error: error.message }, { status: 503 })
+        return NextResponse.json({ error: error.message }, { status: 422 })
       }
       throw error
-    }
-    if (initialAsset?.visibility === 'private' && !assetsSidecar) {
-      return NextResponse.json(
-        { error: 'assetsSealSidecar is required for private initial asset versions' },
-        { status: 422 },
-      )
     }
 
     const mirrored = await syncSoulProjectionFromChain({
       packageId,
       soulObjectId: minted.soulId,
       stateObjectId: minted.stateId,
-      memoryObjectId: minted.memoryId,
       tags: normalizeTags(parseStringArray(body?.tags, 12)),
       previewImages: parseStringArray(body?.previewImages, 8),
       readme: typeof body?.readme === 'string' ? body.readme : null,
-      sealSidecar: soulSidecar,
+      currentKioskCapOnChainId: typeof body?.currentKioskCapOnChainId === 'string'
+        ? body.currentKioskCapOnChainId
+        : null,
       creatorMemberId: auth.identity.memberId,
       currentOwnerMemberId: auth.identity.memberId,
     })
-    // Patch: if event found IDs but chain query missed them (RPC indexing lag)
-    if (initialAsset?.assetsId && !mirrored.assetsOnChainId) {
-      await prisma.soulAsset.update({
-        where: { onChainId: mirrored.onChainId },
-        data: { assetsOnChainId: initialAsset.assetsId },
-      })
-      mirrored.assetsOnChainId = initialAsset.assetsId
-    }
-    if (contentAccessList?.accessListId && !mirrored.accessListOnChainId) {
-      await prisma.soulAsset.update({
-        where: { onChainId: mirrored.onChainId },
-        data: { accessListOnChainId: contentAccessList.accessListId },
-      })
-      mirrored.accessListOnChainId = contentAccessList.accessListId
-    }
-    if (foundingMemory) {
-      const memoryBlobId = await resolveWalrusBlobId(foundingMemory.blobObjectId)
-      await upsertMemoryEntryProjection({
-        entry: {
-          packageId,
-          memoryId: foundingMemory.memoryId,
-          soulId: foundingMemory.soulId,
-          timestampKey: foundingMemory.timestampKey,
-          writerAddress: foundingMemory.writerAddress,
-          writerKind: writerKindToString(foundingMemory.writerKind),
-          createdAtMs: foundingMemory.createdAtMs,
-          blobObjectId: foundingMemory.blobObjectId,
-          blobId: memoryBlobId,
-        },
-        sealSidecar: memorySidecar,
-      })
-    }
-    if (initialSkill) {
-      const skillBlobId = await resolveWalrusBlobId(initialSkill.blobObjectId)
-      await upsertSkillVersionProjection({
-        version: {
-          packageId,
-          soulId: initialSkill.soulId,
-          skillsId: initialSkill.skillsId,
-          skillName: initialSkill.skillName,
-          versionIndex: initialSkill.versionIndex,
-          visibility: initialSkill.visibility,
-          deleted: false,
-          createdAtMs: initialSkill.createdAtMs,
-          blobObjectId: initialSkill.blobObjectId,
-          blobId: skillBlobId,
-        },
-        soulOnChainId: initialSkill.soulId,
-        skillsOnChainId: initialSkill.skillsId,
-        sealSidecar: skillsSidecar,
-      })
-    }
-    if (initialAsset) {
-      const assetBlobId = await resolveWalrusBlobId(initialAsset.blobObjectId)
-      await upsertAssetVersionProjection({
-        version: {
-          soulId: initialAsset.soulId,
-          assetsId: initialAsset.assetsId,
-          assetName: initialAsset.assetName,
-          versionIndex: initialAsset.versionIndex,
-          visibility: initialAsset.visibility,
-          assetType: initialAsset.assetType,
-          blobObjectId: initialAsset.blobObjectId,
-          blobId: assetBlobId,
-          createdAtMs: initialAsset.createdAtMs,
-        },
-        soulOnChainId: initialAsset.soulId,
-        assetsOnChainId: initialAsset.assetsId,
-        sealSidecar: assetsSidecar,
+
+    for (let i = 0; i < versionsForSoul.length; i++) {
+      const version = versionsForSoul[i]
+      const validated = validatedEntries[i]
+      const blobId = await resolveWalrusBlobId(version.blobObjectId)
+      await syncContentVersionProjectionFromChain({
+        soulOnChainId: version.soulId,
+        contentOnChainId: version.contentId,
+        kind: version.kind,
+        kindName: version.kindName,
+        name: version.name,
+        versionIndex: version.versionIndex,
+        blobObjectId: version.blobObjectId,
+        blobId,
+        readModeMask: version.readModeMask,
+        opMask: version.opMask,
+        grantScopeMask: version.grantScopeMask,
+        isPublic: version.isPublic,
+        sealEncrypted: version.sealEncrypted,
+        downloadPolicy: version.downloadPolicy,
+        sealSidecar: validated.validatedSidecar,
+        createdAtMs: version.createdAtMs,
       })
     }
 
     const responseBody = {
       txDigest,
       soulOnChainId: mirrored.onChainId,
-      metadataOnChainId: mirrored.metadataOnChainId ?? minted.metadataId,
+      stateOnChainId: mirrored.stateOnChainId,
+      contentOnChainId: mirrored.contentOnChainId ?? minted.contentId,
+      paidAccessListOnChainId: mirrored.paidAccessListOnChainId
+        ?? paidAccessListEvent?.paidAccessListId
+        ?? null,
+      contentVersionCount: versionsForSoul.length,
       provenanceKind: mirrored.provenanceKind,
       originRef: mirrored.originRef,
-      foundingMemoryTimestampKey: foundingMemory?.timestampKey ?? null,
-      skillsOnChainId: initialSkill?.skillsId ?? null,
-      initialSkillName: initialSkill?.skillName ?? null,
-      initialSkillVersionIndex: initialSkill?.versionIndex ?? null,
-      assetsOnChainId: initialAsset?.assetsId ?? null,
-      accessListOnChainId: contentAccessList?.accessListId ?? null,
-      initialAssetName: initialAsset?.assetName ?? null,
-      initialAssetVersionIndex: initialAsset?.versionIndex ?? null,
     }
 
     await storeSoulidityTxSync({

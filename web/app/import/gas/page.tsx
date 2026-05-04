@@ -411,7 +411,8 @@ export default function ImportGasPage() {
     try {
       await importSoul({
         name: '', description: '', tags: [], imageUrl: '',
-        previewImages: [], protectedBlobObjectId: '', creatorRoyaltyBps: 0,
+        previewImages: [], protectedBlobObjectId: '', foundingMemoryBlobObjectId: '',
+        creatorRoyaltyBps: 0,
         originRef: ctx.originRef,
       })
     } catch (err) {

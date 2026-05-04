@@ -13,23 +13,15 @@ import {
 } from '@/lib/soulidity/client-session'
 import { normalizeTags } from '@/lib/soulidity/tags'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import {
-  extractSoulMintedToKioskEvent,
-  tryExtractMemoryEntryAppendedEvent,
-  tryExtractSkillVersionAppendedEvent,
-} from '@/lib/soulidity/events'
-import {
-  createMemorySealSidecarFromMaterial,
-  createSkillSealSidecarFromMaterial,
-  createSoulSealSidecarFromMaterial,
-  type PendingSealMaterial,
-} from '@/lib/upload/client-seal'
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import { extractAllContentVersionAppendedEvents } from '@/lib/soulidity/events'
+import { type PendingSealMaterial } from '@/lib/upload/client-seal'
 import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
 import {
-  createLegacyInitialAssetSealSidecar,
-  hasValidOptionalLegacyAssetsSealMaterial,
-} from '@/lib/hooks/legacy-mint-asset-recovery'
+  buildContentSidecarsForVersionsWithSuiClient,
+  buildPendingMintSlots,
+  buildPhase2InitialContent,
+  type ContentSidecarRequestEntry,
+} from '@/lib/hooks/phase2-mint-helpers'
 
 const IMPORT_RECOVERY_KEY = 'soul-import-recovery'
 
@@ -55,10 +47,7 @@ interface ImportSyncBody {
   tags: string[]
   previewImages: string[]
   readme: string | null
-  sealSidecar: SealEnvelopeSidecar | null
-  memorySealSidecar: SealEnvelopeSidecar | null
-  skillsSealSidecar: SealEnvelopeSidecar | null
-  assetsSealSidecar: SealEnvelopeSidecar | null
+  contentSidecars: ContentSidecarRequestEntry[]
 }
 
 type ImportSyncMaterial = Pick<
@@ -69,6 +58,7 @@ type ImportSyncMaterial = Pick<
   | 'sealMaterial'
   | 'memorySealMaterial'
   | 'skillsSealMaterial'
+  | 'initialSkillName'
 >
 
 export interface ImportParams {
@@ -79,13 +69,12 @@ export interface ImportParams {
   previewImages: string[]
   readme?: string | null
   protectedBlobObjectId: string
+  /** Required on first call. May be omitted only on the resume path, where the
+   *  PTB has already been signed and `buildPhase2InitialContent` is skipped. */
   foundingMemoryBlobObjectId?: string | null
   skillsBlobObjectId?: string | null
   initialSkillName?: string | null
   skillsVisibility?: 'public' | 'private'
-  contentAccessPriceAtomic?: number
-  contentAccessDefaultScopeMask?: number
-  contentAccessDefaultDurationMs?: number | null
   originRef: string
   creatorRoyaltyBps: number
   sealMaterial?: PendingSealMaterial | null
@@ -111,10 +100,7 @@ function isImportSyncBody(value: unknown): value is ImportSyncBody {
     && Array.isArray(candidate.tags)
     && Array.isArray(candidate.previewImages)
     && (candidate.readme === null || typeof candidate.readme === 'string')
-    && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'object')
-    && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'object')
-    && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'object')
-    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'object')
+    && Array.isArray(candidate.contentSidecars)
 }
 
 function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
@@ -143,7 +129,6 @@ function isImportSyncMaterial(value: unknown): value is ImportSyncMaterial {
     && isOptionalPendingSealMaterial(candidate.sealMaterial)
     && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
     && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
-    && hasValidOptionalLegacyAssetsSealMaterial(value)
 }
 
 function buildImportSyncMaterial(params: ImportParams): ImportSyncMaterial {
@@ -154,6 +139,7 @@ function buildImportSyncMaterial(params: ImportParams): ImportSyncMaterial {
     sealMaterial: params.sealMaterial ?? null,
     memorySealMaterial: params.memorySealMaterial ?? null,
     skillsSealMaterial: params.skillsSealMaterial ?? null,
+    initialSkillName: params.initialSkillName ?? null,
   }
 }
 
@@ -175,15 +161,30 @@ async function buildImportSyncBody(params: {
   suiClient: unknown
 }): Promise<ImportSyncBody> {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
-  const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
-  const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
+  const versions = extractAllContentVersionAppendedEvents(params.txResult as never, packageId)
+  const contentObjectId = versions.length > 0 ? versions[0].contentId : null
+  if (!contentObjectId) {
+    throw new Error('Soul import transaction is missing ContentVersionAppended events')
+  }
 
-  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
-    txResult: params.txResult,
-    syncMaterial: params.importParams,
+  const pendingByKindName = buildPendingMintSlots({
+    soulMaterial: params.importParams.sealMaterial ?? null,
+    memoryMaterial: params.importParams.memorySealMaterial ?? null,
+    skillsMaterial: params.importParams.skillsSealMaterial ?? null,
+    skillsName: params.importParams.initialSkillName,
+  })
+
+  const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
+    suiClient: params.suiClient as never,
     packageId,
-    suiClient: params.suiClient,
+    contentObjectId,
+    pendingByKindName,
+    versions: versions.map((v) => ({
+      kind: v.kind,
+      name: v.name,
+      versionIndex: v.versionIndex,
+      sealEncrypted: v.sealEncrypted,
+    })),
   })
 
   return {
@@ -191,34 +192,7 @@ async function buildImportSyncBody(params: {
     tags: normalizeTags(params.importParams.tags),
     previewImages: params.importParams.previewImages,
     readme: params.importParams.readme ?? null,
-    sealSidecar: params.importParams.sealMaterial
-      ? await createSoulSealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          soulObjectId: minted.soulId,
-          material: params.importParams.sealMaterial,
-        })
-      : null,
-    memorySealSidecar: params.importParams.memorySealMaterial && foundingMemory
-      ? await createMemorySealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          memoryObjectId: foundingMemory.memoryId,
-          timestampKey: foundingMemory.timestampKey,
-          material: params.importParams.memorySealMaterial,
-        })
-      : null,
-    skillsSealSidecar: params.importParams.skillsSealMaterial && initialSkill
-      ? await createSkillSealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          skillsObjectId: initialSkill.skillsId,
-          skillName: initialSkill.skillName,
-          versionIndex: initialSkill.versionIndex,
-          material: params.importParams.skillsSealMaterial,
-        })
-      : null,
-    assetsSealSidecar,
+    contentSidecars,
   }
 }
 
@@ -245,7 +219,6 @@ export function useImport() {
             recoveryRef.current = recovery
             setTxDigest(recovery.txDigest)
           } else if (user?.id) {
-            // Only clear when a different authenticated user is confirmed, not during auth loading
             sessionStorage.removeItem(IMPORT_RECOVERY_KEY)
           }
         }
@@ -270,13 +243,23 @@ export function useImport() {
       let digest = txDigest
       if (!digest) {
         setStatus('building')
+        if (!params.foundingMemoryBlobObjectId) {
+          throw new Error('foundingMemoryBlobObjectId is required for a fresh import (Phase 2 mints must seed at least one MEMORY entry)')
+        }
         const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
         await assertObjectInputsExist(suiClient, {
           'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
           'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
           'Soul character blob': params.protectedBlobObjectId,
-          'Founding memory blob': params.foundingMemoryBlobObjectId ?? null,
+          'Founding memory blob': params.foundingMemoryBlobObjectId,
           'Skills blob': params.skillsBlobObjectId ?? null,
+        })
+        const { initialContent, initialStateConfig } = buildPhase2InitialContent({
+          protectedBlobObjectId: params.protectedBlobObjectId,
+          foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId,
+          skillsBlobObjectId: params.skillsBlobObjectId,
+          initialSkillName: params.initialSkillName,
+          initialSkillVisibility: params.skillsVisibility ?? null,
         })
         const tx: Transaction = buildImportSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
@@ -284,14 +267,8 @@ export function useImport() {
           name: params.name,
           description: params.description,
           imageUrl: params.imageUrl,
-          protectedBlobObjectId: params.protectedBlobObjectId,
-          foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId ?? null,
-          skillsBlobObjectId: params.skillsBlobObjectId ?? null,
-          initialSkillName: params.initialSkillName ?? null,
-          skillsVisibility: params.skillsVisibility ?? 'private',
-          contentAccessPriceAtomic: params.contentAccessPriceAtomic,
-          contentAccessDefaultScopeMask: params.contentAccessDefaultScopeMask,
-          contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
+          initialContent,
+          initialStateConfig,
           originRef: params.originRef,
           creatorRoyaltyBps: params.creatorRoyaltyBps,
         })
@@ -307,8 +284,6 @@ export function useImport() {
           elapsedMs: Date.now() - startedAt,
         })
 
-        // Persist raw Seal material before calling Seal key servers. If sidecar
-        // creation fails, refresh can rebuild the sidecars without re-importing.
         const pendingSync = buildImportSyncMaterial(params)
         const recovery: ImportRecoveryState = attachSoulidityDeploymentSignature({
           userId: user?.id ?? '',

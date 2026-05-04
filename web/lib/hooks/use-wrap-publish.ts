@@ -6,12 +6,7 @@ import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
-import {
-  createMemorySealSidecarFromMaterial,
-  createSkillSealSidecarFromMaterial,
-  createSoulSealSidecarFromMaterial,
-  type PendingSealMaterial,
-} from '@/lib/upload/client-seal'
+import { type PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import type { KioskNft } from '@/lib/hooks/use-kiosk-nfts'
 import type { WrapPublishResult } from '@/components/providers/wrap-provider'
@@ -20,26 +15,23 @@ import {
   hasCurrentSoulidityDeploymentSignature,
 } from '@/lib/soulidity/client-session'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import {
-  extractSoulMintedToKioskEvent,
-  tryExtractMemoryEntryAppendedEvent,
-  tryExtractSkillVersionAppendedEvent,
-} from '@/lib/soulidity/events'
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import { extractAllContentVersionAppendedEvents } from '@/lib/soulidity/events'
 import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
 import {
-  createLegacyInitialAssetSealSidecar,
-  hasValidOptionalLegacyAssetsSealMaterial,
-} from '@/lib/hooks/legacy-mint-asset-recovery'
+  buildLegacyInitialContent,
+  buildLegacyInitialStateConfig,
+} from '@/lib/soulidity/legacy-mint-bridge'
+import {
+  buildContentSidecarsForVersionsWithSuiClient,
+  buildPendingMintSlots,
+  type ContentSidecarRequestEntry,
+} from '@/lib/hooks/phase2-mint-helpers'
 
 const WRAP_MINT_RECOVERY_KEY = 'soul-wrap-personal-recovery'
 
 interface WrapSyncBody {
   txDigest: string
-  sealSidecar: SealEnvelopeSidecar | null
-  memorySealSidecar: SealEnvelopeSidecar | null
-  skillsSealSidecar: SealEnvelopeSidecar | null
-  assetsSealSidecar: SealEnvelopeSidecar | null
+  contentSidecars: ContentSidecarRequestEntry[]
 }
 
 interface WrapRecoveryState {
@@ -54,6 +46,7 @@ interface WrapSyncMaterial {
   sealMaterial?: PendingSealMaterial | null
   memorySealMaterial?: PendingSealMaterial | null
   skillsSealMaterial?: PendingSealMaterial | null
+  skillsName?: string | null
 }
 
 export type WrapPublishStatus = 'idle' | 'uploading' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
@@ -71,10 +64,7 @@ function isWrapSyncBody(value: unknown): value is WrapSyncBody {
   const candidate = value as Partial<WrapSyncBody>
   return typeof candidate.txDigest === 'string'
     && candidate.txDigest.length > 0
-    && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'object')
-    && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'object')
-    && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'object')
-    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'object')
+    && Array.isArray(candidate.contentSidecars)
 }
 
 function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
@@ -98,7 +88,6 @@ function isWrapSyncMaterial(value: unknown): value is WrapSyncMaterial {
   return isOptionalPendingSealMaterial(candidate.sealMaterial)
     && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
     && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
-    && hasValidOptionalLegacyAssetsSealMaterial(value)
 }
 
 export function sanitizeWrapRecoveryState(raw: string | null, userId: string | null | undefined): WrapRecoveryState | null {
@@ -148,47 +137,35 @@ async function buildWrapSyncBody(params: {
   suiClient: unknown
 }): Promise<WrapSyncBody> {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const minted = extractSoulMintedToKioskEvent(params.txResult as never, packageId)
-  const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
-  const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
+  const versions = extractAllContentVersionAppendedEvents(params.txResult as never, packageId)
+  const contentObjectId = versions.length > 0 ? versions[0].contentId : null
+  if (!contentObjectId) {
+    throw new Error('Wrap-link transaction is missing ContentVersionAppended events')
+  }
 
-  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
-    txResult: params.txResult,
-    syncMaterial: params.material,
+  const pendingByKindName = buildPendingMintSlots({
+    soulMaterial: params.material.sealMaterial ?? null,
+    memoryMaterial: params.material.memorySealMaterial ?? null,
+    skillsMaterial: params.material.skillsSealMaterial ?? null,
+    skillsName: params.material.skillsName,
+  })
+
+  const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
+    suiClient: params.suiClient as never,
     packageId,
-    suiClient: params.suiClient,
+    contentObjectId,
+    pendingByKindName,
+    versions: versions.map((v) => ({
+      kind: v.kind,
+      name: v.name,
+      versionIndex: v.versionIndex,
+      sealEncrypted: v.sealEncrypted,
+    })),
   })
 
   return {
     txDigest: params.txDigest,
-    sealSidecar: params.material.sealMaterial
-      ? await createSoulSealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          soulObjectId: minted.soulId,
-          material: params.material.sealMaterial,
-        })
-      : null,
-    memorySealSidecar: params.material.memorySealMaterial && foundingMemory
-      ? await createMemorySealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          memoryObjectId: foundingMemory.memoryId,
-          timestampKey: foundingMemory.timestampKey,
-          material: params.material.memorySealMaterial,
-        })
-      : null,
-    skillsSealSidecar: params.material.skillsSealMaterial && initialSkill
-      ? await createSkillSealSidecarFromMaterial({
-          suiClient: params.suiClient as never,
-          packageId,
-          skillsObjectId: initialSkill.skillsId,
-          skillName: initialSkill.skillName,
-          versionIndex: initialSkill.versionIndex,
-          material: params.material.skillsSealMaterial,
-        })
-      : null,
-    assetsSealSidecar,
+    contentSidecars,
   }
 }
 
@@ -350,10 +327,15 @@ export function useWrapPublish() {
           name: params.nft.name,
           description: params.nft.description || '',
           imageUrl: params.nft.imageUrl || '',
-          protectedBlobObjectId: charUpload.blobObjectId,
-          foundingMemoryBlobObjectId: memUpload.blobObjectId,
-          skillsBlobObjectId: skillsUpload?.blobObjectId ?? null,
-          initialSkillName: skillsUpload?.skillName ?? null,
+          initialContent: buildLegacyInitialContent({
+            protectedBlobObjectId: charUpload.blobObjectId,
+            foundingMemoryBlobObjectId: memUpload.blobObjectId,
+            skillsBlobObjectId: skillsUpload?.blobObjectId ?? null,
+            initialSkillName: skillsUpload?.skillName ?? null,
+          }),
+          initialStateConfig: buildLegacyInitialStateConfig({
+            protectedBlobObjectId: charUpload.blobObjectId,
+          }),
           originRef: `sui:${params.nft.objectId}`,
           creatorRoyaltyBps: params.royalty,
         })
@@ -370,6 +352,7 @@ export function useWrapPublish() {
           sealMaterial: charUpload.sealMaterial ?? null,
           memorySealMaterial: memUpload.sealMaterial ?? null,
           skillsSealMaterial: skillsUpload?.sealMaterial ?? null,
+          skillsName: skillsUpload?.skillName ?? null,
         }
         const recovery: WrapRecoveryState = attachSoulidityDeploymentSignature({
           userId: user?.id ?? '',

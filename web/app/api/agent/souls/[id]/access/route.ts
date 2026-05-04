@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { hasSealSessionConfig } from '@/lib/services/seal'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { resolveSoulAccessPayload, SoulAccessDeniedError } from '@/lib/soulidity/access'
+import { ContentAccessDeniedError, resolveContentAccessPayload } from '@/lib/soulidity/access'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { CANONICAL_SOUL_DOC_NAME, KIND_SOUL_DOC } from '@/lib/soulidity/kinds'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
@@ -38,19 +39,39 @@ export async function GET(
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
+  const detail = toSoulAssetDetail(soul, {
+    viewerMemberId: auth.agent.agentMemberId,
+    viewerAddresses: auth.walletAddresses,
+    quote: null,
+  })
+
+  const soulDocVersion = detail.contentVersions.find(
+    (version) =>
+      version.kind === KIND_SOUL_DOC
+      && version.name === CANONICAL_SOUL_DOC_NAME
+      && version.versionIndex === 0
+      && version.deletedAt == null
+      && version.purgedAt == null,
+  )
+  if (!soulDocVersion) {
+    return NextResponse.json({ error: 'Soul document version is not available' }, { status: 409 })
+  }
+
   try {
-    const payload = await resolveSoulAccessPayload({
-      soul: toSoulAssetDetail(soul, {
-        viewerMemberId: auth.agent.agentMemberId,
-        viewerAddresses: auth.walletAddresses,
-        quote: null,
-      }),
+    const payload = await resolveContentAccessPayload({
+      soul: {
+        onChainId: detail.onChainId,
+        stateOnChainId: detail.stateOnChainId,
+        contentOnChainId: detail.contentOnChainId,
+        paidAccessListOnChainId: detail.paidAccessListOnChainId,
+      },
+      version: soulDocVersion,
       viewerAddresses: auth.walletAddresses,
       packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
     })
     return NextResponse.json(payload)
-  } catch (error) {
-    if (error instanceof SoulAccessDeniedError) {
+  } catch (error: unknown) {
+    if (error instanceof ContentAccessDeniedError) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
     console.error('[agent-soul-access] Failed', {

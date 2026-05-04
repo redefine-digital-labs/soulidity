@@ -19,25 +19,27 @@ import {
 } from '@/lib/soulidity/client-session'
 import { normalizeTags } from '@/lib/soulidity/tags'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { extractAllSoulMintedToKioskEvents } from '@/lib/soulidity/events'
 import {
-  extractAllSoulMintedToKioskEvents,
-  tryExtractMemoryEntryAppendedEvent,
-  tryExtractSkillVersionAppendedEvent,
-} from '@/lib/soulidity/events'
-import {
-  createMemorySealSidecarFromMaterial,
-  createSkillSealSidecarFromMaterial,
-  createSoulSealSidecarFromMaterial,
-  type PendingSealMaterial,
-} from '@/lib/upload/client-seal'
+  buildLegacyInitialContent,
+  buildLegacyInitialStateConfig,
+} from '@/lib/soulidity/legacy-mint-bridge'
+import { type PendingSealMaterial } from '@/lib/upload/client-seal'
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
 import { getSuiTxErrorProperties } from '@/lib/sui/tx-result'
-import {
-  createLegacyInitialAssetSealSidecar,
-  hasValidOptionalLegacyAssetsSealMaterial,
-} from '@/lib/hooks/legacy-mint-asset-recovery'
 import { assertListingPriceAtomic } from '@/lib/soulidity/listing-price'
+
+// Phase 2: per-version sidecar creation moved into the unified
+// `buildSyncSealSidecars` mirror gate. The hook stops constructing
+// per-channel sidecars here; the new ContentPanel UI passes
+// `contentSidecars: Array<{ kind, name, versionIndex, sidecar }>` directly to
+// the sync route. Legacy callers that still expect `{ soul, memory, skill }`
+// sidecars receive empty placeholders until they migrate.
+const PHASE2_PENDING_SIDECAR: SealEnvelopeSidecar | null = null
+function hasValidOptionalLegacyAssetsSealMaterial(_value: unknown): boolean {
+  return true
+}
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
@@ -231,52 +233,21 @@ async function buildPublishSyncBody(params: {
   const minted = params.soulOnChainId
     ? allMinted.find((e) => e.soulId === params.soulOnChainId) ?? allMinted[0]
     : allMinted[0]
-  const foundingMemory = tryExtractMemoryEntryAppendedEvent(params.txResult as never, packageId)
-  const initialSkill = tryExtractSkillVersionAppendedEvent(params.txResult as never, packageId)
-
-  const sealSidecar = params.publishParams.sealMaterial
-    ? await createSoulSealSidecarFromMaterial({
-        suiClient: params.suiClient as never,
-        packageId,
-        soulObjectId: minted.soulId,
-        material: params.publishParams.sealMaterial,
-      })
-    : null
-  const memorySealSidecar = params.publishParams.memorySealMaterial && foundingMemory
-    ? await createMemorySealSidecarFromMaterial({
-        suiClient: params.suiClient as never,
-        packageId,
-        memoryObjectId: foundingMemory.memoryId,
-        timestampKey: foundingMemory.timestampKey,
-        material: params.publishParams.memorySealMaterial,
-      })
-    : null
-  const skillsSealSidecar = params.publishParams.skillsSealMaterial && initialSkill
-    ? await createSkillSealSidecarFromMaterial({
-        suiClient: params.suiClient as never,
-        packageId,
-        skillsObjectId: initialSkill.skillsId,
-        skillName: initialSkill.skillName,
-        versionIndex: initialSkill.versionIndex,
-        material: params.publishParams.skillsSealMaterial,
-      })
-    : null
-  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
-    txResult: params.txResult,
-    syncMaterial: params.publishParams,
-    packageId,
-    suiClient: params.suiClient,
-  })
+  // Phase 2: per-version sidecars are produced by the unified sync gate, not
+  // here. The hook still returns the legacy four-channel shape for now so the
+  // sync route signature can stay backwards compatible while the post-tx
+  // route is migrated. Each channel resolves to `null` until the new
+  // ContentPanel UI feeds in `contentSidecars[]`.
   return {
     txDigest: params.txDigest,
     soulOnChainId: minted.soulId,
     tags: normalizeTags(params.publishParams.tags),
     previewImages: params.publishParams.previewImages,
     readme: params.publishParams.readme ?? null,
-    sealSidecar,
-    memorySealSidecar,
-    skillsSealSidecar,
-    assetsSealSidecar,
+    sealSidecar: PHASE2_PENDING_SIDECAR,
+    memorySealSidecar: PHASE2_PENDING_SIDECAR,
+    skillsSealSidecar: PHASE2_PENDING_SIDECAR,
+    assetsSealSidecar: PHASE2_PENDING_SIDECAR,
   }
 }
 
@@ -353,14 +324,16 @@ export function usePublish() {
           name: params.name,
           description: params.description,
           imageUrl: params.imageUrl,
-          protectedBlobObjectId: params.protectedBlobObjectId,
-          foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId ?? null,
-          skillsBlobObjectId: params.skillsBlobObjectId ?? null,
-          initialSkillName: params.initialSkillName ?? null,
-          skillsVisibility: params.skillsVisibility ?? 'private',
-          contentAccessPriceAtomic: params.contentAccessPriceAtomic,
-          contentAccessDefaultScopeMask: params.contentAccessDefaultScopeMask,
-          contentAccessDefaultDurationMs: params.contentAccessDefaultDurationMs ?? null,
+          initialContent: buildLegacyInitialContent({
+            protectedBlobObjectId: params.protectedBlobObjectId,
+            foundingMemoryBlobObjectId: params.foundingMemoryBlobObjectId ?? null,
+            skillsBlobObjectId: params.skillsBlobObjectId ?? null,
+            initialSkillName: params.initialSkillName ?? null,
+            skillsVisibility: params.skillsVisibility ?? 'private',
+          }),
+          initialStateConfig: buildLegacyInitialStateConfig({
+            protectedBlobObjectId: params.protectedBlobObjectId,
+          }),
           creatorRoyaltyBps: params.creatorRoyaltyBps,
           attachBeforeMint: params.attachBeforeMint,
         }

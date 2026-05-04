@@ -1,4 +1,4 @@
-import type { AssetAccessResponse, SoulListingStatus } from '@/lib/soulidity/types'
+import type { ContentAccessResponse, SoulListingStatus } from '@/lib/soulidity/types'
 
 export type DesktopCatalogSourceType = 'starter' | 'soul'
 export type DesktopSpriteDownloadPolicy = 'public' | 'owner_only' | 'allowlist' | 'missing' | 'invalid'
@@ -23,8 +23,10 @@ export interface DesktopSpriteManifest {
   downloadPolicy: DesktopSpriteDownloadPolicy
   config: DesktopSpriteSheetConfig | null
   publicUrl?: string | null
-  privateAccess?: Extract<AssetAccessResponse, { visibility: 'private' }> | null
-  metadataOnChainId?: string | null
+  /** Sealed Seal-session payload when the active sprite/voice is access-gated. */
+  privateAccess?: Extract<ContentAccessResponse, { visibility: 'sealed' }> | null
+  /** Phase 2: typed-content root id replaces the legacy SoulMetadata object id. */
+  contentOnChainId?: string | null
   error?: string | null
 }
 

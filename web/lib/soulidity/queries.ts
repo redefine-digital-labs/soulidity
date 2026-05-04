@@ -11,16 +11,12 @@ import type {
   ResolvedPersonalKiosk,
   SoulCollectionObject,
   SoulCollectionRightObject,
+  SoulContentObject,
   SoulGrantObject,
   SoulGrantScope,
-  SoulDownloadPolicy,
-  SoulMemoryObject,
-  SoulMetadataBindingRecord,
-  SoulMetadataObject,
   SoulObject,
+  SoulPaidAccessListObject,
   SoulProvenanceKind,
-  SoulSkillVisibility,
-  SoulSkillsObject,
   SoulStateObject,
   SoulidityMarketConfig,
 } from '@/lib/soulidity/types'
@@ -421,14 +417,35 @@ export async function getActiveGrantSlotForGrantee(
   )
 }
 
+/**
+ * Locate the first active grant slot whose grantee address matches one of
+ * the viewer addresses AND whose scopeMask covers the requested mask.
+ *
+ * Phase 2: callers either pass the legacy `scope: SoulGrantScope` string
+ * (back-compat) OR a numeric `scopeMask` matching `ContentSlot.grant_scope_mask`.
+ * The numeric path is preferred — it lets paid-access / content-access
+ * resolvers pass the slot's cached mask directly without re-deriving the
+ * scope string.
+ */
 export async function findActiveGrantSlotForViewer(params: {
   state: SoulStateObject
   viewerAddresses: string[]
-  scope: SoulGrantScope
+  scope?: SoulGrantScope
+  scopeMask?: number
 }): Promise<ActiveGrantSlotObject | null> {
+  if (params.scope == null && params.scopeMask == null) {
+    throw new Error('findActiveGrantSlotForViewer requires either `scope` or `scopeMask`')
+  }
   for (const address of params.viewerAddresses) {
     const slot = await getActiveGrantSlotForGrantee(params.state, address)
-    if (slot?.scopes.includes(params.scope)) {
+    if (!slot) continue
+    if (params.scopeMask != null) {
+      if ((slot.scopeMask & params.scopeMask) === params.scopeMask) {
+        return slot
+      }
+      continue
+    }
+    if (params.scope != null && slot.scopes.includes(params.scope)) {
       return slot
     }
   }
@@ -681,93 +698,10 @@ function readSoulProvenanceKind(value: unknown, fieldName: string): SoulProvenan
   return 'native'
 }
 
-function readWriterKind(value: unknown, fieldName: string) {
-  const rawValue = readNumber(value, fieldName)
-  if (rawValue === 0) return 'founder' as const
-  if (rawValue === 2) return 'granted-agent' as const
-  return 'owner' as const
-}
-
 export function scopeMaskToScopes(scopeMask: number): SoulGrantScope[] {
   return SOUL_GRANT_SCOPE_BITS
     .filter(({ mask }) => (scopeMask & mask) === mask)
     .map(({ scope }) => scope)
-}
-
-function readSkillVisibility(value: unknown, fieldName: string): SoulSkillVisibility {
-  return Boolean(value) ? 'public' : 'private'
-}
-
-function readSoulDownloadPolicy(value: unknown, fieldName: string): SoulDownloadPolicy {
-  const rawValue = readNumber(value, fieldName)
-  if (rawValue === 0) return 'public'
-  if (rawValue === 1) return 'owner_only'
-  if (rawValue === 2) return 'allowlist'
-  throw new OnChainVerificationError(`${fieldName} contains an unknown download policy`)
-}
-
-function readOptionalMetadataBinding(value: unknown, fieldName: string): SoulMetadataBindingRecord | null {
-  const directRecord = asRecord(value)
-  const directFields = directRecord ? asRecord(directRecord.fields) ?? directRecord : null
-  if (
-    directFields
-    && 'asset_name' in directFields
-    && 'version_index' in directFields
-    && 'download_policy' in directFields
-  ) {
-    return {
-      assetName: readString(directFields.asset_name, `${fieldName}.asset_name`),
-      versionIndex: readNumber(directFields.version_index, `${fieldName}.version_index`),
-      downloadPolicy: readSoulDownloadPolicy(directFields.download_policy, `${fieldName}.download_policy`),
-    }
-  }
-
-  const items = readVectorItems(value, fieldName)
-  if (items.length === 0) {
-    return null
-  }
-  const fields = readStructFields(items[0], `${fieldName}[0]`)
-  return {
-    assetName: readString(fields.asset_name, `${fieldName}.asset_name`),
-    versionIndex: readNumber(fields.version_index, `${fieldName}.version_index`),
-    downloadPolicy: readSoulDownloadPolicy(fields.download_policy, `${fieldName}.download_policy`),
-  }
-}
-
-function readUtf8StringFromBytes(value: unknown, fieldName: string): string | null {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (Array.isArray(value)) {
-    if (value.every((item) => Number.isInteger(item) && item >= 0 && item <= 255)) {
-      return new TextDecoder().decode(Uint8Array.from(value as number[]))
-    }
-    if (value.length === 1) {
-      return readUtf8StringFromBytes(value[0], fieldName)
-    }
-    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-  }
-
-  const record = asRecord(value)
-  if (!record) {
-    return null
-  }
-  if (Array.isArray(record.vec)) {
-    return readUtf8StringFromBytes(record.vec, fieldName)
-  }
-  if (Array.isArray(record.contents)) {
-    return readUtf8StringFromBytes(record.contents, fieldName)
-  }
-  if (record.value != null) {
-    return readUtf8StringFromBytes(record.value, fieldName)
-  }
-  if (record.fields != null) {
-    return readUtf8StringFromBytes(record.fields, fieldName)
-  }
-  if (typeof record.bytes === 'string') {
-    return record.bytes
-  }
-  return null
 }
 
 export async function getSoulObject(objectId: string, packageId: string): Promise<SoulObject> {
@@ -788,8 +722,6 @@ export async function getSoulObject(objectId: string, packageId: string): Promis
     name: readString(fields.name, 'Soul name'),
     description: readString(fields.description, 'Soul description'),
     imageUrl: readString(fields.image_url, 'Soul image_url'),
-    protectedBlobId: readWalrusBlobId(fields.protected_blob, 'Soul protected_blob'),
-    protectedBlobObjectId: readNestedObjectId(fields.protected_blob, 'Soul protected_blob') ?? objectId,
     provenanceKind: readSoulProvenanceKind(fields.provenance_kind, 'Soul provenance_kind'),
     originRef: readOptionalString(fields.origin_ref, 'Soul origin_ref'),
   }
@@ -834,43 +766,32 @@ export async function getSoulStateObject(
     activeGrantCount: activeGrantCount ?? activeGrants.length,
     activeGrants,
     activeGrantsTableId,
-    memoryId: readNestedObjectId(fields.memory_id, 'SoulState memory_id'),
-    metadataId: readNestedObjectId(fields.metadata_id, 'SoulState metadata_id'),
-    skillsId: readNestedObjectId(fields.skills_id, 'SoulState skills_id'),
-    assetsId: readNestedObjectId(fields.assets_id, 'SoulState assets_id'),
-    accessListId: readNestedObjectId(fields.access_list_id, 'SoulState access_list_id'),
-    collectionId: readOptionalString(fields.collection_id, 'SoulState collection_id'),
+    contentId: readNestedObjectId(fields.content_id, 'SoulState content_id'),
+    paidAccessListId: readNestedObjectId(fields.access_list_id, 'SoulState access_list_id'),
+    collectionId: readNestedObjectId(fields.collection_id, 'SoulState collection_id'),
+    isListed: Boolean(fields.is_listed),
   }
 }
 
-const MOVE_STRING_TYPE = '0x1::string::String'
-const SPRITE_CONFIG_METADATA_KEY = 'sprite.config.v1'
-const SPRITE_MOOD_MAP_METADATA_KEY = 'sprite.mood_map.v1'
-const VOICE_CONFIG_METADATA_KEY = 'voice.config.v1'
-
-async function getOptionalMetadataBlobValue(parentId: string, key: string): Promise<string | null> {
-  try {
-    const response = await suiClient.getDynamicFieldObject({
-      parentId,
-      name: {
-        type: MOVE_STRING_TYPE,
-        value: key,
-      },
-    })
-    const content = response.data?.content
-    const fields = content && 'fields' in content ? (content.fields as unknown) : null
-    const record = asRecord(fields)
-    const rawValue = record?.value ?? record?.fields ?? fields
-    return readUtf8StringFromBytes(rawValue, `SoulMetadata ext ${key}`)
-  } catch (error) {
-    if (isDynamicFieldNotFound(error)) {
-      return null
-    }
-    throw error
-  }
-}
-
-export async function getSoulMetadataObject(objectId: string, packageId: string): Promise<SoulMetadataObject> {
+/**
+ * Read the shared `SoulContent` object on chain. Phase 2 collapses the legacy
+ * `SoulMetadata` / `SoulSkills` / `SoulAssets` / `SoulMemory` quartet into this
+ * single typed-content root keyed by `(kind, name, versionIndex)`.
+ *
+ * The `items` and `active` Tables are dynamic-field-backed, so iterating them
+ * off-chain is expensive. The DB mirror (`SoulContentVersionRecord`) is the
+ * authoritative source for version counts and active bindings; this function's
+ * job is just to validate that the on-chain object exists, has the expected
+ * type, and points at the expected `soul_id`.
+ *
+ * TODO: surface real `versionCount` / `activeBindings` if a future caller needs
+ * the on-chain truth without going through the mirror — both require iterating
+ * dynamic fields and should probably be paginated through Sui RPC.
+ */
+export async function getSoulContentObject(
+  objectId: string,
+  packageId: string,
+): Promise<SoulContentObject> {
   const response = await suiClient.getObject({
     id: objectId,
     options: {
@@ -878,28 +799,46 @@ export async function getSoulMetadataObject(objectId: string, packageId: string)
       showType: true,
     },
   })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::metadata::SoulMetadata`
+  const expectedTypePrefix = `${normalizePackageId(packageId)}::content::SoulContent`
   const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  const extTableId =
-    readNestedObjectId(fields.ext, 'SoulMetadata ext')
-    ?? readObjectId(fields.ext, 'SoulMetadata ext')
-
-  const [spriteConfigJson, spriteMoodMapJson, voiceConfigJson] = await Promise.all([
-    getOptionalMetadataBlobValue(extTableId, SPRITE_CONFIG_METADATA_KEY),
-    getOptionalMetadataBlobValue(extTableId, SPRITE_MOOD_MAP_METADATA_KEY),
-    getOptionalMetadataBlobValue(extTableId, VOICE_CONFIG_METADATA_KEY),
-  ])
-
   return {
     objectId,
     packageId: resolvedPackageId,
-    soulId: readObjectId(fields.soul_id, 'SoulMetadata soul_id'),
-    activeSprite: readOptionalMetadataBinding(fields.active_sprite, 'SoulMetadata active_sprite'),
-    activeVoice: readOptionalMetadataBinding(fields.active_voice, 'SoulMetadata active_voice'),
-    extTableId,
-    spriteConfigJson,
-    spriteMoodMapJson,
-    voiceConfigJson,
+    soulId: readObjectId(fields.soul_id, 'SoulContent soul_id'),
+    versionCount: 0,
+    activeBindings: [],
+  }
+}
+
+/**
+ * Read the shared `SoulPaidAccessList` object on chain. The `kind_configs` and
+ * `entries` Tables are dynamic-field-backed, so this function intentionally
+ * does not iterate them — DB mirrors (`SoulPaidAccessKindConfigRecord` /
+ * `SoulPaidAccessEntryRecord`) hold the per-row state. The on-chain read is
+ * here to validate object existence, type, and `soul_id` linkage.
+ *
+ * TODO: paginate `kind_configs` via dynamic-field iteration if a non-mirror
+ * caller ever needs the on-chain truth.
+ */
+export async function getSoulPaidAccessListObject(
+  objectId: string,
+  packageId: string,
+): Promise<SoulPaidAccessListObject> {
+  const response = await suiClient.getObject({
+    id: objectId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = `${normalizePackageId(packageId)}::paid_access::SoulPaidAccessList`
+  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
+  return {
+    objectId,
+    packageId: resolvedPackageId,
+    soulId: readObjectId(fields.soul_id, 'SoulPaidAccessList soul_id'),
+    creatorAddress: readAddress(fields.creator, 'SoulPaidAccessList creator'),
+    kindConfigs: [],
   }
 }
 
@@ -968,48 +907,6 @@ export async function getSoulGrantObject(objectId: string, packageId: string): P
     scopeMask: readNumber(fields.scope_mask, 'SoulGrant scope_mask'),
     scopes: scopeMaskToScopes(readNumber(fields.scope_mask, 'SoulGrant scope_mask')),
     expiresAtMs: readOptionalNumber(fields.expires_at_ms, 'SoulGrant expires_at_ms'),
-  }
-}
-
-export async function getSoulMemoryObject(objectId: string, packageId: string): Promise<SoulMemoryObject> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::memory::SoulMemory`
-  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  return {
-    objectId,
-    packageId: resolvedPackageId,
-    soulId: readObjectId(fields.soul_id, 'SoulMemory soul_id'),
-    entryCount: readNumber(fields.entry_count, 'SoulMemory entry_count'),
-    entriesTableId:
-      readNestedObjectId(fields.entries, 'SoulMemory entries')
-      ?? readObjectId(fields.entries, 'SoulMemory entries'),
-  }
-}
-
-export async function getSoulSkillsObject(objectId: string, packageId: string): Promise<SoulSkillsObject> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::skills::SoulSkills`
-  const { fields, packageId: resolvedPackageId } = expectMoveObject(response, objectId, expectedTypePrefix)
-  return {
-    objectId,
-    packageId: resolvedPackageId,
-    soulId: readObjectId(fields.soul_id, 'SoulSkills soul_id'),
-    skillCount: readNumber(fields.skill_count, 'SoulSkills skill_count'),
-    skillsTableId:
-      readNestedObjectId(fields.skills, 'SoulSkills skills')
-      ?? readObjectId(fields.skills, 'SoulSkills skills'),
   }
 }
 

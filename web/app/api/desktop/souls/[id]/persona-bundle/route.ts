@@ -6,9 +6,10 @@
  *
  * Auth: desktop token OR human auth (via requireDesktopIdentity).
  *
- * For public souls: returns the Walrus blob URL directly.
- * For private/encrypted souls: verifies access (owner or active grant),
- *   then returns the blob URL + metadata so the desktop client can download it.
+ * Phase 2: replaces the legacy `resolveDesktopSoulAccess` helper. The active
+ * persona sprite is now a slot in the unified `SoulContent` typed-content root
+ * (kind=KIND_SPRITE, name=`SoulState.active_sprite_name`). This route looks
+ * the slot up directly and forwards the resolved access envelope.
  *
  * Response: { blobUrl, blobId, isEncrypted }
  */
@@ -17,11 +18,25 @@ import { NextResponse } from 'next/server'
 
 import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import { findDesktopPersonaManifestById } from '@/lib/desktop/repository'
-import { resolveDesktopSoulAccess } from '@/lib/soulidity/desktop-asset-access'
 import { prisma } from '@/lib/prisma'
 import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
+import {
+  ContentAccessDeniedError,
+  resolveContentAccessPayload,
+} from '@/lib/soulidity/access'
+import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import {
+  downloadPolicyFromU8,
+  KIND_SPRITE,
+} from '@/lib/soulidity/kinds'
+import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
+import type { SoulContentVersionRecord } from '@/lib/soulidity/types'
 
 export const dynamic = 'force-dynamic'
+
+function asIso(value: Date) {
+  return value.toISOString()
+}
 
 export async function GET(
   request: Request,
@@ -49,6 +64,40 @@ export async function GET(
     )
   }
 
+  const sprite = manifest.sprite
+  if (!sprite) {
+    return NextResponse.json({ error: 'Soul sprite manifest is missing' }, { status: 404 })
+  }
+
+  if (sprite.downloadPolicy === 'missing') {
+    return NextResponse.json(
+      { error: sprite.error ?? 'Soul sprite metadata is missing' },
+      { status: 404 },
+    )
+  }
+
+  if (sprite.downloadPolicy === 'invalid') {
+    return NextResponse.json(
+      { error: sprite.error ?? 'Soul sprite metadata is invalid' },
+      { status: 409 },
+    )
+  }
+
+  if (sprite.downloadPolicy === 'public') {
+    return NextResponse.json({
+      blobUrl: sprite.publicUrl ?? null,
+      blobId: null,
+      isEncrypted: false,
+    })
+  }
+
+  if (!sprite.assetName || sprite.versionIndex == null) {
+    return NextResponse.json(
+      { error: 'Soul sprite metadata is incomplete' },
+      { status: 409 },
+    )
+  }
+
   // ── Resolve the user's member + wallet for access check ─
   const member = await prisma.member.findFirst({
     where: { accountId: auth.accountId!, kind: 'human' },
@@ -66,21 +115,93 @@ export async function GET(
     walletAddresses = []
   }
 
-  // ── Resolve soul access ──────────────────────────────
+  // ── Load the soul mirror + active sprite content version ─
   const soulOnChainId = manifest.sourceRef
-  const access = await resolveDesktopSoulAccess({
-    soulOnChainId,
-    viewerAddresses: walletAddresses,
-    viewerMemberId: member.id,
+  const soul = await prisma.soulAsset.findUnique({
+    where: { onChainId: soulOnChainId },
+    select: {
+      onChainId: true,
+      stateOnChainId: true,
+      contentOnChainId: true,
+      paidAccessListOnChainId: true,
+    },
   })
 
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status })
+  if (!soul) {
+    return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
 
-  return NextResponse.json({
-    blobUrl: access.blobUrl,
-    blobId: access.blobId,
-    isEncrypted: access.isEncrypted,
+  if (!soul.contentOnChainId) {
+    return NextResponse.json(
+      { error: 'Soul content root is not available' },
+      { status: 409 },
+    )
+  }
+
+  const versionRow = await prisma.soulContentVersionRecord.findFirst({
+    where: {
+      soulOnChainId: soul.onChainId,
+      contentOnChainId: soul.contentOnChainId,
+      kind: KIND_SPRITE,
+      name: sprite.assetName,
+      versionIndex: sprite.versionIndex,
+      deletedAt: null,
+    },
   })
+
+  if (!versionRow) {
+    return NextResponse.json(
+      { error: 'Active sprite content version is missing from the mirror' },
+      { status: 404 },
+    )
+  }
+
+  const version: SoulContentVersionRecord = {
+    id: versionRow.id,
+    soulOnChainId: versionRow.soulOnChainId,
+    contentOnChainId: versionRow.contentOnChainId,
+    kind: versionRow.kind,
+    kindName: versionRow.kindName,
+    name: versionRow.name,
+    versionIndex: versionRow.versionIndex,
+    blobObjectId: versionRow.blobObjectId,
+    blobId: versionRow.blobId,
+    readModeMask: versionRow.readModeMask,
+    opMask: versionRow.opMask,
+    grantScopeMask: versionRow.grantScopeMask,
+    isPublic: versionRow.isPublic,
+    sealEncrypted: versionRow.sealEncrypted,
+    downloadPolicy: downloadPolicyFromU8(versionRow.downloadPolicy),
+    sealSidecar: (versionRow.sealSidecar ?? null) as SoulContentVersionRecord['sealSidecar'],
+    deletedAt: versionRow.deletedAt ? asIso(versionRow.deletedAt) : null,
+    purgedAt: versionRow.purgedAt ? asIso(versionRow.purgedAt) : null,
+    createdAtMs: toProjectionNumber(versionRow.createdAtMs, 'SoulContentVersionRecord.createdAtMs'),
+    createdAt: asIso(versionRow.createdAt),
+    updatedAt: asIso(versionRow.updatedAt),
+  }
+
+  try {
+    const access = await resolveContentAccessPayload({
+      soul: {
+        onChainId: soul.onChainId,
+        stateOnChainId: soul.stateOnChainId,
+        contentOnChainId: soul.contentOnChainId,
+        paidAccessListOnChainId: soul.paidAccessListOnChainId,
+      },
+      version,
+      viewerAddresses: walletAddresses,
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+    })
+
+    return NextResponse.json({
+      blobUrl: access.artifact.walrusBlobUrl,
+      blobId: access.artifact.walrusBlobId,
+      isEncrypted: access.visibility === 'sealed',
+    })
+  } catch (error) {
+    if (error instanceof ContentAccessDeniedError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
+  }
 }

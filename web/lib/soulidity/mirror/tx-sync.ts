@@ -10,11 +10,22 @@ export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'grant:revoke',
   'grant:revoke-scope',
   'grant:capacity',
-  'metadata:update',
-  'skills:append',
-  'skills:delete',
-  'assets:append',
-  'assets:delete',
+  // Phase 2 typed-content writes (replaces memory/skills/assets/metadata legacy keys).
+  'content:append',
+  'content:delete',
+  'content:purge',
+  'content:active-bind',
+  'content:active-clear',
+  'state-config:upsert',
+  'state-config:delete',
+  // Per-kind paid access (replaces legacy content-access keys).
+  'paid-access:configure-kind',
+  'paid-access:update-kind',
+  'paid-access:delete-kind',
+  'paid-access:purchase',
+  'paid-access:add',
+  'paid-access:revoke',
+  'paid-access:cleanup',
   'collection:mint',
   'collection:list',
   'collection:delist',
@@ -23,9 +34,6 @@ export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'import',
   'personal-join',
   'agent-buy',
-  'content-access:purchase',
-  'content-access:add',
-  'content-access:revoke',
 ] as const
 
 export type SoulidityTxSyncRouteKey = (typeof SOULIDITY_TX_SYNC_ROUTE_KEYS)[number]

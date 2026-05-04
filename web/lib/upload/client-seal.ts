@@ -178,7 +178,7 @@ function getBrowserSealRuntimeConfig() {
   }
 }
 
-function createBrowserSealClient(suiClient: SealCompatibleClient) {
+export function createBrowserSealClient(suiClient: SealCompatibleClient) {
   const config = getBrowserSealRuntimeConfig()
   if (config.threshold <= 0 || config.serverConfigs.length === 0) {
     throw new Error('Seal key server config is not available for client-side upload')

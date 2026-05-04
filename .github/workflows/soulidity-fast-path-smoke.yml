@@ -14,17 +14,14 @@ on:
       - 'web/lib/upload/**'
       - 'web/lib/hooks/use-publish.ts'
       - 'web/lib/hooks/use-collection-publish.ts'
-      - 'web/lib/hooks/use-assets.ts'
       - 'web/lib/soulidity/events.ts'
       - 'web/app/api/souls/publish/**'
       - 'web/app/api/souls/[id]/list/**'
       - 'web/app/api/collections/[id]/list/**'
       - 'web/app/api/collections/[id]/add-soul/**'
-      - 'tests/new-web/soulidity-tx-builders.test.ts'
       - 'tests/new-web/walrus-batch-helper-split.test.ts'
-      - 'tests/new-web/collection-fast-path-regressions.test.ts'
-      - 'scripts/bench-fast-path.ts'
       - 'scripts/smoke-soulidity.ts'
+      - 'scripts/phase2-testnet-smoke.ts'
       - '.github/workflows/soulidity-fast-path-smoke.yml'
   workflow_dispatch:
     inputs:

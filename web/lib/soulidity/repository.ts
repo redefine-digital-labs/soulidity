@@ -1,22 +1,66 @@
+/**
+ * Soulidity Phase 2 repository helpers.
+ *
+ * Mirrors the unified `SoulContent` typed-content root and the per-Soul
+ * `SoulPaidAccessList` shared object. All legacy memory / skills / assets /
+ * metadata / content-access projections have been hard-cut from Prisma —
+ * `repository.ts` therefore exposes a single `SoulContentVersionRecord` view
+ * plus the new paid-access mirrors.
+ *
+ * Naming pipeline reminders:
+ * - Move `SoulCollection.{max_supply,current_supply}` ↔ Prisma
+ *   `SoulCollectionAsset.{maxSoulSupply,soulCount}` ↔ API
+ *   `{maxSoulSupply,currentSoulSupply}`. `soulCount` is preserved as a legacy
+ *   alias of `currentSoulSupply`, NOT a separate truth.
+ * - Active sprite/voice fields cache `SoulContent.active_table[kind]` and are
+ *   mirror-only; access decisions must read the canonical slot from
+ *   `SoulContentVersionRecord`.
+ */
 import type { Prisma } from '@db/prisma-client'
 import { prisma } from '@/lib/prisma'
 import { isUuid } from '@/lib/is-uuid'
 import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
-import { encodeSkillVersionCursor, parseSkillVersionCursor } from '@/lib/soulidity/skill-version-pagination'
+import {
+  clampContentVersionPageSize,
+  decodeContentVersionCursor,
+  encodeContentVersionCursor,
+} from '@/lib/soulidity/content-version-pagination'
+import {
+  KIND_AUDIO,
+  KIND_MEMORY,
+  KIND_SKILL,
+  KIND_SOUL_DOC,
+  KIND_SPRITE,
+  downloadPolicyFromU8,
+} from '@/lib/soulidity/kinds'
+import { parseSealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 import type {
+  ContentReadMode,
   SoulAssetDetail,
   SoulAssetSummary,
   SoulCollectionAssetDetail,
   SoulCollectionAssetSummary,
+  SoulContentVersionRecord,
+  SoulDownloadPolicy,
   SoulGrantRecord,
   SoulGrantScope,
   SoulListingStatus,
-  SoulMemoryEntryRecord,
-  SoulSkillVersionRecord,
+  SoulPaidAccessEntryRecord,
+  SoulPaidAccessKindConfigRecord,
+  SoulPersonaKind,
+  SoulProvenanceKind,
   SoulQuoteBreakdown,
 } from '@/lib/soulidity/types'
 
-const SOUL_SKILL_VERSION_PREVIEW_LIMIT = 24
+// ── Constants ─────────────────────────────────────────────────────────────
+
+/**
+ * Soul detail preview window per kind. Full pagination uses
+ * `findContentVersionsByKind` / `paginateSoulContentVersions`.
+ */
+const CONTENT_PREVIEW_PER_KIND = 24
+
+// ── Scalar / enum helpers ────────────────────────────────────────────────
 
 function asIso(value: Date) {
   return value.toISOString()
@@ -29,6 +73,54 @@ function asAtomicString(value: { toString(): string } | null | undefined) {
 function asListingStatus(value: string): SoulListingStatus {
   return value === 'listed' ? 'listed' : value === 'floor-violation' ? 'floor-violation' : 'held'
 }
+
+function asProvenanceKind(value: string): SoulProvenanceKind {
+  if (value === 'imported') return 'imported'
+  if (value === 'personal-join') return 'personal-join'
+  return 'native'
+}
+
+function asPersonaKind(value: string): SoulPersonaKind {
+  return value === 'trainers' ? 'trainers' : 'characters'
+}
+
+function asDownloadPolicyOrNull(value: string | null | undefined): SoulDownloadPolicy | null {
+  if (value === 'public' || value === 'owner_only' || value === 'allowlist') return value
+  return null
+}
+
+function safeDownloadPolicyFromU8(value: number): SoulDownloadPolicy {
+  try {
+    return downloadPolicyFromU8(value)
+  } catch {
+    // Fallback for forward-compat: any unknown value is treated as the most
+    // restrictive policy so callers fail closed.
+    return 'owner_only'
+  }
+}
+
+function safeParseSealSidecar(
+  value: Prisma.JsonValue | null | undefined,
+  context: { kind: number; name: string; versionIndex: number; soulOnChainId: string },
+): SoulContentVersionRecord['sealSidecar'] {
+  if (value == null) return null
+  try {
+    return parseSealEnvelopeSidecar(value)
+  } catch (error) {
+    console.warn('[soulidity-repository] Failed to parse Seal sidecar — falling back to null', {
+      ...context,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
+}
+
+function bigIntToAtomicString(value: bigint | null | undefined): string | null {
+  if (value == null) return null
+  return value.toString()
+}
+
+// ── Route-id helpers ─────────────────────────────────────────────────────
 
 export function parseRouteObjectId(id: string) {
   const trimmed = id.trim()
@@ -48,7 +140,8 @@ export function buildSoulRouteWhere(id: string) {
     OR: [
       { onChainId: objectId },
       { stateOnChainId: objectId },
-      { memoryOnChainId: objectId },
+      { contentOnChainId: objectId },
+      { paidAccessListOnChainId: objectId },
     ],
   } satisfies Prisma.SoulAssetWhereInput
 }
@@ -69,27 +162,28 @@ export function buildCollectionRouteWhere(id: string) {
   } satisfies Prisma.SoulCollectionAssetWhereInput
 }
 
+// ── Prisma `select` shapes ───────────────────────────────────────────────
+
 export const soulAssetSummarySelect = {
   id: true,
   onChainId: true,
   stateOnChainId: true,
-  memoryOnChainId: true,
+  contentOnChainId: true,
+  paidAccessListOnChainId: true,
   name: true,
   description: true,
   imageUrl: true,
-  metadataOnChainId: true,
-  activeSpriteAssetName: true,
+  activeSpriteName: true,
   activeSpriteVersionIndex: true,
   activeSpriteDownloadPolicy: true,
-  activeVoiceAssetName: true,
+  activeVoiceName: true,
   activeVoiceVersionIndex: true,
   activeVoiceDownloadPolicy: true,
   spriteConfigJson: true,
   spriteMoodMapJson: true,
   voiceConfigJson: true,
-  contentBlobId: true,
-  contentBlobObjectId: true,
   provenanceKind: true,
+  personaKind: true,
   originRef: true,
   tags: true,
   previewImages: true,
@@ -104,9 +198,6 @@ export const soulAssetSummarySelect = {
   collectionOnChainId: true,
   grantCapacity: true,
   activeGrantCount: true,
-  skillsOnChainId: true,
-  assetsOnChainId: true,
-  accessListOnChainId: true,
   createdAt: true,
   updatedAt: true,
 } as const
@@ -128,32 +219,57 @@ export const soulGrantRecordSelect = {
   updatedAt: true,
 } as const
 
-export const soulMemoryEntrySelect = {
+export const soulContentVersionSelect = {
   id: true,
   soulOnChainId: true,
-  memoryOnChainId: true,
-  timestampKey: true,
-  writerAddress: true,
-  writerKind: true,
+  contentOnChainId: true,
+  kind: true,
+  kindName: true,
+  name: true,
+  versionIndex: true,
   blobObjectId: true,
   blobId: true,
+  readModeMask: true,
+  opMask: true,
+  grantScopeMask: true,
+  isPublic: true,
+  sealEncrypted: true,
+  downloadPolicy: true,
   sealSidecar: true,
+  deletedAt: true,
+  purgedAt: true,
   createdAtMs: true,
   createdAt: true,
   updatedAt: true,
 } as const
 
-export const soulSkillVersionSelect = {
+export const soulPaidAccessKindConfigSelect = {
   id: true,
   soulOnChainId: true,
-  skillsOnChainId: true,
-  skillName: true,
-  versionIndex: true,
-  visibility: true,
+  paidAccessListOnChainId: true,
+  kind: true,
+  version: true,
+  priceAtomic: true,
+  scopeMask: true,
+  durationMs: true,
+  ownershipEpochSnapshot: true,
   deletedAt: true,
-  blobObjectId: true,
-  blobId: true,
-  sealSidecar: true,
+  createdAt: true,
+  updatedAt: true,
+} as const
+
+export const soulPaidAccessEntrySelect = {
+  id: true,
+  soulOnChainId: true,
+  paidAccessListOnChainId: true,
+  buyerAddress: true,
+  kind: true,
+  version: true,
+  scopeMask: true,
+  pricePaidAtomic: true,
+  expiresAtMs: true,
+  ownershipEpochSnapshot: true,
+  revokedAt: true,
   createdAtMs: true,
   createdAt: true,
   updatedAt: true,
@@ -188,31 +304,8 @@ export const soulAssetDetailSelect = {
   creatorMemberId: true,
   currentOwnerMemberId: true,
   readme: true,
-  sealSidecar: true,
   collection: {
     select: soulCollectionSummarySelect,
-  },
-  assetVersions: {
-    select: {
-      id: true,
-      soulOnChainId: true,
-      assetsOnChainId: true,
-      assetName: true,
-      versionIndex: true,
-      visibility: true,
-      assetType: true,
-      deletedAt: true,
-      blobObjectId: true,
-      blobId: true,
-      sealSidecar: true,
-      createdAtMs: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-    orderBy: [
-      { assetName: 'asc' as const },
-      { versionIndex: 'desc' as const },
-    ] as Prisma.SoulAssetVersionRecordOrderByWithRelationInput[],
   },
   grantRecords: {
     select: soulGrantRecordSelect,
@@ -223,25 +316,31 @@ export const soulAssetDetailSelect = {
       createdAt: 'desc',
     },
   },
-  memoryEntries: {
-    select: soulMemoryEntrySelect,
-    orderBy: {
-      timestampKey: 'desc',
-    },
-    take: 20,
-  },
-  skillVersions: {
-    select: soulSkillVersionSelect,
+  /**
+   * Detail-route preview of `soul_content_version_records`. Per kind we keep
+   * the latest `CONTENT_PREVIEW_PER_KIND` (24) rows ordered by createdAtMs
+   * desc. Full pagination is served by `findContentVersionsByKind` (or the
+   * dedicated `/api/souls/[id]/content` endpoints). Soft-deleted rows are
+   * retained — surfaces decide whether to filter on `deletedAt` / `purgedAt`.
+   */
+  contentVersions: {
+    select: soulContentVersionSelect,
     orderBy: [
-      { skillName: 'asc' as const },
+      { kind: 'asc' as const },
+      { name: 'asc' as const },
       { versionIndex: 'desc' as const },
-    ] as Prisma.SoulSkillVersionRecordOrderByWithRelationInput[],
-    take: SOUL_SKILL_VERSION_PREVIEW_LIMIT,
+    ] as Prisma.SoulContentVersionRecordOrderByWithRelationInput[],
   },
-  _count: {
-    select: {
-      skillVersions: true,
-    },
+  paidAccessKindConfigs: {
+    select: soulPaidAccessKindConfigSelect,
+    orderBy: [
+      { kind: 'asc' as const },
+      { version: 'desc' as const },
+    ] as Prisma.SoulPaidAccessKindConfigOrderByWithRelationInput[],
+  },
+  paidAccessEntries: {
+    select: soulPaidAccessEntrySelect,
+    orderBy: { createdAtMs: 'desc' as const },
   },
 } as const
 
@@ -255,13 +354,34 @@ export const soulCollectionDetailSelect = {
   },
 } as const
 
-type SoulAssetSummaryRecord = Prisma.SoulAssetGetPayload<{ select: typeof soulAssetSummarySelect }>
-type SoulGrantRecordRecord = Prisma.SoulGrantRecordGetPayload<{ select: typeof soulGrantRecordSelect }>
-type SoulMemoryEntryRecordRow = Prisma.SoulMemoryEntryGetPayload<{ select: typeof soulMemoryEntrySelect }>
-type SoulSkillVersionRecordRow = Prisma.SoulSkillVersionRecordGetPayload<{ select: typeof soulSkillVersionSelect }>
-type SoulCollectionSummaryRecord = Prisma.SoulCollectionAssetGetPayload<{ select: typeof soulCollectionSummarySelect }>
-type SoulAssetDetailRecord = Prisma.SoulAssetGetPayload<{ select: typeof soulAssetDetailSelect }>
-type SoulCollectionDetailRecord = Prisma.SoulCollectionAssetGetPayload<{ select: typeof soulCollectionDetailSelect }>
+// ── Prisma payload types ─────────────────────────────────────────────────
+
+type SoulAssetSummaryRecord = Prisma.SoulAssetGetPayload<{
+  select: typeof soulAssetSummarySelect
+}>
+type SoulGrantRecordRow = Prisma.SoulGrantRecordGetPayload<{
+  select: typeof soulGrantRecordSelect
+}>
+type SoulContentVersionRow = Prisma.SoulContentVersionRecordGetPayload<{
+  select: typeof soulContentVersionSelect
+}>
+type SoulPaidAccessKindConfigRow = Prisma.SoulPaidAccessKindConfigGetPayload<{
+  select: typeof soulPaidAccessKindConfigSelect
+}>
+type SoulPaidAccessEntryRow = Prisma.SoulPaidAccessEntryGetPayload<{
+  select: typeof soulPaidAccessEntrySelect
+}>
+type SoulCollectionSummaryRecord = Prisma.SoulCollectionAssetGetPayload<{
+  select: typeof soulCollectionSummarySelect
+}>
+type SoulAssetDetailRecord = Prisma.SoulAssetGetPayload<{
+  select: typeof soulAssetDetailSelect
+}>
+type SoulCollectionDetailRecord = Prisma.SoulCollectionAssetGetPayload<{
+  select: typeof soulCollectionDetailSelect
+}>
+
+// ── Mappers: simple records ──────────────────────────────────────────────
 
 export function toSoulGrantScopes(scopes: string[]): SoulGrantScope[] {
   return scopes.filter((scope): scope is SoulGrantScope =>
@@ -269,7 +389,7 @@ export function toSoulGrantScopes(scopes: string[]): SoulGrantScope[] {
   )
 }
 
-export function toSoulGrantRecord(record: SoulGrantRecordRecord): SoulGrantRecord {
+export function toSoulGrantRecord(record: SoulGrantRecordRow): SoulGrantRecord {
   return {
     id: record.id,
     onChainId: record.onChainId,
@@ -296,42 +416,82 @@ export function toSoulGrantRecord(record: SoulGrantRecordRecord): SoulGrantRecor
   }
 }
 
-export function toSoulMemoryEntryRecord(record: SoulMemoryEntryRecordRow): SoulMemoryEntryRecord {
+export function toSoulContentVersionRecord(row: SoulContentVersionRow): SoulContentVersionRecord {
   return {
-    id: record.id,
-    soulOnChainId: record.soulOnChainId,
-    memoryOnChainId: record.memoryOnChainId,
-    timestampKey: toProjectionNumber(record.timestampKey, 'SoulMemoryEntry.timestampKey'),
-    writerAddress: record.writerAddress,
-    writerKind: record.writerKind === 'founder' ? 'founder' : record.writerKind === 'granted-agent' ? 'granted-agent' : 'owner',
-    blobObjectId: record.blobObjectId,
-    blobId: record.blobId,
-    sealSidecar: (record.sealSidecar ?? null) as SoulMemoryEntryRecord['sealSidecar'],
-    createdAtMs: toProjectionNumber(record.createdAtMs, 'SoulMemoryEntry.createdAtMs'),
-    createdAt: asIso(record.createdAt),
-    updatedAt: asIso(record.updatedAt),
+    id: row.id,
+    soulOnChainId: row.soulOnChainId,
+    contentOnChainId: row.contentOnChainId,
+    kind: row.kind,
+    kindName: row.kindName,
+    name: row.name,
+    versionIndex: row.versionIndex,
+    blobObjectId: row.blobObjectId,
+    blobId: row.blobId,
+    readModeMask: row.readModeMask,
+    opMask: row.opMask,
+    grantScopeMask: row.grantScopeMask,
+    isPublic: row.isPublic,
+    sealEncrypted: row.sealEncrypted,
+    downloadPolicy: safeDownloadPolicyFromU8(row.downloadPolicy),
+    sealSidecar: safeParseSealSidecar(row.sealSidecar, {
+      kind: row.kind,
+      name: row.name,
+      versionIndex: row.versionIndex,
+      soulOnChainId: row.soulOnChainId,
+    }),
+    deletedAt: row.deletedAt ? asIso(row.deletedAt) : null,
+    purgedAt: row.purgedAt ? asIso(row.purgedAt) : null,
+    createdAtMs: toProjectionNumber(row.createdAtMs, 'SoulContentVersionRecord.createdAtMs'),
+    createdAt: asIso(row.createdAt),
+    updatedAt: asIso(row.updatedAt),
   }
 }
 
-export function toSoulSkillVersionRecord(record: SoulSkillVersionRecordRow): SoulSkillVersionRecord {
+export function toSoulPaidAccessKindConfigRecord(
+  row: SoulPaidAccessKindConfigRow,
+): SoulPaidAccessKindConfigRecord {
   return {
-    id: record.id,
-    soulOnChainId: record.soulOnChainId,
-    skillsOnChainId: record.skillsOnChainId,
-    skillName: record.skillName,
-    versionIndex: record.versionIndex,
-    visibility: record.visibility === 'public' ? 'public' : 'private',
-    deletedAt: record.deletedAt ? asIso(record.deletedAt) : null,
-    blobObjectId: record.blobObjectId,
-    blobId: record.blobId,
-    sealSidecar: (record.sealSidecar ?? null) as SoulSkillVersionRecord['sealSidecar'],
-    createdAtMs: toProjectionNumber(record.createdAtMs, 'SoulSkillVersionRecord.createdAtMs'),
-    createdAt: asIso(record.createdAt),
-    updatedAt: asIso(record.updatedAt),
+    id: row.id,
+    soulOnChainId: row.soulOnChainId,
+    paidAccessListOnChainId: row.paidAccessListOnChainId,
+    kind: row.kind,
+    version: row.version,
+    priceAtomic: row.priceAtomic.toString(),
+    scopeMask: row.scopeMask,
+    durationMs: bigIntToAtomicString(row.durationMs),
+    ownershipEpochSnapshot: row.ownershipEpochSnapshot,
+    deletedAt: row.deletedAt ? asIso(row.deletedAt) : null,
+    createdAt: asIso(row.createdAt),
+    updatedAt: asIso(row.updatedAt),
   }
 }
 
-export function toSoulCollectionSummary(record: SoulCollectionSummaryRecord): SoulCollectionAssetSummary {
+export function toSoulPaidAccessEntryRecord(
+  row: SoulPaidAccessEntryRow,
+): SoulPaidAccessEntryRecord {
+  return {
+    id: row.id,
+    soulOnChainId: row.soulOnChainId,
+    paidAccessListOnChainId: row.paidAccessListOnChainId,
+    buyerAddress: row.buyerAddress,
+    kind: row.kind,
+    version: row.version,
+    scopeMask: row.scopeMask,
+    pricePaidAtomic: row.pricePaidAtomic.toString(),
+    expiresAtMs: bigIntToAtomicString(row.expiresAtMs),
+    ownershipEpochSnapshot: row.ownershipEpochSnapshot,
+    revokedAt: row.revokedAt ? asIso(row.revokedAt) : null,
+    createdAtMs: toProjectionNumber(row.createdAtMs, 'SoulPaidAccessEntry.createdAtMs'),
+    createdAt: asIso(row.createdAt),
+    updatedAt: asIso(row.updatedAt),
+  }
+}
+
+// ── Mappers: collection / asset summary ──────────────────────────────────
+
+export function toSoulCollectionSummary(
+  record: SoulCollectionSummaryRecord,
+): SoulCollectionAssetSummary {
   // Naming pipeline: Move `max_supply / current_supply` ↔ Prisma
   // `maxSoulSupply / soulCount` ↔ API `maxSoulSupply / currentSoulSupply`.
   // soulCount is preserved as a legacy alias of currentSoulSupply, NOT a
@@ -362,56 +522,37 @@ export function toSoulCollectionSummary(record: SoulCollectionSummaryRecord): So
   }
 }
 
-export function toSoulAssetSummaryList(records: SoulAssetSummaryRecord[]): SoulAssetSummary[] {
-  return records.map(toSoulAssetSummary)
-}
-
-export function toSoulCollectionSummaryList(records: SoulCollectionSummaryRecord[]): SoulCollectionAssetSummary[] {
-  return records.map(toSoulCollectionSummary)
-}
-
 export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSummary {
   return {
     id: record.id,
     onChainId: record.onChainId,
     stateOnChainId: record.stateOnChainId,
-    memoryOnChainId: record.memoryOnChainId,
+    contentOnChainId: record.contentOnChainId,
+    paidAccessListOnChainId: record.paidAccessListOnChainId,
     name: record.name,
     description: record.description,
     imageUrl: record.imageUrl,
-    metadataOnChainId: record.metadataOnChainId,
-    activeSpriteAssetName: record.activeSpriteAssetName,
+    activeSpriteName: record.activeSpriteName,
     activeSpriteVersionIndex: record.activeSpriteVersionIndex == null
       ? null
-      : toProjectionNumber(record.activeSpriteVersionIndex, 'SoulAsset.activeSpriteVersionIndex'),
-    activeSpriteDownloadPolicy: record.activeSpriteDownloadPolicy === 'public'
-      ? 'public'
-      : record.activeSpriteDownloadPolicy === 'owner_only'
-        ? 'owner_only'
-        : record.activeSpriteDownloadPolicy === 'allowlist'
-          ? 'allowlist'
-          : null,
-    activeVoiceAssetName: record.activeVoiceAssetName,
+      : toProjectionNumber(
+          record.activeSpriteVersionIndex,
+          'SoulAsset.activeSpriteVersionIndex',
+        ),
+    activeSpriteDownloadPolicy: asDownloadPolicyOrNull(record.activeSpriteDownloadPolicy),
+    activeVoiceName: record.activeVoiceName,
     activeVoiceVersionIndex: record.activeVoiceVersionIndex == null
       ? null
-      : toProjectionNumber(record.activeVoiceVersionIndex, 'SoulAsset.activeVoiceVersionIndex'),
-    activeVoiceDownloadPolicy: record.activeVoiceDownloadPolicy === 'public'
-      ? 'public'
-      : record.activeVoiceDownloadPolicy === 'owner_only'
-        ? 'owner_only'
-        : record.activeVoiceDownloadPolicy === 'allowlist'
-          ? 'allowlist'
-          : null,
+      : toProjectionNumber(
+          record.activeVoiceVersionIndex,
+          'SoulAsset.activeVoiceVersionIndex',
+        ),
+    activeVoiceDownloadPolicy: asDownloadPolicyOrNull(record.activeVoiceDownloadPolicy),
     spriteConfigJson: record.spriteConfigJson,
     spriteMoodMapJson: record.spriteMoodMapJson,
     voiceConfigJson: record.voiceConfigJson,
-    contentBlobId: record.contentBlobId,
-    contentBlobObjectId: record.contentBlobObjectId,
-    provenanceKind: record.provenanceKind === 'imported'
-      ? 'imported'
-      : record.provenanceKind === 'personal-join'
-        ? 'personal-join'
-        : 'native',
+    provenanceKind: asProvenanceKind(record.provenanceKind),
+    personaKind: asPersonaKind(record.personaKind),
     originRef: record.originRef,
     tags: record.tags,
     previewImages: record.previewImages,
@@ -426,13 +567,60 @@ export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSum
     collectionOnChainId: record.collectionOnChainId,
     grantCapacity: record.grantCapacity,
     activeGrantCount: record.activeGrantCount,
-    skillsOnChainId: record.skillsOnChainId,
-    assetsOnChainId: record.assetsOnChainId,
-    accessListOnChainId: record.accessListOnChainId,
     createdAt: asIso(record.createdAt),
     updatedAt: asIso(record.updatedAt),
   }
 }
+
+export function toSoulAssetSummaryList(records: SoulAssetSummaryRecord[]): SoulAssetSummary[] {
+  return records.map(toSoulAssetSummary)
+}
+
+export function toSoulCollectionSummaryList(
+  records: SoulCollectionSummaryRecord[],
+): SoulCollectionAssetSummary[] {
+  return records.map(toSoulCollectionSummary)
+}
+
+// ── Detail mapper helpers ────────────────────────────────────────────────
+
+/**
+ * Trim the `soul_content_version_records` preview window to a sane subset:
+ *   - SOUL_DOC: latest CANONICAL slot only (versionIndex desc) — keeps the
+ *     newest revision plus the seed v0.
+ *   - MEMORY: latest CANONICAL slot, capped to `CONTENT_PREVIEW_PER_KIND`.
+ *   - SKILL: per skill name, top `CONTENT_PREVIEW_PER_KIND` versions.
+ *   - SPRITE / AUDIO: per name, top `CONTENT_PREVIEW_PER_KIND` versions.
+ *   - Custom kinds: per name, top `CONTENT_PREVIEW_PER_KIND` versions.
+ *
+ * The detail select already orders by (kind asc, name asc, versionIndex desc);
+ * this function applies the per-(kind,name) cap in TS.
+ */
+function trimContentPreview(rows: SoulContentVersionRow[]): SoulContentVersionRow[] {
+  const counters = new Map<string, number>()
+  const out: SoulContentVersionRow[] = []
+  for (const row of rows) {
+    const key = `${row.kind}::${row.name}`
+    const seen = counters.get(key) ?? 0
+    if (seen >= CONTENT_PREVIEW_PER_KIND) continue
+    counters.set(key, seen + 1)
+    out.push(row)
+  }
+  return out
+}
+
+function filterPaidEntriesForViewer(
+  rows: SoulPaidAccessEntryRow[],
+  viewerAddresses: Set<string>,
+): SoulPaidAccessEntryRow[] {
+  if (viewerAddresses.size === 0) return rows
+  return rows.filter((row) => {
+    if (!row.revokedAt) return true
+    return viewerAddresses.has(row.buyerAddress.toLowerCase())
+  })
+}
+
+// ── Detail mappers ───────────────────────────────────────────────────────
 
 export function toSoulAssetDetail(
   record: SoulAssetDetailRecord,
@@ -443,25 +631,43 @@ export function toSoulAssetDetail(
     platformFeeBps?: number | null
   },
 ): SoulAssetDetail {
-  const viewerAddresses = new Set((params.viewerAddresses ?? []).map((value) => value.toLowerCase()))
+  const viewerAddresses = new Set(
+    (params.viewerAddresses ?? []).map((value) => value.toLowerCase()),
+  )
   const currentOwnerAddress = record.currentOwnerAddress.toLowerCase()
   const creatorAddress = record.creatorAddress.toLowerCase()
   const activeGrants = record.grantRecords.map(toSoulGrantRecord)
-  const isOwner = record.currentOwnerMemberId === params.viewerMemberId || viewerAddresses.has(currentOwnerAddress)
-  const isCreator = record.creatorMemberId === params.viewerMemberId || viewerAddresses.has(creatorAddress)
-  const isGrantedAgent = activeGrants.some((grant) => viewerAddresses.has(grant.granteeAddress.toLowerCase()))
+  const isOwner =
+    record.currentOwnerMemberId === params.viewerMemberId
+    || viewerAddresses.has(currentOwnerAddress)
+  const isCreator =
+    record.creatorMemberId === params.viewerMemberId
+    || viewerAddresses.has(creatorAddress)
+  const isGrantedAgent = activeGrants.some((grant) =>
+    viewerAddresses.has(grant.granteeAddress.toLowerCase()),
+  )
+
+  const contentVersions = trimContentPreview(record.contentVersions).map(
+    toSoulContentVersionRecord,
+  )
+  const paidAccessKindConfigs = record.paidAccessKindConfigs.map(
+    toSoulPaidAccessKindConfigRecord,
+  )
+  const paidAccessEntries = filterPaidEntriesForViewer(
+    record.paidAccessEntries,
+    viewerAddresses,
+  ).map(toSoulPaidAccessEntryRecord)
 
   return {
     ...toSoulAssetSummary(record),
     creatorMemberId: record.creatorMemberId,
     currentOwnerMemberId: record.currentOwnerMemberId,
     readme: record.readme,
-    sealSidecar: (record.sealSidecar ?? null) as SoulAssetDetail['sealSidecar'],
     collection: record.collection ? toSoulCollectionSummary(record.collection) : null,
     activeGrants,
-    memoryEntries: record.memoryEntries.map(toSoulMemoryEntryRecord),
-    skillVersions: record.skillVersions.map(toSoulSkillVersionRecord),
-    skillVersionCount: record._count.skillVersions,
+    contentVersions,
+    paidAccessKindConfigs,
+    paidAccessEntries,
     isOwner,
     isCreator,
     isGrantedAgent,
@@ -470,11 +676,25 @@ export function toSoulAssetDetail(
   }
 }
 
-export function toSoulCollectionDetail(record: SoulCollectionDetailRecord): SoulCollectionAssetDetail {
+export function toSoulCollectionDetail(
+  record: SoulCollectionDetailRecord,
+): SoulCollectionAssetDetail {
   return {
     ...toSoulCollectionSummary(record),
     souls: record.souls.map(toSoulAssetSummary),
   }
+}
+
+// ── Lookups ──────────────────────────────────────────────────────────────
+
+export async function findSoulAssetByRouteId(id: string) {
+  const where = buildSoulRouteWhere(id)
+  if (!where) return null
+
+  return prisma.soulAsset.findFirst({
+    where,
+    select: soulAssetSummarySelect,
+  })
 }
 
 export async function findSoulAssetDetailByRouteId(id: string) {
@@ -497,67 +717,241 @@ export async function findSoulCollectionDetailByRouteId(id: string) {
   })
 }
 
+/**
+ * Lookup all Soul summaries owned by an address. Returns the canonical
+ * `SoulAssetSummary` shape so callers can paginate / filter further.
+ */
+export async function findSoulAssetSummariesByOwner(
+  ownerAddress: string,
+  options: { listingStatus?: SoulListingStatus; limit?: number; cursor?: string | null } = {},
+): Promise<{ items: SoulAssetSummary[]; nextCursor: string | null }> {
+  const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 100) : 50
+
+  const rows = await prisma.soulAsset.findMany({
+    where: {
+      currentOwnerAddress: ownerAddress.toLowerCase(),
+      ...(options.listingStatus ? { listingStatus: options.listingStatus } : {}),
+    },
+    select: soulAssetSummarySelect,
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1,
+    ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
+  })
+
+  const pageRows = rows.slice(0, limit)
+  const nextCursor = rows.length > limit ? rows[limit - 1]!.id : null
+  return {
+    items: pageRows.map(toSoulAssetSummary),
+    nextCursor,
+  }
+}
+
+/**
+ * Generic Soul summary pagination. Accepts an arbitrary
+ * `Prisma.SoulAssetWhereInput` so callers (search, agent, marketplace) can
+ * compose their own filter without re-implementing the select / mapper.
+ */
+export async function paginateSoulAssetSummaries(params: {
+  where: Prisma.SoulAssetWhereInput
+  orderBy?: Prisma.SoulAssetOrderByWithRelationInput | Prisma.SoulAssetOrderByWithRelationInput[]
+  limit: number
+  cursor?: string | null
+}): Promise<{ items: SoulAssetSummary[]; nextCursor: string | null; total: number }> {
+  const limit = Math.max(1, Math.min(params.limit, 200))
+
+  const [rows, total] = await Promise.all([
+    prisma.soulAsset.findMany({
+      where: params.where,
+      orderBy: params.orderBy ?? { createdAt: 'desc' },
+      select: soulAssetSummarySelect,
+      take: limit + 1,
+      ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
+    }),
+    prisma.soulAsset.count({ where: params.where }),
+  ])
+
+  const pageRows = rows.slice(0, limit)
+  const nextCursor = rows.length > limit ? rows[limit - 1]!.id : null
+  return {
+    items: pageRows.map(toSoulAssetSummary),
+    nextCursor,
+    total,
+  }
+}
+
+// ── Content-version helpers ──────────────────────────────────────────────
+
+export interface FindContentVersionsByKindOptions {
+  /** Optional slot name filter (`'soul'`, `'default'`, a skill name, etc.). */
+  name?: string | null
+  /**
+   * When true, soft-deleted (`deletedAt != null`) and purged
+   * (`purgedAt != null`) rows are excluded. Default `false`: callers
+   * receive every projection so they can audit history.
+   */
+  excludeDeleted?: boolean
+  /** Page size (default = `DEFAULT_CONTENT_VERSION_PAGE_SIZE`). */
+  limit?: number | null
+  /** Cursor encoded by `encodeContentVersionCursor`. */
+  cursor?: string | null
+}
+
+export interface FindContentVersionsByKindResult {
+  soulOnChainId: string
+  contentOnChainId: string | null
+  kind: number
+  name: string | null
+  items: SoulContentVersionRecord[]
+  nextCursor: string | null
+  total: number
+}
+
+/**
+ * Paginate `soul_content_version_records` for a single (Soul, kind) pair.
+ * Replaces the legacy `findSoulSkillVersionsPageByRouteId` — this works for
+ * any kind (SOUL_DOC, MEMORY, SKILL, SPRITE, AUDIO, custom).
+ *
+ * Ordering: `(name asc, versionIndex desc)` so the cursor advances to the
+ * next `(name, versionIndex)` lexicographically. When `options.name` is set,
+ * the result is a single skill / slot's version history.
+ */
+export async function findContentVersionsByKind(
+  soulOnChainId: string,
+  kind: number,
+  options: FindContentVersionsByKindOptions = {},
+): Promise<FindContentVersionsByKindResult | null> {
+  const soul = await prisma.soulAsset.findUnique({
+    where: { onChainId: soulOnChainId },
+    select: { onChainId: true, contentOnChainId: true },
+  })
+  if (!soul) return null
+
+  const limit = clampContentVersionPageSize(options.limit ?? null)
+  const cursor = decodeContentVersionCursor(options.cursor ?? null)
+
+  const baseWhere: Prisma.SoulContentVersionRecordWhereInput = {
+    soulOnChainId: soul.onChainId,
+    kind,
+    ...(options.name ? { name: options.name } : {}),
+    ...(options.excludeDeleted ? { deletedAt: null, purgedAt: null } : {}),
+  }
+
+  const cursorWhere: Prisma.SoulContentVersionRecordWhereInput = cursor
+    ? {
+        OR: [
+          { name: { gt: cursor.name } },
+          {
+            AND: [
+              { name: cursor.name },
+              { versionIndex: { lt: cursor.versionIndex } },
+            ],
+          },
+        ],
+      }
+    : {}
+
+  const where: Prisma.SoulContentVersionRecordWhereInput = cursor
+    ? { AND: [baseWhere, cursorWhere] }
+    : baseWhere
+
+  const [rows, total] = await Promise.all([
+    prisma.soulContentVersionRecord.findMany({
+      where,
+      select: soulContentVersionSelect,
+      orderBy: [
+        { name: 'asc' },
+        { versionIndex: 'desc' },
+      ],
+      take: limit + 1,
+    }),
+    prisma.soulContentVersionRecord.count({ where: baseWhere }),
+  ])
+
+  const pageRows = rows.slice(0, limit)
+  const nextCursor =
+    rows.length > limit
+      ? encodeContentVersionCursor({
+          name: rows[limit - 1]!.name,
+          versionIndex: rows[limit - 1]!.versionIndex,
+        })
+      : null
+
+  return {
+    soulOnChainId: soul.onChainId,
+    contentOnChainId: soul.contentOnChainId,
+    kind,
+    name: options.name ?? null,
+    items: pageRows.map(toSoulContentVersionRecord),
+    nextCursor,
+    total,
+  }
+}
+
+/**
+ * Convenience wrapper that resolves the Soul by route id (uuid / on-chain id /
+ * content id / paid-access list id) before delegating to
+ * `findContentVersionsByKind`.
+ */
+export async function findContentVersionsByRouteId(
+  routeId: string,
+  kind: number,
+  options: FindContentVersionsByKindOptions = {},
+): Promise<FindContentVersionsByKindResult | null> {
+  const where = buildSoulRouteWhere(routeId)
+  if (!where) return null
+
+  const soul = await prisma.soulAsset.findFirst({
+    where,
+    select: { onChainId: true },
+  })
+  if (!soul) return null
+
+  return findContentVersionsByKind(soul.onChainId, kind, options)
+}
+
+// ── Deprecated phase-1 shims ─────────────────────────────────────────────
+
+/**
+ * @deprecated Phase-1 helper preserved for callers that still pass
+ * `findSoulSkillVersionsPageByRouteId`. Translates the request to the new
+ * `findContentVersionsByKind(soulOnChainId, KIND_SKILL)` query so existing
+ * `/api/souls/[id]/skill-versions` consumers keep working until they migrate
+ * to the unified content endpoints.
+ */
 export async function findSoulSkillVersionsPageByRouteId(params: {
   id: string
   limit: number
   cursor: string | null
 }) {
-  const where = buildSoulRouteWhere(params.id)
-  if (!where) return null
-
-  const soul = await prisma.soulAsset.findFirst({
-    where,
-    select: {
-      onChainId: true,
-      skillsOnChainId: true,
-      _count: {
-        select: {
-          skillVersions: true,
-        },
-      },
-    },
+  const result = await findContentVersionsByRouteId(params.id, KIND_SKILL, {
+    limit: params.limit,
+    cursor: params.cursor,
   })
-
-  if (!soul) {
-    return null
-  }
-
-  const cursor = parseSkillVersionCursor(params.cursor)
-  const rows = await prisma.soulSkillVersionRecord.findMany({
-    where: {
-      soulOnChainId: soul.onChainId,
-      ...(cursor
-        ? {
-            OR: [
-              { skillName: { gt: cursor.skillName } },
-              {
-                AND: [
-                  { skillName: cursor.skillName },
-                  { versionIndex: { lt: cursor.versionIndex } },
-                ],
-              },
-            ],
-          }
-        : {}),
-    },
-    select: soulSkillVersionSelect,
-    orderBy: [
-      { skillName: 'asc' },
-      { versionIndex: 'desc' },
-    ],
-    take: params.limit + 1,
-  })
-
-  const pageRows = rows.slice(0, params.limit)
-  const nextCursor = rows.length > params.limit
-    ? encodeSkillVersionCursor(rows[params.limit - 1]!)
-    : null
+  if (!result) return null
 
   return {
-    soulOnChainId: soul.onChainId,
-    skillsOnChainId: soul.skillsOnChainId,
-    items: pageRows.map(toSoulSkillVersionRecord),
-    nextCursor,
-    total: soul._count.skillVersions,
+    soulOnChainId: result.soulOnChainId,
+    /**
+     * Phase 2 collapses the per-kind shared object into one `SoulContent`
+     * root. The legacy field name is preserved for compatibility — readers
+     * should treat this as `contentOnChainId`.
+     */
+    skillsOnChainId: result.contentOnChainId,
+    items: result.items,
+    nextCursor: result.nextCursor,
+    total: result.total,
   }
 }
+
+// ── Re-exports kept for callers ──────────────────────────────────────────
+
+export {
+  CONTENT_PREVIEW_PER_KIND,
+  KIND_AUDIO,
+  KIND_MEMORY,
+  KIND_SKILL,
+  KIND_SOUL_DOC,
+  KIND_SPRITE,
+}
+
+export type { ContentReadMode }

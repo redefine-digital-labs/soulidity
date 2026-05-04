@@ -1,86 +1,99 @@
-import type { Prisma } from '@db/prisma-client'
+/**
+ * Phase 2 mirror sync helpers. Replaces the legacy four-channel
+ * (memory/skills/assets/metadata) sync with unified content-version syncs.
+ * Every post-tx route should:
+ *   1. Read on-chain Soul + SoulState (and SoulContent / SoulPaidAccessList
+ *      if needed) via this layer.
+ *   2. Pass extracted event data to the appropriate `upsert*` writer.
+ */
 import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
-import type { AssetVersionObject, SkillVersionObject, SoulMetadataObject } from '@/lib/soulidity/types'
 import {
-  OnChainVerificationError,
+  endActiveSoulGrantProjections,
+  endSoulGrantProjection,
+  upsertGrantProjection,
+} from '@/lib/soulidity/mirror/upsert-grant'
+import { upsertCollectionProjection } from '@/lib/soulidity/mirror/upsert-collection'
+import {
+  markContentVersionDeleted,
+  markContentVersionPurged,
+  upsertContentVersionProjection,
+} from '@/lib/soulidity/mirror/upsert-content-version'
+import {
+  markPaidAccessEntryRevoked,
+  markPaidAccessKindConfigDeleted,
+  upsertPaidAccessEntry,
+  upsertPaidAccessKindConfig,
+} from '@/lib/soulidity/mirror/upsert-paid-access'
+import { upsertSoulProjection } from '@/lib/soulidity/mirror/upsert-soul'
+import {
   getRegisteredPersonalKiosk,
   getSoulCollectionObject,
   getSoulCollectionRightObject,
+  getSoulContentObject,
   getSoulGrantObject,
-  getSoulMetadataObject,
-  getSoulMemoryObject,
   getSoulObject,
+  getSoulPaidAccessListObject,
   getSoulStateObject,
   listOwnedPersonalKioskCaps,
 } from '@/lib/soulidity/queries'
 import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { upsertCollectionProjection } from '@/lib/soulidity/mirror/upsert-collection'
-import { endActiveSoulGrantProjections, endSoulGrantProjection, upsertGrantProjection } from '@/lib/soulidity/mirror/upsert-grant'
-import { upsertAssetVersionProjection } from '@/lib/soulidity/mirror/upsert-asset'
-import { upsertContentAccessProjection, markContentAccessRevoked } from '@/lib/soulidity/mirror/upsert-content-access'
-import { markSkillVersionDeleted, upsertSkillVersionProjection } from '@/lib/soulidity/mirror/upsert-skill'
-import { upsertSoulProjection } from '@/lib/soulidity/mirror/upsert-soul'
+import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
 
+interface ActiveBindingMirror {
+  name: string
+  versionIndex: number
+  downloadPolicy: string
+}
+
+interface StateConfigSnapshot {
+  spriteConfigJson?: string | null
+  spriteMoodMapJson?: string | null
+  voiceConfigJson?: string | null
+}
+
+/**
+ * Refresh the SoulAsset projection from on-chain Soul + SoulState (and
+ * optionally SoulContent for active binding lookups). Phase 2 no longer
+ * reads SoulMetadata / SoulMemory / SoulSkills / SoulAssets — those
+ * objects don't exist.
+ */
 export async function syncSoulProjectionFromChain(params: {
   packageId: string
   soulObjectId: string
   stateObjectId: string
-  memoryObjectId: string
   tags: string[]
   previewImages: string[]
   readme?: string | null
-  sealSidecar?: SealEnvelopeSidecar | null
   creatorMemberId?: string | null
   currentOwnerMemberId?: string | null
   currentKioskCapOnChainId?: string | null
   listingObjectOnChainId?: string | null
   listedPriceAtomic?: bigint | null
   listingStatus?: 'held' | 'listed' | 'floor-violation'
+  /** Optional active sprite/voice cache. Caller may load it from the DB
+   *  mirror or from the typed-content root (admin-tools). */
+  activeSprite?: ActiveBindingMirror | null
+  activeVoice?: ActiveBindingMirror | null
+  /** Cached snapshots of `SoulState.config_ext` keys we mirror by name. */
+  stateConfig?: StateConfigSnapshot
 }) {
-  const [soul, state, memory] = await Promise.all([
+  const [soul, state] = await Promise.all([
     getSoulObject(params.soulObjectId, params.packageId),
     getSoulStateObject(params.stateObjectId, params.packageId),
-    getSoulMemoryObject(params.memoryObjectId, params.packageId),
   ])
-  // Resolve SoulMetadata with the same lag tolerance as kiosk-cap resolution:
-  // the metadata object is created in the same TX as the SoulState, but RPC
-  // indexing for the new shared object can lag a few hundred ms behind the
-  // state read. Retry briefly, and if the object still is not visible fall
-  // through with `metadata = null` so the upsert still mirrors
-  // `metadataOnChainId` from `state.metadataId` and a later sync (the asset
-  // /metadata routes call `syncSoulProjectionFromChain` again on every write)
-  // backfills the binding/config detail fields. Without this retry, a freshly
-  // minted/imported/wrapped Soul whose metadata object indexes a beat late
-  // would 500 the post-TX sync and leave the Soul unmirrored.
-  let metadata: SoulMetadataObject | null = null
-  if (state.metadataId) {
-    const MAX_METADATA_RESOLVE_ATTEMPTS = 4
-    const METADATA_RESOLVE_DELAY_MS = 1500
-    for (let attempt = 1; attempt <= MAX_METADATA_RESOLVE_ATTEMPTS; attempt++) {
-      try {
-        metadata = await getSoulMetadataObject(state.metadataId, params.packageId)
-        break
-      } catch (error) {
-        // Indexing-lag and "shape not yet readable" both surface as
-        // OnChainVerificationError from `expectMoveObject`. Anything else
-        // (network failure, programmer error) bubbles up immediately.
-        if (!(error instanceof OnChainVerificationError)) {
-          throw error
-        }
-        if (attempt < MAX_METADATA_RESOLVE_ATTEMPTS) {
-          console.warn(
-            `[syncSoulProjection] SoulMetadata ${state.metadataId} not yet indexed ` +
-            `(attempt ${attempt}/${MAX_METADATA_RESOLVE_ATTEMPTS}): ${error.message}. Retrying...`,
-          )
-          await new Promise(resolve => setTimeout(resolve, METADATA_RESOLVE_DELAY_MS))
-        } else {
-          console.warn(
-            `[syncSoulProjection] SoulMetadata ${state.metadataId} still not readable after ` +
-            `${MAX_METADATA_RESOLVE_ATTEMPTS} attempts (${error.message}). Persisting metadataOnChainId ` +
-            `only; binding/config fields will backfill on the next sync.`,
-          )
-        }
-      }
+
+  // Resolve content root projection if state already exposes a content_id.
+  // Failure is non-fatal — the on-chain object exists by construction
+  // (mint binds it before sharing state); transient indexing lag is OK.
+  let content: { objectId: string } | null = null
+  if (state.contentId) {
+    try {
+      content = await getSoulContentObject(state.contentId, params.packageId)
+    } catch (error) {
+      console.warn(
+        `[syncSoulProjection] SoulContent ${state.contentId} not yet readable`,
+        error,
+      )
     }
   }
 
@@ -102,8 +115,6 @@ export async function syncSoulProjectionFromChain(params: {
         break
       }
 
-      // Registry lookup missed (e.g. RPC indexing lag) — scan owned PersonalKioskCap
-      // objects and match by kiosk ID to avoid storing a Kiosk object ID as a cap ID
       const ownedCaps = await listOwnedPersonalKioskCaps(state.currentOwnerAddress)
       const matched = ownedCaps.find(cap => cap.currentKioskId === state.currentKioskId)
       if (matched) {
@@ -114,21 +125,21 @@ export async function syncSoulProjectionFromChain(params: {
       if (attempt < MAX_CAP_RESOLVE_ATTEMPTS) {
         console.warn(
           `[syncSoulProjection] PersonalKioskCap not yet indexed for kiosk ${state.currentKioskId} ` +
-          `(owner ${state.currentOwnerAddress}, attempt ${attempt}/${MAX_CAP_RESOLVE_ATTEMPTS}). Retrying...`
+          `(owner ${state.currentOwnerAddress}, attempt ${attempt}/${MAX_CAP_RESOLVE_ATTEMPTS}). Retrying...`,
         )
         await new Promise(resolve => setTimeout(resolve, CAP_RESOLVE_DELAY_MS))
       } else {
         throw new Error(
           `[syncSoulProjection] Could not resolve PersonalKioskCap for kiosk ${state.currentKioskId} owned by ${state.currentOwnerAddress}. ` +
           `Registry lookup and owned-object scan (${ownedCaps.length} caps found) both missed after ${MAX_CAP_RESOLVE_ATTEMPTS} attempts. ` +
-          `Sync cannot proceed — retry after RPC indexing catches up.`
+          `Sync cannot proceed — retry after RPC indexing catches up.`,
         )
       }
     }
 
     if (!kioskCapOnChainId) {
       throw new Error(
-        `[syncSoulProjection] Could not resolve PersonalKioskCap for kiosk ${state.currentKioskId} owned by ${state.currentOwnerAddress} after ${MAX_CAP_RESOLVE_ATTEMPTS} attempts.`
+        `[syncSoulProjection] Could not resolve PersonalKioskCap for kiosk ${state.currentKioskId} owned by ${state.currentOwnerAddress} after ${MAX_CAP_RESOLVE_ATTEMPTS} attempts.`,
       )
     }
   }
@@ -136,18 +147,19 @@ export async function syncSoulProjectionFromChain(params: {
   return upsertSoulProjection({
     soul,
     state,
-    memory,
-    metadata,
+    content,
     currentKioskCapOnChainId: kioskCapOnChainId,
     creatorMemberId: params.creatorMemberId ?? null,
     currentOwnerMemberId: params.currentOwnerMemberId ?? null,
     tags: params.tags,
     previewImages: params.previewImages,
     readme: params.readme ?? null,
-    sealSidecar: (params.sealSidecar ?? null) as Prisma.InputJsonValue | null,
     listingObjectOnChainId: params.listingObjectOnChainId ?? null,
     listedPriceAtomic: params.listedPriceAtomic ?? null,
     listingStatus: params.listingStatus ?? 'held',
+    activeSprite: params.activeSprite ?? null,
+    activeVoice: params.activeVoice ?? null,
+    stateConfig: params.stateConfig,
   })
 }
 
@@ -167,9 +179,6 @@ export async function syncCollectionProjectionFromChain(params: {
   return upsertCollectionProjection({
     collection,
     right,
-    // current_supply / max_supply are read directly from the on-chain
-    // SoulCollection object so the mirror always reflects truth, not a
-    // potentially-stale event payload.
     currentSupply: collection.currentSupply,
     maxSoulSupply: collection.maxSupply,
     creatorMemberId: params.creatorMemberId ?? null,
@@ -220,63 +229,102 @@ export async function endActiveSoulGrantProjectionsFromChain(params: {
   return endActiveSoulGrantProjections(params)
 }
 
-export async function syncSkillVersionProjectionFromChain(params: {
-  version: SkillVersionObject
+// ── Content version sync (replaces memory/skill/asset triple) ───────────
+
+export async function syncContentVersionProjectionFromChain(params: {
   soulOnChainId: string
-  skillsOnChainId: string
-  deletedAt?: Date | null
+  contentOnChainId: string
+  kind: number
+  kindName: string
+  name: string
+  versionIndex: number
+  blobObjectId: string
+  blobId?: string | null
+  readModeMask: number
+  opMask: number
+  grantScopeMask: number
+  isPublic: boolean
+  sealEncrypted: boolean
+  downloadPolicy: SoulDownloadPolicy
   sealSidecar?: SealEnvelopeSidecar | null
+  createdAtMs: number | bigint
 }) {
-  return upsertSkillVersionProjection({
-    version: params.version,
-    soulOnChainId: params.soulOnChainId,
-    skillsOnChainId: params.skillsOnChainId,
-    deletedAt: params.deletedAt ?? null,
-    sealSidecar: params.sealSidecar ?? null,
-  })
+  return upsertContentVersionProjection(params)
 }
 
-export async function markSkillVersionDeletedFromChain(params: {
-  skillsOnChainId: string
-  skillName: string
+export async function markContentVersionDeletedFromChain(params: {
+  contentOnChainId: string
+  kind: number
+  name: string
   versionIndex: number
   deletedAt?: Date | null
 }) {
-  return markSkillVersionDeleted(params)
+  return markContentVersionDeleted(params)
 }
 
-export async function syncAssetVersionProjectionFromChain(params: {
-  version: AssetVersionObject
-  soulOnChainId: string
-  assetsOnChainId: string
-  deletedAt?: Date | null
-  sealSidecar?: SealEnvelopeSidecar | null
+export async function markContentVersionPurgedFromChain(params: {
+  contentOnChainId: string
+  kind: number
+  name: string
+  versionIndex: number
+  purgedAt?: Date | null
 }) {
-  return upsertAssetVersionProjection({
-    version: params.version,
-    soulOnChainId: params.soulOnChainId,
-    assetsOnChainId: params.assetsOnChainId,
-    deletedAt: params.deletedAt ?? null,
-    sealSidecar: params.sealSidecar ?? null,
-  })
+  return markContentVersionPurged(params)
 }
 
-export async function syncContentAccessProjectionFromChain(params: {
+// ── Paid access sync ────────────────────────────────────────────────────
+
+export async function syncPaidAccessKindConfigFromChain(params: {
   soulOnChainId: string
-  accessListOnChainId: string
-  granteeAddress: string
+  paidAccessListOnChainId: string
+  kind: number
+  version: number
+  priceAtomic: bigint | number
   scopeMask: number
-  pricePaidAtomic: number | bigint
-  grantedAtMs: number | bigint
-  expiresAtMs?: number | bigint | null
+  durationMs?: number | bigint | null
   ownershipEpochSnapshot: number
 }) {
-  return upsertContentAccessProjection(params)
+  return upsertPaidAccessKindConfig(params)
 }
 
-export async function markContentAccessRevokedFromChain(params: {
-  accessListOnChainId: string
-  granteeAddress: string
+export async function markPaidAccessKindConfigDeletedFromChain(params: {
+  paidAccessListOnChainId: string
+  kind: number
 }) {
-  return markContentAccessRevoked(params)
+  return markPaidAccessKindConfigDeleted(params)
+}
+
+export async function syncPaidAccessEntryFromChain(params: {
+  soulOnChainId: string
+  paidAccessListOnChainId: string
+  buyerAddress: string
+  kind: number
+  version: number
+  scopeMask: number
+  pricePaidAtomic: bigint | number
+  expiresAtMs?: number | bigint | null
+  ownershipEpochSnapshot: number
+  createdAtMs: number | bigint
+}) {
+  return upsertPaidAccessEntry(params)
+}
+
+export async function markPaidAccessEntryRevokedFromChain(params: {
+  paidAccessListOnChainId: string
+  buyerAddress: string
+  kind: number
+}) {
+  return markPaidAccessEntryRevoked(params)
+}
+
+/**
+ * Read on-chain `SoulPaidAccessList` and verify the soul linkage. Useful
+ * for sanity-checking before issuing post-tx writes against a freshly
+ * minted list.
+ */
+export async function ensurePaidAccessListReadable(params: {
+  packageId: string
+  paidAccessListObjectId: string
+}) {
+  return getSoulPaidAccessListObject(params.paidAccessListObjectId, params.packageId)
 }

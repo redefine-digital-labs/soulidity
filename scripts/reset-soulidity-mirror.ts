@@ -2,15 +2,22 @@ import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../src/db/prisma-client.js'
 
-// Soulidity mirror reset.
+// Soulidity mirror reset (phase 2 unified content kind matrix).
 //
 // Wipes every DB row that mirrors on-chain Soulidity state for the current
-// deployment so the web app starts clean against a freshly-published mainnet
-// package. Identity (Member/Account/WalletBinding/WalletChallenge), the news
-// pipeline (RawItem/Article/ArticleCompany/Publication), community
-// (Post/Comment/PostVote/Achievement/MemberAchievement/Skill), starter persona
-// (StarterPersonaAsset), Telegram auth, and desktop device sessions are
-// preserved.
+// deployment so the web app starts clean against a freshly-published
+// package. Identity (Member/Account/WalletBinding/WalletChallenge), the
+// news pipeline (RawItem/Article/ArticleCompany/Publication), community
+// (Post/Comment/PostVote/Achievement/MemberAchievement/Skill), starter
+// persona (StarterPersonaAsset), Telegram auth, and desktop device
+// sessions are preserved.
+//
+// Phase 2 schema: SoulMemoryEntry / SoulSkillVersionRecord /
+// SoulAssetVersionRecord / ContentAccessRecord were dropped by migration
+// `20260504150000_phase2_unified_content` and replaced with
+// SoulContentVersionRecord + SoulPaidAccessKindConfig +
+// SoulPaidAccessEntry. All three new tables FK-cascade from SoulAsset, but
+// we delete them explicitly so the dry-run row counts stay informative.
 //
 // Usage:
 //   npx tsx scripts/reset-soulidity-mirror.ts --dry-run   (default; no writes)
@@ -55,11 +62,10 @@ function printUsage() {
 }
 
 interface ResetCounts {
-  contentAccessRecord: number
-  soulSkillVersionRecord: number
-  soulMemoryEntry: number
+  soulContentVersionRecord: number
+  soulPaidAccessEntry: number
+  soulPaidAccessKindConfig: number
   soulGrantRecord: number
-  soulAssetVersionRecord: number
   bookmark: number
   soulPreparedPurchase: number
   soulUploadBinding: number
@@ -72,11 +78,10 @@ interface ResetCounts {
 
 async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
   const [
-    contentAccessRecord,
-    soulSkillVersionRecord,
-    soulMemoryEntry,
+    soulContentVersionRecord,
+    soulPaidAccessEntry,
+    soulPaidAccessKindConfig,
     soulGrantRecord,
-    soulAssetVersionRecord,
     bookmark,
     soulPreparedPurchase,
     soulUploadBinding,
@@ -86,11 +91,10 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
     soulAsset,
     soulCollectionAsset,
   ] = await Promise.all([
-    prisma.contentAccessRecord.count(),
-    prisma.soulSkillVersionRecord.count(),
-    prisma.soulMemoryEntry.count(),
+    prisma.soulContentVersionRecord.count(),
+    prisma.soulPaidAccessEntry.count(),
+    prisma.soulPaidAccessKindConfig.count(),
     prisma.soulGrantRecord.count(),
-    prisma.soulAssetVersionRecord.count(),
     prisma.bookmark.count(),
     prisma.soulPreparedPurchase.count(),
     prisma.soulUploadBinding.count(),
@@ -102,11 +106,10 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
   ])
 
   return {
-    contentAccessRecord,
-    soulSkillVersionRecord,
-    soulMemoryEntry,
+    soulContentVersionRecord,
+    soulPaidAccessEntry,
+    soulPaidAccessKindConfig,
     soulGrantRecord,
-    soulAssetVersionRecord,
     bookmark,
     soulPreparedPurchase,
     soulUploadBinding,
@@ -120,11 +123,10 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
 
 function printCounts(label: string, counts: ResetCounts) {
   console.log(label)
-  console.log(`  ContentAccessRecord:                    ${counts.contentAccessRecord}`)
-  console.log(`  SoulSkillVersionRecord:                 ${counts.soulSkillVersionRecord}`)
-  console.log(`  SoulMemoryEntry:                        ${counts.soulMemoryEntry}`)
+  console.log(`  SoulContentVersionRecord:               ${counts.soulContentVersionRecord}`)
+  console.log(`  SoulPaidAccessEntry:                    ${counts.soulPaidAccessEntry}`)
+  console.log(`  SoulPaidAccessKindConfig:               ${counts.soulPaidAccessKindConfig}`)
   console.log(`  SoulGrantRecord:                        ${counts.soulGrantRecord}`)
-  console.log(`  SoulAssetVersionRecord:                 ${counts.soulAssetVersionRecord}`)
   console.log(`  Bookmark:                               ${counts.bookmark}`)
   console.log(`  SoulPreparedPurchase:                   ${counts.soulPreparedPurchase}`)
   console.log(`  SoulUploadBinding:                      ${counts.soulUploadBinding}`)
@@ -157,15 +159,17 @@ async function main() {
     }
 
     // Order matters: delete child rows first so FKs do not abort the tx.
+    // SoulContentVersionRecord / SoulPaidAccessEntry / SoulPaidAccessKindConfig /
+    // SoulGrantRecord all FK-cascade from SoulAsset, so the explicit deletes
+    // below are belt-and-braces — they keep dry-run counts honest and avoid
+    // surprise cascade behaviour if a future schema change drops the cascade.
     // The soulAsset.updateMany clears the collection FK so SoulCollectionAsset
-    // can drop without leaving orphaned references; SoulAsset rows are then
-    // dropped, and finally the SoulCollectionAsset rows.
+    // can drop without leaving orphaned references.
     await prisma.$transaction([
-      prisma.contentAccessRecord.deleteMany({}),
-      prisma.soulSkillVersionRecord.deleteMany({}),
-      prisma.soulMemoryEntry.deleteMany({}),
+      prisma.soulContentVersionRecord.deleteMany({}),
+      prisma.soulPaidAccessEntry.deleteMany({}),
+      prisma.soulPaidAccessKindConfig.deleteMany({}),
       prisma.soulGrantRecord.deleteMany({}),
-      prisma.soulAssetVersionRecord.deleteMany({}),
       prisma.bookmark.deleteMany({}),
       prisma.soulPreparedPurchase.deleteMany({}),
       prisma.soulUploadBinding.deleteMany({}),
@@ -184,11 +188,10 @@ async function main() {
     printCounts('\nPost-reset row counts', after)
 
     const residual =
-      after.contentAccessRecord +
-      after.soulSkillVersionRecord +
-      after.soulMemoryEntry +
+      after.soulContentVersionRecord +
+      after.soulPaidAccessEntry +
+      after.soulPaidAccessKindConfig +
       after.soulGrantRecord +
-      after.soulAssetVersionRecord +
       after.bookmark +
       after.soulPreparedPurchase +
       after.soulUploadBinding +

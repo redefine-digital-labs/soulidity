@@ -1,13 +1,21 @@
 import type {
-  AssetType,
   CollectionListingObject,
   SoulCollectionObject,
+  SoulDownloadPolicy,
   SoulGrantObject,
   SoulGrantScope,
   SoulListingObject,
-  SoulMemoryObject,
 } from '@/lib/soulidity/types'
 import { OnChainVerificationError, getTrustedPackageIds, normalizeSuiValue, scopeMaskToScopes } from '@/lib/soulidity/queries'
+
+/**
+ * Phase 2 writer-kind enum mirrored from `content.move`. Phase 1 emitted this
+ * on every `MemoryEntryAppended` event; the Phase 2 `ContentVersionAppended`
+ * struct dropped the field, so this stays here for legacy mirror callers that
+ * still need to label appends. Keep `'owner' | 'granted-agent'` as the
+ * canonical TS form to mirror the on-chain `u8` (0 = owner, 1 = granted_agent).
+ */
+export type SoulWriterKind = 'owner' | 'granted-agent'
 
 type TransactionLike = {
   events?: Array<{ type?: unknown; parsedJson?: unknown }> | null
@@ -222,12 +230,114 @@ function extractAllTypedEvents(
     .filter((value): value is Record<string, unknown> => value !== null)
 }
 
+// ── Helpers shared by multiple parsers ────────────────────────────────
+
+/**
+ * Phase 2 download-policy enum on the wire. Mirrors `content.move`:
+ *   0 = DOWNLOAD_POLICY_PUBLIC
+ *   1 = DOWNLOAD_POLICY_OWNER_ONLY
+ *   2 = DOWNLOAD_POLICY_ALLOWLIST
+ * Anything else is rejected — the chain only ever emits one of these three.
+ */
+function mapDownloadPolicy(value: number, fieldName: string): SoulDownloadPolicy {
+  switch (value) {
+    case 0: return 'public'
+    case 1: return 'owner_only'
+    case 2: return 'allowlist'
+    default:
+      throw new OnChainVerificationError(`${fieldName} has an unsupported value (${value})`)
+  }
+}
+
+/**
+ * Map the on-chain `u8` writer-kind to its TS form. Only used by callers that
+ * still need to label appends (paid-access purchase mirror, legacy logs).
+ * 0 = owner, 1 = granted_agent. Unknown values fall back to `'owner'` because
+ * the contract only emits these two and we'd rather not throw on a future
+ * additive change.
+ */
+export function mapWriterKind(value: number): SoulWriterKind {
+  return value === 1 ? 'granted-agent' : 'owner'
+}
+
+// ── soul.move ─────────────────────────────────────────────────────────
+
+export function extractSoulOwnershipRotatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::soul::SoulOwnershipRotated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulOwnershipRotated event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'SoulOwnershipRotated soul_id'),
+    previousOwnerAddress: readAddress(event.previous_owner, 'SoulOwnershipRotated previous_owner'),
+    newOwnerAddress: readAddress(event.new_owner, 'SoulOwnershipRotated new_owner'),
+    ownershipEpoch: readNumber(event.ownership_epoch, 'SoulOwnershipRotated ownership_epoch'),
+  }
+}
+
+function parseSoulStateConfigUpsertedEvent(event: Record<string, unknown>) {
+  return {
+    stateId: readObjectId(event.state_id, 'SoulStateConfigUpserted state_id'),
+    soulId: readObjectId(event.soul_id, 'SoulStateConfigUpserted soul_id'),
+    updaterAddress: readAddress(event.updater, 'SoulStateConfigUpserted updater'),
+    key: readString(event.key, 'SoulStateConfigUpserted key'),
+  }
+}
+
+export function extractSoulStateConfigUpsertedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::soul::SoulStateConfigUpserted`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulStateConfigUpserted event is missing from the transaction')
+  }
+  return parseSoulStateConfigUpsertedEvent(event)
+}
+
+/**
+ * Extracts every `SoulStateConfigUpserted` event in emission order. Owner-driven
+ * batch config writes (sprite_config_json + voice_config_json + persona tags)
+ * may emit multiple per PTB; mirror routes pair by `key`.
+ */
+export function extractAllSoulStateConfigUpsertedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::soul::SoulStateConfigUpserted`, trustedPackageIds)
+  return events.map(parseSoulStateConfigUpsertedEvent)
+}
+
+export function extractSoulStateConfigDeletedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::soul::SoulStateConfigDeleted`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulStateConfigDeleted event is missing from the transaction')
+  }
+  return {
+    stateId: readObjectId(event.state_id, 'SoulStateConfigDeleted state_id'),
+    soulId: readObjectId(event.soul_id, 'SoulStateConfigDeleted soul_id'),
+    updaterAddress: readAddress(event.updater, 'SoulStateConfigDeleted updater'),
+    key: readString(event.key, 'SoulStateConfigDeleted key'),
+  }
+}
+
+// ── market.move (mint / list / purchase) ──────────────────────────────
+
 function parseSoulMintedToKioskEvent(event: Record<string, unknown>) {
   return {
     soulId: readObjectId(event.soul_id, 'SoulMintedToKiosk soul_id'),
     stateId: readObjectId(event.state_id, 'SoulMintedToKiosk state_id'),
-    memoryId: readObjectId(event.memory_id, 'SoulMintedToKiosk memory_id'),
-    metadataId: readObjectId(event.metadata_id, 'SoulMintedToKiosk metadata_id'),
+    contentId: readObjectId(event.content_id, 'SoulMintedToKiosk content_id'),
     kioskId: readObjectId(event.kiosk_id, 'SoulMintedToKiosk kiosk_id'),
     ownerAddress: readAddress(event.owner, 'SoulMintedToKiosk owner'),
     provenanceKind: readNumber(event.provenance_kind, 'SoulMintedToKiosk provenance_kind'),
@@ -310,46 +420,456 @@ export function extractSoulListingCancelledEvent(transaction: TransactionLike, p
   }
 }
 
-export function extractSoulMetadataMutationEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const candidates = [
-    {
-      type: `${packageId}::metadata::SoulMetadataSpriteUpdated`,
-      label: 'SoulMetadataSpriteUpdated',
-      kind: 'sprite' as const,
-    },
-    {
-      type: `${packageId}::metadata::SoulMetadataVoiceUpdated`,
-      label: 'SoulMetadataVoiceUpdated',
-      kind: 'voice' as const,
-    },
-    {
-      type: `${packageId}::metadata::SoulMetadataBlobUpserted`,
-      label: 'SoulMetadataBlobUpserted',
-      kind: 'blob_upserted' as const,
-    },
-    {
-      type: `${packageId}::metadata::SoulMetadataBlobDeleted`,
-      label: 'SoulMetadataBlobDeleted',
-      kind: 'blob_deleted' as const,
-    },
-  ]
+// ── content.move ──────────────────────────────────────────────────────
 
-  for (const candidate of candidates) {
-    const event = extractTypedEvent(transaction, candidate.type, trustedPackageIds)
-    if (!event) {
-      continue
-    }
-    return {
-      kind: candidate.kind,
-      soulId: readObjectId(event.soul_id, `${candidate.label} soul_id`),
-      metadataId: readObjectId(event.metadata_id, `${candidate.label} metadata_id`),
-      updaterAddress: readAddress(event.updater, `${candidate.label} updater`),
-      key: 'key' in event ? readOptionalString(event.key, `${candidate.label} key`) : null,
-    }
+function parseSoulContentCreatedEvent(event: Record<string, unknown>) {
+  return {
+    contentId: readObjectId(event.content_id, 'SoulContentCreated content_id'),
+    soulId: readObjectId(event.soul_id, 'SoulContentCreated soul_id'),
   }
-
-  throw new OnChainVerificationError('Soul metadata mutation event is missing from the transaction')
 }
+
+export function extractSoulContentCreatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content::SoulContentCreated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulContentCreated event is missing from the transaction')
+  }
+  return parseSoulContentCreatedEvent(event)
+}
+
+/**
+ * Extracts every `SoulContentCreated` event in emission order. Batched mint
+ * PTBs emit one per soul. Caller pairs events to souls by `soulId`.
+ */
+export function extractAllSoulContentCreatedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::content::SoulContentCreated`, trustedPackageIds)
+  return events.map(parseSoulContentCreatedEvent)
+}
+
+function parseContentVersionAppendedEvent(event: Record<string, unknown>) {
+  return {
+    contentId: readObjectId(event.content_id, 'ContentVersionAppended content_id'),
+    soulId: readObjectId(event.soul_id, 'ContentVersionAppended soul_id'),
+    kind: readNumber(event.kind, 'ContentVersionAppended kind'),
+    kindName: readString(event.kind_name, 'ContentVersionAppended kind_name'),
+    name: readString(event.name, 'ContentVersionAppended name'),
+    versionIndex: readNumber(event.version_index, 'ContentVersionAppended version_index'),
+    isPublic: Boolean(event.is_public),
+    downloadPolicy: mapDownloadPolicy(
+      readNumber(event.download_policy, 'ContentVersionAppended download_policy'),
+      'ContentVersionAppended download_policy',
+    ),
+    grantScopeMask: readNumber(event.grant_scope_mask, 'ContentVersionAppended grant_scope_mask'),
+    readModeMask: readNumber(event.read_mode_mask, 'ContentVersionAppended read_mode_mask'),
+    opMask: readNumber(event.op_mask, 'ContentVersionAppended op_mask'),
+    sealEncrypted: Boolean(event.seal_encrypted),
+    blobObjectId: readObjectId(event.blob_object_id, 'ContentVersionAppended blob_object_id'),
+    createdAtMs: readNumber(event.created_at_ms, 'ContentVersionAppended created_at_ms'),
+  }
+}
+
+export function extractContentVersionAppendedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content::ContentVersionAppended`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentVersionAppended event is missing from the transaction')
+  }
+  return parseContentVersionAppendedEvent(event)
+}
+
+export function tryExtractContentVersionAppendedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content::ContentVersionAppended`, trustedPackageIds)
+  if (!event) return null
+  return parseContentVersionAppendedEvent(event)
+}
+
+/**
+ * Extracts every `ContentVersionAppended` event in emission order. Mint PTBs
+ * emit one per `(kind, name)` initial slot (SOUL_DOC v0 + MEMORY v0 + any
+ * persona / skill seeds). Caller pairs events to souls by `soulId` and to
+ * slots by `(kind, name, versionIndex)`.
+ */
+export function extractAllContentVersionAppendedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::content::ContentVersionAppended`, trustedPackageIds)
+  return events.map(parseContentVersionAppendedEvent)
+}
+
+function parseContentVersionDeletedEvent(event: Record<string, unknown>) {
+  return {
+    contentId: readObjectId(event.content_id, 'ContentVersionDeleted content_id'),
+    soulId: readObjectId(event.soul_id, 'ContentVersionDeleted soul_id'),
+    kind: readNumber(event.kind, 'ContentVersionDeleted kind'),
+    kindName: readString(event.kind_name, 'ContentVersionDeleted kind_name'),
+    name: readString(event.name, 'ContentVersionDeleted name'),
+    versionIndex: readNumber(event.version_index, 'ContentVersionDeleted version_index'),
+    deletedByAddress: readAddress(event.deleted_by, 'ContentVersionDeleted deleted_by'),
+  }
+}
+
+export function extractContentVersionDeletedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content::ContentVersionDeleted`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentVersionDeleted event is missing from the transaction')
+  }
+  return parseContentVersionDeletedEvent(event)
+}
+
+export function extractAllContentVersionDeletedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::content::ContentVersionDeleted`, trustedPackageIds)
+  return events.map(parseContentVersionDeletedEvent)
+}
+
+function parseContentVersionPurgedEvent(event: Record<string, unknown>) {
+  return {
+    contentId: readObjectId(event.content_id, 'ContentVersionPurged content_id'),
+    soulId: readObjectId(event.soul_id, 'ContentVersionPurged soul_id'),
+    kind: readNumber(event.kind, 'ContentVersionPurged kind'),
+    kindName: readString(event.kind_name, 'ContentVersionPurged kind_name'),
+    name: readString(event.name, 'ContentVersionPurged name'),
+    versionIndex: readNumber(event.version_index, 'ContentVersionPurged version_index'),
+    purgedByAddress: readAddress(event.purged_by, 'ContentVersionPurged purged_by'),
+  }
+}
+
+export function extractContentVersionPurgedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content::ContentVersionPurged`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ContentVersionPurged event is missing from the transaction')
+  }
+  return parseContentVersionPurgedEvent(event)
+}
+
+export function extractAllContentVersionPurgedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::content::ContentVersionPurged`, trustedPackageIds)
+  return events.map(parseContentVersionPurgedEvent)
+}
+
+/**
+ * Parse the inner `ActiveBinding` struct nested inside `Option<ActiveBinding>`.
+ * Mirrors `content.move::ActiveBinding { kind, name, version_index, download_policy }`.
+ */
+function parseActiveBindingPayload(value: Record<string, unknown>) {
+  // The SDK may unwrap the struct directly or via a `fields` shim.
+  const fields = (() => {
+    const maybeFields = asRecord(value.fields)
+    return maybeFields ?? value
+  })()
+  return {
+    kind: readNumber(fields.kind, 'ActiveBinding kind'),
+    name: readString(fields.name, 'ActiveBinding name'),
+    versionIndex: readNumber(fields.version_index, 'ActiveBinding version_index'),
+    downloadPolicy: mapDownloadPolicy(
+      readNumber(fields.download_policy, 'ActiveBinding download_policy'),
+      'ActiveBinding download_policy',
+    ),
+  }
+}
+
+/**
+ * Read the `Option<ActiveBinding>` payload off an `ActiveBindingUpdated` event.
+ * Returns `null` for `None` (`clear_active`) and the parsed binding for `Some`
+ * (`set_active`). Walks the same Option shapes as `readOptionalBigInt` so the
+ * SDK's varying serialisations all collapse to one path.
+ */
+function readOptionalActiveBinding(value: unknown, fieldName: string) {
+  if (value == null) return null
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null
+    return readOptionalActiveBinding(value[0], fieldName)
+  }
+  const record = asRecord(value)
+  if (!record) {
+    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+  }
+  if (Array.isArray(record.vec)) {
+    return readOptionalActiveBinding(record.vec, fieldName)
+  }
+  if (record.value !== undefined) {
+    return readOptionalActiveBinding(record.value, fieldName)
+  }
+  // Direct struct shape: { kind, name, version_index, download_policy }.
+  if ('kind' in record && 'name' in record && 'version_index' in record && 'download_policy' in record) {
+    return parseActiveBindingPayload(record)
+  }
+  // Wrapped struct shape: { fields: { ... } } — SDK unwraps to fields.
+  if (asRecord(record.fields)) {
+    return parseActiveBindingPayload(record)
+  }
+  throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+}
+
+function parseActiveBindingUpdatedEvent(event: Record<string, unknown>) {
+  return {
+    contentId: readObjectId(event.content_id, 'ActiveBindingUpdated content_id'),
+    soulId: readObjectId(event.soul_id, 'ActiveBindingUpdated soul_id'),
+    kind: readNumber(event.kind, 'ActiveBindingUpdated kind'),
+    kindName: readString(event.kind_name, 'ActiveBindingUpdated kind_name'),
+    binding: readOptionalActiveBinding(event.binding, 'ActiveBindingUpdated binding'),
+    updaterAddress: readAddress(event.updater, 'ActiveBindingUpdated updater'),
+  }
+}
+
+export function extractActiveBindingUpdatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::content::ActiveBindingUpdated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('ActiveBindingUpdated event is missing from the transaction')
+  }
+  return parseActiveBindingUpdatedEvent(event)
+}
+
+export function extractAllActiveBindingUpdatedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::content::ActiveBindingUpdated`, trustedPackageIds)
+  return events.map(parseActiveBindingUpdatedEvent)
+}
+
+// ── paid_access.move ──────────────────────────────────────────────────
+
+function parseSoulPaidAccessListCreatedEvent(event: Record<string, unknown>) {
+  return {
+    paidAccessListId: readObjectId(event.paid_access_list_id, 'SoulPaidAccessListCreated paid_access_list_id'),
+    soulId: readObjectId(event.soul_id, 'SoulPaidAccessListCreated soul_id'),
+    creatorAddress: readAddress(event.creator, 'SoulPaidAccessListCreated creator'),
+  }
+}
+
+export function extractSoulPaidAccessListCreatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::paid_access::SoulPaidAccessListCreated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulPaidAccessListCreated event is missing from the transaction')
+  }
+  return parseSoulPaidAccessListCreatedEvent(event)
+}
+
+export function tryExtractSoulPaidAccessListCreatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::paid_access::SoulPaidAccessListCreated`, trustedPackageIds)
+  if (!event) return null
+  return parseSoulPaidAccessListCreatedEvent(event)
+}
+
+/**
+ * Extracts every `SoulPaidAccessListCreated` event in emission order. Mint
+ * PTBs emit one per soul. Caller pairs events to souls by `soulId`.
+ */
+export function extractAllSoulPaidAccessListCreatedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(
+    transaction,
+    `${packageId}::paid_access::SoulPaidAccessListCreated`,
+    trustedPackageIds,
+  )
+  return events.map(parseSoulPaidAccessListCreatedEvent)
+}
+
+function parseSoulPaidAccessKindConfiguredEvent(event: Record<string, unknown>) {
+  return {
+    soulId: readObjectId(event.soul_id, 'SoulPaidAccessKindConfigured soul_id'),
+    paidAccessListId: readObjectId(
+      event.paid_access_list_id,
+      'SoulPaidAccessKindConfigured paid_access_list_id',
+    ),
+    kind: readNumber(event.kind, 'SoulPaidAccessKindConfigured kind'),
+    priceAtomic: readBigInt(event.price_atomic, 'SoulPaidAccessKindConfigured price_atomic'),
+    scopeMask: readNumber(event.scope_mask, 'SoulPaidAccessKindConfigured scope_mask'),
+    durationMs: readOptionalBigInt(event.duration_ms, 'SoulPaidAccessKindConfigured duration_ms'),
+    ownershipEpochSnapshot: readNumber(
+      event.ownership_epoch_snapshot,
+      'SoulPaidAccessKindConfigured ownership_epoch_snapshot',
+    ),
+  }
+}
+
+export function extractSoulPaidAccessKindConfiguredEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::paid_access::SoulPaidAccessKindConfigured`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulPaidAccessKindConfigured event is missing from the transaction')
+  }
+  return parseSoulPaidAccessKindConfiguredEvent(event)
+}
+
+export function extractAllSoulPaidAccessKindConfiguredEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(
+    transaction,
+    `${packageId}::paid_access::SoulPaidAccessKindConfigured`,
+    trustedPackageIds,
+  )
+  return events.map(parseSoulPaidAccessKindConfiguredEvent)
+}
+
+export function extractSoulPaidAccessKindUpdatedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::paid_access::SoulPaidAccessKindUpdated`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulPaidAccessKindUpdated event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'SoulPaidAccessKindUpdated soul_id'),
+    paidAccessListId: readObjectId(
+      event.paid_access_list_id,
+      'SoulPaidAccessKindUpdated paid_access_list_id',
+    ),
+    kind: readNumber(event.kind, 'SoulPaidAccessKindUpdated kind'),
+    oldPriceAtomic: readBigInt(event.old_price_atomic, 'SoulPaidAccessKindUpdated old_price_atomic'),
+    newPriceAtomic: readBigInt(event.new_price_atomic, 'SoulPaidAccessKindUpdated new_price_atomic'),
+    oldScopeMask: readNumber(event.old_scope_mask, 'SoulPaidAccessKindUpdated old_scope_mask'),
+    newScopeMask: readNumber(event.new_scope_mask, 'SoulPaidAccessKindUpdated new_scope_mask'),
+    oldDurationMs: readOptionalBigInt(event.old_duration_ms, 'SoulPaidAccessKindUpdated old_duration_ms'),
+    newDurationMs: readOptionalBigInt(event.new_duration_ms, 'SoulPaidAccessKindUpdated new_duration_ms'),
+    ownershipEpochSnapshot: readNumber(
+      event.ownership_epoch_snapshot,
+      'SoulPaidAccessKindUpdated ownership_epoch_snapshot',
+    ),
+  }
+}
+
+export function extractSoulPaidAccessKindDeletedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::paid_access::SoulPaidAccessKindDeleted`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulPaidAccessKindDeleted event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'SoulPaidAccessKindDeleted soul_id'),
+    paidAccessListId: readObjectId(
+      event.paid_access_list_id,
+      'SoulPaidAccessKindDeleted paid_access_list_id',
+    ),
+    kind: readNumber(event.kind, 'SoulPaidAccessKindDeleted kind'),
+  }
+}
+
+function parseSoulPaidAccessGrantedEvent(event: Record<string, unknown>) {
+  return {
+    soulId: readObjectId(event.soul_id, 'SoulPaidAccessGranted soul_id'),
+    paidAccessListId: readObjectId(
+      event.paid_access_list_id,
+      'SoulPaidAccessGranted paid_access_list_id',
+    ),
+    granteeAddress: readAddress(event.grantee, 'SoulPaidAccessGranted grantee'),
+    kind: readNumber(event.kind, 'SoulPaidAccessGranted kind'),
+    scopeMask: readNumber(event.scope_mask, 'SoulPaidAccessGranted scope_mask'),
+    pricePaidAtomic: readBigInt(event.price_paid_atomic, 'SoulPaidAccessGranted price_paid_atomic'),
+    expiresAtMs: readOptionalBigInt(event.expires_at_ms, 'SoulPaidAccessGranted expires_at_ms'),
+    ownershipEpochSnapshot: readNumber(
+      event.ownership_epoch_snapshot,
+      'SoulPaidAccessGranted ownership_epoch_snapshot',
+    ),
+  }
+}
+
+export function extractSoulPaidAccessGrantedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::paid_access::SoulPaidAccessGranted`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulPaidAccessGranted event is missing from the transaction')
+  }
+  return parseSoulPaidAccessGrantedEvent(event)
+}
+
+export function extractAllSoulPaidAccessGrantedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(
+    transaction,
+    `${packageId}::paid_access::SoulPaidAccessGranted`,
+    trustedPackageIds,
+  )
+  return events.map(parseSoulPaidAccessGrantedEvent)
+}
+
+export function extractSoulPaidAccessRevokedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(transaction, `${packageId}::paid_access::SoulPaidAccessRevoked`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulPaidAccessRevoked event is missing from the transaction')
+  }
+  return {
+    soulId: readObjectId(event.soul_id, 'SoulPaidAccessRevoked soul_id'),
+    paidAccessListId: readObjectId(
+      event.paid_access_list_id,
+      'SoulPaidAccessRevoked paid_access_list_id',
+    ),
+    granteeAddress: readAddress(event.grantee, 'SoulPaidAccessRevoked grantee'),
+    kind: readNumber(event.kind, 'SoulPaidAccessRevoked kind'),
+  }
+}
+
+// ── collection.move / market.move (collection) ────────────────────────
 
 function parseSoulAddedToCollectionEvent(event: Record<string, unknown>) {
   return {
@@ -465,6 +985,8 @@ export function extractCollectionListingCancelledEvent(transaction: TransactionL
   }
 }
 
+// ── grant.move ────────────────────────────────────────────────────────
+
 export function extractSoulGrantIssuedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
   const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantIssued`, trustedPackageIds)
   if (!event) {
@@ -521,357 +1043,6 @@ export function extractSoulGrantExpiredEvent(transaction: TransactionLike, packa
   }
 }
 
-export function extractSoulMemoryCreatedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::memory::SoulMemoryCreated`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('SoulMemoryCreated event is missing from the transaction')
-  }
-  return {
-    memoryId: readObjectId(event.memory_id, 'SoulMemoryCreated memory_id'),
-    soulId: readObjectId(event.soul_id, 'SoulMemoryCreated soul_id'),
-  }
-}
-
-export function extractMemoryEntryAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::memory::MemoryEntryAppended`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('MemoryEntryAppended event is missing from the transaction')
-  }
-  return {
-    memoryId: readObjectId(event.memory_id, 'MemoryEntryAppended memory_id'),
-    soulId: readObjectId(event.soul_id, 'MemoryEntryAppended soul_id'),
-    timestampKey: readNumber(event.timestamp_key, 'MemoryEntryAppended timestamp_key'),
-    writerAddress: readAddress(event.writer, 'MemoryEntryAppended writer'),
-    writerKind: readNumber(event.writer_kind, 'MemoryEntryAppended writer_kind'),
-    createdAtMs: readNumber(event.created_at_ms, 'MemoryEntryAppended created_at_ms'),
-    blobObjectId: readObjectId(event.blob_object_id, 'MemoryEntryAppended blob_object_id'),
-  }
-}
-
-export function tryExtractMemoryEntryAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::memory::MemoryEntryAppended`, trustedPackageIds)
-  if (!event) return null
-  return parseMemoryEntryAppendedEvent(event)
-}
-
-function parseMemoryEntryAppendedEvent(event: Record<string, unknown>) {
-  return {
-    memoryId: readObjectId(event.memory_id, 'MemoryEntryAppended memory_id'),
-    soulId: readObjectId(event.soul_id, 'MemoryEntryAppended soul_id'),
-    timestampKey: readNumber(event.timestamp_key, 'MemoryEntryAppended timestamp_key'),
-    writerAddress: readAddress(event.writer, 'MemoryEntryAppended writer'),
-    writerKind: readNumber(event.writer_kind, 'MemoryEntryAppended writer_kind'),
-    createdAtMs: readNumber(event.created_at_ms, 'MemoryEntryAppended created_at_ms'),
-    blobObjectId: readObjectId(event.blob_object_id, 'MemoryEntryAppended blob_object_id'),
-  }
-}
-
-/**
- * Extracts every `MemoryEntryAppended` event in emission order. Batched mint
- * PTBs emit one per soul (founding memory). Caller pairs events to souls by
- * `soulId`.
- */
-export function extractAllMemoryEntryAppendedEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const events = extractAllTypedEvents(transaction, `${packageId}::memory::MemoryEntryAppended`, trustedPackageIds)
-  return events.map(parseMemoryEntryAppendedEvent)
-}
-
-export function extractSkillVersionAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::skills::SkillVersionAppended`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('SkillVersionAppended event is missing from the transaction')
-  }
-  return {
-    skillsId: readObjectId(event.skills_id, 'SkillVersionAppended skills_id'),
-    soulId: readObjectId(event.soul_id, 'SkillVersionAppended soul_id'),
-    skillName: readString(event.skill_name, 'SkillVersionAppended skill_name'),
-    versionIndex: readNumber(event.version_index, 'SkillVersionAppended version_index'),
-    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
-    createdAtMs: readNumber(event.created_at_ms, 'SkillVersionAppended created_at_ms'),
-    blobObjectId: readObjectId(event.blob_object_id, 'SkillVersionAppended blob_object_id'),
-  }
-}
-
-function parseSkillVersionAppendedEvent(event: Record<string, unknown>) {
-  return {
-    skillsId: readObjectId(event.skills_id, 'SkillVersionAppended skills_id'),
-    soulId: readObjectId(event.soul_id, 'SkillVersionAppended soul_id'),
-    skillName: readString(event.skill_name, 'SkillVersionAppended skill_name'),
-    versionIndex: readNumber(event.version_index, 'SkillVersionAppended version_index'),
-    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
-    createdAtMs: readNumber(event.created_at_ms, 'SkillVersionAppended created_at_ms'),
-    blobObjectId: readObjectId(event.blob_object_id, 'SkillVersionAppended blob_object_id'),
-  }
-}
-
-export function tryExtractSkillVersionAppendedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::skills::SkillVersionAppended`, trustedPackageIds)
-  if (!event) return null
-  return parseSkillVersionAppendedEvent(event)
-}
-
-/**
- * Extracts every `SkillVersionAppended` event in emission order. Batched
- * mint PTBs emit zero-or-one per soul (only souls minted with a skills
- * blob produce an entry). Caller pairs events to souls by `soulId`.
- */
-export function extractAllSkillVersionAppendedEvents(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const events = extractAllTypedEvents(transaction, `${packageId}::skills::SkillVersionAppended`, trustedPackageIds)
-  return events.map(parseSkillVersionAppendedEvent)
-}
-
-function mapAssetType(value: number): AssetType {
-  switch (value) {
-    case 0: return 'sprite'
-    case 1: return 'live2d'
-    case 2: return 'audio'
-    default: return 'sprite'
-  }
-}
-
-function parseAssetVersionAppendedEvent(event: Record<string, unknown>) {
-  return {
-    assetsId: readObjectId(event.assets_id, 'AssetVersionAppended assets_id'),
-    soulId: readObjectId(event.soul_id, 'AssetVersionAppended soul_id'),
-    assetName: readString(event.asset_name, 'AssetVersionAppended asset_name'),
-    versionIndex: readNumber(event.version_index, 'AssetVersionAppended version_index'),
-    visibility: Boolean(event.is_public) ? 'public' as const : 'private' as const,
-    assetType: mapAssetType(readNumber(event.asset_type, 'AssetVersionAppended asset_type')),
-    createdAtMs: readNumber(event.created_at_ms, 'AssetVersionAppended created_at_ms'),
-    blobObjectId: readObjectId(event.blob_object_id, 'AssetVersionAppended blob_object_id'),
-  }
-}
-
-export function extractAssetVersionAppendedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::assets::AssetVersionAppended`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('AssetVersionAppended event is missing from the transaction')
-  }
-  return parseAssetVersionAppendedEvent(event)
-}
-
-export function extractAllAssetVersionAppendedEvents(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const events = extractAllTypedEvents(transaction, `${packageId}::assets::AssetVersionAppended`, trustedPackageIds)
-  return events.map(parseAssetVersionAppendedEvent)
-}
-
-export function tryExtractAssetVersionAppendedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::assets::AssetVersionAppended`, trustedPackageIds)
-  if (!event) return null
-  return parseAssetVersionAppendedEvent(event)
-}
-
-export function extractAssetVersionDeletedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::assets::AssetVersionDeleted`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('AssetVersionDeleted event is missing from the transaction')
-  }
-  return {
-    assetsId: readObjectId(event.assets_id, 'AssetVersionDeleted assets_id'),
-    soulId: readObjectId(event.soul_id, 'AssetVersionDeleted soul_id'),
-    assetName: readString(event.asset_name, 'AssetVersionDeleted asset_name'),
-    versionIndex: readNumber(event.version_index, 'AssetVersionDeleted version_index'),
-    deletedBy: readObjectId(event.deleted_by, 'AssetVersionDeleted deleted_by'),
-  }
-}
-
-function parseContentAccessListCreatedEvent(event: Record<string, unknown>) {
-  return {
-    accessListId: readObjectId(event.access_list_id, 'ContentAccessListCreated access_list_id'),
-    soulId: readObjectId(event.soul_id, 'ContentAccessListCreated soul_id'),
-    creator: readAddress(event.creator, 'ContentAccessListCreated creator'),
-    priceAtomic: readNumber(event.price_atomic, 'ContentAccessListCreated price_atomic'),
-    defaultScopeMask: readNumber(event.default_scope_mask, 'ContentAccessListCreated default_scope_mask'),
-    defaultAccessDurationMs: readOptionalNumber(
-      event.default_access_duration_ms,
-      'ContentAccessListCreated default_access_duration_ms',
-    ),
-  }
-}
-
-export function extractContentAccessListCreatedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessListCreated`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('ContentAccessListCreated event is missing from the transaction')
-  }
-  return parseContentAccessListCreatedEvent(event)
-}
-
-export function tryExtractContentAccessListCreatedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessListCreated`, trustedPackageIds)
-  if (!event) return null
-  return parseContentAccessListCreatedEvent(event)
-}
-
-/**
- * Extracts every `ContentAccessListCreated` event in emission order. Batched
- * mint PTBs emit one per soul (mint_native_in_personal_kiosk creates one
- * ContentAccessList per soul). Caller pairs events to souls by `soulId`.
- */
-export function extractAllContentAccessListCreatedEvents(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const events = extractAllTypedEvents(
-    transaction,
-    `${packageId}::content_access::ContentAccessListCreated`,
-    trustedPackageIds,
-  )
-  return events.map(parseContentAccessListCreatedEvent)
-}
-
-export function extractContentAccessGrantedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessGranted`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('ContentAccessGranted event is missing from the transaction')
-  }
-  return {
-    soulId: readObjectId(event.soul_id, 'ContentAccessGranted soul_id'),
-    accessListId: readObjectId(event.access_list_id, 'ContentAccessGranted access_list_id'),
-    grantee: readAddress(event.grantee, 'ContentAccessGranted grantee'),
-    scopeMask: readNumber(event.scope_mask, 'ContentAccessGranted scope_mask'),
-    pricePaidAtomic: readNumber(event.price_paid_atomic, 'ContentAccessGranted price_paid_atomic'),
-    expiresAtMs: readOptionalNumber(event.expires_at_ms, 'ContentAccessGranted expires_at_ms'),
-    ownershipEpochSnapshot: readNumber(
-      event.ownership_epoch_snapshot,
-      'ContentAccessGranted ownership_epoch_snapshot',
-    ),
-  }
-}
-
-/**
- * Find the ContentAccessGranted event that matches a specific access_list_id and grantee.
- * Used by the purchase mirror route to pair the grant event with the purchase event
- * in multi-call PTBs where multiple ContentAccessGranted events may exist.
- */
-export function extractMatchedContentAccessGrantedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  matchAccessListId: string,
-  matchGrantee: string,
-  trustedPackageIds?: string[],
-) {
-  const type = `${packageId}::content_access::ContentAccessGranted`
-  const suffix = type.replace(/^0x[0-9a-fA-F]+/, '')
-  const trustedPackages = getTrustedPackageIds(...(trustedPackageIds ?? []))
-
-  const candidates = (transaction.events ?? []).filter((item) => {
-    if (item?.type === type) return true
-    if (typeof item?.type !== 'string' || !item.type.endsWith(suffix)) return false
-    if (trustedPackages.length === 0) return false
-    const fallbackPackageId = readPackageIdFromType(item.type)
-    return fallbackPackageId ? trustedPackages.includes(fallbackPackageId) : false
-  })
-
-  for (const candidate of candidates) {
-    const parsed = asRecord(candidate.parsedJson)
-    if (!parsed) continue
-    try {
-      const accessListId = readObjectId(parsed.access_list_id, 'ContentAccessGranted access_list_id')
-      const grantee = readAddress(parsed.grantee, 'ContentAccessGranted grantee')
-      if (accessListId === matchAccessListId && grantee === matchGrantee) {
-        return {
-          soulId: readObjectId(parsed.soul_id, 'ContentAccessGranted soul_id'),
-          accessListId,
-          grantee,
-          scopeMask: readNumber(parsed.scope_mask, 'ContentAccessGranted scope_mask'),
-          pricePaidAtomic: readNumber(parsed.price_paid_atomic, 'ContentAccessGranted price_paid_atomic'),
-          expiresAtMs: readOptionalNumber(parsed.expires_at_ms, 'ContentAccessGranted expires_at_ms'),
-          ownershipEpochSnapshot: readNumber(
-            parsed.ownership_epoch_snapshot,
-            'ContentAccessGranted ownership_epoch_snapshot',
-          ),
-        }
-      }
-    } catch {
-      continue
-    }
-  }
-
-  throw new OnChainVerificationError('No ContentAccessGranted event matches the purchase (access_list_id + grantee)')
-}
-
-export function extractContentAccessRevokedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::content_access::ContentAccessRevoked`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('ContentAccessRevoked event is missing from the transaction')
-  }
-  return {
-    soulId: readObjectId(event.soul_id, 'ContentAccessRevoked soul_id'),
-    accessListId: readObjectId(event.access_list_id, 'ContentAccessRevoked access_list_id'),
-    grantee: readAddress(event.grantee, 'ContentAccessRevoked grantee'),
-  }
-}
-
-export function extractContentAccessPurchasedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::market::ContentAccessPurchased`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('ContentAccessPurchased event is missing from the transaction')
-  }
-  return {
-    soulId: readObjectId(event.soul_id, 'ContentAccessPurchased soul_id'),
-    accessListId: readObjectId(event.access_list_id, 'ContentAccessPurchased access_list_id'),
-    buyer: readAddress(event.buyer, 'ContentAccessPurchased buyer'),
-    priceAtomic: readBigInt(event.price, 'ContentAccessPurchased price'),
-    platformFeeAtomic: readBigInt(event.platform_fee, 'ContentAccessPurchased platform_fee'),
-    paymentRecipient: readAddress(event.payment_recipient, 'ContentAccessPurchased payment_recipient'),
-  }
-}
-
-export function tryExtractContentAccessPurchasedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(transaction, `${packageId}::market::ContentAccessPurchased`, trustedPackageIds)
-  if (!event) return null
-  return {
-    soulId: readObjectId(event.soul_id, 'ContentAccessPurchased soul_id'),
-    accessListId: readObjectId(event.access_list_id, 'ContentAccessPurchased access_list_id'),
-    buyer: readAddress(event.buyer, 'ContentAccessPurchased buyer'),
-    priceAtomic: readBigInt(event.price, 'ContentAccessPurchased price'),
-    platformFeeAtomic: readBigInt(event.platform_fee, 'ContentAccessPurchased platform_fee'),
-    paymentRecipient: readAddress(event.payment_recipient, 'ContentAccessPurchased payment_recipient'),
-  }
-}
-
 export function extractGrantCapacityUpdatedEvent(
   transaction: TransactionLike,
   packageId: string,
@@ -902,19 +1073,7 @@ export function tryExtractGrantCapacityUpdatedEvent(
   }
 }
 
-export function extractSkillVersionDeletedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::skills::SkillVersionDeleted`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('SkillVersionDeleted event is missing from the transaction')
-  }
-  return {
-    skillsId: readObjectId(event.skills_id, 'SkillVersionDeleted skills_id'),
-    soulId: readObjectId(event.soul_id, 'SkillVersionDeleted soul_id'),
-    skillName: readString(event.skill_name, 'SkillVersionDeleted skill_name'),
-    versionIndex: readNumber(event.version_index, 'SkillVersionDeleted version_index'),
-    deletedByAddress: readAddress(event.deleted_by, 'SkillVersionDeleted deleted_by'),
-  }
-}
+// ── Helpers (unchanged) ───────────────────────────────────────────────
 
 export function deriveCollectionRoyaltyBps(collection: SoulCollectionObject | null, listing: SoulListingObject) {
   if (!collection || !listing.collectionId) return 0
