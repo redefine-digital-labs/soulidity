@@ -3,7 +3,6 @@ import type { Bot } from 'grammy'
 import type { PrismaClient } from './db/database.js'
 import { expireOldRawItems } from './db/database.js'
 import { runCollectors } from './collector/run.js'
-import { collectRss } from './collector/rss.js'
 import { collectGithub } from './collector/github.js'
 import { collectX } from './collector/x.js'
 import { runDedup } from './producer/dedup.js'
@@ -46,15 +45,6 @@ async function runCronJob(
 
 export function startScheduler(prisma: PrismaClient, llm: LLMAdapter | undefined, bot?: Bot) {
   let producing = false
-
-  cron.schedule('0 * * * *', () =>
-    runCronJob('rss_collection', async () => {
-      log.info(`[${new Date().toISOString()}] Running RSS collection...`)
-      const result = await runCollectors(prisma, [collectRss])
-      log.info(`RSS: fetched ${result.total}, inserted ${result.inserted}, filtered ${result.filtered}`)
-      return { total: result.total, inserted: result.inserted, filtered: result.filtered }
-    }),
-  )
 
   cron.schedule('0 6 * * *', () =>
     runCronJob('github_collection', async () => {
@@ -153,7 +143,6 @@ export function startScheduler(prisma: PrismaClient, llm: LLMAdapter | undefined
   )
 
   log.info('Scheduler started. Cron jobs:')
-  log.info('  RSS collection:      every hour at :00')
   log.info('  GitHub collection:   daily at 06:00')
   log.info('  X collection:        every 30 minutes')
   log.info('  Dedup + Produce:     every hour at :25')

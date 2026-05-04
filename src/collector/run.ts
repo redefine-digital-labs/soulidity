@@ -1,5 +1,4 @@
 import type { PrismaClient } from '../db/database.js'
-import { collectRss } from './rss.js'
 import { collectGithub } from './github.js'
 import { scoreItem } from './score.js'
 import { isDuplicate } from './dedup.js'
@@ -78,7 +77,7 @@ if (process.argv[1]?.endsWith('run.ts') || process.argv[1]?.endsWith('run.js')) 
       }
     } else {
       log.info('Running collectors...')
-      const result = await runCollectors(prisma, [collectRss, collectGithub])
+      const result = await runCollectors(prisma, [collectGithub])
       log.info(`Done. Fetched ${result.total} items, inserted ${result.inserted} new, filtered ${result.filtered}, skipped ${result.skipped} duplicates.`)
     }
   } finally {
