@@ -1,0 +1,29 @@
+{
+  "testnet": {
+    "packageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "marketConfigId": "0x252255abd42007f0a2b3fad596c7b0705f19979436ed043fb24f2047050827fe",
+    "kioskRegistryId": "0xec8c87496f40c640411f8b4b0ee76d5b171de4fcf5aa49062ba7db4c1a15e30c",
+    "soulTransferPolicyId": "0x5e5711e21db5e445c03a59154bcb1fd889efc111cd42180f28c7a3adbe9ae92f",
+    "collectionTransferPolicyId": "0x97bf30a371ab12bd3184357cb69dd0ec8c1503ab730390166c4279173a8851db",
+    "paymentCoinType": "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC",
+    "publishTxDigest": "HKenfarHCL6jnrqS2CosAkVNc7zBTTVXfpby5RB62i7r",
+    "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b"
+  },
+  "mainnet": {
+    "packageId": "0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0",
+    "marketConfigId": "0xe6214eaba8afa4c9191a602b78bfc0658ce1e188625f986dc6768d40f4d7dbb5",
+    "kioskRegistryId": "0x8063dbb7cc35b136355a329a7d54ae3258ee8b30473d86a925d3390f7b9a32e4",
+    "kindRegistryId": "0x27f249c5fe0ff056f4d5bc1473e10621966e646faf29de89200d9b612e6b9880",
+    "soulTransferPolicyId": "0xaf28f957b4f30bfd73c00bff61cc3cb8d54be25ca1a0f03aa8aad15e06e476c4",
+    "collectionTransferPolicyId": "0xaeee89fa0d39d43f7cbd402ec13a618a06222ff40792e8edc6c627cadfc0def0",
+    "paymentCoinType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+    "publishTxDigest": "BuBAX27guhWwvUM5y9PGUnMi77C3ttSdRG95p1eGhxmS",
+    "upgradeCapId": "0xca2ff2940a628e5d15e7d452604aa0a2777ed147febe012280b54feced1dc701",
+    "marketAdminCapId": "0x1a68b6e897b9c76377e895545c2d54f777820bf8b844748718ec9e242aae2446",
+    "kindAdminCapId": "0x4119e53eac9c6b53739e2a0727c601923dc89f545241dbffe9f7aa4c1e6b2fe0",
+    "soulPolicyCapId": "0xc4923f86bb28e8a9839898fa387a5af16cfaf0f4bb9b439f5a871282f8701cc8",
+    "collectionPolicyCapId": "0x1aa2e82267d865eeb08d4b0b9aeee3e223cab73e05598a4a6f0c5e8d63754b19",
+    "soulDisplayId": "0x5dd035eac005605c44f10eda57fcef3e2de4407f714d43ea4a931998c6918e93",
+    "collectionDisplayId": "0x0d21ab049f684a37f8f898d7ccabc4976426ad8c76234f194c0a03705728ed82"
+  }
+}

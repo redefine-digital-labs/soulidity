@@ -39,6 +39,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactCompiler: true,
   serverExternalPackages: ['@prisma/client'],
+  transpilePackages: ['@soulidity/sdk'],
   compiler: {
     removeConsole:
       process.env.NODE_ENV === 'production'

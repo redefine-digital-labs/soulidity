@@ -1,10 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import type { SoulAssetDetail } from '@/lib/soulidity/types'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import { buildBuySoulTx } from '@/lib/soulidity/tx/buy'
+import type { SoulAssetDetail } from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { assertObjectInputsExist } from '@soulidity/sdk'
+import { buildBuySoulTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 

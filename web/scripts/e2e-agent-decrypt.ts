@@ -1,16 +1,19 @@
 /**
- * E2E Test: Agent Seal Decrypt via Soulidity Grant system
+ * E2E Test: Agent Seal Decrypt via Soulidity unified content access.
  *
- * 1. GET /api/agent/souls/{id}/access → Seal access payload
+ * 1. GET /api/agent/souls/{id}/access → ContentAccessResponse (sealed)
  * 2. Download encrypted blob from Walrus
- * 3. Build Soulidity seal_approve TX (seal_approve_owner or seal_approve_granted_agent)
+ * 3. Build Soulidity `seal_approve_content_*` PTB matching the response's
+ *    `accessPolicy.functionName` (owner / granted_agent / public / paid_access)
  * 4. Create SealClient + SessionKey, sign with agent keypair
  * 5. Decrypt DEK via Seal, then AES-GCM decrypt the blob
  * 6. SHA-256 verify decrypted content
  *
- * Soulidity seal_policy entry functions:
- *   seal_approve_owner(id: vector<u8>, state: &SoulState, soul_id: ID, ctx)
- *   seal_approve_granted_agent(id: vector<u8>, state: &SoulState, soul_id: ID, grant: &SoulGrant, clock: &Clock, ctx)
+ * Phase 2 unified content seal entry signatures:
+ *   content::seal_approve_content_owner(id, state, content, kind, name, version_index, ctx)
+ *   content::seal_approve_content_granted_agent(id, state, content, soul_grant, kind, name, version_index, clock, ctx)
+ *   content::seal_approve_content_public(id, state, content, kind, name, version_index, ctx)
+ *   paid_access::seal_approve_content_paid_access(id, state, paid_access_list, content, kind, name, version_index, clock, ctx)
  *
  * Usage:
  *   AGENT_MNEMONIC="..." AGENT_API_KEY="sk-..." SOUL_ID="..." \
@@ -88,49 +91,93 @@ function parseSidecar(value: unknown): SealSidecar {
   }
 }
 
-// --- Build Seal approval TX for Soulidity functions ---
+// --- Build Seal approval TX for Soulidity unified content functions ---
+
+const SUI_CLOCK_OBJECT_ID = '0x6'
+
+type SealApprovalFunctionName =
+  | 'seal_approve_content_owner'
+  | 'seal_approve_content_granted_agent'
+  | 'seal_approve_content_public'
+  | 'seal_approve_content_paid_access'
 
 interface AccessPolicy {
   packageId: string
-  soulObjectId: string
   stateObjectId: string
-  moduleName: string
-  functionName: string
+  contentObjectId: string
+  kind: number
+  name: string
+  versionIndex: number
+  moduleName: 'content' | 'paid_access'
+  functionName: SealApprovalFunctionName
   soulGrantObjectId: string | null
+  paidAccessListOnChainId: string | null
+  documentIdHex: string
 }
 
 function buildSealApprovalTx(accessPolicy: AccessPolicy, documentId: string): Transaction {
   const tx = new Transaction()
   const target = `${accessPolicy.packageId}::${accessPolicy.moduleName}::${accessPolicy.functionName}`
   const docIdArg = tx.pure.vector('u8', Array.from(hexToBytes(documentId)))
+  const stateArg = tx.object(accessPolicy.stateObjectId)
+  const contentArg = tx.object(accessPolicy.contentObjectId)
+  const kindArg = tx.pure.u32(accessPolicy.kind)
+  const nameArg = tx.pure.string(accessPolicy.name)
+  const versionArg = tx.pure.u64(BigInt(accessPolicy.versionIndex))
 
-  if (accessPolicy.functionName === 'seal_approve_owner') {
-    // seal_approve_owner(id, state, soul_id, ctx)
-    tx.moveCall({
-      target,
-      arguments: [
-        docIdArg,
-        tx.object(accessPolicy.stateObjectId),
-        tx.pure.id(accessPolicy.soulObjectId),
-      ],
-    })
-  } else if (accessPolicy.functionName === 'seal_approve_granted_agent') {
-    // seal_approve_granted_agent(id, state, soul_id, grant, clock, ctx)
-    if (!accessPolicy.soulGrantObjectId) {
-      throw new Error('soulGrantObjectId is required for seal_approve_granted_agent')
+  switch (accessPolicy.functionName) {
+    case 'seal_approve_content_owner':
+      tx.moveCall({
+        target,
+        arguments: [docIdArg, stateArg, contentArg, kindArg, nameArg, versionArg],
+      })
+      break
+    case 'seal_approve_content_granted_agent':
+      if (!accessPolicy.soulGrantObjectId) {
+        throw new Error('soulGrantObjectId is required for seal_approve_content_granted_agent')
+      }
+      tx.moveCall({
+        target,
+        arguments: [
+          docIdArg,
+          stateArg,
+          contentArg,
+          tx.object(accessPolicy.soulGrantObjectId),
+          kindArg,
+          nameArg,
+          versionArg,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+        ],
+      })
+      break
+    case 'seal_approve_content_public':
+      tx.moveCall({
+        target,
+        arguments: [docIdArg, stateArg, contentArg, kindArg, nameArg, versionArg],
+      })
+      break
+    case 'seal_approve_content_paid_access':
+      if (!accessPolicy.paidAccessListOnChainId) {
+        throw new Error('paidAccessListOnChainId is required for seal_approve_content_paid_access')
+      }
+      tx.moveCall({
+        target,
+        arguments: [
+          docIdArg,
+          stateArg,
+          tx.object(accessPolicy.paidAccessListOnChainId),
+          contentArg,
+          kindArg,
+          nameArg,
+          versionArg,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+        ],
+      })
+      break
+    default: {
+      const exhaustive: never = accessPolicy.functionName
+      throw new Error(`Unknown Seal approval function: ${exhaustive as string}`)
     }
-    tx.moveCall({
-      target,
-      arguments: [
-        docIdArg,
-        tx.object(accessPolicy.stateObjectId),
-        tx.pure.id(accessPolicy.soulObjectId),
-        tx.object(accessPolicy.soulGrantObjectId),
-        tx.object('0x6'), // Clock object
-      ],
-    })
-  } else {
-    throw new Error(`Unknown Seal approval function: ${accessPolicy.functionName}`)
   }
 
   return tx

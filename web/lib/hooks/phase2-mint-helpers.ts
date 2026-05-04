@@ -22,17 +22,17 @@ import {
   READ_GRANT,
   READ_OWNER,
   READ_PUBLIC,
-} from '@/lib/soulidity/kinds'
-import type { InitialContentEntryInput, StateConfigEntryInput } from '@/lib/soulidity/tx/shared'
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
-import { generateContentDocumentIdBytes } from '@/lib/soulidity/content-document-id'
+} from '@soulidity/sdk'
+import type { InitialContentEntryInput, StateConfigEntryInput } from '@soulidity/sdk'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
+import { generateContentDocumentIdBytes } from '@soulidity/sdk'
 import {
   base64ToBytes,
   bytesToBase64,
   createBrowserSealClient,
   type PendingSealMaterial,
 } from '@/lib/upload/client-seal'
-import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
+import type { SoulDownloadPolicy } from '@soulidity/sdk'
 
 const DEK_BYTES = 32
 const IV_BYTES = 12

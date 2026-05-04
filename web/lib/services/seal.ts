@@ -8,8 +8,8 @@ import {
   type SealCompatibleClient,
 } from '@mysten/seal'
 import type { Signer } from '@mysten/sui/cryptography'
-import { suiClient } from '@/lib/sui'
-import { getSoulidityDeployment } from '@/lib/soulidity/deployment'
+import { suiClient } from '@soulidity/sdk'
+import { getSoulidityDeployment } from '@soulidity/sdk'
 
 const DEFAULT_TESTNET_SEAL_SERVER_CONFIGS: KeyServerConfig[] = [
   {

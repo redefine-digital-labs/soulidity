@@ -14,9 +14,9 @@ import { FilterTabs } from '@/components/nav/filter-tabs'
 import { buttonStyles } from '@/components/ui/button'
 import { GrantModal } from '@/components/souls/grant-modal'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
 import { CollectionSection } from '@/components/collections/collection-section'
-import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulGrantStatus, SoulAssetSummary } from '@/lib/soulidity/types'
+import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulGrantStatus, SoulAssetSummary } from '@soulidity/sdk'
 
 const tabs = [
   { id: 'owned', label: 'Owned' },

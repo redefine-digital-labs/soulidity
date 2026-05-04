@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
-import type { WalrusUploadQuote } from '@/lib/upload/walrus-quote'
+import type { WalrusUploadQuote } from '@soulidity/sdk'
 
 interface UploadCostReviewContextValue {
   requestUploadCostApproval: (quote: WalrusUploadQuote) => Promise<boolean>

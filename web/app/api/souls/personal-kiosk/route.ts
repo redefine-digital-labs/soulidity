@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { takeBestEffortRateLimitToken } from '@/lib/rate-limit'
-import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@/lib/soulidity/personal-kiosk'
+import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@soulidity/sdk'
 import { requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'

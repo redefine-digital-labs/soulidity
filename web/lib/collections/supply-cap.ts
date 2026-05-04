@@ -1,4 +1,4 @@
-import { MAX_COLLECTION_SUPPLY } from '@/lib/soulidity/tx/shared'
+import { MAX_COLLECTION_SUPPLY } from '@soulidity/sdk'
 
 export const COLLECTION_SUPPLY_CAP_ERROR =
   `Must be an integer between 1 and ${MAX_COLLECTION_SUPPLY.toLocaleString()}`

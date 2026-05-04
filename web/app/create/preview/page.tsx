@@ -9,7 +9,7 @@ import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
-import { validateListingPriceAtomic } from '@/lib/soulidity/listing-price'
+import { validateListingPriceAtomic } from '@soulidity/sdk'
 
 const steps = [
   { label: 'Basic Info' },

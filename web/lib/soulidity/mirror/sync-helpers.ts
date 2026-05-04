@@ -6,7 +6,7 @@
  *      if needed) via this layer.
  *   2. Pass extracted event data to the appropriate `upsert*` writer.
  */
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
 import {
   endActiveSoulGrantProjections,
   endSoulGrantProjection,
@@ -35,9 +35,9 @@ import {
   getSoulPaidAccessListObject,
   getSoulStateObject,
   listOwnedPersonalKioskCaps,
-} from '@/lib/soulidity/queries'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
+} from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import type { SoulDownloadPolicy } from '@soulidity/sdk'
 
 interface ActiveBindingMirror {
   name: string

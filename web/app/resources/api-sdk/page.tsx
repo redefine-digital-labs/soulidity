@@ -30,12 +30,14 @@ export default function ApiSdkPage() {
             ['GET', '/api/souls/my', 'List souls owned by the authenticated user.'],
             ['GET', '/api/souls/tags', 'List popular soul tags with counts.'],
             ['GET', '/api/souls/[id]', 'Get soul detail by on-chain object ID or DB slug.'],
-            ['POST', '/api/souls/publish', 'Mirror a publish TX. Body: txDigest + client-built Seal sidecar object(s). Returns soul + state mirror.'],
-            ['POST', '/api/souls/[id]/metadata', 'Mirror a SoulMetadata binding/blob mutation TX and refresh the mirrored metadata projection.'],
             ['GET', '/api/souls/personal-kiosk', 'Resolve the personal kiosk for the authenticated user\'s wallet.'],
+            ['POST', '/api/souls/publish', 'Mirror a publish TX. Body: txDigest + client-built Seal sidecar object(s). Returns soul + state mirror.'],
+            ['POST', '/api/souls/[id]/list', 'Mirror a fixed-price list TX (atomic USDC).'],
+            ['POST', '/api/souls/[id]/delist', 'Mirror a cancel-listing TX.'],
+            ['POST', '/api/souls/[id]/purchase', 'Mirror a buy TX (kiosk transfer + fee split).'],
             ['POST', '/api/souls/[id]/grant', 'Mirror a grant issue/revoke TX. See SoulGrant API docs.'],
-            ['GET', '/api/souls/[id]/memory/[entryKey]/access', 'Resolve Seal access params for a memory entry.'],
-            ['GET', '/api/souls/[id]/skills/[skillName]/versions/[versionIndex]/access', 'Resolve Seal access params for a private skill version.'],
+            ['POST', '/api/souls/[id]/grant-capacity', 'Mirror a grant-capacity adjustment TX.'],
+            ['GET', '/api/souls/[id]/access', 'Unified Seal access resolution for any SoulContent kind / name / version (default = SOUL_DOC). Replaces phase 1 metadata / memory / skills / assets routes.'],
           ].map(([method, path, desc]) => (
             <div key={path} className="text-sm">
               <div className="flex items-start gap-2 mb-0.5">
@@ -91,23 +93,26 @@ Authorization: Bearer snk_...`}</code>
             </thead>
             <tbody className="text-muted">
               {[
-                ['types.ts', 'All shared TypeScript types: SoulObject, SoulStateObject, SoulGrantScope, access response shapes, etc.'],
-                ['queries.ts', 'On-chain read helpers: getSoulStateObject, getSoulGrantObject, getSuccessfulTransactionBlock.'],
-                ['access.ts', 'resolveSoulAccessPayload — owner vs granted-agent Seal access resolution for Soul content.'],
-                ['memory-access.ts', 'resolveMemoryAccessPayload — same pattern for memory entry access.'],
-                ['skill-access.ts', 'fetchSkillAccess + loadDecryptedPrivateSkillVersion — full client-side decryption flow for private skills.'],
-                ['events.ts', 'extractSoulGrantIssuedEvent, extractSoulGrantRevokedEvent, etc. — parse Move events from TX blocks.'],
+                ['types.ts', 'All shared TypeScript types: SoulObject, SoulStateObject, SoulContentObject, SoulPaidAccessListObject, SoulGrantScope, access response shapes, etc.'],
+                ['kinds.ts', 'KIND_* / OP_* / READ_* constants and built-in KindDescriptor table mirroring kind_registry.move. Single source for kind ids and slot read-mode validation.'],
+                ['content-document-id.ts', 'Canonical Seal document-id builder for SoulContent slots. Must match content::assert_matching_document_id byte-for-byte.'],
+                ['content-version-pagination.ts', 'Cursor pagination over SoulContent versions for browsing memory / skill / sprite history.'],
+                ['legacy-mint-bridge.ts', 'Phase 1 → phase 2 client compat shim: rewrites legacy mint payloads onto the unified content envelope.'],
+                ['queries.ts', 'On-chain read helpers: getSoulStateObject, getSoulContentObject, getSoulPaidAccessListObject, getSoulGrantObject, getSuccessfulTransactionBlock.'],
+                ['access.ts', 'resolveContentAccessPayload — owner / granted-agent / paid-access / public Seal access resolution for any SoulContent slot.'],
+                ['events.ts', 'extractSoulGrantIssuedEvent, ContentVersionAppended, SoulPaidAccessGranted, etc. — parse Move events from TX blocks.'],
                 ['repository.ts', 'DB query helpers: findSoulAssetDetailByRouteId, toSoulAssetDetail.'],
                 ['server.ts', 'requireHumanWalletIdentity, assertTransactionSender — server-side auth guards.'],
                 ['personal-kiosk.ts', 'resolvePersonalKiosk — on-chain kiosk lookup for a wallet address.'],
                 ['tx/publish.ts', 'buildPublishSoulTx — native mint PTB builder.'],
                 ['tx/personal-join.ts', 'buildPersonalJoinSoulTx — wrap+link PTB builder.'],
-                ['tx/metadata.ts', 'buildSetActiveSpriteTx, buildClearActiveSpriteTx, buildSetActiveVoiceTx, buildUpsertMetadataBlobTx — owner SoulMetadata maintenance PTBs.'],
+                ['tx/content.ts', 'buildAppendContentTx, buildSetActiveBindingTx, buildClearActiveBindingTx, buildDeleteContentVersionTx, buildPurgeContentVersionTx — unified PTBs for every kind (memory / skill / sprite / audio / soul_doc).'],
+                ['tx/paid-access.ts', 'buildConfigureKindPaidAccessTx, buildRecordPurchaseTx, buildAddPaidAccessTx, buildRevokePaidAccessTx — KindPaidConfig + KindPaidEntry PTBs.'],
+                ['tx/mint-helpers.ts', 'Shared PTB primitives reused by publish / import / personal-join (Walrus blob refs, content envelope serialization).'],
                 ['tx/grant.ts', 'buildIssueSoulGrantTx, buildRevokeSoulGrantTx.'],
                 ['tx/buy.ts', 'buildBuySoulTx — purchase + kiosk transfer PTB.'],
-                ['tx/memory.ts', 'buildAppendMemoryTx — append memory entry PTB.'],
-                ['tx/skills.ts', 'buildAppendSkillVersionTx, buildDeleteSkillVersionTx.'],
-                ['mirror/', 'Server-side DB sync helpers — sync-helpers.ts, build-seal-sidecars.ts, tx-sync.ts.'],
+                ['tx/list.ts, tx/delist.ts, tx/update-price.ts', 'Fixed-price listing PTBs (atomic USDC).'],
+                ['mirror/', 'Server-side DB sync helpers — parse-content-sidecars, upsert-content-version, upsert-paid-access, tx-sync.'],
               ].map(([file, desc]) => (
                 <tr key={file} className="border-b border-border/30">
                   <td className="py-2 pr-4 font-mono text-xs align-top whitespace-nowrap">{file}</td>
@@ -134,7 +139,7 @@ type SoulAccessKind = 'owner' | 'granted-agent'
 // Grant lifecycle
 type SoulGrantStatus = 'active' | 'revoked' | 'expired' | 'superseded' | 'invalidated'
 
-// SoulState from on-chain (queries.ts)
+// SoulState from on-chain (queries.ts) — phase 2 unified content
 interface SoulStateObject {
   objectId, packageId, soulId,
   creatorAddress, creatorRoyaltyBps,
@@ -142,7 +147,10 @@ interface SoulStateObject {
   ownershipEpoch, grantCapacity,
   activeGrantCount,
   activeGrants: ActiveGrantSlotObject[],
-  memoryId, metadataId, skillsId, collectionId,
+  contentId,         // → SoulContent (typed-content root)
+  paidAccessListId,  // → SoulPaidAccessList (per-Soul 1:1)
+  collectionId,
+  isListed,
 }
 
 interface ActiveGrantSlotObject {

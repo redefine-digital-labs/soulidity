@@ -3,12 +3,12 @@ import { isMultipleSuiWalletBindingsError } from '@/lib/auth/sui-wallet-errors'
 import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
 import { resolveIdentity } from '@/lib/auth/identity'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   OnChainVerificationError,
   quoteSoulPurchase,
-} from '@/lib/soulidity/queries'
-import { getCachedMarketConfig } from '@/lib/soulidity/market-config-cache'
+} from '@soulidity/sdk'
+import { getCachedMarketConfig } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 
 const SOUL_DETAIL_RATE_LIMIT = {

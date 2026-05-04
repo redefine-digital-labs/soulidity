@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
-import type { SoulCollectionAssetSummary } from '@/lib/soulidity/types'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import type { SoulCollectionAssetSummary } from '@soulidity/sdk'
 
 export type CollectionAction = 'list' | 'edit-price' | 'delist'
 

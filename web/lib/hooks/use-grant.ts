@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import { DEFAULT_ISSUE_SCOPE_MASK } from '@/lib/soulidity/grant-scopes'
-import { buildIssueGrantTx, buildRevokeGrantScopeTx, buildRevokeGrantTx } from '@/lib/soulidity/tx/grant'
+import { assertObjectInputsExist } from '@soulidity/sdk'
+import { DEFAULT_ISSUE_SCOPE_MASK } from '@soulidity/sdk'
+import { buildIssueGrantTx, buildRevokeGrantScopeTx, buildRevokeGrantTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 

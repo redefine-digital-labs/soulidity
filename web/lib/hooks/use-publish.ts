@@ -3,32 +3,32 @@
 import { useEffect, useRef, useState } from 'react'
 import posthog from 'posthog-js'
 import type { Transaction } from '@mysten/sui/transactions'
-import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
+import { assertObjectInputsExist } from '@soulidity/sdk'
 import {
   buildPublishSoulTx,
   buildPublishSoulWithBindTx,
   buildPublishSoulWithListTx,
   buildPublishSoulWithCollectionAndListTx,
-} from '@/lib/soulidity/tx/publish'
-import { preflightCollectionBindTarget } from '@/lib/soulidity/collection-bind-preflight'
+} from '@soulidity/sdk'
+import { preflightCollectionBindTarget } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
-} from '@/lib/soulidity/client-session'
-import { normalizeTags } from '@/lib/soulidity/tags'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { extractAllSoulMintedToKioskEvents } from '@/lib/soulidity/events'
+} from '@soulidity/sdk'
+import { normalizeTags } from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { extractAllSoulMintedToKioskEvents } from '@soulidity/sdk'
 import {
   buildLegacyInitialContent,
   buildLegacyInitialStateConfig,
-} from '@/lib/soulidity/legacy-mint-bridge'
+} from '@soulidity/sdk'
 import { type PendingSealMaterial } from '@/lib/upload/client-seal'
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
-import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
-import { getSuiTxErrorProperties } from '@/lib/sui/tx-result'
-import { assertListingPriceAtomic } from '@/lib/soulidity/listing-price'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
+import { assertSoulidityTxSucceeded } from '@soulidity/sdk'
+import { getSuiTxErrorProperties } from '@soulidity/sdk'
+import { assertListingPriceAtomic } from '@soulidity/sdk'
 
 // Phase 2: per-version sidecar creation moved into the unified
 // `buildSyncSealSidecars` mirror gate. The hook stops constructing

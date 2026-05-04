@@ -1,13 +1,13 @@
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@db/prisma-client'
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
 import {
   CANONICAL_MEMORY_NAME,
   CANONICAL_SOUL_DOC_NAME,
   KIND_MEMORY,
   KIND_SOUL_DOC,
-} from '@/lib/soulidity/kinds'
-import type { SoulDownloadPolicy } from '@/lib/soulidity/types'
+} from '@soulidity/sdk'
+import type { SoulDownloadPolicy } from '@soulidity/sdk'
 
 /**
  * Phase 2 unified content-version mirror. Called by post-TX sync routes

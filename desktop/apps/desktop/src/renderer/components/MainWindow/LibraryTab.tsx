@@ -5,9 +5,9 @@ import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { usePersonaLibrary, type PersonaItem } from '../../hooks/usePersonaLibrary'
 import {
-  loadDecryptedPrivateAssetVersion,
-  parsePrivateAssetAccess,
-} from '../../lib/soulidity/asset-access'
+  loadDecryptedContentVersion,
+  parseContentAccessResponse,
+} from '../../lib/soulidity/content-access'
 import { useDesktopWallet } from '../../lib/hooks/use-desktop-wallet'
 
 type CardSection = 'downloaded' | 'owned' | 'marketplace'
@@ -54,6 +54,9 @@ type PrivateManifestPayload = {
   sourceType: 'starter' | 'soul'
   sourceRef: string
   sprite: {
+    assetName: string
+    versionIndex: number
+    contentOnChainId: string
     downloadPolicy: ProtectedSpriteDownloadPolicy
     config: {
       src: string
@@ -101,6 +104,9 @@ function parsePrivateManifest(payload: unknown): PrivateManifestPayload {
     || (payload.sourceType !== 'starter' && payload.sourceType !== 'soul')
     || typeof payload.sourceRef !== 'string'
     || !isRecord(payload.sprite)
+    || typeof payload.sprite.assetName !== 'string'
+    || typeof payload.sprite.versionIndex !== 'number'
+    || typeof payload.sprite.contentOnChainId !== 'string'
     || !isProtectedSpritePolicy(payload.sprite.downloadPolicy)
     || !isSpriteConfig(payload.sprite.config)
   ) {
@@ -215,6 +221,11 @@ function PersonaCard({
           )}
           {persona.listingStatus === 'listed' && (
             <span className="persona-card__badge persona-card__badge--listed">Listed</span>
+          )}
+          {persona.activeSpriteVersionIndex != null && (
+            <span className="persona-card__badge persona-card__badge--version">
+              Sprite v{persona.activeSpriteVersionIndex}
+            </span>
           )}
         </div>
         {listedPrice && (
@@ -496,9 +507,9 @@ function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: strin
         viewer: suiWallet.address,
       })
       const manifest = parsePrivateManifest(manifestPayload)
-      const privateAccess = parsePrivateAssetAccess(manifest.sprite.privateAccess)
-      const decrypted = await loadDecryptedPrivateAssetVersion({
-        access: privateAccess,
+      const access = parseContentAccessResponse(manifest.sprite.privateAccess)
+      const decrypted = await loadDecryptedContentVersion({
+        access,
         signPersonalMessage,
         suiClient,
       })
@@ -554,7 +565,7 @@ function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | n
   }
 
   const network = runtimeConfig!.suiNetwork as SuiNetwork
-  const defaultNetwork: SuiNetwork = network in suiNetworks ? network : 'testnet'
+  const defaultNetwork: SuiNetwork = network in suiNetworks ? network : 'mainnet'
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -580,7 +591,7 @@ export function LibraryTab(): React.JSX.Element {
       .catch(() => {
         if (!cancelled) {
           setRuntimeConfig({
-            suiNetwork: 'testnet',
+            suiNetwork: 'mainnet',
             authReady: false,
             authBlocker: 'Failed to load desktop wallet configuration.',
           })

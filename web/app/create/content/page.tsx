@@ -10,8 +10,8 @@ import { buttonStyles } from '@/components/ui/button'
 import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { cn } from '@/lib/utils/cn'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
-import { SOUL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
-import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
+import { SOUL_MD_TEMPLATE } from '@soulidity/sdk'
+import { validateSelectedSkillBundle } from '@soulidity/sdk'
 
 const steps = [
   { label: 'Basic Info' },

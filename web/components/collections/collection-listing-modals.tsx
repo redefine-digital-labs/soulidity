@@ -6,8 +6,8 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { useCollectionListing } from '@/lib/hooks/use-collections'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
-import type { SoulCollectionAssetSummary } from '@/lib/soulidity/types'
+import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
+import type { SoulCollectionAssetSummary } from '@soulidity/sdk'
 
 /* ------------------------------------------------------------------ */
 /*  List Collection Modal                                              */

@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { selectCoinObjectIdsForAmountAcrossPages } from '@/lib/soulidity/coin-selection'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { selectCoinObjectIdsForAmountAcrossPages } from '@soulidity/sdk'
 import {
   buildConfigurePaidAccessKindTx,
   buildPurchasePaidAccessTx,
   buildUpdatePaidAccessKindTx,
-} from '@/lib/soulidity/tx/paid-access'
-import { buildSetGrantCapacityTx } from '@/lib/soulidity/tx/grant'
+} from '@soulidity/sdk'
+import { buildSetGrantCapacityTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 

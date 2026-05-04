@@ -1,6 +1,6 @@
 import { verifyPersonalMessageSignature as verifyPersonalMessageSignatureRaw } from '@mysten/sui/verify'
 
-import { suiClient } from '@/lib/sui'
+import { suiClient } from '@soulidity/sdk'
 
 export function verifyPersonalMessageSignature(
   message: Uint8Array,

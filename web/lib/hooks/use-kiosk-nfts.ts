@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useSuiClient } from '@mysten/dapp-kit'
-import { getOptionalSoulidityEnv } from '@/lib/soulidity/env'
+import { getOptionalSoulidityEnv } from '@soulidity/sdk'
 
 export interface KioskNft {
   objectId: string

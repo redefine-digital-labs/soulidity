@@ -3,19 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 import posthog from 'posthog-js'
 import type { Transaction } from '@mysten/sui/transactions'
-import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import { buildImportSoulTx } from '@/lib/soulidity/tx/import'
+import { assertObjectInputsExist } from '@soulidity/sdk'
+import { buildImportSoulTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
-} from '@/lib/soulidity/client-session'
-import { normalizeTags } from '@/lib/soulidity/tags'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { extractAllContentVersionAppendedEvents } from '@/lib/soulidity/events'
+} from '@soulidity/sdk'
+import { normalizeTags } from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { extractAllContentVersionAppendedEvents } from '@soulidity/sdk'
 import { type PendingSealMaterial } from '@/lib/upload/client-seal'
-import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
+import { assertSoulidityTxSucceeded } from '@soulidity/sdk'
 import {
   buildContentSidecarsForVersionsWithSuiClient,
   buildPendingMintSlots,

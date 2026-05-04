@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import { buildPersonalJoinSoulTx } from '@/lib/soulidity/tx/personal-join'
+import { assertObjectInputsExist } from '@soulidity/sdk'
+import { buildPersonalJoinSoulTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import { uploadSoulPayload } from '@/lib/upload/client-upload'
@@ -13,14 +13,14 @@ import type { WrapPublishResult } from '@/components/providers/wrap-provider'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
-} from '@/lib/soulidity/client-session'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { extractAllContentVersionAppendedEvents } from '@/lib/soulidity/events'
-import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
+} from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { extractAllContentVersionAppendedEvents } from '@soulidity/sdk'
+import { assertSoulidityTxSucceeded } from '@soulidity/sdk'
 import {
   buildLegacyInitialContent,
   buildLegacyInitialStateConfig,
-} from '@/lib/soulidity/legacy-mint-bridge'
+} from '@soulidity/sdk'
 import {
   buildContentSidecarsForVersionsWithSuiClient,
   buildPendingMintSlots,

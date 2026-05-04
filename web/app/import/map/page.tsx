@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils/cn'
 import { Input, Textarea } from '@/components/ui/input'
 import { useImportSoul } from '@/components/providers/import-soul-provider'
 import { MAPPING_OPTIONS, type SoulTargetField } from '@/lib/import/field-mapping'
-import { SOUL_MD_TEMPLATE } from '@/lib/soulidity/content-templates'
-import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
+import { SOUL_MD_TEMPLATE } from '@soulidity/sdk'
+import { validateSelectedSkillBundle } from '@soulidity/sdk'
 
 const steps = [
   { label: 'Choose Source' },

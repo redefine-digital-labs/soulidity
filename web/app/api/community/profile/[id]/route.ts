@@ -3,7 +3,7 @@ import { resolveIdentity } from '@/lib/auth/identity'
 import { prisma } from '@/lib/prisma'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
 import { resolveMemberSpaceId } from '@/lib/community/resolve-space'
-import { serializeSoulPreviewImageList } from '@/lib/soulidity/serialization'
+import { serializeSoulPreviewImageList } from '@soulidity/sdk'
 import { parseCommunityTags } from '@shared/community-tags'
 
 export const dynamic = 'force-dynamic'

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CollectionRowCard, type CollectionAction } from '@/components/collections/collection-row-card'
 import { ListCollectionModal, EditCollectionPriceModal, DelistCollectionModal } from '@/components/collections/collection-listing-modals'
-import type { SoulCollectionAssetSummary } from '@/lib/soulidity/types'
+import type { SoulCollectionAssetSummary } from '@soulidity/sdk'
 
 interface CollectionSectionProps {
   collections: SoulCollectionAssetSummary[]

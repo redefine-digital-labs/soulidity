@@ -4,8 +4,8 @@ import {
   extractAllContentVersionAppendedEvents,
   extractSoulMintedToKioskEvent,
   tryExtractSoulPaidAccessListCreatedEvent,
-} from '@/lib/soulidity/events'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+} from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import {
   syncContentVersionProjectionFromChain,
@@ -13,15 +13,15 @@ import {
 } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { SealSidecarRequestError } from '@/lib/soulidity/mirror/provided-sidecar'
-import { parseRequiredTxDigest } from '@/lib/soulidity/request'
+import { parseRequiredTxDigest } from '@soulidity/sdk'
 import {
   getSuccessfulTransactionBlock,
   readTransactionSender,
   resolveWalrusBlobId,
   waitForTransactionBestEffort,
-} from '@/lib/soulidity/queries'
+} from '@soulidity/sdk'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
-import { normalizeTags } from '@/lib/soulidity/tags'
+import { normalizeTags } from '@soulidity/sdk'
 import { parseContentSidecars } from '@/lib/soulidity/mirror/parse-content-sidecars'
 
 export const dynamic = 'force-dynamic'

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils/cn'
 import {
   SKILL_BUNDLE_FORMAT_SUMMARY,
   SKILL_BUNDLE_FRONTMATTER_EXAMPLE,
-} from '@/lib/soulidity/upload-validation'
+} from '@soulidity/sdk'
 
 function downloadSkillBundleTemplate() {
   const zipBytes = zipSync({

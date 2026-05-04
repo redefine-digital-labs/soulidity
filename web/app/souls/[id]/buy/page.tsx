@@ -10,7 +10,7 @@ import { useToast } from '@/components/ui/toast'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { usePurchase } from '@/lib/hooks/use-purchase'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'

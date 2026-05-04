@@ -3,13 +3,13 @@ import { prisma } from '@/lib/prisma'
 import { resolveIdentity } from '@/lib/auth/identity'
 import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   findSoulCollectionDetailByRouteId,
   toSoulCollectionDetail,
 } from '@/lib/soulidity/repository'
-import { quoteCollectionPurchase } from '@/lib/soulidity/queries'
-import { getCachedMarketConfig } from '@/lib/soulidity/market-config-cache'
+import { quoteCollectionPurchase } from '@soulidity/sdk'
+import { getCachedMarketConfig } from '@soulidity/sdk'
 
 export const dynamic = 'force-dynamic'
 

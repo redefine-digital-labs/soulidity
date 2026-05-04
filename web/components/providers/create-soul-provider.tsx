@@ -5,7 +5,7 @@ import { useAuth } from '@/components/providers/auth-provider'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
-} from '@/lib/soulidity/client-session'
+} from '@soulidity/sdk'
 import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 
 const PUBLISH_RESULT_KEY = 'soul-publish-result'

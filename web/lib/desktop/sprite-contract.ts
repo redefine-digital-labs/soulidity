@@ -1,14 +1,14 @@
-import { getBlobUrl } from '@/lib/services/walrus'
+import { getBlobUrl } from '@soulidity/sdk'
 import {
   CANONICAL_PERSONA_SPRITE_ASSET_NAME,
   buildDesktopSpriteSheetConfig,
   resolveMirroredSoulSpriteContract,
-} from '@/lib/soulidity/metadata'
-import { KIND_SPRITE, READ_PUBLIC } from '@/lib/soulidity/kinds'
+} from '@soulidity/sdk'
+import { KIND_SPRITE, READ_PUBLIC } from '@soulidity/sdk'
 import type {
   SoulContentVersionRecord,
   SoulDownloadPolicy,
-} from '@/lib/soulidity/types'
+} from '@soulidity/sdk'
 import type { DesktopSpriteManifest } from '@/lib/types/desktop'
 
 const CANONICAL_SPRITE_FILE_NAME = 'persona-sprite.png'

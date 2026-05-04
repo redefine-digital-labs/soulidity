@@ -2,7 +2,7 @@ import Link from 'next/link'
 import {
   FOUNDING_MEMORY_MD_TEMPLATE,
   SOUL_MD_TEMPLATE,
-} from '@/lib/soulidity/content-templates'
+} from '@soulidity/sdk'
 
 function TemplatePreview({ title, code }: { title: string; code: string }) {
   return (

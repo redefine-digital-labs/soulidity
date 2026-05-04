@@ -9,13 +9,14 @@ import {
   ContentAccessDeniedError,
   resolveContentAccessPayload,
 } from '@/lib/soulidity/access'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   downloadPolicyFromU8,
   KIND_SPRITE,
-} from '@/lib/soulidity/kinds'
-import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
-import type { SoulContentVersionRecord } from '@/lib/soulidity/types'
+} from '@soulidity/sdk'
+import { toProjectionNumber } from '@soulidity/sdk'
+import type { SoulContentVersionRecord } from '@soulidity/sdk'
+import type { DesktopPersonaManifest } from '@/lib/types/desktop'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +33,105 @@ function asIso(value: Date) {
   return value.toISOString()
 }
 
+function hasDesktopAuthHint(request: Request) {
+  return Boolean(request.headers.get('authorization') || request.headers.get('cookie'))
+}
+
+type DesktopMemberContext = {
+  member: { id: string }
+  walletAddresses: string[]
+}
+
+type DesktopMemberContextResult = {
+  memberContext: DesktopMemberContext | null
+  error: NextResponse | null
+}
+
+type AuthenticatedHeldSoulManifestResult = {
+  manifest: DesktopPersonaManifest | null
+  memberContext: DesktopMemberContext | null
+  error: NextResponse | null
+}
+
+async function resolveDesktopMemberContext(request: Request): Promise<DesktopMemberContextResult> {
+  const auth = await requireDesktopIdentity(request)
+  if (auth.error) {
+    return { memberContext: null, error: auth.error }
+  }
+
+  const member = await prisma.member.findFirst({
+    where: { accountId: auth.accountId!, kind: 'human' },
+    select: { id: true },
+  })
+
+  if (!member) {
+    return {
+      memberContext: null,
+      error: NextResponse.json({ error: 'Member not found for this account' }, { status: 404 }),
+    }
+  }
+
+  let walletAddresses: string[]
+  try {
+    walletAddresses = await getMemberSuiWalletAddresses(member.id)
+  } catch {
+    walletAddresses = []
+  }
+
+  return { memberContext: { member, walletAddresses }, error: null }
+}
+
+async function resolveAuthenticatedHeldSoulManifest(
+  id: string,
+  request: Request,
+): Promise<AuthenticatedHeldSoulManifestResult> {
+  const memberResult = await resolveDesktopMemberContext(request)
+  if (memberResult.error) {
+    return { manifest: null, memberContext: null, error: memberResult.error }
+  }
+
+  const memberContext = memberResult.memberContext!
+  const member = memberContext.member
+  const manifest = await findDesktopPersonaManifestById(id)
+  if (!manifest) {
+    return {
+      manifest: null,
+      memberContext: null,
+      error: NextResponse.json({ error: 'Not found' }, { status: 404 }),
+    }
+  }
+
+  if (manifest.sourceType !== 'soul') {
+    return { manifest, memberContext, error: null }
+  }
+
+  const soul = await prisma.soulAsset.findUnique({
+    where: { onChainId: manifest.sourceRef },
+    select: { currentOwnerMemberId: true },
+  })
+
+  if (!soul) {
+    return {
+      manifest: null,
+      memberContext: null,
+      error: NextResponse.json({ error: 'Soul not found' }, { status: 404 }),
+    }
+  }
+
+  if (soul.currentOwnerMemberId !== member.id) {
+    return {
+      manifest: null,
+      memberContext: null,
+      error: NextResponse.json(
+        { error: 'Authenticated desktop access to this held Soul requires ownership' },
+        { status: 403 },
+      ),
+    }
+  }
+
+  return { manifest, memberContext, error: null }
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -40,9 +140,17 @@ export async function GET(
   // Public marketplace surface: dynamic `soul:<onChainId>` lookups must be
   // gated to `listingStatus: 'listed'` so held/unpublished Souls do not leak
   // their sprite manifest (and public Walrus URL) to unauthenticated callers.
-  // Owned held Souls reach the renderer via the authenticated
-  // `/api/desktop/me/souls` and `/api/desktop/souls/[id]/persona-bundle` paths.
-  const manifest = await findDesktopPersonaManifestById(id, { publicOnly: true })
+  // Owned held Souls can fall through to the authenticated owner-only fallback;
+  // unauthenticated callers still see only listed/public catalog entries.
+  const publicManifest = await findDesktopPersonaManifestById(id, { publicOnly: true })
+  const heldSoulResult = publicManifest || !hasDesktopAuthHint(request)
+    ? { manifest: null, memberContext: null, error: null }
+    : await resolveAuthenticatedHeldSoulManifest(id, request)
+  if (heldSoulResult.error) {
+    return heldSoulResult.error
+  }
+  const manifest = publicManifest ?? heldSoulResult.manifest
+  let memberContext = heldSoulResult.memberContext
 
   if (!manifest) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -73,26 +181,14 @@ export async function GET(
     return NextResponse.json({ error: 'Soul sprite metadata is incomplete' }, { status: 422 })
   }
 
-  const auth = await requireDesktopIdentity(request)
-  if (auth.error) {
-    return auth.error
+  if (!memberContext) {
+    const memberResult = await resolveDesktopMemberContext(request)
+    if (memberResult.error) {
+      return memberResult.error
+    }
+    memberContext = memberResult.memberContext
   }
-
-  const member = await prisma.member.findFirst({
-    where: { accountId: auth.accountId!, kind: 'human' },
-    select: { id: true },
-  })
-
-  if (!member) {
-    return NextResponse.json({ error: 'Member not found for this account' }, { status: 404 })
-  }
-
-  let walletAddresses: string[]
-  try {
-    walletAddresses = await getMemberSuiWalletAddresses(member.id)
-  } catch {
-    walletAddresses = []
-  }
+  const walletAddresses = memberContext?.walletAddresses ?? []
 
   const url = new URL(request.url)
   const rawViewer = url.searchParams.get('viewer')

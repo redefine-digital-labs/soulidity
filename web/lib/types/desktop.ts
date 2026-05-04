@@ -1,4 +1,4 @@
-import type { ContentAccessResponse, SoulListingStatus } from '@/lib/soulidity/types'
+import type { ContentAccessResponse, SoulListingStatus } from '@soulidity/sdk'
 
 export type DesktopCatalogSourceType = 'starter' | 'soul'
 export type DesktopSpriteDownloadPolicy = 'public' | 'owner_only' | 'allowlist' | 'missing' | 'invalid'
@@ -41,6 +41,14 @@ export interface DesktopCatalogItem {
   listingStatus: SoulListingStatus | null
   listedPriceAtomic: string | null
   spriteDownloadPolicy: DesktopSpriteDownloadPolicy
+  /**
+   * Phase 2: live `SoulContent.active_table[KIND_SPRITE]` projection from
+   * the mirror. Reflects on-chain `OP_ACTIVE_BIND` updates so consumers can
+   * detect when their cached sprite version drifts from the active one.
+   */
+  activeSpriteName?: string | null
+  activeSpriteVersionIndex?: number | null
+  activeSpriteDownloadPolicy?: DesktopSpriteDownloadPolicy | null
   updatedAt: string
 }
 

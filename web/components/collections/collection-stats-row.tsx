@@ -1,5 +1,5 @@
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
-import type { CollectionDetailResponse } from '@/lib/soulidity/types'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import type { CollectionDetailResponse } from '@soulidity/sdk'
 
 interface CollectionStatsRowProps {
   collection: CollectionDetailResponse

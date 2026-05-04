@@ -7,7 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
+import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
 
 export default function SellPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)

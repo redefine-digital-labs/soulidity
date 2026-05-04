@@ -59,7 +59,7 @@ import { decodeEd25519SecretKey } from './lib/keypair'
 // Manifest must be loaded BEFORE importing builders so the
 // `getRequiredSoulidityEnv` calls inside the builders see the new package id.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const manifestPath = resolve(repoRoot, 'web/lib/soulidity/deployment-manifest.json')
+const manifestPath = resolve(repoRoot, 'packages/soulidity-sdk/src/deployment-manifest.json')
 
 interface DeploymentEntry {
   packageId: string
@@ -114,27 +114,27 @@ const {
   buildPublishSoulTx,
   buildPublishSoulWithListTx,
   buildPublishSoulWithBindTx,
-} = await import('@web/lib/soulidity/tx/publish')
+} = await import('@soulidity/sdk')
 const {
   buildCreateCollectionTx,
   buildAddSoulToCollectionTx,
-} = await import('@web/lib/soulidity/tx/collection')
-const { buildBuyCollectionTx } = await import('@web/lib/soulidity/tx/buy')
-const { buildListCollectionTx } = await import('@web/lib/soulidity/tx/list')
+} = await import('@soulidity/sdk')
+const { buildBuyCollectionTx } = await import('@soulidity/sdk')
+const { buildListCollectionTx } = await import('@soulidity/sdk')
 const {
   buildAppendContentVersionAsOwnerTx,
   buildDeleteContentVersionAsOwnerTx,
   buildPurgeContentVersionAsOwnerTx,
   buildSetActiveContentTx,
-} = await import('@web/lib/soulidity/tx/content')
-const { buildIssueGrantTx, buildRevokeGrantTx } = await import('@web/lib/soulidity/tx/grant')
+} = await import('@soulidity/sdk')
+const { buildIssueGrantTx, buildRevokeGrantTx } = await import('@soulidity/sdk')
 const {
   buildConfigurePaidAccessKindTx,
   buildPurchasePaidAccessTx,
   buildDeletePaidAccessKindTx,
-} = await import('@web/lib/soulidity/tx/paid-access')
-const { buildBuySoulTx } = await import('@web/lib/soulidity/tx/buy')
-const { buildListSoulTx } = await import('@web/lib/soulidity/tx/list')
+} = await import('@soulidity/sdk')
+const { buildBuySoulTx } = await import('@soulidity/sdk')
+const { buildListSoulTx } = await import('@soulidity/sdk')
 const {
   KIND_SOUL_DOC,
   KIND_MEMORY,
@@ -146,13 +146,13 @@ const {
   READ_GRANT,
   READ_PUBLIC,
   READ_PAID,
-} = await import('@web/lib/soulidity/kinds')
+} = await import('@soulidity/sdk')
 const {
   SOUL_GRANT_SCOPE_SEAL,
   SOUL_GRANT_SCOPE_MEMORY,
   SOUL_GRANT_SCOPE_SKILLS,
   SOUL_GRANT_SCOPE_ASSETS,
-} = await import('@web/lib/soulidity/grant-scopes')
+} = await import('@soulidity/sdk')
 
 // ── CLI args ───────────────────────────────────────────────────────────
 

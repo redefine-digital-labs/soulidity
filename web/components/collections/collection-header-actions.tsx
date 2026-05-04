@@ -1,8 +1,8 @@
 'use client'
 
 import { buttonStyles } from '@/components/ui/button'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
-import type { CollectionDetailResponse } from '@/lib/soulidity/types'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import type { CollectionDetailResponse } from '@soulidity/sdk'
 import type { CollectionAction } from '@/components/collections/collection-row-card'
 
 export type CollectionViewVariant =

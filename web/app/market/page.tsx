@@ -14,8 +14,8 @@ import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
-import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@/lib/soulidity/types'
+import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
+import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@soulidity/sdk'
 
 // Tag colors removed — tags now use uniform 'muted' styling
 

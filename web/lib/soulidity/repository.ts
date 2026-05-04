@@ -19,12 +19,12 @@
 import type { Prisma } from '@db/prisma-client'
 import { prisma } from '@/lib/prisma'
 import { isUuid } from '@/lib/is-uuid'
-import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
+import { toProjectionNumber } from '@soulidity/sdk'
 import {
   clampContentVersionPageSize,
   decodeContentVersionCursor,
   encodeContentVersionCursor,
-} from '@/lib/soulidity/content-version-pagination'
+} from '@soulidity/sdk'
 import {
   KIND_AUDIO,
   KIND_MEMORY,
@@ -32,7 +32,7 @@ import {
   KIND_SOUL_DOC,
   KIND_SPRITE,
   downloadPolicyFromU8,
-} from '@/lib/soulidity/kinds'
+} from '@soulidity/sdk'
 import { parseSealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 import type {
   ContentReadMode,
@@ -50,7 +50,7 @@ import type {
   SoulPersonaKind,
   SoulProvenanceKind,
   SoulQuoteBreakdown,
-} from '@/lib/soulidity/types'
+} from '@soulidity/sdk'
 
 // ── Constants ─────────────────────────────────────────────────────────────
 

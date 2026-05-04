@@ -1,15 +1,15 @@
 import type { Prisma } from '@db/prisma-client'
 import { prisma } from '@/lib/prisma'
 import { resolveDesktopSpriteManifest } from '@/lib/desktop/sprite-contract'
-import { downloadPolicyFromU8, KIND_SPRITE } from '@/lib/soulidity/kinds'
-import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@/lib/soulidity/metadata'
-import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
+import { downloadPolicyFromU8, KIND_SPRITE } from '@soulidity/sdk'
+import { CANONICAL_PERSONA_SPRITE_ASSET_NAME } from '@soulidity/sdk'
+import { toProjectionNumber } from '@soulidity/sdk'
 import type {
   SoulContentVersionRecord,
   SoulDownloadPolicy,
   SoulListingStatus,
-} from '@/lib/soulidity/types'
-import { materializeWalrusBlobUrls } from '@/lib/services/walrus'
+} from '@soulidity/sdk'
+import { materializeWalrusBlobUrls } from '@soulidity/sdk'
 import type {
   DesktopCatalogItem,
   DesktopCatalogSourceType,
@@ -490,6 +490,10 @@ async function toSoulCatalogItem(entry: DesktopCatalogSource, soul: SoulCatalogR
     listingStatus: normalizeListingStatus(soul.listingStatus),
     listedPriceAtomic: asAtomicString(soul.listedPriceAtomic),
     spriteDownloadPolicy: sprite.downloadPolicy,
+    activeSpriteName: soul.activeSpriteName,
+    activeSpriteVersionIndex:
+      soul.activeSpriteVersionIndex == null ? null : Number(soul.activeSpriteVersionIndex),
+    activeSpriteDownloadPolicy: normalizeActiveDownloadPolicy(soul.activeSpriteDownloadPolicy),
     updatedAt: asIso(soul.updatedAt),
   }
 }

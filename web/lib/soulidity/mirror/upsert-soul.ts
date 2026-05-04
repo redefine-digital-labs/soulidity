@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
-import { inferPersonaKind } from '@/lib/soulidity/persona'
-import type { SoulContentObject, SoulObject, SoulStateObject } from '@/lib/soulidity/types'
+import { inferPersonaKind } from '@soulidity/sdk'
+import type { SoulContentObject, SoulObject, SoulStateObject } from '@soulidity/sdk'
 
 interface ActiveBindingMirror {
   name: string

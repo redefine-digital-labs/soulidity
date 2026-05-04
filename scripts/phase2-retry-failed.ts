@@ -15,7 +15,7 @@ import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { decodeEd25519SecretKey } from './lib/keypair'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const m = JSON.parse(readFileSync(resolve(repoRoot, 'web/lib/soulidity/deployment-manifest.json'), 'utf8'))['mainnet']
+const m = JSON.parse(readFileSync(resolve(repoRoot, 'packages/soulidity-sdk/src/deployment-manifest.json'), 'utf8'))['mainnet']
 
 process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = m.packageId
 process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID = m.marketConfigId
@@ -28,9 +28,9 @@ process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE = m.paymentCoinType
 const {
   buildDeleteContentVersionAsOwnerTx,
   buildPurgeContentVersionAsOwnerTx,
-} = await import('@web/lib/soulidity/tx/content')
-const { buildBuySoulTx } = await import('@web/lib/soulidity/tx/buy')
-const { KIND_MEMORY, CANONICAL_MEMORY_NAME } = await import('@web/lib/soulidity/kinds')
+} = await import('@soulidity/sdk')
+const { buildBuySoulTx } = await import('@soulidity/sdk')
+const { KIND_MEMORY, CANONICAL_MEMORY_NAME } = await import('@soulidity/sdk')
 
 const ownerKp = decodeEd25519SecretKey(process.env.MAINNET_DEPLOYER_PRIV_KEY!.trim(), 'MAINNET_DEPLOYER_PRIV_KEY')
 const buyerKp = decodeEd25519SecretKey(process.env.PHASE2_BUYER_PRIV_KEY!.trim(), 'PHASE2_BUYER_PRIV_KEY')

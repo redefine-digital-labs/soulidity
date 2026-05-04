@@ -19,7 +19,7 @@ import type { Transaction } from '@mysten/sui/transactions'
 import { decodeEd25519SecretKey } from './lib/keypair'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const m = JSON.parse(readFileSync(resolve(repoRoot, 'web/lib/soulidity/deployment-manifest.json'), 'utf8'))['mainnet']
+const m = JSON.parse(readFileSync(resolve(repoRoot, 'packages/soulidity-sdk/src/deployment-manifest.json'), 'utf8'))['mainnet']
 
 process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = m.packageId
 process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID = m.marketConfigId
@@ -29,12 +29,12 @@ process.env.NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID = m.soulTransferPolicy
 process.env.NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID = m.collectionTransferPolicyId
 process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE = m.paymentCoinType
 
-const { buildAppendContentVersionAsOwnerTx } = await import('@web/lib/soulidity/tx/content')
+const { buildAppendContentVersionAsOwnerTx } = await import('@soulidity/sdk')
 const {
   buildConfigurePaidAccessKindTx,
   buildPurchasePaidAccessTx,
-} = await import('@web/lib/soulidity/tx/paid-access')
-const { buildPublishSoulTx } = await import('@web/lib/soulidity/tx/publish')
+} = await import('@soulidity/sdk')
+const { buildPublishSoulTx } = await import('@soulidity/sdk')
 const {
   KIND_SOUL_DOC,
   KIND_MEMORY,
@@ -45,8 +45,8 @@ const {
   READ_OWNER,
   READ_GRANT,
   READ_PUBLIC,
-} = await import('@web/lib/soulidity/kinds')
-const { SOUL_GRANT_SCOPE_ASSETS } = await import('@web/lib/soulidity/grant-scopes')
+} = await import('@soulidity/sdk')
+const { SOUL_GRANT_SCOPE_ASSETS } = await import('@soulidity/sdk')
 
 const ownerKp = decodeEd25519SecretKey(process.env.MAINNET_DEPLOYER_PRIV_KEY!.trim(), 'MAINNET_DEPLOYER_PRIV_KEY')
 const buyerKp = decodeEd25519SecretKey(process.env.PHASE2_BUYER_PRIV_KEY!.trim(), 'PHASE2_BUYER_PRIV_KEY')

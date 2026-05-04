@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { soulAssetSummarySelect, toSoulAssetSummaryList } from '@/lib/soulidity/repository'
 import type { Prisma } from '@db/prisma-client'
-import { parsePersonaFilter } from '@/lib/soulidity/persona'
+import { parsePersonaFilter } from '@soulidity/sdk'
 import { buildSoulsWhere } from './query'
 
 const DEFAULT_PAGE = 1

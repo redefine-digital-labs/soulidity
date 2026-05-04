@@ -1,4 +1,4 @@
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
 
 export class SealSidecarRequestError extends Error {}
 

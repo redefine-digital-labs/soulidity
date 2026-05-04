@@ -11,8 +11,8 @@ import type { Transaction } from '@mysten/sui/transactions'
 import {
   resolveSuiTxResultWithEffects,
   type SuiTxResultWithEffects,
-} from '@/lib/sui/tx-result'
-import { enhanceSoulidityError } from '@/lib/soulidity/market-errors'
+} from '@soulidity/sdk'
+import { enhanceSoulidityError } from '@soulidity/sdk'
 
 async function waitForTransactionBestEffort(
   client: ReturnType<typeof useSuiClient>,

@@ -24,13 +24,13 @@ import {
   ContentAccessDeniedError,
   resolveContentAccessPayload,
 } from '@/lib/soulidity/access'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   downloadPolicyFromU8,
   KIND_SPRITE,
-} from '@/lib/soulidity/kinds'
-import { toProjectionNumber } from '@/lib/soulidity/projection-scalars'
-import type { SoulContentVersionRecord } from '@/lib/soulidity/types'
+} from '@soulidity/sdk'
+import { toProjectionNumber } from '@soulidity/sdk'
+import type { SoulContentVersionRecord } from '@soulidity/sdk'
 
 export const dynamic = 'force-dynamic'
 

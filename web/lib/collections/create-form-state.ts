@@ -4,7 +4,7 @@ import {
   MAX_IMAGE_URL_BYTES,
   MAX_NAME_BYTES,
   getUtf8ByteLength,
-} from '@/lib/soulidity/tx/shared'
+} from '@soulidity/sdk'
 
 export interface CreateCollectionFormValues {
   name: string

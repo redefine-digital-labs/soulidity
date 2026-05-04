@@ -4,7 +4,7 @@ import { getMemberSuiWalletAddresses } from '@/lib/auth/sui-wallet'
 import { isMultipleSuiWalletBindingsError } from '@/lib/auth/sui-wallet-errors'
 import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import { prisma } from '@/lib/prisma'
-import { sameSuiValue } from '@/lib/soulidity/queries'
+import { sameSuiValue } from '@soulidity/sdk'
 
 export interface RequireHumanWalletIdentityOptions {
   /**

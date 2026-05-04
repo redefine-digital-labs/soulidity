@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { prisma } from '@/lib/prisma'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
 
 type Params = { id: string }
 

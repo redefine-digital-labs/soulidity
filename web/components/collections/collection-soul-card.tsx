@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { Tag } from '@/components/ui/tag'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
-import type { SoulAssetSummary } from '@/lib/soulidity/types'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import type { SoulAssetSummary } from '@soulidity/sdk'
 
 interface CollectionSoulCardProps {
   soul: SoulAssetSummary

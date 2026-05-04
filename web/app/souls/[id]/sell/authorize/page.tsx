@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { useToast } from '@/components/ui/toast'
 import { useListSoul } from '@/lib/hooks/use-list-soul'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
+import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'

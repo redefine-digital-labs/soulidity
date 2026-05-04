@@ -53,9 +53,13 @@ interface CatalogManifest {
   downloadMode?: 'direct' | 'authenticated'
   files: ManifestFile[]
   sprite: {
+    assetName?: string | null
+    versionIndex?: number | null
+    contentOnChainId?: string | null
     downloadPolicy: SoulSpriteDownloadPolicy
     publicUrl?: string | null
     config?: SpriteConfig | null
+    privateAccess?: unknown
     error?: string | null
   } | null
 }

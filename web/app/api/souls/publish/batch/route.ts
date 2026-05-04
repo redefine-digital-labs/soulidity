@@ -6,9 +6,9 @@ import {
   extractAllSoulMintedToKioskEvents,
   extractAllSoulAddedToCollectionEvents,
   extractAllSoulPaidAccessListCreatedEvents,
-} from '@/lib/soulidity/events'
-import { normalizeSuiValue } from '@/lib/soulidity/queries'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+} from '@soulidity/sdk'
+import { normalizeSuiValue } from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import {
   syncCollectionProjectionFromChain,
@@ -17,16 +17,16 @@ import {
 } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
 import { SealSidecarRequestError } from '@/lib/soulidity/mirror/provided-sidecar'
-import { parseRequiredTxDigest } from '@/lib/soulidity/request'
+import { parseRequiredTxDigest } from '@soulidity/sdk'
 import { findSoulCollectionDetailByRouteId } from '@/lib/soulidity/repository'
 import {
   getSuccessfulTransactionBlock,
   readTransactionSender,
   resolveWalrusBlobId,
   waitForTransactionBestEffort,
-} from '@/lib/soulidity/queries'
+} from '@soulidity/sdk'
 import { assertTransactionSender, requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
-import { normalizeTags } from '@/lib/soulidity/tags'
+import { normalizeTags } from '@soulidity/sdk'
 import {
   parseContentSidecars,
   type ContentSidecarMap,

@@ -6,7 +6,7 @@ import type { CollectionSyncResponse } from '@/lib/hooks/use-collection-publish'
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
-} from '@/lib/soulidity/client-session'
+} from '@soulidity/sdk'
 
 const PUBLISH_RESULT_KEY = 'collection-publish-result'
 const MINT_RECOVERY_KEY = 'collection-mint-recovery'

@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/components/providers/auth-provider'
-import type { SoulAssetSummary } from '@/lib/soulidity/types'
+import type { SoulAssetSummary } from '@soulidity/sdk'
 
 // ── Types ──
 

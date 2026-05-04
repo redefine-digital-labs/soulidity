@@ -11,7 +11,7 @@
  * `sealEncrypted` flag via `buildSyncSealSidecars`.
  */
 import { SealSidecarRequestError, parseProvidedSidecar } from '@/lib/soulidity/mirror/provided-sidecar'
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
 
 export interface ContentSidecarRequestEntry {
   kind: number

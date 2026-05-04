@@ -6,8 +6,8 @@ import {
   createMemoryEntrySealEnvelopeSidecar,
   createSealEnvelopeSidecar,
   createSkillVersionSealEnvelopeSidecar,
-  type SealEnvelopeSidecar,
 } from '@/lib/services/seal-crypto'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
 
 const DEFAULT_TESTNET_SEAL_SERVER_CONFIGS: KeyServerConfig[] = [
   {

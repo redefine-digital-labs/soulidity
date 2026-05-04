@@ -1,8 +1,8 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import type { MySoulsResponse, SoulAssetDetail, SoulsListResponse } from '@/lib/soulidity/types'
-import type { PersonaFilter } from '@/lib/soulidity/persona'
+import type { MySoulsResponse, SoulAssetDetail, SoulsListResponse } from '@soulidity/sdk'
+import type { PersonaFilter } from '@soulidity/sdk'
 
 export type SoulsSortOption = 'newest' | 'price_asc' | 'price_desc' | 'popular'
 

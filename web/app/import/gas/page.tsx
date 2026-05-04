@@ -27,8 +27,8 @@ import {
   countPendingImportUploads,
   txBoundImportUploadObjectIds,
 } from '@/lib/import/import-wallet-balance'
-import { hasCurrentSoulidityDeploymentSignature } from '@/lib/soulidity/client-session'
-import { findMissingObjectIds } from '@/lib/soulidity/object-inputs'
+import { hasCurrentSoulidityDeploymentSignature } from '@soulidity/sdk'
+import { findMissingObjectIds } from '@soulidity/sdk'
 import {
   selectReusableUploadResults,
   useImportSoul,

@@ -4,17 +4,17 @@ import {
   extractSoulGrantIssuedEvent,
   extractSoulGrantRevokedEvent,
   extractSoulGrantSupersededEvent,
-} from '@/lib/soulidity/events'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
+} from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   endSoulGrantProjectionFromChain,
   syncGrantProjectionFromChain,
   syncSoulProjectionFromChain,
 } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
-import { parseRequiredAddress, parseRequiredTxDigest } from '@/lib/soulidity/request'
+import { parseRequiredAddress, parseRequiredTxDigest } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
-import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@/lib/soulidity/queries'
+import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@soulidity/sdk'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
 
 export const dynamic = 'force-dynamic'

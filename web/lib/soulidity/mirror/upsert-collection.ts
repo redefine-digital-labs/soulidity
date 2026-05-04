@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
-import { assertBigIntFitsPrismaInt } from '@/lib/soulidity/projection-scalars'
-import type { SoulCollectionObject, SoulCollectionRightObject } from '@/lib/soulidity/types'
+import { assertBigIntFitsPrismaInt } from '@soulidity/sdk'
+import type { SoulCollectionObject, SoulCollectionRightObject } from '@soulidity/sdk'
 
 export async function upsertCollectionProjection(params: {
   collection: SoulCollectionObject

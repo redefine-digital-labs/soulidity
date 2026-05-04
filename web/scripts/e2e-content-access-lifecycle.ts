@@ -35,7 +35,7 @@ function getRequiredSoulidityEnv(name: SoulidityPublicEnvName) {
   if (name !== 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID') {
     throw new Error(`Unsupported Soulidity env in lifecycle helper: ${name}`)
   }
-  const manifestPath = join(scriptDir, '../lib/soulidity/deployment-manifest.json')
+  const manifestPath = join(scriptDir, '../../packages/soulidity-sdk/src/deployment-manifest.json')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, { packageId?: string }>
   const value = process.env[name]?.trim() || manifest[SUI_NETWORK]?.packageId?.trim()
   if (!value) throw new Error(`Missing required Soulidity env: ${name}`)

@@ -13,7 +13,7 @@ import { buttonStyles } from '@/components/ui/button'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 import { useKioskNfts } from '@/lib/hooks/use-kiosk-nfts'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
-import { validateSelectedSkillBundle } from '@/lib/soulidity/upload-validation'
+import { validateSelectedSkillBundle } from '@soulidity/sdk'
 
 function FileUploadCard({
   label,

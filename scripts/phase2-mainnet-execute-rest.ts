@@ -36,7 +36,7 @@ import { decodeEd25519SecretKey } from './lib/keypair'
 // ── Manifest + env wiring ─────────────────────────────────────────────
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const manifestPath = resolve(repoRoot, 'web/lib/soulidity/deployment-manifest.json')
+const manifestPath = resolve(repoRoot, 'packages/soulidity-sdk/src/deployment-manifest.json')
 
 interface Manifest {
   packageId: string
@@ -60,27 +60,27 @@ process.env.NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID = m.soulTransferPolicy
 process.env.NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID = m.collectionTransferPolicyId
 process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE = m.paymentCoinType
 
-const { buildIssueGrantTx } = await import('@web/lib/soulidity/tx/grant')
+const { buildIssueGrantTx } = await import('@soulidity/sdk')
 const {
   buildConfigurePaidAccessKindTx,
   buildDeletePaidAccessKindTx,
-} = await import('@web/lib/soulidity/tx/paid-access')
+} = await import('@soulidity/sdk')
 const {
   buildAppendContentVersionAsOwnerTx,
   buildDeleteContentVersionAsOwnerTx,
   buildPurgeContentVersionAsOwnerTx,
-} = await import('@web/lib/soulidity/tx/content')
-const { buildListSoulTx, buildListCollectionTx } = await import('@web/lib/soulidity/tx/list')
-const { buildBuySoulTx, buildBuyCollectionTx } = await import('@web/lib/soulidity/tx/buy')
+} = await import('@soulidity/sdk')
+const { buildListSoulTx, buildListCollectionTx } = await import('@soulidity/sdk')
+const { buildBuySoulTx, buildBuyCollectionTx } = await import('@soulidity/sdk')
 const {
   KIND_MEMORY,
   KIND_SPRITE,
   CANONICAL_MEMORY_NAME,
   READ_OWNER,
   READ_GRANT,
-} = await import('@web/lib/soulidity/kinds')
+} = await import('@soulidity/sdk')
 const { SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_ASSETS } = await import(
-  '@web/lib/soulidity/grant-scopes'
+  '@soulidity/sdk'
 )
 
 // ── Required env ──────────────────────────────────────────────────────

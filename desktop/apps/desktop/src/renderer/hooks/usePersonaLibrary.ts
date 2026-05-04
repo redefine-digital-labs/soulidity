@@ -14,6 +14,13 @@ export interface PersonaItem {
   listingStatus: 'held' | 'listed' | 'floor-violation' | null
   listedPriceAtomic: string | null
   spriteDownloadPolicy: PersonaSpriteDownloadPolicy
+  /**
+   * Phase 2: live `SoulContent.active_table[KIND_SPRITE]` projection. When
+   * present and different from the user's cached version, the UI shows an
+   * "Update available" hint.
+   */
+  activeSpriteName?: string | null
+  activeSpriteVersionIndex?: number | null
   isCached: boolean
   isActive: boolean
   downloadProgress: number | null
@@ -42,6 +49,8 @@ interface CatalogItem {
   listingStatus: 'held' | 'listed' | 'floor-violation' | null
   listedPriceAtomic: string | null
   spriteDownloadPolicy: PersonaSpriteDownloadPolicy
+  activeSpriteName?: string | null
+  activeSpriteVersionIndex?: number | null
 }
 
 interface CatalogPage {
@@ -194,6 +203,8 @@ export function usePersonaLibrary(options: UsePersonaLibraryOptions = {}): Libra
       listingStatus: item.listingStatus,
       listedPriceAtomic: item.listedPriceAtomic,
       spriteDownloadPolicy: item.spriteDownloadPolicy,
+      activeSpriteName: item.activeSpriteName ?? null,
+      activeSpriteVersionIndex: item.activeSpriteVersionIndex ?? null,
       isCached: cachedIds.has(spriteId),
       isActive: item.id === activeId,
       downloadProgress: progressMapRef.current.get(item.id) ?? null,

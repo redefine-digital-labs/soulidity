@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatAtomicAmountForDisplay } from '@/lib/soulidity/format'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
 import type { ProtocolStats } from '@/app/api/stats/route'
 
 function formatCount(n: number): string {

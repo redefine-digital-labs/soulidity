@@ -2,7 +2,7 @@ import type { SealClient, SessionKey } from '@mysten/seal'
 import { Transaction } from '@mysten/sui/transactions'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import type { AccessPolicyDescriptor } from '@/lib/services/seal'
-import { suiClient } from '@/lib/sui'
+import { suiClient, type SealEnvelopeSidecar } from '@soulidity/sdk'
 
 const AES_GCM_ALGORITHM = 'AES-GCM'
 const AES_GCM_CIPHER_LABEL = 'AES-GCM-256'
@@ -26,18 +26,6 @@ const DOCUMENT_ID_DOMAIN_SPECS = [
   { domain: SKILL_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 1 + 8 + SKILL_DOCUMENT_ID_NONCE.length },
   { domain: ASSET_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 1 + 8 + ASSET_DOCUMENT_ID_NONCE.length },
 ] as const
-
-export interface SealEnvelopeSidecar {
-  version: 1
-  mode: 'seal-envelope'
-  documentId: string
-  encryptedDek: string
-  iv: string
-  cipher: 'AES-GCM-256'
-  mimeType: string
-  fileName: string
-  contentHash: string
-}
 
 function getCrypto(): Crypto {
   const cryptoInstance = globalThis.crypto

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@/lib/soulidity/format'
+import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
 
 function resolvePriceDisplay(rawPrice: string | null, listedPriceAtomic: string | null) {
   if (rawPrice) {

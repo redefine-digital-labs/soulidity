@@ -770,7 +770,7 @@ const WEB_BASE_URL = getDesktopWebBaseUrl()
 
 function getLocalDesktopRuntimeConfig() {
   return {
-    suiNetwork: process.env.NEXT_PUBLIC_SUI_NETWORK?.trim() || 'testnet',
+    suiNetwork: process.env.NEXT_PUBLIC_SUI_NETWORK?.trim() || 'mainnet',
   }
 }
 

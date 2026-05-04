@@ -8,14 +8,14 @@ import {
   quoteWalrusUpload,
   type WalrusUploadPlan,
   type WalrusUploadQuote,
-} from '@/lib/upload/walrus-quote'
+} from '@soulidity/sdk'
 import { encryptClientSide, sha256Hex, type PendingSealMaterial } from '@/lib/upload/client-seal'
 import {
   extractSkillBundleMetadata,
   hasZipSignature,
   validateSoulUploadFile,
   validateSoulUploadSignature,
-} from '@/lib/soulidity/upload-validation'
+} from '@soulidity/sdk'
 import {
   buildWalrusBatchRecoveryKey,
   buildWalrusUploadRecoveryKey,
@@ -30,7 +30,7 @@ import {
   type WalrusOrphanBlob,
   type WalrusUploadRecoveryRecord,
 } from '@/lib/upload/walrus-recovery'
-import { assertSuiTxSucceeded } from '@/lib/sui/tx-result'
+import { assertSuiTxSucceeded } from '@soulidity/sdk'
 
 export type SoulUploadKind = 'persona-sprite' | 'soul-content'
 export type SoulUploadType = 'public' | 'encrypted'

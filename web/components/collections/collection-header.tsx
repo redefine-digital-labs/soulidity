@@ -1,5 +1,5 @@
 import { Tag } from '@/components/ui/tag'
-import type { CollectionDetailResponse } from '@/lib/soulidity/types'
+import type { CollectionDetailResponse } from '@soulidity/sdk'
 
 function formatDate(iso: string) {
   const d = new Date(iso)

@@ -27,7 +27,7 @@ function defineEnv(values: Record<string, string>) {
 loadDesktopBuildEnv()
 
 const sharedEnvDefines = defineEnv({
-  NEXT_PUBLIC_SUI_NETWORK: process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet',
+  NEXT_PUBLIC_SUI_NETWORK: process.env.NEXT_PUBLIC_SUI_NETWORK || 'mainnet',
   // Empty string lets the runtime fallback in web/lib/soulidity/kiosk.ts pick
   // the correct mainnet/testnet kiosk package by network.
   NEXT_PUBLIC_KIOSK_PACKAGE_ID: process.env.NEXT_PUBLIC_KIOSK_PACKAGE_ID || '',
@@ -35,12 +35,15 @@ const sharedEnvDefines = defineEnv({
   SOULIDITY_WEB_URL: process.env.SOULIDITY_WEB_URL || '',
 })
 
+const repoRootDir = resolve(__dirname, '../../..')
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@soulidity/backend', '@soulidity/shared'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@soulidity/backend', '@soulidity/sdk', '@soulidity/shared'] })],
     resolve: {
       alias: {
         '@soulidity/backend': resolve(__dirname, '../../packages/backend/src/index.ts'),
+        '@soulidity/sdk': resolve(repoRootDir, 'packages/soulidity-sdk/src/index.ts'),
         '@soulidity/shared': resolve(__dirname, '../../packages/shared/src/index.ts')
       }
     },
@@ -53,6 +56,7 @@ export default defineConfig({
     plugins: [react()],
     resolve: {
       alias: {
+        '@soulidity/sdk': resolve(repoRootDir, 'packages/soulidity-sdk/src/index.ts'),
         '@soulidity/shared': resolve(__dirname, '../../packages/shared/src/index.ts'),
       },
     },

@@ -9,11 +9,11 @@ import {
   appendCreateCollectionMoveCalls,
   buildBatchAddSoulToCollectionTx,
   buildCollectionCoverCertifyTx,
-} from '@/lib/soulidity/tx/collection'
+} from '@soulidity/sdk'
 import {
   buildBatchPublishSoulTx,
   buildCollectionFastPathPtb2Tx,
-} from '@/lib/soulidity/tx/publish'
+} from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 import {
@@ -35,16 +35,16 @@ import type { SoulFolderMap } from '@/components/providers/create-collection-pro
 import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
-} from '@/lib/soulidity/client-session'
-import { assertObjectInputsExist } from '@/lib/soulidity/object-inputs'
-import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
-import { extractAllSoulMintedToKioskEvents } from '@/lib/soulidity/events'
-import type { SealEnvelopeSidecar } from '@/lib/services/seal-crypto'
-import { assertSoulidityTxSucceeded } from '@/lib/soulidity/market-errors'
+} from '@soulidity/sdk'
+import { assertObjectInputsExist } from '@soulidity/sdk'
+import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { extractAllSoulMintedToKioskEvents } from '@soulidity/sdk'
+import type { SealEnvelopeSidecar } from '@soulidity/sdk'
+import { assertSoulidityTxSucceeded } from '@soulidity/sdk'
 import {
   buildLegacyInitialContent,
   buildLegacyInitialStateConfig,
-} from '@/lib/soulidity/legacy-mint-bridge'
+} from '@soulidity/sdk'
 
 // Phase 2: per-version sidecars are produced by the unified mirror gate. The
 // hook returns null placeholders until the new ContentPanel UI passes

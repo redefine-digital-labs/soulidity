@@ -1,0 +1,177 @@
+/* Soul Detail page — design-specific scoped styles.
+   Pseudo-element rules and gradients that don't map cleanly to Tailwind utilities. */
+
+.sd-page {
+  --text-faint: #6B5E94;
+  --border-soft: rgba(168, 85, 247, 0.18);
+  --purple-soft: rgba(168, 85, 247, 0.12);
+  --bg-2: #0A0818;
+  --card-3: #2B1A6B;
+
+  position: relative;
+  background:
+    radial-gradient(900px 600px at 88% -10%, rgba(124, 58, 237, 0.18), transparent 60%),
+    radial-gradient(700px 500px at -10% 110%, rgba(245, 158, 11, 0.06), transparent 55%);
+}
+
+/* ── Cover overlay live pulse ───────────────────────────────────── */
+.sd-pill-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  animation: sd-pulse 1.6s ease-in-out infinite;
+  display: inline-block;
+  margin-right: 6px;
+}
+@keyframes sd-pulse {
+  50% { opacity: 0.4; }
+}
+
+/* ── Sprite thumb gradient/stripes ──────────────────────────────── */
+.sd-sprite-thumb {
+  background:
+    linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(124, 58, 237, 0.45)),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0 4px, transparent 4px 8px);
+}
+
+/* ── Listing card gold gradient overlay ─────────────────────────── */
+.sd-listing-listed {
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.02)),
+    var(--card2);
+}
+
+/* ── Tab underline ──────────────────────────────────────────────── */
+.sd-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--purple);
+  border-radius: 2px 2px 0 0;
+}
+
+/* ── Activity timeline ──────────────────────────────────────────── */
+.sd-activity {
+  position: relative;
+  padding-left: 18px;
+}
+.sd-activity::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--border-soft), transparent);
+}
+.sd-act {
+  position: relative;
+  padding: 6px 0 14px;
+}
+.sd-act::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--purple);
+}
+.sd-act-gold::before { border-color: var(--gold); }
+.sd-act-teal::before { border-color: var(--teal); }
+
+/* ── Scope picker ───────────────────────────────────────────────── */
+.sd-scope-card {
+  background: var(--card2);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.sd-scope-card:hover { border-color: var(--purple); }
+.sd-scope-card[data-selected="true"],
+.sd-scope-card[aria-checked="true"] {
+  border-color: var(--purple);
+  background: rgba(168, 85, 247, 0.10);
+  box-shadow: 0 0 0 1px var(--purple) inset;
+}
+
+/* ── Grant input ────────────────────────────────────────────────── */
+.sd-grant-input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.sd-grant-input:focus { border-color: var(--purple); }
+.sd-grant-input::placeholder { color: var(--text-faint); }
+
+/* ── Progress bar ───────────────────────────────────────────────── */
+.sd-progress {
+  height: 6px;
+  background: var(--card2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.sd-progress > div {
+  height: 100%;
+  background: linear-gradient(90deg, var(--purple), var(--purple-deep));
+}
+
+/* ── Visibility toggle ──────────────────────────────────────────── */
+.sd-visibility-toggle {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--card2);
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+}
+.sd-visibility-toggle button {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-radius: 7px;
+  transition: all 0.12s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.sd-visibility-toggle button.on {
+  background: var(--gold);
+  color: #1A1040;
+}
+.sd-visibility-toggle button.on.private {
+  background: var(--purple);
+  color: #fff;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .sd-body { grid-template-columns: 1fr !important; }
+  .sd-hero { grid-template-columns: 1fr !important; }
+  .sd-qstats { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 720px) {
+  .sd-listing { grid-template-columns: 1fr !important; }
+  .sd-listing-actions { min-width: 0 !important; }
+  .sd-id-title { font-size: 30px !important; }
+}

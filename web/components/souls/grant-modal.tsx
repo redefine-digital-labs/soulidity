@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { useGrant } from '@/lib/hooks/use-grant'
-import type { MySoulEntry } from '@/lib/soulidity/types'
+import type { MySoulEntry } from '@soulidity/sdk'
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */

@@ -14,11 +14,8 @@
  * but a defensive check is kept here for any caller passing
  * `sealEncrypted=false`.
  */
-import {
-  parseSealEnvelopeSidecar,
-  type SealEnvelopeSidecar,
-} from '@/lib/services/seal-crypto'
-import { isValidContentDocumentId } from '@/lib/soulidity/content-document-id'
+import { parseSealEnvelopeSidecar } from '@/lib/services/seal-crypto'
+import { isValidContentDocumentId, type SealEnvelopeSidecar } from '@soulidity/sdk'
 
 export class SealSidecarSyncConfigError extends Error {}
 

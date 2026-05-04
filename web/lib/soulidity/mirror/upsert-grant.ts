@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import type { SoulGrantObject } from '@/lib/soulidity/types'
+import type { SoulGrantObject } from '@soulidity/sdk'
 
 export async function upsertGrantProjection(params: {
   grant: SoulGrantObject

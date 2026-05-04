@@ -20,9 +20,9 @@
  * fetch the plaintext URL directly.
  */
 import { prisma } from '@/lib/prisma'
-import { getBlobUrl } from '@/lib/services/walrus'
+import { getBlobUrl } from '@soulidity/sdk'
 import { getSealRuntimeConfig, getSealSessionTtlMinutes } from '@/lib/services/seal'
-import { generateContentDocumentIdHex } from '@/lib/soulidity/content-document-id'
+import { generateContentDocumentIdHex } from '@soulidity/sdk'
 import {
   CANONICAL_MEMORY_NAME,
   CANONICAL_SOUL_DOC_NAME,
@@ -32,14 +32,14 @@ import {
   READ_OWNER,
   READ_PAID,
   READ_PUBLIC,
-} from '@/lib/soulidity/kinds'
+} from '@soulidity/sdk'
 import {
   findActiveGrantSlotForViewer,
   getSoulGrantObject,
   getSoulStateObject,
   normalizeSuiValue,
   sameSuiValue,
-} from '@/lib/soulidity/queries'
+} from '@soulidity/sdk'
 import type {
   ContentAccessKind,
   ContentAccessResponse,
@@ -47,7 +47,7 @@ import type {
   SoulAssetSummary,
   SoulContentVersionRecord,
   SoulDownloadPolicy,
-} from '@/lib/soulidity/types'
+} from '@soulidity/sdk'
 
 export class ContentAccessDeniedError extends Error {
   constructor(message: string, readonly status = 403) {
