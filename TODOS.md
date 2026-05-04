@@ -5,13 +5,15 @@
 
 ---
 
-## T1 — `grant.move` 增加独立 scope 位以拆分 sprite / audio 授权
+## T1 — `grant.move` 增加独立 scope 位以拆分 sprite / audio 授权（**产品分支项 — 非必做**）
 
 **What**: 在 `grant.move` 中新增独立 scope bit（如 `SCOPE_AUDIO = 16`），让"授权 agent 听音色但不能换 sprite"成为可能。同步给 `KindRegistry` 提供"自定义 kind 也可以拥有独立 scope"的能力。
 
 **Why**: 当前 `KindDescriptor.default_grant_scope_mask` 必须恰好是 `SCOPE_SKILLS` 或 `SCOPE_ASSETS` 二选一。Sprite 和 Audio 都被绑在 `SCOPE_ASSETS` 上，无法分离细粒度授权。Voice 是产品上的强差异化能力（agent 用音色身份代理用户），但当前权限模型把它和 sprite 混为一谈。
 
-**Pros**:
+**Status**: 这不是 phase 2 的技术债，而是**产品决策项**。从语义看 `assets = sprite + audio` 是合理的"persona 资产伞"，把 sprite/audio 合并授权对 99% 场景是正确设计。只有当产品上确认存在"音色独立授权"的真实需求（如 agent 代理用户音色但不允许换形象）时才启动。在产品决策前不应被视为待办。
+
+**Pros**（仅在产品需要时才成立）:
 - 解锁"授权听不授权改"细粒度场景。
 - 为未来 video / 3D / biometric 等 kind 独立 scope 铺路（不再受 skills/assets 二选一约束）。
 - 让 typed-content nebula 的 "admin 一笔注册新 kind" 真正完整——独立 scope 才是新 kind 的真正自由。
@@ -20,10 +22,11 @@
 - 又一次 ABI break + 重审计 + multisig cap handoff（成本与本轮 typed-content 相当）。
 - `grant.move` 现有所有 scope-mask 校验路径都要扩展并回归。
 - 已有 grant 的兼容策略需重新设计（按本仓库习惯：hard cut 不迁移）。
+- **过早启动会被产品打回**：在没有"音色独立授权"用例的情况下做这次 ABI break，纯粹是技术上的洁癖。
 
 **Context**: 本轮 plan §Why §Known Limit 第 1 条明列。typed-content nebula 落地后，添加新 kind 已能跳过 ABI break，但只要它需要独立 scope，就还得发包。Move 中新增 scope bit 不复杂，复杂在所有调用方（前端 grant builder、API、mirror、UI）都要识别。
 
-**Depends on / blocked by**: 等本轮 typed-content nebula 落地稳定（mainnet smoke + 2 周观察期）。在那之前，独立 scope 对当前用户没有可见价值。
+**Depends on / blocked by**: **产品决策**——确认存在"sprite / audio 独立授权"或"未来某 kind 需要不在现有 4 个 scope 范畴的独立位"的真实用例。在此之前不启动。
 
 ---
 
