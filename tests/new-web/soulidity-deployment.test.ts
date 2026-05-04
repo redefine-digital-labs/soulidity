@@ -9,10 +9,20 @@ import {
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 
 const ORIGINAL_NETWORK = process.env.NEXT_PUBLIC_SUI_NETWORK
+const ORIGINAL_PACKAGE_ID = process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID
+
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[name]
+  } else {
+    process.env[name] = value
+  }
+}
 
 describe('Soulidity deployment manifest', () => {
   afterEach(() => {
-    process.env.NEXT_PUBLIC_SUI_NETWORK = ORIGINAL_NETWORK
+    restoreEnv('NEXT_PUBLIC_SUI_NETWORK', ORIGINAL_NETWORK)
+    restoreEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID', ORIGINAL_PACKAGE_ID)
   })
 
   it('resolves the active network deployment from the manifest', () => {
@@ -39,6 +49,14 @@ describe('Soulidity deployment manifest', () => {
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')).toBe(
       '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
     )
+  })
+
+  it('honors explicit env overrides before falling back to the manifest', () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+    process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = '0x111'
+
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')).toBe('0x111')
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')).toBe(deploymentManifest.mainnet.marketConfigId)
   })
 
   it('throws a targeted error for unsupported networks', () => {
