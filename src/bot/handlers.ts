@@ -3,6 +3,9 @@ import { insertRawItem } from '../db/database.js'
 import type { PrismaClient } from '../db/database.js'
 import { getAppBaseUrl } from '../shared/app-config.js'
 import { captureBackendEvent } from '../observability/posthog.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('bot')
 
 const TG_GROUP_ID = () => process.env.TG_GROUP_ID ?? ''
 
@@ -46,7 +49,7 @@ export async function handleJoin(ctx: Context, prisma?: PrismaClient): Promise<v
 
   const groupId = TG_GROUP_ID()
   if (!groupId) {
-    console.error('[handleJoin] TG_GROUP_ID not configured')
+    log.error('[handleJoin] TG_GROUP_ID not configured')
     await ctx.reply('系统暂时不可用，请稍后再试')
     return
   }
@@ -58,7 +61,7 @@ export async function handleJoin(ctx: Context, prisma?: PrismaClient): Promise<v
     })
     inviteLink = result.invite_link
   } catch (error) {
-    console.error('[handleJoin] failed to create invite link:', error)
+    log.error('[handleJoin] failed to create invite link:', error)
     await ctx.reply('系统暂时不可用，请稍后再试')
     return
   }

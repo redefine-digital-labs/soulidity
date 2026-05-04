@@ -1,5 +1,7 @@
 import type { PrismaClient } from '../db/database.js'
+import { logger } from '../shared/logger.js'
 
+const log = logger.child('scan-skills')
 const CLAWHUB_API = 'https://clawhub.ai/api/v1/skills'
 
 interface ClawHubSkill {
@@ -22,7 +24,7 @@ interface ClawHubResponse {
 }
 
 export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number }> {
-  console.log(`[${new Date().toISOString()}] Scanning ClawHub skills...`)
+  log.info(`[${new Date().toISOString()}] Scanning ClawHub skills...`)
 
   const skillMap = new Map<string, ClawHubSkill>()
   let cursor: string | null = null
@@ -39,7 +41,7 @@ export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number
     })
 
     if (!res.ok) {
-      console.error(`ClawHub API error: ${res.status} ${res.statusText}`)
+      log.error(`ClawHub API error: ${res.status} ${res.statusText}`)
       break
     }
 
@@ -50,7 +52,7 @@ export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number
     for (const item of data.items) {
       skillMap.set(item.slug, item)
     }
-    console.log(`  fetched ${skillMap.size} unique skills so far...`)
+    log.info(`  fetched ${skillMap.size} unique skills so far...`)
 
     // Stop if no new unique items or no cursor
     if (skillMap.size === prevSize || !data.nextCursor) break
@@ -60,7 +62,7 @@ export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number
   const skills = Array.from(skillMap.values())
 
   if (skills.length === 0) {
-    console.warn('No skills fetched from ClawHub; skipping sync')
+    log.warn('No skills fetched from ClawHub; skipping sync')
     return { synced: 0 }
   }
 
@@ -89,10 +91,10 @@ export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number
     })
     synced++
     if (synced % 2000 === 0) {
-      console.log(`  upserted ${synced}/${skills.length} skills...`)
+      log.info(`  upserted ${synced}/${skills.length} skills...`)
     }
   }
-  console.log(`  upserted ${synced}/${skills.length} skills...`)
+  log.info(`  upserted ${synced}/${skills.length} skills...`)
 
   // Remove skills no longer on ClawHub
   const slugs = skills.map(s => s.slug)
@@ -100,10 +102,10 @@ export async function scanSkills(prisma: PrismaClient): Promise<{ synced: number
     where: { slug: { notIn: slugs } },
   })
   if (removed.count > 0) {
-    console.log(`  removed ${removed.count} stale skills`)
+    log.info(`  removed ${removed.count} stale skills`)
   }
 
-  console.log(`Skills sync done: synced ${synced}`)
+  log.info(`Skills sync done: synced ${synced}`)
   return { synced }
 }
 

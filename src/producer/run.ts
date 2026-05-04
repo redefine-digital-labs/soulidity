@@ -4,10 +4,13 @@ import { createLLMAdapter, resolveLLMRuntimeConfig } from './llm.js'
 import { produceArticles } from './produce.js'
 import { autoPublish } from '../publisher/publish.js'
 import { shutdownPostHogWithTimeout } from '../observability/posthog.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('producer')
 
 const llmRuntime = resolveLLMRuntimeConfig(process.env)
 if (!llmRuntime) {
-  console.error('DEEPSEEK_API_KEY is required to run the producer.')
+  log.error('DEEPSEEK_API_KEY is required to run the producer.')
   process.exit(1)
 }
 
@@ -15,13 +18,13 @@ const prisma = createPrisma()
 const llm = createLLMAdapter(llmRuntime)
 
 try {
-  console.log('Producing articles...')
+  log.info('Producing articles...')
   const result = await produceArticles(prisma, llm, 10, 3)
-  console.log(`Done. Processed ${result.processed}, succeeded ${result.succeeded}, failed ${result.failed}.`)
+  log.info(`Done. Processed ${result.processed}, succeeded ${result.succeeded}, failed ${result.failed}.`)
 
-  console.log('Auto-publishing drafts older than 10 minutes...')
+  log.info('Auto-publishing drafts older than 10 minutes...')
   const pubResult = await autoPublish(prisma)
-  console.log(`Auto-publish: published ${pubResult.published}, failed ${pubResult.failed}`)
+  log.info(`Auto-publish: published ${pubResult.published}, failed ${pubResult.failed}`)
 } finally {
   try {
     await prisma.$disconnect()
@@ -29,7 +32,7 @@ try {
     try {
       await shutdownPostHogWithTimeout()
     } catch (error) {
-      console.error('[producer] failed to flush PostHog telemetry:', error)
+      log.error('[producer] failed to flush PostHog telemetry:', error)
     }
   }
 }

@@ -3,6 +3,9 @@ import type { PrismaClient } from '../db/database.js'
 import { formatArticle } from './formatter.js'
 import { syncArticleToPost } from '../shared/sync-article-post.js'
 import { captureBackendEvent, captureBackendException } from '../observability/posthog.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('publisher')
 
 /** Auto-publish draft articles older than `maxAgeMs` (default 10 minutes). */
 export async function autoPublish(
@@ -15,7 +18,7 @@ export async function autoPublish(
   const token = process.env.TG_BOT_TOKEN
   const channelId = process.env.TG_CHANNEL_ID
   if (!channelId || (!token && !opts.bot)) {
-    console.error('TG_BOT_TOKEN or TG_CHANNEL_ID not configured, skipping auto-publish')
+    log.error('TG_BOT_TOKEN or TG_CHANNEL_ID not configured, skipping auto-publish')
     return { published: 0, failed: 0 }
   }
 
@@ -64,12 +67,12 @@ export async function autoPublish(
       try {
         await syncArticleToPost(prisma, article.id)
       } catch (err) {
-        console.error(`Failed to sync article ${article.id} to community post:`, err)
+        log.error(`Failed to sync article ${article.id} to community post:`, err)
       }
 
       published++
     } catch (err) {
-      console.error(`Failed to auto-publish article ${article.id}:`, err instanceof Error ? err.message : err)
+      log.error(`Failed to auto-publish article ${article.id}:`, err instanceof Error ? err.message : err)
       captureBackendException(err, { scope: 'publisher', articleId: article.id })
       captureBackendEvent('article_publish_failed', { articleId: article.id, error: err instanceof Error ? err.message : String(err) })
       failed++
@@ -89,11 +92,11 @@ export async function autoPublish(
       try {
         await syncArticleToPost(prisma, art.id)
       } catch (err) {
-        console.error(`Catch-up sync failed for article ${art.id}:`, err)
+        log.error(`Catch-up sync failed for article ${art.id}:`, err)
       }
     }
   } catch (err) {
-    console.error('Catch-up sync query failed:', err)
+    log.error('Catch-up sync query failed:', err)
   }
 
   return { published, failed }

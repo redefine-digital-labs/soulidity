@@ -6,7 +6,10 @@ import { seedAgentRoles } from './db/agent-roles.js'
 import { startScheduler } from './scheduler.js'
 import { registerHandlers } from './bot/handlers.js'
 import { captureBackendException, shutdownPostHog } from './observability/posthog.js'
+import { logger } from './shared/logger.js'
 import type { PrismaClient } from './db/database.js'
+
+const log = logger.child('main')
 
 const SHUTDOWN_TIMEOUT_MS = 5_000
 
@@ -39,7 +42,7 @@ async function shutdownRuntime(exitCode: number): Promise<never> {
   try {
     bot?.stop()
   } catch (error) {
-    console.error('[shutdown] failed to stop bot:', error)
+    log.error('[shutdown] failed to stop bot:', error)
   }
 
   try {
@@ -47,13 +50,13 @@ async function shutdownRuntime(exitCode: number): Promise<never> {
       await withShutdownTimeout('prisma disconnect', prisma.$disconnect())
     }
   } catch (error) {
-    console.error('[shutdown] failed to disconnect prisma:', error)
+    log.error('[shutdown] failed to disconnect prisma:', error)
   }
 
   try {
     await withShutdownTimeout('posthog shutdown', shutdownPostHog())
   } catch (error) {
-    console.error('[shutdown] failed to flush posthog:', error)
+    log.error('[shutdown] failed to flush posthog:', error)
   }
 
   process.exit(exitCode)
@@ -63,34 +66,34 @@ function captureFatalException(scope: 'uncaughtException' | 'unhandledRejection'
   try {
     captureBackendException(error, { scope })
   } catch (captureError) {
-    console.error(`[${scope}] failed to capture exception:`, captureError)
+    log.error(`[${scope}] failed to capture exception:`, captureError)
   }
 }
 
 process.on('uncaughtException', (error) => {
-  console.error('[uncaughtException]', error)
+  log.error('[uncaughtException]', error)
   captureFatalException('uncaughtException', error)
   void shutdownRuntime(1)
 })
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason)
+  log.error('[unhandledRejection]', reason)
   captureFatalException('unhandledRejection', reason)
   void shutdownRuntime(1)
 })
 
 const llmRuntime = resolveLLMRuntimeConfig(process.env)
 if (!llmRuntime) {
-  console.warn('DEEPSEEK_API_KEY not set, LLM disabled — content production will be skipped.')
+  log.warn('DEEPSEEK_API_KEY not set, LLM disabled — content production will be skipped.')
 }
 
 prisma = createPrisma()
 const llm = llmRuntime ? createLLMAdapter(llmRuntime) : undefined
 
-console.log('CryptoOpenClaw engine starting...')
+log.info('CryptoOpenClaw engine starting...')
 await seedAgentRoles(prisma)
-console.log('Agent roles seeded.')
-console.log(`Database: ${process.env.DATABASE_URL?.replace(/\/\/.*@/, '//***@')}`)
+log.info('Agent roles seeded.')
+log.info(`Database: ${process.env.DATABASE_URL?.replace(/\/\/.*@/, '//***@')}`)
 
 // Start Bot in long-polling mode
 const botToken = process.env.TG_BOT_TOKEN
@@ -98,15 +101,15 @@ if (botToken) {
   bot = new Bot(botToken)
   registerHandlers(bot, prisma)
   bot.start()
-  console.log('Bot started in long-polling mode.')
+  log.info('Bot started in long-polling mode.')
 } else {
-  console.warn('TG_BOT_TOKEN not set, bot disabled.')
+  log.warn('TG_BOT_TOKEN not set, bot disabled.')
 }
 
 startScheduler(prisma, llm, bot)
 
 // Keep process alive
 process.on('SIGINT', async () => {
-  console.log('\nShutting down...')
+  log.info('\nShutting down...')
   await shutdownRuntime(0)
 })

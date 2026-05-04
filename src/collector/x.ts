@@ -2,6 +2,9 @@ import pg from 'pg'
 import type { PrismaClient } from '../db/database.js'
 import { getCollectorState, upsertCollectorState } from '../db/database.js'
 import { captureBackendEvent, captureBackendException } from '../observability/posthog.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('collector:x')
 
 // Parse "timestamp without time zone" as UTC to avoid local-timezone offset
 // when the external DB stores wall-clock times in a non-tz column.
@@ -95,7 +98,7 @@ function getPool(): pg.Pool {
       types: { getTypeParser: (oid: number) => oid === TIMESTAMP_OID ? parseTimestampAsUTC : pg.types.getTypeParser(oid) },
     })
     xPool.on('error', (err) => {
-      console.error('X database pool error:', err.message)
+      log.error('X database pool error:', err.message)
       captureBackendException(err, {
         scope: 'collector',
         collector: 'x',
@@ -226,7 +229,7 @@ export async function collectX(prisma: PrismaClient, deps: CollectXDeps = {}): P
         if (isShort) pendingReview++
       } catch (err: any) {
         if (err?.code === 'P2002') {
-          console.log(`  skipped (already exists): ${tweet.tweet_url}`)
+          log.info(`  skipped (already exists): ${tweet.tweet_url}`)
         } else {
           throw err
         }

@@ -1,5 +1,8 @@
 import type { CollectedItem } from './types.js'
 import { captureBackendException } from '../observability/posthog.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('collector:github')
 
 const SEARCH_QUERIES = [
   'ai agent',
@@ -42,7 +45,7 @@ export async function collectGithub(): Promise<CollectedItem[]> {
       )
 
       if (!resp.ok) {
-        console.error(`GitHub API error for "${query}": ${resp.status}`)
+        log.error(`GitHub API error for "${query}": ${resp.status}`)
         captureBackendException(new Error(`GitHub API ${resp.status}`), {
           scope: 'collector',
           collector: 'github',
@@ -69,7 +72,7 @@ export async function collectGithub(): Promise<CollectedItem[]> {
         })
       }
     } catch (err) {
-      console.error(`Failed to search GitHub for "${query}":`, err)
+      log.error(`Failed to search GitHub for "${query}":`, err)
       captureBackendException(err, {
         scope: 'collector',
         collector: 'github',

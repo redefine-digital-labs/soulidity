@@ -7,6 +7,9 @@ import { buildAnalystPrompt, parseAnalystResponse, ANALYST_SYSTEM_PROMPT } from 
 import { buildEditorPrompt, parseEditorResponse, EDITOR_SYSTEM_PROMPT } from './agents/editor.js'
 import { getPrismaConnectionErrorCode, isTransientPrismaConnectionError } from '../shared/prisma-errors.js'
 import { captureBackendEvent, captureBackendException } from '../observability/posthog.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('pipeline')
 
 interface PipelineResult {
   success: boolean
@@ -135,7 +138,7 @@ export async function runAgentPipeline(
           await updateProcessLog(prisma, logId, { status: 'completed', output: JSON.stringify(editorOutput), completedAt: now })
         }
       } catch (logErr) {
-        console.error('Failed to write process logs:', logErr)
+        log.error('Failed to write process logs:', logErr)
       }
 
       // Link companies
@@ -145,7 +148,7 @@ export async function runAgentPipeline(
             const companyId = await upsertCompany(prisma, c)
             await linkArticleCompany(prisma, articleId, companyId)
           } catch (err) {
-            console.error(`Failed to link company ${c.name}:`, err)
+            log.error(`Failed to link company ${c.name}:`, err)
           }
         }
       }
@@ -175,12 +178,12 @@ export async function runAgentPipeline(
     // Retryable: transient DB connection errors
     if (isTransientPrismaConnectionError(err)) {
       const pgCode = getPrismaConnectionErrorCode(err) ?? 'unknown'
-      console.warn(`Pipeline transient DB error for ${rawItemId}, will retry:`, err.message)
+      log.warn(`Pipeline transient DB error for ${rawItemId}, will retry:`, err.message)
       await requeueRawItem(prisma, rawItemId)
       return { success: false, articleId: null, error: `DB connection error ${pgCode}`, retryLater: true }
     }
 
-    console.error(`Pipeline failed for ${rawItemId}:`, err)
+    log.error(`Pipeline failed for ${rawItemId}:`, err)
     captureBackendException(err, { scope: 'pipeline', rawItemId })
     captureBackendEvent('article_production_failed', { rawItemId, error: err.message })
     await updateRawItemStatus(prisma, rawItemId, 'rejected').catch(() => {})

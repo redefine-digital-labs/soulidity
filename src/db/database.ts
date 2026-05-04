@@ -3,6 +3,9 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import type { RawItem, Article, RawItemStatus, ArticleStatus, CollectorState } from '../shared/types.js'
 import { normalizeUrl } from '../shared/dedup.js'
 import { isTransientPrismaConnectionError } from '../shared/prisma-errors.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('db')
 
 export type { PrismaClient }
 
@@ -45,7 +48,7 @@ export function createPrisma(): PrismaClient {
 
     current = buildPrismaClient(connectionString)
     await stale.$disconnect().catch(() => {})
-    console.warn('Prisma connection closed; recreated PrismaClient.')
+    log.warn('Prisma connection closed; recreated PrismaClient.')
   }
 
   const runWithReconnect = async <T>(operation: (client: PrismaClient) => Promise<T>, canRetry: boolean): Promise<T> => {

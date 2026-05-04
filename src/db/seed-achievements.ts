@@ -1,5 +1,8 @@
 import 'dotenv/config'
 import { createPrisma } from './database.js'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('seed-achievements')
 
 const ACHIEVEMENTS = [
   { name: 'first-post', nameZh: '首次发布', icon: '🌱', description: '发布第一篇养成日志', condition: 'posts >= 1' },
@@ -21,9 +24,9 @@ async function main() {
       update: {},
     })
   }
-  console.log(`Seeded ${ACHIEVEMENTS.length} achievements`)
+  log.info(`Seeded ${ACHIEVEMENTS.length} achievements`)
 
   await prisma.$disconnect()
 }
 
-main().catch(console.error)
+main().catch((err) => log.error('seed failed', err))

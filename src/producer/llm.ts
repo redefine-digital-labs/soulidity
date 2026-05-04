@@ -1,4 +1,7 @@
 import OpenAI from 'openai'
+import { logger } from '../shared/logger.js'
+
+const log = logger.child('llm')
 
 export interface LLMAdapter {
   generate(systemPrompt: string, userPrompt: string): Promise<string>
@@ -65,7 +68,7 @@ export function createLLMAdapter(config: LLMConfig): LLMAdapter {
         const text = response.choices[0]?.message?.content
         if (text) return text
         if (attempt < maxRetries) {
-          console.warn(`LLM returned empty response (attempt ${attempt + 1}/${maxRetries + 1}), retrying...`)
+          log.warn(`LLM returned empty response (attempt ${attempt + 1}/${maxRetries + 1}), retrying...`)
           await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
         }
       }
