@@ -195,11 +195,13 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
         'Soul kiosk capability': soulKioskCapId,
+        'Soul state': soul.stateOnChainId,
         'Soul listing': soul.listingObjectOnChainId,
       })
       const tx = buildDelistSoulTx({
         currentKioskId: soulKioskId,
         currentKioskCapOnChainId: soulKioskCapId,
+        stateObjectId: soul.stateOnChainId,
         listingObjectId: soul.listingObjectOnChainId,
       })
       const result = await signAndExecute(tx)

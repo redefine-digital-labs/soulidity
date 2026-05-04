@@ -117,8 +117,6 @@ export interface SoulCollectionRightObject {
   name: string
   description: string
   imageUrl: string
-  extraRoyaltyBps: number
-  tradeable: boolean
 }
 
 export interface CollectionListingObject {

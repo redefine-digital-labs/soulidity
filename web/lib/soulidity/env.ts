@@ -4,6 +4,7 @@ export type SoulidityPublicEnvName =
   | 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'
   | 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE'
@@ -24,6 +25,8 @@ function readPublicEnv(name: SoulidityPublicEnvName): string | undefined {
       return deployment.marketConfigId
     case 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID':
       return deployment.kioskRegistryId
+    case 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID':
+      return deployment.kindRegistryId
     case 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID':
       return deployment.soulTransferPolicyId
     case 'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID':

@@ -21,8 +21,8 @@ export function buildIssueGrantTx(params: {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const tx = new Transaction()
-  const [grantObject] = tx.moveCall({
-    target: `${packageId}::grant::issue`,
+  tx.moveCall({
+    target: `${packageId}::grant::issue_to_grantee`,
     arguments: [
       tx.object(params.stateObjectId),
       tx.pure.address(params.granteeAddress),
@@ -31,7 +31,6 @@ export function buildIssueGrantTx(params: {
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
-  tx.transferObjects([grantObject], tx.pure.address(params.granteeAddress))
   return tx
 }
 
@@ -132,8 +131,8 @@ export function buildRevokeGrantScopeTx(params: {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const tx = new Transaction()
-  const [grantObject] = tx.moveCall({
-    target: `${packageId}::grant::revoke_scope`,
+  tx.moveCall({
+    target: `${packageId}::grant::revoke_scope_to_grantee`,
     arguments: [
       tx.object(params.stateObjectId),
       tx.pure.address(params.granteeAddress),
@@ -141,6 +140,5 @@ export function buildRevokeGrantScopeTx(params: {
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
-  tx.transferObjects([grantObject], tx.pure.address(params.granteeAddress))
   return tx
 }

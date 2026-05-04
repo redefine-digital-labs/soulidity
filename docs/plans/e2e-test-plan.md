@@ -18,7 +18,6 @@
 | `soulTransferPolicyId` | `0x5e5711e21db5e445c03a59154bcb1fd889efc111cd42180f28c7a3adbe9ae92f` |
 | `collectionTransferPolicyId` | `0x97bf30a371ab12bd3184357cb69dd0ec8c1503ab730390166c4279173a8851db` |
 | `upgradeCapId` | `0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b` |
-| `upgradeStateId` | `0x616117e725110550e03490bf189e0c5a9a01c2383e819eff2092b58560355f2c` |
 | `paymentCoinType` | `…::usdc::USDC`（见 deployment-manifest.json） |
 | `publishTxDigest` | `HKenfarHCL6jnrqS2CosAkVNc7zBTTVXfpby5RB62i7r` |
 
@@ -424,7 +423,6 @@ const vars = {
   COLLECTION_TRANSFER_POLICY_ID: manifest.collectionTransferPolicyId,
   PAYMENT_COIN_TYPE: manifest.paymentCoinType,
   UPGRADE_CAP_ID: manifest.upgradeCapId,
-  UPGRADE_STATE_ID: manifest.upgradeStateId,
 }
 for (const [key, value] of Object.entries(vars)) {
   if (!value) throw new Error(`Missing ${key} in deployment manifest`)
@@ -2509,7 +2507,7 @@ Gas 页（`web/app/create/gas/page.tsx`）在 `useEffect` 中挂载以下全局�
 
 ### 合约 / SDK 契约
 
-16. **Fresh publish manifest 唯一真相**：运行时读取的 packageId / marketConfigId / kioskRegistryId / soulTransferPolicyId / collectionTransferPolicyId / upgradeCapId / upgradeStateId 必须来自 `web/lib/soulidity/deployment-manifest.json`；`move/soulidity/Published.toml` 只交叉校验 `published-at` / `original-id` / `upgrade-capability`（不记录 `upgradeStateId`）。Test 7.10b 做 manifest 一致性断言。
+16. **Fresh publish manifest 唯一真相**：运行时读取的 packageId / marketConfigId / kioskRegistryId / kindRegistryId / soulTransferPolicyId / collectionTransferPolicyId / upgradeCapId 必须来自 `web/lib/soulidity/deployment-manifest.json`；`move/soulidity/Published.toml` 只交叉校验 `published-at` / `original-id` / `upgrade-capability`。`MarketUpgradeState` 已移除，治理边界以 `UpgradeCap` 归属为准。Test 7.10b 做 manifest 一致性断言。
 17. **Mint 签名扩展参数**：`mint_native_in_personal_kiosk` / `mint_imported_in_personal_kiosk` / `mint_joined_in_personal_kiosk<T>` 在 `asset_*` 组之后依次插入 sprite 5 项 + voice 4 项 + `content_access_price_atomic/u64` + `content_access_default_scope_mask/u64` + `content_access_default_duration_ms/Option<u64>` + `creator_royalty_bps/u16`。所有直接构造 PTB 的外部调用者必须与 SDK 对齐；本计划统一走 `web/lib/soulidity/tx/*` builder。
 18. **SoulMetadata mint 自动创建**：mint 内部自动 `metadata::create()` + `share_metadata()`；`SoulAsset.metadataOnChainId` 在 publish sync 路由 mirror。Phase 1.8 / 1.9 断言该字段非空；fixture 不含 sprite / voice，因此 `activeSprite* / activeVoice*` 字段为 null。
 19. **ContentAccessList 与 SoulState 一一绑定**：mint 自动创建 ContentAccessList 并写入 `SoulState.access_list_id`；`market::purchase_content_access` 双向校验 `state.access_list_id == object::id(access_list)`（`EAccessListLinkageMismatch = 29`）。

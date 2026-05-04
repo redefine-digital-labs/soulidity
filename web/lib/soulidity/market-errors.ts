@@ -36,31 +36,30 @@ export type MarketErrorName =
   | 'EPersonalKioskMismatch'
   | 'ECollectionMismatch'
   | 'ECollectionRightMismatch'
-  | 'EStateMismatch'
   | 'EAccessListStateMismatch'
-  | 'EUpgradeCapNotTracked'
-  | 'EUpgradeCapMismatch'
-  | 'EUpgradesImmutable'
-  | 'EUpgradeAlreadyPending'
-  | 'EUpgradeNotPending'
   | 'ESourceAlreadyJoined'
-  | 'EInvalidMetadataBinding'
-  | 'EMetadataAssetsMissing'
-  | 'EContentAccessNotPurchasable'
+  | 'EPaidAccessNotPurchasable'
   | 'EAccessListLinkageMismatch'
   | 'EListingStillActive'
   | 'EOldKioskNotEmpty'
   | 'EOldKioskMismatch'
   | 'ERebindSameKiosk'
-  | 'EAssetsRootAlreadyExists'
-  | 'EContentAccessOwnerCannotPurchase'
-  | 'ESkillsRootAlreadyExists'
+  | 'EPaidAccessOwnerCannotPurchase'
   | 'EPersonalKioskCapMismatch'
   | 'ESoulCurrentKioskMismatch'
   | 'ESoulOwnerMismatch'
   | 'EKioskOwnerMismatch'
   | 'EListingSellerMismatch'
   | 'EListingStateMismatch'
+  | 'EInitialEntryActiveNotSupported'
+  | 'ENotSoulOwner'
+  | 'EStateConfigKeyEmpty'
+  | 'EInitialSoulDocCountMismatch'
+  | 'EInitialSoulDocNameMismatch'
+  | 'EInitialMemoryCountMismatch'
+  | 'EInitialMemoryNameMismatch'
+  | 'EInitialKindOpNotAllowedAtMint'
+  | 'EPaidAccessKindMismatch'
 
 export interface MarketErrorEntry {
   readonly name: MarketErrorName
@@ -156,64 +155,24 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
     summary: 'Collection right object does not match this collection.',
     recoveryHint: 'Refresh and use the correct CollectionRight.',
   },
-  18: {
-    name: 'EStateMismatch',
-    summary: 'Soul state object does not match the Soul ID you passed in.',
-    recoveryHint: 'Refresh the page; the Soul state may have been updated by another transaction.',
-  },
   19: {
     name: 'EAccessListStateMismatch',
-    summary: 'ContentAccessList does not belong to this Soul state.',
+    summary: 'Paid access list does not belong to this Soul state.',
     recoveryHint: 'Refresh the page.',
-  },
-  20: {
-    name: 'EUpgradeCapNotTracked',
-    summary: 'Market upgrade cap is not tracked.',
-    recoveryHint: 'Admin-only path; not user-actionable.',
-  },
-  21: {
-    name: 'EUpgradeCapMismatch',
-    summary: 'Provided upgrade cap does not match the tracked one.',
-    recoveryHint: 'Admin-only path; not user-actionable.',
-  },
-  22: {
-    name: 'EUpgradesImmutable',
-    summary: 'Market upgrades are frozen.',
-    recoveryHint: 'Admin-only path; not user-actionable.',
-  },
-  23: {
-    name: 'EUpgradeAlreadyPending',
-    summary: 'A market upgrade is already pending.',
-    recoveryHint: 'Admin-only path; not user-actionable.',
-  },
-  24: {
-    name: 'EUpgradeNotPending',
-    summary: 'No market upgrade is currently pending.',
-    recoveryHint: 'Admin-only path; not user-actionable.',
   },
   25: {
     name: 'ESourceAlreadyJoined',
     summary: 'This Soul has already been joined into the target.',
     recoveryHint: 'No action needed — the join already happened.',
   },
-  26: {
-    name: 'EInvalidMetadataBinding',
-    summary: 'Metadata binding parameters are invalid.',
-    recoveryHint: 'Refresh and verify the asset/version selection.',
-  },
-  27: {
-    name: 'EMetadataAssetsMissing',
-    summary: 'Required metadata assets are missing.',
-    recoveryHint: 'Upload the required sprite/voice assets before binding.',
-  },
   28: {
-    name: 'EContentAccessNotPurchasable',
-    summary: 'This Soul’s content access cannot be purchased (price not set or list mismatch).',
-    recoveryHint: 'Verify the Soul has an active access price and refresh.',
+    name: 'EPaidAccessNotPurchasable',
+    summary: 'This paid access entry cannot be purchased because its price is not set.',
+    recoveryHint: 'Refresh and verify the Soul has paid access configured.',
   },
   29: {
     name: 'EAccessListLinkageMismatch',
-    summary: 'ContentAccessList linkage does not match the Soul state.',
+    summary: 'Paid access list linkage does not match the Soul state.',
     recoveryHint: 'Refresh the page.',
   },
   30: {
@@ -236,20 +195,10 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
     summary: 'Cannot rebind to the same kiosk you are already on.',
     recoveryHint: 'Provide a different personal kiosk to rebind to.',
   },
-  34: {
-    name: 'EAssetsRootAlreadyExists',
-    summary: 'Soul already has an assets root.',
-    recoveryHint: 'No action needed; assets are already initialized.',
-  },
   35: {
-    name: 'EContentAccessOwnerCannotPurchase',
+    name: 'EPaidAccessOwnerCannotPurchase',
     summary: 'You already own this Soul; no need to purchase access.',
     recoveryHint: 'Use your owner privileges instead of purchasing.',
-  },
-  36: {
-    name: 'ESkillsRootAlreadyExists',
-    summary: 'Soul already has a skills root.',
-    recoveryHint: 'No action needed; skills are already initialized.',
   },
   37: {
     name: 'EPersonalKioskCapMismatch',
@@ -280,6 +229,51 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
     name: 'EListingStateMismatch',
     summary: 'The Soul state referenced by this listing has changed.',
     recoveryHint: 'Refresh the page; the listing may need to be recreated.',
+  },
+  43: {
+    name: 'EInitialEntryActiveNotSupported',
+    summary: 'This content kind cannot be marked active during mint.',
+    recoveryHint: 'Refresh and retry with a supported active content kind.',
+  },
+  44: {
+    name: 'ENotSoulOwner',
+    summary: 'Only the current Soul owner can perform this action.',
+    recoveryHint: 'Refresh and sign with the current owner wallet.',
+  },
+  45: {
+    name: 'EStateConfigKeyEmpty',
+    summary: 'State config key cannot be empty.',
+    recoveryHint: 'Provide a non-empty config key and retry.',
+  },
+  46: {
+    name: 'EInitialSoulDocCountMismatch',
+    summary: 'Mint must include exactly one soul document entry.',
+    recoveryHint: 'Refresh and retry the mint flow.',
+  },
+  47: {
+    name: 'EInitialSoulDocNameMismatch',
+    summary: 'Initial soul document entry uses the wrong canonical name.',
+    recoveryHint: 'Refresh and retry the mint flow.',
+  },
+  48: {
+    name: 'EInitialMemoryCountMismatch',
+    summary: 'Mint must include at least one memory entry.',
+    recoveryHint: 'Refresh and retry the mint flow.',
+  },
+  49: {
+    name: 'EInitialMemoryNameMismatch',
+    summary: 'Initial memory entry uses the wrong canonical name.',
+    recoveryHint: 'Refresh and retry the mint flow.',
+  },
+  50: {
+    name: 'EInitialKindOpNotAllowedAtMint',
+    summary: 'Initial content entry is not allowed for this kind.',
+    recoveryHint: 'Remove the unsupported entry and retry.',
+  },
+  51: {
+    name: 'EPaidAccessKindMismatch',
+    summary: 'Paid access is not configured for this content kind.',
+    recoveryHint: 'Refresh and verify the selected paid access kind.',
   },
 }
 
@@ -454,6 +448,7 @@ export type CollectionErrorName =
   | 'ECreatorMismatch'
   | 'ECollectionSupplyExceeded'
   | 'ESupplyCapInvalid'
+  | 'ESoulCurrentlyListed'
 
 export interface CollectionErrorEntry {
   readonly name: CollectionErrorName
@@ -498,6 +493,12 @@ export const COLLECTION_ERROR_CATALOG: { readonly [code: number]: CollectionErro
     summary: 'Collection supply cap is invalid',
     recoveryHint: 'Supply cap must be at least 1, or unset for unlimited.',
     httpStatus: 400,
+  },
+  6: {
+    name: 'ESoulCurrentlyListed',
+    summary: 'This Soul is currently listed for sale.',
+    recoveryHint: 'Cancel the active listing first, then bind the Soul into a collection.',
+    httpStatus: 409,
   },
 }
 

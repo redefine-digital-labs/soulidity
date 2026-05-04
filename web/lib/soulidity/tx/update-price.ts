@@ -25,6 +25,7 @@ export function buildUpdateListingPriceTx(params: {
     arguments: [
       tx.object(params.currentKioskId),
       tx.object(params.currentKioskCapOnChainId),
+      tx.object(params.stateObjectId),
       tx.object(params.listingObjectId),
     ],
   })

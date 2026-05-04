@@ -68,10 +68,10 @@ export default function SoulGrantApiPage() {
         <h2 className="text-lg font-semibold">Grant Lifecycle</h2>
         <ul className="text-sm text-muted space-y-2">
           <li>
-            <strong className="text-foreground">Issue:</strong> Owner calls <code>grant::issue</code> on-chain, passing the <code>SoulState</code>, grantee address, scope mask, and optional expiry timestamp in milliseconds. One grant slot per grantee is enforced — issuing a second grant to the same grantee supersedes the first. The default <code>grant_capacity</code> is 1.
+            <strong className="text-foreground">Issue:</strong> Owner calls <code>grant::issue_to_grantee</code> on-chain, passing the <code>SoulState</code>, grantee address, scope mask, and optional expiry timestamp in milliseconds. One grant slot per grantee is enforced — issuing a second grant to the same grantee supersedes the first. The default <code>grant_capacity</code> is 1.
           </li>
           <li>
-            <strong className="text-foreground">Supersede (revoke-scope):</strong> Owner calls <code>grant::revoke_scope</code> to strip specific scope bits and issue a replacement grant in one atomic transaction. The event log records both <code>SoulGrantSuperseded</code> and a new <code>SoulGrantIssued</code>.
+            <strong className="text-foreground">Supersede (revoke-scope):</strong> Owner calls <code>grant::revoke_scope_to_grantee</code> to strip specific scope bits and issue a replacement grant in one atomic transaction. The event log records both <code>SoulGrantSuperseded</code> and a new <code>SoulGrantIssued</code>.
           </li>
           <li>
             <strong className="text-foreground">Revoke:</strong> Owner calls <code>grant::revoke</code> to remove a grantee&apos;s slot entirely. Emits <code>SoulGrantRevoked</code>.
@@ -99,7 +99,7 @@ export default function SoulGrantApiPage() {
 }`}</code>
         </pre>
         <p className="text-xs text-muted">
-          The <code>SoulGrant</code> object is transferred to the grantee wallet after <code>grant::issue</code>. The grantee must pass it as an argument to any guarded Move entry function. The <code>ownership_epoch_snapshot</code> must equal the current <code>SoulState.ownership_epoch</code> — any ownership rotation increments the epoch and invalidates all outstanding grants.
+          The <code>SoulGrant</code> object is transferred to the grantee wallet by <code>grant::issue_to_grantee</code>. The grantee must pass it as an argument to any guarded Move entry function. The <code>ownership_epoch_snapshot</code> must equal the current <code>SoulState.ownership_epoch</code> — any ownership rotation increments the epoch and invalidates all outstanding grants.
         </p>
       </div>
 

@@ -14,11 +14,14 @@ const ECollectionLocked: u64 = 2;
 const ECreatorMismatch: u64 = 3;
 const ECollectionSupplyExceeded: u64 = 4;
 const ESupplyCapInvalid: u64 = 5;
+const ESoulCurrentlyListed: u64 = 6;
+const VERSION: u64 = 1;
 
 public struct COLLECTION has drop {}
 
 public struct SoulCollection has key {
     id: UID,
+    version: u64,
     creator: address,
     extra_royalty_bps: u16,
     tradeable: bool,
@@ -29,15 +32,18 @@ public struct SoulCollection has key {
     current_supply: u64,
 }
 
+/// Kiosk-held tradeable certificate for a `SoulCollection`. Carries only
+/// `Display`-rendered metadata (name / description / image_url) plus the
+/// back-pointer to the parent collection. Royalty rate and tradeability
+/// live exclusively on `SoulCollection` to avoid two-source-of-truth drift.
 public struct SoulCollectionRight has key, store {
     id: UID,
+    version: u64,
     collection_id: ID,
     creator: address,
     name: String,
     description: String,
     image_url: String,
-    extra_royalty_bps: u16,
-    tradeable: bool,
 }
 
 public struct SoulCollectionCreated has copy, drop {
@@ -82,6 +88,18 @@ public fun current_holder(self: &SoulCollection): address {
     self.current_holder
 }
 
+public fun protocol_version(): u64 {
+    VERSION
+}
+
+public fun collection_version(self: &SoulCollection): u64 {
+    self.version
+}
+
+public fun collection_right_version(self: &SoulCollectionRight): u64 {
+    self.version
+}
+
 public fun current_holder_kiosk_id(self: &SoulCollection): ID {
     self.current_holder_kiosk_id
 }
@@ -106,10 +124,6 @@ public fun collection_id(self: &SoulCollectionRight): ID {
     self.collection_id
 }
 
-public fun right_tradeable(self: &SoulCollectionRight): bool {
-    self.tradeable
-}
-
 public(package) fun create(
     name: String,
     description: String,
@@ -129,17 +143,17 @@ public(package) fun create(
     let collection_id = collection_uid.to_inner();
     let right = SoulCollectionRight {
         id: object::new(ctx),
+        version: VERSION,
         collection_id,
         creator,
         name,
         description,
         image_url,
-        extra_royalty_bps,
-        tradeable,
     };
     let right_id = object::id(&right);
     let collection = SoulCollection {
         id: collection_uid,
+        version: VERSION,
         creator,
         extra_royalty_bps,
         tradeable,
@@ -170,6 +184,13 @@ public fun add_soul(
     assert!(collection.creator == ctx.sender(), ENotCollectionCreator);
     assert!(soul::state_creator(state) == collection.creator, ECreatorMismatch);
     soul::assert_owner(state, ctx.sender());
+    // Solo listings reserve the Soul's PurchaseCap inside a `SoulListing`;
+    // binding into a collection mid-listing would leave the active solo
+    // listing un-purchasable (`buy_soul_fixed_price` requires
+    // `state.collection_id.is_none()` and `*_with_collection` requires the
+    // listing to carry the collection id at list time). Force the seller
+    // through cancel → list_with_collection instead.
+    assert!(!soul::is_listed(state), ESoulCurrentlyListed);
 
     if (collection.max_supply.is_some()) {
         let cap = *collection.max_supply.borrow();
@@ -231,6 +252,7 @@ public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
 public fun destroy_collection_for_testing(self: SoulCollection) {
     let SoulCollection {
         id,
+        version: _,
         creator: _,
         extra_royalty_bps: _,
         tradeable: _,
@@ -247,13 +269,12 @@ public fun destroy_collection_for_testing(self: SoulCollection) {
 public fun destroy_right_for_testing(self: SoulCollectionRight) {
     let SoulCollectionRight {
         id,
+        version: _,
         collection_id: _,
         creator: _,
         name: _,
         description: _,
         image_url: _,
-        extra_royalty_bps: _,
-        tradeable: _,
     } = self;
     id.delete();
 }

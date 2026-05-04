@@ -945,8 +945,6 @@ export async function getSoulCollectionRightObject(objectId: string, packageId: 
     name: readString(fields.name, 'SoulCollectionRight name'),
     description: readString(fields.description, 'SoulCollectionRight description'),
     imageUrl: readString(fields.image_url, 'SoulCollectionRight image_url'),
-    extraRoyaltyBps: readNumber(fields.extra_royalty_bps, 'SoulCollectionRight extra_royalty_bps'),
-    tradeable: Boolean(fields.tradeable),
   }
 }
 

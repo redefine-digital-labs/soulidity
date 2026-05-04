@@ -38,10 +38,10 @@
    - 预期效果：新的个人 kiosk 初始化、复绑、Soul/Collection 挂单、购买、内容访问购买都会在市场层直接 abort。
 2. 故障分流：
    - 若问题只在运营/前端层，保持 `paused = true`，修复链下依赖后再恢复。
-   - 若问题在链上逻辑但可修复，保持 `paused = true`，按 `track_upgrade_cap -> authorize_upgrade -> commit_upgrade` 完成升级验证后，再 `update_paused(..., false)` 恢复。
+   - 若问题在链上逻辑但可修复，保持 `paused = true`，用当前 `UpgradeCap` 归属方完成原生 Sui package upgrade 后，再 `update_paused(..., false)` 恢复。
 3. 永久锁定：
-   - 若确认当前版本需要长期冻结，调用 `market::freeze_upgrades(&mut upgrade_state, &admin_cap, upgrade_cap)`。
-   - 预期效果：upgrade cap 被 `package::make_immutable` 消耗，后续所有 `track/restrict/authorize/commit` 路径都会被 `EUpgradesImmutable` 拦住。
+   - 若确认当前版本需要长期冻结，由 `UpgradeCap` 持有人走原生 Sui freeze / immutable 路径。
+   - 预期效果：upgrade cap 被消耗，后续无法再升级该 package。
 4. 回滚边界：
    - `pause` 是可逆的运维开关。
    - `freeze_upgrades` 是不可逆锁定，不存在链上解锁路径；真正的回滚点只在执行 freeze 之前。

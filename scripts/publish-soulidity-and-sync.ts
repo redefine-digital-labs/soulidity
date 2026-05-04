@@ -19,21 +19,21 @@ interface SoulidityDeployment {
   packageId: string
   marketConfigId: string
   kioskRegistryId: string
+  kindRegistryId?: string
   soulTransferPolicyId: string
   collectionTransferPolicyId: string
   paymentCoinType: string
   publishTxDigest?: string
   upgradeCapId?: string
-  upgradeStateId?: string
   // Mainnet multisig handoff
   marketAdminCapId?: string
+  kindAdminCapId?: string
   soulPolicyCapId?: string
   collectionPolicyCapId?: string
   soulDisplayId?: string
   collectionDisplayId?: string
   multisigOwner?: string
   capTransferTxDigest?: string
-  trackUpgradeCapTxDigest?: string
   partialDeploymentReason?: string
 }
 
@@ -164,7 +164,6 @@ interface ParsedArgs {
   gasBudget: string | null
   paymentCoinType: string | null
   transferCapsTo: string | null
-  trackUpgradeCap: boolean
   privKeyEnv: string
 }
 
@@ -178,7 +177,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
     gasBudget: null,
     paymentCoinType: null,
     transferCapsTo: null,
-    trackUpgradeCap: true,
     privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
   }
 
@@ -190,8 +188,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
     if (arg === '--resume-cap-transfer-from-manifest') { result.resumeCapTransferFromManifest = true; continue }
     if (arg === '--use-env-key') { result.useEnvKey = true; continue }
     if (arg === '--mainnet-e2e') { result.mainnetE2e = true; continue }
-    if (arg === '--track-upgrade-cap') { result.trackUpgradeCap = true; continue }
-    if (arg === '--no-track-upgrade-cap') { result.trackUpgradeCap = false; continue }
 
     const valueFor = (flag: string): string | null | undefined => {
       if (arg === flag) {
@@ -297,9 +293,10 @@ export function extractDeploymentFromPublishResult(
   const soulTransferPolicyId = requireString(marketPayload.soul_policy_id, 'soul transfer policy id')
   const collectionTransferPolicyId = requireString(marketPayload.collection_policy_id, 'collection transfer policy id')
 
-  const upgradeStateInitialized = result.events?.find((event) => event.type?.endsWith('::market::MarketUpgradeStateInitialized'))
-  const upgradeStatePayload = upgradeStateInitialized?.parsedJson ?? {}
-  const upgradeStateId = requireString(upgradeStatePayload.upgrade_state_id, 'upgrade state id')
+  const kindRegistryCreated = result.events?.find((event) => event.type?.endsWith('::kind_registry::KindRegistryCreated'))
+  const kindRegistryPayload = kindRegistryCreated?.parsedJson ?? {}
+  const kindRegistryId = requireString(kindRegistryPayload.registry_id, 'kind registry id')
+  const kindAdminCapIdFromEvent = requireString(kindRegistryPayload.admin_cap_id, 'kind admin cap id')
 
   const findByObjectType = (typeStr: string) =>
     result.objectChanges?.find((c) => c.objectType === typeStr)?.objectId
@@ -310,6 +307,7 @@ export function extractDeploymentFromPublishResult(
   )
 
   const marketAdminCapId = findByObjectType(`${packageId}::market::MarketAdminCap`)
+  const kindAdminCapId = findByObjectType(`${packageId}::kind_registry::KindAdminCap`) ?? kindAdminCapIdFromEvent
   const soulPolicyCapId = findByObjectType(`0x2::transfer_policy::TransferPolicyCap<${packageId}::soul::Soul>`)
   const collectionPolicyCapId = findByObjectType(`0x2::transfer_policy::TransferPolicyCap<${packageId}::collection::SoulCollectionRight>`)
   const soulDisplayId = findByObjectType(`0x2::display::Display<${packageId}::soul::Soul>`)
@@ -326,13 +324,14 @@ export function extractDeploymentFromPublishResult(
     packageId,
     marketConfigId,
     kioskRegistryId,
+    kindRegistryId,
     soulTransferPolicyId,
     collectionTransferPolicyId,
     paymentCoinType,
     publishTxDigest: requireString(publishTxDigest, 'publish transaction digest'),
     upgradeCapId,
-    upgradeStateId,
     marketAdminCapId,
+    kindAdminCapId,
     soulPolicyCapId,
     collectionPolicyCapId,
     soulDisplayId,
@@ -345,13 +344,11 @@ export function extractDeploymentFromPublishResult(
 export function buildCapTransferPtb(
   deployment: SoulidityDeployment,
   multisig: string,
-  trackUpgradeCap: boolean,
   deployerAddr: string,
 ): Transaction {
   const required: Array<keyof SoulidityDeployment> = [
-    'packageId',
-    'upgradeStateId',
     'marketAdminCapId',
+    'kindAdminCapId',
     'upgradeCapId',
     'soulPolicyCapId',
     'collectionPolicyCapId',
@@ -366,20 +363,10 @@ export function buildCapTransferPtb(
 
   const tx = new Transaction()
 
-  if (trackUpgradeCap) {
-    tx.moveCall({
-      target: `${deployment.packageId}::market::track_upgrade_cap`,
-      arguments: [
-        tx.object(deployment.upgradeStateId!),
-        tx.object(deployment.marketAdminCapId!),
-        tx.object(deployment.upgradeCapId!),
-      ],
-    })
-  }
-
   tx.transferObjects(
     [
       tx.object(deployment.marketAdminCapId!),
+      tx.object(deployment.kindAdminCapId!),
       tx.object(deployment.soulPolicyCapId!),
       tx.object(deployment.collectionPolicyCapId!),
       tx.object(deployment.upgradeCapId!),
@@ -459,10 +446,9 @@ async function executeCapTransferPtb(
   deployerAddr: string,
   deployment: SoulidityDeployment,
   multisig: string,
-  trackUpgradeCap: boolean,
   gasBudgetOverride: string | null,
 ) {
-  const tx = buildCapTransferPtb(deployment, multisig, trackUpgradeCap, deployerAddr)
+  const tx = buildCapTransferPtb(deployment, multisig, deployerAddr)
   tx.setGasBudget(gasBudgetOverride ? BigInt(gasBudgetOverride) : DEFAULT_TRANSFER_GAS_BUDGET)
 
   const res = await client.signAndExecuteTransaction({
@@ -696,14 +682,10 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
           deployerAddr,
           deployment,
           args.transferCapsTo,
-          args.trackUpgradeCap,
           args.gasBudget,
         )
         deployment.multisigOwner = args.transferCapsTo
         deployment.capTransferTxDigest = transferRes.digest
-        if (args.trackUpgradeCap) {
-          deployment.trackUpgradeCapTxDigest = transferRes.digest
-        }
         manifest[network] = deployment
         writeJsonFile(manifestPath, manifest)
       } catch (e) {
@@ -770,12 +752,12 @@ async function runResumeCapTransferFlow(args: ParsedArgs, network: 'mainnet' | '
   }
   for (const field of [
     'marketAdminCapId',
+    'kindAdminCapId',
     'soulPolicyCapId',
     'collectionPolicyCapId',
     'upgradeCapId',
     'soulDisplayId',
     'collectionDisplayId',
-    'upgradeStateId',
   ] as const) {
     if (!deployment[field]) {
       exitWithError(EXIT_PREFLIGHT_FAILED, `Pre-flight: manifest.${network}.${field} missing; cannot resume`)
@@ -795,7 +777,7 @@ async function runResumeCapTransferFlow(args: ParsedArgs, network: 'mainnet' | '
   }
 
   if (args.dryRunTransferOnly) {
-    const tx = buildCapTransferPtb(deployment, args.transferCapsTo, args.trackUpgradeCap, deployerAddr)
+    const tx = buildCapTransferPtb(deployment, args.transferCapsTo, deployerAddr)
     tx.setGasBudget(args.gasBudget ? BigInt(args.gasBudget) : DEFAULT_TRANSFER_GAS_BUDGET)
     const txBytes = await tx.build({ client })
     const dryRun = await client.dryRunTransactionBlock({ transactionBlock: txBytes })
@@ -815,14 +797,10 @@ async function runResumeCapTransferFlow(args: ParsedArgs, network: 'mainnet' | '
       deployerAddr,
       deployment,
       args.transferCapsTo,
-      args.trackUpgradeCap,
       args.gasBudget,
     )
     deployment.multisigOwner = args.transferCapsTo
     deployment.capTransferTxDigest = transferRes.digest
-    if (args.trackUpgradeCap) {
-      deployment.trackUpgradeCapTxDigest = transferRes.digest
-    }
     delete deployment.partialDeploymentReason
     manifest[network] = deployment
     writeJsonFile(manifestPath, manifest)

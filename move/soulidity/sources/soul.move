@@ -1,11 +1,10 @@
 module soulidity::soul;
 
-use std::string::String;
+use std::string::{Self as string, String};
 use sui::display::{Self as display, Display};
 use sui::event;
 use sui::package::{Self as package, Publisher};
 use sui::table::{Self as table, Table};
-use walrus::blob::{Self as blob, Blob};
 
 const MAX_BPS: u16 = 10_000;
 const DEFAULT_GRANT_CAPACITY: u64 = 1;
@@ -14,31 +13,37 @@ const ECreatorRoyaltyTooHigh: u64 = 0;
 const ENotSoulOwner: u64 = 1;
 const ECollectionAlreadyBound: u64 = 2;
 const EInvalidOwner: u64 = 3;
-const ESkillsAlreadyBound: u64 = 4;
-const EMemoryAlreadyBound: u64 = 5;
-const EMetadataAlreadyBound: u64 = 6;
-const EAssetsAlreadyBound: u64 = 12;
 const EAccessListAlreadyBound: u64 = 13;
 const ESoulStateMismatch: u64 = 14;
+const EContentRootMissing: u64 = 15;
+const EContentAlreadyBound: u64 = 16;
+const EStateConfigKeyEmpty: u64 = 17;
+const EStateConfigKeyMissing: u64 = 18;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
 const PROVENANCE_PERSONAL_JOIN: u8 = 2;
+const VERSION: u64 = 1;
 
 public struct SOUL has drop {}
 
+/// Phase 2 hard cut: `protected_blob` (soul.md) lives in `SoulContent` as
+/// `(kind=KIND_SOUL_DOC, name="soul", version=0)`. It is no longer a Soul
+/// field. `memory_id` is gone for the same reason: `(kind=KIND_MEMORY,
+/// name="default", version=N)` covers the memory timeline.
 public struct Soul has key, store {
     id: UID,
+    version: u64,
     name: String,
     description: String,
     image_url: String,
-    protected_blob: Blob,
     provenance_kind: u8,
     origin_ref: Option<String>,
     creator: address,
 }
 
 public struct ActiveGrantSlot has copy, drop, store {
+    version: u64,
     grant_id: ID,
     grantee: address,
     scope_mask: u64,
@@ -48,6 +53,7 @@ public struct ActiveGrantSlot has copy, drop, store {
 
 public struct SoulState has key {
     id: UID,
+    version: u64,
     soul_id: ID,
     creator: address,
     creator_royalty_bps: u16,
@@ -58,18 +64,27 @@ public struct SoulState has key {
     active_grants: Table<address, ActiveGrantSlot>,
     active_grant_ids: Table<ID, address>,
     active_grant_count: u64,
-    memory_id: Option<ID>,
-    metadata_id: Option<ID>,
-    skills_id: Option<ID>,
-    assets_id: Option<ID>,
+    /// Single typed-content root. Bound once during mint, never re-bound.
+    /// Replaces former `metadata_id` / `skills_id` / `assets_id` /
+    /// `memory_id` quartet.
+    content_id: Option<ID>,
+    /// Free-form config blobs owned by the Soul (sprite_config_json,
+    /// sprite_mood_map_json, etc). Absorbs the former `metadata::ext`
+    /// channel. Mutated via market `set_state_config` / `delete_state_config`.
+    config_ext: Table<String, vector<u8>>,
     collection_id: Option<ID>,
     access_list_id: Option<ID>,
+    /// True iff a `market::SoulListing` is currently holding this Soul's
+    /// `PurchaseCap` in active state. Flipped via `set_listed` from market
+    /// list / cancel / buy flows. `collection::add_soul` aborts when set so
+    /// solo listings cannot be silently reframed into collection sales.
+    is_listed: bool,
 }
 
 public struct SoulCreated has copy, drop {
     soul_id: ID,
     state_id: ID,
-    metadata_id: ID,
+    content_id: ID,
     creator: address,
     owner: address,
     provenance_kind: u8,
@@ -82,12 +97,38 @@ public struct SoulOwnershipRotated has copy, drop {
     ownership_epoch: u64,
 }
 
+public struct SoulStateConfigUpserted has copy, drop {
+    state_id: ID,
+    soul_id: ID,
+    updater: address,
+    key: String,
+}
+
+public struct SoulStateConfigDeleted has copy, drop {
+    state_id: ID,
+    soul_id: ID,
+    updater: address,
+    key: String,
+}
+
 fun init(otw: SOUL, ctx: &mut TxContext) {
     let publisher = package::claim(otw, ctx);
     let soul_display = create_display(&publisher, ctx);
 
     transfer::public_transfer(soul_display, ctx.sender());
     publisher.burn();
+}
+
+public fun protocol_version(): u64 {
+    VERSION
+}
+
+public fun soul_version(self: &Soul): u64 {
+    self.version
+}
+
+public fun state_version(self: &SoulState): u64 {
+    self.version
 }
 
 public fun creator(self: &Soul): address {
@@ -112,10 +153,6 @@ public fun provenance_kind(self: &Soul): u8 {
 
 public fun origin_ref(self: &Soul): &Option<String> {
     &self.origin_ref
-}
-
-public fun protected_blob_object_id(self: &Soul): ID {
-    blob::object_id(&self.protected_blob)
 }
 
 public fun soul_id(self: &SoulState): ID {
@@ -154,20 +191,17 @@ public fun active_grant_count(self: &SoulState): u64 {
     self.active_grant_count
 }
 
-public fun memory_id(self: &SoulState): &Option<ID> {
-    &self.memory_id
+public fun content_id(self: &SoulState): &Option<ID> {
+    &self.content_id
 }
 
-public fun metadata_id(self: &SoulState): &Option<ID> {
-    &self.metadata_id
+public fun has_content_id(self: &SoulState): bool {
+    self.content_id.is_some()
 }
 
-public fun skills_id(self: &SoulState): &Option<ID> {
-    &self.skills_id
-}
-
-public fun assets_id(self: &SoulState): &Option<ID> {
-    &self.assets_id
+public fun require_content_id(self: &SoulState): ID {
+    assert!(self.content_id.is_some(), EContentRootMissing);
+    *self.content_id.borrow()
 }
 
 public fun collection_id(self: &SoulState): &Option<ID> {
@@ -178,8 +212,25 @@ public fun access_list_id(self: &SoulState): &Option<ID> {
     &self.access_list_id
 }
 
+public fun is_listed(self: &SoulState): bool {
+    self.is_listed
+}
+
+public fun has_state_config(self: &SoulState, key: String): bool {
+    self.config_ext.contains(key)
+}
+
+public fun state_config(self: &SoulState, key: String): &vector<u8> {
+    assert!(self.config_ext.contains(key), EStateConfigKeyMissing);
+    self.config_ext.borrow(key)
+}
+
 public fun active_grant_slot_grant_id(self: &ActiveGrantSlot): ID {
     self.grant_id
+}
+
+public fun active_grant_slot_version(self: &ActiveGrantSlot): u64 {
+    self.version
 }
 
 public fun active_grant_slot_grantee(self: &ActiveGrantSlot): address {
@@ -202,7 +253,6 @@ public(package) fun mint(
     name: String,
     description: String,
     image_url: String,
-    protected_blob: Blob,
     creator: address,
     creator_royalty_bps: u16,
     provenance_kind: u8,
@@ -213,10 +263,10 @@ public(package) fun mint(
 
     Soul {
         id: object::new(ctx),
+        version: VERSION,
         name,
         description,
         image_url,
-        protected_blob,
         provenance_kind,
         origin_ref,
         creator,
@@ -229,7 +279,6 @@ public(package) fun create_state(
     creator_royalty_bps: u16,
     owner: address,
     kiosk_id: ID,
-    memory_id: Option<ID>,
     ctx: &mut TxContext,
 ): SoulState {
     assert!(owner != @0x0, EInvalidOwner);
@@ -237,6 +286,7 @@ public(package) fun create_state(
 
     SoulState {
         id: object::new(ctx),
+        version: VERSION,
         soul_id,
         creator,
         creator_royalty_bps,
@@ -247,21 +297,26 @@ public(package) fun create_state(
         active_grants: table::new(ctx),
         active_grant_ids: table::new(ctx),
         active_grant_count: 0,
-        memory_id,
-        metadata_id: option::none(),
-        skills_id: option::none(),
-        assets_id: option::none(),
+        content_id: option::none(),
+        config_ext: table::new(ctx),
         collection_id: option::none(),
         access_list_id: option::none(),
+        is_listed: false,
     }
 }
 
-public(package) fun emit_created(state: &SoulState, provenance_kind: u8) {
-    let metadata_id = *state.metadata_id.borrow();
+/// Emit `SoulCreated` only after `content_id` has been bound. The market
+/// mint flow guarantees this ordering; aborts if called too early.
+public(package) fun emit_created_after_content_bound(
+    state: &SoulState,
+    provenance_kind: u8,
+) {
+    assert!(state.content_id.is_some(), EContentRootMissing);
+    let content_id = *state.content_id.borrow();
     event::emit(SoulCreated {
         soul_id: state.soul_id,
         state_id: object::id(state),
-        metadata_id,
+        content_id,
         creator: state.creator,
         owner: state.current_owner,
         provenance_kind,
@@ -293,24 +348,16 @@ public(package) fun bind_collection(state: &mut SoulState, collection_id: ID) {
     state.collection_id = option::some(collection_id);
 }
 
-public(package) fun set_memory_id(state: &mut SoulState, memory_id: ID) {
-    assert!(state.memory_id.is_none(), EMemoryAlreadyBound);
-    state.memory_id = option::some(memory_id);
+/// Mirror the listing lifecycle on `SoulState`. Flipped to `true` by market
+/// list flows and back to `false` by cancel / buy paths so other modules
+/// (currently `collection::add_soul`) can reject conflicting transitions.
+public(package) fun set_listed(state: &mut SoulState, listed: bool) {
+    state.is_listed = listed;
 }
 
-public(package) fun set_metadata_id(state: &mut SoulState, metadata_id: ID) {
-    assert!(state.metadata_id.is_none(), EMetadataAlreadyBound);
-    state.metadata_id = option::some(metadata_id);
-}
-
-public(package) fun set_skills_id(state: &mut SoulState, skills_id: ID) {
-    assert!(state.skills_id.is_none(), ESkillsAlreadyBound);
-    state.skills_id = option::some(skills_id);
-}
-
-public(package) fun set_assets_id(state: &mut SoulState, assets_id: ID) {
-    assert!(state.assets_id.is_none(), EAssetsAlreadyBound);
-    state.assets_id = option::some(assets_id);
+public(package) fun set_content_id(state: &mut SoulState, content_id: ID) {
+    assert!(state.content_id.is_none(), EContentAlreadyBound);
+    state.content_id = option::some(content_id);
 }
 
 public(package) fun set_access_list_id(state: &mut SoulState, id: ID) {
@@ -322,6 +369,40 @@ public(package) fun set_grant_capacity(state: &mut SoulState, cap: u64) {
     state.grant_capacity = cap;
 }
 
+public(package) fun upsert_state_config(state: &mut SoulState, key: String, value: vector<u8>) {
+    assert!(!string::is_empty(&key), EStateConfigKeyEmpty);
+    if (state.config_ext.contains(copy key)) {
+        let existing = state.config_ext.borrow_mut(copy key);
+        *existing = value;
+    } else {
+        state.config_ext.add(key, value);
+    };
+}
+
+public(package) fun delete_state_config(state: &mut SoulState, key: String) {
+    assert!(!string::is_empty(&key), EStateConfigKeyEmpty);
+    assert!(state.config_ext.contains(copy key), EStateConfigKeyMissing);
+    let _ = state.config_ext.remove(key);
+}
+
+public(package) fun emit_state_config_upserted(state: &SoulState, updater: address, key: String) {
+    event::emit(SoulStateConfigUpserted {
+        state_id: object::id(state),
+        soul_id: state.soul_id,
+        updater,
+        key,
+    });
+}
+
+public(package) fun emit_state_config_deleted(state: &SoulState, updater: address, key: String) {
+    event::emit(SoulStateConfigDeleted {
+        state_id: object::id(state),
+        soul_id: state.soul_id,
+        updater,
+        key,
+    });
+}
+
 public(package) fun push_active_grant(
     state: &mut SoulState,
     grant_id: ID,
@@ -331,6 +412,7 @@ public(package) fun push_active_grant(
     ownership_epoch_snapshot: u64,
 ) {
     state.active_grants.add(grantee, ActiveGrantSlot {
+        version: VERSION,
         grant_id,
         grantee,
         scope_mask,
@@ -424,7 +506,12 @@ public(package) fun rotate_owner(
     });
 }
 
+/// Single sanctioned path for sharing a `SoulState`. Asserts that the
+/// content root has already been bound so mirror / API / UI never see a
+/// content-less Soul. Any direct `transfer::share_object(state)` call is
+/// rejected at compile time because `SoulState` lacks the `store` ability.
 public(package) fun share_state(state: SoulState) {
+    assert!(state.content_id.is_some(), EContentRootMissing);
     transfer::share_object(state);
 }
 
@@ -464,25 +551,25 @@ public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
 }
 
 #[test_only]
-public fun destroy_for_testing(self: Soul): Blob {
+public fun destroy_for_testing(self: Soul) {
     let Soul {
         id,
+        version: _,
         name: _,
         description: _,
         image_url: _,
-        protected_blob,
         provenance_kind: _,
         origin_ref: _,
         creator: _,
     } = self;
     id.delete();
-    protected_blob
 }
 
 #[test_only]
 public fun destroy_state_for_testing(self: SoulState) {
     let SoulState {
         id,
+        version: _,
         soul_id: _,
         creator: _,
         creator_royalty_bps: _,
@@ -493,14 +580,14 @@ public fun destroy_state_for_testing(self: SoulState) {
         active_grants,
         active_grant_ids,
         active_grant_count: _,
-        memory_id: _,
-        metadata_id: _,
-        skills_id: _,
-        assets_id: _,
+        content_id: _,
+        config_ext,
         collection_id: _,
         access_list_id: _,
+        is_listed: _,
     } = self;
     table::drop(active_grants);
     table::drop(active_grant_ids);
+    table::drop(config_ext);
     id.delete();
 }

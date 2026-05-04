@@ -11,8 +11,8 @@
 | 项 | Owner | 完成标准 |
 |---|---|---|
 | 实现 | Codex / implementer | resolver、Move entry、frontend hook/UI、reset script、tests 均落地 |
-| 主网 publish | mainnet deployer EOA via `MAINNET_DEPLOYER_PRIV_KEY` | 新 package、config、registry、policies、upgrade state、admin/policy/display caps 全部从 publish 输出提取并存档 |
-| 生产治理 | multisig `0xcaab58c145b4c0479f662a88bcb9d4db9f1f391f8ec19535b1ef75ce08879294` | `MarketAdminCap`、`TransferPolicyCap<Soul>`、`TransferPolicyCap<SoulCollectionRight>`、`UpgradeCap`、`Display<Soul>`、`Display<SoulCollectionRight>` 均归属多签，`track_upgrade_cap` 已记录 |
+| 主网 publish | mainnet deployer EOA via `MAINNET_DEPLOYER_PRIV_KEY` | 新 package、config、registry、policies、admin/policy/display/upgrade/kind caps 全部从 publish 输出提取并存档 |
+| 生产治理 | multisig `0xcaab58c145b4c0479f662a88bcb9d4db9f1f391f8ec19535b1ef75ce08879294` | `MarketAdminCap`、`KindAdminCap`、`TransferPolicyCap<Soul>`、`TransferPolicyCap<SoulCollectionRight>`、`UpgradeCap`、`Display<Soul>`、`Display<SoulCollectionRight>` 均归属多签 |
 | DB reset | deploy operator | Soulidity mirror 表和 desktop `sourceType='soul'` catalog entries 清空，desktop active soul profile 指针归零；身份、资讯流、starter persona、desktop session 表保留 |
 | Web 发布 | deploy operator | Vercel production 使用新 manifest；`NEXT_PUBLIC_SUI_NETWORK=mainnet`；核心页面和 API smoke 通过 |
 | 主网 smoke | deploy operator + wallet owner | collection 创建恢复；post-mint sprite 首次创建 root、追加 v2、公有/私有渲染均通过 |
@@ -22,9 +22,9 @@
 1. 当前主网 collection 创建失败的直接原因不是用户 `PersonalKioskCap` 丢失。链上实测 wallet `0xf1e23e7d...` 仍持有 cap `0x547b81723e1bf23f3d4565bd93f8d0d597af97db86f0924c7144dc2b754b0f70`，`cap.for` 指向 registry 里的 kiosk `0xf27df1...`。问题是 web/API 用 `0x434b5bd8...::personal_kiosk::PersonalKioskCap` 做 mainnet owned-object filter，真实 type origin 是 `0x0cb4bcc0560340eb1a1b929cabe56b33fc6449820ec8c1980d69bb98b649b802`。
 2. `assets::create`、`assets::share_assets`、`assets::append_initial_version` 在 `move/soulidity/sources/assets.move` 是 `public(package)`；mint 之外没有 public entry 能创建 `SoulAssets` root。当前 `web/lib/hooks/use-assets.ts:322` 在 `assetsOnChainId == null` 时直接抛错，详情页 post-mint sprite 永远无法补建 root。
 3. `NEXT_PUBLIC_SOULIDITY_*` 的公开合约配置由 `web/lib/soulidity/deployment.ts::getSoulidityDeployment()` 读取 `web/lib/soulidity/deployment-manifest.json`，不是直接读 `.env`。本轮只改 manifest 的 `mainnet` 段；`.env` 不承载这些 ID。
-4. 当前 `web/lib/soulidity/deployment-manifest.json` 的 mainnet 段有 17 个字段：`packageId`、`marketConfigId`、`kioskRegistryId`、`soulTransferPolicyId`、`collectionTransferPolicyId`、`paymentCoinType`、`publishTxDigest`、`upgradeCapId`、`upgradeStateId`、`marketAdminCapId`、`soulPolicyCapId`、`collectionPolicyCapId`、`soulDisplayId`、`collectionDisplayId`、`multisigOwner`、`capTransferTxDigest`、`trackUpgradeCapTxDigest`。fresh publish 后所有链上对象字段都必须替换为新值；`paymentCoinType` 保持主网 USDC `0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC`。
+4. 当前 `web/lib/soulidity/deployment-manifest.json` 的 mainnet 段不再记录 `upgradeStateId` / `trackUpgradeCapTxDigest`。fresh publish 后必须替换 package/config/registry/policy/display/cap 字段；`paymentCoinType` 保持主网 USDC `0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC`。
 5. `move/soulidity/Move.toml` 当前主网 publish 依赖形态是：USDC `0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7`、stablecoin `0xecf47609d7da919ea98e7fd04f6e0648a0a79b337aaad373fa37aac8febf19c8`、sui_extensions `0xe0917b74a5912e4ad186ac634e29c922ab83903f71af7500969f9411706f9b9a` 均来自 Circle pinned git source + mainnet `addr_subst` / `dep-replacements.mainnet`；Kiosk 来自 `MystenLabs/apps` pinned git source，original id 是 `0x434b5bd8f6a7b05fede0ff46c6e511d71ea326ed38056e3bcd681d2d7c2a7879`，mainnet published package 是 `0xdfb4f1d4e43e0c3ad834dcd369f0d39005c872e118c9dc1c5da9765bb93ee5f3`；Walrus 使用 `mainnet-contracts/walrus`。不再依赖本地 `move/test_usdc` 或 `move/vendor/kiosk`。fresh publish 前必须做 linkage preflight，确认 Kiosk package / `PersonalKioskCap` type origin、Walrus `Blob`、USDC 类型在 mainnet runtime 下和 web 传入对象一致。
-6. `scripts/publish-soulidity-and-sync.ts` 已能从 publish 输出提取 manifest 字段，写 `Published.toml`，并通过 `--transfer-caps-to` 构造包含 `track_upgrade_cap` 的 cap transfer PTB。该脚本是主路径；手工 `sui client publish` 只作为故障时的排障工具。
+6. `scripts/publish-soulidity-and-sync.ts` 已能从 publish 输出提取 manifest 字段，写 `Published.toml`，并通过 `--transfer-caps-to` 构造 cap transfer PTB。`MarketUpgradeState` 已移除，升级治理以 `UpgradeCap` 归属为准。该脚本是主路径；手工 `sui client publish` 只作为故障时的排障工具。
 
 ## 执行顺序
 
@@ -291,9 +291,9 @@ cp /tmp/<publish-output>.json docs/deployments/mainnet-soulidity-YYYYMMDD-HHMMSS
 
 Manifest / Published 验收：
 
-- `web/lib/soulidity/deployment-manifest.json.mainnet` 写入新 `packageId`、`marketConfigId`、`kioskRegistryId`、两个 policy、`publishTxDigest`、`upgradeCapId`、`upgradeStateId`、`marketAdminCapId`、两个 policy cap、两个 display。
+- `web/lib/soulidity/deployment-manifest.json.mainnet` 写入新 `packageId`、`marketConfigId`、`kioskRegistryId`、`kindRegistryId`、两个 policy、`publishTxDigest`、`upgradeCapId`、`marketAdminCapId`、`kindAdminCapId`、两个 policy cap、两个 display。
 - `move/soulidity/Published.toml[published.mainnet]` 的 `published-at`、`original-id`、`upgrade-capability` 指向新 package / upgrade cap。
-- 中间 manifest 不得沿用旧 `capTransferTxDigest` / `trackUpgradeCapTxDigest`。cap handoff 完成前这两个字段必须不存在。
+- 中间 manifest 不得沿用旧 `capTransferTxDigest`。cap handoff 完成前该字段必须不存在。
 
 ### Step 7 - Production DB Reset 与 Web Deploy
 
@@ -391,10 +391,9 @@ npm run publish:soulidity -- \
 
 验收：
 
-- `market::track_upgrade_cap` 成功执行。
-- manifest 写入新 `multisigOwner`、`capTransferTxDigest`、`trackUpgradeCapTxDigest`。
-- Deployer 不再持有 `MarketAdminCap`、两个 `TransferPolicyCap`、`UpgradeCap`、两个 Display。
-- 多签地址持有以上 6 个治理对象。
+- manifest 写入新 `multisigOwner`、`capTransferTxDigest`。
+- Deployer 不再持有 `MarketAdminCap`、`KindAdminCap`、两个 `TransferPolicyCap`、`UpgradeCap`、两个 Display。
+- 多签地址持有以上 7 个治理对象。
 - 再提交 manifest-only diff 并触发 production redeploy。
 
 如果 cap transfer 命令失败：
@@ -459,6 +458,6 @@ npm run publish:soulidity -- \
 - Production web 读取新 mainnet manifest。
 - Collection 创建恢复。
 - Post-mint sprite 首次 root 创建、public/private 渲染、已有 root 追加 v2 全通过。
-- 多签持有 6 个治理对象，deployer 不再持有这些对象。
-- `capTransferTxDigest` 与 `trackUpgradeCapTxDigest` 是新 package 的 tx digest。
+- 多签持有 7 个治理对象，deployer 不再持有这些对象。
+- `capTransferTxDigest` 是新 package 的 tx digest。
 - 三份相关 plan/audit 文档全部更新。

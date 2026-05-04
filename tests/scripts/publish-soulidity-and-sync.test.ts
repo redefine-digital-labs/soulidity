@@ -33,9 +33,10 @@ describe('extractDeploymentFromPublishResult', () => {
           },
         },
         {
-          type: '0xpackage::market::MarketUpgradeStateInitialized',
+          type: '0xpackage::kind_registry::KindRegistryCreated',
           parsedJson: {
-            upgrade_state_id: '0xupgradestate',
+            registry_id: '0xkindregistry',
+            admin_cap_id: '0xkindadmincap',
           },
         },
       ],
@@ -47,12 +48,13 @@ describe('extractDeploymentFromPublishResult', () => {
       packageId: '0xpackage',
       marketConfigId: '0xconfig',
       kioskRegistryId: '0xregistry',
+      kindRegistryId: '0xkindregistry',
       soulTransferPolicyId: '0xsoulpolicy',
       collectionTransferPolicyId: '0xcollectionpolicy',
       paymentCoinType: '0x2::coin::COIN',
       publishTxDigest: '6XqMK1KoLFXTP4gg4rVraN4vqzTJ28kQp7iPR7wkhdLd',
       upgradeCapId: '0xupgradecap',
-      upgradeStateId: '0xupgradestate',
+      kindAdminCapId: '0xkindadmincap',
     })
   })
 
@@ -74,9 +76,10 @@ describe('extractDeploymentFromPublishResult', () => {
           },
         },
         {
-          type: '0xpackage::market::MarketUpgradeStateInitialized',
+          type: '0xpackage::kind_registry::KindRegistryCreated',
           parsedJson: {
-            upgrade_state_id: '0xupgradestate',
+            registry_id: '0xkindregistry',
+            admin_cap_id: '0xkindadmincap',
           },
         },
       ],
@@ -103,9 +106,10 @@ describe('extractDeploymentFromPublishResult', () => {
           },
         },
         {
-          type: '0xpackage::market::MarketUpgradeStateInitialized',
+          type: '0xpackage::kind_registry::KindRegistryCreated',
           parsedJson: {
-            upgrade_state_id: '0xupgradestate',
+            registry_id: '0xkindregistry',
+            admin_cap_id: '0xkindadmincap',
           },
         },
       ],
@@ -116,7 +120,7 @@ describe('extractDeploymentFromPublishResult', () => {
     expect(deployment.publishTxDigest).toBe('0xdryrundigest')
   })
 
-  it('extracts the 5 cap/display ids using packageId-templated objectType strings', () => {
+  it('extracts the cap/display ids using packageId-templated objectType strings', () => {
     const pkg = '0xabc123'
     const deployment = extractDeploymentFromPublishResult({
       digest: '0xdigest',
@@ -124,6 +128,7 @@ describe('extractDeploymentFromPublishResult', () => {
         { type: 'published', packageId: pkg },
         { objectType: '0x2::package::UpgradeCap', objectId: '0xupgradecap' },
         { objectType: `${pkg}::market::MarketAdminCap`, objectId: '0xadmincap' },
+        { objectType: `${pkg}::kind_registry::KindAdminCap`, objectId: '0xkindadmincap' },
         // Decoy: another TransferPolicyCap of an unrelated type — must NOT be picked
         { objectType: '0x2::transfer_policy::TransferPolicyCap<0xdead::nft::Other>', objectId: '0xdecoy' },
         { objectType: `0x2::transfer_policy::TransferPolicyCap<${pkg}::soul::Soul>`, objectId: '0xsoulpolicycap' },
@@ -142,13 +147,18 @@ describe('extractDeploymentFromPublishResult', () => {
           },
         },
         {
-          type: `${pkg}::market::MarketUpgradeStateInitialized`,
-          parsedJson: { upgrade_state_id: '0xupgradestate' },
+          type: `${pkg}::kind_registry::KindRegistryCreated`,
+          parsedJson: {
+            registry_id: '0xkindregistry',
+            admin_cap_id: '0xkindadmincap-from-event',
+          },
         },
       ],
     }, { paymentCoinType: '0x2::coin::COIN' })
 
     expect(deployment.marketAdminCapId).toBe('0xadmincap')
+    expect(deployment.kindRegistryId).toBe('0xkindregistry')
+    expect(deployment.kindAdminCapId).toBe('0xkindadmincap')
     expect(deployment.soulPolicyCapId).toBe('0xsoulpolicycap')
     expect(deployment.collectionPolicyCapId).toBe('0xcollectionpolicycap')
     expect(deployment.soulDisplayId).toBe('0xsouldisplay')
@@ -170,7 +180,6 @@ describe('parseArgs', () => {
       gasBudget: null,
       paymentCoinType: null,
       transferCapsTo: null,
-      trackUpgradeCap: true,
       privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
     })
   })
@@ -183,11 +192,6 @@ describe('parseArgs', () => {
   it('parses --transfer-caps-to in both = and space forms', () => {
     expect(parseArgs(['--transfer-caps-to=0xabc']).transferCapsTo).toBe('0xabc')
     expect(parseArgs(['--transfer-caps-to', '0xdef']).transferCapsTo).toBe('0xdef')
-  })
-
-  it('parses --no-track-upgrade-cap to disable tracking', () => {
-    expect(parseArgs(['--no-track-upgrade-cap']).trackUpgradeCap).toBe(false)
-    expect(parseArgs([]).trackUpgradeCap).toBe(true)
   })
 
   it('parses resume + dry-run-transfer-only flags', () => {
@@ -208,12 +212,13 @@ describe('buildCapTransferPtb', () => {
     packageId: '0xpkg',
     marketConfigId: '0xconfig',
     kioskRegistryId: '0xregistry',
+    kindRegistryId: '0xkindregistry',
     soulTransferPolicyId: '0xsoulpolicy',
     collectionTransferPolicyId: '0xcollectionpolicy',
     paymentCoinType: '0x2::coin::COIN',
     upgradeCapId: '0xupgradecap',
-    upgradeStateId: '0xupgradestate',
     marketAdminCapId: '0xadmincap',
+    kindAdminCapId: '0xkindadmincap',
     soulPolicyCapId: '0xsoulpolicycap',
     collectionPolicyCapId: '0xcollectionpolicycap',
     soulDisplayId: '0xsouldisplay',
@@ -224,33 +229,22 @@ describe('buildCapTransferPtb', () => {
     expect(() => buildCapTransferPtb(
       { ...completeDeployment, marketAdminCapId: undefined },
       '0x' + 'a'.repeat(64),
-      true,
       '0x' + 'b'.repeat(64),
     )).toThrow(/marketAdminCapId is missing/)
   })
 
-  it('builds a transaction with track_upgrade_cap when enabled', () => {
+  it('builds a transaction that transfers governance caps without upgrade-state tracking', () => {
     expect(() => buildCapTransferPtb(
       completeDeployment,
       '0x' + 'a'.repeat(64),
-      true,
-      '0x' + 'b'.repeat(64),
-    )).not.toThrow()
-  })
-
-  it('omits track_upgrade_cap when disabled but still transfers all 6 caps', () => {
-    expect(() => buildCapTransferPtb(
-      completeDeployment,
-      '0x' + 'a'.repeat(64),
-      false,
       '0x' + 'b'.repeat(64),
     )).not.toThrow()
   })
 
   it('throws when each individual required field is missing', () => {
     const requiredFields = [
-      'upgradeStateId',
       'marketAdminCapId',
+      'kindAdminCapId',
       'upgradeCapId',
       'soulPolicyCapId',
       'collectionPolicyCapId',
@@ -261,7 +255,6 @@ describe('buildCapTransferPtb', () => {
       expect(() => buildCapTransferPtb(
         { ...completeDeployment, [field]: undefined },
         '0x' + 'a'.repeat(64),
-        true,
         '0x' + 'b'.repeat(64),
       )).toThrow(new RegExp(`${field} is missing`))
     }

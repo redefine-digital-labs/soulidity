@@ -106,14 +106,14 @@ const EAssetsRootAlreadyExists: u64 = 34;
 
 1. 在 `move/soulidity/` 跑 `sui move build` 验证编译通过。
 2. `sui client switch --env mainnet`，确认账户。
-3. `sui client publish --gas-budget <budget>` —— `init` 自动执行，emit `MarketInitialized` + `MarketUpgradeStateInitialized` 两个事件。
+3. `sui client publish --gas-budget <budget>` —— `init` 自动执行，emit `MarketInitialized` 和 `KindRegistryCreated`。
 4. 从 publish 输出收集：
    - **package id**（顶层）
    - **upgrade cap id**（owned by deployer）
    - 从 `MarketInitialized` 事件读：`config_id` / `registry_id` / `soul_policy_id` / `collection_policy_id`
-   - 从 `MarketUpgradeStateInitialized` 事件读：`upgrade_state_id`
-   - deployer 钱包里出现的：`MarketAdminCap`、两个 `TransferPolicyCap<Soul>` / `TransferPolicyCap<SoulCollectionRight>`（line 1983-1985 transfer 给 admin）
-5. （可选）调 `track_upgrade_cap`（`market.move:417`）把 upgrade cap 注册进 `MarketUpgradeState`，便于后续策略管理。
+   - 从 `KindRegistryCreated` 事件读：`registry_id` / `admin_cap_id`
+   - deployer 钱包里出现的：`MarketAdminCap`、`KindAdminCap`、两个 `TransferPolicyCap<Soul>` / `TransferPolicyCap<SoulCollectionRight>`。
+5. `MarketUpgradeState` 已移除；升级治理以 `UpgradeCap` 归属、多签和必要时 freeze 为准。
 
 ### 2.2 文件更新
 
@@ -125,7 +125,7 @@ const EAssetsRootAlreadyExists: u64 = 34;
 
 - 所有用户的 personal kiosk 是 `kiosk::Kiosk`（由 kiosk package 拥有，不是 soulidity package），**对象本身不会作废**。但新合约的 `KioskRegistry` 是空的，用户首次操作时需要走 `ensure_personal_kiosk_registered` 或 `init_personal_kiosk` 重新登记一次。
 - 旧 package 持有的所有 Soul / SoulMetadata / SoulState / SoulMemory / SoulSkills / SoulAssets / Soul Grant / ContentAccessList / SoulCollection / SoulCollectionRight / SoulListing / CollectionListing 都成为孤儿——新合约调用既不能引用、也不能销毁它们，这些对象会永久占用链上空间。
-- 旧 `TransferPolicy<Soul>` / `TransferPolicy<SoulCollectionRight>` / `MarketConfig` / `KioskRegistry` / `MarketUpgradeState` 同上。
+- 旧 `TransferPolicy<Soul>` / `TransferPolicy<SoulCollectionRight>` / `MarketConfig` / `KioskRegistry` / `KindRegistry` 同上。
 
 ---
 

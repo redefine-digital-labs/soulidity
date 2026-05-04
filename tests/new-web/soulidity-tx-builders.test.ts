@@ -812,12 +812,23 @@ describe('delist.ts — buildDelistSoulTx', () => {
   const VALID_PARAMS = {
     currentKioskId: OBJ('22'),
     currentKioskCapOnChainId: OBJ('33'),
+    stateObjectId: OBJ('11'),
     listingObjectId: OBJ('55'),
   }
 
   it('returns a Transaction with valid params', () => {
     const tx = buildDelistSoulTx(VALID_PARAMS)
     expect(tx).toBeInstanceOf(Transaction)
+  })
+
+  it('passes the state object so cancel_soul_listing can clear is_listed', () => {
+    const tx = buildDelistSoulTx(VALID_PARAMS)
+    const inputs = tx.getData().inputs
+    const stateInput = inputs.find((input) => {
+      const obj = (input as unknown as Record<string, unknown>).UnresolvedObject
+      return obj && (obj as Record<string, unknown>).objectId === VALID_PARAMS.stateObjectId
+    })
+    expect(stateInput).toBeDefined()
   })
 })
 

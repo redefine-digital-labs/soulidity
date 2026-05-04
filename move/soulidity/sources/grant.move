@@ -22,6 +22,7 @@ const EGrantCapacityTooHigh: u64 = 15;
 const EGrantStillActive: u64 = 16;
 
 const MAX_GRANT_CAPACITY: u64 = 10_000;
+const VERSION: u64 = 1;
 
 const SCOPE_SEAL: u64 = 1;
 const SCOPE_MEMORY: u64 = 2;
@@ -30,6 +31,7 @@ const SCOPE_ASSETS: u64 = 8;
 
 public struct SoulGrant has key, store {
     id: UID,
+    version: u64,
     soul_id: ID,
     grantee: address,
     issued_by: address,
@@ -83,6 +85,14 @@ public struct SoulGrantDestroyed has copy, drop {
 
 public fun soul_id(self: &SoulGrant): ID {
     self.soul_id
+}
+
+public fun protocol_version(): u64 {
+    VERSION
+}
+
+public fun grant_version(self: &SoulGrant): u64 {
+    self.version
 }
 
 public fun grantee(self: &SoulGrant): address {
@@ -146,6 +156,7 @@ public fun issue(
 
     let grant = SoulGrant {
         id: object::new(ctx),
+        version: VERSION,
         soul_id: soul::soul_id(state),
         grantee,
         issued_by: ctx.sender(),
@@ -186,6 +197,18 @@ public fun issue(
     grant
 }
 
+public fun issue_to_grantee(
+    state: &mut SoulState,
+    grantee: address,
+    scope_mask: u64,
+    expires_at_ms: Option<u64>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let grant = issue(state, grantee, scope_mask, expires_at_ms, clock, ctx);
+    transfer::public_transfer(grant, grantee);
+}
+
 public fun revoke(
     state: &mut SoulState,
     grantee: address,
@@ -223,6 +246,7 @@ public fun revoke_scope(
 
     let new_grant = SoulGrant {
         id: object::new(ctx),
+        version: VERSION,
         soul_id: soul::soul_id(state),
         grantee,
         issued_by: ctx.sender(),
@@ -258,6 +282,17 @@ public fun revoke_scope(
     });
 
     new_grant
+}
+
+public fun revoke_scope_to_grantee(
+    state: &mut SoulState,
+    grantee: address,
+    revoked_scope_mask: u64,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let grant = revoke_scope(state, grantee, revoked_scope_mask, clock, ctx);
+    transfer::public_transfer(grant, grantee);
 }
 
 public fun cleanup_inactive_grants(
@@ -327,6 +362,7 @@ public fun destroy_invalidated_grant(
 
     let SoulGrant {
         id,
+        version: _,
         soul_id,
         grantee,
         issued_by: _,
@@ -427,6 +463,7 @@ fun has_required_scope(scope_mask: u64, required_scope_mask: u64): bool {
 public fun destroy_for_testing(self: SoulGrant) {
     let SoulGrant {
         id,
+        version: _,
         soul_id: _,
         grantee: _,
         issued_by: _,

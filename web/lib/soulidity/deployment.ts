@@ -4,12 +4,13 @@ export interface SoulidityDeployment {
   packageId: string
   marketConfigId: string
   kioskRegistryId: string
+  kindRegistryId?: string
   soulTransferPolicyId: string
   collectionTransferPolicyId: string
   paymentCoinType: string
   publishTxDigest?: string
   upgradeCapId?: string
-  upgradeStateId?: string
+  kindAdminCapId?: string
 }
 
 export type SoulidityDeploymentManifest = Record<string, SoulidityDeployment>

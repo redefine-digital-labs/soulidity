@@ -1,48 +1,64 @@
 #[test_only]
 module soulidity::protocol_tests;
 
-use std::string;
+use std::string::{Self as string, String};
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
+use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant::{Self as grant, SoulGrant};
-use soulidity::market::{Self as market, CollectionListing, KioskRegistry, MarketConfig, MarketUpgradeState, SoulListing};
-use soulidity::memory::{Self as memory, SoulMemory};
-use soulidity::metadata::{Self as metadata, SoulMetadata};
-use soulidity::skills::{Self as skills, SoulSkills};
-use soulidity::assets::{Self as assets, SoulAssets};
-use soulidity::content_access::{Self as content_access, ContentAccessList};
-use soulidity::seal_policy;
+use soulidity::kind_registry::{Self as kind_registry, KindAdminCap, KindRegistry};
+use soulidity::market::{
+    Self as market,
+    InitialContentEntry,
+    KioskRegistry,
+    MarketConfig,
+    SoulListing,
+    StateConfigEntry,
+};
+use soulidity::paid_access::{Self as paid_access, SoulPaidAccessList};
 use soulidity::soul::{Self as soul, Soul, SoulState};
-use sui::clock::{Self as clock, Clock};
+use sui::clock::{Self as clock};
 use sui::coin;
-use sui::kiosk::{Self as kiosk, Kiosk};
-use sui::package::{Self as package};
+use sui::kiosk::{Self as sui_kiosk, Kiosk};
 use sui::test_scenario::{Self as ts};
-use sui::transfer_policy::TransferPolicy;
+use sui::transfer_policy::{Self as transfer_policy, TransferPolicy, TransferPolicyCap};
 use usdc::usdc::USDC;
 use walrus::{blob, encoding, system, test_utils};
 
-const BLOB_ROOT_HASH_A: u256 = 0xABC;
-const BLOB_ROOT_HASH_B: u256 = 0xABD;
+// ── Constants ─────────────────────────────────────────────────────────
+
+const BLOB_ROOT_HASH_SOUL_DOC: u256 = 0xA00;
+const BLOB_ROOT_HASH_MEMORY: u256 = 0xA01;
+const BLOB_ROOT_HASH_SKILL: u256 = 0xA02;
+const BLOB_ROOT_HASH_SPRITE: u256 = 0xA03;
+const BLOB_ROOT_HASH_AUDIO: u256 = 0xA04;
+const BLOB_ROOT_HASH_EXTRA_A: u256 = 0xA05;
 const BLOB_SIZE: u64 = 5_000_000;
 const BLOB_ENCODING: u8 = 1;
 const BLOB_EPOCHS_AHEAD: u32 = 3;
 const PAYMENT_FROST: u64 = 1_000_000_000;
 
 const SOUL_PRICE: u64 = 1_000_000;
-const SOUL_RESALE_PRICE: u64 = 2_000_000;
-const COLLECTION_PRICE: u64 = 300_000;
+const PAID_ACCESS_PRICE: u64 = 250_000;
 const DEFAULT_PLATFORM_FEE_BPS: u16 = 250;
 const CREATOR_ROYALTY_BPS: u16 = 1_000;
 const COLLECTION_ROYALTY_BPS: u16 = 500;
-const BLOB_ROOT_HASH_C: u256 = 0xABE;
-const BLOB_ROOT_HASH_D: u256 = 0xABF;
-const BLOB_ROOT_HASH_E: u256 = 0xAC0;
 
-public struct SourceNft has key, store {
-    id: UID,
-    serial: u64,
-}
+const DOC_ID_VERSION: u8 = 1;
+const DOC_ID_NONCE_BYTES: u64 = 16;
+
+// ── Test addresses ────────────────────────────────────────────────────
+
+const ADMIN: address = @0xA1;
+const MINTER: address = @0xB1;
+const BUYER: address = @0xC1;
+const AGENT: address = @0xD1;
+
+public struct AdminMutablePolicyRule has drop {}
+
+public struct AdminMutablePolicyConfig has copy, drop, store {}
+
+// ── Blob registration helpers ─────────────────────────────────────────
 
 fun register_test_blob_with_root(
     walrus_system: &mut system::System,
@@ -62,7 +78,7 @@ fun register_test_blob_with_root(
         ctx,
     );
     let blob_id = blob::derive_blob_id(root_hash, BLOB_ENCODING, BLOB_SIZE);
-    let registered_blob = walrus_system.register_blob(
+    let registered = walrus_system.register_blob(
         storage,
         blob_id,
         root_hash,
@@ -73,15867 +89,4247 @@ fun register_test_blob_with_root(
         ctx,
     );
     payment.burn_for_testing();
-    registered_blob
+    registered
 }
 
-fun mint_test_blobs_to_recipients(
-    first_recipient: address,
-    first_root_hash: u256,
-    second_recipient: address,
-    second_root_hash: u256,
-    ctx: &mut TxContext,
-) {
-    let mut walrus_system = system::new_for_testing(ctx);
-    let first_blob = register_test_blob_with_root(&mut walrus_system, first_root_hash, ctx);
-    let second_blob = register_test_blob_with_root(&mut walrus_system, second_root_hash, ctx);
-    std::unit_test::destroy(walrus_system);
-    transfer::public_transfer(first_blob, first_recipient);
-    transfer::public_transfer(second_blob, second_recipient);
+public struct BlobMintRequest has copy, drop, store {
+    recipient: address,
+    root_hash: u256,
 }
 
-fun mint_test_blobs_to_three_recipients(
-    first_recipient: address,
-    first_root_hash: u256,
-    second_recipient: address,
-    second_root_hash: u256,
-    third_recipient: address,
-    third_root_hash: u256,
-    ctx: &mut TxContext,
-) {
-    let mut walrus_system = system::new_for_testing(ctx);
-    let first_blob = register_test_blob_with_root(&mut walrus_system, first_root_hash, ctx);
-    let second_blob = register_test_blob_with_root(&mut walrus_system, second_root_hash, ctx);
-    let third_blob = register_test_blob_with_root(&mut walrus_system, third_root_hash, ctx);
-    std::unit_test::destroy(walrus_system);
-    transfer::public_transfer(first_blob, first_recipient);
-    transfer::public_transfer(second_blob, second_recipient);
-    transfer::public_transfer(third_blob, third_recipient);
+fun blob_req(recipient: address, root_hash: u256): BlobMintRequest {
+    BlobMintRequest { recipient, root_hash }
 }
 
-fun mint_test_blobs_to_four_recipients(
-    first_recipient: address,
-    first_root_hash: u256,
-    second_recipient: address,
-    second_root_hash: u256,
-    third_recipient: address,
-    third_root_hash: u256,
-    fourth_recipient: address,
-    fourth_root_hash: u256,
-    ctx: &mut TxContext,
-) {
-    let mut walrus_system = system::new_for_testing(ctx);
-    let first_blob = register_test_blob_with_root(&mut walrus_system, first_root_hash, ctx);
-    let second_blob = register_test_blob_with_root(&mut walrus_system, second_root_hash, ctx);
-    let third_blob = register_test_blob_with_root(&mut walrus_system, third_root_hash, ctx);
-    let fourth_blob = register_test_blob_with_root(&mut walrus_system, fourth_root_hash, ctx);
-    std::unit_test::destroy(walrus_system);
-    transfer::public_transfer(first_blob, first_recipient);
-    transfer::public_transfer(second_blob, second_recipient);
-    transfer::public_transfer(third_blob, third_recipient);
-    transfer::public_transfer(fourth_blob, fourth_recipient);
-}
-
-fun mint_test_blobs_to_five_recipients(
-    first_recipient: address,
-    first_root_hash: u256,
-    second_recipient: address,
-    second_root_hash: u256,
-    third_recipient: address,
-    third_root_hash: u256,
-    fourth_recipient: address,
-    fourth_root_hash: u256,
-    fifth_recipient: address,
-    fifth_root_hash: u256,
-    ctx: &mut TxContext,
-) {
-    let mut walrus_system = system::new_for_testing(ctx);
-    let first_blob = register_test_blob_with_root(&mut walrus_system, first_root_hash, ctx);
-    let second_blob = register_test_blob_with_root(&mut walrus_system, second_root_hash, ctx);
-    let third_blob = register_test_blob_with_root(&mut walrus_system, third_root_hash, ctx);
-    let fourth_blob = register_test_blob_with_root(&mut walrus_system, fourth_root_hash, ctx);
-    let fifth_blob = register_test_blob_with_root(&mut walrus_system, fifth_root_hash, ctx);
-    std::unit_test::destroy(walrus_system);
-    transfer::public_transfer(first_blob, first_recipient);
-    transfer::public_transfer(second_blob, second_recipient);
-    transfer::public_transfer(third_blob, third_recipient);
-    transfer::public_transfer(fourth_blob, fourth_recipient);
-    transfer::public_transfer(fifth_blob, fifth_recipient);
-}
-
-fun mint_test_blob_to_recipient(recipient: address, root_hash: u256, ctx: &mut TxContext) {
-    let mut walrus_system = system::new_for_testing(ctx);
-    let test_blob = register_test_blob_with_root(&mut walrus_system, root_hash, ctx);
-    std::unit_test::destroy(walrus_system);
-    transfer::public_transfer(test_blob, recipient);
-}
-
-fun soul_document_id_with_version(soul_id: ID, version: u8): vector<u8> {
-    let mut id = b"soul-seal:";
-    let soul_id_bytes = soul_id.to_bytes();
-    let mut soul_id_index: u64 = 0;
-    id.push_back(version);
-    while (soul_id_index < soul_id_bytes.length()) {
-        id.push_back(soul_id_bytes[soul_id_index]);
-        soul_id_index = soul_id_index + 1;
+/// Walrus's `system::new_for_testing` may only run once per scenario, so
+/// every blob a test needs must be minted in this single call.
+fun mint_blobs_for_test(scenario: &mut ts::Scenario, requests: vector<BlobMintRequest>) {
+    if (requests.is_empty()) {
+        let empty = requests;
+        empty.destroy_empty();
+        return
     };
-    let mut i: u64 = 0;
-    while (i < 16) {
-        id.push_back(0x7A);
+    let mut walrus = system::new_for_testing(scenario.ctx());
+    let mut reqs = requests;
+    reqs.reverse();
+    while (!reqs.is_empty()) {
+        let req = reqs.pop_back();
+        let b = register_test_blob_with_root(&mut walrus, req.root_hash, scenario.ctx());
+        transfer::public_transfer(b, req.recipient);
+    };
+    reqs.destroy_empty();
+    std::unit_test::destroy(walrus);
+}
+
+fun mint_test_blobs_then_advance(
+    scenario: &mut ts::Scenario,
+    requests: vector<BlobMintRequest>,
+    advance_to: address,
+) {
+    mint_blobs_for_test(scenario, requests);
+    scenario.next_tx(advance_to);
+}
+
+// ── Document ID builders ──────────────────────────────────────────────
+
+fun append_u32_be(out: &mut vector<u8>, value: u32) {
+    let mut i: u8 = 24;
+    let mut count: u64 = 0;
+    while (count < 4) {
+        out.push_back(((value >> i) & 0xFF) as u8);
+        i = if (i >= 8) i - 8 else 0;
+        count = count + 1;
+    };
+}
+
+fun append_u64_be(out: &mut vector<u8>, value: u64) {
+    let mut i: u8 = 56;
+    let mut count: u64 = 0;
+    while (count < 8) {
+        out.push_back(((value >> i) & 0xFF) as u8);
+        i = if (i >= 8) i - 8 else 0;
+        count = count + 1;
+    };
+}
+
+fun append_id_bytes(out: &mut vector<u8>, id: ID) {
+    let bytes = id.to_bytes();
+    let mut i = 0;
+    while (i < bytes.length()) {
+        out.push_back(bytes[i]);
         i = i + 1;
     };
-    id
 }
 
-fun soul_document_id(soul_id: ID): vector<u8> {
-    soul_document_id_with_version(soul_id, 0x01)
-}
-
-fun append_u64_be_bytes(id: &mut vector<u8>, value: u64) {
-    let mut shift = 56u8;
-    let mut index = 0u64;
-    while (index < 8u64) {
-        id.push_back(((value >> shift) & 0xFF) as u8);
-        shift = if (shift >= 8u8) shift - 8u8 else 0u8;
-        index = index + 1u64;
+fun append_nonce(out: &mut vector<u8>) {
+    let mut i = 0;
+    while (i < DOC_ID_NONCE_BYTES) {
+        out.push_back(0x42);
+        i = i + 1;
     };
 }
 
-fun memory_document_id(memory_id: ID, timestamp_key: u64): vector<u8> {
-    let mut id = b"soul-memory:";
-    let memory_id_bytes = memory_id.to_bytes();
-    let mut memory_id_index = 0;
-    id.push_back(0x01);
-    while (memory_id_index < memory_id_bytes.length()) {
-        id.push_back(memory_id_bytes[memory_id_index]);
-        memory_id_index = memory_id_index + 1;
+fun content_document_id(
+    content_object_id: ID,
+    kind: u32,
+    name: String,
+    version_index: u64,
+): vector<u8> {
+    let mut out = b"soul-content:";
+    out.push_back(DOC_ID_VERSION);
+    append_u32_be(&mut out, kind);
+    append_id_bytes(&mut out, content_object_id);
+    let bytes = string::as_bytes(&name);
+    let mut i = 0;
+    while (i < bytes.length()) {
+        out.push_back(bytes[i]);
+        i = i + 1;
     };
-    append_u64_be_bytes(&mut id, timestamp_key);
-    let mut i = 0u64;
-    while (i < 16u64) {
-        id.push_back(0x4D);
-        i = i + 1u64;
-    };
-    id
+    out.push_back(0x00);
+    append_u64_be(&mut out, version_index);
+    append_nonce(&mut out);
+    out
 }
 
-fun skill_document_id(skills_id: ID, skill_name: std::string::String, version_index: u64): vector<u8> {
-    let mut id = b"soul-skill:";
-    let skills_id_bytes = skills_id.to_bytes();
-    let skill_name_bytes = string::as_bytes(&skill_name);
-    let mut skills_id_index = 0;
-    let mut skill_name_index = 0;
-    id.push_back(0x01);
-    while (skills_id_index < skills_id_bytes.length()) {
-        id.push_back(skills_id_bytes[skills_id_index]);
-        skills_id_index = skills_id_index + 1;
-    };
-    while (skill_name_index < skill_name_bytes.length()) {
-        id.push_back(skill_name_bytes[skill_name_index]);
-        skill_name_index = skill_name_index + 1;
-    };
-    id.push_back(0x00);
-    append_u64_be_bytes(&mut id, version_index);
-    let mut i = 0u64;
-    while (i < 16u64) {
-        id.push_back(0x5A);
-        i = i + 1u64;
-    };
-    id
+// ── Default canonical names ───────────────────────────────────────────
+
+fun default_skill_name(): String { b"skill_intro".to_string() }
+fun default_sprite_name(): String { b"sprite_idle".to_string() }
+fun default_audio_name(): String { b"audio_voice".to_string() }
+fun default_state_config_key(): String { b"sprite_config_json".to_string() }
+
+// ── Read-mode shorthands ──────────────────────────────────────────────
+
+fun read_owner_grant(): u64 {
+    kind_registry::read_owner() | kind_registry::read_grant()
 }
 
-fun default_skill_name(): std::string::String {
-    string::utf8(b"default")
+fun read_owner_only(): u64 { kind_registry::read_owner() }
+
+fun read_grant_only(): u64 { kind_registry::read_grant() }
+
+fun read_owner_grant_paid_public(): u64 {
+    kind_registry::read_owner()
+        | kind_registry::read_grant()
+        | kind_registry::read_paid()
+        | kind_registry::read_public()
 }
 
-fun default_asset_name(): std::string::String {
-    string::utf8(b"persona-sprite")
-}
+fun read_public_only(): u64 { kind_registry::read_public() }
 
-fun asset_document_id(assets_id: ID, asset_name: std::string::String, version_index: u64): vector<u8> {
-    let mut id = b"soul-asset:";
-    let assets_id_bytes = assets_id.to_bytes();
-    let asset_name_bytes = string::as_bytes(&asset_name);
-    let mut assets_id_index = 0;
-    let mut asset_name_index = 0;
-    id.push_back(0x01);
-    while (assets_id_index < assets_id_bytes.length()) {
-        id.push_back(assets_id_bytes[assets_id_index]);
-        assets_id_index = assets_id_index + 1;
-    };
-    while (asset_name_index < asset_name_bytes.length()) {
-        id.push_back(asset_name_bytes[asset_name_index]);
-        asset_name_index = asset_name_index + 1;
-    };
-    id.push_back(0x00);
-    append_u64_be_bytes(&mut id, version_index);
-    let mut i = 0u64;
-    while (i < 16u64) {
-        id.push_back(0x6A);
-        i = i + 1u64;
-    };
-    id
-}
+// ── Protocol init ─────────────────────────────────────────────────────
 
 fun init_protocol_for_testing(scenario: &mut ts::Scenario, admin: address) {
-    ts::next_tx(scenario, admin);
-    {
-        soul::init_for_testing(admin, ts::ctx(scenario));
-        collection::init_for_testing(admin, ts::ctx(scenario));
-        market::init_for_testing(admin, ts::ctx(scenario));
-        let clock_obj = clock::create_for_testing(ts::ctx(scenario));
-        clock::share_for_testing(clock_obj);
-    };
+    soul::init_for_testing(admin, scenario.ctx());
+    collection::init_for_testing(admin, scenario.ctx());
+    market::init_for_testing(admin, scenario.ctx());
+    kind_registry::init_for_testing(scenario.ctx());
 }
 
 fun init_personal_kiosk_for_sender(scenario: &mut ts::Scenario, sender: address): ID {
-    let kiosk_id: ID;
-    ts::next_tx(scenario, sender);
-    {
-        let config: MarketConfig = ts::take_shared(scenario);
-        let mut registry: KioskRegistry = ts::take_shared(scenario);
-        kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
+    scenario.next_tx(sender);
+    let config = ts::take_shared<MarketConfig>(scenario);
+    let mut registry = ts::take_shared<KioskRegistry>(scenario);
+    let kiosk_id = market::init_personal_kiosk(&config, &mut registry, scenario.ctx());
+    ts::return_shared(config);
+    ts::return_shared(registry);
     kiosk_id
 }
 
-fun mint_usdc_to_recipient(
-    scenario: &mut ts::Scenario,
-    admin: address,
-    recipient: address,
-    amount: u64,
-) {
-    ts::next_tx(scenario, admin);
-    {
-        let payment = coin::mint_for_testing<USDC>(amount, ts::ctx(scenario));
-        transfer::public_transfer(payment, recipient);
+fun mint_usdc_to(recipient: address, amount: u64, scenario: &mut ts::Scenario) {
+    let usdc_coin = coin::mint_for_testing<USDC>(amount, scenario.ctx());
+    transfer::public_transfer(usdc_coin, recipient);
+}
+
+// ── Mint helpers — typed-content (Phase 2 invariant entries always) ───
+//
+// Phase 2 every mint MUST include exactly one (KIND_SOUL_DOC, "soul")
+// and at least one (KIND_MEMORY, "default") entry. The base `MintBlobSpec`
+// flag set is for additional non-invariant kinds the test wants seeded.
+
+public struct MintBlobSpec has copy, drop {
+    skill: bool,
+    sprite_active_public: bool,
+    audio_active_public: bool,
+}
+
+fun spec_invariant_only(): MintBlobSpec {
+    MintBlobSpec { skill: false, sprite_active_public: false, audio_active_public: false }
+}
+
+fun spec_with_skill(): MintBlobSpec {
+    MintBlobSpec { skill: true, sprite_active_public: false, audio_active_public: false }
+}
+
+fun spec_with_sprite_active(): MintBlobSpec {
+    MintBlobSpec { skill: false, sprite_active_public: true, audio_active_public: false }
+}
+
+fun spec_with_audio_active(): MintBlobSpec {
+    MintBlobSpec { skill: false, sprite_active_public: false, audio_active_public: true }
+}
+
+fun spec_blob_requests(spec: MintBlobSpec, recipient: address): vector<BlobMintRequest> {
+    let mut reqs = vector[
+        blob_req(recipient, BLOB_ROOT_HASH_SOUL_DOC),
+        blob_req(recipient, BLOB_ROOT_HASH_MEMORY),
+    ];
+    if (spec.skill) reqs.push_back(blob_req(recipient, BLOB_ROOT_HASH_SKILL));
+    if (spec.sprite_active_public) reqs.push_back(blob_req(recipient, BLOB_ROOT_HASH_SPRITE));
+    if (spec.audio_active_public) reqs.push_back(blob_req(recipient, BLOB_ROOT_HASH_AUDIO));
+    reqs
+}
+
+fun build_initial_content_from_address(
+    minter: address,
+    scenario: &ts::Scenario,
+    spec: MintBlobSpec,
+): vector<InitialContentEntry> {
+    let mut entries = vector::empty<InitialContentEntry>();
+
+    // SOUL_DOC v0: read OWNER|GRANT, no PUBLIC, no download_policy override.
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(scenario, minter);
+    entries.push_back(market::new_initial_content_entry(
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        false,
+        soul_doc_blob,
+    ));
+
+    // MEMORY v0: read OWNER|GRANT.
+    let memory_blob = ts::take_from_address<blob::Blob>(scenario, minter);
+    entries.push_back(market::new_initial_content_entry(
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        false,
+        memory_blob,
+    ));
+
+    if (spec.skill) {
+        let b = ts::take_from_address<blob::Blob>(scenario, minter);
+        entries.push_back(market::new_initial_content_entry(
+            kind_registry::kind_skill(),
+            default_skill_name(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            b,
+        ));
     };
+    if (spec.sprite_active_public) {
+        let b = ts::take_from_address<blob::Blob>(scenario, minter);
+        entries.push_back(market::new_initial_content_entry(
+            kind_registry::kind_sprite(),
+            default_sprite_name(),
+            read_owner_grant_paid_public(),
+            content::download_policy_public(),
+            true,
+            b,
+        ));
+    };
+    if (spec.audio_active_public) {
+        let b = ts::take_from_address<blob::Blob>(scenario, minter);
+        entries.push_back(market::new_initial_content_entry(
+            kind_registry::kind_audio(),
+            default_audio_name(),
+            read_owner_grant_paid_public(),
+            content::download_policy_public(),
+            true,
+            b,
+        ));
+    };
+    entries
 }
 
-fun bps_amount_for_tests(price: u64, bps: u16): u64 {
-    ((price as u128 * (bps as u128)) / 10_000) as u64
+fun mint_native_with_entries(
+    scenario: &mut ts::Scenario,
+    minter: address,
+    minter_kiosk_id: ID,
+    initial_content: vector<InitialContentEntry>,
+    initial_state_config: vector<StateConfigEntry>,
+): ID {
+    scenario.next_tx(minter);
+    let config = ts::take_shared<MarketConfig>(scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(scenario);
+    let registry = ts::take_shared<KioskRegistry>(scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(scenario, minter_kiosk_id);
+    let kiosk_cap = ts::take_from_address<PersonalKioskCap>(scenario, minter);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+
+    let state = market::mint_native_in_personal_kiosk(
+        &config,
+        &kind_registry_obj,
+        &registry,
+        &soul_policy,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        b"Test Soul".to_string(),
+        b"Description".to_string(),
+        b"https://example.com".to_string(),
+        initial_content,
+        initial_state_config,
+        CREATOR_ROYALTY_BPS,
+        &test_clock,
+        scenario.ctx(),
+    );
+    let state_id = object::id(&state);
+    market::finalize_soul_state(state);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(minter, kiosk_cap);
+    state_id
 }
 
-fun default_platform_fee_amount(price: u64): u64 {
-    bps_amount_for_tests(price, DEFAULT_PLATFORM_FEE_BPS)
+fun setup_and_mint_native(
+    scenario: &mut ts::Scenario,
+    minter: address,
+    minter_kiosk_id: ID,
+    spec: MintBlobSpec,
+    initial_state_config: vector<StateConfigEntry>,
+): ID {
+    let reqs = spec_blob_requests(spec, minter);
+    mint_test_blobs_then_advance(scenario, reqs, minter);
+    let entries = build_initial_content_from_address(minter, scenario, spec);
+    mint_native_with_entries(scenario, minter, minter_kiosk_id, entries, initial_state_config)
+}
+
+/// Mint with the bare invariant set (SOUL_DOC + MEMORY) and additionally
+/// register a list of extra blob recipients (e.g. AGENT) so granted-agent
+/// or buyer flows can `take_from_address` them later.
+fun setup_and_mint_invariant_with_extras(
+    scenario: &mut ts::Scenario,
+    minter: address,
+    minter_kiosk_id: ID,
+    extra_requests: vector<BlobMintRequest>,
+): ID {
+    let mut reqs = spec_blob_requests(spec_invariant_only(), minter);
+    let mut extras = extra_requests;
+    extras.reverse();
+    while (!extras.is_empty()) {
+        reqs.push_back(extras.pop_back());
+    };
+    extras.destroy_empty();
+    mint_test_blobs_then_advance(scenario, reqs, minter);
+    let entries = build_initial_content_from_address(minter, scenario, spec_invariant_only());
+    mint_native_with_entries(scenario, minter, minter_kiosk_id, entries, vector::empty())
+}
+
+// ── Fee math ──────────────────────────────────────────────────────────
+
+fun bps_amount(price: u64, bps: u16): u64 {
+    let numerator = (price as u128) * (bps as u128);
+    if (numerator == 0) {
+        return 0
+    };
+    (((numerator + 9_999) / 10_000) as u64)
+}
+
+fun default_platform_fee(price: u64): u64 {
+    bps_amount(price, DEFAULT_PLATFORM_FEE_BPS)
 }
 
 fun soul_purchase_total(price: u64, creator_royalty_bps: u16, collection_royalty_bps: u16): u64 {
     price
-        + default_platform_fee_amount(price)
-        + bps_amount_for_tests(price, creator_royalty_bps)
-        + bps_amount_for_tests(price, collection_royalty_bps)
+        + default_platform_fee(price)
+        + bps_amount(price, creator_royalty_bps)
+        + bps_amount(price, collection_royalty_bps)
 }
 
-fun collection_purchase_total(price: u64): u64 {
-    price + default_platform_fee_amount(price)
+fun paid_access_total(price: u64): u64 {
+    price + default_platform_fee(price)
 }
 
-fun content_access_purchase_total(price: u64): u64 {
-    price + default_platform_fee_amount(price)
-}
-
-fun collection_purchase_total_with_platform_fee(price: u64, platform_fee_bps: u16): u64 {
-    price + bps_amount_for_tests(price, platform_fee_bps)
-}
-
-fun content_access_purchase_total_with_platform_fee(price: u64, platform_fee_bps: u16): u64 {
-    price + bps_amount_for_tests(price, platform_fee_bps)
-}
-
-fun mint_native_in_personal_kiosk_no_skills(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    soul_policy: &TransferPolicy<Soul>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    deprecated_metadata_blob_ref: Option<std::string::String>,
-    protected_blob: blob::Blob,
-    founding_memory_blob: Option<blob::Blob>,
-    creator_royalty_bps: u16,
-    scenario: &mut ts::Scenario,
-): ID {
-    let clock_obj: Clock = ts::take_shared(scenario);
-    let soul_id = mint_native_in_personal_kiosk_compat(
-        config,
-        registry,
-        soul_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        name,
-        description,
-        image_url,
-        deprecated_metadata_blob_ref,
-        protected_blob,
-        founding_memory_blob,
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        0,
-        0,
-        15,
-        option::none(),
-        creator_royalty_bps,
-        &clock_obj,
-        ts::ctx(scenario),
-    );
-    ts::return_shared(clock_obj);
-    soul_id
-}
-
-fun mint_imported_in_personal_kiosk_no_skills(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    soul_policy: &TransferPolicy<Soul>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    deprecated_metadata_blob_ref: Option<std::string::String>,
-    protected_blob: blob::Blob,
-    founding_memory_blob: Option<blob::Blob>,
-    origin_ref: std::string::String,
-    creator_royalty_bps: u16,
-    scenario: &mut ts::Scenario,
-): ID {
-    let clock_obj: Clock = ts::take_shared(scenario);
-    let soul_id = mint_imported_in_personal_kiosk_compat(
-        config,
-        registry,
-        soul_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        name,
-        description,
-        image_url,
-        deprecated_metadata_blob_ref,
-        protected_blob,
-        founding_memory_blob,
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        0,
-        0,
-        15,
-        option::none(),
-        origin_ref,
-        creator_royalty_bps,
-        &clock_obj,
-        ts::ctx(scenario),
-    );
-    ts::return_shared(clock_obj);
-    soul_id
-}
-
-fun mint_joined_in_personal_kiosk_no_skills<T: key + store>(
-    config: &MarketConfig,
-    registry: &mut KioskRegistry,
-    soul_policy: &TransferPolicy<Soul>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    source_object_id: ID,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    deprecated_metadata_blob_ref: Option<std::string::String>,
-    protected_blob: blob::Blob,
-    founding_memory_blob: Option<blob::Blob>,
-    origin_ref: std::string::String,
-    creator_royalty_bps: u16,
-    scenario: &mut ts::Scenario,
-): ID {
-    let clock_obj: Clock = ts::take_shared(scenario);
-    let soul_id = mint_joined_in_personal_kiosk_compat<T>(
-        config,
-        registry,
-        soul_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        source_object_id,
-        name,
-        description,
-        image_url,
-        deprecated_metadata_blob_ref,
-        protected_blob,
-        founding_memory_blob,
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        0,
-        0,
-        15,
-        option::none(),
-        origin_ref,
-        creator_royalty_bps,
-        &clock_obj,
-        ts::ctx(scenario),
-    );
-    ts::return_shared(clock_obj);
-    soul_id
-}
-
-fun mint_native_in_personal_kiosk_compat(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    soul_policy: &TransferPolicy<Soul>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    _deprecated_metadata_blob_ref: Option<std::string::String>,
-    protected_blob: blob::Blob,
-    founding_memory_blob: Option<blob::Blob>,
-    skills_blob: Option<blob::Blob>,
-    initial_skill_name: std::string::String,
-    skills_public: bool,
-    asset_blob: Option<blob::Blob>,
-    initial_asset_name: std::string::String,
-    asset_public: bool,
-    asset_type: u8,
-    content_access_price_atomic: u64,
-    content_access_default_scope_mask: u64,
-    content_access_default_duration_ms: Option<u64>,
-    creator_royalty_bps: u16,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): ID {
-    let state = market::mint_native_in_personal_kiosk(
-        config,
-        registry,
-        soul_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        name,
-        description,
-        image_url,
-        protected_blob,
-        founding_memory_blob,
-        skills_blob,
-        initial_skill_name,
-        skills_public,
-        asset_blob,
-        initial_asset_name,
-        asset_public,
-        asset_type,
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        content_access_price_atomic,
-        content_access_default_scope_mask,
-        content_access_default_duration_ms,
-        creator_royalty_bps,
-        clock,
-        ctx,
-    );
-    let soul_id = soul::soul_id(&state);
-    market::finalize_soul_state(state);
-    soul_id
-}
-
-fun mint_imported_in_personal_kiosk_compat(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    soul_policy: &TransferPolicy<Soul>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    _deprecated_metadata_blob_ref: Option<std::string::String>,
-    protected_blob: blob::Blob,
-    founding_memory_blob: Option<blob::Blob>,
-    skills_blob: Option<blob::Blob>,
-    initial_skill_name: std::string::String,
-    skills_public: bool,
-    asset_blob: Option<blob::Blob>,
-    initial_asset_name: std::string::String,
-    asset_public: bool,
-    asset_type: u8,
-    content_access_price_atomic: u64,
-    content_access_default_scope_mask: u64,
-    content_access_default_duration_ms: Option<u64>,
-    origin_ref: std::string::String,
-    creator_royalty_bps: u16,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): ID {
-    let state = market::mint_imported_in_personal_kiosk(
-        config,
-        registry,
-        soul_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        name,
-        description,
-        image_url,
-        protected_blob,
-        founding_memory_blob,
-        skills_blob,
-        initial_skill_name,
-        skills_public,
-        asset_blob,
-        initial_asset_name,
-        asset_public,
-        asset_type,
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        content_access_price_atomic,
-        content_access_default_scope_mask,
-        content_access_default_duration_ms,
-        origin_ref,
-        creator_royalty_bps,
-        clock,
-        ctx,
-    );
-    let soul_id = soul::soul_id(&state);
-    market::finalize_soul_state(state);
-    soul_id
-}
-
-fun mint_joined_in_personal_kiosk_compat<T: key + store>(
-    config: &MarketConfig,
-    registry: &mut KioskRegistry,
-    soul_policy: &TransferPolicy<Soul>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    source_object_id: ID,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    _deprecated_metadata_blob_ref: Option<std::string::String>,
-    protected_blob: blob::Blob,
-    founding_memory_blob: Option<blob::Blob>,
-    skills_blob: Option<blob::Blob>,
-    initial_skill_name: std::string::String,
-    skills_public: bool,
-    asset_blob: Option<blob::Blob>,
-    initial_asset_name: std::string::String,
-    asset_public: bool,
-    asset_type: u8,
-    content_access_price_atomic: u64,
-    content_access_default_scope_mask: u64,
-    content_access_default_duration_ms: Option<u64>,
-    origin_ref: std::string::String,
-    creator_royalty_bps: u16,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): ID {
-    let state = market::mint_joined_in_personal_kiosk<T>(
-        config,
-        registry,
-        soul_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        source_object_id,
-        name,
-        description,
-        image_url,
-        protected_blob,
-        founding_memory_blob,
-        skills_blob,
-        initial_skill_name,
-        skills_public,
-        asset_blob,
-        initial_asset_name,
-        asset_public,
-        asset_type,
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        content_access_price_atomic,
-        content_access_default_scope_mask,
-        content_access_default_duration_ms,
-        origin_ref,
-        creator_royalty_bps,
-        clock,
-        ctx,
-    );
-    let soul_id = soul::soul_id(&state);
-    market::finalize_soul_state(state);
-    soul_id
-}
-
-// ── Compat wrappers for the new finalize-style ABI ───────────────────
-// Tests retain their original call shapes; these helpers internally
-// finalize the unshared root object so existing assertions on
-// `take_shared` of the resulting object continue to work.
-
-fun create_collection_in_personal_kiosk_compat(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    collection_policy: &TransferPolicy<SoulCollectionRight>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    extra_royalty_bps: u16,
-    tradeable: bool,
-    max_supply: Option<u64>,
-    ctx: &mut TxContext,
-): ID {
-    let collection_obj = market::create_collection_in_personal_kiosk(
-        config,
-        registry,
-        collection_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        name,
-        description,
-        image_url,
-        extra_royalty_bps,
-        tradeable,
-        max_supply,
-        ctx,
-    );
-    let collection_id = object::id(&collection_obj);
-    market::finalize_collection(collection_obj);
-    collection_id
-}
-
-fun list_soul_fixed_price_compat(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    state: &SoulState,
-    _soul_id: ID,
-    price: u64,
-    ctx: &mut TxContext,
-): ID {
-    let listing = market::list_soul_fixed_price(
-        config,
-        registry,
-        kiosk_obj,
-        personal_kiosk_cap,
-        state,
-        price,
-        ctx,
-    );
-    let listing_id = object::id(&listing);
-    market::finalize_soul_listing(listing);
-    listing_id
-}
-
-fun list_soul_fixed_price_with_collection_compat(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    collection_obj: &SoulCollection,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    state: &SoulState,
-    _soul_id: ID,
-    price: u64,
-    ctx: &mut TxContext,
-): ID {
-    let listing = market::list_soul_fixed_price_with_collection(
-        config,
-        registry,
-        collection_obj,
-        kiosk_obj,
-        personal_kiosk_cap,
-        state,
-        price,
-        ctx,
-    );
-    let listing_id = object::id(&listing);
-    market::finalize_soul_listing(listing);
-    listing_id
-}
-
-fun list_collection_right_fixed_price_compat(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    collection_obj: &SoulCollection,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    _right_id: ID,
-    price: u64,
-    ctx: &mut TxContext,
-): ID {
-    let listing = market::list_collection_right_fixed_price(
-        config,
-        registry,
-        collection_obj,
-        kiosk_obj,
-        personal_kiosk_cap,
-        price,
-        ctx,
-    );
-    let listing_id = object::id(&listing);
-    market::finalize_collection_listing(listing);
-    listing_id
-}
-
-fun init_assets_and_append_sprite_as_owner_compat(
-    state: &mut SoulState,
-    metadata_obj: &mut SoulMetadata,
-    asset_name: std::string::String,
-    is_public: bool,
-    content_blob: blob::Blob,
-    sprite_config: vector<u8>,
-    sprite_mood_map: vector<u8>,
-    sprite_config_key: std::string::String,
-    sprite_mood_map_key: std::string::String,
-    download_policy: u8,
-    clock: &Clock,
-    ctx: &mut TxContext,
-) {
-    let assets_book = market::init_assets_and_append_sprite_as_owner(
-        state,
-        metadata_obj,
-        asset_name,
-        is_public,
-        content_blob,
-        sprite_config,
-        sprite_mood_map,
-        sprite_config_key,
-        sprite_mood_map_key,
-        download_policy,
-        clock,
-        ctx,
-    );
-    market::finalize_soul_assets(assets_book);
-}
-
-fun init_skills_and_append_as_owner_compat(
-    state: &mut SoulState,
-    skill_name: std::string::String,
-    is_public: bool,
-    content_blob: blob::Blob,
-    clock: &Clock,
-    ctx: &mut TxContext,
-) {
-    let skills_book = market::init_skills_and_append_as_owner(
-        state,
-        skill_name,
-        is_public,
-        content_blob,
-        clock,
-        ctx,
-    );
-    market::finalize_soul_skills(skills_book);
-}
+// ── Grant helpers ─────────────────────────────────────────────────────
 
 fun issue_default_grant(
-    state: &mut SoulState,
-    grantee: address,
-    expires_at_ms: Option<u64>,
     scenario: &mut ts::Scenario,
-): SoulGrant {
-    let clock_obj: Clock = ts::take_shared(scenario);
-    let soul_grant = grant::issue(
-        state,
+    owner: address,
+    grantee: address,
+    scope_mask: u64,
+): ID {
+    scenario.next_tx(owner);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let mut state = ts::take_shared<SoulState>(scenario);
+    let g = grant::issue(
+        &mut state,
         grantee,
-        grant::scope_seal() | grant::scope_memory(),
-        expires_at_ms,
-        &clock_obj,
-        ts::ctx(scenario),
+        scope_mask,
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
     );
-    ts::return_shared(clock_obj);
-    soul_grant
+    let grant_id = object::id(&g);
+    transfer::public_transfer(g, grantee);
+    test_clock.destroy_for_testing();
+    ts::return_shared(state);
+    grant_id
 }
 
-fun revoke_grant_for_grantee(
-    state: &mut SoulState,
-    grantee: address,
+#[test]
+fun issue_to_grantee_entry_transfers_grant() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    grant::issue_to_grantee(
+        &mut state,
+        AGENT,
+        grant::scope_seal(),
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    test_clock.destroy_for_testing();
+    ts::return_shared(state);
+
+    scenario.next_tx(AGENT);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    assert!(grant::grantee(&g) == AGENT, 0);
+    ts::return_to_address(AGENT, g);
+    ts::end(scenario);
+}
+
+// ── Paid-access kind config helper ────────────────────────────────────
+
+fun configure_paid_kind_for_minter(
     scenario: &mut ts::Scenario,
+    minter: address,
+    kind: u32,
+    scope_mask: u64,
+    duration_ms: Option<u64>,
 ) {
-    let clock_obj: Clock = ts::take_shared(scenario);
-    grant::revoke(state, grantee, &clock_obj, ts::ctx(scenario));
-    ts::return_shared(clock_obj);
+    scenario.next_tx(minter);
+    let config = ts::take_shared<MarketConfig>(scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(scenario);
+    let state = ts::take_shared<SoulState>(scenario);
+    market::configure_paid_access_kind(
+        &config,
+        &kind_registry_obj,
+        &mut paid_list,
+        &state,
+        kind,
+        PAID_ACCESS_PRICE,
+        scope_mask,
+        duration_ms,
+        scenario.ctx(),
+    );
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
 }
 
-fun has_active_grant_id(state: &SoulState, grant_id: ID): bool {
-    soul::active_grant_contains_id(state, grant_id)
-}
-
-fun has_active_grantee(state: &SoulState, grantee: address): bool {
-    soul::active_grant_contains_grantee(state, grantee)
-}
+// ─────────────────────────────────────────────────────────────────────
+// 8.1 Kind registry tests
+// ─────────────────────────────────────────────────────────────────────
 
 #[test]
-fun metadata_object_is_created_and_bound_on_mint() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
+fun builtin_kinds_pre_registered_at_publish() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Metadata Soul"),
-            string::utf8(b"Soul metadata object is created at mint"),
-            string::utf8(b"https://example.com/metadata.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let assets_id = *soul::assets_id(&state).borrow();
-
-        assert!(metadata::soul_id(&metadata_obj) == soul_id, 0);
-        assert!(soul::metadata_id(&state).contains(&metadata_id), 1);
-        assert!(soul::assets_id(&state).contains(&assets_id), 2);
-        assert!(metadata::active_sprite(&metadata_obj).is_none(), 3);
-        assert!(metadata::active_voice(&metadata_obj).is_none(), 4);
-
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-    };
-
+    scenario.next_tx(ADMIN);
+    let registry = ts::take_shared<KindRegistry>(&scenario);
+    assert!(kind_registry::contains_kind(&registry, kind_registry::kind_soul_doc()), 0);
+    assert!(kind_registry::contains_kind(&registry, kind_registry::kind_memory()), 1);
+    assert!(kind_registry::contains_kind(&registry, kind_registry::kind_skill()), 2);
+    assert!(kind_registry::contains_kind(&registry, kind_registry::kind_sprite()), 3);
+    assert!(kind_registry::contains_kind(&registry, kind_registry::kind_audio()), 4);
+    assert!(kind_registry::contains_name(&registry, b"soul_doc".to_string()), 5);
+    assert!(kind_registry::contains_name(&registry, b"memory".to_string()), 6);
+    assert!(kind_registry::contains_name(&registry, b"skill".to_string()), 7);
+    assert!(kind_registry::contains_name(&registry, b"sprite".to_string()), 8);
+    assert!(kind_registry::contains_name(&registry, b"audio".to_string()), 9);
+    assert!(kind_registry::next_kind(&registry) == kind_registry::first_custom_kind(), 10);
+    ts::return_shared(registry);
     ts::end(scenario);
 }
 
 #[test]
-fun owner_can_set_and_clear_active_metadata_bindings() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun builtin_kind_descriptors_carry_expected_metadata() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    scenario.next_tx(ADMIN);
+    let registry = ts::take_shared<KindRegistry>(&scenario);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
+    // SOUL_DOC: mint-only, OWNER|GRANT, scope=SEAL, no active binding, no download policy.
+    let soul_doc = kind_registry::borrow_descriptor(&registry, kind_registry::kind_soul_doc());
+    assert!(kind_registry::descriptor_op_mask(soul_doc) == 0, 0);
+    assert!(kind_registry::descriptor_read_mode_mask(soul_doc) == read_owner_grant(), 1);
+    assert!(!kind_registry::descriptor_has_active_binding(soul_doc), 2);
+    assert!(!kind_registry::descriptor_requires_download_policy(soul_doc), 3);
+    assert!(
+        kind_registry::descriptor_default_grant_scope_mask(soul_doc) == grant::scope_seal(),
+        4,
+    );
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    // MEMORY: APPEND|DELETE|PURGE, OWNER|GRANT, scope=MEMORY.
+    let memory = kind_registry::borrow_descriptor(&registry, kind_registry::kind_memory());
+    let crud_only = kind_registry::op_append() | kind_registry::op_delete() | kind_registry::op_purge();
+    assert!(kind_registry::descriptor_op_mask(memory) == crud_only, 5);
+    assert!(kind_registry::descriptor_read_mode_mask(memory) == read_owner_grant(), 6);
+    assert!(!kind_registry::descriptor_has_active_binding(memory), 7);
+    assert!(!kind_registry::descriptor_requires_download_policy(memory), 8);
+    assert!(
+        kind_registry::descriptor_default_grant_scope_mask(memory) == grant::scope_memory(),
+        9,
+    );
 
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Binding Metadata Soul"),
-            string::utf8(b"Owner can manage active sprite and voice metadata"),
-            string::utf8(b"https://example.com/binding.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
+    // SKILL: APPEND|DELETE|PURGE, OWNER|GRANT, scope=SKILLS.
+    let skill = kind_registry::borrow_descriptor(&registry, kind_registry::kind_skill());
+    assert!(kind_registry::descriptor_op_mask(skill) == crud_only, 10);
+    assert!(kind_registry::descriptor_read_mode_mask(skill) == read_owner_grant(), 11);
+    assert!(
+        kind_registry::descriptor_default_grant_scope_mask(skill) == grant::scope_skills(),
+        12,
+    );
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+    // SPRITE: full CRUD + ACTIVE_BIND, all four read modes.
+    let sprite = kind_registry::borrow_descriptor(&registry, kind_registry::kind_sprite());
+    let full_op = crud_only | kind_registry::op_active_bind();
+    assert!(kind_registry::descriptor_op_mask(sprite) == full_op, 13);
+    assert!(kind_registry::descriptor_read_mode_mask(sprite) == read_owner_grant_paid_public(), 14);
+    assert!(kind_registry::descriptor_has_active_binding(sprite), 15);
+    assert!(kind_registry::descriptor_requires_download_policy(sprite), 16);
+    assert!(
+        kind_registry::descriptor_default_grant_scope_mask(sprite) == grant::scope_assets(),
+        17,
+    );
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let voice_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    // AUDIO: same shape as SPRITE.
+    let audio = kind_registry::borrow_descriptor(&registry, kind_registry::kind_audio());
+    assert!(kind_registry::descriptor_op_mask(audio) == full_op, 18);
+    assert!(kind_registry::descriptor_read_mode_mask(audio) == read_owner_grant_paid_public(), 19);
 
-        let _ = assets::append_version_as_owner(
-            &mut assets_book,
-            &state,
-            string::utf8(b"voice-primary"),
-            false,
-            2,
-            voice_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        market::set_active_sprite(
-            &mut metadata_obj,
-            &state,
-            &assets_book,
-            default_asset_name(),
-            0,
-            metadata::download_policy_owner_only(),
-            ts::ctx(&mut scenario),
-        );
-        market::set_active_voice(
-            &mut metadata_obj,
-            &state,
-            &assets_book,
-            string::utf8(b"voice-primary"),
-            0,
-            metadata::download_policy_allowlist(),
-            ts::ctx(&mut scenario),
-        );
-        metadata::upsert_metadata_blob(
-            &mut metadata_obj,
-            &state,
-            string::utf8(b"sprite.config.v1"),
-            b"{\"fps\":12}",
-            ts::ctx(&mut scenario),
-        );
-        metadata::upsert_metadata_blob(
-            &mut metadata_obj,
-            &state,
-            string::utf8(b"voice.config.v1"),
-            b"{\"provider\":\"test\"}",
-            ts::ctx(&mut scenario),
-        );
-
-        let sprite_binding = metadata::active_sprite(&metadata_obj).borrow();
-        let voice_binding = metadata::active_voice(&metadata_obj).borrow();
-        assert!(*metadata::asset_name(sprite_binding) == default_asset_name(), 10);
-        assert!(metadata::version_index(sprite_binding) == 0, 11);
-        assert!(metadata::download_policy(sprite_binding) == metadata::download_policy_owner_only(), 12);
-        assert!(*metadata::asset_name(voice_binding) == string::utf8(b"voice-primary"), 13);
-        assert!(metadata::version_index(voice_binding) == 0, 14);
-        assert!(metadata::download_policy(voice_binding) == metadata::download_policy_allowlist(), 15);
-
-        market::clear_active_sprite(&mut metadata_obj, &state, ts::ctx(&mut scenario));
-        market::clear_active_voice(&mut metadata_obj, &state, ts::ctx(&mut scenario));
-        metadata::delete_metadata_blob(
-            &mut metadata_obj,
-            &state,
-            string::utf8(b"sprite.config.v1"),
-            ts::ctx(&mut scenario),
-        );
-        metadata::delete_metadata_blob(
-            &mut metadata_obj,
-            &state,
-            string::utf8(b"voice.config.v1"),
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(metadata::active_sprite(&metadata_obj).is_none(), 16);
-        assert!(metadata::active_voice(&metadata_obj).is_none(), 17);
-
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-        ts::return_shared(assets_book);
-    };
-
+    ts::return_shared(registry);
     ts::end(scenario);
 }
 
 #[test]
-#[expected_failure(abort_code = soulidity::market::EInvalidMetadataBinding)]
-fun cannot_bind_private_sprite_as_public() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun register_kind_allocates_monotonic_custom_ids() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
+    let video_kind = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append() | kind_registry::op_delete() | kind_registry::op_purge() | kind_registry::op_active_bind(),
+        read_owner_grant_paid_public(),
+        true,
+        true,
+        grant::scope_assets(),
+        scenario.ctx(),
+    );
+    assert!(video_kind == kind_registry::first_custom_kind(), 0);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    let prompt_kind = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"prompt".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(),
+        false,
+        false,
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    assert!(prompt_kind == video_kind + 1, 1);
+    assert!(kind_registry::next_kind(&registry) == prompt_kind + 1, 2);
 
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Invalid Policy Soul"),
-            string::utf8(b"Private assets cannot use public download policy"),
-            string::utf8(b"https://example.com/invalid-policy.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
+    ts::return_shared(registry);
+    ts::return_to_address(ADMIN, cap);
+    ts::end(scenario);
+}
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+#[test, expected_failure(abort_code = 3, location = sui::test_scenario)]
+fun non_admin_cannot_register_kind() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
+    scenario.next_tx(BUYER);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    // `KindAdminCap` is the authority proof. BUYER never received it, so
+    // test_scenario aborts with EEmptyInventory before `register_kind` can run.
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, BUYER);
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        read_owner_only(),
+        false,
+        false,
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
-        market::set_active_sprite(
-            &mut metadata_obj,
-            &state,
-            &assets_book,
-            default_asset_name(),
-            0,
-            metadata::download_policy_public(),
-            ts::ctx(&mut scenario),
-        );
+#[test, expected_failure(abort_code = soulidity::kind_registry::EKindNameTaken)]
+fun register_kind_rejects_duplicate_name() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-        abort 0
-    }
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"skill".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(),
+        false,
+        false,
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EOpMaskUnknownBit)]
+fun register_kind_rejects_unknown_op_bit() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append() | (1 << 5), // bit 5 unknown
+        read_owner_grant(),
+        false,
+        false,
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::ENoReadModeMask)]
+fun register_kind_rejects_zero_read_mode() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        0,
+        0,
+        false,
+        false,
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EReadModeOwnerRequired)]
+fun register_kind_rejects_missing_owner_read() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        kind_registry::read_grant(), // missing OWNER
+        false,
+        false,
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EActiveBindingMaskInconsistent)]
+fun register_kind_rejects_active_op_without_flag() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    // op_mask has ACTIVE_BIND but has_active_binding=false → inconsistent.
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append() | kind_registry::op_active_bind(),
+        read_owner_grant_paid_public(),
+        false,
+        true,
+        grant::scope_assets(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EActiveBindingMaskInconsistent)]
+fun register_kind_rejects_active_flag_without_op() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    // has_active_binding=true but op_mask lacks ACTIVE_BIND.
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(),
+        true,
+        false,
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EPublicRequiresDownloadPolicy)]
+fun register_kind_rejects_public_without_download_policy() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        read_owner_only() | kind_registry::read_public(),
+        false,
+        false, // requires_download_policy=false but PUBLIC included
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EDownloadPolicyRequiresPublic)]
+fun register_kind_rejects_download_policy_without_public_read() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(), // no PUBLIC
+        false,
+        true, // but requires_download_policy=true
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EInvalidDefaultGrantScope)]
+fun register_kind_rejects_grant_without_scope() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(),
+        false,
+        false,
+        0, // grant readable but scope=0
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EInvalidDefaultGrantScope)]
+fun register_kind_rejects_paid_without_scope() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append() | kind_registry::op_active_bind(),
+        kind_registry::read_owner() | kind_registry::read_paid() | kind_registry::read_public(),
+        true,
+        true,
+        0, // paid readable but scope=0
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EInvalidDefaultGrantScope)]
+fun register_kind_rejects_unscoped_read_with_scope() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        read_owner_only(), // no GRANT, no PAID
+        false,
+        false,
+        grant::scope_skills(), // but scope is non-zero → inconsistent
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EInvalidDefaultGrantScope)]
+fun register_kind_rejects_combined_scope_mask() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"video".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(),
+        false,
+        false,
+        grant::scope_skills() | grant::scope_assets(), // multi-bit
+        scenario.ctx(),
+    );
+    abort 42
 }
 
 #[test]
-#[expected_failure(abort_code = soulidity::soul::ENotSoulOwner)]
-fun non_owner_cannot_set_active_sprite() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let attacker = @0xBAD;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun register_kind_accepts_seal_scope_for_doc_like_kind() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    let _ = init_personal_kiosk_for_sender(&mut scenario, attacker);
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
+    let kind_id = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"manifest".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(),
+        false,
+        false,
+        grant::scope_seal(), // Phase 2 allows SEAL scope explicitly.
+        scenario.ctx(),
+    );
+    assert!(kind_id == kind_registry::first_custom_kind(), 0);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Protected Metadata Soul"),
-            string::utf8(b"Only owner can set active sprite"),
-            string::utf8(b"https://example.com/protected-metadata.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, attacker);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        market::set_active_sprite(
-            &mut metadata_obj,
-            &state,
-            &assets_book,
-            default_asset_name(),
-            0,
-            metadata::download_policy_owner_only(),
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
+    ts::return_shared(registry);
+    ts::return_to_address(ADMIN, cap);
+    ts::end(scenario);
 }
 
-#[test]
-#[expected_failure(abort_code = soulidity::metadata::EAssetVersionActive)]
-fun cannot_delete_active_asset_version() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+#[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
+fun admin_registered_kind_enforces_configured_ops_and_reads() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+    let notes_kind = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"notes".to_string(),
+        kind_registry::op_append(),
+        read_owner_only(),
+        false,
+        false,
+        0,
+        scenario.ctx(),
+    );
+    ts::return_shared(registry);
+    ts::return_to_address(ADMIN, cap);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Active Delete Soul"),
-            string::utf8(b"Active asset versions cannot be deleted"),
-            string::utf8(b"https://example.com/active-delete.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        market::set_active_sprite(
-            &mut metadata_obj,
-            &state,
-            &assets_book,
-            default_asset_name(),
-            0,
-            metadata::download_policy_owner_only(),
-            ts::ctx(&mut scenario),
-        );
-
-        assets::delete_version_as_owner(
-            &mut assets_book,
-            &metadata_obj,
-            &state,
-            default_asset_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantOwnerEpochMismatch)]
-fun stale_grant_cannot_be_used_after_soul_sale() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        creator_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            agent,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Genesis Soul"),
-            string::utf8(b"Soul with one active grant"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = memory::append_as_granted_agent(
-            &mut memory_book,
-            &state,
-            &soul_grant,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        assert!(memory::entry_count(&memory_book) == 1, 0);
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        buyer_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+    let _ = setup_and_mint_invariant_with_extras(
         &mut scenario,
-        admin,
-        buyer,
-        soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0),
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
     );
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
+    let version_index = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        notes_kind,
+        b"build-notes".to_string(),
+        read_owner_only(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    let slot = content::borrow_slot(&content_obj, notes_kind, b"build-notes".to_string(), version_index);
+    assert!(content::slot_op_mask(slot) == kind_registry::op_append(), 0);
+    assert!(content::slot_read_mode_mask(slot) == read_owner_only(), 1);
 
-        assert!(soul::current_owner(&state) == buyer, 0);
-        assert!(soul::current_kiosk_id(&state) == buyer_kiosk_id, 1);
-        assert!(soul::ownership_epoch(&state) == 1, 2);
-        assert!(soul::active_grant_count(&state) == 0, 3);
-        assert!(!has_active_grantee(&state, agent), 4);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        notes_kind,
+        b"build-notes".to_string(),
+        version_index,
+    );
+    content::seal_approve_content_owner(
+        id,
+        &state,
+        &content_obj,
+        notes_kind,
+        b"build-notes".to_string(),
+        version_index,
+        scenario.ctx(),
+    );
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(buyer_kiosk);
-        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
-    };
+    content::delete_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        notes_kind,
+        b"build-notes".to_string(),
+        version_index,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let document_id = soul_document_id(soul_id);
-        seal_policy::seal_approve_granted_agent_for_testing(
-            document_id,
-            &state,
-            soul_id,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
+#[test, expected_failure(abort_code = soulidity::kind_registry::EKindNameInvalidChar)]
+fun register_kind_rejects_uppercase_name() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-        abort 1
-    }
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"Video".to_string(),
+        kind_registry::op_append() | kind_registry::op_active_bind(),
+        read_owner_grant_paid_public(),
+        true,
+        true,
+        grant::scope_assets(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::kind_registry::EKindNameInvalidLength)]
+fun register_kind_rejects_empty_name() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+
+    let _ = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"".to_string(),
+        kind_registry::op_append(),
+        read_owner_grant(),
+        false,
+        false,
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    abort 42
 }
 
 #[test]
-fun collection_holder_receives_extra_royalty_on_soul_resale() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let holder = @0xBEEF;
-    let buyer = @0xF00D;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let holder_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
+fun deprecate_and_reactivate_kind_toggles_flag() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    init_protocol_for_testing(&mut scenario, admin);
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        creator_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
+    kind_registry::deprecate_kind(&mut registry, &cap, kind_registry::kind_skill(), scenario.ctx());
+    let d = kind_registry::borrow_descriptor(&registry, kind_registry::kind_skill());
+    assert!(kind_registry::descriptor_deprecated(d), 0);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
+    kind_registry::reactivate_kind(&mut registry, &cap, kind_registry::kind_skill(), scenario.ctx());
+    let d2 = kind_registry::borrow_descriptor(&registry, kind_registry::kind_skill());
+    assert!(!kind_registry::descriptor_deprecated(d2), 1);
+    // Op/read masks are immutable across reactivation.
+    let crud_only = kind_registry::op_append() | kind_registry::op_delete() | kind_registry::op_purge();
+    assert!(kind_registry::descriptor_op_mask(d2) == crud_only, 2);
+    assert!(kind_registry::descriptor_read_mode_mask(d2) == read_owner_grant(), 3);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+    ts::return_shared(registry);
+    ts::return_to_address(ADMIN, cap);
+    ts::end(scenario);
+}
 
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Royalty Soul"),
-            string::utf8(b"Soul backed by one collection"),
-            string::utf8(b"https://example.com/royalty.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
+#[test, expected_failure(abort_code = soulidity::kind_registry::EKindDeprecated)]
+fun deprecate_kind_blocks_double_deprecation() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let _collection_id = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Founders Circle"),
-            string::utf8(b"Extra royalty stream"),
-            string::utf8(b"https://example.com/collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
+    kind_registry::deprecate_kind(&mut registry, &cap, kind_registry::kind_skill(), scenario.ctx());
+    kind_registry::deprecate_kind(&mut registry, &cap, kind_registry::kind_skill(), scenario.ctx());
+    abort 42
+}
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+#[test, expected_failure(abort_code = soulidity::kind_registry::EKindNotFound)]
+fun borrow_descriptor_aborts_for_unregistered_kind() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-    };
+    scenario.next_tx(ADMIN);
+    let registry = ts::take_shared<KindRegistry>(&scenario);
+    let _ = kind_registry::borrow_descriptor(&registry, 999);
+    abort 42
+}
 
-    ts::next_tx(&mut scenario, holder);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        holder_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
+// ─────────────────────────────────────────────────────────────────────
+// 8.5 Mint flow / invariant entries
+// ─────────────────────────────────────────────────────────────────────
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let right_id = collection::right_id(&collection_obj);
-        let _listing_id = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            right_id,
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
+#[test]
+fun mint_with_invariant_entries_only_succeeds() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    mint_usdc_to_recipient(
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    assert!(soul::has_content_id(&state), 0);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    assert!(content::soul_id(&content_obj) == soul::soul_id(&state), 1);
+    // SOUL_DOC v0 + MEMORY v0 must be present.
+    assert!(
+        content::version_count(&content_obj, kind_registry::kind_soul_doc(), b"soul".to_string()) == 1,
+        2,
+    );
+    assert!(
+        content::version_count(&content_obj, kind_registry::kind_memory(), b"default".to_string()) == 1,
+        3,
+    );
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
+fun mint_rejects_owner_only_soul_doc_read_mode() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        holder,
-        collection_purchase_total(COLLECTION_PRICE),
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+        ],
+        MINTER,
     );
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-    ts::next_tx(&mut scenario, holder);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut holder_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, holder_kiosk_id);
-        let holder_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_only(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
+}
 
-        market::buy_collection_right_fixed_price(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut collection_obj,
-            &mut creator_kiosk,
-            &mut holder_kiosk,
-            &holder_cap,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
+#[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
+fun mint_rejects_owner_only_memory_read_mode() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-        assert!(collection::current_holder(&collection_obj) == holder, 0);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(collection_obj);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(holder_kiosk);
-        personal_kiosk::transfer_to_sender(holder_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        buyer_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let _listing_id = list_soul_fixed_price_with_collection_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        buyer,
-        soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, COLLECTION_ROYALTY_BPS),
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+        ],
+        MINTER,
     );
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_only(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
+}
 
-        market::buy_soul_fixed_price_with_collection(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut collection_obj,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
+#[test]
+fun mint_with_skill_records_version() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(buyer_kiosk);
-        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
-    };
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
 
-    ts::next_tx(&mut scenario, holder);
-    {
-        let royalty_coin: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        assert!(coin::value(&royalty_coin) == 50_000, 1);
-        transfer::public_transfer(royalty_coin, holder);
-    };
-
+    scenario.next_tx(MINTER);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    assert!(content::count_for_kind(&content_obj, kind_registry::kind_skill()) == 1, 0);
+    assert!(
+        content::version_count(&content_obj, kind_registry::kind_skill(), default_skill_name()) == 1,
+        1,
+    );
+    let slot = content::borrow_slot(
+        &content_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+    );
+    assert!(!content::slot_is_public(slot), 2);
+    assert!(content::slot_grant_scope_mask(slot) == grant::scope_skills(), 3);
+    assert!(content::slot_read_mode_mask(slot) == read_owner_grant(), 4);
+    assert!(content::slot_seal_encrypted(slot), 5);
+    ts::return_shared(content_obj);
     ts::end(scenario);
 }
 
 #[test]
-#[expected_failure(abort_code = soulidity::soul::ENotSoulOwner)]
-fun creator_cannot_bind_collection_after_soul_sale() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
+fun mint_with_sprite_set_active_binds_active_table() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
+    scenario.next_tx(MINTER);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    assert!(content::has_active(&content_obj, kind_registry::kind_sprite()), 0);
+    assert!(content::is_version_active(
+        &content_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+    ), 1);
+    let slot = content::borrow_slot(
+        &content_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+    );
+    assert!(content::slot_is_public(slot), 2);
+    assert!(content::slot_seal_encrypted(slot), 3); // mixed-mode slot stays encrypted
+    ts::return_shared(content_obj);
+    ts::end(scenario);
+}
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
+#[test, expected_failure(abort_code = soulidity::market::EInitialEntryActiveNotSupported)]
+fun mint_set_active_for_skill_kind_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Sold Soul"),
-            string::utf8(b"Cannot be rebound after sale"),
-            string::utf8(b"https://example.com/sold-soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        buyer,
-        soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0),
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+            blob_req(MINTER, BLOB_ROOT_HASH_SKILL),
+        ],
+        MINTER,
     );
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(buyer_kiosk);
-        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let creator_payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        transfer::public_transfer(creator_payment, creator);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Late Collection"),
-            string::utf8(b"Post-sale bind should fail"),
-            string::utf8(b"https://example.com/late-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::ECombinedFeesTooHigh)]
-fun bound_soul_listing_rejects_unbuyable_combined_fees() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-    let high_creator_royalty_bps = 6_000;
-    let high_collection_royalty_bps = 5_000;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"High Fee Soul"),
-            string::utf8(b"Bound listing must fail before creating dead listing"),
-            string::utf8(b"https://example.com/high-fee-soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            high_creator_royalty_bps,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"High Fee Collection"),
-            string::utf8(b"Combined fees should be rejected at listing time"),
-            string::utf8(b"https://example.com/high-fee-collection.png"),
-            high_collection_royalty_bps,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_soul_fixed_price_with_collection_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-fun import_and_personal_join_set_expected_provenance() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let source_id: ID;
-    let imported_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        creator_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let source = SourceNft {
-            id: object::new(ts::ctx(&mut scenario)),
-            serial: 7,
-        };
-        source_id = object::id(&source);
-        let imported_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        kiosk::place(&mut creator_kiosk, personal_kiosk::borrow(&personal_cap), source);
-
-        imported_id = mint_imported_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Imported Soul"),
-            string::utf8(b"Imported from elsewhere"),
-            string::utf8(b"https://example.com/imported.png"),
-            option::none(),
-            imported_blob,
-            option::none(),
-            string::utf8(b"import://alpha"),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let imported_grant = issue_default_grant(&mut state, admin, option::none(), &mut scenario);
-        assert!(grant::soul_id(&imported_grant) == imported_id, 4);
-        assert!(grant::issued_by(&imported_grant) == creator, 5);
-        transfer::public_transfer(imported_grant, admin);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let joined_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let joined_id = mint_joined_in_personal_kiosk_no_skills<SourceNft>(
-            &config,
-            &mut registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            source_id,
-            string::utf8(b"Joined Soul"),
-            string::utf8(b"Soul layer on top of existing NFT"),
-            string::utf8(b"https://example.com/joined.png"),
-            option::none(),
-            joined_blob,
-            option::none(),
-            string::utf8(b"join://source-7"),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        let imported_ref = kiosk::borrow<Soul>(&creator_kiosk, personal_kiosk::borrow(&personal_cap), imported_id);
-        let joined_ref = kiosk::borrow<Soul>(&creator_kiosk, personal_kiosk::borrow(&personal_cap), joined_id);
-
-        assert!(soul::provenance_kind(imported_ref) == soul::provenance_imported_for_testing(), 0);
-        assert!(soul::provenance_kind(joined_ref) == soul::provenance_personal_join_for_testing(), 1);
-        assert!(soul::origin_ref(imported_ref).contains(&string::utf8(b"import://alpha")), 2);
-        assert!(soul::origin_ref(joined_ref).contains(&string::utf8(b"join://source-7")), 3);
-        assert!(kiosk::has_item_with_type<SourceNft>(&creator_kiosk, source_id), 6);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun native_soul_mint_creates_state_memory_and_founding_entry() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Founding Soul"),
-            string::utf8(b"Native soul with founding memory"),
-            string::utf8(b"https://example.com/founding.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        let soul_ref = kiosk::borrow<Soul>(&creator_kiosk, personal_kiosk::borrow(&personal_cap), soul_id);
-        assert!(soul::provenance_kind(soul_ref) == soul::provenance_native_for_testing(), 0);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_book: SoulMemory = ts::take_shared(&scenario);
-
-        assert!(soul::soul_id(&state) == soul_id, 1);
-        assert!(soul::current_owner(&state) == creator, 2);
-        assert!(soul::current_kiosk_id(&state) == creator_kiosk_id, 3);
-        let memory_id = object::id(&memory_book);
-
-        assert!(memory::soul_id(&memory_book) == soul_id, 4);
-        assert!(soul::memory_id(&state).contains(&memory_id), 5);
-        assert!(memory::entry_count(&memory_book) == 1, 6);
-        assert!(memory::contains_entry(&memory_book, 0), 7);
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun collection_creation_and_binding_track_current_holder_and_state() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let collection_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Collection Soul"),
-            string::utf8(b"Collection binding"),
-            string::utf8(b"https://example.com/collection-soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        collection_id = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Genesis Collection"),
-            string::utf8(b"Tradeable collection"),
-            string::utf8(b"https://example.com/collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-
-        assert!(collection::current_holder(&collection_obj) == creator, 7);
-        assert!(collection::tradeable(&collection_obj), 8);
-        assert!(soul::soul_id(&state) == soul_id, 9);
-        assert!(soul::collection_id(&state).contains(&collection_id), 10);
-
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::collection::ECollectionLocked)]
-fun non_tradeable_collection_cannot_be_listed() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Locked Collection"),
-            string::utf8(b"Not tradeable"),
-            string::utf8(b"https://example.com/locked.png"),
-            COLLECTION_ROYALTY_BPS,
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let skill_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let right_id = collection::right_id(&collection_obj);
-
-        list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            right_id,
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_skill(),
+            default_skill_name(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            true, // set_active=true on a kind without active binding
+            skill_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
 }
 
-#[test]
-fun grant_issue_sets_active_grantee_and_metadata() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Grant Soul"),
-            string::utf8(b"Grant issue"),
-            string::utf8(b"https://example.com/grant.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        let grant_id = object::id(&soul_grant);
-
-        assert!(grant::soul_id(&soul_grant) == soul_id, 11);
-        assert!(grant::grantee(&soul_grant) == agent, 12);
-        assert!(grant::issued_by(&soul_grant) == creator, 13);
-        assert!(grant::expires_at_ms(&soul_grant).is_none(), 14);
-        assert!(soul::active_grant_count(&state) == 1, 15);
-        assert!(has_active_grant_id(&state, grant_id), 16);
-        assert!(has_active_grantee(&state, agent), 17);
-
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantNotActive)]
-fun reissued_grant_for_same_grantee_invalidates_old_grant() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let first_agent = @0xA63E;
-    let second_agent = @0xBEEF;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            first_agent,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Reissue Soul"),
-            string::utf8(b"Grant reissue"),
-            string::utf8(b"https://example.com/reissue.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let first_grant = issue_default_grant(&mut state, first_agent, option::none(), &mut scenario);
-        transfer::public_transfer(first_grant, first_agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let second_grant = issue_default_grant(&mut state, first_agent, option::none(), &mut scenario);
-        assert!(soul::active_grant_count(&state) == 1, 17);
-        assert!(has_active_grantee(&state, first_agent), 18);
-        transfer::public_transfer(second_grant, second_agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, first_agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let stale_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = memory::append_as_granted_agent(
-            &mut memory_book,
-            &state,
-            &stale_grant,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantNotActive)]
-fun revoked_grant_cannot_be_used_for_seal() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Revoked Soul"),
-            string::utf8(b"Grant revoke"),
-            string::utf8(b"https://example.com/revoke.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        revoke_grant_for_grantee(&mut state, agent, &mut scenario);
-        assert!(soul::active_grant_count(&state) == 0, 18);
-        assert!(!has_active_grantee(&state, agent), 19);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-
-        seal_policy::seal_approve_granted_agent_for_testing(
-            soul_document_id(soul_id),
-            &state,
-            soul_id,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantExpired)]
-fun expired_grant_cannot_append_memory() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            agent,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Expiry Soul"),
-            string::utf8(b"Grant expiry"),
-            string::utf8(b"https://example.com/expiry.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::some(100), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 101);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = memory::append_as_granted_agent(
-            &mut memory_book,
-            &state,
-            &soul_grant,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-fun listing_keeps_grant_active_before_and_after_cancel() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Listed Soul"),
-            string::utf8(b"Grant survives listing"),
-            string::utf8(b"https://example.com/listed.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::current_owner(&state) == creator, 20);
-        assert!(soul::ownership_epoch(&state) == 0, 21);
-        assert!(has_active_grantee(&state, agent), 22);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-
-        seal_policy::seal_approve_granted_agent_for_testing(
-            soul_document_id(soul_id),
-            &state,
-            soul_id,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        market::cancel_soul_listing(&mut creator_kiosk, &personal_cap, &mut listing);
-
-        assert!(soul::current_owner(&state) == creator, 23);
-        assert!(soul::ownership_epoch(&state) == 0, 24);
-        assert!(has_active_grantee(&state, agent), 25);
-
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-
-        seal_policy::seal_approve_granted_agent_for_testing(
-            soul_document_id(soul_id),
-            &state,
-            soul_id,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun memory_append_by_owner_and_granted_agent_is_monotonic() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            agent,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Soul"),
-            string::utf8(b"Append only"),
-            string::utf8(b"https://example.com/memory.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let owner_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let owner_timestamp = clock::timestamp_ms(&clock_obj);
-        let owner_blob_id = blob::object_id(&owner_blob);
-
-        let _ = memory::append_as_owner(
-            &mut memory_book,
-            &state,
-            owner_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(memory::entry_count(&memory_book) == 1, 26);
-        assert!(memory::contains_entry(&memory_book, owner_timestamp), 27);
-        assert!(memory::blob_object_id_for(&memory_book, owner_timestamp) == owner_blob_id, 28);
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 1);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let agent_timestamp = clock::timestamp_ms(&clock_obj);
-        let agent_blob_id = blob::object_id(&agent_blob);
-
-        let _ = memory::append_as_granted_agent(
-            &mut memory_book,
-            &state,
-            &soul_grant,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(memory::entry_count(&memory_book) == 2, 29);
-        assert!(memory::contains_entry(&memory_book, agent_timestamp), 30);
-        assert!(memory::blob_object_id_for(&memory_book, agent_timestamp) == agent_blob_id, 31);
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::ENotSoulOwner)]
-fun unauthorized_memory_append_as_owner_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let outsider = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            outsider,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Protected Soul"),
-            string::utf8(b"Owner only"),
-            string::utf8(b"https://example.com/protected.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, outsider);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let outsider_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = memory::append_as_owner(
-            &mut memory_book,
-            &state,
-            outsider_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::seal_policy::EIdPrefixMismatch)]
-fun owner_seal_approval_rejects_invalid_document_id() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Seal Soul"),
-            string::utf8(b"Document id check"),
-            string::utf8(b"https://example.com/seal.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-
-        seal_policy::seal_approve_owner_for_testing(
-            soul_document_id(soul_id),
-            &state,
-            soul_id,
-            ts::ctx(&mut scenario),
-        );
-        seal_policy::seal_approve_owner_for_testing(
-            soul_document_id_with_version(soul_id, 0x02),
-            &state,
-            soul_id,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-fun primary_sale_quote_and_purchase_include_creator_royalty_in_total() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xF00D;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
-    let expected_platform_fee = default_platform_fee_amount(SOUL_PRICE);
-    let creator_royalty = bps_amount_for_tests(SOUL_PRICE, CREATOR_ROYALTY_BPS);
-    let total = soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Primary Sale Soul"),
-            string::utf8(b"Primary sale includes creator surcharge"),
-            string::utf8(b"https://example.com/primary-sale.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let (platform_fee, quoted_price, quoted_creator_royalty, quoted_collection_royalty, quoted_total) =
-            market::quote_soul_purchase(
-                &config,
-                SOUL_PRICE,
-                soul::creator_royalty_bps(&state),
-                0,
-            );
-
-        assert!(platform_fee == expected_platform_fee, 30);
-        assert!(quoted_price == SOUL_PRICE, 31);
-        assert!(quoted_creator_royalty == creator_royalty, 32);
-        assert!(quoted_collection_royalty == 0, 33);
-        assert!(quoted_total == total, 34);
-
-        let _ = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, total);
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::current_owner(&state) == buyer, 35);
-        assert!(soul::current_kiosk_id(&state) == buyer_kiosk_id, 36);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(buyer_kiosk);
-        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let creator_payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        assert!(coin::value(&creator_payment) == SOUL_PRICE + creator_royalty, 37);
-        transfer::public_transfer(creator_payment, creator);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun secondary_sale_pays_creator_royalty() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let seller = @0xBEEF;
-    let buyer = @0xF00D;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let seller_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
-    let creator_royalty = ((SOUL_RESALE_PRICE as u128 * (CREATOR_ROYALTY_BPS as u128)) / 10_000) as u64;
-    let initial_sale_total = soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0);
-    let resale_total = soul_purchase_total(SOUL_RESALE_PRICE, CREATOR_ROYALTY_BPS, 0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    seller_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, seller);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Royalty Flow Soul"),
-            string::utf8(b"Secondary sale creator royalty"),
-            string::utf8(b"https://example.com/secondary.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+#[test, expected_failure(abort_code = soulidity::market::EInitialSoulDocCountMismatch)]
+fun mint_aborts_without_soul_doc() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        seller,
-        initial_sale_total,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_MEMORY)],
+        MINTER,
     );
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
+}
 
-    ts::next_tx(&mut scenario, seller);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, seller_kiosk_id);
-        let seller_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+#[test, expected_failure(abort_code = soulidity::market::EInitialSoulDocCountMismatch)]
+fun mint_aborts_with_two_soul_docs() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut seller_kiosk,
-            &seller_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::current_owner(&state) == seller, 30);
-        assert!(soul::current_kiosk_id(&state) == seller_kiosk_id, 31);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(seller_kiosk);
-        personal_kiosk::transfer_to_sender(seller_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let first_sale_coin: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        transfer::public_transfer(first_sale_coin, admin);
-    };
-
-    ts::next_tx(&mut scenario, seller);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, seller_kiosk_id);
-
-        let _ = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut seller_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_RESALE_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::current_owner(&state) == seller, 32);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(seller_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        buyer,
-        resale_total,
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+            blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A),
+        ],
+        MINTER,
     );
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, seller_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut seller_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::current_owner(&state) == buyer, 33);
-        assert!(soul::current_kiosk_id(&state) == buyer_kiosk_id, 34);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(seller_kiosk);
-        ts::return_shared(buyer_kiosk);
-        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let royalty_coin: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        assert!(coin::value(&royalty_coin) == creator_royalty, 35);
-        transfer::public_transfer(royalty_coin, creator);
-    };
-
-    ts::next_tx(&mut scenario, seller);
-    {
-        let seller_coin: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        assert!(coin::value(&seller_coin) == SOUL_RESALE_PRICE, 36);
-        transfer::public_transfer(seller_coin, seller);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::ENotSoulOwner)]
-fun collection_holder_cannot_append_memory_as_owner() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let holder = @0xBEEF;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let holder_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    holder_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, holder);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            holder,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Collection Access Soul"),
-            string::utf8(b"Collection holder should not gain owner access"),
-            string::utf8(b"https://example.com/access.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Access Collection"),
-            string::utf8(b"Collection right only"),
-            string::utf8(b"https://example.com/access-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(&mut scenario, admin, holder, collection_purchase_total(COLLECTION_PRICE));
-
-    ts::next_tx(&mut scenario, holder);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut holder_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, holder_kiosk_id);
-        let holder_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::buy_collection_right_fixed_price(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut collection_obj,
-            &mut creator_kiosk,
-            &mut holder_kiosk,
-            &holder_cap,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(collection::current_holder(&collection_obj) == holder, 37);
-        assert!(soul::current_owner(&state) == creator, 38);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(holder_kiosk);
-        personal_kiosk::transfer_to_sender(holder_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, holder);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let holder_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = memory::append_as_owner(
-            &mut memory_book,
-            &state,
-            holder_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::ENotSoulOwner)]
-fun collection_holder_cannot_approve_seal_as_owner() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let holder = @0xBEEF;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let holder_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    holder_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, holder);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Seal Access Soul"),
-            string::utf8(b"Collection holder should not approve owner seal"),
-            string::utf8(b"https://example.com/seal-access.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Seal Access Collection"),
-            string::utf8(b"Right only"),
-            string::utf8(b"https://example.com/seal-access-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(&mut scenario, admin, holder, collection_purchase_total(COLLECTION_PRICE));
-
-    ts::next_tx(&mut scenario, holder);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut holder_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, holder_kiosk_id);
-        let holder_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::buy_collection_right_fixed_price(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut collection_obj,
-            &mut creator_kiosk,
-            &mut holder_kiosk,
-            &holder_cap,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(collection::current_holder(&collection_obj) == holder, 39);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(collection_obj);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(holder_kiosk);
-        personal_kiosk::transfer_to_sender(holder_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, holder);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        seal_policy::seal_approve_owner_for_testing(
-            soul_document_id(soul_id),
-            &state,
-            soul_id,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::collection::ENotCollectionCreator)]
-fun non_creator_cannot_add_soul_to_collection() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let intruder = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Protected Collection Soul"),
-            string::utf8(b"Only creator can add"),
-            string::utf8(b"https://example.com/protected-collection.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Strict Collection"),
-            string::utf8(b"Creator only"),
-            string::utf8(b"https://example.com/strict.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, intruder);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::collection::ECreatorMismatch)]
-fun collection_creator_cannot_add_soul_from_other_creator() {
-    let admin = @0xA11CE;
-    let collection_creator = @0xC0DE;
-    let soul_creator = @0xBEEF;
-    let mut scenario = ts::begin(@0x0);
-    let collection_creator_kiosk_id: ID;
-    let soul_creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    collection_creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, collection_creator);
-    soul_creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, soul_creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(soul_creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, collection_creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, collection_creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Creator Match Collection"),
-            string::utf8(b"Soul creator must match"),
-            string::utf8(b"https://example.com/match.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, soul_creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, soul_creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Foreign Soul"),
-            string::utf8(b"Wrong creator"),
-            string::utf8(b"https://example.com/foreign.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, collection_creator);
-    {
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::ECollectionAlreadyBound)]
-fun soul_cannot_bind_collection_twice() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let first_collection_id: ID;
-    let second_collection_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Single Collection Soul"),
-            string::utf8(b"Cannot bind twice"),
-            string::utf8(b"https://example.com/single.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        first_collection_id = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"First Collection"),
-            string::utf8(b"First bind"),
-            string::utf8(b"https://example.com/first.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        second_collection_id = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Second Collection"),
-            string::utf8(b"Second bind"),
-            string::utf8(b"https://example.com/second.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut first_collection: SoulCollection = ts::take_shared_by_id(&scenario, first_collection_id);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut first_collection, &mut state, ts::ctx(&mut scenario));
-        ts::return_shared(first_collection);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut second_collection: SoulCollection = ts::take_shared_by_id(&scenario, second_collection_id);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        collection::add_soul(&mut second_collection, &mut state, ts::ctx(&mut scenario));
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantCapacityExceeded)]
-fun multiple_active_grants_respect_capacity() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let first_agent = @0xA63E;
-    let second_agent = @0xBEEF;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Scoped Soul"),
-            string::utf8(b"Supports multiple active grants"),
-            string::utf8(b"https://example.com/scoped.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let first_grant = grant::issue(
-            &mut state,
-            first_agent,
-            grant::scope_seal() | grant::scope_memory(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        assert!(soul::active_grant_count(&state) == 1, 100);
-        transfer::public_transfer(first_grant, first_agent);
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let second_grant = grant::issue(
-            &mut state,
-            second_agent,
-            grant::scope_skills(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        transfer::public_transfer(second_grant, second_agent);
-
-        abort 101
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantInvalidScopeMask)]
-fun grant_issue_rejects_unknown_scope_bits() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Scoped Soul"),
-            string::utf8(b"Rejects undefined scope bits"),
-            string::utf8(b"https://example.com/scoped.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let scope_mask = grant::scope_seal() | 16;
-        let invalid_grant = grant::issue(
-            &mut state,
-            agent,
-            scope_mask,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        transfer::public_transfer(invalid_grant, agent);
-
-        abort 106
-    }
-}
-
-// (removed) collection_listing_rejects_mismatched_right_id —
-// list_collection_right_fixed_price now derives right_id from the
-// passed `&SoulCollection`, so the previous user-supplied mismatch
-// path is unreachable. The remaining safety properties (must hold
-// the right in the kiosk, must be the current holder) are exercised
-// by other tests in this module.
-
-#[test]
-fun founding_memory_uses_real_clock_timestamp_and_optional_skills_init() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 777);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Skill Soul"),
-            string::utf8(b"Founding memory keeps clock timestamp"),
-            string::utf8(b"https://example.com/skills.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_book: SoulMemory = ts::take_shared(&scenario);
-        let memory_id = object::id(&memory_book);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        assert!(soul::memory_id(&state).contains(&memory_id), 102);
-        assert!(memory::contains_entry(&memory_book, 777), 103);
-        assert!(skills::skill_count(&skills_book) == 1, 104);
-        assert!(skills::version_count(&skills_book, default_skill_name()) == 1, 105);
-        assert!(!skills::version_is_public(&skills_book, default_skill_name(), 0), 106);
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-        ts::return_shared(skills_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun skills_versions_are_indexed_by_skill_name_and_version_index() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Indexed Soul"),
-            string::utf8(b"Skills stay addressable by version number"),
-            string::utf8(b"https://example.com/indexed-skills.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(initial_skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let second_skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let first_blob_id = skills::blob_object_id_for(&skills_book, default_skill_name(), 0);
-
-        let second_version_index = skills::append_version_as_owner(
-            &mut skills_book,
-            &state,
-            default_skill_name(),
-            true,
-            second_skill_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(second_version_index == 1, 106);
-        assert!(skills::skill_count(&skills_book) == 1, 107);
-        assert!(skills::version_count(&skills_book, default_skill_name()) == 2, 108);
-        assert!(skills::blob_object_id_for(&skills_book, default_skill_name(), 0) == first_blob_id, 109);
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        assert!(!skills::version_is_deleted(&skills_book, default_skill_name(), 0), 110);
-        assert!(skills::version_is_public(&skills_book, default_skill_name(), 1), 111);
-        assert!(skills::version_created_at_ms(&skills_book, default_skill_name(), 1) == 0, 112);
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun owner_memory_seal_approval_uses_memory_id_and_timestamp_key() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 777);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Seal Soul"),
-            string::utf8(b"Memory seal binding"),
-            string::utf8(b"https://example.com/memory-seal.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_book: SoulMemory = ts::take_shared(&scenario);
-
-        seal_policy::seal_approve_memory_owner_for_testing(
-            memory_document_id(object::id(&memory_book), 777),
-            &state,
-            &memory_book,
-            777,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun skills_private_read_and_delete_use_skill_name_and_version_index() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Private Skill Soul"),
-            string::utf8(b"Private skill access"),
-            string::utf8(b"https://example.com/private-skill.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(initial_skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        skills::seal_approve_private_read_as_owner_for_testing(
-            skill_document_id(skills_id, default_skill_name(), 0),
-            &state,
-            &skills_book,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        skills::delete_version_as_owner(
-            &mut skills_book,
-            &state,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(skills::version_is_deleted(&skills_book, default_skill_name(), 0), 113);
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun rebind_primary_kiosk_succeeds_when_old_kiosk_is_empty() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let original_kiosk_id: ID;
-    let replacement_kiosk_id: ID;
-    let replacement_cap_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        original_kiosk_id = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let (mut replacement_kiosk, replacement_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        replacement_kiosk_id = object::id(&replacement_kiosk);
-        let replacement_personal_cap = personal_kiosk::new(
-            &mut replacement_kiosk,
-            replacement_owner_cap,
-            ts::ctx(&mut scenario),
-        );
-        replacement_cap_id = object::id(&replacement_personal_cap);
-
-        transfer::public_share_object(replacement_kiosk);
-        personal_kiosk::transfer_to_sender(replacement_personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Rebind from the empty original kiosk to the replacement. Because the
-    // original kiosk was created by `init_personal_kiosk` and never had any
-    // items added, `kiosk::item_count(old_kiosk) == 0` holds and the rebind
-    // succeeds. After rebinding, `reuse_personal_kiosk` must return the new
-    // kiosk id — confirming the registry now points at the replacement.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let original_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, original_kiosk_id);
-        let replacement_personal_cap: PersonalKioskCap =
-            ts::take_from_sender_by_id(&scenario, replacement_cap_id);
-
-        market::rebind_primary_kiosk(
-            &config,
-            &mut registry,
-            &original_kiosk,
-            &replacement_personal_cap,
-            ts::ctx(&mut scenario),
-        );
-        let rebound_kiosk_id = market::reuse_personal_kiosk(
-            &registry,
-            replacement_personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(rebound_kiosk_id == replacement_kiosk_id, 106);
-        assert!(rebound_kiosk_id != original_kiosk_id, 107);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(original_kiosk);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EOldKioskNotEmpty)]
-fun rebind_primary_kiosk_fails_when_old_kiosk_has_soul() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let original_kiosk_id: ID;
-    let replacement_cap_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    original_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint a Soul into the original kiosk so its item_count > 0.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut original_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, original_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut original_kiosk,
-            &personal_cap,
-            string::utf8(b"Locked Soul"),
-            string::utf8(b"Prevents rebind"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(original_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Create a replacement kiosk.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let (mut replacement_kiosk, replacement_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let replacement_personal_cap = personal_kiosk::new(
-            &mut replacement_kiosk,
-            replacement_owner_cap,
-            ts::ctx(&mut scenario),
-        );
-        replacement_cap_id = object::id(&replacement_personal_cap);
-        transfer::public_share_object(replacement_kiosk);
-        personal_kiosk::transfer_to_sender(replacement_personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Attempt rebind — must abort EOldKioskNotEmpty.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let original_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, original_kiosk_id);
-        let replacement_personal_cap: PersonalKioskCap =
-            ts::take_from_sender_by_id(&scenario, replacement_cap_id);
-
-        market::rebind_primary_kiosk(
-            &config,
-            &mut registry,
-            &original_kiosk,
-            &replacement_personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EPersonalKioskNotInitialized)]
-fun rebind_primary_kiosk_fails_when_caller_unregistered() {
-    let admin = @0xA11CE;
-    let attacker = @0xBAD;
-    let unrelated = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let unrelated_kiosk_id: ID;
-    let attacker_cap_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    // `unrelated` registers a kiosk; the attacker does not.
-    unrelated_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, unrelated);
-
-    // Attacker creates their own personal kiosk but never registers it.
-    ts::next_tx(&mut scenario, attacker);
-    {
-        let (mut attacker_kiosk, attacker_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let attacker_personal_cap = personal_kiosk::new(
-            &mut attacker_kiosk,
-            attacker_owner_cap,
-            ts::ctx(&mut scenario),
-        );
-        attacker_cap_id = object::id(&attacker_personal_cap);
-        transfer::public_share_object(attacker_kiosk);
-        personal_kiosk::transfer_to_sender(attacker_personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Attacker tries to rebind using someone else's registered kiosk as
-    // `old_kiosk`. Registry has no entry for attacker → EPersonalKioskNotInitialized.
-    ts::next_tx(&mut scenario, attacker);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let unrelated_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, unrelated_kiosk_id);
-        let attacker_cap: PersonalKioskCap =
-            ts::take_from_sender_by_id(&scenario, attacker_cap_id);
-
-        market::rebind_primary_kiosk(
-            &config,
-            &mut registry,
-            &unrelated_kiosk,
-            &attacker_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EOldKioskMismatch)]
-fun rebind_primary_kiosk_fails_on_mismatched_old_kiosk() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let decoy_kiosk_id: ID;
-    let replacement_cap_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    // Creator registers the real kiosk via `init_personal_kiosk`.
-    let _real_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Creator also creates a decoy kiosk (not registered) and a replacement
-    // personal kiosk cap in the same transaction.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let (mut decoy_kiosk, decoy_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        decoy_kiosk_id = object::id(&decoy_kiosk);
-        let decoy_personal_cap = personal_kiosk::new(
-            &mut decoy_kiosk,
-            decoy_owner_cap,
-            ts::ctx(&mut scenario),
-        );
-        transfer::public_share_object(decoy_kiosk);
-        personal_kiosk::transfer_to_sender(decoy_personal_cap, ts::ctx(&mut scenario));
-
-        let (mut replacement_kiosk, replacement_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let replacement_personal_cap = personal_kiosk::new(
-            &mut replacement_kiosk,
-            replacement_owner_cap,
-            ts::ctx(&mut scenario),
-        );
-        replacement_cap_id = object::id(&replacement_personal_cap);
-        transfer::public_share_object(replacement_kiosk);
-        personal_kiosk::transfer_to_sender(replacement_personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Pass the decoy kiosk (not the registered one) as `old_kiosk` → EOldKioskMismatch.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let decoy_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, decoy_kiosk_id);
-        let replacement_personal_cap: PersonalKioskCap =
-            ts::take_from_sender_by_id(&scenario, replacement_cap_id);
-
-        market::rebind_primary_kiosk(
-            &config,
-            &mut registry,
-            &decoy_kiosk,
-            &replacement_personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::ERebindSameKiosk)]
-fun rebind_primary_kiosk_fails_on_same_kiosk() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Rebind attempt where old == new uses the SAME registered cap.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, kiosk_id);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-
-        market::rebind_primary_kiosk(
-            &config,
-            &mut registry,
-            &kiosk_obj,
-            &personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EMarketPaused)]
-fun paused_market_blocks_kiosk_registration() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        market::update_paused(&mut config, &admin_cap, true);
-        transfer::public_transfer(admin_cap, admin);
-        ts::return_shared(config);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let _ = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-
-        abort 105
-    }
-}
-
-// ── SoulAssets Tests ──
-
-#[test]
-fun asset_version_append_and_seal_approval_by_owner() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 4 blobs for creator: protected, founding memory, initial asset, extra asset
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_four_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            creator,
-            BLOB_ROOT_HASH_D,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial asset
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Asset Soul"),
-            string::utf8(b"Soul with initial asset"),
-            string::utf8(b"https://example.com/asset-soul.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Append a second asset version under a different name
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let extra_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let version_index = assets::append_version_as_owner(
-            &mut assets_book,
-            &state,
-            string::utf8(b"persona-hires"),
-            false,
-            0,
-            extra_asset_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(version_index == 0, 100);
-        assert!(assets::asset_count(&assets_book) == 2, 101);
-        assert!(assets::version_count(&assets_book, default_asset_name()) == 1, 102);
-        assert!(assets::version_count(&assets_book, string::utf8(b"persona-hires")) == 1, 103);
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-        ts::return_shared(clock_obj);
-    };
-
-    // Seal approve the initial asset read as owner
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        assets::seal_approve_asset_read_as_owner_for_testing(
-            asset_document_id(assets_id, default_asset_name(), 0),
-            &state,
-            &assets_book,
-            default_asset_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun granted_agent_can_append_and_seal_approve_asset() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 4 blobs: 3 for creator + 1 for agent
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_four_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            agent,
-            BLOB_ROOT_HASH_D,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial asset
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Agent Asset Soul"),
-            string::utf8(b"Soul for agent asset test"),
-            string::utf8(b"https://example.com/agent-asset.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Issue grant with scope_assets() to agent
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_assets(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    // Agent appends a new asset version
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let version_index = assets::append_version_as_granted_agent(
-            &mut assets_book,
-            &state,
-            &soul_grant,
-            default_asset_name(),
-            false,
-            0,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(version_index == 1, 100);
-        assert!(assets::asset_count(&assets_book) == 1, 101);
-        assert!(assets::version_count(&assets_book, default_asset_name()) == 2, 102);
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    // Agent calls seal approve for the appended asset
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-
-        assets::seal_approve_asset_read_as_granted_agent_for_testing(
-            asset_document_id(assets_id, default_asset_name(), 1),
-            &state,
-            &assets_book,
-            default_asset_name(),
-            1,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun owner_can_soft_delete_asset_version() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: protected + initial asset
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial asset (no founding memory)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Delete Asset Soul"),
-            string::utf8(b"Soul for delete test"),
-            string::utf8(b"https://example.com/delete-asset.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Delete the initial asset version
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let assets_id = *soul::assets_id(&state).borrow();
-        let metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        assets::delete_version_as_owner(
-            &mut assets_book,
-            &metadata_obj,
-            &state,
-            default_asset_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(assets::version_is_deleted(&assets_book, default_asset_name(), 0) == true, 100);
-
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-        ts::return_shared(assets_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::assets::EAssetVersionDeleted)]
-fun seal_approval_fails_on_deleted_asset() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: protected + initial asset
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial asset (no founding memory)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Fail Seal Soul"),
-            string::utf8(b"Soul for seal fail test"),
-            string::utf8(b"https://example.com/fail-seal.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Delete the initial asset version
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let assets_id = *soul::assets_id(&state).borrow();
-        let metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        assets::delete_version_as_owner(
-            &mut assets_book,
-            &metadata_obj,
-            &state,
-            default_asset_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-        ts::return_shared(assets_book);
-    };
-
-    // Try to seal approve the deleted asset — should abort
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        assets::seal_approve_asset_read_as_owner_for_testing(
-            asset_document_id(assets_id, default_asset_name(), 0),
-            &state,
-            &assets_book,
-            default_asset_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── ContentAccessList tests ──────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-const CONTENT_ACCESS_PRICE: u64 = 1_000_000;
-const SCOPE_SKILLS: u64 = 4;
-const SCOPE_ASSETS: u64 = 8;
-const SCOPE_SKILLS_AND_ASSETS: u64 = 12; // SCOPE_SKILLS | SCOPE_ASSETS
-
-#[test]
-fun content_access_add_and_has_access() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint blob for creator
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul with content access (price > 0, scope = SKILLS|ASSETS)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Content Access Soul"),
-            string::utf8(b"Soul with content access list"),
-            string::utf8(b"https://example.com/ca.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Add buyer to access list, then assert has_access
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        // Buyer has SKILLS scope
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj) == true, 0);
-        // Buyer has ASSETS scope
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_ASSETS, &clock_obj) == true, 1);
-        // Random address has no access
-        assert!(content_access::has_access(&access_list, &state, @0xDEAD, SCOPE_SKILLS, &clock_obj) == false, 2);
-        // Entry count is 1
-        assert!(content_access::entry_count(&access_list) == 1, 3);
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun content_access_revoke_removes_entry() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint blob for creator
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul with content access list
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Revoke Test Soul"),
-            string::utf8(b"Soul for revoke test"),
-            string::utf8(b"https://example.com/revoke.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Add buyer to access list
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj) == true, 0);
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    // Revoke buyer access
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-
-        content_access::revoke_access(
-            &mut access_list,
-            &state,
-            buyer,
-            ts::ctx(&mut scenario),
-        );
-
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        // Buyer should no longer have access
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj) == false, 1);
-        assert!(content_access::entry_count(&access_list) == 0, 2);
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun content_access_set_price_updates_price() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint blob for creator
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul with content access list (price = 1_000_000)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Price Update Soul"),
-            string::utf8(b"Soul for price update test"),
-            string::utf8(b"https://example.com/price.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Update price from 1_000_000 to 2_000_000
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-
-        // Verify initial price
-        assert!(content_access::price_atomic(&access_list) == CONTENT_ACCESS_PRICE, 0);
-
-        content_access::set_content_price(
-            &mut access_list,
-            &state,
-            2_000_000,
-            ts::ctx(&mut scenario),
-        );
-
-        // Verify updated price
-        assert!(content_access::price_atomic(&access_list) == 2_000_000, 1);
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun seal_approve_asset_allowlisted_works() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: 1 protected + 1 initial asset
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial asset AND content access list (scope = SCOPE_ASSETS)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Seal Asset Soul"),
-            string::utf8(b"Soul for seal approve asset allowlisted test"),
-            string::utf8(b"https://example.com/seal-asset.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Add buyer to access list with SCOPE_ASSETS
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    // Buyer calls seal_approve_asset_allowlisted — should succeed
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let doc_id = asset_document_id(assets_id, default_asset_name(), 0);
-
-        content_access::seal_approve_asset_allowlisted(
-            doc_id,
-            &state,
-            &access_list,
-            &assets_book,
-            default_asset_name(),
-            0,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(assets_book);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::end(scenario);
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── Phase 1A: content_access error-path tests ───────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::content_access::ENotOwner)]
-fun unauthorized_add_access_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let bad = @0xBAD;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint blob for creator
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul with content access
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Unauthorized Add Soul"),
-            string::utf8(b"Soul for unauthorized add test"),
-            string::utf8(b"https://example.com/unauth-add.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // @0xBAD (not creator or owner) tries to add access — should fail
-    ts::next_tx(&mut scenario, bad);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::content_access::EAlreadyHasAccess)]
-fun duplicate_unexpired_access_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint blob for creator
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul with content access
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Duplicate Access Soul"),
-            string::utf8(b"Soul for duplicate access test"),
-            string::utf8(b"https://example.com/dup-access.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Creator adds buyer (no expiry), then adds buyer again — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        // Second add for same buyer — no expiry means not renewable
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::content_access::ENoAccessEntry)]
-fun revoke_nonexistent_access_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint blob for creator
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul with content access
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Revoke Nonexistent Soul"),
-            string::utf8(b"Soul for revoke nonexistent test"),
-            string::utf8(b"https://example.com/revoke-none.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Creator revokes buyer who was never added — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-
-        content_access::revoke_access(
-            &mut access_list,
-            &state,
-            buyer,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::content_access::EScopeMismatch)]
-fun seal_approve_skill_wrong_scope_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: 1 protected + 1 initial asset
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial asset AND content access (scope = SCOPE_SKILLS_AND_ASSETS)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Scope Mismatch Soul"),
-            string::utf8(b"Soul for scope mismatch test"),
-            string::utf8(b"https://example.com/scope-mm.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Add buyer with SCOPE_SKILLS (4) only
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_SKILLS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    // Buyer calls seal_approve_asset_allowlisted which requires SCOPE_ASSETS (8) — should fail
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let doc_id = asset_document_id(assets_id, default_asset_name(), 0);
-
-        content_access::seal_approve_asset_allowlisted(
-            doc_id,
-            &state,
-            &access_list,
-            &assets_book,
-            default_asset_name(),
-            0,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::content_access::EAccessListMismatch)]
-fun access_list_soul_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: one for each soul
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A with content access
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul A Mismatch"),
-            string::utf8(b"First soul for mismatch test"),
-            string::utf8(b"https://example.com/mm-a.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul B with content access
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul B Mismatch"),
-            string::utf8(b"Second soul for mismatch test"),
-            string::utf8(b"https://example.com/mm-b.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Use soul A's state + soul B's access_list in add_access — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        // There are 2 SoulStates shared. Take them in order:
-        // first take = soul A, second take = soul B
-        let state_a: SoulState = ts::take_shared(&scenario);
-        let state_b: SoulState = ts::take_shared(&scenario);
-        // Get soul B's access list
-        let access_list_b_id = *soul::access_list_id(&state_b).borrow();
-        let mut access_list_b: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_b_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        // Passing soul A's state with soul B's access_list
-        content_access::add_access(
-            &mut access_list_b,
-            &state_a,
-            buyer,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── Phase 1B: memory error-path tests ───────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::memory::EMemoryStateMismatch)]
-fun memory_state_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 3 blobs: 2 for protected (soul A + B) + 1 for memory append
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A (with memory)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Soul A"),
-            string::utf8(b"First soul for memory mismatch"),
-            string::utf8(b"https://example.com/mem-a.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul B (with memory)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Soul B"),
-            string::utf8(b"Second soul for memory mismatch"),
-            string::utf8(b"https://example.com/mem-b.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Creator calls append_as_owner with soul B's memory + soul A's state — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state_a: SoulState = ts::take_shared(&scenario);
-        let state_b: SoulState = ts::take_shared(&scenario);
-        let memory_b_id = *soul::memory_id(&state_b).borrow();
-        let mut memory_b: SoulMemory = ts::take_shared_by_id(&scenario, memory_b_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let append_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = memory::append_as_owner(
-            &mut memory_b,
-            &state_a,
-            append_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::memory::EMemoryGrantStateMismatch)]
-fun memory_grant_state_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 3 blobs: 2 for protected (soul A + B) + 1 for agent memory append
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            agent,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Grant Mem Soul A"),
-            string::utf8(b"First soul for grant memory mismatch"),
-            string::utf8(b"https://example.com/gmem-a.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul B
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Grant Mem Soul B"),
-            string::utf8(b"Second soul for grant memory mismatch"),
-            string::utf8(b"https://example.com/gmem-b.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Issue grant on soul A to agent
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state_a: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state_a, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state_a);
-    };
-
-    // Agent calls append_as_granted_agent with soul B's memory + soul A's state + grant — should fail
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state_a: SoulState = ts::take_shared(&scenario);
-        let state_b: SoulState = ts::take_shared(&scenario);
-        let memory_b_id = *soul::memory_id(&state_b).borrow();
-        let mut memory_b: SoulMemory = ts::take_shared_by_id(&scenario, memory_b_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = memory::append_as_granted_agent(
-            &mut memory_b,
-            &state_a,
-            &soul_grant,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::memory::EMemoryEntryMissing)]
-fun memory_entry_missing_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint blob for creator
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul (with memory)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Missing Soul"),
-            string::utf8(b"Soul for memory entry missing test"),
-            string::utf8(b"https://example.com/mem-missing.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Call blob_object_id_for with nonexistent timestamp_key — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_id = *soul::memory_id(&state).borrow();
-        let memory_book: SoulMemory = ts::take_shared_by_id(&scenario, memory_id);
-
-        let _ = memory::blob_object_id_for(&memory_book, 999999);
-
-        abort 100
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── Phase 1C: skills error-path tests ───────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::skills::EEmptySkillName)]
-fun empty_skill_name_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 3 blobs: 1 protected + 1 initial skill + 1 for empty-name append
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial skill
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Empty Skill Name Soul"),
-            string::utf8(b"Soul for empty skill name test"),
-            string::utf8(b"https://example.com/empty-skill.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Creator calls append_version_as_owner with empty skill name — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let new_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = skills::append_version_as_owner(
-            &mut skills_book,
-            &state,
-            string::utf8(b""),
-            false,
-            new_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::skills::ESkillsStateMismatch)]
-fun skills_state_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 5 blobs: 2 protected + 2 initial skill + 1 for append
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_five_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            creator,
-            BLOB_ROOT_HASH_D,
-            creator,
-            BLOB_ROOT_HASH_E,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A with skills
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Skills Soul A"),
-            string::utf8(b"First soul for skills mismatch"),
-            string::utf8(b"https://example.com/sk-a.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul B with skills
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Skills Soul B"),
-            string::utf8(b"Second soul for skills mismatch"),
-            string::utf8(b"https://example.com/sk-b.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Creator calls delete_version_as_owner with soul B's skills + soul A's state — should fail
-    // assert_owner(state_a, creator) passes, then assert_skills_matches_state fails
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state_a: SoulState = ts::take_shared(&scenario);
-        let state_b: SoulState = ts::take_shared(&scenario);
-        let skills_b_id = *soul::skills_id(&state_b).borrow();
-        let mut skills_b: SoulSkills = ts::take_shared_by_id(&scenario, skills_b_id);
-
-        skills::delete_version_as_owner(
-            &mut skills_b,
-            &state_a,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::skills::ESkillSlotMissing)]
-fun skill_slot_missing_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: 1 protected + 1 initial skill
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial skill ("default")
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Slot Missing Soul"),
-            string::utf8(b"Soul for skill slot missing test"),
-            string::utf8(b"https://example.com/slot-missing.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Call blob_object_id_for with nonexistent skill name — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        let _ = skills::blob_object_id_for(&skills_book, string::utf8(b"nonexistent"), 0);
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::skills::ESkillVersionDeleted)]
-fun skill_version_deleted_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: 1 protected + 1 initial skill
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial skill
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Delete Skill Soul"),
-            string::utf8(b"Soul for skill version deleted test"),
-            string::utf8(b"https://example.com/del-skill.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Delete version 0
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        skills::delete_version_as_owner(
-            &mut skills_book,
-            &state,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-    };
-
-    // Try to delete version 0 again — should fail with ESkillVersionDeleted
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        skills::delete_version_as_owner(
-            &mut skills_book,
-            &state,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::skills::EDocumentIdInvalidLength)]
-fun skill_seal_document_too_short_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: 1 protected + 1 initial skill
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial skill
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Short Doc ID Soul"),
-            string::utf8(b"Soul for short document ID test"),
-            string::utf8(b"https://example.com/short-doc.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Call seal_approve with too-short document ID — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        skills::seal_approve_private_read_as_owner_for_testing(
-            b"short",
-            &state,
-            &skills_book,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::skills::EDocumentIdPrefixMismatch)]
-fun skill_seal_prefix_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs: 1 protected + 1 initial skill
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with initial skill
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Prefix Mismatch Soul"),
-            string::utf8(b"Soul for prefix mismatch test"),
-            string::utf8(b"https://example.com/prefix-mm.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Build a document ID with correct length but wrong prefix
-    // Expected minimum: "soul-skill:" (11) + version (1) + skills_id (32) + skill_name + null (1) + version_index (8) + nonce (16)
-    // "default" = 7 bytes, so total = 11 + 1 + 32 + 7 + 1 + 8 + 16 = 76 bytes
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-
-        // Build wrong-prefix document ID with correct length
-        let mut bad_doc_id = b"wrong-seal:";  // 11 bytes, wrong domain
-        bad_doc_id.push_back(0x01);           // version byte
-        // Fill remaining bytes to reach correct length: 32 + 7 + 1 + 8 + 16 = 64
-        let mut i = 0u64;
-        while (i < 64) {
-            bad_doc_id.push_back(0xAA);
-            i = i + 1;
-        };
-
-        skills::seal_approve_private_read_as_owner_for_testing(
-            bad_doc_id,
-            &state,
-            &skills_book,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-// ═══════════════════════════════════════════════════════════════════
-// ── Phase 2: Error-path coverage ────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-// ───────────────────────────────────────────────────────────────────
-// 2A  grant.move (10 error codes)
-// ───────────────────────────────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EInvalidGrantee)]
-fun grant_to_zero_address_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Grant Zero Soul"),
-            string::utf8(b"Test grant to zero address"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let bad_grant = grant::issue(
-            &mut state,
-            @0x0,
-            grant::scope_seal() | grant::scope_memory(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        // Should not reach here
-        grant::destroy_for_testing(bad_grant);
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EInvalidGrantee)]
-fun grant_to_self_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Grant Self Soul"),
-            string::utf8(b"Test grant to self"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let bad_grant = grant::issue(
-            &mut state,
-            creator, // granting to self
-            grant::scope_seal() | grant::scope_memory(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        grant::destroy_for_testing(bad_grant);
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantSoulMismatch)]
-fun grant_soul_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id_a: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 3 blobs: protected_blob_a, protected_blob_b for two souls, memory_blob for agent
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            agent,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id_a = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul A"),
-            string::utf8(b"First soul"),
-            string::utf8(b"https://example.com/a.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Issue grant from soul A to agent
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state_a: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state_a, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state_a);
-    };
-
-    // Mint soul B
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul B"),
-            string::utf8(b"Second soul"),
-            string::utf8(b"https://example.com/b.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Agent tries to use grant from soul A on soul B's memory
-    ts::next_tx(&mut scenario, agent);
-    {
-        // We need to pick state_b (the second one). Since both are shared SoulState,
-        // we take them by order — take state_a first, then state_b.
-        let state_a: SoulState = ts::take_shared(&scenario);
-        let state_b: SoulState = ts::take_shared(&scenario);
-        // Identify which is which: state_a should have soul_id_a
-        let (used_state_b, returned_state_a) = if (soul::soul_id(&state_a) == soul_id_a) {
-            (state_b, state_a)
-        } else {
-            (state_a, state_b)
-        };
-        let memory_b_id = *soul::memory_id(&used_state_b).borrow();
-        let mut memory_b: SoulMemory = ts::take_shared_by_id(&scenario, memory_b_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let grant_a: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        // Grant from soul A used against soul B's state => EGrantSoulMismatch
-        let _ = memory::append_as_granted_agent(
-            &mut memory_b,
-            &used_state_b,
-            &grant_a,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(returned_state_a);
-        ts::return_shared(used_state_b);
-        ts::return_shared(memory_b);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(grant_a, agent);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantTargetMismatch)]
-fun grant_target_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            buyer,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Target Mismatch Soul"),
-            string::utf8(b"Test wrong sender uses grant"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Issue grant to agent
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        // Transfer grant to buyer (wrong person) so they have it
-        transfer::public_transfer(soul_grant, buyer);
-        ts::return_shared(state);
-    };
-
-    // buyer (not agent) tries to use agent's grant
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_id = *soul::memory_id(&state).borrow();
-        let mut memory_book: SoulMemory = ts::take_shared_by_id(&scenario, memory_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let buyer_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        // buyer is sender but grant.grantee is agent => EGrantTargetMismatch
-        let _ = memory::append_as_granted_agent(
-            &mut memory_book,
-            &state,
-            &soul_grant,
-            buyer_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, buyer);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantScopeMissing)]
-fun grant_scope_missing_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Need 3 blobs: protected, skill_blob for minting soul with skills, agent_blob for agent use
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            agent,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with skills
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Scope Missing Soul"),
-            string::utf8(b"Test scope mismatch"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Issue grant with seal|memory scope (no skills)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    // Agent tries skills::append_version_as_granted_agent which requires scope_skills
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        // Grant has seal|memory but skills::append requires scope_skills => EGrantScopeMissing
-        let _ = skills::append_version_as_granted_agent(
-            &mut skills_book,
-            &state,
-            &soul_grant,
-            default_skill_name(),
-            false,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantNotFound)]
-fun revoke_nonexistent_grant_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Revoke Nonexistent Soul"),
-            string::utf8(b"Test revoke missing grant"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        // @0xDEAD was never granted
-        grant::revoke(&mut state, @0xDEAD, &clock_obj, ts::ctx(&mut scenario));
-
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EEmptyScopeMask)]
-fun grant_empty_scope_mask_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Empty Scope Soul"),
-            string::utf8(b"Test zero scope mask"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        // scope_mask = 0 => EEmptyScopeMask
-        let bad_grant = grant::issue(
-            &mut state,
-            agent,
-            0,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        grant::destroy_for_testing(bad_grant);
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantScopeWouldRemoveAll)]
-fun revoke_scope_would_remove_all_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Revoke All Scope Soul"),
-            string::utf8(b"Test revoke all scopes"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Issue grant with only memory scope
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let soul_grant = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_memory(), // only memory
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    // Revoke memory scope => retained = 0 => EGrantScopeWouldRemoveAll
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let new_grant = grant::revoke_scope(
-            &mut state,
-            agent,
-            grant::scope_memory(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        grant::destroy_for_testing(new_grant);
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantCapacityTooLow)]
-fun grant_capacity_too_low_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Capacity Low Soul"),
-            string::utf8(b"Test capacity below active"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Issue 1 grant
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let soul_grant = issue_default_grant(&mut state, agent, option::none(), &mut scenario);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    // Try to set capacity to 0 (below active count of 1)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        grant::set_grant_capacity(&mut state, 0, &clock_obj, ts::ctx(&mut scenario));
-
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantCapacityTooHigh)]
-fun grant_capacity_too_high_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Capacity High Soul"),
-            string::utf8(b"Test capacity above max"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Try to set capacity to 10_001 (above MAX_GRANT_CAPACITY)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        grant::set_grant_capacity(&mut state, 10_001, &clock_obj, ts::ctx(&mut scenario));
-
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-// ───────────────────────────────────────────────────────────────────
-// 2B  soul.move (6 error codes)
-// ───────────────────────────────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::ECombinedFeesTooHigh)]
-fun creator_royalty_too_high_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        // creator_royalty_bps = 10_001 exceeds MAX_BPS
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"High Royalty Soul"),
-            string::utf8(b"Royalty too high"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            10_001, // exceeds 10_000
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::EInvalidOwner)]
-fun invalid_zero_owner_fails() {
-    let mut scenario = ts::begin(@0xC0DE);
-    ts::next_tx(&mut scenario, @0xC0DE);
-    {
-        let dummy_soul_id = object::id_from_address(@0x1);
-        let dummy_kiosk_id = object::id_from_address(@0x2);
-        let state = soul::create_state(
-            dummy_soul_id,
-            @0xC0DE,
-            1000,
-            @0x0, // zero owner => EInvalidOwner
-            dummy_kiosk_id,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-        soul::destroy_state_for_testing(state);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::ESkillsAlreadyBound)]
-fun skills_already_bound_fails() {
-    let mut scenario = ts::begin(@0xC0DE);
-    ts::next_tx(&mut scenario, @0xC0DE);
-    {
-        let dummy_soul_id = object::id_from_address(@0x1);
-        let dummy_kiosk_id = object::id_from_address(@0x2);
-        let first_skills_id = object::id_from_address(@0x3);
-        let second_skills_id = object::id_from_address(@0x4);
-        let mut state = soul::create_state(
-            dummy_soul_id,
-            @0xC0DE,
-            1000,
-            @0xC0DE,
-            dummy_kiosk_id,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-        soul::set_skills_id(&mut state, first_skills_id);
-        soul::set_skills_id(&mut state, second_skills_id); // already bound => ESkillsAlreadyBound
-        soul::destroy_state_for_testing(state);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::EMemoryAlreadyBound)]
-fun memory_already_bound_fails() {
-    let mut scenario = ts::begin(@0xC0DE);
-    ts::next_tx(&mut scenario, @0xC0DE);
-    {
-        let dummy_soul_id = object::id_from_address(@0x1);
-        let dummy_kiosk_id = object::id_from_address(@0x2);
-        let first_memory_id = object::id_from_address(@0x3);
-        let second_memory_id = object::id_from_address(@0x4);
-        // Create state with memory already bound
-        let mut state = soul::create_state(
-            dummy_soul_id,
-            @0xC0DE,
-            1000,
-            @0xC0DE,
-            dummy_kiosk_id,
-            option::some(first_memory_id), // memory already set during creation
-            ts::ctx(&mut scenario),
-        );
-        soul::set_memory_id(&mut state, second_memory_id); // already bound => EMemoryAlreadyBound
-        soul::destroy_state_for_testing(state);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::EAssetsAlreadyBound)]
-fun assets_already_bound_fails() {
-    let mut scenario = ts::begin(@0xC0DE);
-    ts::next_tx(&mut scenario, @0xC0DE);
-    {
-        let dummy_soul_id = object::id_from_address(@0x1);
-        let dummy_kiosk_id = object::id_from_address(@0x2);
-        let first_assets_id = object::id_from_address(@0x3);
-        let second_assets_id = object::id_from_address(@0x4);
-        let mut state = soul::create_state(
-            dummy_soul_id,
-            @0xC0DE,
-            1000,
-            @0xC0DE,
-            dummy_kiosk_id,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-        soul::set_assets_id(&mut state, first_assets_id);
-        soul::set_assets_id(&mut state, second_assets_id); // already bound => EAssetsAlreadyBound
-        soul::destroy_state_for_testing(state);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::EAccessListAlreadyBound)]
-fun access_list_already_bound_fails() {
-    let mut scenario = ts::begin(@0xC0DE);
-    ts::next_tx(&mut scenario, @0xC0DE);
-    {
-        let dummy_soul_id = object::id_from_address(@0x1);
-        let dummy_kiosk_id = object::id_from_address(@0x2);
-        let first_access_list_id = object::id_from_address(@0x3);
-        let second_access_list_id = object::id_from_address(@0x4);
-        let mut state = soul::create_state(
-            dummy_soul_id,
-            @0xC0DE,
-            1000,
-            @0xC0DE,
-            dummy_kiosk_id,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-        soul::set_access_list_id(&mut state, first_access_list_id);
-        soul::set_access_list_id(&mut state, second_access_list_id); // already bound => EAccessListAlreadyBound
-        soul::destroy_state_for_testing(state);
-    };
-
-    abort 100
-}
-
-// ───────────────────────────────────────────────────────────────────
-// 2C  seal_policy.move (4 error codes)
-// ───────────────────────────────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::seal_policy::EDocumentIdInvalidLength)]
-fun seal_document_id_too_short_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Seal Short ID Soul"),
-            string::utf8(b"Test document ID too short"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-
-        // Too-short document ID
-        seal_policy::seal_approve_owner_for_testing(
-            b"short",
-            &state,
-            soul_id,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::seal_policy::EStateSoulMismatch)]
-fun seal_state_soul_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Seal Mismatch Soul"),
-            string::utf8(b"Test state vs soul_id mismatch"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        // Use a fake soul_id that doesn't match state
-        let wrong_soul_id = object::id_from_address(@0xDEAD);
-        // Build a valid-length document ID for the WRONG soul_id so it passes the length check
-        let doc_id = soul_document_id(wrong_soul_id);
-
-        // state.soul_id != wrong_soul_id => EStateSoulMismatch
-        seal_policy::seal_approve_owner_for_testing(
-            doc_id,
-            &state,
-            wrong_soul_id,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::seal_policy::EStateMemoryMismatch)]
-fun seal_state_memory_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Need 2 blobs: protected + founding_memory for soul A
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A with founding memory
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Mismatch Soul"),
-            string::utf8(b"Test memory not bound to state"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Create a second, standalone SoulState whose soul_id matches the memory's soul_id,
-    // but whose memory_id is None. This passes the first check (memory.soul_id == state.soul_id)
-    // but fails the second (state.memory_id.contains(&memory_id)).
-    ts::next_tx(&mut scenario, creator);
-    {
-        let real_state: SoulState = ts::take_shared(&scenario);
-        let real_soul_id = soul::soul_id(&real_state);
-        let real_memory_id = *soul::memory_id(&real_state).borrow();
-        let memory_book: SoulMemory = ts::take_shared_by_id(&scenario, real_memory_id);
-
-        // Build a standalone state: same soul_id so memory.soul_id == state.soul_id passes,
-        // but memory_id = None so the contains check fails.
-        let dummy_kiosk_id = object::id_from_address(@0xBEEF);
-        let unbound_state = soul::create_state(
-            real_soul_id, // match memory's soul_id
-            creator,
-            1000,
-            creator,
-            dummy_kiosk_id,
-            option::none(), // no memory bound
-            ts::ctx(&mut scenario),
-        );
-
-        // Build valid doc_id for the real memory + timestamp_key=0 (the founding entry timestamp)
-        let doc_id = memory_document_id(real_memory_id, 0);
-
-        // unbound_state has no memory_id => EStateMemoryMismatch
-        seal_policy::seal_approve_memory_owner_for_testing(
-            doc_id,
-            &unbound_state,
-            &memory_book,
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        soul::destroy_state_for_testing(unbound_state);
-        ts::return_shared(real_state);
-        ts::return_shared(memory_book);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::seal_policy::EMemoryEntryMissing)]
-fun seal_memory_entry_missing_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Need 2 blobs: protected + founding_memory
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with founding memory
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Entry Soul"),
-            string::utf8(b"Test nonexistent memory entry"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Try seal_approve_memory_owner with a nonexistent timestamp_key
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_id = *soul::memory_id(&state).borrow();
-        let memory_book: SoulMemory = ts::take_shared_by_id(&scenario, memory_id);
-
-        let nonexistent_ts: u64 = 999_999;
-        let doc_id = memory_document_id(memory_id, nonexistent_ts);
-
-        // Entry at timestamp 999_999 doesn't exist => EMemoryEntryMissing
-        seal_policy::seal_approve_memory_owner_for_testing(
-            doc_id,
-            &state,
-            &memory_book,
-            nonexistent_ts,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-    };
-
-    abort 100
-}
-
-// ───────────────────────────────────────────────────────────────────
-// 2D  assets.move (4 error codes)
-// ───────────────────────────────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::assets::EAssetsMismatch)]
-fun assets_state_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id_a: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Need 4 blobs: protected_a, founding_memory_a, initial_asset_a, protected_b
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_four_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            creator,
-            BLOB_ROOT_HASH_D,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A with assets
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id_a = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Asset Soul A"),
-            string::utf8(b"Soul A with assets"),
-            string::utf8(b"https://example.com/a.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul B (no assets)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul B"),
-            string::utf8(b"Second soul without assets"),
-            string::utf8(b"https://example.com/b.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Creator tries append on soul A's assets with soul B's state
-    // delete_version_as_owner checks assert_assets_matches_state FIRST (fails: soul_id mismatch)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state_1: SoulState = ts::take_shared(&scenario);
-        let state_2: SoulState = ts::take_shared(&scenario);
-        let (state_a, state_b) = if (soul::soul_id(&state_1) == soul_id_a) {
-            (state_1, state_2)
-        } else {
-            (state_2, state_1)
-        };
-
-        let assets_a_id = *soul::assets_id(&state_a).borrow();
-        let metadata_a_id = *soul::metadata_id(&state_a).borrow();
-        let mut assets_a: SoulAssets = ts::take_shared_by_id(&scenario, assets_a_id);
-        let metadata_a: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_a_id);
-
-        // assets_a.soul_id != soul::soul_id(state_b) => EAssetsMismatch
-        assets::delete_version_as_owner(
-            &mut assets_a,
-            &metadata_a,
-            &state_b,
-            default_asset_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::assets::EAssetNotFound)]
-fun asset_not_found_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Need 3 blobs: protected, founding_memory, initial_asset
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with assets
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Asset Lookup Soul"),
-            string::utf8(b"Test nonexistent asset name"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Try to look up a nonexistent asset name
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        // "nonexistent" was never added => EAssetNotFound
-        let _ = assets::blob_object_id_for(
-            &assets_book,
-            string::utf8(b"nonexistent"),
-            0,
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::assets::EVersionOutOfBounds)]
-fun asset_version_out_of_bounds_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with 1 asset version
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Version OOB Soul"),
-            string::utf8(b"Test version out of bounds"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Try version_index 99 when only version 0 exists
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        // Only version 0 exists, 99 is OOB => EVersionOutOfBounds
-        let _ = assets::blob_object_id_for(
-            &assets_book,
-            default_asset_name(),
-            99,
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::assets::EEmptyAssetName)]
-fun empty_asset_name_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Need 4 blobs: protected, founding_memory, initial_asset, extra_blob for the bad append
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_four_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            creator,
-            BLOB_ROOT_HASH_D,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul with assets
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Empty Name Soul"),
-            string::utf8(b"Test empty asset name"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Try to append with empty asset name
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let extra_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        // Empty string asset name => EEmptyAssetName
-        let _ = assets::append_version_as_owner(
-            &mut assets_book,
-            &state,
-            string::utf8(b""), // empty name
-            false,
-            0,
-            extra_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-// ───────────────────────────────────────────────────────────────────
-// 2E  collection.move (1 error code)
-// ───────────────────────────────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::collection::EExtraRoyaltyTooHigh)]
-fun extra_royalty_too_high_fails() {
-    let mut scenario = ts::begin(@0xC0DE);
-    ts::next_tx(&mut scenario, @0xC0DE);
-    {
-        let dummy_kiosk_id = object::id_from_address(@0x1);
-
-        // extra_royalty_bps = 10_001 exceeds MAX_BPS => EExtraRoyaltyTooHigh
-        let (coll, right) = collection::create(
-            string::utf8(b"Bad Royalty Collection"),
-            string::utf8(b"Extra royalty too high"),
-            string::utf8(b"https://example.com/coll.png"),
-            10_001, // exceeds 10_000
-            true,
-            option::none<u64>(),
-            @0xC0DE,
-            dummy_kiosk_id,
-            ts::ctx(&mut scenario),
-        );
-
-        collection::destroy_collection_for_testing(coll);
-        collection::destroy_right_for_testing(right);
-    };
-
-    abort 100
-}
-// ═══════════════════════════════════════════════════════════════════
-// ── Phase 3: market.move error-code tests ──────────────────────
-// ═══════════════════════════════════════════════════════════════════
-//
-// Paste these functions into `soulidity::protocol_tests`.
-// All imports already exist; only the test functions are provided.
-
-// ── 1. EInvalidRecipient ────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EInvalidRecipient)]
-fun update_fee_recipient_zero_fails() {
-    let admin = @0xA11CE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-
-        market::update_fee_recipient(&mut config, &admin_cap, @0x0);
-
-        abort 100
-    }
-}
-
-// ── 2. EInvalidPrice ────────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EInvalidPrice)]
-fun list_soul_zero_price_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Free Soul"),
-            string::utf8(b"Zero-price listing should succeed"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // List with price = 0 — should fail
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            0, // zero price
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::end(scenario);
-}
-
-#[test, expected_failure(abort_code = market::EInvalidPrice)]
-fun buy_soul_zero_price_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xF00D;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Free Soul"),
-            string::utf8(b"Zero-price purchase test"),
-            string::utf8(b"https://example.com/free-soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // List at price 0
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Buy with zero-value coin
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment = coin::zero<USDC>(ts::ctx(&mut scenario));
-
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(soul::current_owner(&state) == buyer, 1);
-        assert!(soul::current_kiosk_id(&state) == buyer_kiosk_id, 2);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(buyer_kiosk);
-        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::end(scenario);
-}
-
-// ── 3. EPlatformFeeTooHigh ──────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EPlatformFeeTooHigh)]
-fun platform_fee_too_high_fails() {
-    let admin = @0xA11CE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-
-        market::update_platform_fee_bps(&mut config, &admin_cap, 10_001);
-
-        abort 100
-    }
-}
-
-// ── 4. EInactiveListing (cancel twice) ──────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EInactiveListing)]
-fun cancel_inactive_listing_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Cancel Test Soul"),
-            string::utf8(b"Double cancel test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // List the soul
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // First cancel — succeeds
-    ts::next_tx(&mut scenario, creator);
-    {
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-
-        market::cancel_soul_listing(
-            &mut creator_kiosk,
-            &personal_cap,
-            &mut listing,
-        );
-
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Second cancel — EInactiveListing
-    ts::next_tx(&mut scenario, creator);
-    {
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-
-        market::cancel_soul_listing(
-            &mut creator_kiosk,
-            &personal_cap,
-            &mut listing,
-        );
-
-        abort 100
-    }
-}
-
-// ── 5. EListingKioskMismatch ────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EListingKioskMismatch)]
-fun listing_kiosk_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Kiosk Mismatch Soul"),
-            string::utf8(b"Cancel from wrong kiosk"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // List the soul from creator's kiosk
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Buyer tries to cancel listing using buyer's kiosk → EListingKioskMismatch
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-
-        market::cancel_soul_listing(
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut listing,
-        );
-
-        abort 100
-    }
-}
-
-// ── 6. EIncorrectPaymentAmount ──────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EIncorrectPaymentAmount)]
-fun buy_soul_wrong_payment_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Payment Test Soul"),
-            string::utf8(b"Wrong payment amount test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // List the soul
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint wrong USDC amount to buyer (1 token instead of the quoted total)
-    mint_usdc_to_recipient(&mut scenario, admin, buyer, 1);
-
-    // Buyer tries to buy with wrong payment → EIncorrectPaymentAmount
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ── 7. EUnauthorizedKioskAccess ─────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUnauthorizedKioskAccess)]
-fun unauthorized_kiosk_access_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    let _buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Auth Test Soul"),
-            string::utf8(b"Unauthorized access test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Buyer tries to list from creator's kiosk using buyer's PersonalKioskCap
-    // → has_access check fails → EUnauthorizedKioskAccess
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &buyer_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ── 8. EQuoteOverflow ───────────────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EQuoteOverflow)]
-fun quote_overflow_u64_max_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    // Set platform fee to non-zero so that price + fee overflows u64
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        market::update_platform_fee_bps(&mut config, &admin_cap, 1); // 0.01%
-        transfer::public_transfer(admin_cap, admin);
-        ts::return_shared(config);
-    };
-
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint soul with very high creator_royalty_bps to help trigger overflow
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Overflow Soul"),
-            string::utf8(b"Quote overflow test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            5_000, // 50% creator royalty
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // List at u64::MAX → quote_soul_purchase overflow because
-    // price + bps_amount(price, creator_royalty_bps) + bps_amount(price, platform_fee_bps) > MAX_U64
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            soul_id,
-            18446744073709551615, // u64::MAX
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ── 9. EPersonalKioskAlreadyInitialized ─────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EPersonalKioskAlreadyInitialized)]
-fun double_personal_kiosk_init_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    // First init — succeeds
-    let _kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Second init — EPersonalKioskAlreadyInitialized
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-
-        let _ = market::init_personal_kiosk(&config, &mut registry, ts::ctx(&mut scenario));
-
-        abort 100
-    }
-}
-
-// ── 10. EPersonalKioskNotInitialized ────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EPersonalKioskNotInitialized)]
-fun personal_kiosk_not_initialized_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    // Manually create a kiosk + personal cap without calling init_personal_kiosk
-    // (so registry has no entry for creator)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let (mut kiosk_obj, owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let personal_cap = personal_kiosk::new(
-            &mut kiosk_obj,
-            owner_cap,
-            ts::ctx(&mut scenario),
-        );
-        transfer::public_share_object(kiosk_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Try to reuse without registration → EPersonalKioskNotInitialized
-    ts::next_tx(&mut scenario, creator);
-    {
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-
-        let _id = market::reuse_personal_kiosk(
-            &registry,
-            personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ── 11. EPersonalKioskMismatch ──────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EPersonalKioskMismatch)]
-fun personal_kiosk_mismatch_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Mismatch Soul"),
-            string::utf8(b"Kiosk mismatch on list"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Try to re-register the creator with a brand new second kiosk.
-    // Since the registry is now insert-only (M-1 fix), this aborts here
-    // with EPersonalKioskMismatch rather than silently overwriting the
-    // registration and orphaning the Soul locked in the original kiosk.
-    // The subsequent `list_soul_fixed_price` call below is dead code kept
-    // to document what used to be tested.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let (mut new_kiosk, new_owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let new_personal_cap = personal_kiosk::new(
-            &mut new_kiosk,
-            new_owner_cap,
-            ts::ctx(&mut scenario),
-        );
-        transfer::public_share_object(new_kiosk);
-        personal_kiosk::transfer_to_sender(new_personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        // Pick the new cap (the one just created)
-        let new_personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        market::ensure_personal_kiosk_registered(
-            &config,
-            &mut registry,
-            &new_personal_cap,
-            ts::ctx(&mut scenario),
-        );
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        personal_kiosk::transfer_to_sender(new_personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Now try to list from the NEW kiosk — but state says soul is in the OLD kiosk
-    // → EPersonalKioskMismatch
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let new_personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        // Take the NEW kiosk (not by id — by sender's latest shared kiosk)
-        let new_kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(&new_personal_cap));
-        let mut new_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, new_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut new_kiosk,
-            &new_personal_cap,
-            &state,
-            soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ── 12. (removed) EStateMismatch on list — list_soul_fixed_price now
-//        derives soul_id from state, making the previous mismatch test
-//        unreachable. The state vs caller mismatch is now caught by
-//        ESoulOwnerMismatch / ESoulCurrentKioskMismatch in the same path.
-
-// ── 13. ECombinedFeesTooHigh (via quote_soul_purchase) ──────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::ECombinedFeesTooHigh)]
-fun combined_fees_too_high_on_quote_fails() {
-    let admin = @0xA11CE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    // Set platform fee to 9500 bps (95%)
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        market::update_platform_fee_bps(&mut config, &admin_cap, 9_500);
-        transfer::public_transfer(admin_cap, admin);
-        ts::return_shared(config);
-    };
-
-    // Call quote_soul_purchase with creator_royalty_bps=1000 (10%)
-    // combined = 9500 + 1000 + 0 = 10500 > 10000 → ECombinedFeesTooHigh
-    ts::next_tx(&mut scenario, admin);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let (_, _, _, _, _) = market::quote_soul_purchase(
-            &config,
-            SOUL_PRICE,
-            1_000, // creator royalty 10%
-            0,     // no collection royalty
-        );
-
-        abort 100
-    }
-}
-
-// ── 14. EAccessListStateMismatch ────────────────────────────────
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EAccessListStateMismatch)]
-fun access_list_state_mismatch_on_purchase_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let access_list_a_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Mint 2 blobs for 2 souls
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint soul A (with content access price)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul A"),
-            string::utf8(b"Soul with content access"),
-            string::utf8(b"https://example.com/a.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(clock_obj);
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Capture soul A's access_list_id (only one SoulState exists at this point)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state_a: SoulState = ts::take_shared(&scenario);
-        access_list_a_id = *soul::access_list_id(&state_a).borrow();
-        ts::return_shared(state_a);
-    };
-
-    // Mint soul B (with content access price)
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul B"),
-            string::utf8(b"Another soul with content access"),
-            string::utf8(b"https://example.com/b.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(clock_obj);
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint USDC to buyer for content access purchase
-    mint_usdc_to_recipient(
+    let soul_doc_blob_1 = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let soul_doc_blob_2 = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob_1,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob_2,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EInitialMemoryCountMismatch)]
+fun mint_aborts_without_memory() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        buyer,
-        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC)],
+        MINTER,
     );
-
-    // Find soul B's state_id — take both states, identify the one that does NOT
-    // own access_list_a, that is state_b.
-    let state_b_id: ID;
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let state_x: SoulState = ts::take_shared(&scenario);
-        let state_y: SoulState = ts::take_shared(&scenario);
-        let al_x = soul::access_list_id(&state_x);
-        state_b_id = if (al_x.contains(&access_list_a_id)) {
-            object::id(&state_y) // state_x is soul A, so state_y is soul B
-        } else {
-            object::id(&state_x) // state_x is soul B
-        };
-        ts::return_shared(state_x);
-        ts::return_shared(state_y);
-    };
-
-    // Buyer tries purchase_content_access with access_list from soul A
-    // + state from soul B → EAccessListStateMismatch
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        let state_b: SoulState = ts::take_shared_by_id(&scenario, state_b_id);
-        let mut access_list_a: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_a_id);
-
-        market::purchase_content_access(
-            &config,
-            &mut access_list_a,
-            &state_b,
-            payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// ── Phase 4: Protocol init verification ─────────────────────────
-// ═══════════════════════════════════════════════════════════════════
+#[test, expected_failure(abort_code = soulidity::market::EInitialSoulDocNameMismatch)]
+fun mint_aborts_with_wrong_soul_doc_name() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-#[test]
-#[expected_failure(abort_code = soulidity::content_access::EAlreadyHasAccess)]
-fun content_access_repeat_purchase_same_tx_fails_after_state_update() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Repeat Purchase Soul"),
-            string::utf8(b"Exercise purchase_content_access twice in one tx"),
-            string::utf8(b"https://example.com/repeat-purchase.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        buyer,
-        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+        ],
+        MINTER,
     );
-    mint_usdc_to_recipient(
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"other".to_string(), // wrong name
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EInitialMemoryNameMismatch)]
+fun mint_aborts_with_wrong_memory_name() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        buyer,
-        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+        ],
+        MINTER,
     );
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let first_payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        let second_payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            first_payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            second_payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-fun market_upgrade_state_tracks_full_lifecycle() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &upgrade_cap);
-        assert!(market::has_tracked_upgrade_cap(&upgrade_state), 0);
-        assert!(market::upgrade_cap_live(&upgrade_state), 1);
-        assert!(market::upgrades_immutable(&upgrade_state) == false, 2);
-        assert!(market::upgrade_pending(&upgrade_state) == false, 3);
-        assert!(market::tracked_upgrade_version(&upgrade_state) == 1, 4);
-        assert!(market::tracked_upgrade_policy(&upgrade_state) == package::compatible_policy(), 5);
-        assert!(market::tracked_package_id(&upgrade_state).contains(&initial_package), 6);
-
-        market::restrict_upgrade_policy_additive(&mut upgrade_state, &admin_cap, &mut upgrade_cap);
-        assert!(market::tracked_upgrade_policy(&upgrade_state) == package::additive_policy(), 7);
-
-        let ticket = market::authorize_upgrade(
-            &mut upgrade_state,
-            &admin_cap,
-            &mut upgrade_cap,
-            package::dep_only_policy(),
-            sui::hash::blake2b256(&b"soulidity-upgrade"),
-        );
-        assert!(market::upgrade_pending(&upgrade_state), 8);
-        assert!(package::ticket_policy(&ticket) == package::dep_only_policy(), 9);
-
-        let receipt = package::test_upgrade(ticket);
-        market::commit_upgrade(&mut upgrade_state, &admin_cap, &mut upgrade_cap, receipt);
-        assert!(market::upgrade_pending(&upgrade_state) == false, 10);
-        assert!(market::tracked_upgrade_version(&upgrade_state) == 2, 11);
-        assert!(market::tracked_package_id(&upgrade_state).contains(&initial_package) == false, 12);
-        assert!(market::upgrade_cap_live(&upgrade_state), 13);
-
-        market::freeze_upgrades(&mut upgrade_state, &admin_cap, upgrade_cap);
-        assert!(market::upgrades_immutable(&upgrade_state), 14);
-        assert!(market::upgrade_cap_live(&upgrade_state) == false, 15);
-        assert!(market::upgrade_pending(&upgrade_state) == false, 16);
-
-        ts::return_to_sender(&scenario, admin_cap);
-        ts::return_shared(upgrade_state);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUpgradeCapMismatch)]
-fun market_upgrade_rejects_untracked_cap() {
-    let admin = @0xA11CE;
-    let tracked_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(tracked_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let tracked_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-        let mut wrong_cap = package::test_publish(@0x43.to_id(), ts::ctx(&mut scenario));
-
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &tracked_cap);
-        let _ticket = market::authorize_upgrade(
-            &mut upgrade_state,
-            &admin_cap,
-            &mut wrong_cap,
-            package::compatible_policy(),
-            sui::hash::blake2b256(&b"wrong-upgrade-cap"),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-fun content_access_expired_purchase_renews_and_skill_allowlist_succeeds() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Renewable Access Soul"),
-            string::utf8(b"Renewal path for content access purchase"),
-            string::utf8(b"https://example.com/renew-access.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(initial_skill_blob),
-            default_skill_name(),
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            option::none(),
-            default_asset_name(),
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"custom".to_string(), // wrong
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
+            memory_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
+}
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+#[test, expected_failure(abort_code = soulidity::market::EInitialKindOpNotAllowedAtMint)]
+fun mint_aborts_when_initial_custom_kind_lacks_append_op() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    // Admin registers a kind with op_mask=0 (mint-only, no user APPEND).
+    scenario.next_tx(ADMIN);
+    let mut registry = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+    let frozen_kind = kind_registry::register_kind(
+        &mut registry,
+        &cap,
+        b"frozen".to_string(),
+        0, // op_mask=0
+        read_owner_grant(),
+        false,
+        false,
+        grant::scope_skills(),
+        scenario.ctx(),
+    );
+    ts::return_shared(registry);
+    ts::return_to_address(ADMIN, cap);
 
-        assert!(content_access::soul_id(&access_list) == soul::soul_id(&state), 0);
-        assert!(content_access::creator(&access_list) == creator, 1);
-        assert!(content_access::price_atomic(&access_list) == CONTENT_ACCESS_PRICE, 2);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_SKILLS,
-            option::some(100),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 101);
-        ts::return_shared(clock_obj);
-    };
-
-    mint_usdc_to_recipient(
+    mint_test_blobs_then_advance(
         &mut scenario,
-        admin,
-        buyer,
-        content_access_purchase_total(CONTENT_ACCESS_PRICE),
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+            blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A),
+        ],
+        MINTER,
     );
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let frozen_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj) == false, 3);
-
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj), 4);
-        assert!(content_access::entry_count(&access_list) == 1, 5);
-
-        content_access::seal_approve_skill_allowlisted(
-            skill_document_id(skills_id, default_skill_name(), 0),
-            &state,
-            &access_list,
-            &skills_book,
-            default_skill_name(),
-            0,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(skills_book);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun skills_granted_agent_append_seal_delete_and_getters_work() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            agent,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Skill Grant Soul"),
-            string::utf8(b"Granted agent skill lifecycle"),
-            string::utf8(b"https://example.com/skill-grant.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(initial_skill_blob),
-            default_skill_name(),
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            option::none(),
-            default_asset_name(),
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_skills(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 777);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let mut skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-        let agent_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        assert!(skills::soul_id(&skills_book) == soul::soul_id(&state), 0);
-        assert!(skills::skills_id(&skills_book) == skills_id, 1);
-        assert!(skills::contains_skill(&skills_book, default_skill_name()), 2);
-        assert!(grant::scope_mask(&soul_grant) == grant::scope_skills(), 3);
-        assert!(grant::has_scope(&soul_grant, grant::scope_skills()), 4);
-        assert!(grant::has_scope(&soul_grant, grant::scope_assets()) == false, 5);
-
-        let version_index = skills::append_version_as_granted_agent(
-            &mut skills_book,
-            &state,
-            &soul_grant,
-            default_skill_name(),
-            true,
-            agent_blob,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(version_index == 1, 6);
-        assert!(skills::version_count(&skills_book, default_skill_name()) == 2, 7);
-        assert!(skills::version_is_public(&skills_book, default_skill_name(), 1), 8);
-        assert!(skills::version_created_at_ms(&skills_book, default_skill_name(), 1) == 777, 9);
-
-        skills::seal_approve_private_read_as_granted_agent_for_testing(
-            skill_document_id(skills_id, default_skill_name(), 1),
-            &state,
-            &skills_book,
-            default_skill_name(),
-            1,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        skills::delete_version_as_granted_agent(
-            &mut skills_book,
-            &state,
-            default_skill_name(),
-            1,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(skills::version_is_deleted(&skills_book, default_skill_name(), 1), 10);
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun assets_granted_agent_delete_and_getters_work() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Asset Grant Soul"),
-            string::utf8(b"Granted agent asset delete"),
-            string::utf8(b"https://example.com/asset-grant.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
+            memory_blob,
+        ),
+        market::new_initial_content_entry(
+            frozen_kind,
+            b"x".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            2,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
+            frozen_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+    abort 42
+}
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+#[test]
+fun mint_with_state_config_emits_upserted_events() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_assets(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
+    let configs = vector[
+        market::new_state_config_entry(default_state_config_key(), b"{\"k\":1}"),
+    ];
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), configs);
 
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let assets_id = *soul::assets_id(&state).borrow();
-        let mut assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-
-        assert!(assets::soul_id(&assets_book) == soul::soul_id(&state), 0);
-        assert!(assets::assets_id(&assets_book) == assets_id, 1);
-        assert!(assets::contains_asset(&assets_book, default_asset_name()), 2);
-        assert!(assets::version_asset_type(&assets_book, default_asset_name(), 0) == 2, 3);
-        assert!(assets::version_is_deleted(&assets_book, default_asset_name(), 0) == false, 4);
-        assert!(grant::has_scope(&soul_grant, grant::scope_assets()), 5);
-
-        assets::delete_version_as_granted_agent(
-            &mut assets_book,
-            &metadata_obj,
-            &state,
-            default_asset_name(),
-            0,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(assets::version_is_deleted(&assets_book, default_asset_name(), 0), 6);
-
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-        ts::return_shared(assets_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    assert!(soul::has_state_config(&state, default_state_config_key()), 0);
+    let value = soul::state_config(&state, default_state_config_key());
+    assert!(value == &b"{\"k\":1}", 1);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
-#[test]
-fun market_quote_helpers_and_admin_updates_work() {
-    let admin = @0xA11CE;
-    let fee_recipient = @0xFEE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-
-        market::update_fee_recipient(&mut config, &admin_cap, fee_recipient);
-        market::update_platform_fee_bps(&mut config, &admin_cap, 500);
-        market::update_paused(&mut config, &admin_cap, true);
-        assert!(market::paused(&config), 0);
-        market::update_paused(&mut config, &admin_cap, false);
-
-        let (collection_fee, collection_price, collection_total) =
-            market::quote_collection_purchase(&config, COLLECTION_PRICE);
-        let (access_fee, access_price, access_total) =
-            market::quote_content_access_purchase(&config, CONTENT_ACCESS_PRICE);
-
-        assert!(market::fee_recipient(&config) == fee_recipient, 1);
-        assert!(market::platform_fee_bps(&config) == 500, 2);
-        assert!(market::paused(&config) == false, 3);
-        assert!(collection_fee == 15_000, 4);
-        assert!(collection_price == COLLECTION_PRICE, 5);
-        assert!(collection_total == 315_000, 6);
-        assert!(access_fee == 50_000, 7);
-        assert!(access_price == CONTENT_ACCESS_PRICE, 8);
-        assert!(access_total == 1_050_000, 9);
-
-        ts::return_to_sender(&scenario, admin_cap);
-        ts::return_shared(config);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun ensure_personal_kiosk_registered_allows_reuse() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let (mut kiosk_obj, owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        kiosk_id = object::id(&kiosk_obj);
-        let personal_cap = personal_kiosk::new(&mut kiosk_obj, owner_cap, ts::ctx(&mut scenario));
-
-        transfer::public_share_object(kiosk_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-
-        market::ensure_personal_kiosk_registered(
-            &config,
-            &mut registry,
-            &personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        let reused_kiosk_id = market::reuse_personal_kiosk(
-            &registry,
-            personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(reused_kiosk_id == kiosk_id, 0);
-        ts::return_shared(config);
-        ts::return_shared(registry);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun cancelled_collection_listing_can_be_relisted() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _collection_id = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Relistable Collection"),
-            string::utf8(b"Collection right can be relisted after cancel"),
-            string::utf8(b"https://example.com/relist-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-
-        market::cancel_collection_listing(
-            &mut creator_kiosk,
-            &personal_cap,
-            &mut listing,
-        );
-
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(listing);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUpgradesImmutable)]
-fun market_upgrade_dep_only_policy_and_freeze_block_followup() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &upgrade_cap);
-        market::restrict_upgrade_policy_dep_only(&mut upgrade_state, &admin_cap, &mut upgrade_cap);
-        assert!(market::tracked_upgrade_policy(&upgrade_state) == package::dep_only_policy(), 0);
-
-        market::freeze_upgrades(&mut upgrade_state, &admin_cap, upgrade_cap);
-        assert!(market::upgrades_immutable(&upgrade_state), 1);
-
-        let next_cap = package::test_publish(@0x43.to_id(), ts::ctx(&mut scenario));
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &next_cap);
-
-        abort 100
-    }
-}
-
-#[test]
-fun market_upgrade_dep_only_policy_tracks_state() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &upgrade_cap);
-        market::restrict_upgrade_policy_dep_only(&mut upgrade_state, &admin_cap, &mut upgrade_cap);
-
-        assert!(market::tracked_upgrade_policy(&upgrade_state) == package::dep_only_policy(), 0);
-        assert!(market::tracked_upgrade_version(&upgrade_state) == 1, 1);
-        assert!(market::upgrade_pending(&upgrade_state) == false, 2);
-
-        transfer::public_transfer(upgrade_cap, admin);
-        ts::return_to_sender(&scenario, admin_cap);
-        ts::return_shared(upgrade_state);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUpgradeCapNotTracked)]
-fun market_upgrade_dep_only_without_tracking_fails() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        market::restrict_upgrade_policy_dep_only(&mut upgrade_state, &admin_cap, &mut upgrade_cap);
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUpgradeAlreadyPending)]
-fun market_upgrade_authorize_while_pending_fails() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &upgrade_cap);
-        let _first_ticket = market::authorize_upgrade(
-            &mut upgrade_state,
-            &admin_cap,
-            &mut upgrade_cap,
-            package::compatible_policy(),
-            sui::hash::blake2b256(&b"pending-upgrade-a"),
-        );
-        let _second_ticket = market::authorize_upgrade(
-            &mut upgrade_state,
-            &admin_cap,
-            &mut upgrade_cap,
-            package::compatible_policy(),
-            sui::hash::blake2b256(&b"pending-upgrade-b"),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUpgradeAlreadyPending)]
-fun market_upgrade_track_while_pending_fails() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &upgrade_cap);
-        let _ticket = market::authorize_upgrade(
-            &mut upgrade_state,
-            &admin_cap,
-            &mut upgrade_cap,
-            package::compatible_policy(),
-            sui::hash::blake2b256(&b"pending-upgrade"),
-        );
-        // Attempting to re-track while a ticket is outstanding must abort
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &upgrade_cap);
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUpgradeCapNotTracked)]
-fun market_upgrade_authorize_without_tracking_fails() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        let _ticket = market::authorize_upgrade(
-            &mut upgrade_state,
-            &admin_cap,
-            &mut upgrade_cap,
-            package::compatible_policy(),
-            sui::hash::blake2b256(&b"authorize-without-tracking"),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EUpgradeNotPending)]
-fun market_upgrade_commit_without_pending_fails() {
-    let admin = @0xA11CE;
-    let initial_package = @0x42.to_id();
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let upgrade_cap = package::test_publish(initial_package, ts::ctx(&mut scenario));
-        transfer::public_transfer(upgrade_cap, admin);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let mut upgrade_cap: package::UpgradeCap = ts::take_from_sender(&scenario);
-
-        market::track_upgrade_cap(&mut upgrade_state, &admin_cap, &upgrade_cap);
-        let ticket = package::authorize_upgrade(
-            &mut upgrade_cap,
-            package::compatible_policy(),
-            sui::hash::blake2b256(&b"commit-without-pending"),
-        );
-        let receipt = package::test_upgrade(ticket);
-        market::commit_upgrade(&mut upgrade_state, &admin_cap, &mut upgrade_cap, receipt);
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EInvalidPrice)]
-fun list_collection_right_zero_price_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Zero Price Collection"),
-            string::utf8(b"Listing with zero price should fail"),
-            string::utf8(b"https://example.com/zero-price-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EIncorrectPaymentAmount)]
-fun buy_collection_right_wrong_payment_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Wrong Payment Collection"),
-            string::utf8(b"Collection purchase wrong payment should fail"),
-            string::utf8(b"https://example.com/wrong-payment-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+// ─────────────────────────────────────────────────────────────────────
+// 8.2 Content op-mask enforcement
+// ─────────────────────────────────────────────────────────────────────
+
+#[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
+fun soul_doc_append_as_owner_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
         &mut scenario,
-        admin,
-        buyer,
-        collection_purchase_total(COLLECTION_PRICE) - 1,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
     );
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-        market::buy_collection_right_fixed_price(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut collection_obj,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
+    let _ = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
 }
 
-#[test]
-#[expected_failure(abort_code = soulidity::market::EMarketPaused)]
-fun ensure_personal_kiosk_registered_paused_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let (mut kiosk_obj, owner_cap) = kiosk::new(ts::ctx(&mut scenario));
-        let personal_cap = personal_kiosk::new(&mut kiosk_obj, owner_cap, ts::ctx(&mut scenario));
-
-        transfer::public_share_object(kiosk_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-
-        market::update_paused(&mut config, &admin_cap, true);
-
-        ts::return_to_sender(&scenario, admin_cap);
-        ts::return_shared(config);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-
-        market::ensure_personal_kiosk_registered(
-            &config,
-            &mut registry,
-            &personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EInactiveListing)]
-fun cancel_collection_listing_inactive_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Cancel Twice Collection"),
-            string::utf8(b"Second cancel should fail"),
-            string::utf8(b"https://example.com/cancel-twice-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-
-        market::cancel_collection_listing(&mut creator_kiosk, &personal_cap, &mut listing);
-
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(listing);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-
-        market::cancel_collection_listing(&mut creator_kiosk, &personal_cap, &mut listing);
-
-        abort 100
-    }
-}
-
-#[test]
-fun collection_purchase_with_platform_fee_branch_works() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let buyer_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, buyer);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-
-        market::update_platform_fee_bps(&mut config, &admin_cap, 500);
-
-        ts::return_to_sender(&scenario, admin_cap);
-        ts::return_shared(config);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Fee Split Collection"),
-            string::utf8(b"Collection purchase exercises platform fee split"),
-            string::utf8(b"https://example.com/fee-split-collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_collection_right_fixed_price_compat(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            collection::right_id(&collection_obj),
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+#[test, expected_failure(abort_code = soulidity::content::EOwnerReadModeRequired)]
+fun append_version_rejects_slot_without_owner_read() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
         &mut scenario,
-        admin,
-        buyer,
-        collection_purchase_total_with_platform_fee(COLLECTION_PRICE, 500),
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
     );
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
-        let buyer_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-        market::buy_collection_right_fixed_price(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut collection_obj,
-            &mut creator_kiosk,
-            &mut buyer_kiosk,
-            &buyer_cap,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
+    let _ = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        read_grant_only(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
-        assert!(collection::current_holder(&collection_obj) == buyer, 0);
-        assert!(collection::current_holder_kiosk_id(&collection_obj) == buyer_kiosk_id, 1);
+#[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
+fun soul_doc_delete_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(collection_obj);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(buyer_kiosk);
-        personal_kiosk::transfer_to_sender(buyer_cap, ts::ctx(&mut scenario));
-    };
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    content::delete_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
-    ts::end(scenario);
+#[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
+fun soul_doc_purge_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    content::purge_deleted_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EKindActiveBindingNotSupported)]
+fun soul_doc_set_active_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+
+    market::set_active_content(
+        &config,
+        &kind_registry_obj,
+        &mut content_obj,
+        &state,
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
 }
 
 #[test]
-fun grant_owner_rotation_invalidation_clears_active_slots() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let first_agent = @0xA63E;
-    let second_agent = @0xBEEF;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Grant Invalidate Soul"),
-            string::utf8(b"Invalidate all active grants"),
-            string::utf8(b"https://example.com/grant-invalidate.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        grant::set_grant_capacity(&mut state, 2, &clock_obj, ts::ctx(&mut scenario));
-        let first_grant = grant::issue(
-            &mut state,
-            first_agent,
-            grant::scope_seal() | grant::scope_memory(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        let second_grant = grant::issue(
-            &mut state,
-            second_agent,
-            grant::scope_assets(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        ts::return_shared(clock_obj);
-
-        assert!(grant::scope_mask(&first_grant) == (grant::scope_seal() | grant::scope_memory()), 0);
-        assert!(grant::has_scope(&first_grant, grant::scope_memory()), 1);
-        assert!(grant::has_scope(&second_grant, grant::scope_assets()), 2);
-        assert!(soul::active_grant_count(&state) == 2, 3);
-
-        grant::invalidate_all_for_owner_rotation(&mut state, @0xD00D, creator);
-
-        assert!(soul::active_grant_count(&state) == 0, 4);
-        assert!(has_active_grantee(&state, first_agent) == false, 5);
-        assert!(has_active_grantee(&state, second_agent) == false, 6);
-
-        grant::destroy_for_testing(first_grant);
-        grant::destroy_for_testing(second_grant);
-        ts::return_shared(state);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun seal_policy_memory_granted_agent_uses_timestamp_key() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xA63E;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 777);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Grant Seal Soul"),
-            string::utf8(b"Granted memory seal approval"),
-            string::utf8(b"https://example.com/memory-grant-seal.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            string::utf8(b"default"),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_memory(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-        ts::return_shared(state);
-    };
-
-    ts::next_tx(&mut scenario, agent);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_book: SoulMemory = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let soul_grant: SoulGrant = ts::take_from_sender(&scenario);
-
-        seal_policy::seal_approve_memory_granted_agent_for_testing(
-            memory_document_id(object::id(&memory_book), 777),
-            &state,
-            &memory_book,
-            777,
-            &soul_grant,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-        ts::return_shared(clock_obj);
-        transfer::public_transfer(soul_grant, agent);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun content_access_purchase_with_platform_fee_branch_works() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let mut config: MarketConfig = ts::take_shared(&scenario);
-        market::update_platform_fee_bps(&mut config, &admin_cap, 500);
-        ts::return_to_sender(&scenario, admin_cap);
-        ts::return_shared(config);
-    };
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Fee Split Access Soul"),
-            string::utf8(b"Exercise platform fee split on content access"),
-            string::utf8(b"https://example.com/fee-split-access.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+fun memory_append_and_delete_succeed() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
         &mut scenario,
-        admin,
-        buyer,
-        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, 500),
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
     );
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj), 0);
-        ts::return_shared(config);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun protocol_init_creates_all_expected_objects() {
-    let admin = @0xA11CE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    // Verify MarketAdminCap is owned by admin
-    ts::next_tx(&mut scenario, admin);
-    {
-        let admin_cap: market::MarketAdminCap = ts::take_from_sender(&scenario);
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let upgrade_state: MarketUpgradeState = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        // MarketConfig defaults
-        assert!(market::fee_recipient(&config) == admin, 0);
-        assert!(market::platform_fee_bps(&config) == 250, 1);
-        assert!(market::paused(&config) == false, 2);
-        assert!(market::has_tracked_upgrade_cap(&upgrade_state) == false, 3);
-        assert!(market::tracked_upgrade_version(&upgrade_state) == 0, 4);
-        assert!(market::tracked_upgrade_policy(&upgrade_state) == package::compatible_policy(), 5);
-        assert!(market::upgrade_cap_live(&upgrade_state) == false, 6);
-        assert!(market::upgrades_immutable(&upgrade_state) == false, 7);
-        assert!(market::upgrade_pending(&upgrade_state) == false, 8);
-
-        ts::return_to_sender(&scenario, admin_cap);
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(upgrade_state);
-        ts::return_shared(soul_policy);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::end(scenario);
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── L-7: ContentAccessList.default_access_duration_ms ─────────────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fun purchase_with_duration_sets_expires_at_ms() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let duration_ms: u64 = 86_400_000; // 1 day
-    let clock_start_ms: u64 = 1_000_000;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, clock_start_ms);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Duration Soul"),
-            string::utf8(b"purchase expires_at_ms = now + duration"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), option::none(),
-            default_skill_name(), false,
-            option::none(), default_asset_name(), false, 0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::some(duration_ms),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj, ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
-        &mut scenario, admin, buyer,
-        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, DEFAULT_PLATFORM_FEE_BPS),
+    let v = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    assert!(v == 1, 0);
+    assert!(
+        content::version_count(&content_obj, kind_registry::kind_memory(), b"default".to_string()) == 2,
+        1,
     );
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::purchase_content_access(
-            &config, &mut access_list, &state, payment, &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        let expires = content_access::entry_expires_at_ms(&access_list, buyer);
-        assert!(expires.is_some(), 0);
-        assert!(*expires.borrow() == clock_start_ms + duration_ms, 1);
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS_AND_ASSETS, &clock_obj), 2);
-
-        ts::return_shared(config);
-        ts::return_shared(clock_obj);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun purchase_without_duration_grants_lifetime_access() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Lifetime Soul"),
-            string::utf8(b"default_duration=None -> entry.expires=None"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), option::none(),
-            default_skill_name(), false,
-            option::none(), default_asset_name(), false, 0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj, ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
-        &mut scenario, admin, buyer,
-        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, DEFAULT_PLATFORM_FEE_BPS),
+    content::delete_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        1,
+        scenario.ctx(),
+    );
+    assert!(
+        content::version_is_deleted(&content_obj, kind_registry::kind_memory(), b"default".to_string(), 1),
+        2,
     );
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::purchase_content_access(
-            &config, &mut access_list, &state, payment, &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        let expires = content_access::entry_expires_at_ms(&access_list, buyer);
-        assert!(expires.is_none(), 0);
-
-        ts::return_shared(config);
-        ts::return_shared(clock_obj);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-    };
-
+    test_clock.destroy_for_testing();
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(content_obj);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
-#[test]
-fun has_access_returns_false_after_duration_expires() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let duration_ms: u64 = 1_000;
-    let clock_start_ms: u64 = 1_000_000;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, clock_start_ms);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Expiring Soul"),
-            string::utf8(b"has_access false after expiry"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), option::none(),
-            default_skill_name(), false,
-            option::none(), default_asset_name(), false, 0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::some(duration_ms),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj, ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
-        &mut scenario, admin, buyer,
-        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, DEFAULT_PLATFORM_FEE_BPS),
-    );
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::purchase_content_access(
-            &config, &mut access_list, &state, payment, &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS_AND_ASSETS, &clock_obj), 0);
-
-        // Advance past expiry
-        clock::set_for_testing(&mut clock_obj, clock_start_ms + duration_ms + 1);
-        assert!(!content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS_AND_ASSETS, &clock_obj), 1);
-
-        ts::return_shared(config);
-        ts::return_shared(clock_obj);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun set_content_access_duration_affects_subsequent_purchases() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let initial_duration: u64 = 1_000;
-    let updated_duration: u64 = 5_000;
-    let clock_start_ms: u64 = 1_000_000;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, clock_start_ms);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Updatable Soul"),
-            string::utf8(b"owner updates duration, next purchase picks new value"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), option::none(),
-            default_skill_name(), false,
-            option::none(), default_asset_name(), false, 0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::some(initial_duration),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj, ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-
-        content_access::set_content_access_duration(
-            &mut access_list,
-            &state,
-            option::some(updated_duration),
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(content_access::default_access_duration_ms(&access_list).is_some(), 0);
-        assert!(*content_access::default_access_duration_ms(&access_list).borrow() == updated_duration, 1);
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-    };
-
-    mint_usdc_to_recipient(
-        &mut scenario, admin, buyer,
-        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, DEFAULT_PLATFORM_FEE_BPS),
-    );
-
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::purchase_content_access(
-            &config, &mut access_list, &state, payment, &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        let expires = content_access::entry_expires_at_ms(&access_list, buyer);
-        assert!(expires.is_some(), 2);
-        assert!(*expires.borrow() == clock_start_ms + updated_duration, 3);
-
-        ts::return_shared(config);
-        ts::return_shared(clock_obj);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-    };
-
-    ts::end(scenario);
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── L-3: delete_soul_listing / delete_collection_listing ──────────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EListingStillActive)]
-fun delete_active_soul_listing_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Active Listing Soul"),
-            string::utf8(b"delete rejects active listing"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), CREATOR_ROYALTY_BPS, &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config, &registry, &mut creator_kiosk, &personal_cap, &state,
-            soul_id, SOUL_PRICE, ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let listing: SoulListing = ts::take_shared(&scenario);
-        market::delete_soul_listing(listing, ts::ctx(&mut scenario));
-    };
-
-    abort 100
-}
-
-#[test]
-fun delete_cancelled_soul_listing_succeeds() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Cancel-then-Delete Soul"),
-            string::utf8(b"delete after cancel succeeds"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), CREATOR_ROYALTY_BPS, &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _listing_id = list_soul_fixed_price_compat(
-            &config, &registry, &mut creator_kiosk, &personal_cap, &state,
-            soul_id, SOUL_PRICE, ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-
-        market::cancel_soul_listing(&mut creator_kiosk, &personal_cap, &mut listing);
-
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let listing: SoulListing = ts::take_shared(&scenario);
-        market::delete_soul_listing(listing, ts::ctx(&mut scenario));
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun delete_cancelled_collection_listing_succeeds() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let collection_id: ID;
-    let right_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        collection_id = create_collection_in_personal_kiosk_compat(
-            &config, &registry, &collection_policy,
-            &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Collection"),
-            string::utf8(b"Tradeable collection for listing delete"),
-            string::utf8(b"https://example.com/collection.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_obj: SoulCollection = ts::take_shared_by_id(&scenario, collection_id);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        right_id = collection::right_id(&collection_obj);
-
-        let _listing_id = list_collection_right_fixed_price_compat(
-            &config, &registry, &collection_obj,
-            &mut creator_kiosk, &personal_cap,
-            right_id, COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut listing: CollectionListing = ts::take_shared(&scenario);
-
-        market::cancel_collection_listing(&mut creator_kiosk, &personal_cap, &mut listing);
-
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let listing: CollectionListing = ts::take_shared(&scenario);
-        market::delete_collection_listing(listing, ts::ctx(&mut scenario));
-    };
-
-    ts::end(scenario);
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── L-1: destroy_invalidated_grant reclaims stale grant objects ───
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantStillActive)]
-fun destroy_invalidated_grant_rejects_active_grant() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xAAA;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Active Grant Soul"),
-            string::utf8(b"destroy_invalidated_grant rejects active grant"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), CREATOR_ROYALTY_BPS, &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let grant_obj = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_seal() | grant::scope_memory(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        grant::destroy_invalidated_grant(grant_obj, &mut state, &clock_obj, ts::ctx(&mut scenario));
-
-        ts::return_shared(clock_obj);
-        ts::return_shared(state);
-    };
-
-    abort 100
-}
-
-#[test]
-fun destroy_invalidated_grant_after_revoke_succeeds() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xAAA;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Revoked Grant Soul"),
-            string::utf8(b"destroy after revoke succeeds"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), CREATOR_ROYALTY_BPS, &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let grant_obj = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_seal() | grant::scope_memory(),
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        grant::revoke(&mut state, agent, &clock_obj, ts::ctx(&mut scenario));
-
-        grant::destroy_invalidated_grant(grant_obj, &mut state, &clock_obj, ts::ctx(&mut scenario));
-
-        ts::return_shared(clock_obj);
-        ts::return_shared(state);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun destroy_invalidated_grant_after_expiry_succeeds() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xAAA;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Expired Grant Soul"),
-            string::utf8(b"destroy after expiry succeeds"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(), protected_blob, option::none(), CREATOR_ROYALTY_BPS, &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 1_000);
-        let grant_obj = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_seal() | grant::scope_memory(),
-            option::some(2_000),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        // Advance clock past expiry
-        clock::set_for_testing(&mut clock_obj, 3_000);
-
-        grant::destroy_invalidated_grant(grant_obj, &mut state, &clock_obj, ts::ctx(&mut scenario));
-
-        ts::return_shared(clock_obj);
-        ts::return_shared(state);
-    };
-
-    ts::end(scenario);
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── M-3: purchase_content_access enforces state.access_list_id ────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EAccessListLinkageMismatch)]
-fun purchase_content_access_with_mismatched_access_list_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let impostor_list_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let soul_id = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Linkage Soul"),
-            string::utf8(b"state.access_list_id linkage mismatch test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        // Impostor: a second ContentAccessList for the same soul_id
-        // but NOT bound to state.access_list_id.
-        let impostor = content_access::create(
-            soul_id,
-            creator,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-        impostor_list_id = object::id(&impostor);
-        content_access::share_access_list(impostor);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
+#[test, expected_failure(abort_code = soulidity::content::EMemoryNameMismatch)]
+fun memory_append_wrong_name_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
         &mut scenario,
-        admin,
-        buyer,
-        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, DEFAULT_PLATFORM_FEE_BPS),
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
     );
 
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut impostor: ContentAccessList = ts::take_shared_by_id(&scenario, impostor_list_id);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-        market::purchase_content_access(
-            &config,
-            &mut impostor,
-            &state,
-            payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── M-2: purchase_content_access rejects free (price=0) lists ─────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EContentAccessNotPurchasable)]
-fun purchase_content_access_with_zero_price_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Free Access Soul"),
-            string::utf8(b"price=0 must forbid purchase_content_access"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0, // price_atomic = 0 (free) — owner must use add_access path
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Buyer attempts purchase with coin::zero — must abort
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let zero_payment = coin::zero<USDC>(ts::ctx(&mut scenario));
-
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            zero_payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── L-6: scope_mask validation at ContentAccessList creation ──────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EEmptyScopeMask)]
-fun mint_with_zero_scope_mask_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Zero Scope Soul"),
-            string::utf8(b"scope_mask=0 must abort"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            100,
-            0, // scope_mask = 0 -> must abort
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    abort 100
+    let _ = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_memory(),
+        b"other".to_string(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
 }
 
 #[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantInvalidScopeMask)]
-fun mint_with_invalid_scope_mask_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun memory_purge_after_delete_succeeds() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
+    );
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
+    let v = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    content::delete_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        v,
+        scenario.ctx(),
+    );
+    content::purge_deleted_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        v,
+        scenario.ctx(),
+    );
+    assert!(
+        content::version_is_purged(&content_obj, kind_registry::kind_memory(), b"default".to_string(), v),
+        0,
+    );
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Invalid Scope Soul"),
-            string::utf8(b"scope_mask with unknown bit must abort"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            100,
-            16, // 16 is outside ALL_SCOPES (1|2|4|8=15) -> must abort
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    abort 100
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── L-5: strict-length Seal document id tests (trailing bytes) ────
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-#[expected_failure(abort_code = soulidity::seal_policy::EDocumentIdInvalidLength)]
-fun seal_soul_document_id_too_long_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        soul_id = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Soul Doc Too Long"),
-            string::utf8(b"Seal doc id trailing byte test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let mut id = soul_document_id(soul_id);
-        id.push_back(0xFF);
-
-        seal_policy::seal_approve_owner_for_testing(
-            id,
-            &state,
-            soul_id,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::seal_policy::EDocumentIdInvalidLength)]
-fun seal_memory_document_id_too_long_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let founding_memory_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Memory Doc Too Long"),
-            string::utf8(b"Memory doc id trailing byte test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::some(founding_memory_blob),
-            CREATOR_ROYALTY_BPS,
-            &mut scenario,
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let memory_book: SoulMemory = ts::take_shared(&scenario);
-        let mut id = memory_document_id(object::id(&memory_book), 0);
-        id.push_back(0xFF);
-
-        seal_policy::seal_approve_memory_owner_for_testing(
-            id,
-            &state,
-            &memory_book,
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(memory_book);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::skills::EDocumentIdInvalidLength)]
-fun skill_seal_document_too_long_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let skill_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Skill Doc Too Long"),
-            string::utf8(b"Skill doc id trailing byte test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::some(skill_blob),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let skills_id = *soul::skills_id(&state).borrow();
-        let skills_book: SoulSkills = ts::take_shared_by_id(&scenario, skills_id);
-        let mut id = skill_document_id(skills_id, default_skill_name(), 0);
-        id.push_back(0xFF);
-
-        skills::seal_approve_private_read_as_owner_for_testing(
-            id,
-            &state,
-            &skills_book,
-            default_skill_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(skills_book);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::assets::EDocumentIdInvalidLength)]
-fun asset_seal_document_too_long_fails() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Asset Doc Too Long"),
-            string::utf8(b"Asset doc id trailing byte test"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let mut id = asset_document_id(assets_id, default_asset_name(), 0);
-        id.push_back(0xFF);
-
-        assets::seal_approve_asset_read_as_owner_for_testing(
-            id,
-            &state,
-            &assets_book,
-            default_asset_name(),
-            0,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(assets_book);
-    };
-
-    abort 100
-}
-
-// ── M-1 regression: registry is insert-only, re-registering the same kiosk
-//    with the same cap is idempotent and does not abort.
-
-#[test]
-fun ensure_personal_kiosk_registered_is_idempotent_for_same_cap() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-    let _kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    // Calling ensure_personal_kiosk_registered with the SAME cap twice must
-    // be a no-op on the second call — the registry already has a matching
-    // record, so insert-only logic simply asserts the match and returns.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let mut registry: KioskRegistry = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-
-        market::ensure_personal_kiosk_registered(
-            &config,
-            &mut registry,
-            &personal_cap,
-            ts::ctx(&mut scenario),
-        );
-        market::ensure_personal_kiosk_registered(
-            &config,
-            &mut registry,
-            &personal_cap,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
+    test_clock.destroy_for_testing();
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(content_obj);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
-// ── M-2 regression: ContentAccessEntry is epoch-pinned to SoulState.
-//    Entries recorded under the previous owner auto-invalidate after a sale
-//    (mirrors the SoulGrant.ownership_epoch_snapshot contract).
+#[test, expected_failure(abort_code = soulidity::content::EKindActiveBindingNotSupported)]
+fun memory_set_active_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+
+    market::set_active_content(
+        &config,
+        &kind_registry_obj,
+        &mut content_obj,
+        &state,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
 #[test]
-fun content_access_invalidates_and_allows_repurchase_after_ownership_rotation() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;          // purchases content access
-    let secondary = @0x5EC2;     // purchases the Soul itself
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let secondary_kiosk_id: ID;
-    let _soul_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    secondary_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, secondary);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Mint Soul with content access enabled at CONTENT_ACCESS_PRICE.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        _soul_id = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Epoch-Pinned Soul"),
-            string::utf8(b"Content access entries auto-invalidate on rotation"),
-            string::utf8(b"https://example.com/epoch.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Mint USDC to buyer for initial content-access purchase + repurchase.
-    mint_usdc_to_recipient(
+fun set_active_content_derives_binding_policy_from_slot() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
         &mut scenario,
-        admin,
-        buyer,
-        content_access_purchase_total(CONTENT_ACCESS_PRICE) * 2,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
     );
 
-    // Buyer purchases content access under creator's epoch=0.
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let full_payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-        // Split off just enough for one purchase; keep the rest for repurchase.
-        let mut full_payment = full_payment;
-        let payment = coin::split(
-            &mut full_payment,
-            content_access_purchase_total(CONTENT_ACCESS_PRICE),
-            ts::ctx(&mut scenario),
-        );
-        transfer::public_transfer(full_payment, buyer);
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj), 0);
-        assert!(content_access::entry_count(&access_list) == 1, 1);
-
-        ts::return_shared(config);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    // Creator lists the Soul.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            _soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Secondary buys the Soul → epoch goes 0 → 1.
-    mint_usdc_to_recipient(
-        &mut scenario,
-        admin,
-        secondary,
-        soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0),
+    let version_index = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        read_owner_grant(),
+        content::download_policy_owner_only(),
+        b,
+        &test_clock,
+        scenario.ctx(),
     );
-    ts::next_tx(&mut scenario, secondary);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut secondary_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, secondary_kiosk_id);
-        let secondary_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    market::set_active_content(
+        &config,
+        &kind_registry_obj,
+        &mut content_obj,
+        &state,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        version_index,
+        scenario.ctx(),
+    );
 
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut secondary_kiosk,
-            &secondary_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
+    let mut binding = content::active_binding(&content_obj, kind_registry::kind_sprite());
+    assert!(binding.is_some(), 0);
+    let active = option::extract(&mut binding);
+    assert!(content::active_binding_download_policy(&active) == content::download_policy_owner_only(), 1);
+    binding.destroy_none();
 
-        assert!(soul::current_owner(&state) == secondary, 0);
-        assert!(soul::ownership_epoch(&state) == 1, 1);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(secondary_kiosk);
-        personal_kiosk::transfer_to_sender(secondary_cap, ts::ctx(&mut scenario));
-    };
-
-    // Assert buyer's stale entry no longer grants access.
-    ts::next_tx(&mut scenario, secondary);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        assert!(!content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj), 0);
-        assert!(!content_access::has_access(&access_list, &state, buyer, SCOPE_ASSETS, &clock_obj), 1);
-        // The table row is retained for audit — only the epoch mismatch
-        // blocks access, not removal of the entry itself.
-        assert!(content_access::entry_count(&access_list) == 1, 2);
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    // Buyer repurchases under the new owner — the stale entry is overwritten
-    // rather than blocking the purchase with EAlreadyHasAccess.
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        assert!(content_access::has_access(&access_list, &state, buyer, SCOPE_SKILLS, &clock_obj), 0);
-        assert!(content_access::entry_count(&access_list) == 1, 1);
-
-        ts::return_shared(config);
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(content_obj);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
 #[test]
-#[expected_failure(abort_code = soulidity::content_access::EScopeMismatch)]
-fun seal_approve_asset_allowlisted_fails_after_ownership_rotation() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let buyer = @0xB0B;
-    let secondary = @0x5EC2;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-    let secondary_kiosk_id: ID;
-    let _soul_id: ID;
+fun skill_full_crud_succeeds() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    secondary_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, secondary);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    // Mint Soul with an initial asset + content-access at scope=ASSETS.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        _soul_id = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Seal Epoch Soul"),
-            string::utf8(b"Soul for epoch-stale seal_approve test"),
-            string::utf8(b"https://example.com/seal-epoch.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Creator adds buyer to the allowlist (free, no expiry) under epoch=0.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            buyer,
-            SCOPE_ASSETS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(access_list);
-        ts::return_shared(clock_obj);
-    };
-
-    // Creator lists, secondary buys the Soul (epoch 0 → 1).
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = list_soul_fixed_price_compat(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            _soul_id,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(state);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
-        &mut scenario,
-        admin,
-        secondary,
-        soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0),
+    content::delete_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
     );
-    ts::next_tx(&mut scenario, secondary);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let mut listing: SoulListing = ts::take_shared(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let mut secondary_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, secondary_kiosk_id);
-        let secondary_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
+    content::purge_deleted_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
+    );
+    assert!(
+        content::version_is_purged(&content_obj, kind_registry::kind_skill(), default_skill_name(), 0),
+        0,
+    );
 
-        market::buy_soul_fixed_price(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &mut secondary_kiosk,
-            &secondary_cap,
-            &mut state,
-            &mut listing,
-            payment,
-            ts::ctx(&mut scenario),
-        );
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(content_obj);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(state);
-        ts::return_shared(listing);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(secondary_kiosk);
-        personal_kiosk::transfer_to_sender(secondary_cap, ts::ctx(&mut scenario));
-    };
+#[test, expected_failure(abort_code = soulidity::content::EKindActiveBindingNotSupported)]
+fun skill_set_active_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
 
-    // Buyer's pre-rotation entry is now stale. seal_approve_asset_allowlisted
-    // must abort with EScopeMismatch (the assert wrapping has_access fires
-    // because the epoch snapshot no longer matches).
-    ts::next_tx(&mut scenario, buyer);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
 
-        let doc_id = asset_document_id(assets_id, default_asset_name(), 0);
+    market::set_active_content(
+        &config,
+        &kind_registry_obj,
+        &mut content_obj,
+        &state,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
-        content_access::seal_approve_asset_allowlisted(
-            doc_id,
-            &state,
-            &access_list,
-            &assets_book,
-            default_asset_name(),
-            0,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
+#[test, expected_failure(abort_code = soulidity::content::EActiveVersionDeleted)]
+fun delete_active_sprite_version_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-        abort 100
-    }
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    content::delete_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
 }
 
 #[test]
-fun init_assets_and_append_sprite_succeeds_for_owner_without_existing_root() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun clear_active_then_delete_sprite_succeeds() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
+    market::clear_active_content(
+        &config,
+        &kind_registry_obj,
+        &mut content_obj,
+        &state,
+        kind_registry::kind_sprite(),
+        scenario.ctx(),
+    );
+    assert!(!content::has_active(&content_obj, kind_registry::kind_sprite()), 0);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    content::delete_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        scenario.ctx(),
+    );
+    assert!(
+        content::version_is_deleted(&content_obj, kind_registry::kind_sprite(), default_sprite_name(), 0),
+        1,
+    );
 
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Bare Mint Soul"),
-            string::utf8(b"Soul minted without initial sprite"),
-            string::utf8(b"https://example.com/bare-mint.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(content_obj);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 8.3 Content read-mode enforcement
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun soul_doc_owner_seal_reads() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+    );
+    content::seal_approve_content_owner(
+        id,
+        &state,
+        &content_obj,
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+    ts::end(scenario);
+}
+
+#[test]
+fun soul_doc_grant_seal_reads_with_seal_scope() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_seal());
+
+    scenario.next_tx(AGENT);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+    );
+    content::seal_approve_content_granted_agent(
+        id,
+        &state,
+        &content_obj,
+        &g,
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+
+    test_clock.destroy_for_testing();
+    ts::return_to_address(AGENT, g);
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
+fun soul_doc_public_seal_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+    );
+    content::seal_approve_content_public(
+        id,
+        &state,
+        &content_obj,
+        kind_registry::kind_soul_doc(),
+        b"soul".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test]
+fun memory_owner_and_grant_seal_read() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_memory());
+
+    // Owner reads memory v0.
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id_owner = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        0,
+    );
+    content::seal_approve_content_owner(
+        id_owner,
+        &state,
+        &content_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+
+    // Granted agent reads memory v0.
+    scenario.next_tx(AGENT);
+    let state2 = ts::take_shared<SoulState>(&scenario);
+    let content_obj2 = ts::take_shared<SoulContent>(&scenario);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let id_grant = content_document_id(
+        content::content_id(&content_obj2),
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        0,
+    );
+    content::seal_approve_content_granted_agent(
+        id_grant,
+        &state2,
+        &content_obj2,
+        &g,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+    test_clock.destroy_for_testing();
+    ts::return_to_address(AGENT, g);
+    ts::return_shared(state2);
+    ts::return_shared(content_obj2);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
+fun memory_public_seal_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        0,
+    );
+    content::seal_approve_content_public(
+        id,
+        &state,
+        &content_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
+fun skill_public_seal_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+    );
+    content::seal_approve_content_public(
+        id,
+        &state,
+        &content_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test]
+fun skill_owner_and_grant_seal_read() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
+
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_skills());
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id_owner = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+    );
+    content::seal_approve_content_owner(
+        id_owner,
+        &state,
+        &content_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
+    );
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+
+    scenario.next_tx(AGENT);
+    let state2 = ts::take_shared<SoulState>(&scenario);
+    let content_obj2 = ts::take_shared<SoulContent>(&scenario);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let id_grant = content_document_id(
+        content::content_id(&content_obj2),
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+    );
+    content::seal_approve_content_granted_agent(
+        id_grant,
+        &state2,
+        &content_obj2,
+        &g,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+    test_clock.destroy_for_testing();
+    ts::return_to_address(AGENT, g);
+    ts::return_shared(state2);
+    ts::return_shared(content_obj2);
+    ts::end(scenario);
+}
+
+#[test]
+fun sprite_all_four_modes_pass_when_mask_full() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    // Owner reads.
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id_owner = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+    );
+    content::seal_approve_content_owner(
+        id_owner,
+        &state,
+        &content_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        scenario.ctx(),
+    );
+    // Public read on the same sprite (it is encrypted because read mode is mixed).
+    let id_public = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+    );
+    content::seal_approve_content_public(
+        id_public,
+        &state,
+        &content_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        scenario.ctx(),
+    );
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+
+    // Grant scope=ASSETS reads sprite slot.
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_assets());
+    scenario.next_tx(AGENT);
+    let state2 = ts::take_shared<SoulState>(&scenario);
+    let content_obj2 = ts::take_shared<SoulContent>(&scenario);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let id_grant = content_document_id(
+        content::content_id(&content_obj2),
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+    );
+    content::seal_approve_content_granted_agent(
+        id_grant,
+        &state2,
+        &content_obj2,
+        &g,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+    test_clock.destroy_for_testing();
+    ts::return_to_address(AGENT, g);
+    ts::return_shared(state2);
+    ts::return_shared(content_obj2);
+    ts::end(scenario);
+}
+
+#[test]
+fun audio_owner_public_paid_and_active_paths() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_audio_active(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    assert!(content::has_active(&content_obj, kind_registry::kind_audio()), 0);
+    assert!(content::is_version_active(
+        &content_obj,
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+    ), 1);
+
+    let id_owner = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+    );
+    content::seal_approve_content_owner(
+        id_owner,
+        &state,
+        &content_obj,
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+        scenario.ctx(),
+    );
+    let id_public = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+    );
+    content::seal_approve_content_public(
+        id_public,
+        &state,
+        &content_obj,
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+        scenario.ctx(),
+    );
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_audio(),
+        grant::scope_assets(),
+        option::none(),
+    );
+
+    mint_usdc_to(BUYER, paid_access_total(PAID_ACCESS_PRICE), &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state2 = ts::take_shared<SoulState>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state2,
+        kind_registry::kind_audio(),
+        payment,
+        &test_clock,
+        scenario.ctx(),
+    );
+
+    let content_obj2 = ts::take_shared<SoulContent>(&scenario);
+    let id_paid = content_document_id(
+        content::content_id(&content_obj2),
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+    );
+    paid_access::seal_approve_content_paid_access(
+        id_paid,
+        &state2,
+        &paid_list,
+        &content_obj2,
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(paid_list);
+    ts::return_shared(state2);
+    ts::return_shared(content_obj2);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EOwnerReadModeRequired)]
+fun sprite_pure_public_slot_append_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    // Build an entry with read_mode_mask = READ_PUBLIC only. Per-slot masks
+    // cannot drop READ_OWNER, so this fails at append/mint time.
+    mint_test_blobs_then_advance(
+        &mut scenario,
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+            blob_req(MINTER, BLOB_ROOT_HASH_SPRITE),
+        ],
+        MINTER,
+    );
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let sprite_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            option::none(),
-            default_asset_name(),
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
             false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
+            memory_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_sprite(),
+            default_sprite_name(),
+            read_public_only(),
+            content::download_policy_public(),
+            false,
+            sprite_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+    abort 42
+}
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
+// ─────────────────────────────────────────────────────────────────────
+// 8.7 Grant scope coexistence — multi-kind reads with single grant
+// ─────────────────────────────────────────────────────────────────────
 
-        assert!(soul::assets_id(&state).is_none(), 0);
-        assert!(metadata::active_sprite(&metadata_obj).is_none(), 1);
+#[test]
+fun grant_scope_assets_reads_sprite_and_audio() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let sprite_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        init_assets_and_append_sprite_as_owner_compat(
-            &mut state,
-            &mut metadata_obj,
-            default_asset_name(),
+    // Mint with both sprite + audio entries, both active and public.
+    mint_test_blobs_then_advance(
+        &mut scenario,
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+            blob_req(MINTER, BLOB_ROOT_HASH_SPRITE),
+            blob_req(MINTER, BLOB_ROOT_HASH_AUDIO),
+        ],
+        MINTER,
+    );
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let sprite_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let audio_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_sprite(),
+            default_sprite_name(),
+            read_owner_grant_paid_public(),
+            content::download_policy_public(),
             true,
             sprite_blob,
-            b"{\"fps\":12}",
-            b"{\"happy\":\"a\"}",
-            string::utf8(b"sprite.config.v1"),
-            string::utf8(b"sprite.mood_map.v1"),
-            metadata::download_policy_public(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let assets_id = *soul::assets_id(&state).borrow();
-        let assets_book: SoulAssets = ts::take_shared_by_id(&scenario, assets_id);
-
-        assert!(soul::assets_id(&state).is_some(), 10);
-        assert!(assets::soul_id(&assets_book) == soul::soul_id(&state), 11);
-        assert!(assets::contains_asset(&assets_book, default_asset_name()), 12);
-        assert!(assets::version_count(&assets_book, default_asset_name()) == 1, 13);
-        assert!(assets::version_is_public(&assets_book, default_asset_name(), 0), 14);
-
-        let binding = metadata::active_sprite(&metadata_obj).borrow();
-        assert!(*metadata::asset_name(binding) == default_asset_name(), 20);
-        assert!(metadata::version_index(binding) == 0, 21);
-        assert!(metadata::download_policy(binding) == metadata::download_policy_public(), 22);
-
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-        ts::return_shared(assets_book);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EAssetsRootAlreadyExists)]
-fun init_assets_and_append_sprite_fails_when_root_already_exists() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let initial_asset_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Pre-existing Root Soul"),
-            string::utf8(b"Soul minted with sprite already initialized"),
-            string::utf8(b"https://example.com/preexisting-root.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::some(initial_asset_blob),
-            default_asset_name(),
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_audio(),
+            default_audio_name(),
+            read_owner_grant_paid_public(),
+            content::download_policy_public(),
             true,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let extra_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        init_assets_and_append_sprite_as_owner_compat(
-            &mut state,
-            &mut metadata_obj,
-            default_asset_name(),
-            true,
-            extra_blob,
-            b"{\"fps\":12}",
-            b"{\"happy\":\"a\"}",
-            string::utf8(b"sprite.config.v1"),
-            string::utf8(b"sprite.mood_map.v1"),
-            metadata::download_policy_public(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::soul::ENotSoulOwner)]
-fun init_assets_and_append_sprite_fails_for_non_owner() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let attacker = @0xBAD;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    let _ = init_personal_kiosk_for_sender(&mut scenario, attacker);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            attacker,
-            BLOB_ROOT_HASH_B,
-            ts::ctx(&mut scenario),
-        );
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Owner-only Init Soul"),
-            string::utf8(b"Non-owner cannot create the SoulAssets root"),
-            string::utf8(b"https://example.com/owner-only-init.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            0,
-            15,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, attacker);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let attacker_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        init_assets_and_append_sprite_as_owner_compat(
-            &mut state,
-            &mut metadata_obj,
-            default_asset_name(),
-            true,
-            attacker_blob,
-            b"{\"fps\":12}",
-            b"{\"happy\":\"a\"}",
-            string::utf8(b"sprite.config.v1"),
-            string::utf8(b"sprite.mood_map.v1"),
-            metadata::download_policy_public(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 0
-    }
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::grant::EGrantExpired)]
-fun issue_grant_rejects_current_expiry() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let agent = @0xAAA;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, admin);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let dummy_soul_id = object::id_from_address(@0x1);
-        let dummy_kiosk_id = object::id_from_address(@0x2);
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 1_000);
-        let mut state = soul::create_state(
-            dummy_soul_id,
-            creator,
-            CREATOR_ROYALTY_BPS,
-            creator,
-            dummy_kiosk_id,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-
-        let grant_obj = grant::issue(
-            &mut state,
-            agent,
-            grant::scope_seal(),
-            option::some(1_000),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        grant::destroy_for_testing(grant_obj);
-        soul::destroy_state_for_testing(state);
-        ts::return_shared(clock_obj);
-    };
-
-    abort 100
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::market::EContentAccessOwnerCannotPurchase)]
-fun owner_cannot_purchase_own_content_access() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
-
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-
-        let _ = mint_native_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Owner Self Purchase Soul"),
-            string::utf8(b"owner cannot buy own content access"),
-            string::utf8(b"https://example.com/self-purchase.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            option::none(),
-            default_skill_name(),
-            false,
-            option::none(),
-            default_asset_name(),
-            false,
-            0,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    mint_usdc_to_recipient(
-        &mut scenario,
-        admin,
-        creator,
-        content_access_purchase_total_with_platform_fee(CONTENT_ACCESS_PRICE, DEFAULT_PLATFORM_FEE_BPS),
-    );
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-        let state: SoulState = ts::take_shared(&scenario);
-        let access_list_id = *soul::access_list_id(&state).borrow();
-        let mut access_list: ContentAccessList = ts::take_shared_by_id(&scenario, access_list_id);
-        let payment: coin::Coin<USDC> = ts::take_from_sender(&scenario);
-
-        market::purchase_content_access(
-            &config,
-            &mut access_list,
-            &state,
-            payment,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-
-        abort 100
-    }
-}
-
-#[test]
-fun cleanup_stale_content_access_entries_removes_only_old_epoch_rows() {
-    let creator = @0xC0DE;
-    let stale_buyer = @0xB0B;
-    let current_buyer = @0xCAFE;
-    let mut scenario = ts::begin(@0x0);
-
-    init_protocol_for_testing(&mut scenario, @0xA11CE);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let dummy_soul_id = object::id_from_address(@0x1);
-        let first_kiosk_id = object::id_from_address(@0x2);
-        let second_kiosk_id = object::id_from_address(@0x3);
-        let mut clock_obj: Clock = ts::take_shared(&scenario);
-        clock::set_for_testing(&mut clock_obj, 1_000);
-        let mut state = soul::create_state(
-            dummy_soul_id,
-            creator,
-            CREATOR_ROYALTY_BPS,
-            creator,
-            first_kiosk_id,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-        let mut access_list = content_access::create(
-            dummy_soul_id,
-            creator,
-            CONTENT_ACCESS_PRICE,
-            SCOPE_SKILLS_AND_ASSETS,
-            option::none(),
-            ts::ctx(&mut scenario),
-        );
-        soul::set_access_list_id(&mut state, object::id(&access_list));
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            stale_buyer,
-            SCOPE_SKILLS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        assert!(content_access::entry_count(&access_list) == 1, 0);
-
-        soul::rotate_owner(&mut state, creator, second_kiosk_id);
-        assert!(!content_access::has_access(&access_list, &state, stale_buyer, SCOPE_SKILLS, &clock_obj), 1);
-
-        content_access::add_access(
-            &mut access_list,
-            &state,
-            current_buyer,
-            SCOPE_SKILLS,
-            option::none(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        assert!(content_access::entry_count(&access_list) == 2, 2);
-
-        content_access::cleanup_stale_entries(
-            &mut access_list,
-            &state,
-            vector[stale_buyer, current_buyer],
-            ts::ctx(&mut scenario),
-        );
-        assert!(content_access::entry_count(&access_list) == 1, 3);
-        assert!(content_access::has_access(&access_list, &state, current_buyer, SCOPE_SKILLS, &clock_obj), 4);
-
-        content_access::destroy_for_testing(access_list);
-        soul::destroy_state_for_testing(state);
-        ts::return_shared(clock_obj);
-    };
-
-    ts::end(scenario);
-}
-
-// ── Collection supply cap tests ──────────────────────────────────────────────
-
-fun mint_supply_test_blobs(
-    scenario: &mut ts::Scenario,
-    admin: address,
-    creator: address,
-    count: u64,
-) {
-    ts::next_tx(scenario, admin);
-    {
-        let ctx = ts::ctx(scenario);
-        let mut walrus_system = system::new_for_testing(ctx);
-        let mut i: u64 = 0;
-        while (i < count) {
-            let root_hash: u256 = (0xABC0u256) + (i as u256);
-            let blob = register_test_blob_with_root(&mut walrus_system, root_hash, ctx);
-            transfer::public_transfer(blob, creator);
-            i = i + 1;
-        };
-        std::unit_test::destroy(walrus_system);
-    };
-}
-
-fun create_collection_with_supply_for_test(
-    scenario: &mut ts::Scenario,
-    creator: address,
-    creator_kiosk_id: ID,
-    name: vector<u8>,
-    max_supply: Option<u64>,
-): ID {
-    let collection_id: ID;
-    ts::next_tx(scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(scenario);
-        let registry: KioskRegistry = ts::take_shared(scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(scenario, creator_kiosk_id);
-        collection_id = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(name),
-            string::utf8(b"supply cap test"),
-            string::utf8(b"https://example.com/cap.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            max_supply,
-            ts::ctx(scenario),
-        );
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(scenario));
-    };
-    collection_id
-}
-
-fun mint_one_soul_for_supply_test(
-    scenario: &mut ts::Scenario,
-    creator: address,
-    creator_kiosk_id: ID,
-    name: vector<u8>,
-): ID {
-    ts::next_tx(scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(scenario);
-        let registry: KioskRegistry = ts::take_shared(scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(scenario);
-        let _ = mint_native_in_personal_kiosk_no_skills(
-            &config,
-            &registry,
-            &soul_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(name),
-            string::utf8(b"supply test soul"),
-            string::utf8(b"https://example.com/soul.png"),
-            option::none(),
-            protected_blob,
-            option::none(),
-            CREATOR_ROYALTY_BPS,
-            scenario,
-        );
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(scenario));
-    };
-    // advance one more tx so the just-shared SoulState is visible to most_recent_id_shared
-    ts::next_tx(scenario, creator);
-    let state_opt = ts::most_recent_id_shared<SoulState>();
-    state_opt.destroy_some()
-}
-
-fun add_soul_to_collection_by_id(
-    scenario: &mut ts::Scenario,
-    creator: address,
-    collection_id: ID,
-    state_id: ID,
-) {
-    ts::next_tx(scenario, creator);
-    {
-        let mut collection_obj = ts::take_shared_by_id<SoulCollection>(scenario, collection_id);
-        let mut state = ts::take_shared_by_id<SoulState>(scenario, state_id);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(scenario));
-        ts::return_shared(collection_obj);
-        ts::return_shared(state);
-    };
-}
-
-#[test]
-fun collection_with_supply_cap_accepts_within_limit() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    init_protocol_for_testing(&mut scenario, admin);
-    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    mint_supply_test_blobs(&mut scenario, admin, creator, 2);
-
-    let state_id_a = mint_one_soul_for_supply_test(
-        &mut scenario, creator, creator_kiosk_id, b"Alpha",
-    );
-    let state_id_b = mint_one_soul_for_supply_test(
-        &mut scenario, creator, creator_kiosk_id, b"Beta",
-    );
-
-    let collection_id = create_collection_with_supply_for_test(
-        &mut scenario, creator, creator_kiosk_id, b"Capped Collection", option::some(2),
-    );
-
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        assert!(collection::current_supply(&collection_obj) == 2, 1);
-        let cap_opt = collection::max_supply(&collection_obj);
-        assert!(cap_opt.is_some(), 2);
-        assert!(*cap_opt.borrow() == 2, 3);
-        ts::return_shared(collection_obj);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::collection::ECollectionSupplyExceeded)]
-fun collection_with_supply_cap_rejects_exceeding() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    init_protocol_for_testing(&mut scenario, admin);
-    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    mint_supply_test_blobs(&mut scenario, admin, creator, 3);
-
-    let state_id_a = mint_one_soul_for_supply_test(
-        &mut scenario, creator, creator_kiosk_id, b"Alpha",
-    );
-    let state_id_b = mint_one_soul_for_supply_test(
-        &mut scenario, creator, creator_kiosk_id, b"Beta",
-    );
-    let state_id_c = mint_one_soul_for_supply_test(
-        &mut scenario, creator, creator_kiosk_id, b"Gamma",
-    );
-
-    let collection_id = create_collection_with_supply_for_test(
-        &mut scenario, creator, creator_kiosk_id, b"Tight Cap", option::some(2),
-    );
-
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_c);
-
-    abort 99
-}
-
-#[test]
-fun collection_unlimited_supply_accepts_many() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    init_protocol_for_testing(&mut scenario, admin);
-    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    mint_supply_test_blobs(&mut scenario, admin, creator, 4);
-
-    let state_id_a = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"A");
-    let state_id_b = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"B");
-    let state_id_c = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"C");
-    let state_id_d = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"D");
-
-    let collection_id = create_collection_with_supply_for_test(
-        &mut scenario, creator, creator_kiosk_id, b"Unlimited", option::none(),
-    );
-
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_c);
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_d);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        assert!(collection::current_supply(&collection_obj) == 4, 1);
-        assert!(collection::max_supply(&collection_obj).is_none(), 2);
-        ts::return_shared(collection_obj);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure(abort_code = soulidity::collection::ESupplyCapInvalid)]
-fun collection_max_supply_zero_rejects_create() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    init_protocol_for_testing(&mut scenario, admin);
-    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    let _collection_id = create_collection_with_supply_for_test(
-        &mut scenario, creator, creator_kiosk_id, b"Zero Cap", option::some(0),
-    );
-
-    abort 99
-}
-
-#[test]
-fun collection_supply_counter_increments() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    init_protocol_for_testing(&mut scenario, admin);
-    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    mint_supply_test_blobs(&mut scenario, admin, creator, 3);
-
-    let state_id_a = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"A");
-    let state_id_b = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"B");
-    let state_id_c = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"C");
-
-    let collection_id = create_collection_with_supply_for_test(
-        &mut scenario, creator, creator_kiosk_id, b"Counter", option::some(5),
-    );
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        assert!(collection::current_supply(&collection_obj) == 0, 1);
-        ts::return_shared(collection_obj);
-    };
-
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
-    ts::next_tx(&mut scenario, creator);
-    {
-        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        assert!(collection::current_supply(&collection_obj) == 1, 2);
-        ts::return_shared(collection_obj);
-    };
-
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
-    ts::next_tx(&mut scenario, creator);
-    {
-        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        assert!(collection::current_supply(&collection_obj) == 2, 3);
-        ts::return_shared(collection_obj);
-    };
-
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_c);
-    ts::next_tx(&mut scenario, creator);
-    {
-        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        assert!(collection::current_supply(&collection_obj) == 3, 4);
-        ts::return_shared(collection_obj);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-fun collection_holder_change_preserves_supply() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let new_holder = @0xBEEF;
-    let mut scenario = ts::begin(@0x0);
-    init_protocol_for_testing(&mut scenario, admin);
-    let creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-    let new_holder_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, new_holder);
-
-    mint_supply_test_blobs(&mut scenario, admin, creator, 2);
-
-    let state_id_a = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"A");
-    let state_id_b = mint_one_soul_for_supply_test(&mut scenario, creator, creator_kiosk_id, b"B");
-
-    let collection_id = create_collection_with_supply_for_test(
-        &mut scenario, creator, creator_kiosk_id, b"Holder Change", option::some(3),
-    );
-
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_a);
-    add_soul_to_collection_by_id(&mut scenario, creator, collection_id, state_id_b);
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        collection::update_holder(&mut collection_obj, new_holder, new_holder_kiosk_id);
-        ts::return_shared(collection_obj);
-    };
-
-    ts::next_tx(&mut scenario, new_holder);
-    {
-        let collection_obj = ts::take_shared_by_id<SoulCollection>(&scenario, collection_id);
-        assert!(collection::current_supply(&collection_obj) == 2, 1);
-        let cap_opt = collection::max_supply(&collection_obj);
-        assert!(cap_opt.is_some(), 2);
-        assert!(*cap_opt.borrow() == 3, 3);
-        assert!(collection::current_holder(&collection_obj) == new_holder, 4);
-        ts::return_shared(collection_obj);
-    };
-
-    ts::end(scenario);
-}
-
-// ────────────────────────────────────────────────────────────────────
-// Fast-path ABI tests (C2 of the 2-signature runbook).
-// Each test below exercises the new primitive-return ABI by composing
-// multiple Move calls in a single transaction (the on-chain analogue of
-// a single PTB).
-// ────────────────────────────────────────────────────────────────────
-
-const SPRITE_ASSET_TYPE_FOR_TESTS: u8 = 0;
-
-fun mint_state_bare(
-    config: &MarketConfig,
-    registry: &KioskRegistry,
-    soul_policy: &TransferPolicy<Soul>,
-    kiosk_obj: &mut Kiosk,
-    personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    protected_blob: blob::Blob,
-    creator_royalty_bps: u16,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): SoulState {
-    market::mint_native_in_personal_kiosk(
-        config,
-        registry,
-        soul_policy,
-        kiosk_obj,
-        personal_kiosk_cap,
-        name,
-        description,
-        image_url,
-        protected_blob,
-        option::none(),
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        option::none(),
-        string::utf8(b"default"),
-        false,
-        SPRITE_ASSET_TYPE_FOR_TESTS,
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
-        option::none(),
+            audio_blob,
+        ),
+    ];
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_assets());
+    scenario.next_tx(AGENT);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+
+    let id_sprite = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
         0,
-        15,
+    );
+    content::seal_approve_content_granted_agent(
+        id_sprite,
+        &state,
+        &content_obj,
+        &g,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+    let id_audio = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+    );
+    content::seal_approve_content_granted_agent(
+        id_audio,
+        &state,
+        &content_obj,
+        &g,
+        kind_registry::kind_audio(),
+        default_audio_name(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+
+    test_clock.destroy_for_testing();
+    ts::return_to_address(AGENT, g);
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::grant::EGrantScopeMissing)]
+fun grant_scope_skills_cannot_read_sprite() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_skills());
+    scenario.next_tx(AGENT);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+    );
+    content::seal_approve_content_granted_agent(
+        id,
+        &state,
+        &content_obj,
+        &g,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 8.4 Paid-access per-kind
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun configure_paid_access_kind_creates_config() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
         option::none(),
-        creator_royalty_bps,
-        clock,
-        ctx,
-    )
+    );
+
+    scenario.next_tx(MINTER);
+    let paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    assert!(paid_access::has_kind_config(&paid_list, kind_registry::kind_sprite()), 0);
+    assert!(
+        paid_access::kind_config_price_atomic(&paid_list, kind_registry::kind_sprite()) == PAID_ACCESS_PRICE,
+        1,
+    );
+    assert!(
+        paid_access::kind_config_scope_mask(&paid_list, kind_registry::kind_sprite()) == grant::scope_assets(),
+        2,
+    );
+    ts::return_shared(paid_list);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::paid_access::EKindReadPaidNotAllowed)]
+fun soul_doc_paid_access_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_soul_doc(),
+        grant::scope_seal(),
+        option::none(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::paid_access::EKindReadPaidNotAllowed)]
+fun memory_paid_access_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_memory(),
+        grant::scope_memory(),
+        option::none(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::paid_access::EKindReadPaidNotAllowed)]
+fun skill_paid_access_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
+
+    // SKILL has no READ_PAID in its descriptor → should reject.
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_skill(),
+        grant::scope_skills(),
+        option::none(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::paid_access::EKindScopeMismatch)]
+fun configure_paid_access_kind_rejects_scope_mismatch() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    // SPRITE descriptor scope is ASSETS, not SKILLS.
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_skills(),
+        option::none(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::paid_access::EKindAlreadyConfigured)]
+fun configure_paid_access_kind_duplicate_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
+    abort 42
 }
 
 #[test]
-fun test_create_collection_with_souls_fast_path() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun paid_access_purchase_grants_seal_read_for_sprite() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_three_recipients(
-            creator,
-            BLOB_ROOT_HASH_A,
-            creator,
-            BLOB_ROOT_HASH_B,
-            creator,
-            BLOB_ROOT_HASH_C,
-            ts::ctx(&mut scenario),
-        );
-    };
+    mint_usdc_to(BUYER, paid_access_total(PAID_ACCESS_PRICE), &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        payment,
+        &test_clock,
+        scenario.ctx(),
+    );
 
-    // Single transaction: create collection + 3 mints + 3 binds + finalize all.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let blob_a: blob::Blob = ts::take_from_sender(&scenario);
-        let blob_b: blob::Blob = ts::take_from_sender(&scenario);
-        let blob_c: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+    );
+    paid_access::seal_approve_content_paid_access(
+        id,
+        &state,
+        &paid_list,
+        &content_obj,
+        kind_registry::kind_sprite(),
+        default_sprite_name(),
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
 
-        let mut collection_obj = market::create_collection_in_personal_kiosk(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Fast Path Collection"),
-            string::utf8(b"3 souls minted in one PTB"),
-            string::utf8(b"https://example.com/fast-path.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        let mut state_a = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Soul A"), string::utf8(b"a"), string::utf8(b"https://example.com/a.png"),
-            blob_a, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        collection::add_soul(&mut collection_obj, &mut state_a, ts::ctx(&mut scenario));
-        market::finalize_soul_state(state_a);
-
-        let mut state_b = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Soul B"), string::utf8(b"b"), string::utf8(b"https://example.com/b.png"),
-            blob_b, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        collection::add_soul(&mut collection_obj, &mut state_b, ts::ctx(&mut scenario));
-        market::finalize_soul_state(state_b);
-
-        let mut state_c = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Soul C"), string::utf8(b"c"), string::utf8(b"https://example.com/c.png"),
-            blob_c, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        collection::add_soul(&mut collection_obj, &mut state_c, ts::ctx(&mut scenario));
-        market::finalize_soul_state(state_c);
-
-        market::finalize_collection(collection_obj);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    ts::next_tx(&mut scenario, creator);
-    {
-        let collection_obj: SoulCollection = ts::take_shared(&scenario);
-        assert!(collection::current_supply(&collection_obj) == 3, 1);
-        ts::return_shared(collection_obj);
-    };
-
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
     ts::end(scenario);
 }
 
 #[test]
-fun test_single_soul_publish_with_bind() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun paid_access_quote_rounds_nonzero_bps_fee_up() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
-
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
-
-    // Pre-existing collection created in its own TX so it is shared.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Pre-existing"),
-            string::utf8(b"already shared"),
-            string::utf8(b"https://example.com/pre.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Single transaction: mint + bind + finalize_state.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let mut state = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Bound Soul"), string::utf8(b"single"), string::utf8(b"https://example.com/x.png"),
-            protected_blob, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        let collection_id = object::id(&collection_obj);
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-        assert!(soul::collection_id(&state).contains(&collection_id), 1);
-        market::finalize_soul_state(state);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
+    scenario.next_tx(ADMIN);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let (platform_fee, price, total) = market::quote_paid_access_purchase(&config, 1);
+    assert!(price == 1, 0);
+    assert!(platform_fee == 1, 1);
+    assert!(total == 2, 2);
+    ts::return_shared(config);
     ts::end(scenario);
 }
 
 #[test]
-fun test_publish_soul_with_list() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun paid_access_purchase_extends_unexpired_duration() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::some(1_000),
+    );
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
+    mint_usdc_to(BUYER, paid_access_total(PAID_ACCESS_PRICE), &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        payment,
+        &test_clock,
+        scenario.ctx(),
+    );
+    let first_expires = *paid_access::kind_entry_expires_at_ms(
+        &paid_list,
+        BUYER,
+        kind_registry::kind_sprite(),
+    ).borrow();
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
 
-    // Single transaction: mint + list + finalize_listing + finalize_state.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    mint_usdc_to(BUYER, paid_access_total(PAID_ACCESS_PRICE), &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        payment,
+        &test_clock,
+        scenario.ctx(),
+    );
+    let second_expires = *paid_access::kind_entry_expires_at_ms(
+        &paid_list,
+        BUYER,
+        kind_registry::kind_sprite(),
+    ).borrow();
+    assert!(second_expires == first_expires + 1_000, 0);
 
-        let state = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Listed Soul"), string::utf8(b"l"), string::utf8(b"https://example.com/l.png"),
-            protected_blob, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        let listing = market::list_soul_fixed_price(
-            &config,
-            &registry,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-        market::finalize_soul_listing(listing);
-        market::finalize_soul_state(state);
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+#[test, expected_failure(abort_code = soulidity::paid_access::EKindConfigOwnerEpochMismatch)]
+fun paid_access_purchase_requires_current_owner_config_epoch() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let listing: SoulListing = ts::take_shared(&scenario);
-        // Listing is shared after finalize and present here.
-        ts::return_shared(listing);
-    };
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
 
+    scenario.next_tx(MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    soul::rotate_owner(&mut state, BUYER, minter_kiosk_id);
+    ts::return_shared(state);
+
+    mint_usdc_to(AGENT, paid_access_total(PAID_ACCESS_PRICE), &mut scenario);
+    scenario.next_tx(AGENT);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        payment,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::paid_access::EMismatchedLengths)]
+fun cleanup_stale_entries_rejects_mismatched_vectors() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    scenario.next_tx(AGENT);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    paid_access::cleanup_stale_entries(
+        &mut paid_list,
+        &state,
+        vector[BUYER],
+        vector::empty<u32>(),
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EPaidAccessKindMismatch)]
+fun paid_access_purchase_aborts_for_unconfigured_kind() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    // Don't configure any kind. Try to buy SPRITE → fails.
+    mint_usdc_to(BUYER, paid_access_total(PAID_ACCESS_PRICE), &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        payment,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EPaidAccessOwnerCannotPurchase)]
+fun owner_cannot_purchase_paid_access() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
+
+    mint_usdc_to(MINTER, paid_access_total(PAID_ACCESS_PRICE), &mut scenario);
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, MINTER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        payment,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test]
+fun add_access_per_kind_free_grants_only_that_kind() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
+
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    paid_access::add_access(
+        &mut paid_list,
+        &state,
+        &kind_registry_obj,
+        BUYER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    assert!(
+        paid_access::has_access(&paid_list, &state, BUYER, kind_registry::kind_sprite(), grant::scope_assets(), &test_clock),
+        0,
+    );
+    // Audio entry doesn't exist for BUYER.
+    assert!(!paid_access::has_kind_entry(&paid_list, BUYER, kind_registry::kind_audio()), 1);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
 #[test]
-fun test_publish_soul_with_collection_and_list() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun revoke_kind_revokes_only_that_kind() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blob_to_recipient(creator, BLOB_ROOT_HASH_A, ts::ctx(&mut scenario));
-    };
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    paid_access::add_access(
+        &mut paid_list,
+        &state,
+        &kind_registry_obj,
+        BUYER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    paid_access::revoke_access(
+        &mut paid_list,
+        &state,
+        BUYER,
+        kind_registry::kind_sprite(),
+        scenario.ctx(),
+    );
+    assert!(!paid_access::has_kind_entry(&paid_list, BUYER, kind_registry::kind_sprite()), 0);
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-
-        let _ = create_collection_in_personal_kiosk_compat(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"List+Bind"),
-            string::utf8(b"shared"),
-            string::utf8(b"https://example.com/lb.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Single transaction: mint + bind + list_with_collection + finalize_listing + finalize_state.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let mut collection_obj: SoulCollection = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let mut state = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"List+Bind Soul"), string::utf8(b"lb"), string::utf8(b"https://example.com/lbs.png"),
-            protected_blob, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        collection::add_soul(&mut collection_obj, &mut state, ts::ctx(&mut scenario));
-        let listing = market::list_soul_fixed_price_with_collection(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            &state,
-            SOUL_PRICE,
-            ts::ctx(&mut scenario),
-        );
-        market::finalize_soul_listing(listing);
-        market::finalize_soul_state(state);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(collection_obj);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
+    test_clock.destroy_for_testing();
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
 #[test]
-fun test_create_collection_with_list() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun delete_paid_access_kind_removes_config_only() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
 
-    // Single transaction: create collection + list_collection_right + finalize both.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let collection_policy: TransferPolicy<SoulCollectionRight> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    market::delete_paid_access_kind(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        scenario.ctx(),
+    );
+    assert!(!paid_access::has_kind_config(&paid_list, kind_registry::kind_sprite()), 0);
 
-        let collection_obj = market::create_collection_in_personal_kiosk(
-            &config,
-            &registry,
-            &collection_policy,
-            &mut creator_kiosk,
-            &personal_cap,
-            string::utf8(b"Created+Listed"),
-            string::utf8(b"shared in one PTB"),
-            string::utf8(b"https://example.com/cl.png"),
-            COLLECTION_ROYALTY_BPS,
-            true,
-            option::none<u64>(),
-            ts::ctx(&mut scenario),
-        );
-        let listing = market::list_collection_right_fixed_price(
-            &config,
-            &registry,
-            &collection_obj,
-            &mut creator_kiosk,
-            &personal_cap,
-            COLLECTION_PRICE,
-            ts::ctx(&mut scenario),
-        );
-        market::finalize_collection_listing(listing);
-        market::finalize_collection(collection_obj);
+    ts::return_shared(config);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(collection_policy);
-        ts::return_shared(creator_kiosk);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+// ─────────────────────────────────────────────────────────────────────
+// Existing flows preserved (listing/buy, granted-agent append, doc id)
+// ─────────────────────────────────────────────────────────────────────
 
-    ts::next_tx(&mut scenario, creator);
-    {
-        let listing: CollectionListing = ts::take_shared(&scenario);
-        ts::return_shared(listing);
-    };
+#[test]
+fun owner_can_append_skill_version() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
+    mint_test_blobs_then_advance(
+        &mut scenario,
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+            blob_req(MINTER, BLOB_ROOT_HASH_SKILL),
+            blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A),
+        ],
+        MINTER,
+    );
+    let entries = build_initial_content_from_address(MINTER, &scenario, spec_with_skill());
+    let _ = mint_native_with_entries(&mut scenario, MINTER, minter_kiosk_id, entries, vector::empty());
+
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+
+    let v = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    assert!(v == 1, 0);
+    assert!(
+        content::version_count(&content_obj, kind_registry::kind_skill(), default_skill_name()) == 2,
+        1,
+    );
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(content_obj);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
 #[test]
-fun test_init_and_batch_append_skills() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun granted_agent_can_append_skill_version() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(AGENT, BLOB_ROOT_HASH_EXTRA_A)],
+    );
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_skills());
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_four_recipients(
-            creator, BLOB_ROOT_HASH_A,
-            creator, BLOB_ROOT_HASH_B,
-            creator, BLOB_ROOT_HASH_C,
-            creator, BLOB_ROOT_HASH_D,
-            ts::ctx(&mut scenario),
-        );
-    };
+    scenario.next_tx(AGENT);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    let b = ts::take_from_address<blob::Blob>(&scenario, AGENT);
 
-    // Mint a soul without skills.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    let v = content::append_version_as_granted_agent(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        &g,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    assert!(v == 0, 0);
+    assert!(content::count_for_kind(&content_obj, kind_registry::kind_skill()) == 1, 1);
 
-        let state = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Skills Soul"), string::utf8(b"s"), string::utf8(b"https://example.com/sk.png"),
-            protected_blob, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        market::finalize_soul_state(state);
-
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
-
-    // Single transaction: init_skills + 2 append_version_as_owner + finalize_skills.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let blob_b: blob::Blob = ts::take_from_sender(&scenario);
-        let blob_c: blob::Blob = ts::take_from_sender(&scenario);
-        let blob_d: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
-
-        let mut skills_book = market::init_skills_and_append_as_owner(
-            &mut state,
-            string::utf8(b"v0"),
-            true,
-            blob_b,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        let _ = skills::append_version_as_owner(
-            &mut skills_book,
-            &state,
-            string::utf8(b"v0"),
-            true,
-            blob_c,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        let _ = skills::append_version_as_owner(
-            &mut skills_book,
-            &state,
-            string::utf8(b"v0"),
-            true,
-            blob_d,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        assert!(skills::version_count(&skills_book, string::utf8(b"v0")) == 3, 1);
-        market::finalize_soul_skills(skills_book);
-
-        ts::return_shared(state);
-        ts::return_shared(clock_obj);
-    };
-
+    test_clock.destroy_for_testing();
+    ts::return_to_address(AGENT, g);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(content_obj);
+    ts::return_shared(state);
     ts::end(scenario);
 }
 
 #[test]
-fun test_init_and_batch_append_assets() {
-    let admin = @0xA11CE;
-    let creator = @0xC0DE;
-    let mut scenario = ts::begin(@0x0);
-    let creator_kiosk_id: ID;
+fun deprecated_kind_blocks_new_append_but_keeps_historical_read() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
 
-    init_protocol_for_testing(&mut scenario, admin);
-    creator_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, creator);
+    scenario.next_tx(ADMIN);
+    let mut registry_admin = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+    kind_registry::deprecate_kind(&mut registry_admin, &cap, kind_registry::kind_skill(), scenario.ctx());
+    ts::return_shared(registry_admin);
+    ts::return_to_address(ADMIN, cap);
 
-    ts::next_tx(&mut scenario, admin);
-    {
-        mint_test_blobs_to_four_recipients(
-            creator, BLOB_ROOT_HASH_A,
-            creator, BLOB_ROOT_HASH_B,
-            creator, BLOB_ROOT_HASH_C,
-            creator, BLOB_ROOT_HASH_D,
-            ts::ctx(&mut scenario),
-        );
-    };
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+    );
+    content::seal_approve_content_owner(
+        id,
+        &state,
+        &content_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
+    );
 
-    // Mint a soul without assets.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let config: MarketConfig = ts::take_shared(&scenario);
-        let registry: KioskRegistry = ts::take_shared(&scenario);
-        let soul_policy: TransferPolicy<Soul> = ts::take_shared(&scenario);
-        let personal_cap: PersonalKioskCap = ts::take_from_sender(&scenario);
-        let mut creator_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, creator_kiosk_id);
-        let protected_blob: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+    ts::end(scenario);
+}
 
-        let state = mint_state_bare(
-            &config, &registry, &soul_policy, &mut creator_kiosk, &personal_cap,
-            string::utf8(b"Assets Soul"), string::utf8(b"a"), string::utf8(b"https://example.com/as.png"),
-            protected_blob, CREATOR_ROYALTY_BPS, &clock_obj, ts::ctx(&mut scenario),
-        );
-        market::finalize_soul_state(state);
+#[test, expected_failure(abort_code = soulidity::kind_registry::EKindDeprecated)]
+fun deprecated_kind_rejects_new_append() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
+    );
 
-        ts::return_shared(config);
-        ts::return_shared(registry);
-        ts::return_shared(soul_policy);
-        ts::return_shared(creator_kiosk);
-        ts::return_shared(clock_obj);
-        personal_kiosk::transfer_to_sender(personal_cap, ts::ctx(&mut scenario));
-    };
+    scenario.next_tx(ADMIN);
+    let mut registry_admin = ts::take_shared<KindRegistry>(&scenario);
+    let cap = ts::take_from_address<KindAdminCap>(&scenario, ADMIN);
+    kind_registry::deprecate_kind(&mut registry_admin, &cap, kind_registry::kind_skill(), scenario.ctx());
+    ts::return_shared(registry_admin);
+    ts::return_to_address(ADMIN, cap);
 
-    // Single transaction: init_assets + 2 append_version_as_owner + finalize_assets.
-    ts::next_tx(&mut scenario, creator);
-    {
-        let mut state: SoulState = ts::take_shared(&scenario);
-        let metadata_id = *soul::metadata_id(&state).borrow();
-        let mut metadata_obj: SoulMetadata = ts::take_shared_by_id(&scenario, metadata_id);
-        let blob_b: blob::Blob = ts::take_from_sender(&scenario);
-        let blob_c: blob::Blob = ts::take_from_sender(&scenario);
-        let blob_d: blob::Blob = ts::take_from_sender(&scenario);
-        let clock_obj: Clock = ts::take_shared(&scenario);
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
-        let mut assets_book = market::init_assets_and_append_sprite_as_owner(
-            &mut state,
-            &mut metadata_obj,
-            string::utf8(b"sprite"),
-            true,
-            blob_b,
-            b"{\"fps\":12}",
-            b"{\"happy\":\"a\"}",
-            string::utf8(b"sprite.config.v1"),
-            string::utf8(b"sprite.mood_map.v1"),
-            metadata::download_policy_public(),
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        let _ = assets::append_version_as_owner(
-            &mut assets_book,
-            &state,
-            string::utf8(b"sprite"),
-            true,
-            SPRITE_ASSET_TYPE_FOR_TESTS,
-            blob_c,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        let _ = assets::append_version_as_owner(
-            &mut assets_book,
-            &state,
-            string::utf8(b"sprite"),
-            true,
-            SPRITE_ASSET_TYPE_FOR_TESTS,
-            blob_d,
-            &clock_obj,
-            ts::ctx(&mut scenario),
-        );
-        assert!(assets::version_count(&assets_book, string::utf8(b"sprite")) == 3, 1);
-        market::finalize_soul_assets(assets_book);
+    let _ = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
-        ts::return_shared(state);
-        ts::return_shared(metadata_obj);
-        ts::return_shared(clock_obj);
-    };
+#[test, expected_failure(abort_code = soulidity::content::EDocumentIdPrefixMismatch)]
+fun seal_approve_rejects_wrong_kind_in_document_id() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
 
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    let id = content_document_id(
+        content::content_id(&content_obj),
+        kind_registry::kind_sprite(), // wrong kind in id bytes
+        default_skill_name(),
+        0,
+    );
+    content::seal_approve_content_owner(
+        id,
+        &state,
+        &content_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EDocumentIdInvalidLength)]
+fun seal_approve_rejects_short_document_id() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let content_obj = ts::take_shared<SoulContent>(&scenario);
+    content::seal_approve_content_owner(
+        b"too-short",
+        &state,
+        &content_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        0,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::content::EKindRequiresDownloadPolicy)]
+fun append_skill_with_nonzero_policy_aborts() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
+    );
+
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+
+    let _ = content::append_version_as_owner(
+        &mut content_obj,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_skill(),
+        default_skill_name(),
+        read_owner_grant(),
+        content::download_policy_owner_only(), // nonzero, but skill kind doesn't allow
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// State config wallet wrappers
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun owner_can_upsert_and_delete_state_config() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    market::set_state_config(&config, &mut state, b"k1".to_string(), b"v1", scenario.ctx());
+    assert!(soul::has_state_config(&state, b"k1".to_string()), 0);
+
+    market::delete_state_config(&config, &mut state, b"k1".to_string(), scenario.ctx());
+    assert!(!soul::has_state_config(&state, b"k1".to_string()), 1);
+    ts::return_shared(config);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::market::ENotSoulOwner)]
+fun non_owner_cannot_set_state_config() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    market::set_state_config(&config, &mut state, b"k1".to_string(), b"v1", scenario.ctx());
+    abort 42
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// List / buy soul flow
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun list_and_buy_soul_rotates_owner_and_invalidates_grants() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, BUYER);
+
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    let _grant_id = issue_default_grant(&mut scenario, MINTER, AGENT, grant::scope_seal());
+
+    // Seller lists.
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let seller_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state_for_listing = ts::take_shared<SoulState>(&scenario);
+    let listing = market::list_soul_fixed_price(
+        &config,
+        &registry,
+        &mut seller_kiosk,
+        &seller_cap,
+        &mut state_for_listing,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    market::finalize_soul_listing(listing);
+    ts::return_shared(state_for_listing);
+    ts::return_to_address(MINTER, seller_cap);
+    ts::return_shared(seller_kiosk);
+
+    // Buyer pays exact total.
+    let total = soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0);
+    mint_usdc_to(BUYER, total, &mut scenario);
+
+    scenario.next_tx(BUYER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut listing = ts::take_shared<SoulListing>(&scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
+    let buyer_cap = ts::take_from_address<PersonalKioskCap>(&scenario, BUYER);
+
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    let mut seller_kiosk_again = ts::take_shared_by_id<Kiosk>(&scenario, soul::current_kiosk_id(&state));
+
+    market::buy_soul_fixed_price(
+        &config,
+        &registry,
+        &soul_policy,
+        &mut seller_kiosk_again,
+        &mut buyer_kiosk,
+        &buyer_cap,
+        &mut state,
+        &mut listing,
+        payment,
+        scenario.ctx(),
+    );
+
+    assert!(soul::current_owner(&state) == BUYER, 0);
+    assert!(soul::ownership_epoch(&state) == 1, 1);
+    assert!(soul::active_grant_count(&state) == 0, 2);
+
+    ts::return_shared(soul_policy);
+    ts::return_shared(state);
+    ts::return_shared(listing);
+    ts::return_shared(seller_kiosk_again);
+    ts::return_shared(buyer_kiosk);
+    ts::return_to_address(BUYER, buyer_cap);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::end(scenario);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Collection bind sanity
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun collection_creator_can_bind_soul() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let collection_policy = ts::take_shared<TransferPolicy<SoulCollectionRight>>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+
+    let collection_obj = market::create_collection_in_personal_kiosk(
+        &config,
+        &registry,
+        &collection_policy,
+        &mut kiosk_obj,
+        &cap,
+        b"Collection One".to_string(),
+        b"desc".to_string(),
+        b"https://img".to_string(),
+        COLLECTION_ROYALTY_BPS,
+        true,
+        option::some(2),
+        scenario.ctx(),
+    );
+    market::finalize_collection(collection_obj);
+
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(collection_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, cap);
+
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let mut collection_obj = ts::take_shared<SoulCollection>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    collection::add_soul(&mut collection_obj, &mut state, scenario.ctx());
+    assert!(collection::current_supply(&collection_obj) == 1, 0);
+    assert!(soul::collection_id(&state).contains(&object::id(&collection_obj)), 1);
+    ts::return_shared(collection_obj);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Admin governance — Kiosk policy and package upgrade guardrails
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun admin_can_adjust_transfer_policy_rules_after_init() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let soul_policy_cap = ts::take_from_address<TransferPolicyCap<Soul>>(&scenario, ADMIN);
+
+    transfer_policy::add_rule<Soul, AdminMutablePolicyRule, AdminMutablePolicyConfig>(
+        AdminMutablePolicyRule {},
+        &mut soul_policy,
+        &soul_policy_cap,
+        AdminMutablePolicyConfig {},
+    );
+    assert!(transfer_policy::has_rule<Soul, AdminMutablePolicyRule>(&soul_policy), 0);
+
+    transfer_policy::remove_rule<Soul, AdminMutablePolicyRule, AdminMutablePolicyConfig>(
+        &mut soul_policy,
+        &soul_policy_cap,
+    );
+    assert!(!transfer_policy::has_rule<Soul, AdminMutablePolicyRule>(&soul_policy), 1);
+
+    ts::return_to_address(ADMIN, soul_policy_cap);
+    ts::return_shared(soul_policy);
+    ts::end(scenario);
+}
+
+#[test]
+fun version_fields_cover_persistent_objects() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    scenario.next_tx(ADMIN);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let descriptor = kind_registry::borrow_descriptor(&kind_registry_obj, kind_registry::kind_sprite());
+    let registration = market::personal_kiosk_registration(&registry, MINTER);
+
+    assert!(market::config_version(&config) == market::protocol_version(), 0);
+    assert!(market::kiosk_registry_version(&registry) == market::protocol_version(), 1);
+    assert!(market::personal_kiosk_registration_version(registration) == market::protocol_version(), 3);
+    assert!(kind_registry::registry_version(&kind_registry_obj) == kind_registry::protocol_version(), 4);
+    assert!(kind_registry::descriptor_version(descriptor) == kind_registry::protocol_version(), 5);
+
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(kind_registry_obj);
+
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let collection_policy = ts::take_shared<TransferPolicy<SoulCollectionRight>>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let kiosk_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let content_id = *soul::content_id(&state).borrow();
+    let access_list_id = *soul::access_list_id(&state).borrow();
+    let content_obj = ts::take_shared_by_id<SoulContent>(&scenario, content_id);
+    let mut paid_list = ts::take_shared_by_id<SoulPaidAccessList>(&scenario, access_list_id);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+
+    let soul_ref = sui_kiosk::borrow<Soul>(
+        &kiosk_obj,
+        personal_kiosk::borrow(&kiosk_cap),
+        soul::soul_id(&state),
+    );
+    let soul_doc_slot = content::borrow_slot(
+        &content_obj,
+        kind_registry::kind_soul_doc(),
+        content::soul_doc_name(),
+        0,
+    );
+    let mut binding = content::active_binding(&content_obj, kind_registry::kind_sprite());
+    assert!(binding.is_some(), 10);
+    let active_binding = option::extract(&mut binding);
+
+    assert!(soul::soul_version(soul_ref) == soul::protocol_version(), 6);
+    assert!(soul::state_version(&state) == soul::protocol_version(), 7);
+    assert!(content::content_version(&content_obj) == content::protocol_version(), 8);
+    assert!(content::slot_version(soul_doc_slot) == content::protocol_version(), 9);
+    assert!(content::active_binding_version(&active_binding) == content::protocol_version(), 10);
+    assert!(paid_access::paid_access_list_version(&paid_list) == paid_access::protocol_version(), 11);
+    binding.destroy_none();
+
+    paid_access::configure_paid_access_kind(
+        &mut paid_list,
+        &state,
+        &kind_registry_obj,
+        kind_registry::kind_sprite(),
+        PAID_ACCESS_PRICE,
+        grant::scope_assets(),
+        option::none(),
+        scenario.ctx(),
+    );
+    assert!(
+        paid_access::kind_config_version(&paid_list, kind_registry::kind_sprite())
+            == paid_access::protocol_version(),
+        12,
+    );
+    paid_access::add_access(
+        &mut paid_list,
+        &state,
+        &kind_registry_obj,
+        AGENT,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    assert!(
+        paid_access::kind_entry_version(&paid_list, AGENT, kind_registry::kind_sprite())
+            == paid_access::protocol_version(),
+        13,
+    );
+
+    let grant_obj = grant::issue(
+        &mut state,
+        AGENT,
+        grant::scope_seal(),
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    let active_grant_slot = soul::active_grant_slot_for_grantee(&state, AGENT);
+    assert!(grant::grant_version(&grant_obj) == grant::protocol_version(), 14);
+    assert!(soul::active_grant_slot_version(active_grant_slot) == soul::protocol_version(), 15);
+    transfer::public_transfer(grant_obj, AGENT);
+
+    let mut soul_listing = market::list_soul_fixed_price(
+        &config,
+        &registry,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    assert!(market::soul_listing_version(&soul_listing) == market::protocol_version(), 16);
+    market::cancel_soul_listing(&mut kiosk_obj, &kiosk_cap, &mut state, &mut soul_listing);
+    market::delete_soul_listing(soul_listing, scenario.ctx());
+
+    let collection_obj = market::create_collection_in_personal_kiosk(
+        &config,
+        &registry,
+        &collection_policy,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        b"Versioned Collection".to_string(),
+        b"desc".to_string(),
+        b"https://img".to_string(),
+        COLLECTION_ROYALTY_BPS,
+        true,
+        option::none(),
+        scenario.ctx(),
+    );
+    let right_ref = sui_kiosk::borrow<SoulCollectionRight>(
+        &kiosk_obj,
+        personal_kiosk::borrow(&kiosk_cap),
+        collection::right_id(&collection_obj),
+    );
+    assert!(collection::collection_version(&collection_obj) == collection::protocol_version(), 17);
+    assert!(collection::collection_right_version(right_ref) == collection::protocol_version(), 18);
+
+    let mut collection_listing = market::list_collection_right_fixed_price(
+        &config,
+        &registry,
+        &collection_obj,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    assert!(market::collection_listing_version(&collection_listing) == market::protocol_version(), 19);
+    market::cancel_collection_listing(&mut kiosk_obj, &kiosk_cap, &mut collection_listing);
+    market::delete_collection_listing(collection_listing, scenario.ctx());
+    collection::destroy_collection_for_testing(collection_obj);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(soul_policy);
+    ts::return_shared(collection_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, kiosk_cap);
+    ts::return_shared(state);
+    ts::return_shared(content_obj);
+    ts::return_shared(paid_list);
+    ts::end(scenario);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Imported provenance — sanity that other mint paths still compile
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun mint_imported_records_provenance_and_origin_ref() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    mint_test_blobs_then_advance(
+        &mut scenario,
+        vector[
+            blob_req(MINTER, BLOB_ROOT_HASH_SOUL_DOC),
+            blob_req(MINTER, BLOB_ROOT_HASH_MEMORY),
+        ],
+        MINTER,
+    );
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let kiosk_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let soul_doc_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let memory_blob = ts::take_from_address<blob::Blob>(&scenario, MINTER);
+    let entries = vector[
+        market::new_initial_content_entry(
+            kind_registry::kind_soul_doc(),
+            b"soul".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            soul_doc_blob,
+        ),
+        market::new_initial_content_entry(
+            kind_registry::kind_memory(),
+            b"default".to_string(),
+            read_owner_grant(),
+            content::download_policy_public(),
+            false,
+            memory_blob,
+        ),
+    ];
+
+    let state = market::mint_imported_in_personal_kiosk(
+        &config,
+        &kind_registry_obj,
+        &registry,
+        &soul_policy,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        b"Imported".to_string(),
+        b"desc".to_string(),
+        b"https://example.com".to_string(),
+        entries,
+        vector::empty(),
+        b"https://origin.example".to_string(),
+        CREATOR_ROYALTY_BPS,
+        &test_clock,
+        scenario.ctx(),
+    );
+    market::finalize_soul_state(state);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, kiosk_cap);
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    assert!(soul::has_content_id(&state), 0);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit 2026-05-04 — Low #3 / Low #4 regressions
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun paid_access_revoke_drops_empty_buyer_row() {
+    // After revoking the buyer's only configured kind, the outer
+    // `entries[buyer]` row must be reclaimed so long-lived Souls don't
+    // accumulate empty `Table<u32, KindPaidEntry>` shells per historical
+    // buyer.
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
+
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    paid_access::add_access(
+        &mut paid_list,
+        &state,
+        &kind_registry_obj,
+        BUYER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    assert!(paid_access::has_buyer_row(&paid_list, BUYER), 0);
+
+    paid_access::revoke_access(
+        &mut paid_list,
+        &state,
+        BUYER,
+        kind_registry::kind_sprite(),
+        scenario.ctx(),
+    );
+    assert!(!paid_access::has_kind_entry(&paid_list, BUYER, kind_registry::kind_sprite()), 1);
+    assert!(!paid_access::has_buyer_row(&paid_list, BUYER), 2);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+#[test]
+fun paid_access_cleanup_drops_empty_buyer_row_on_rotation() {
+    // After ownership rotates, prior paid entries are stale; running
+    // `cleanup_stale_entries` for the only configured kind must reclaim the
+    // outer row, not just the inner kind entry.
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector::empty());
+
+    configure_paid_kind_for_minter(
+        &mut scenario,
+        MINTER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+    );
+
+    scenario.next_tx(MINTER);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    paid_access::add_access(
+        &mut paid_list,
+        &state,
+        &kind_registry_obj,
+        BUYER,
+        kind_registry::kind_sprite(),
+        grant::scope_assets(),
+        option::none(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    assert!(paid_access::has_buyer_row(&paid_list, BUYER), 0);
+
+    // Bypass market::buy_soul_impl path — directly rotate so the entry's
+    // `ownership_epoch_snapshot` becomes stale.
+    soul::rotate_owner(&mut state, BUYER, minter_kiosk_id);
+
+    // Anyone can call cleanup; AGENT is fine.
+    paid_access::cleanup_stale_entries(
+        &mut paid_list,
+        &state,
+        vector[BUYER],
+        vector[kind_registry::kind_sprite()],
+        scenario.ctx(),
+    );
+    assert!(!paid_access::has_kind_entry(&paid_list, BUYER, kind_registry::kind_sprite()), 1);
+    assert!(!paid_access::has_buyer_row(&paid_list, BUYER), 2);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::collection::ESoulCurrentlyListed)]
+fun add_soul_aborts_when_soul_currently_listed() {
+    // Audit Low #4: solo-listed Soul must not be silently bound into a
+    // collection — that mid-listing rebind would make the active listing
+    // un-purchasable from either solo or with-collection buy paths.
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let collection_policy = ts::take_shared<TransferPolicy<SoulCollectionRight>>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+
+    let collection_obj = market::create_collection_in_personal_kiosk(
+        &config,
+        &registry,
+        &collection_policy,
+        &mut kiosk_obj,
+        &cap,
+        b"Listed Conflict".to_string(),
+        b"desc".to_string(),
+        b"https://img".to_string(),
+        COLLECTION_ROYALTY_BPS,
+        true,
+        option::some(2),
+        scenario.ctx(),
+    );
+    market::finalize_collection(collection_obj);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(collection_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, cap);
+
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    // Solo-list the freshly minted Soul.
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let listing = market::list_soul_fixed_price(
+        &config,
+        &registry,
+        &mut kiosk_obj,
+        &cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    market::finalize_soul_listing(listing);
+    assert!(soul::is_listed(&state), 0);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, cap);
+    ts::return_shared(state);
+
+    // add_soul on an active solo listing must abort with ESoulCurrentlyListed.
+    scenario.next_tx(MINTER);
+    let mut collection_obj = ts::take_shared<SoulCollection>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    collection::add_soul(&mut collection_obj, &mut state, scenario.ctx());
+    abort 42
+}
+
+#[test]
+fun add_soul_succeeds_after_listing_cancelled() {
+    // The audit fix must remain reversible: once cancel clears `is_listed`,
+    // the seller can bind into a collection in the same session.
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let collection_policy = ts::take_shared<TransferPolicy<SoulCollectionRight>>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+
+    let collection_obj = market::create_collection_in_personal_kiosk(
+        &config,
+        &registry,
+        &collection_policy,
+        &mut kiosk_obj,
+        &cap,
+        b"Recoverable".to_string(),
+        b"desc".to_string(),
+        b"https://img".to_string(),
+        COLLECTION_ROYALTY_BPS,
+        true,
+        option::some(2),
+        scenario.ctx(),
+    );
+    market::finalize_collection(collection_obj);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(collection_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, cap);
+
+    let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector::empty());
+
+    // List → cancel → expect is_listed=false.
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut listing = market::list_soul_fixed_price(
+        &config,
+        &registry,
+        &mut kiosk_obj,
+        &cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    assert!(soul::is_listed(&state), 0);
+    market::cancel_soul_listing(&mut kiosk_obj, &cap, &mut state, &mut listing);
+    market::delete_soul_listing(listing, scenario.ctx());
+    assert!(!soul::is_listed(&state), 1);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, cap);
+    ts::return_shared(state);
+
+    // add_soul now succeeds.
+    scenario.next_tx(MINTER);
+    let mut collection_obj = ts::take_shared<SoulCollection>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    collection::add_soul(&mut collection_obj, &mut state, scenario.ctx());
+    assert!(collection::current_supply(&collection_obj) == 1, 2);
+    assert!(soul::collection_id(&state).contains(&object::id(&collection_obj)), 3);
+    ts::return_shared(collection_obj);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// SoulState destroy helper smoke (catches schema drift)
+// ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun soul_state_destroy_helper_smoke() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let state = soul::create_state(
+        sui::object::id_from_address(@0xdead),
+        ADMIN,
+        100,
+        ADMIN,
+        sui::object::id_from_address(@0xbeef),
+        scenario.ctx(),
+    );
+    soul::destroy_state_for_testing(state);
     ts::end(scenario);
 }

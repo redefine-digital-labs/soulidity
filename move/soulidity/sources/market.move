@@ -1,17 +1,15 @@
 module soulidity::market;
 
-use std::string;
+use std::string::String;
 use kiosk::kiosk_lock_rule;
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
 use kiosk::witness_rule;
-use soulidity::assets::{Self as assets, SoulAssets};
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
-use soulidity::content_access;
+use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant;
-use soulidity::memory;
-use soulidity::metadata::{Self as metadata, AssetBinding, SoulMetadata};
-use soulidity::skills::{Self as skills, SoulSkills};
+use soulidity::kind_registry::{Self as kind_registry, KindRegistry};
+use soulidity::paid_access::{Self as paid_access, SoulPaidAccessList};
 use soulidity::soul::{Self as soul, Soul, SoulState};
 use sui::clock::Clock;
 use sui::coin::{Self as coin, Coin};
@@ -46,32 +44,30 @@ const EPersonalKioskMismatch: u64 = 14;
 const ECollectionMismatch: u64 = 15;
 const ECollectionRightMismatch: u64 = 16;
 const EAccessListStateMismatch: u64 = 19;
-const EUpgradeCapNotTracked: u64 = 20;
-const EUpgradeCapMismatch: u64 = 21;
-const EUpgradesImmutable: u64 = 22;
-const EUpgradeAlreadyPending: u64 = 23;
-const EUpgradeNotPending: u64 = 24;
 const ESourceAlreadyJoined: u64 = 25;
-const EInvalidMetadataBinding: u64 = 26;
-const EMetadataAssetsMissing: u64 = 27;
-const EContentAccessNotPurchasable: u64 = 28;
+const EPaidAccessNotPurchasable: u64 = 28;
 const EAccessListLinkageMismatch: u64 = 29;
 const EListingStillActive: u64 = 30;
 const EOldKioskNotEmpty: u64 = 31;
 const EOldKioskMismatch: u64 = 32;
 const ERebindSameKiosk: u64 = 33;
-const EAssetsRootAlreadyExists: u64 = 34;
-const EContentAccessOwnerCannotPurchase: u64 = 35;
-const ESkillsRootAlreadyExists: u64 = 36;
+const EPaidAccessOwnerCannotPurchase: u64 = 35;
 const EPersonalKioskCapMismatch: u64 = 37;
 const ESoulCurrentKioskMismatch: u64 = 38;
 const ESoulOwnerMismatch: u64 = 39;
 const EKioskOwnerMismatch: u64 = 40;
 const EListingSellerMismatch: u64 = 41;
 const EListingStateMismatch: u64 = 42;
-
-const ASSET_TYPE_SPRITE: u8 = 0;
-const ASSET_TYPE_AUDIO: u8 = 2;
+const EInitialEntryActiveNotSupported: u64 = 43;
+const ENotSoulOwner: u64 = 44;
+const EStateConfigKeyEmpty: u64 = 45;
+const EInitialSoulDocCountMismatch: u64 = 46;
+const EInitialSoulDocNameMismatch: u64 = 47;
+const EInitialMemoryCountMismatch: u64 = 48;
+const EInitialMemoryNameMismatch: u64 = 49;
+const EInitialKindOpNotAllowedAtMint: u64 = 50;
+const EPaidAccessKindMismatch: u64 = 51;
+const VERSION: u64 = 1;
 
 public struct MARKET has drop {}
 
@@ -81,6 +77,7 @@ public struct MarketAdminCap has key, store {
 
 public struct MarketConfig has key {
     id: UID,
+    version: u64,
     fee_recipient: address,
     platform_fee_bps: u16,
     paused: bool,
@@ -88,21 +85,16 @@ public struct MarketConfig has key {
 
 public struct KioskRegistry has key {
     id: UID,
+    version: u64,
 }
 
-public struct MarketUpgradeState has key {
+/// Marker objects for listings: `key`-only by design. Without `store`,
+/// listings cannot be `public_transfer`'d or wrapped — the only sanctioned
+/// path is `finalize_*` which shares them. PTBs may still hold and pass
+/// them between commands within a single transaction.
+public struct SoulListing has key {
     id: UID,
-    tracked_package_id: Option<ID>,
-    tracked_upgrade_cap_id: Option<ID>,
-    tracked_upgrade_policy: u8,
-    tracked_upgrade_version: u64,
-    upgrade_cap_live: bool,
-    immutable: bool,
-    pending_upgrade: bool,
-}
-
-public struct SoulListing has key, store {
-    id: UID,
+    version: u64,
     soul_id: ID,
     state_id: ID,
     seller: address,
@@ -115,8 +107,9 @@ public struct SoulListing has key, store {
     is_active: bool,
 }
 
-public struct CollectionListing has key, store {
+public struct CollectionListing has key {
     id: UID,
+    version: u64,
     collection_id: ID,
     right_id: ID,
     seller: address,
@@ -135,6 +128,7 @@ public struct JoinedSourceKey has copy, drop, store {
 }
 
 public struct PersonalKioskRegistration has copy, drop, store {
+    version: u64,
     kiosk_id: ID,
     kiosk_cap_id: ID,
 }
@@ -142,6 +136,35 @@ public struct PersonalKioskRegistration has copy, drop, store {
 public struct SoulMarketProof has drop {}
 
 public struct CollectionMarketProof has drop {}
+
+/// Caller-supplied initial content entry consumed by mint flows. Carries
+/// the Walrus `Blob`, so the struct must be `store`-only and unpacked
+/// during the mint PTB. `set_active=true` is only valid for kinds with
+/// `has_active_binding=true`; the mint helper aborts with
+/// `EInitialEntryActiveNotSupported` otherwise so the failure is local to
+/// the market wrapper rather than surfacing from `content::set_active`.
+///
+/// Phase 2: `is_public` was replaced by `slot_read_mode_mask`. `is_public`
+/// becomes a derived event field in `content.move` (set when the slot's
+/// read-mode mask includes `READ_PUBLIC`). Mint flows must include exactly
+/// one `(KIND_SOUL_DOC, "soul")` entry and at least one
+/// `(KIND_MEMORY, "default")` entry; see `assert_initial_content_well_formed`.
+public struct InitialContentEntry has store {
+    kind: u32,
+    name: String,
+    slot_read_mode_mask: u64,
+    download_policy: u8,
+    set_active: bool,
+    blob: Blob,
+}
+
+/// Caller-supplied initial state-config entry consumed by mint flows.
+/// Mirrors the legacy `metadata::ext` blobs; typical keys: `sprite_config_json`,
+/// `sprite_mood_map_json`.
+public struct StateConfigEntry has copy, drop, store {
+    key: String,
+    value: vector<u8>,
+}
 
 public struct MarketInitialized has copy, drop {
     config_id: ID,
@@ -183,42 +206,10 @@ public struct PersonalKioskRebound has copy, drop {
     new_kiosk_cap_id: ID,
 }
 
-public struct MarketUpgradeStateInitialized has copy, drop {
-    upgrade_state_id: ID,
-}
-
-public struct MarketUpgradeCapTracked has copy, drop {
-    upgrade_state_id: ID,
-    package_id: ID,
-    upgrade_cap_id: ID,
-    policy: u8,
-    version: u64,
-}
-
-public struct MarketUpgradeAuthorized has copy, drop {
-    upgrade_state_id: ID,
-    package_id: ID,
-    policy: u8,
-}
-
-public struct MarketUpgradeCommitted has copy, drop {
-    upgrade_state_id: ID,
-    from_package_id: ID,
-    to_package_id: ID,
-    version: u64,
-}
-
-public struct MarketUpgradesFrozen has copy, drop {
-    upgrade_state_id: ID,
-    package_id: ID,
-    version: u64,
-}
-
 public struct SoulMintedToKiosk has copy, drop {
     soul_id: ID,
     state_id: ID,
-    memory_id: ID,
-    metadata_id: ID,
+    content_id: ID,
     kiosk_id: ID,
     owner: address,
     provenance_kind: u8,
@@ -282,9 +273,9 @@ public struct CollectionPurchased has copy, drop {
     platform_fee: u64,
 }
 
-public struct ContentAccessPurchased has copy, drop {
+public struct SoulPaidAccessPurchased has copy, drop {
     soul_id: ID,
-    access_list_id: ID,
+    paid_access_list_id: ID,
     buyer: address,
     price: u64,
     platform_fee: u64,
@@ -309,6 +300,37 @@ fun init(otw: MARKET, ctx: &mut TxContext) {
     init_impl(package::claim(otw, ctx), ctx.sender(), ctx)
 }
 
+public fun protocol_version(): u64 {
+    VERSION
+}
+
+public fun config_version(self: &MarketConfig): u64 {
+    self.version
+}
+
+public fun kiosk_registry_version(self: &KioskRegistry): u64 {
+    self.version
+}
+
+public fun soul_listing_version(self: &SoulListing): u64 {
+    self.version
+}
+
+public fun collection_listing_version(self: &CollectionListing): u64 {
+    self.version
+}
+
+public fun personal_kiosk_registration_version(self: &PersonalKioskRegistration): u64 {
+    self.version
+}
+
+public fun personal_kiosk_registration(
+    registry: &KioskRegistry,
+    owner: address,
+): &PersonalKioskRegistration {
+    borrow_personal_kiosk_registration(registry, owner)
+}
+
 public fun fee_recipient(self: &MarketConfig): address {
     self.fee_recipient
 }
@@ -321,33 +343,31 @@ public fun paused(self: &MarketConfig): bool {
     self.paused
 }
 
-public fun tracked_upgrade_policy(self: &MarketUpgradeState): u8 {
-    self.tracked_upgrade_policy
+// ── Initial entry constructors (callable by wallet PTBs) ──────────────
+
+public fun new_initial_content_entry(
+    kind: u32,
+    name: String,
+    slot_read_mode_mask: u64,
+    download_policy: u8,
+    set_active: bool,
+    blob: Blob,
+): InitialContentEntry {
+    InitialContentEntry {
+        kind,
+        name,
+        slot_read_mode_mask,
+        download_policy,
+        set_active,
+        blob,
+    }
 }
 
-public fun tracked_upgrade_version(self: &MarketUpgradeState): u64 {
-    self.tracked_upgrade_version
+public fun new_state_config_entry(key: String, value: vector<u8>): StateConfigEntry {
+    StateConfigEntry { key, value }
 }
 
-public fun has_tracked_upgrade_cap(self: &MarketUpgradeState): bool {
-    self.tracked_upgrade_cap_id.is_some()
-}
-
-public fun upgrade_cap_live(self: &MarketUpgradeState): bool {
-    self.upgrade_cap_live
-}
-
-public fun upgrades_immutable(self: &MarketUpgradeState): bool {
-    self.immutable
-}
-
-public fun upgrade_pending(self: &MarketUpgradeState): bool {
-    self.pending_upgrade
-}
-
-public fun tracked_package_id(self: &MarketUpgradeState): Option<ID> {
-    self.tracked_package_id
-}
+// ── Quote helpers ─────────────────────────────────────────────────────
 
 public fun quote_soul_purchase(
     config: &MarketConfig,
@@ -383,7 +403,7 @@ public fun quote_collection_purchase(
     (platform_fee, price, total as u64)
 }
 
-public fun quote_content_access_purchase(
+public fun quote_paid_access_purchase(
     config: &MarketConfig,
     price: u64,
 ): (u64, u64, u64) {
@@ -392,6 +412,8 @@ public fun quote_content_access_purchase(
     assert!(total <= MAX_U64_AS_U128, EQuoteOverflow);
     (platform_fee, price, total as u64)
 }
+
+// ── Admin entries ─────────────────────────────────────────────────────
 
 public fun update_fee_recipient(
     config: &mut MarketConfig,
@@ -422,150 +444,7 @@ public fun update_paused(
     event::emit(MarketPauseUpdated { paused });
 }
 
-public fun track_upgrade_cap(
-    upgrade_state: &mut MarketUpgradeState,
-    _: &MarketAdminCap,
-    upgrade_cap: &package::UpgradeCap,
-) {
-    assert!(!upgrade_state.immutable, EUpgradesImmutable);
-    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
-    let package_id = package::upgrade_package(upgrade_cap);
-    assert!(package_id.to_address() != @0x0, EInvalidRecipient);
-    let upgrade_cap_id = object::id(upgrade_cap);
-    if (upgrade_state.tracked_upgrade_cap_id.is_some()) {
-        assert!(*upgrade_state.tracked_upgrade_cap_id.borrow() == upgrade_cap_id, EUpgradeCapMismatch);
-    };
-    upgrade_state.tracked_package_id = option::some(package_id);
-    upgrade_state.tracked_upgrade_cap_id = option::some(upgrade_cap_id);
-    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
-    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
-    upgrade_state.upgrade_cap_live = true;
-    event::emit(MarketUpgradeCapTracked {
-        upgrade_state_id: object::id(upgrade_state),
-        package_id,
-        upgrade_cap_id,
-        policy: upgrade_state.tracked_upgrade_policy,
-        version: upgrade_state.tracked_upgrade_version,
-    });
-}
-
-public fun restrict_upgrade_policy_additive(
-    upgrade_state: &mut MarketUpgradeState,
-    _: &MarketAdminCap,
-    upgrade_cap: &mut package::UpgradeCap,
-) {
-    assert!(!upgrade_state.immutable, EUpgradesImmutable);
-    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
-    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
-    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
-    package::only_additive_upgrades(upgrade_cap);
-    upgrade_state.tracked_package_id = option::some(package::upgrade_package(upgrade_cap));
-    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
-    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
-    event::emit(MarketUpgradeCapTracked {
-        upgrade_state_id: object::id(upgrade_state),
-        package_id: package::upgrade_package(upgrade_cap),
-        upgrade_cap_id: object::id(upgrade_cap),
-        policy: upgrade_state.tracked_upgrade_policy,
-        version: package::version(upgrade_cap),
-    });
-}
-
-public fun restrict_upgrade_policy_dep_only(
-    upgrade_state: &mut MarketUpgradeState,
-    _: &MarketAdminCap,
-    upgrade_cap: &mut package::UpgradeCap,
-) {
-    assert!(!upgrade_state.immutable, EUpgradesImmutable);
-    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
-    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
-    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
-    package::only_dep_upgrades(upgrade_cap);
-    upgrade_state.tracked_package_id = option::some(package::upgrade_package(upgrade_cap));
-    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
-    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
-    event::emit(MarketUpgradeCapTracked {
-        upgrade_state_id: object::id(upgrade_state),
-        package_id: package::upgrade_package(upgrade_cap),
-        upgrade_cap_id: object::id(upgrade_cap),
-        policy: upgrade_state.tracked_upgrade_policy,
-        version: package::version(upgrade_cap),
-    });
-}
-
-public fun authorize_upgrade(
-    upgrade_state: &mut MarketUpgradeState,
-    _: &MarketAdminCap,
-    upgrade_cap: &mut package::UpgradeCap,
-    policy: u8,
-    digest: vector<u8>,
-): package::UpgradeTicket {
-    assert!(!upgrade_state.immutable, EUpgradesImmutable);
-    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
-    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
-    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
-
-    let package_id = package::upgrade_package(upgrade_cap);
-    let ticket = package::authorize_upgrade(upgrade_cap, policy, digest);
-    upgrade_state.pending_upgrade = true;
-    event::emit(MarketUpgradeAuthorized {
-        upgrade_state_id: object::id(upgrade_state),
-        package_id,
-        policy: package::ticket_policy(&ticket),
-    });
-    ticket
-}
-
-public fun commit_upgrade(
-    upgrade_state: &mut MarketUpgradeState,
-    _: &MarketAdminCap,
-    upgrade_cap: &mut package::UpgradeCap,
-    receipt: package::UpgradeReceipt,
-) {
-    assert!(!upgrade_state.immutable, EUpgradesImmutable);
-    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
-    assert!(upgrade_state.pending_upgrade, EUpgradeNotPending);
-    assert_tracked_upgrade_cap(upgrade_state, object::id(upgrade_cap));
-
-    let from_package_id = *upgrade_state.tracked_package_id.borrow();
-    package::commit_upgrade(upgrade_cap, receipt);
-    let to_package_id = package::upgrade_package(upgrade_cap);
-    upgrade_state.tracked_package_id = option::some(to_package_id);
-    upgrade_state.tracked_upgrade_policy = package::upgrade_policy(upgrade_cap);
-    upgrade_state.tracked_upgrade_version = package::version(upgrade_cap);
-    upgrade_state.pending_upgrade = false;
-    event::emit(MarketUpgradeCommitted {
-        upgrade_state_id: object::id(upgrade_state),
-        from_package_id,
-        to_package_id,
-        version: upgrade_state.tracked_upgrade_version,
-    });
-}
-
-public fun freeze_upgrades(
-    upgrade_state: &mut MarketUpgradeState,
-    _: &MarketAdminCap,
-    upgrade_cap: package::UpgradeCap,
-) {
-    assert!(!upgrade_state.immutable, EUpgradesImmutable);
-    assert!(upgrade_state.upgrade_cap_live, EUpgradeCapNotTracked);
-    assert!(!upgrade_state.pending_upgrade, EUpgradeAlreadyPending);
-
-    let upgrade_cap_id = object::id(&upgrade_cap);
-    assert_tracked_upgrade_cap(upgrade_state, upgrade_cap_id);
-    let package_id = package::upgrade_package(&upgrade_cap);
-    let version = package::version(&upgrade_cap);
-    package::make_immutable(upgrade_cap);
-    upgrade_state.tracked_package_id = option::some(package_id);
-    upgrade_state.tracked_upgrade_version = version;
-    upgrade_state.upgrade_cap_live = false;
-    upgrade_state.immutable = true;
-    event::emit(MarketUpgradesFrozen {
-        upgrade_state_id: object::id(upgrade_state),
-        package_id,
-        version,
-    });
-}
+// ── Personal kiosk plumbing ───────────────────────────────────────────
 
 public fun init_personal_kiosk(
     config: &MarketConfig,
@@ -668,42 +547,27 @@ public fun reuse_personal_kiosk(
     kiosk_id
 }
 
+// ── Mint entries (typed-content ABI) ──────────────────────────────────
+
 public fun mint_native_in_personal_kiosk(
     config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    protected_blob: Blob,
-    founding_memory_blob: Option<Blob>,
-    skills_blob: Option<Blob>,
-    initial_skill_name: std::string::String,
-    skills_public: bool,
-    asset_blob: Option<Blob>,
-    initial_asset_name: std::string::String,
-    asset_public: bool,
-    asset_type: u8,
-    initial_sprite_asset_name: Option<std::string::String>,
-    initial_sprite_version_index: Option<u64>,
-    initial_sprite_download_policy: Option<u8>,
-    initial_sprite_config: Option<vector<u8>>,
-    initial_sprite_mood_map: Option<vector<u8>>,
-    initial_voice_asset_name: Option<std::string::String>,
-    initial_voice_version_index: Option<u64>,
-    initial_voice_download_policy: Option<u8>,
-    initial_voice_config: Option<vector<u8>>,
-    content_access_price_atomic: u64,
-    content_access_default_scope_mask: u64,
-    content_access_default_duration_ms: Option<u64>,
+    name: String,
+    description: String,
+    image_url: String,
+    initial_content: vector<InitialContentEntry>,
+    initial_state_config: vector<StateConfigEntry>,
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
 ): SoulState {
     mint_soul_in_personal_kiosk_impl(
         config,
+        kind_registry_obj,
         registry,
         soul_policy,
         kiosk_obj,
@@ -711,27 +575,8 @@ public fun mint_native_in_personal_kiosk(
         name,
         description,
         image_url,
-        protected_blob,
-        founding_memory_blob,
-        skills_blob,
-        initial_skill_name,
-        skills_public,
-        asset_blob,
-        initial_asset_name,
-        asset_public,
-        asset_type,
-        initial_sprite_asset_name,
-        initial_sprite_version_index,
-        initial_sprite_download_policy,
-        initial_sprite_config,
-        initial_sprite_mood_map,
-        initial_voice_asset_name,
-        initial_voice_version_index,
-        initial_voice_download_policy,
-        initial_voice_config,
-        content_access_price_atomic,
-        content_access_default_scope_mask,
-        content_access_default_duration_ms,
+        initial_content,
+        initial_state_config,
         creator_royalty_bps,
         soul::provenance_native(),
         option::none(),
@@ -740,43 +585,33 @@ public fun mint_native_in_personal_kiosk(
     )
 }
 
+/// Mint a Soul whose origin is declared off-chain (e.g. ported from another
+/// chain or platform). `origin_ref` is treated as a free-form, **unverified**
+/// human-readable string — the chain layer does not check signatures, oracles
+/// or provenance attestations against it. UI surfaces must label imported
+/// Souls accordingly so buyers don't mistake the field for a verified claim.
+/// Promoting `origin_ref` to a verified channel would require introducing an
+/// oracle / multisig attestation path here.
 public fun mint_imported_in_personal_kiosk(
     config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    protected_blob: Blob,
-    founding_memory_blob: Option<Blob>,
-    skills_blob: Option<Blob>,
-    initial_skill_name: std::string::String,
-    skills_public: bool,
-    asset_blob: Option<Blob>,
-    initial_asset_name: std::string::String,
-    asset_public: bool,
-    asset_type: u8,
-    initial_sprite_asset_name: Option<std::string::String>,
-    initial_sprite_version_index: Option<u64>,
-    initial_sprite_download_policy: Option<u8>,
-    initial_sprite_config: Option<vector<u8>>,
-    initial_sprite_mood_map: Option<vector<u8>>,
-    initial_voice_asset_name: Option<std::string::String>,
-    initial_voice_version_index: Option<u64>,
-    initial_voice_download_policy: Option<u8>,
-    initial_voice_config: Option<vector<u8>>,
-    content_access_price_atomic: u64,
-    content_access_default_scope_mask: u64,
-    content_access_default_duration_ms: Option<u64>,
-    origin_ref: std::string::String,
+    name: String,
+    description: String,
+    image_url: String,
+    initial_content: vector<InitialContentEntry>,
+    initial_state_config: vector<StateConfigEntry>,
+    origin_ref: String,
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
 ): SoulState {
     mint_soul_in_personal_kiosk_impl(
         config,
+        kind_registry_obj,
         registry,
         soul_policy,
         kiosk_obj,
@@ -784,27 +619,8 @@ public fun mint_imported_in_personal_kiosk(
         name,
         description,
         image_url,
-        protected_blob,
-        founding_memory_blob,
-        skills_blob,
-        initial_skill_name,
-        skills_public,
-        asset_blob,
-        initial_asset_name,
-        asset_public,
-        asset_type,
-        initial_sprite_asset_name,
-        initial_sprite_version_index,
-        initial_sprite_download_policy,
-        initial_sprite_config,
-        initial_sprite_mood_map,
-        initial_voice_asset_name,
-        initial_voice_version_index,
-        initial_voice_download_policy,
-        initial_voice_config,
-        content_access_price_atomic,
-        content_access_default_scope_mask,
-        content_access_default_duration_ms,
+        initial_content,
+        initial_state_config,
         creator_royalty_bps,
         soul::provenance_imported(),
         option::some(origin_ref),
@@ -815,36 +631,18 @@ public fun mint_imported_in_personal_kiosk(
 
 public fun mint_joined_in_personal_kiosk<T: key + store>(
     config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
     registry: &mut KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
     source_object_id: ID,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    protected_blob: Blob,
-    founding_memory_blob: Option<Blob>,
-    skills_blob: Option<Blob>,
-    initial_skill_name: std::string::String,
-    skills_public: bool,
-    asset_blob: Option<Blob>,
-    initial_asset_name: std::string::String,
-    asset_public: bool,
-    asset_type: u8,
-    initial_sprite_asset_name: Option<std::string::String>,
-    initial_sprite_version_index: Option<u64>,
-    initial_sprite_download_policy: Option<u8>,
-    initial_sprite_config: Option<vector<u8>>,
-    initial_sprite_mood_map: Option<vector<u8>>,
-    initial_voice_asset_name: Option<std::string::String>,
-    initial_voice_version_index: Option<u64>,
-    initial_voice_download_policy: Option<u8>,
-    initial_voice_config: Option<vector<u8>>,
-    content_access_price_atomic: u64,
-    content_access_default_scope_mask: u64,
-    content_access_default_duration_ms: Option<u64>,
-    origin_ref: std::string::String,
+    name: String,
+    description: String,
+    image_url: String,
+    initial_content: vector<InitialContentEntry>,
+    initial_state_config: vector<StateConfigEntry>,
+    origin_ref: String,
     creator_royalty_bps: u16,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -855,6 +653,7 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
     df::add(&mut registry.id, join_key, true);
     mint_soul_in_personal_kiosk_impl(
         config,
+        kind_registry_obj,
         registry,
         soul_policy,
         kiosk_obj,
@@ -862,27 +661,8 @@ public fun mint_joined_in_personal_kiosk<T: key + store>(
         name,
         description,
         image_url,
-        protected_blob,
-        founding_memory_blob,
-        skills_blob,
-        initial_skill_name,
-        skills_public,
-        asset_blob,
-        initial_asset_name,
-        asset_public,
-        asset_type,
-        initial_sprite_asset_name,
-        initial_sprite_version_index,
-        initial_sprite_download_policy,
-        initial_sprite_config,
-        initial_sprite_mood_map,
-        initial_voice_asset_name,
-        initial_voice_version_index,
-        initial_voice_download_policy,
-        initial_voice_config,
-        content_access_price_atomic,
-        content_access_default_scope_mask,
-        content_access_default_duration_ms,
+        initial_content,
+        initial_state_config,
         creator_royalty_bps,
         soul::provenance_personal_join(),
         option::some(origin_ref),
@@ -897,9 +677,9 @@ public fun create_collection_in_personal_kiosk(
     collection_policy: &TransferPolicy<SoulCollectionRight>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
+    name: String,
+    description: String,
+    image_url: String,
     extra_royalty_bps: u16,
     tradeable: bool,
     max_supply: Option<u64>,
@@ -947,128 +727,79 @@ public fun create_collection_in_personal_kiosk(
     collection_obj
 }
 
-public fun set_active_sprite(
-    metadata_obj: &mut SoulMetadata,
+// ── Active-binding / state-config wallet wrappers ─────────────────────
+
+/// Bind `(kind, name, version_index)` as the active version for `kind`
+/// on this Soul. Replaces the legacy `set_active_sprite` /
+/// `set_active_voice` pair. Operates on the typed-content root
+/// (`&mut SoulContent`) instead of the deleted `SoulMetadata` object.
+public fun set_active_content(
+    config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
+    content: &mut SoulContent,
     state: &SoulState,
-    assets_book: &assets::SoulAssets,
-    asset_name: std::string::String,
+    kind: u32,
+    name: String,
     version_index: u64,
-    download_policy: u8,
     ctx: &TxContext,
 ) {
-    let binding = metadata::new_asset_binding(asset_name, version_index, download_policy);
-    assert_binding_matches_assets(&binding, assets_book, ASSET_TYPE_SPRITE);
-    metadata::set_active_sprite(metadata_obj, state, option::some(binding), ctx);
+    assert!(!config.paused, EMarketPaused);
+    assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    content::set_active(content, state, kind_registry_obj, kind, name, version_index, ctx);
 }
 
-public fun clear_active_sprite(
-    metadata_obj: &mut SoulMetadata,
+public fun clear_active_content(
+    config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
+    content: &mut SoulContent,
     state: &SoulState,
+    kind: u32,
     ctx: &TxContext,
 ) {
-    metadata::clear_active_sprite(metadata_obj, state, ctx);
+    assert!(!config.paused, EMarketPaused);
+    assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    content::clear_active(content, state, kind_registry_obj, kind, ctx);
 }
 
-public fun set_active_voice(
-    metadata_obj: &mut SoulMetadata,
-    state: &SoulState,
-    assets_book: &assets::SoulAssets,
-    asset_name: std::string::String,
-    version_index: u64,
-    download_policy: u8,
-    ctx: &TxContext,
-) {
-    let binding = metadata::new_asset_binding(asset_name, version_index, download_policy);
-    assert_binding_matches_assets(&binding, assets_book, ASSET_TYPE_AUDIO);
-    metadata::set_active_voice(metadata_obj, state, option::some(binding), ctx);
-}
-
-public fun clear_active_voice(
-    metadata_obj: &mut SoulMetadata,
-    state: &SoulState,
-    ctx: &TxContext,
-) {
-    metadata::clear_active_voice(metadata_obj, state, ctx);
-}
-
-/// Atomically create the SoulAssets root for a Soul that minted without
-/// initial sprite assets, append the first sprite version, write the
-/// sprite config + mood map metadata blobs, and bind the sprite as the
-/// active version — all in one PTB.
-///
-/// Required when the Soul was minted via the bare-mint path (no sprite
-/// blob at mint time) and the owner is now uploading the first sprite.
-/// The legacy `assets::append_version_as_owner` path requires an existing
-/// `SoulAssets` root and is unreachable in this case.
-public fun init_assets_and_append_sprite_as_owner(
+public fun set_state_config(
+    config: &MarketConfig,
     state: &mut SoulState,
-    metadata_obj: &mut SoulMetadata,
-    asset_name: std::string::String,
-    is_public: bool,
-    content_blob: Blob,
-    sprite_config: vector<u8>,
-    sprite_mood_map: vector<u8>,
-    sprite_config_key: std::string::String,
-    sprite_mood_map_key: std::string::String,
-    download_policy: u8,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): SoulAssets {
-    soul::assert_owner(state, ctx.sender());
-    assert!(soul::assets_id(state).is_none(), EAssetsRootAlreadyExists);
-
-    let mut assets_book = assets::create(soul::soul_id(state), ctx);
-    let version_index = assets::append_initial_version(
-        &mut assets_book,
-        asset_name,
-        is_public,
-        ASSET_TYPE_SPRITE,
-        content_blob,
-        clock,
-        ctx,
-    );
-
-    metadata::upsert_metadata_blob(metadata_obj, state, sprite_config_key, sprite_config, ctx);
-    metadata::upsert_metadata_blob(metadata_obj, state, sprite_mood_map_key, sprite_mood_map, ctx);
-
-    let binding = metadata::new_asset_binding(asset_name, version_index, download_policy);
-    assert_binding_matches_assets(&binding, &assets_book, ASSET_TYPE_SPRITE);
-    metadata::set_active_sprite(metadata_obj, state, option::some(binding), ctx);
-
-    soul::set_assets_id(state, object::id(&assets_book));
-    assets_book
+    key: String,
+    value: vector<u8>,
+    ctx: &TxContext,
+) {
+    assert!(!config.paused, EMarketPaused);
+    assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
+    let updater = ctx.sender();
+    let key_for_event = copy key;
+    soul::upsert_state_config(state, key, value);
+    soul::emit_state_config_upserted(state, updater, key_for_event);
 }
 
-public fun init_skills_and_append_as_owner(
+public fun delete_state_config(
+    config: &MarketConfig,
     state: &mut SoulState,
-    skill_name: std::string::String,
-    is_public: bool,
-    content_blob: Blob,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): SoulSkills {
-    soul::assert_owner(state, ctx.sender());
-    assert!(soul::skills_id(state).is_none(), ESkillsRootAlreadyExists);
-
-    let mut skills_book = skills::create(soul::soul_id(state), ctx);
-    let _ = skills::append_initial_version(
-        &mut skills_book,
-        skill_name,
-        is_public,
-        content_blob,
-        clock,
-        ctx,
-    );
-    soul::set_skills_id(state, object::id(&skills_book));
-    skills_book
+    key: String,
+    ctx: &TxContext,
+) {
+    assert!(!config.paused, EMarketPaused);
+    assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
+    let updater = ctx.sender();
+    let key_for_event = copy key;
+    soul::delete_state_config(state, key);
+    soul::emit_state_config_deleted(state, updater, key_for_event);
 }
+
+// ── Listing flows (Soul / Collection) ─────────────────────────────────
 
 public fun list_soul_fixed_price(
     config: &MarketConfig,
     registry: &KioskRegistry,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
-    state: &SoulState,
+    state: &mut SoulState,
     price: u64,
     ctx: &mut TxContext,
 ): SoulListing {
@@ -1099,6 +830,7 @@ public fun list_soul_fixed_price(
         ctx,
     );
     let listing_id = object::id(&listing);
+    soul::set_listed(state, true);
 
     event::emit(SoulListed {
         listing_id,
@@ -1117,7 +849,7 @@ public fun list_soul_fixed_price_with_collection(
     collection_obj: &SoulCollection,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
-    state: &SoulState,
+    state: &mut SoulState,
     price: u64,
     ctx: &mut TxContext,
 ): SoulListing {
@@ -1153,6 +885,7 @@ public fun list_soul_fixed_price_with_collection(
         ctx,
     );
     let listing_id = object::id(&listing);
+    soul::set_listed(state, true);
 
     event::emit(SoulListed {
         listing_id,
@@ -1168,16 +901,20 @@ public fun list_soul_fixed_price_with_collection(
 public fun cancel_soul_listing(
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
     listing: &mut SoulListing,
 ) {
     assert!(listing.is_active, EInactiveListing);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(object::id(kiosk_obj) == listing.seller_kiosk_id, EListingKioskMismatch);
     assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EKioskOwnerMismatch);
+    assert!(listing.state_id == object::id(state), EListingStateMismatch);
+    assert!(listing.soul_id == soul::soul_id(state), EListingStateMismatch);
 
     let purchase_cap = take_soul_purchase_cap(listing);
     kiosk::return_purchase_cap<Soul>(kiosk_obj, purchase_cap);
     listing.is_active = false;
+    soul::set_listed(state, false);
 
     event::emit(SoulListingCancelled {
         listing_id: object::id(listing),
@@ -1378,27 +1115,45 @@ public fun buy_collection_right_fixed_price(
     });
 }
 
-// ── Content access purchase (H-1 fix: pays current owner, I-2: platform fee) ──
-
-public fun purchase_content_access(
+// ── Paid-access purchase ──────────────────────────────────────────────
+//
+// Paid access is an **owner-revocable subscription**, not a perpetual or
+// term-guaranteed license:
+//
+// - The owner may revoke a buyer's `(grantee, kind)` entry at any time via
+//   `paid_access::revoke_access`; no on-chain refund is issued.
+// - Underlying content can still be soft-deleted (`content::delete_*`) or
+//   permanently purged (`content::purge_deleted_*`) by the owner; once
+//   purged, the Walrus blob is burned even if active paid entries exist.
+// - `SoulPaidAccessRevoked` / `ContentVersionDeleted` / `ContentVersionPurged`
+//   events let buyer-side indexers detect the situation and notify users;
+//   any refund or credit policy must run off-chain.
+//
+// Surfaces that take payment for a kind MUST disclose this trust boundary
+// (see CLAUDE.md `System Invariants`). Promoting paid access to a guaranteed
+// term would require introducing slot-level receipts, a delete-lock window,
+// or an explicit refund rail.
+public fun purchase_paid_access(
     config: &MarketConfig,
-    access_list: &mut content_access::ContentAccessList,
+    paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,
+    kind: u32,
     payment: Coin<USDC>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(!config.paused, EMarketPaused);
-    assert!(content_access::soul_id(access_list) == soul::soul_id(state), EAccessListStateMismatch);
+    assert!(paid_access::soul_id(paid_access_list) == soul::soul_id(state), EAccessListStateMismatch);
     assert!(
-        soul::access_list_id(state).contains(&object::id(access_list)),
+        soul::access_list_id(state).contains(&object::id(paid_access_list)),
         EAccessListLinkageMismatch,
     );
+    assert!(paid_access::has_kind_config(paid_access_list, kind), EPaidAccessKindMismatch);
 
-    let price = content_access::price_atomic(access_list);
-    assert!(price > 0, EContentAccessNotPurchasable);
-    assert!(ctx.sender() != soul::current_owner(state), EContentAccessOwnerCannotPurchase);
-    let (platform_fee, _, total) = quote_content_access_purchase(config, price);
+    let price = paid_access::kind_config_price_atomic(paid_access_list, kind);
+    assert!(price > 0, EPaidAccessNotPurchasable);
+    assert!(ctx.sender() != soul::current_owner(state), EPaidAccessOwnerCannotPurchase);
+    let (platform_fee, _, total) = quote_paid_access_purchase(config, price);
     assert!(payment.value() == total, EIncorrectPaymentAmount);
 
     let payment_recipient = soul::current_owner(state);
@@ -1410,17 +1165,80 @@ public fun purchase_content_access(
     transfer::public_transfer(owner_payment, payment_recipient);
 
     let buyer = ctx.sender();
-    content_access::record_purchase(access_list, state, buyer, price, clock);
+    paid_access::record_purchase(paid_access_list, state, buyer, kind, price, clock, ctx);
 
-    event::emit(ContentAccessPurchased {
+    event::emit(SoulPaidAccessPurchased {
         soul_id: soul::soul_id(state),
-        access_list_id: object::id(access_list),
+        paid_access_list_id: object::id(paid_access_list),
         buyer,
         price,
         platform_fee,
         payment_recipient,
     });
 }
+
+// ── Paid-access per-kind config wrappers ──────────────────────────────
+
+public fun configure_paid_access_kind(
+    config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
+    paid_access_list: &mut SoulPaidAccessList,
+    state: &SoulState,
+    kind: u32,
+    price_atomic: u64,
+    scope_mask: u64,
+    duration_ms: Option<u64>,
+    ctx: &TxContext,
+) {
+    assert!(!config.paused, EMarketPaused);
+    paid_access::configure_paid_access_kind(
+        paid_access_list,
+        state,
+        kind_registry_obj,
+        kind,
+        price_atomic,
+        scope_mask,
+        duration_ms,
+        ctx,
+    );
+}
+
+public fun update_paid_access_kind(
+    config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
+    paid_access_list: &mut SoulPaidAccessList,
+    state: &SoulState,
+    kind: u32,
+    price_atomic: u64,
+    scope_mask: u64,
+    duration_ms: Option<u64>,
+    ctx: &TxContext,
+) {
+    assert!(!config.paused, EMarketPaused);
+    paid_access::update_paid_access_kind(
+        paid_access_list,
+        state,
+        kind_registry_obj,
+        kind,
+        price_atomic,
+        scope_mask,
+        duration_ms,
+        ctx,
+    );
+}
+
+public fun delete_paid_access_kind(
+    config: &MarketConfig,
+    paid_access_list: &mut SoulPaidAccessList,
+    state: &SoulState,
+    kind: u32,
+    ctx: &TxContext,
+) {
+    assert!(!config.paused, EMarketPaused);
+    paid_access::delete_paid_access_kind(paid_access_list, state, kind, ctx);
+}
+
+// ── Listing storage cleanup ───────────────────────────────────────────
 
 /// Reclaim storage for a fully-settled `SoulListing` (cancelled or purchased).
 /// Any caller may invoke this — invalidated listings carry no value and
@@ -1430,6 +1248,7 @@ public fun delete_soul_listing(listing: SoulListing, ctx: &TxContext) {
     let listing_id = object::id(&listing);
     let SoulListing {
         id,
+        version: _,
         soul_id,
         state_id: _,
         seller,
@@ -1457,6 +1276,7 @@ public fun delete_collection_listing(listing: CollectionListing, ctx: &TxContext
     let listing_id = object::id(&listing);
     let CollectionListing {
         id,
+        version: _,
         collection_id,
         right_id: _,
         seller,
@@ -1475,39 +1295,23 @@ public fun delete_collection_listing(listing: CollectionListing, ctx: &TxContext
     });
 }
 
+// ── Mint impl (typed-content) ─────────────────────────────────────────
+
 fun mint_soul_in_personal_kiosk_impl(
     config: &MarketConfig,
+    kind_registry_obj: &KindRegistry,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
-    name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
-    protected_blob: Blob,
-    founding_memory_blob: Option<Blob>,
-    skills_blob: Option<Blob>,
-    initial_skill_name: std::string::String,
-    skills_public: bool,
-    asset_blob: Option<Blob>,
-    initial_asset_name: std::string::String,
-    asset_public: bool,
-    asset_type: u8,
-    initial_sprite_asset_name: Option<std::string::String>,
-    initial_sprite_version_index: Option<u64>,
-    initial_sprite_download_policy: Option<u8>,
-    initial_sprite_config: Option<vector<u8>>,
-    initial_sprite_mood_map: Option<vector<u8>>,
-    initial_voice_asset_name: Option<std::string::String>,
-    initial_voice_version_index: Option<u64>,
-    initial_voice_download_policy: Option<u8>,
-    initial_voice_config: Option<vector<u8>>,
-    content_access_price_atomic: u64,
-    content_access_default_scope_mask: u64,
-    content_access_default_duration_ms: Option<u64>,
+    name: String,
+    description: String,
+    image_url: String,
+    initial_content: vector<InitialContentEntry>,
+    initial_state_config: vector<StateConfigEntry>,
     creator_royalty_bps: u16,
     provenance_kind: u8,
-    origin_ref: Option<std::string::String>,
+    origin_ref: Option<String>,
     clock: &Clock,
     ctx: &mut TxContext,
 ): SoulState {
@@ -1518,6 +1322,11 @@ fun mint_soul_in_personal_kiosk_impl(
     );
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
 
+    // Phase 2 invariant: every mint must include the SOUL_DOC and at least
+    // one MEMORY entry. Validate before consuming any blobs so the caller
+    // gets back malformed PTBs cleanly (blobs stay owned by them).
+    assert_initial_content_well_formed(kind_registry_obj, &initial_content);
+
     let owner = personal_kiosk::owner(kiosk_obj);
     let kiosk_id = object::id(kiosk_obj);
     assert_registered_personal_kiosk(registry, owner, kiosk_id, object::id(personal_kiosk_cap));
@@ -1526,7 +1335,6 @@ fun mint_soul_in_personal_kiosk_impl(
         name,
         description,
         image_url,
-        protected_blob,
         owner,
         creator_royalty_bps,
         provenance_kind,
@@ -1534,113 +1342,38 @@ fun mint_soul_in_personal_kiosk_impl(
         ctx,
     );
     let soul_id = object::id(&soul_obj);
-    let mut memory_obj = memory::create(soul_id, ctx);
-    let memory_id = object::id(&memory_obj);
     let mut state = soul::create_state(
         soul_id,
         owner,
         creator_royalty_bps,
         owner,
         kiosk_id,
-        option::some(memory_id),
         ctx,
     );
     let state_id = object::id(&state);
-    let mut metadata_obj = metadata::create(soul_id, ctx);
-    let metadata_id = object::id(&metadata_obj);
-    soul::set_metadata_id(&mut state, metadata_id);
-    let mut founding_memory_blob = founding_memory_blob;
-    if (founding_memory_blob.is_some()) {
-        let blob = option::extract(&mut founding_memory_blob);
-        let _ = memory::append_founding(&mut memory_obj, owner, blob, clock, ctx);
-    };
-    founding_memory_blob.destroy_none();
 
-    let mut skills_blob = skills_blob;
-    if (skills_blob.is_some()) {
-        let skill_blob = option::extract(&mut skills_blob);
-        let mut skills_book = skills::create(soul_id, ctx);
-        let _ = skills::append_initial_version(
-            &mut skills_book,
-            initial_skill_name,
-            skills_public,
-            skill_blob,
-            clock,
-            ctx,
-        );
-        soul::set_skills_id(&mut state, object::id(&skills_book));
-        skills::share_skills(skills_book);
-    };
-    skills_blob.destroy_none();
+    let mut content_obj = content::create(soul_id, ctx);
+    let content_id = object::id(&content_obj);
+    soul::set_content_id(&mut state, content_id);
 
-    let mut initial_sprite_binding = resolve_initial_binding(
-        initial_sprite_asset_name,
-        initial_sprite_version_index,
-        initial_sprite_download_policy,
-    );
-    let mut initial_voice_binding = resolve_initial_binding(
-        initial_voice_asset_name,
-        initial_voice_version_index,
-        initial_voice_download_policy,
-    );
-
-    // Create SoulAssets if asset_blob provided
-    let mut asset_blob = asset_blob;
-    if (asset_blob.is_some()) {
-        let ab = option::extract(&mut asset_blob);
-        let mut assets_book = assets::create(soul_id, ctx);
-        let _ = assets::append_initial_version(
-            &mut assets_book,
-            initial_asset_name,
-            asset_public,
-            asset_type,
-            ab,
-            clock,
-            ctx,
-        );
-
-        if (initial_sprite_binding.is_some()) {
-            let sprite_binding = option::extract(&mut initial_sprite_binding);
-            assert_binding_matches_assets(&sprite_binding, &assets_book, ASSET_TYPE_SPRITE);
-            metadata::set_active_sprite(&mut metadata_obj, &state, option::some(sprite_binding), ctx);
-        };
-
-        if (initial_voice_binding.is_some()) {
-            let voice_binding = option::extract(&mut initial_voice_binding);
-            assert_binding_matches_assets(&voice_binding, &assets_book, ASSET_TYPE_AUDIO);
-            metadata::set_active_voice(&mut metadata_obj, &state, option::some(voice_binding), ctx);
-        };
-
-        soul::set_assets_id(&mut state, object::id(&assets_book));
-        assets::share_assets(assets_book);
-    } else {
-        assert!(initial_sprite_binding.is_none(), EMetadataAssetsMissing);
-        assert!(initial_voice_binding.is_none(), EMetadataAssetsMissing);
-    };
-    asset_blob.destroy_none();
-    initial_sprite_binding.destroy_none();
-    initial_voice_binding.destroy_none();
-
-    // Create ContentAccessList and bind to state (M-1 fix)
-    let access_list = content_access::create(
-        soul_id,
-        ctx.sender(),
-        content_access_price_atomic,
-        content_access_default_scope_mask,
-        content_access_default_duration_ms,
-        ctx,
-    );
-    soul::set_access_list_id(&mut state, object::id(&access_list));
-    content_access::share_access_list(access_list);
-    upsert_initial_metadata_blobs(
-        &mut metadata_obj,
+    apply_initial_state_config(&mut state, initial_state_config, owner);
+    apply_initial_content_entries(
+        &mut content_obj,
         &state,
-        initial_sprite_config,
-        initial_sprite_mood_map,
-        initial_voice_config,
+        kind_registry_obj,
+        initial_content,
+        clock,
         ctx,
     );
-    metadata::share_metadata(metadata_obj);
+    // Mint-time invariant: SOUL_DOC v0 + MEMORY v0 must be bound before
+    // the SoulState becomes visible. Any deviation aborts the whole tx.
+    content::assert_initial_content_complete(&state, &content_obj);
+
+    let paid_access_list = paid_access::create(soul_id, owner, ctx);
+    soul::set_access_list_id(&mut state, object::id(&paid_access_list));
+    paid_access::share_paid_access_list(paid_access_list);
+
+    content::share_content(content_obj);
 
     kiosk::lock<Soul>(
         kiosk_obj,
@@ -1648,13 +1381,12 @@ fun mint_soul_in_personal_kiosk_impl(
         soul_policy,
         soul_obj,
     );
-    soul::emit_created(&state, provenance_kind);
-    memory::share_memory(memory_obj);
+
+    soul::emit_created_after_content_bound(&state, provenance_kind);
     event::emit(SoulMintedToKiosk {
         soul_id,
         state_id,
-        memory_id,
-        metadata_id,
+        content_id,
         kiosk_id,
         owner,
         provenance_kind,
@@ -1663,11 +1395,148 @@ fun mint_soul_in_personal_kiosk_impl(
     state
 }
 
-// ─── Finalize wrappers ────────────────────────────────────────────────
-// These exist solely to share the unshared root objects produced by the
-// new fast-path mint/create/list/init ABI. PTBs compose primitive object
-// returns first (mint → bind, create → list, init_skills → append_more,
-// etc.) and call the matching finalize_* call last to share the root.
+fun apply_initial_state_config(
+    state: &mut SoulState,
+    initial_state_config: vector<StateConfigEntry>,
+    updater: address,
+) {
+    let mut entries = initial_state_config;
+    while (!entries.is_empty()) {
+        let entry = entries.pop_back();
+        let StateConfigEntry { key, value } = entry;
+        assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
+        let key_for_event = copy key;
+        soul::upsert_state_config(state, key, value);
+        soul::emit_state_config_upserted(state, updater, key_for_event);
+    };
+    entries.destroy_empty();
+}
+
+fun apply_initial_content_entries(
+    content_obj: &mut SoulContent,
+    state: &SoulState,
+    kind_registry_obj: &KindRegistry,
+    initial_content: vector<InitialContentEntry>,
+    clock: &Clock,
+    ctx: &TxContext,
+) {
+    let kind_soul_doc = kind_registry::kind_soul_doc();
+    let kind_memory = kind_registry::kind_memory();
+
+    // Forward iteration so version_index assignment is predictable for
+    // callers (lower indices appended first).
+    let mut entries = initial_content;
+    entries.reverse();
+    while (!entries.is_empty()) {
+        let entry = entries.pop_back();
+        let InitialContentEntry {
+            kind,
+            name,
+            slot_read_mode_mask,
+            download_policy,
+            set_active,
+            blob,
+        } = entry;
+
+        if (set_active) {
+            // Reject `set_active=true` for kinds that don't support active
+            // binding here — failing inside `content::set_active` would be
+            // less helpful at the wallet boundary.
+            let descriptor = kind_registry::borrow_descriptor(kind_registry_obj, kind);
+            assert!(
+                kind_registry::descriptor_has_active_binding(descriptor),
+                EInitialEntryActiveNotSupported,
+            );
+        };
+
+        let version_index = if (kind == kind_soul_doc || kind == kind_memory) {
+            // SOUL_DOC and MEMORY bypass the OP_APPEND gate (SOUL_DOC's
+            // descriptor declares op_mask=0 by design; MEMORY's founding
+            // entry must always be appendable at mint time even if
+            // OP_APPEND is later restricted).
+            content::append_initial_invariant_version(
+                content_obj,
+                kind_registry_obj,
+                kind,
+                copy name,
+                slot_read_mode_mask,
+                download_policy,
+                blob,
+                clock,
+            )
+        } else {
+            content::append_initial_user_version(
+                content_obj,
+                kind_registry_obj,
+                kind,
+                copy name,
+                slot_read_mode_mask,
+                download_policy,
+                blob,
+                clock,
+            )
+        };
+
+        if (set_active) {
+            // Mint flow uses owner-as-sender semantics; `set_active` only
+            // requires `state` for mismatch checks here, no owner assertion.
+            // Wallet-callable variants flow through `set_active_content`.
+            content::set_active(content_obj, state, kind_registry_obj, kind, name, version_index, ctx);
+        };
+    };
+    entries.destroy_empty();
+}
+
+/// Wallet-boundary preflight: enforces exactly one `(KIND_SOUL_DOC, "soul")`
+/// entry and at least one `(KIND_MEMORY, "default")` entry across the
+/// `initial_content` vector. Custom kinds in `initial_content` must have
+/// `OP_APPEND` set in their descriptor — otherwise the user could seed
+/// content into a kind that later forbids appends, escaping the op gate.
+fun assert_initial_content_well_formed(
+    registry: &KindRegistry,
+    entries: &vector<InitialContentEntry>,
+) {
+    let kind_soul_doc = kind_registry::kind_soul_doc();
+    let kind_memory = kind_registry::kind_memory();
+    let soul_doc_name = content::soul_doc_name();
+    let memory_name = content::memory_name();
+
+    let mut soul_doc_count: u64 = 0;
+    let mut memory_count: u64 = 0;
+    let len = entries.length();
+    let mut i = 0;
+    while (i < len) {
+        let entry = vector::borrow(entries, i);
+        let entry_kind = initial_entry_kind(entry);
+        let entry_name = initial_entry_name(entry);
+        if (entry_kind == kind_soul_doc) {
+            assert!(entry_name == &soul_doc_name, EInitialSoulDocNameMismatch);
+            soul_doc_count = soul_doc_count + 1;
+        } else if (entry_kind == kind_memory) {
+            assert!(entry_name == &memory_name, EInitialMemoryNameMismatch);
+            memory_count = memory_count + 1;
+        } else {
+            let descriptor = kind_registry::borrow_descriptor(registry, entry_kind);
+            assert!(
+                kind_registry::descriptor_op_mask(descriptor) & kind_registry::op_append() != 0,
+                EInitialKindOpNotAllowedAtMint,
+            );
+        };
+        i = i + 1;
+    };
+    assert!(soul_doc_count == 1, EInitialSoulDocCountMismatch);
+    assert!(memory_count >= 1, EInitialMemoryCountMismatch);
+}
+
+fun initial_entry_kind(entry: &InitialContentEntry): u32 {
+    entry.kind
+}
+
+fun initial_entry_name(entry: &InitialContentEntry): &String {
+    &entry.name
+}
+
+// ── Finalize wrappers ─────────────────────────────────────────────────
 
 public fun finalize_soul_state(state: SoulState) {
     soul::share_state(state)
@@ -1677,117 +1546,19 @@ public fun finalize_collection(collection_obj: SoulCollection) {
     collection::share_collection(collection_obj)
 }
 
-#[allow(lint(share_owned, custom_state_change))]
 public fun finalize_soul_listing(listing: SoulListing) {
     transfer::share_object(listing)
 }
 
-#[allow(lint(share_owned, custom_state_change))]
 public fun finalize_collection_listing(listing: CollectionListing) {
     transfer::share_object(listing)
 }
 
-public fun finalize_soul_skills(skills_book: SoulSkills) {
-    skills::share_skills(skills_book)
+public fun finalize_soul_content(content_obj: SoulContent) {
+    content::share_content(content_obj)
 }
 
-public fun finalize_soul_assets(assets_book: SoulAssets) {
-    assets::share_assets(assets_book)
-}
-
-fun resolve_initial_binding(
-    asset_name: Option<std::string::String>,
-    version_index: Option<u64>,
-    download_policy: Option<u8>,
-): Option<AssetBinding> {
-    let has_asset_name = asset_name.is_some();
-    let has_version_index = version_index.is_some();
-    let has_download_policy = download_policy.is_some();
-
-    if (!has_asset_name && !has_version_index && !has_download_policy) {
-        asset_name.destroy_none();
-        version_index.destroy_none();
-        download_policy.destroy_none();
-        return option::none()
-    };
-
-    assert!(has_asset_name && has_version_index && has_download_policy, EInvalidMetadataBinding);
-    option::some(metadata::new_asset_binding(
-        option::destroy_some(asset_name),
-        option::destroy_some(version_index),
-        option::destroy_some(download_policy),
-    ))
-}
-
-fun assert_binding_matches_assets(
-    binding: &AssetBinding,
-    assets_book: &assets::SoulAssets,
-    expected_asset_type: u8,
-) {
-    let asset_name = *metadata::asset_name(binding);
-    let version_index = metadata::version_index(binding);
-    let download_policy = metadata::download_policy(binding);
-
-    assert!(!assets::version_is_deleted(assets_book, copy asset_name, version_index), EInvalidMetadataBinding);
-    assert!(assets::version_asset_type(assets_book, copy asset_name, version_index) == expected_asset_type, EInvalidMetadataBinding);
-
-    if (download_policy == metadata::download_policy_public()) {
-        assert!(assets::version_is_public(assets_book, asset_name, version_index), EInvalidMetadataBinding);
-    } else {
-        assert!(!assets::version_is_public(assets_book, asset_name, version_index), EInvalidMetadataBinding);
-    };
-}
-
-fun upsert_initial_metadata_blobs(
-    metadata_obj: &mut SoulMetadata,
-    state: &SoulState,
-    initial_sprite_config: Option<vector<u8>>,
-    initial_sprite_mood_map: Option<vector<u8>>,
-    initial_voice_config: Option<vector<u8>>,
-    ctx: &TxContext,
-) {
-    upsert_initial_metadata_blob_if_some(
-        metadata_obj,
-        state,
-        string::utf8(b"sprite.config.v1"),
-        initial_sprite_config,
-        ctx,
-    );
-    upsert_initial_metadata_blob_if_some(
-        metadata_obj,
-        state,
-        string::utf8(b"sprite.mood_map.v1"),
-        initial_sprite_mood_map,
-        ctx,
-    );
-    upsert_initial_metadata_blob_if_some(
-        metadata_obj,
-        state,
-        string::utf8(b"voice.config.v1"),
-        initial_voice_config,
-        ctx,
-    );
-}
-
-fun upsert_initial_metadata_blob_if_some(
-    metadata_obj: &mut SoulMetadata,
-    state: &SoulState,
-    key: std::string::String,
-    blob: Option<vector<u8>>,
-    ctx: &TxContext,
-) {
-    if (blob.is_some()) {
-        metadata::upsert_metadata_blob(
-            metadata_obj,
-            state,
-            key,
-            option::destroy_some(blob),
-            ctx,
-        );
-    } else {
-        blob.destroy_none();
-    };
-}
+// ── Listing helpers ──────────────────────────────────────────────────
 
 fun create_soul_listing(
     config: &MarketConfig,
@@ -1818,6 +1589,7 @@ fun create_soul_listing(
 
     SoulListing {
         id: object::new(ctx),
+        version: VERSION,
         soul_id,
         state_id: object::id(state),
         seller: personal_kiosk::owner(kiosk_obj),
@@ -1854,6 +1626,7 @@ fun create_collection_listing(
 
     CollectionListing {
         id: object::new(ctx),
+        version: VERSION,
         collection_id: object::id(collection_obj),
         right_id,
         seller: personal_kiosk::owner(kiosk_obj),
@@ -1928,6 +1701,7 @@ fun buy_soul_impl(
 
     grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
     soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
+    soul::set_listed(state, false);
     kiosk::lock<Soul>(
         buyer_kiosk,
         personal_kiosk::borrow(buyer_personal_kiosk_cap),
@@ -1965,7 +1739,11 @@ fun take_collection_purchase_cap(
 }
 
 fun bps_amount(price: u64, bps: u16): u64 {
-    (((price as u128) * (bps as u128)) / 10_000) as u64
+    let numerator = (price as u128) * (bps as u128);
+    if (numerator == 0) {
+        return 0
+    };
+    (((numerator + 9_999) / 10_000) as u64)
 }
 
 fun register_personal_kiosk(
@@ -1980,6 +1758,7 @@ fun register_personal_kiosk(
         &mut registry.id,
         key,
         PersonalKioskRegistration {
+            version: VERSION,
             kiosk_id,
             kiosk_cap_id,
         },
@@ -2011,6 +1790,7 @@ fun insert_or_assert_personal_kiosk_registration(
             &mut registry.id,
             key,
             PersonalKioskRegistration {
+                version: VERSION,
                 kiosk_id,
                 kiosk_cap_id,
             },
@@ -2043,11 +1823,7 @@ fun assert_registered_personal_kiosk(
     assert!(registration.kiosk_cap_id == kiosk_cap_id, EPersonalKioskCapMismatch);
 }
 
-fun assert_tracked_upgrade_cap(upgrade_state: &MarketUpgradeState, upgrade_cap_id: ID) {
-    assert!(upgrade_state.tracked_upgrade_cap_id.is_some(), EUpgradeCapNotTracked);
-    assert!(*upgrade_state.tracked_upgrade_cap_id.borrow() == upgrade_cap_id, EUpgradeCapMismatch);
-}
-
+// TransferPolicy must stay shared so admins can add/remove Kiosk rules later.
 #[allow(lint(share_owned))]
 fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
     let (mut soul_policy, soul_policy_cap) = transfer_policy::new<Soul>(&publisher, ctx);
@@ -2055,26 +1831,17 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
         transfer_policy::new<SoulCollectionRight>(&publisher, ctx);
     let config = MarketConfig {
         id: object::new(ctx),
+        version: VERSION,
         fee_recipient: admin,
         platform_fee_bps: DEFAULT_PLATFORM_FEE_BPS,
         paused: false,
     };
     let registry = KioskRegistry {
         id: object::new(ctx),
-    };
-    let upgrade_state = MarketUpgradeState {
-        id: object::new(ctx),
-        tracked_package_id: option::none(),
-        tracked_upgrade_cap_id: option::none(),
-        tracked_upgrade_policy: package::compatible_policy(),
-        tracked_upgrade_version: 0,
-        upgrade_cap_live: false,
-        immutable: false,
-        pending_upgrade: false,
+        version: VERSION,
     };
     let config_id = object::id(&config);
     let registry_id = object::id(&registry);
-    let upgrade_state_id = object::id(&upgrade_state);
     let soul_policy_id = object::id(&soul_policy);
     let collection_policy_id = object::id(&collection_policy);
     let admin_cap = MarketAdminCap { id: object::new(ctx) };
@@ -2089,7 +1856,6 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
 
     transfer::share_object(config);
     transfer::share_object(registry);
-    transfer::share_object(upgrade_state);
     transfer::public_share_object(soul_policy);
     transfer::public_share_object(collection_policy);
     transfer::transfer(admin_cap, admin);
@@ -2104,12 +1870,22 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
         collection_policy_id,
         admin,
     });
-    event::emit(MarketUpgradeStateInitialized {
-        upgrade_state_id,
-    });
 }
 
 #[test_only]
 public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
     init_impl(package::claim(MARKET {}, ctx), recipient, ctx);
+}
+
+#[test_only]
+public fun destroy_initial_content_entry_for_testing(entry: InitialContentEntry): Blob {
+    let InitialContentEntry {
+        kind: _,
+        name: _,
+        slot_read_mode_mask: _,
+        download_policy: _,
+        set_active: _,
+        blob,
+    } = entry;
+    blob
 }

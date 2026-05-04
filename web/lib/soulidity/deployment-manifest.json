@@ -7,8 +7,7 @@
     "collectionTransferPolicyId": "0x97bf30a371ab12bd3184357cb69dd0ec8c1503ab730390166c4279173a8851db",
     "paymentCoinType": "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC",
     "publishTxDigest": "HKenfarHCL6jnrqS2CosAkVNc7zBTTVXfpby5RB62i7r",
-    "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b",
-    "upgradeStateId": "0x616117e725110550e03490bf189e0c5a9a01c2383e819eff2092b58560355f2c"
+    "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b"
   },
   "mainnet": {
     "packageId": "0x6d7d0230f9f87572d80090651f6c99b46f15b016f330642d9b10fbb93b5c41de",
@@ -19,7 +18,6 @@
     "paymentCoinType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
     "publishTxDigest": "GFqzwHHMRRgo36p99etXocpE5vmzYunckN4cKCqdkaDk",
     "upgradeCapId": "0xd45f1e7647a463be2bac2cc990bf9ce8b91702ccca6a33b414717854a6b0073b",
-    "upgradeStateId": "0xbd7ee8702bf3e363fad93b3c34c2489c4cc82805bd77354f420f37662b686dd4",
     "marketAdminCapId": "0x619465f10883ef9ec3fcee13554c11d28e4626b5212dd24d8bc30853806c5042",
     "soulPolicyCapId": "0x9f0f372c64e9f50216109a92ee7a97ecf3ca062d5ea58be3ed7a64aeda46569c",
     "collectionPolicyCapId": "0x8dbd1b29eccbd31ca611aa9442d405751131d56797d939053d9af70421d321ce",

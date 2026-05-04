@@ -503,7 +503,7 @@ Post-handoff checks:
 
 - `web/lib/soulidity/deployment-manifest.json` mainnet entry has the new package and multisig owner.
 - `move/soulidity/Published.toml` has the new `[published.mainnet]` package and upgrade cap.
-- `MarketUpgradeState.tracked_upgrade_cap_id` points to the current upgrade cap when tracking is enabled.
+- `MarketUpgradeState` is no longer part of the package; upgrade governance is verified by current `UpgradeCap` ownership.
 - Web production build reads the manifest entry, not parallel public env IDs.
 
 ### 8. Rollback

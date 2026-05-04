@@ -323,7 +323,7 @@ Response 增加只读字段，方便成功页/后续 UI 使用：
    NEXT_PUBLIC_SUI_NETWORK=testnet npm run publish:soulidity -- --dry-run --payment-coin-type=<testnet-usdc-type>
    NEXT_PUBLIC_SUI_NETWORK=testnet npm run publish:soulidity -- --payment-coin-type=<testnet-usdc-type>
    ```
-   脚本必须写回 `web/lib/soulidity/deployment-manifest.json` 和 `move/soulidity/Published.toml`；发布后用 diff 复核 packageId / policy / display / upgradeState 等字段。
+   脚本必须写回 `web/lib/soulidity/deployment-manifest.json` 和 `move/soulidity/Published.toml`；发布后用 diff 复核 packageId / policy / display / upgradeCap / KindRegistry 等字段。
 3. **Mainnet live collection mandatory pre-flight**：
    - 在任何 mainnet `--mainnet-e2e --dry-run` / publish 之前，新增并运行 `scripts/precheck-live-soulidity-collections.ts`（或等价 npm script）。
    - precheck 输入：当前 mainnet packageId、当前 production DB URL、已知 deployer / multisig / holder 地址列表。

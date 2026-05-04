@@ -4,6 +4,7 @@ import { getRequiredSoulidityEnv } from '@/lib/soulidity/env'
 export function buildDelistSoulTx(params: {
   currentKioskId: string
   currentKioskCapOnChainId: string
+  stateObjectId: string
   listingObjectId: string
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
@@ -13,6 +14,7 @@ export function buildDelistSoulTx(params: {
     arguments: [
       tx.object(params.currentKioskId),
       tx.object(params.currentKioskCapOnChainId),
+      tx.object(params.stateObjectId),
       tx.object(params.listingObjectId),
     ],
   })
