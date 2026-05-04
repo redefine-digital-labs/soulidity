@@ -1,0 +1,24 @@
+Unused files (9)
+scripts/phase2-finish-skipped.ts              
+scripts/phase2-mainnet-execute-rest.ts        
+scripts/phase2-retry-failed.ts                
+scripts/precheck-live-soulidity-collections.ts
+scripts/reset-soulidity-mirror.ts             
+web/components/ui/alert.tsx                   
+web/lib/soulidity/persona-sprite.ts           
+web/lib/soulidity/tx/kiosk-management.ts      
+web/lib/soulidity/walrus-blob.ts              
+Configuration hints (13)
+…tor,producer,publisher}/run.ts, …]                            knip.json  Remove, or move unused top-level entry to one…
+[src/**/*.{ts,tsx}, …]                                         knip.json  Remove, or move unused top-level project to o…
+generated/prisma/**                                            knip.json  Remove from ignore                            
+docs/legacy/**                                                 knip.json  Remove from ignore                            
+web/.next/**                                                   knip.json  Remove from ignore                            
+desktop/**/dist/**                                             knip.json  Remove from ignore                            
+desktop/**/out/**                                              knip.json  Remove from ignore                            
+desktop/apps/desktop/release/**                                knip.json  Remove from ignore                            
+lib/soulidity/asset-access.ts        web                       knip.json  Refine entry pattern (no matches)             
+src/index.ts                         desktop/packages/backend  knip.json  Remove redundant entry pattern                
+src/index.ts                         desktop/packages/shared   knip.json  Remove redundant entry pattern                
+instrumentation-client.ts            web                       knip.json  Remove redundant entry pattern                
+proxy.ts                             web                       knip.json  Remove redundant entry pattern                
