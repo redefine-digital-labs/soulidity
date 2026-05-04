@@ -17,9 +17,9 @@
     "read-excel-file": "9.0.6"
   },
   "devDependencies": {
-    "@types/node": "^20.19.37",
-    "write-excel-file": "4.0.2",
+    "@types/node": "^25.6.0",
     "tsx": "^4.0.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "write-excel-file": "4.0.2"
   }
 }

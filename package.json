@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "cleanup": "bash scripts/cleanup-artifacts.sh",
     "dev": "tsx src/main.ts",
     "test": "npm run validate:v6-plan && npm run prisma:generate && vitest run",
     "test:watch": "vitest",
@@ -45,12 +46,13 @@
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
-    "@types/node": "^22.19.17",
+    "@types/node": "^25.6.0",
     "@types/node-cron": "^3.0.11",
     "@types/node-fetch": "^2.6.13",
     "@types/pg": "^8.20.0",
     "@types/xml2js": "^0.4.14",
     "jsdom": "^29.0.2",
+    "knip": "^6.11.0",
     "tsx": "^4.19.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.5"
