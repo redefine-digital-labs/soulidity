@@ -1,3 +1,4 @@
+import withBundleAnalyzer from '@next/bundle-analyzer'
 import dotenv from 'dotenv'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -38,6 +39,12 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactCompiler: true,
   serverExternalPackages: ['@prisma/client'],
+  compiler: {
+    removeConsole:
+      process.env.NODE_ENV === 'production'
+        ? { exclude: ['error', 'warn'] }
+        : false,
+  },
   env: {
     NEXT_PUBLIC_WALRUS_WASM_VERSION: walrusWasmVersion,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim() || '',
@@ -69,4 +76,6 @@ const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
 }
 
-export default nextConfig
+const bundleAnalyzer = withBundleAnalyzer({ enabled: process.env.ANALYZE === 'true' })
+
+export default bundleAnalyzer(nextConfig)
