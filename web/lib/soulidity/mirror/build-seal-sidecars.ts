@@ -15,7 +15,7 @@
  * `sealEncrypted=false`.
  */
 import { parseSealEnvelopeSidecar } from '@/lib/services/seal-crypto'
-import { isValidContentDocumentId, type SealEnvelopeSidecar } from '@soulidity/sdk'
+import { isContentDocumentIdForVersion, type SealEnvelopeSidecar } from '@soulidity/sdk'
 
 export class SealSidecarSyncConfigError extends Error {}
 
@@ -70,9 +70,14 @@ export function buildSyncSealSidecars(
           `content version (kind=${entry.kind}, name=${entry.name}, version=${entry.versionIndex}) is sealEncrypted but no sidecar was provided`,
         )
       }
-      if (!isValidContentDocumentId(provided.documentId)) {
+      if (!isContentDocumentIdForVersion(provided.documentId, {
+        contentObjectId: input.contentObjectId,
+        kind: entry.kind,
+        name: entry.name,
+        versionIndex: entry.versionIndex,
+      })) {
         throw new SealSidecarSyncConfigError(
-          `content sidecar documentId is not a soul-content: id (kind=${entry.kind}, name=${entry.name}, version=${entry.versionIndex})`,
+          `content sidecar documentId does not match content version (kind=${entry.kind}, name=${entry.name}, version=${entry.versionIndex})`,
         )
       }
       return {

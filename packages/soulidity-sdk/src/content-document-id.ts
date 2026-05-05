@@ -84,6 +84,16 @@ export interface GenerateContentDocumentIdParams {
   nonce?: Uint8Array
 }
 
+export type ContentDocumentVersionParams = Omit<GenerateContentDocumentIdParams, 'nonce'>
+
+function bytesEqualAt(bytes: Uint8Array, offset: number, expected: Uint8Array): boolean {
+  if (offset + expected.length > bytes.length) return false
+  for (let index = 0; index < expected.length; index += 1) {
+    if (bytes[offset + index] !== expected[index]) return false
+  }
+  return true
+}
+
 /**
  * Build a Phase 2 content document id (raw bytes) matching the Move
  * `assert_matching_document_id` layout.
@@ -152,5 +162,49 @@ export function isValidContentDocumentId(value: string): boolean {
     if (bytes[i] !== DOMAIN_BYTES[i]) return false
   }
   if (bytes[DOMAIN_BYTES.length] !== DOCUMENT_ID_VERSION) return false
+  return true
+}
+
+export function isContentDocumentIdForVersion(
+  value: string,
+  params: ContentDocumentVersionParams,
+): boolean {
+  let bytes: Uint8Array
+  let contentIdBytes: Uint8Array
+  let kindBytes: Uint8Array
+  let versionIndexBytes: Uint8Array
+  try {
+    bytes = hexToBytes(value)
+    contentIdBytes = hexToBytes(params.contentObjectId)
+    kindBytes = u32ToBigEndian(params.kind)
+    versionIndexBytes = u64ToBigEndian(params.versionIndex)
+  } catch {
+    return false
+  }
+  if (contentIdBytes.length !== CONTENT_OBJECT_ID_BYTES) return false
+
+  const nameBytes = new TextEncoder().encode(params.name)
+  const expectedLength = DOMAIN_BYTES.length
+    + 1
+    + KIND_BYTES
+    + CONTENT_OBJECT_ID_BYTES
+    + nameBytes.length
+    + 1
+    + VERSION_INDEX_BYTES
+    + NONCE_BYTES
+  if (bytes.length !== expectedLength) return false
+
+  let offset = 0
+  if (!bytesEqualAt(bytes, offset, DOMAIN_BYTES)) return false
+  offset += DOMAIN_BYTES.length
+  if (bytes[offset++] !== DOCUMENT_ID_VERSION) return false
+  if (!bytesEqualAt(bytes, offset, kindBytes)) return false
+  offset += KIND_BYTES
+  if (!bytesEqualAt(bytes, offset, contentIdBytes)) return false
+  offset += CONTENT_OBJECT_ID_BYTES
+  if (!bytesEqualAt(bytes, offset, nameBytes)) return false
+  offset += nameBytes.length
+  if (bytes[offset++] !== 0x00) return false
+  if (!bytesEqualAt(bytes, offset, versionIndexBytes)) return false
   return true
 }

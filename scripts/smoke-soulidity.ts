@@ -45,6 +45,7 @@ import { resolve } from 'node:path'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
+import { extractAllContentVersionAppendedEvents, getRequiredSoulidityEnv } from '@soulidity/sdk'
 
 // Load smoke wallets / scenario from `.env.soulidity-smoke` (or an explicit
 // override via SOULIDITY_SMOKE_ENV_FILE). Documented in `.env.soulidity-smoke
@@ -148,11 +149,23 @@ interface SmokeJsonAssertion {
   present?: boolean
 }
 
+interface SmokeContentVersionEventAssertion {
+  kind?: number
+  name?: string
+  versionIndex?: number
+  count: number
+}
+
+interface SmokeEventAssertions {
+  contentVersions?: SmokeContentVersionEventAssertion[]
+}
+
 interface SmokeStep {
   label: string
   signer: SmokeSigner
   transactionBase64: string
   mirror?: SmokeMirrorRequest | SmokeMirrorRequest[]
+  assertEvents?: SmokeEventAssertions
 }
 
 interface SmokeRow {
@@ -163,6 +176,34 @@ interface SmokeRow {
 
 interface SmokeScenario {
   rows: SmokeRow[]
+}
+
+function validateSmokeEventAssertions(rowName: string, step: SmokeStep) {
+  const assertions = step.assertEvents
+  if (!assertions) return
+  if (
+    assertions.contentVersions !== undefined
+    && !Array.isArray(assertions.contentVersions)
+  ) {
+    throw new Error(`${rowName}/${step.label}: assertEvents.contentVersions must be an array`)
+  }
+  for (const [index, assertion] of (assertions.contentVersions ?? []).entries()) {
+    if (!Number.isInteger(assertion.count) || assertion.count < 0) {
+      throw new Error(`${rowName}/${step.label}: assertEvents.contentVersions[${index}].count must be a non-negative integer`)
+    }
+    if (assertion.kind !== undefined && !Number.isInteger(assertion.kind)) {
+      throw new Error(`${rowName}/${step.label}: assertEvents.contentVersions[${index}].kind must be an integer`)
+    }
+    if (assertion.name !== undefined && typeof assertion.name !== 'string') {
+      throw new Error(`${rowName}/${step.label}: assertEvents.contentVersions[${index}].name must be a string`)
+    }
+    if (assertion.versionIndex !== undefined && !Number.isInteger(assertion.versionIndex)) {
+      throw new Error(`${rowName}/${step.label}: assertEvents.contentVersions[${index}].versionIndex must be an integer`)
+    }
+    if (assertion.kind === undefined && assertion.name === undefined && assertion.versionIndex === undefined) {
+      throw new Error(`${rowName}/${step.label}: assertEvents.contentVersions[${index}] must filter by kind, name, or versionIndex`)
+    }
+  }
 }
 
 function readSmokeScenario(): SmokeScenario {
@@ -193,6 +234,7 @@ function readSmokeScenario(): SmokeScenario {
       if (!['publisher', 'buyer', 'agent'].includes(step.signer)) {
         throw new Error(`${row.name}/${step.label}: unsupported signer ${step.signer}`)
       }
+      validateSmokeEventAssertions(row.name, step)
     }
   }
   return parsed
@@ -281,6 +323,39 @@ function assertMirrorBody(payload: unknown, assertions: SmokeJsonAssertion[], mi
   }
 }
 
+function formatContentVersionEventAssertion(assertion: SmokeContentVersionEventAssertion) {
+  return [
+    assertion.kind === undefined ? null : `kind=${assertion.kind}`,
+    assertion.name === undefined ? null : `name=${assertion.name}`,
+    assertion.versionIndex === undefined ? null : `versionIndex=${assertion.versionIndex}`,
+  ].filter(Boolean).join(',')
+}
+
+function assertSmokeEvents(
+  row: SmokeRow,
+  step: SmokeStep,
+  transaction: Parameters<typeof extractAllContentVersionAppendedEvents>[0],
+) {
+  const assertions = step.assertEvents
+  if (!assertions) return
+  if (assertions.contentVersions?.length) {
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const contentVersionEvents = extractAllContentVersionAppendedEvents(transaction, packageId)
+    for (const assertion of assertions.contentVersions) {
+      const actual = contentVersionEvents.filter((event) => (
+        (assertion.kind === undefined || event.kind === assertion.kind)
+        && (assertion.name === undefined || event.name === assertion.name)
+        && (assertion.versionIndex === undefined || event.versionIndex === assertion.versionIndex)
+      )).length
+      if (actual !== assertion.count) {
+        throw new Error(
+          `${row.name}/${step.label}: ContentVersionAppended ${formatContentVersionEventAssertion(assertion)} expected count ${assertion.count}, got ${actual}`,
+        )
+      }
+    }
+  }
+}
+
 async function assertMirrorOk(c: RunContext, mirror: SmokeMirrorRequest, txDigest: string, signer: SmokeSigner) {
   const body = substituteDigest(mirror.body ?? { txDigest }, txDigest)
   const res = await fetch(new URL(mirror.path, c.webBaseUrl), {
@@ -327,6 +402,7 @@ async function runSmokeStep(c: RunContext, row: SmokeRow, step: SmokeStep, trace
     throw new Error(`${row.name}/${step.label}: tx settled with failure: ${result.effects?.status?.error ?? 'unknown'}`)
   }
   trace.signatures += 1
+  assertSmokeEvents(row, step, result)
   const mirrors = Array.isArray(step.mirror) ? step.mirror : step.mirror ? [step.mirror] : []
   for (const mirror of mirrors) {
     await assertMirrorOk(c, mirror, result.digest, step.signer)

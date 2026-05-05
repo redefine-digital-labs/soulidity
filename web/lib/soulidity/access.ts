@@ -22,7 +22,6 @@
 import { prisma } from '@/lib/prisma'
 import { getBlobUrl } from '@soulidity/sdk'
 import { getSealRuntimeConfig, getSealSessionTtlMinutes } from '@/lib/services/seal'
-import { generateContentDocumentIdHex } from '@soulidity/sdk'
 import {
   CANONICAL_MEMORY_NAME,
   CANONICAL_SOUL_DOC_NAME,
@@ -147,12 +146,7 @@ function buildSealedResponse(params: {
       functionName: params.functionName,
       soulGrantObjectId: params.soulGrantObjectId,
       paidAccessListOnChainId: params.paidAccessListOnChainId,
-      documentIdHex: generateContentDocumentIdHex({
-        contentObjectId: params.contentObjectId,
-        kind: params.version.kind,
-        name: params.version.name,
-        versionIndex: params.version.versionIndex,
-      }),
+      documentIdHex: params.version.sealSidecar.documentId,
     },
     seal: getSealRuntimeConfig(),
     sealSidecar: params.version.sealSidecar,

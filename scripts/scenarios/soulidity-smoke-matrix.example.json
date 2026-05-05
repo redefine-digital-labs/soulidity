@@ -1,5 +1,5 @@
 {
-  "_comment": "Soulidity 2-sig fast-path acceptance matrix (11 rows). The harness scripts/smoke-soulidity.ts is a PTB replayer: each step's transactionBase64 must be a real, pre-built PTB encoded as base64. The operator builds these PTBs ahead of time using the SDK builders in web/lib/soulidity/tx/ (e.g. via a one-off Node script that wires builders + smoke wallet keypairs against the testnet/mainnet package id from the deployment manifest), then drops the base64 strings into the placeholders below. The {{txDigest}} token in mirror bodies is substituted at runtime with the digest of the just-signed step. Mirror paths must reference live first-party routes under web/app/api (collection PTB1 mirrors hit /api/collections/create which accepts { txDigest, floorPriceAtomic? }; supply floorPriceAtomic when the collection enforces an off-chain floor). Mirror auth is picked per step.signer: publisher rows use SMOKE_PUBLISHER_*, buyer rows use SMOKE_BUYER_*, agent rows use SMOKE_AGENT_* (see .env.soulidity-smoke.example). Replace every __PLACEHOLDER__ before running. /api/souls/publish/batch syncBodies entries must be one-per-soul (length === expectedSoulCount); the operator fills each __SOUL_ON_CHAIN_ID_N__ with the actual minted soul id from the same PTB. The batch route ALWAYS requires a per-soul `sealSidecar` (Soul content is uploaded encrypted by web/lib/hooks/use-collection-publish.ts) and ALWAYS requires `memorySealSidecar` for souls that emit a founding-memory event (memory blob is also uploaded encrypted) — replace the __REPLACE_WITH_*_SEAL_SIDECAR_N__ placeholders with the real Seal envelope sidecars (shape: SealEnvelopeSidecar from web/lib/services/seal-crypto.ts) produced by the Walrus upload pipeline; the route returns 422 if either is missing. Add `assetsSealSidecar` separately on entries whose initial asset version is private (route also returns 422 then). Add `skillsSealSidecar` separately on entries whose initial skill version is private (skills uploaded with `skillsVisibility: 'private'` by use-collection-publish.ts emit a private SkillVersionAppended event and the route returns 422 if the per-soul `skillsSealSidecar` is missing). The single-Soul /api/souls/publish route enforces the same fail-closed contract: every body ALWAYS requires `sealSidecar` (the create flow at web/app/create/gas/page.tsx uploads the Soul character file as encrypted), ALWAYS requires `memorySealSidecar` when the PTB emits a founding-memory event, and ALWAYS requires `skillsSealSidecar` when the PTB appends a private initial skill version — replace the __REPLACE_WITH_SOUL_SEAL_SIDECAR__ / __REPLACE_WITH_MEMORY_SEAL_SIDECAR__ / __REPLACE_WITH_SKILLS_SEAL_SIDECAR__ placeholders below with the real envelopes. Plan source: docs/plans/2026-05-03-soulidity-2sigs-fast-path.md sections 7a/7b.",
+  "_comment": "Soulidity 2-sig fast-path acceptance matrix (11 rows). The harness scripts/smoke-soulidity.ts is a PTB replayer: each step's transactionBase64 must be a real, pre-built PTB encoded as base64. The operator builds these PTBs ahead of time using the SDK builders in web/lib/soulidity/tx/ (e.g. via a one-off Node script that wires builders + smoke wallet keypairs against the testnet/mainnet package id from the deployment manifest), then drops the base64 strings into the placeholders below. The {{txDigest}} token in mirror bodies is substituted at runtime with the digest of the just-signed step. Mirror paths must reference live first-party routes under web/app/api (collection PTB1 mirrors hit /api/collections/create which accepts { txDigest, floorPriceAtomic? }; supply floorPriceAtomic when the collection enforces an off-chain floor). Mirror auth is picked per step.signer: publisher rows use SMOKE_PUBLISHER_*, buyer rows use SMOKE_BUYER_*, agent rows use SMOKE_AGENT_* (see .env.soulidity-smoke.example). Replace every __PLACEHOLDER__ before running. /api/souls/publish and /api/souls/publish/batch mirror bodies use contentSidecars[] entries keyed to emitted ContentVersionAppended events. Each entry shape is { kind, name, versionIndex, sidecar }. Initial mint examples include KIND_SOUL_DOC=0 name \"soul\" versionIndex=0 and KIND_MEMORY=1 name \"default\" versionIndex=0; add KIND_SKILL=2 name \"default\" versionIndex=0 only when the PTB emits an initial skill version. Replace __REPLACE_WITH_*_CONTENT_SIDECAR*__ placeholders with the real Seal envelope sidecars produced by the Walrus upload pipeline, or null for pure-public slots. /api/souls/publish/batch syncBodies entries must be one-per-soul (length === expectedSoulCount); the operator fills each __SOUL_ON_CHAIN_ID_N__ with the actual minted soul id from the same PTB. Standalone skills/assets append rows are PTB-only because current web/app/api has no first-party mirror route for those operations. Plan source: docs/plans/2026-05-03-soulidity-2sigs-fast-path.md sections 7a/7b.",
   "rows": [
     {
       "name": "empty-collection",
@@ -65,9 +65,9 @@
                 "expectedSoulCount": 3,
                 "expectedBindCount": 3,
                 "syncBodies": [
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_1__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_1__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_1__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_2__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_2__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_2__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_3__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_3__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_3__": true } }
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_1__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_1__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_1__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_2__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_2__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_2__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_3__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_3__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_3__": true } }] }
                 ]
               },
               "assertBody": [
@@ -92,7 +92,7 @@
           "signer": "publisher",
           "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
           "mirror": [
-            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR__": true } } },
+            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "soulOnChainId": "__SOUL_ON_CHAIN_ID__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR__": true } }] } },
             { "path": "/api/collections/__COLLECTION_ON_CHAIN_ID__/add-soul", "body": { "txDigest": "{{txDigest}}", "soulOnChainId": "__SOUL_ON_CHAIN_ID__" } }
           ]
         }
@@ -112,7 +112,7 @@
           "signer": "publisher",
           "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
           "mirror": [
-            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR__": true } } },
+            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "soulOnChainId": "__SOUL_ON_CHAIN_ID__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR__": true } }] } },
             { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/list", "body": { "txDigest": "{{txDigest}}" } }
           ]
         }
@@ -132,7 +132,7 @@
           "signer": "publisher",
           "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
           "mirror": [
-            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR__": true } } },
+            { "path": "/api/souls/publish", "body": { "txDigest": "{{txDigest}}", "soulOnChainId": "__SOUL_ON_CHAIN_ID__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR__": true } }] } },
             { "path": "/api/collections/__COLLECTION_ON_CHAIN_ID__/add-soul", "body": { "txDigest": "{{txDigest}}", "soulOnChainId": "__SOUL_ON_CHAIN_ID__" } },
             { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/list", "body": { "txDigest": "{{txDigest}}" } }
           ]
@@ -152,9 +152,12 @@
           "label": "ptb2-init-and-append-skills",
           "signer": "publisher",
           "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
-          "mirror": [
-            { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/skills", "body": { "txDigest": "{{txDigest}}" } }
-          ]
+          "_comment": "PTB-only: current web/app/api has no first-party mirror route for standalone skill-root appends; verify the chain effect directly from emitted ContentVersionAppended events.",
+          "assertEvents": {
+            "contentVersions": [
+              { "kind": 2, "count": 3 }
+            ]
+          }
         }
       ]
     },
@@ -171,9 +174,12 @@
           "label": "ptb2-init-and-append-assets",
           "signer": "publisher",
           "transactionBase64": "__REPLACE_WITH_BASE64_PTB2__",
-          "mirror": [
-            { "path": "/api/souls/__SOUL_ON_CHAIN_ID__/assets", "body": { "txDigest": "{{txDigest}}" } }
-          ]
+          "_comment": "PTB-only: current web/app/api has no first-party mirror route for standalone sprite asset appends; verify the chain effect directly from emitted ContentVersionAppended events.",
+          "assertEvents": {
+            "contentVersions": [
+              { "kind": 3, "count": 3 }
+            ]
+          }
         }
       ]
     },
@@ -203,18 +209,18 @@
                 "expectedSoulCount": 12,
                 "expectedBindCount": 12,
                 "syncBodies": [
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_1__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_1__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_1__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_2__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_2__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_2__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_3__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_3__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_3__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_4__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_4__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_4__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_5__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_5__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_5__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_6__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_6__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_6__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_7__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_7__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_7__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_8__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_8__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_8__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_9__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_9__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_9__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_10__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_10__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_10__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_11__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_11__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_11__": true } },
-                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_12__", "tags": [], "previewImages": [], "readme": null, "sealSidecar": { "__REPLACE_WITH_SOUL_SEAL_SIDECAR_12__": true }, "memorySealSidecar": { "__REPLACE_WITH_MEMORY_SEAL_SIDECAR_12__": true } }
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_1__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_1__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_1__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_2__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_2__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_2__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_3__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_3__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_3__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_4__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_4__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_4__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_5__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_5__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_5__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_6__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_6__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_6__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_7__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_7__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_7__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_8__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_8__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_8__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_9__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_9__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_9__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_10__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_10__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_10__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_11__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_11__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_11__": true } }] },
+                  { "soulOnChainId": "__SOUL_ON_CHAIN_ID_12__", "tags": [], "previewImages": [], "readme": null, "contentSidecars": [{ "kind": 0, "name": "soul", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_SOUL_CONTENT_SIDECAR_12__": true } }, { "kind": 1, "name": "default", "versionIndex": 0, "sidecar": { "__REPLACE_WITH_MEMORY_CONTENT_SIDECAR_12__": true } }] }
                 ]
               },
               "assertBody": [

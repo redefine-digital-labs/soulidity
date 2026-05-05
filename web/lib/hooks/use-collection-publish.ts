@@ -24,12 +24,7 @@ import {
   type CompleteBatchWalrusUploadResult,
   type SoulUploadResult,
 } from '@/lib/upload/client-upload'
-import {
-  createMemorySealSidecarFromMaterial,
-  createSkillSealSidecarFromMaterial,
-  createSoulSealSidecarFromMaterial,
-  type PendingSealMaterial,
-} from '@/lib/upload/client-seal'
+import { type PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import type { SoulFolderMap } from '@/components/providers/create-collection-provider'
 import {
@@ -38,36 +33,21 @@ import {
 } from '@soulidity/sdk'
 import { assertObjectInputsExist } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
-import { extractAllSoulMintedToKioskEvents } from '@soulidity/sdk'
-import type { SealEnvelopeSidecar } from '@soulidity/sdk'
+import {
+  extractAllContentVersionAppendedEvents,
+  extractAllSoulMintedToKioskEvents,
+} from '@soulidity/sdk'
 import { assertSoulidityTxSucceeded } from '@soulidity/sdk'
 import {
   buildLegacyInitialContent,
   buildLegacyInitialStateConfig,
 } from '@soulidity/sdk'
-
-// Phase 2: per-version sidecars are produced by the unified mirror gate. The
-// hook returns null placeholders until the new ContentPanel UI passes
-// `contentSidecars[]` to the post-tx route.
-const PHASE2_PENDING_SIDECAR: SealEnvelopeSidecar | null = null
-function extractAllMemoryEntryAppendedEvents(
-  _tx: unknown,
-  _packageId: string,
-): Array<{ soulId: string; memoryId: string; timestampKey: number }> {
-  return []
-}
-function extractAllSkillVersionAppendedEvents(
-  _tx: unknown,
-  _packageId: string,
-): Array<{ soulId: string; skillsId: string; skillName: string; versionIndex: number }> {
-  return []
-}
-function hasValidOptionalLegacyAssetsSealMaterial(_value: unknown): boolean {
-  return true
-}
-function createLegacyInitialAssetSealSidecar(_args: unknown): SealEnvelopeSidecar | null {
-  return null
-}
+import {
+  buildContentSidecarsForVersionsWithSuiClient,
+  buildPendingMintSlots,
+  KIND_SPRITE,
+  type ContentSidecarRequestEntry,
+} from '@/lib/hooks/phase2-mint-helpers'
 
 const RECOVERY_KEY = 'collection-mint-recovery'
 
@@ -190,10 +170,7 @@ interface PublishSyncBody {
   soulOnChainId: string
   tags: string[]
   previewImages: string[]
-  sealSidecar: SealEnvelopeSidecar | null
-  memorySealSidecar: SealEnvelopeSidecar | null
-  skillsSealSidecar: SealEnvelopeSidecar | null
-  assetsSealSidecar: SealEnvelopeSidecar | null
+  contentSidecars: ContentSidecarRequestEntry[]
 }
 
 export interface BatchSoulToMint {
@@ -342,6 +319,21 @@ function hasCommittedOnChainState(recovery: RecoveryState): boolean {
   return recovery.souls.some((s) => s.mintSync != null)
 }
 
+function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<PendingSealMaterial>
+  return candidate.version === 1
+    && typeof candidate.dek === 'string'
+    && typeof candidate.iv === 'string'
+    && typeof candidate.contentHash === 'string'
+    && typeof candidate.mimeType === 'string'
+    && typeof candidate.fileName === 'string'
+}
+
+function hasValidOptionalLegacyAssetsSealMaterial(value: unknown): boolean {
+  return value == null || isPendingSealMaterial(value)
+}
+
 function sanitizeRecoveryState(raw: string | null, userId: string | undefined): RecoveryState | null {
   if (!raw || !userId) return null
   try {
@@ -357,7 +349,7 @@ function sanitizeRecoveryState(raw: string | null, userId: string | undefined): 
     ) {
       return null
     }
-    if (parsed.souls.some((soul) => soul.uploads && !hasValidOptionalLegacyAssetsSealMaterial(soul.uploads))) {
+    if (parsed.souls.some((soul) => soul.uploads && !hasValidOptionalLegacyAssetsSealMaterial(soul.uploads.assetsSealMaterial))) {
       return null
     }
     return parsed
@@ -533,57 +525,42 @@ function collectCertifyIndicesForChunk(layout: BatchFileLayout, soulIndices: num
   return indices
 }
 
-function findEventForSoulId<T extends { soulId: string }>(events: T[], soulId: string): T | null {
-  return events.find((e) => e.soulId === soulId) ?? null
-}
-
 async function buildSoulPublishSyncBody(params: {
   txDigest: string
   txResult: unknown
   soul: BatchSoulToMint
   uploads: SoulUploadRecovery
-  mintEvent: { soulId: string }
-  memoryEvent: { memoryId: string; timestampKey: number } | null
-  skillEvent: { skillsId: string; skillName: string; versionIndex: number } | null
+  mintEvent: { soulId: string; contentId: string }
   suiClient: unknown
 }): Promise<PublishSyncBody> {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-
-  if (!params.memoryEvent) {
-    throw new Error(`Soul "${params.soul.name}" mint transaction is missing the founding memory event`)
+  const versionsForSoul = extractAllContentVersionAppendedEvents(params.txResult as never, packageId)
+    .filter((version) => version.soulId === params.mintEvent.soulId)
+  if (versionsForSoul.length === 0) {
+    throw new Error(`Soul "${params.soul.name}" mint transaction is missing ContentVersionAppended events`)
   }
-  if (params.uploads.skillsSealMaterial && !params.skillEvent) {
-    throw new Error(`Soul "${params.soul.name}" mint transaction is missing the initial skill event`)
-  }
-
-  const sealSidecar = await createSoulSealSidecarFromMaterial({
-    suiClient: params.suiClient as never,
-    packageId,
-    soulObjectId: params.mintEvent.soulId,
-    material: params.uploads.sealMaterial,
-  })
-  const memorySealSidecar = await createMemorySealSidecarFromMaterial({
-    suiClient: params.suiClient as never,
-    packageId,
-    memoryObjectId: params.memoryEvent.memoryId,
-    timestampKey: params.memoryEvent.timestampKey,
-    material: params.uploads.memorySealMaterial,
-  })
-  const skillsSealSidecar = params.uploads.skillsSealMaterial && params.skillEvent
-    ? await createSkillSealSidecarFromMaterial({
-        suiClient: params.suiClient as never,
-        packageId,
-        skillsObjectId: params.skillEvent.skillsId,
-        skillName: params.skillEvent.skillName,
-        versionIndex: params.skillEvent.versionIndex,
-        material: params.uploads.skillsSealMaterial,
-      })
+  const legacySpriteVersion = params.uploads.assetsSealMaterial
+    ? versionsForSoul.find((version) => version.kind === KIND_SPRITE && version.sealEncrypted) ?? null
     : null
-  const assetsSealSidecar = await createLegacyInitialAssetSealSidecar({
-    txResult: params.txResult,
-    syncMaterial: params.uploads,
+
+  const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
+    suiClient: params.suiClient as never,
     packageId,
-    suiClient: params.suiClient,
+    contentObjectId: params.mintEvent.contentId,
+    pendingByKindName: buildPendingMintSlots({
+      soulMaterial: params.uploads.sealMaterial,
+      memoryMaterial: params.uploads.memorySealMaterial,
+      skillsMaterial: params.uploads.skillsSealMaterial,
+      skillsName: params.uploads.initialSkillName,
+      spriteMaterial: params.uploads.assetsSealMaterial ?? null,
+      spriteName: legacySpriteVersion?.name ?? null,
+    }),
+    versions: versionsForSoul.map((version) => ({
+      kind: version.kind,
+      name: version.name,
+      versionIndex: version.versionIndex,
+      sealEncrypted: version.sealEncrypted,
+    })),
   })
 
   const previewImageUrl = params.uploads.imageUrl.startsWith('http') ? params.uploads.imageUrl : ''
@@ -592,10 +569,7 @@ async function buildSoulPublishSyncBody(params: {
     soulOnChainId: params.mintEvent.soulId,
     tags: params.soul.tags,
     previewImages: previewImageUrl ? [previewImageUrl] : [],
-    sealSidecar,
-    memorySealSidecar,
-    skillsSealSidecar,
-    assetsSealSidecar,
+    contentSidecars,
   }
 }
 
@@ -621,8 +595,6 @@ async function mirrorFastPathPtb2(args: {
   } = args
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const mintEvents = extractAllSoulMintedToKioskEvents(txResultForMirror as never, packageId)
-  const memoryEvents = extractAllMemoryEntryAppendedEvents(txResultForMirror as never, packageId)
-  const skillEvents = extractAllSkillVersionAppendedEvents(txResultForMirror as never, packageId)
   if (mintEvents.length !== recovery.souls.length) {
     throw new FastPathMirrorFailed(
       `fast-path TX produced ${mintEvents.length} mints, expected ${recovery.souls.length}`,
@@ -633,16 +605,12 @@ async function mirrorFastPathPtb2(args: {
     const soul = recovery.souls[i]
     if (!soul.uploads) throw new Error(`Soul "${soul.input.name}" missing uploads at fast-path mirror`)
     const mintEvent = mintEvents[i]
-    const memoryEvent = findEventForSoulId(memoryEvents, mintEvent.soulId)
-    const skillEvent = findEventForSoulId(skillEvents, mintEvent.soulId)
     syncBodies.push(await buildSoulPublishSyncBody({
       txDigest: ptb2Digest,
       txResult: txResultForMirror,
       soul: soul.input,
       uploads: soul.uploads,
       mintEvent,
-      memoryEvent,
-      skillEvent,
       suiClient,
     }))
   }
@@ -1242,8 +1210,8 @@ export function useCollectionPublish(draftSignature?: string | null) {
         }
 
         // Mirror via /api/souls/publish/batch — one RPC per chunk regardless of N.
-        // We still need per-soul sealSidecar bodies, so we resolve the events
-        // from the chunk TX and build syncBodies in JS.
+        // We still need per-soul contentSidecars, so we resolve the events from
+        // the chunk TX and build syncBodies in JS.
         const chunkNeedsMirror = chunk.soulIndices.some((idx) => !recovery.souls[idx].mintSync)
         if (chunkNeedsMirror) {
           if (!chunkTxResult) {
@@ -1254,8 +1222,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
           }
           const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
           const mintEvents = extractAllSoulMintedToKioskEvents(chunkTxResult as never, packageId)
-          const memoryEvents = extractAllMemoryEntryAppendedEvents(chunkTxResult as never, packageId)
-          const skillEvents = extractAllSkillVersionAppendedEvents(chunkTxResult as never, packageId)
           if (mintEvents.length !== chunk.soulIndices.length) {
             throw new Error(
               `Batch mint chunk produced ${mintEvents.length} mint events but expected ${chunk.soulIndices.length}`,
@@ -1267,8 +1233,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
             const soulIdx = chunk.soulIndices[i]
             const soul = recovery.souls[soulIdx]
             const mintEvent = mintEvents[i]
-            const memoryEvent = findEventForSoulId(memoryEvents, mintEvent.soulId)
-            const skillEvent = findEventForSoulId(skillEvents, mintEvent.soulId)
             if (!soul.uploads) {
               throw new Error(`Soul "${soul.input.name}" is missing uploaded assets during mirror sync`)
             }
@@ -1278,8 +1242,6 @@ export function useCollectionPublish(draftSignature?: string | null) {
               soul: soul.input,
               uploads: soul.uploads,
               mintEvent,
-              memoryEvent,
-              skillEvent,
               suiClient,
             }))
           }

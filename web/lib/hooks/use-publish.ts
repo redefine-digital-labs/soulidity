@@ -19,27 +19,23 @@ import {
 } from '@soulidity/sdk'
 import { normalizeTags } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
-import { extractAllSoulMintedToKioskEvents } from '@soulidity/sdk'
+import {
+  extractAllContentVersionAppendedEvents,
+  extractAllSoulMintedToKioskEvents,
+} from '@soulidity/sdk'
 import {
   buildLegacyInitialContent,
   buildLegacyInitialStateConfig,
 } from '@soulidity/sdk'
 import { type PendingSealMaterial } from '@/lib/upload/client-seal'
-import type { SealEnvelopeSidecar } from '@soulidity/sdk'
 import { assertSoulidityTxSucceeded } from '@soulidity/sdk'
 import { getSuiTxErrorProperties } from '@soulidity/sdk'
 import { assertListingPriceAtomic } from '@soulidity/sdk'
-
-// Phase 2: per-version sidecar creation moved into the unified
-// `buildSyncSealSidecars` mirror gate. The hook stops constructing
-// per-channel sidecars here; the new ContentPanel UI passes
-// `contentSidecars: Array<{ kind, name, versionIndex, sidecar }>` directly to
-// the sync route. Legacy callers that still expect `{ soul, memory, skill }`
-// sidecars receive empty placeholders until they migrate.
-const PHASE2_PENDING_SIDECAR: SealEnvelopeSidecar | null = null
-function hasValidOptionalLegacyAssetsSealMaterial(_value: unknown): boolean {
-  return true
-}
+import {
+  buildContentSidecarsForVersionsWithSuiClient,
+  buildPendingMintSlots,
+  type ContentSidecarRequestEntry,
+} from '@/lib/hooks/phase2-mint-helpers'
 
 const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 
@@ -84,10 +80,7 @@ interface PublishSyncBody {
   tags: string[]
   previewImages: string[]
   readme: string | null
-  sealSidecar: SealEnvelopeSidecar | null
-  memorySealSidecar: SealEnvelopeSidecar | null
-  skillsSealSidecar: SealEnvelopeSidecar | null
-  assetsSealSidecar: SealEnvelopeSidecar | null
+  contentSidecars: ContentSidecarRequestEntry[]
 }
 
 type PublishSyncMaterial = Pick<
@@ -98,6 +91,7 @@ type PublishSyncMaterial = Pick<
   | 'sealMaterial'
   | 'memorySealMaterial'
   | 'skillsSealMaterial'
+  | 'initialSkillName'
 >
 
 export interface PublishParams {
@@ -149,10 +143,7 @@ function isPublishSyncBody(value: unknown): value is PublishSyncBody {
     && Array.isArray(candidate.tags)
     && Array.isArray(candidate.previewImages)
     && (candidate.readme === null || typeof candidate.readme === 'string')
-    && (candidate.sealSidecar === null || typeof candidate.sealSidecar === 'object')
-    && (candidate.memorySealSidecar === null || typeof candidate.memorySealSidecar === 'object')
-    && (candidate.skillsSealSidecar === null || typeof candidate.skillsSealSidecar === 'object')
-    && (candidate.assetsSealSidecar === null || typeof candidate.assetsSealSidecar === 'object')
+    && Array.isArray(candidate.contentSidecars)
 }
 
 function isPendingSealMaterial(value: unknown): value is PendingSealMaterial {
@@ -181,7 +172,7 @@ function isPublishSyncMaterial(value: unknown): value is PublishSyncMaterial {
     && isOptionalPendingSealMaterial(candidate.sealMaterial)
     && isOptionalPendingSealMaterial(candidate.memorySealMaterial)
     && isOptionalPendingSealMaterial(candidate.skillsSealMaterial)
-    && hasValidOptionalLegacyAssetsSealMaterial(value)
+    && (candidate.initialSkillName == null || typeof candidate.initialSkillName === 'string')
 }
 
 function buildPublishSyncMaterial(params: PublishParams): PublishSyncMaterial {
@@ -192,6 +183,7 @@ function buildPublishSyncMaterial(params: PublishParams): PublishSyncMaterial {
     sealMaterial: params.sealMaterial ?? null,
     memorySealMaterial: params.memorySealMaterial ?? null,
     skillsSealMaterial: params.skillsSealMaterial ?? null,
+    initialSkillName: params.initialSkillName ?? null,
   }
 }
 
@@ -233,21 +225,38 @@ async function buildPublishSyncBody(params: {
   const minted = params.soulOnChainId
     ? allMinted.find((e) => e.soulId === params.soulOnChainId) ?? allMinted[0]
     : allMinted[0]
-  // Phase 2: per-version sidecars are produced by the unified sync gate, not
-  // here. The hook still returns the legacy four-channel shape for now so the
-  // sync route signature can stay backwards compatible while the post-tx
-  // route is migrated. Each channel resolves to `null` until the new
-  // ContentPanel UI feeds in `contentSidecars[]`.
+
+  const versionsForSoul = extractAllContentVersionAppendedEvents(params.txResult as never, packageId)
+    .filter((version) => version.soulId === minted.soulId)
+  if (versionsForSoul.length === 0) {
+    throw new Error(`Publish transaction is missing ContentVersionAppended events for ${minted.soulId}`)
+  }
+
+  const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
+    suiClient: params.suiClient as never,
+    packageId,
+    contentObjectId: minted.contentId,
+    pendingByKindName: buildPendingMintSlots({
+      soulMaterial: params.publishParams.sealMaterial ?? null,
+      memoryMaterial: params.publishParams.memorySealMaterial ?? null,
+      skillsMaterial: params.publishParams.skillsSealMaterial ?? null,
+      skillsName: params.publishParams.initialSkillName,
+    }),
+    versions: versionsForSoul.map((version) => ({
+      kind: version.kind,
+      name: version.name,
+      versionIndex: version.versionIndex,
+      sealEncrypted: version.sealEncrypted,
+    })),
+  })
+
   return {
     txDigest: params.txDigest,
     soulOnChainId: minted.soulId,
     tags: normalizeTags(params.publishParams.tags),
     previewImages: params.publishParams.previewImages,
     readme: params.publishParams.readme ?? null,
-    sealSidecar: PHASE2_PENDING_SIDECAR,
-    memorySealSidecar: PHASE2_PENDING_SIDECAR,
-    skillsSealSidecar: PHASE2_PENDING_SIDECAR,
-    assetsSealSidecar: PHASE2_PENDING_SIDECAR,
+    contentSidecars,
   }
 }
 
@@ -269,9 +278,12 @@ export function usePublish() {
       try {
         const raw = sessionStorage.getItem(MINT_RECOVERY_KEY)
         if (raw) {
-          const recovery: MintRecoveryState = JSON.parse(raw)
-          const hasRecoverablePayload = isPublishSyncBody(recovery.syncBody) || isPublishSyncMaterial(recovery.pendingSync)
-          if (recovery.txDigest && hasRecoverablePayload && recovery.userId === user?.id && hasCurrentSoulidityDeploymentSignature(recovery)) {
+          const parsed: MintRecoveryState = JSON.parse(raw)
+          const syncBody = isPublishSyncBody(parsed.syncBody) ? parsed.syncBody : null
+          const pendingSync = isPublishSyncMaterial(parsed.pendingSync) ? parsed.pendingSync : null
+          const hasRecoverablePayload = Boolean(syncBody || pendingSync)
+          if (parsed.txDigest && hasRecoverablePayload && parsed.userId === user?.id && hasCurrentSoulidityDeploymentSignature(parsed)) {
+            const recovery = { ...parsed, syncBody, pendingSync }
             recoveryRef.current = recovery
             setTxDigest(recovery.txDigest)
           } else {
