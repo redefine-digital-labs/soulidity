@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
 
 const steps = [
   { label: 'Basic Info' },
@@ -96,7 +97,7 @@ export default function CreateSuccessPage() {
           {isListed && listedPriceAtomic ? (
             <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
               <span className="text-muted">Listed Price</span>
-              <span className="font-mono text-xs text-teal">{listedPriceAtomic} atomic USDC</span>
+              <span className="font-mono text-xs text-teal">{formatAtomicAmountForDisplay(listedPriceAtomic)}</span>
             </div>
           ) : null}
           <div className="flex items-center justify-between py-2.5 text-sm">

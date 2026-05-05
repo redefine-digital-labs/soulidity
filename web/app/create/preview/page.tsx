@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -9,7 +9,16 @@ import { SectionHeader } from '@/components/layout/section-header'
 import { buttonStyles } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
-import { validateListingPriceAtomic } from '@soulidity/sdk'
+import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
+
+function atomicToPriceInput(atomic: string | null): string {
+  if (!atomic) return ''
+  try {
+    return formatAtomicAmountForDisplay(atomic, { symbol: '' }).trim()
+  } catch {
+    return ''
+  }
+}
 
 const steps = [
   { label: 'Basic Info' },
@@ -86,6 +95,36 @@ export default function CreatePreviewPage() {
   const router = useRouter()
   const ctx = useCreateSoul()
 
+  // Listing price input is decimal USDC (e.g. "1.000001" → 1_000_001 atomic).
+  // We keep the raw typed string locally so partial values like "1." don't get
+  // reformatted mid-typing, and mirror the parsed atomic value into ctx so the
+  // gas page and use-publish keep their atomic-string contract.
+  const [priceInput, setPriceInput] = useState<string>(() => atomicToPriceInput(ctx.listingPriceAtomic))
+  const [priceParseError, setPriceParseError] = useState<string | null>(null)
+
+  const handlePriceChange = (raw: string) => {
+    setPriceInput(raw)
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      setPriceParseError(null)
+      ctx.setListingPriceAtomic(null)
+      return
+    }
+    try {
+      const atomic = parseDisplayAmountToAtomic(trimmed)
+      if (atomic <= 0n) {
+        setPriceParseError('Listing price must be greater than 0')
+        ctx.setListingPriceAtomic(null)
+        return
+      }
+      setPriceParseError(null)
+      ctx.setListingPriceAtomic(atomic.toString())
+    } catch (err) {
+      setPriceParseError(err instanceof Error ? err.message : 'Invalid amount')
+      ctx.setListingPriceAtomic(null)
+    }
+  }
+
   // Guard: redirect to earliest incomplete step when required data is missing
   const missingStep1 = !ctx.name || !ctx.description || !ctx.coverImageFile
   const missingStep2 = !ctx.charFile || !ctx.memoryFile
@@ -104,11 +143,17 @@ export default function CreatePreviewPage() {
   // / zero price, click through, sign the paid Walrus register PTB on the gas page,
   // and only then have `usePublish.assertListingPriceAtomic` reject the value —
   // leaving paid registered blobs orphaned for a preventable form error.
-  const listingPriceCheck = ctx.listOnPublish
-    ? validateListingPriceAtomic(ctx.listingPriceAtomic)
-    : { ok: true as const, value: 0n }
-  const listingPriceBlocked = ctx.listOnPublish && !listingPriceCheck.ok
-  const listingPriceError = listingPriceBlocked && !listingPriceCheck.ok ? listingPriceCheck.error : null
+  let listingPriceError: string | null = null
+  if (ctx.listOnPublish) {
+    if (priceParseError) {
+      listingPriceError = priceParseError
+    } else if (!priceInput.trim()) {
+      listingPriceError = 'Listing price is required'
+    } else if (ctx.listingPriceAtomic == null) {
+      listingPriceError = 'Listing price is invalid'
+    }
+  }
+  const listingPriceBlocked = ctx.listOnPublish && listingPriceError !== null
 
   return (
     <div className="relative z-10 border-t border-purple/20">
@@ -266,13 +311,13 @@ export default function CreatePreviewPage() {
           {ctx.listOnPublish && (
             <div className="space-y-1 pl-6">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted">USDC price (atomic units, 6 dp)</span>
+                <span className="text-xs text-muted">Price (USDC)</span>
                 <input
                   type="text"
-                  inputMode="numeric"
-                  value={ctx.listingPriceAtomic ?? ''}
-                  onChange={(e) => ctx.setListingPriceAtomic(e.currentTarget.value || null)}
-                  placeholder="e.g. 1000000"
+                  inputMode="decimal"
+                  value={priceInput}
+                  onChange={(e) => handlePriceChange(e.currentTarget.value)}
+                  placeholder="e.g. 1.5"
                   aria-invalid={listingPriceError ? 'true' : 'false'}
                   data-testid="listing-price-input"
                   className={cn(
