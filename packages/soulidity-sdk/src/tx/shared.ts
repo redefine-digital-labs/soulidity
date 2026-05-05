@@ -6,6 +6,7 @@ import {
   CANONICAL_SOUL_DOC_NAME,
   KIND_MEMORY,
   KIND_SOUL_DOC,
+  NO_DOWNLOAD_POLICY,
   READ_GRANT,
   READ_OWNER,
   assertSlotReadModeAllowed,
@@ -131,6 +132,16 @@ export interface StateConfigEntryInput {
 
 const MINT_INVARIANT_READ_MODE = READ_OWNER | READ_GRANT
 
+function assertBuiltinDownloadPolicyAllowed(entry: InitialContentEntryInput): void {
+  const descriptor = getBuiltinKindDescriptor(entry.kind)
+  if (!descriptor || descriptor.requiresDownloadPolicy) return
+  if (entry.downloadPolicy !== NO_DOWNLOAD_POLICY) {
+    throw new Error(
+      `kind ${entry.kind} (${descriptor.name}) does not accept download_policy; use the protocol no-policy value (${NO_DOWNLOAD_POLICY}/0)`,
+    )
+  }
+}
+
 /**
  * Mirrors `market.move::assert_initial_content_well_formed`. Run client-side
  * before composing the PTB so the user sees a friendly error instead of the
@@ -154,6 +165,7 @@ export function validateInitialContentEntries(
     if (entry.name.trim().length === 0) {
       throw new Error('initial content entry name is required')
     }
+    assertBuiltinDownloadPolicyAllowed(entry)
     if (entry.kind === KIND_SOUL_DOC) {
       if (entry.name !== CANONICAL_SOUL_DOC_NAME) {
         throw new Error(`SOUL_DOC entry name must be "${CANONICAL_SOUL_DOC_NAME}"`)

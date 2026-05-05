@@ -54,6 +54,11 @@ export const DOWNLOAD_POLICY_PUBLIC = 0
 export const DOWNLOAD_POLICY_OWNER_ONLY = 1
 export const DOWNLOAD_POLICY_ALLOWLIST = 2
 
+// `content.move` requires policy byte 0 for descriptors with
+// `requires_download_policy=false`. The policy-enabled enum names byte 0
+// `public`; this alias documents the no-policy use at call sites.
+export const NO_DOWNLOAD_POLICY: SoulDownloadPolicy = 'public'
+
 export function downloadPolicyToU8(policy: SoulDownloadPolicy): number {
   switch (policy) {
     case 'public': return DOWNLOAD_POLICY_PUBLIC

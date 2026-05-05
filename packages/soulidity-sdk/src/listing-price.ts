@@ -1,18 +1,22 @@
 /**
  * Shared listing-price validation for the single-Soul publish flow.
  *
- * The same parser is used in three places so the form, the gas-page
- * preflight, and the publish hook all reject the same set of values
- * before any paid Walrus register PTB is signed:
+ * The create preview form accepts decimal USDC input via
+ * `parseDisplayAmountToAtomic(...)`, then mirrors the parsed positive atomic
+ * string into create context. This validator owns the downstream atomic-string
+ * contract that must hold before any paid Walrus register PTB is signed:
  *
- *  - `web/app/create/preview/page.tsx` blocks the "Next: Pay Gas"
- *    transition when `listOnPublish` is true and the typed price would
- *    fail this parser.
  *  - `web/app/create/gas/page.tsx` calls this in its preflight, before
  *    `prepareSoulBlobsForBatchPublish(...)`, so a back-buttoned or
- *    direct-navigation user still cannot pay PTB1 with an invalid price.
- *  - `web/lib/hooks/use-publish.ts` keeps the same parser as the final
- *    server-bound contract — same accepted shape, same error messages.
+ *    direct-navigation user still cannot pay PTB1 with a missing, zero, or
+ *    non-bigint atomic price.
+ *  - `web/lib/hooks/use-publish.ts` keeps the same atomic parser as the final
+ *    server-bound contract, preserving the same accepted shape and error
+ *    messages for non-form callers.
+ *
+ * The preview form intentionally has a narrower input surface than this helper:
+ * values that pass the decimal form parser become positive bigint strings, so
+ * they remain safe for the gas-page and publish-hook assertions.
  */
 export function assertListingPriceAtomic(value: string | null | undefined): bigint {
   const trimmed = typeof value === 'string' ? value.trim() : ''
@@ -34,8 +38,8 @@ export function assertListingPriceAtomic(value: string | null | undefined): bigi
 /**
  * Non-throwing form for UI gating. Returns the parsed bigint when valid,
  * or an error message string when the value would fail
- * `assertListingPriceAtomic`. Used by the preview page to decide whether
- * to enable "Next: Pay Gas" without rendering thrown exceptions.
+ * `assertListingPriceAtomic`. Retained as a public SDK helper for callers that
+ * already deal in atomic-unit strings and need a non-throwing check.
  */
 export function validateListingPriceAtomic(value: string | null | undefined):
   | { ok: true, value: bigint }
