@@ -3,6 +3,8 @@ dist/
 data/
 .env
 .env.local
+.env.e2e
+.env.*.local
 .DS_Store
 .next/
 web/.next/

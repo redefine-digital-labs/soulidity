@@ -16,21 +16,19 @@ import {
 } from '@/lib/hooks/use-wallet-balances'
 import { useImport } from '@/lib/hooks/use-import'
 import { useAuth } from '@/components/providers/auth-provider'
-import { uploadSoulPayload, WalrusUploadCancelledError } from '@/lib/upload/client-upload'
-import type { PendingSealMaterial } from '@/lib/upload/client-seal'
+import {
+  prepareSoulBlobsForBatchPublish,
+  WalrusUploadCancelledError,
+  type BatchSoulUploadFile,
+  type PreparedSoulBlobs,
+} from '@/lib/upload/client-upload'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
-import {
-  countPendingImportUploads,
-  txBoundImportUploadObjectIds,
-} from '@/lib/import/import-wallet-balance'
 import { hasCurrentSoulidityDeploymentSignature } from '@soulidity/sdk'
-import { findMissingObjectIds } from '@soulidity/sdk'
 import {
-  selectReusableUploadResults,
   useImportSoul,
   type UploadResults,
 } from '@/components/providers/import-soul-provider'
@@ -53,18 +51,16 @@ const royaltyLabels: Record<number, string> = {
 
 type UploadPhase =
   | 'idle'
-  | 'uploading-cover'
-  | 'uploading-character'
-  | 'uploading-memory'
-  | 'uploading-skills'
+  | 'preparing-uploads'
+  | 'awaiting-register-signature'
+  | 'uploading-to-relay'
   | 'done'
 
 const uploadPhaseLabels: Record<UploadPhase, string> = {
   idle: '',
-  'uploading-cover': 'Uploading cover image\u2026',
-  'uploading-character': 'Encrypting & uploading character file\u2026',
-  'uploading-memory': 'Encrypting & uploading memory\u2026',
-  'uploading-skills': 'Encrypting & uploading skills bundle\u2026',
+  'preparing-uploads': 'Encrypting & encoding files\u2026',
+  'awaiting-register-signature': 'Awaiting wallet signature for batched register\u2026',
+  'uploading-to-relay': 'Uploading encoded payloads to Walrus\u2026',
   done: 'Uploads complete',
 }
 
@@ -82,81 +78,24 @@ function withMime(file: File): File {
   return new File([file], file.name, { type: expected })
 }
 
-interface UploadedPublicResult {
-  blobId: string
-  blobObjectId: string
-  contentHash: string
-  blobUrl: string
-}
-
-interface UploadedEncryptedResult extends UploadedPublicResult {
-  sealMaterial: PendingSealMaterial
-  skillName?: string | null
-}
-
-interface WalletUploadContext {
-  walletAddress: string
-  suiClient: unknown
-  signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
-  confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
-}
-
-async function uploadFile(
-  file: File,
-  type: 'public',
-  headers: Record<string, string>,
-  wallet: WalletUploadContext,
-  sendObjectTo?: string,
-): Promise<UploadedPublicResult>
-async function uploadFile(
-  file: File,
-  type: 'encrypted',
-  headers: Record<string, string>,
-  wallet: WalletUploadContext,
-  sendObjectTo?: string,
-): Promise<UploadedEncryptedResult>
-async function uploadFile(
-  file: File,
-  type: 'public' | 'encrypted',
-  headers: Record<string, string>,
-  wallet: WalletUploadContext,
-  sendObjectTo?: string,
-): Promise<UploadedPublicResult | UploadedEncryptedResult> {
-  const result = await uploadSoulPayload({
-    file: withMime(file),
-    uploadType: type,
-    kind: 'soul-content',
-    authHeaders: headers,
-    sendObjectTo: sendObjectTo ?? null,
-    walletAddress: wallet.walletAddress,
-    suiClient: wallet.suiClient,
-    signAndExecute: wallet.signAndExecute,
-    confirmQuote: wallet.confirmQuote,
-  })
-  if (type === 'encrypted') {
-    if (!result.sealMaterial) {
-      throw new Error('Encrypted upload response is missing Seal material')
-    }
-    return {
-      blobId: result.blobId,
-      blobObjectId: result.blobObjectId,
-      contentHash: result.contentHash,
-      blobUrl: result.blobUrl,
-      sealMaterial: result.sealMaterial,
-      skillName: result.skillName ?? null,
-    }
-  }
-  return {
-    blobId: result.blobId,
-    blobObjectId: result.blobObjectId,
-    contentHash: result.contentHash,
-    blobUrl: result.blobUrl,
-  }
-}
-
 function truncateHash(hash: string, len = 16) {
   if (hash.length <= len) return hash
   return `${hash.slice(0, 10)}…${hash.slice(-4)}`
+}
+
+function buildBatchFingerprint(walletAddress: string, files: BatchSoulUploadFile[]): string {
+  return JSON.stringify({
+    walletAddress: walletAddress.toLowerCase(),
+    files: files.map((f) => ({
+      name: f.file.name,
+      size: f.file.size,
+      lastModified: f.file.lastModified,
+      type: f.file.type,
+      uploadType: f.uploadType,
+      kind: f.kind,
+      sendObjectTo: f.sendObjectTo?.trim().toLowerCase() ?? null,
+    })),
+  })
 }
 
 function checkImportRecovery(userId: string | undefined): boolean {
@@ -182,40 +121,21 @@ export default function ImportGasPage() {
   const autoConnectStatus = useAutoConnectWallet()
   const openWalletLogin = useLogin()
   const { requestUploadCostApproval } = useUploadCostReview()
-  const { getAuthHeaders, user } = useAuth()
-  const importSoulRef = useRef(importSoul)
-  const getAuthHeadersRef = useRef(getAuthHeaders)
-  useEffect(() => {
-    importSoulRef.current = importSoul
-    getAuthHeadersRef.current = getAuthHeaders
-  })
+  const { user, getAuthHeaders } = useAuth()
 
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
   const [deployError, setDeployError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const completedDigestRef = useRef<string | null>(null)
-  const [verifiedReusableUploadState, setVerifiedReusableUploadState] = useState<{
+  const preparedBatchRef = useRef<{
     walletAddress: string
-    uploadResults: UploadResults | null
-    blobObjectIds: ReadonlySet<string>
+    fingerprint: string
+    prepared: PreparedSoulBlobs
   } | null>(null)
 
   const balances = useWalletBalances(suiWallet?.address ?? null)
-  const reusableUploadResults = suiWallet
-    ? selectReusableUploadResults(ctx.uploadResults, suiWallet.address)
-    : ctx.uploadResults
-  const verifiedReusableBlobObjectIds =
-    verifiedReusableUploadState
-    && verifiedReusableUploadState.walletAddress === suiWallet?.address
-    && verifiedReusableUploadState.uploadResults === ctx.uploadResults
-      ? verifiedReusableUploadState.blobObjectIds
-      : null
-  const pendingImportUploadCount = countPendingImportUploads({
-    reusableUploadResults,
-    hasSkillsFile: Boolean(ctx.skillsFile),
-    verifiedReusableBlobObjectIds,
-  })
-  const importWalletTransactionCount = 1 + pendingImportUploadCount * 2
+  // Batched import uses one Walrus register PTB and one import+certify PTB.
+  const importWalletTransactionCount = 2
   const minImportSuiBalance = minimumSuiBalanceForWalletTransactions(importWalletTransactionCount)
   const suiInsufficient = balances.sui !== null && balances.sui < minImportSuiBalance
   const balanceBlocked = suiInsufficient
@@ -224,45 +144,6 @@ export default function ImportGasPage() {
   const [hasImportRecovery, setHasImportRecovery] = useState(false)
   // Detect recovery from both sessionStorage (remount) and in-memory state (same-tab sync failure)
   const inRecovery = (hasImportRecovery || (!!txDigest && status === 'error')) && status !== 'done'
-
-  useEffect(() => {
-    let cancelled = false
-    const walletAddress = suiWallet?.address
-    const uploadResults = ctx.uploadResults
-    if (!walletAddress) {
-      return () => {
-        cancelled = true
-      }
-    }
-
-    const currentReusableUploadResults = selectReusableUploadResults(uploadResults, walletAddress)
-    const txBoundObjectIds = txBoundImportUploadObjectIds(currentReusableUploadResults)
-    if (txBoundObjectIds.length === 0) {
-      return () => {
-        cancelled = true
-      }
-    }
-
-    void findMissingObjectIds(suiClient, txBoundObjectIds)
-      .then((missingObjectIds) => {
-        if (cancelled) return
-        const missingObjectIdSet = new Set(missingObjectIds)
-        setVerifiedReusableUploadState({
-          walletAddress,
-          uploadResults,
-          blobObjectIds: new Set(txBoundObjectIds.filter((id) => !missingObjectIdSet.has(id))),
-        })
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setVerifiedReusableUploadState(null)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [ctx.uploadResults, suiClient, suiWallet?.address])
 
   // Re-evaluate recovery state reactively when auth resolves
   useEffect(() => {
@@ -298,80 +179,137 @@ export default function ImportGasPage() {
 
     try {
       const authHeaders = await getAuthHeaders()
-      const walletUpload = {
-        walletAddress,
-        suiClient,
-        signAndExecute,
-        confirmQuote: requestUploadCostApproval,
-      }
-      const results: UploadResults = selectReusableUploadResults(ctx.uploadResults, walletAddress)
-      const missingCachedObjectIds = new Set(await findMissingObjectIds(suiClient, [
-        results.charFile?.blobObjectId,
-        results.memorySeed?.blobObjectId,
-        results.skillsFile?.blobObjectId,
-      ]))
-      if (results.charFile && missingCachedObjectIds.has(results.charFile.blobObjectId)) {
-        results.charFile = undefined
-      }
-      if (results.memorySeed && missingCachedObjectIds.has(results.memorySeed.blobObjectId)) {
-        results.memorySeed = undefined
-      }
-      if (results.skillsFile && missingCachedObjectIds.has(results.skillsFile.blobObjectId)) {
-        results.skillsFile = undefined
+      const fileIndex = { cover: -1, char: -1, memory: -1, skills: -1 }
+      const batchFiles: BatchSoulUploadFile[] = []
+
+      fileIndex.cover = batchFiles.length
+      batchFiles.push({
+        file: withMime(ctx.coverImageFile),
+        uploadType: 'public',
+        kind: 'soul-content',
+      })
+
+      fileIndex.char = batchFiles.length
+      batchFiles.push({
+        file: withMime(ctx.charFile),
+        uploadType: 'encrypted',
+        kind: 'soul-content',
+        sendObjectTo: walletAddress,
+      })
+
+      fileIndex.memory = batchFiles.length
+      batchFiles.push({
+        file: withMime(ctx.memoryFile),
+        uploadType: 'encrypted',
+        kind: 'soul-content',
+        sendObjectTo: walletAddress,
+      })
+
+      if (ctx.skillsFile) {
+        fileIndex.skills = batchFiles.length
+        batchFiles.push({
+          file: withMime(ctx.skillsFile),
+          uploadType: 'encrypted',
+          kind: 'soul-content',
+          sendObjectTo: walletAddress,
+        })
       }
 
-      // 1. Upload cover image
-      if (!results.coverImage) {
-        setUploadPhase('uploading-cover')
-        results.coverImage = await uploadFile(ctx.coverImageFile, 'public', authHeaders, walletUpload)
+      const fingerprint = buildBatchFingerprint(walletAddress, batchFiles)
+      const cachedBatch = preparedBatchRef.current
+      const reusable =
+        !!cachedBatch
+        && cachedBatch.walletAddress === walletAddress
+        && cachedBatch.fingerprint === fingerprint
+      let prepared: PreparedSoulBlobs
+      if (reusable) {
+        prepared = cachedBatch.prepared
+      } else {
+        if (cachedBatch) preparedBatchRef.current = null
+        setUploadPhase('preparing-uploads')
+        prepared = await prepareSoulBlobsForBatchPublish({
+          files: batchFiles,
+          walletAddress,
+          suiClient,
+          signAndExecute,
+          authHeaders,
+          confirmQuote: async (quote) => {
+            setUploadPhase('awaiting-register-signature')
+            const approved = await requestUploadCostApproval(quote)
+            if (approved) setUploadPhase('uploading-to-relay')
+            return approved
+          },
+        })
+        preparedBatchRef.current = { walletAddress, fingerprint, prepared }
       }
 
-      // 2. Upload character file (encrypted)
-      if (!results.charFile) {
-        setUploadPhase('uploading-character')
-        results.charFile = await uploadFile(ctx.charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
+      const cover = prepared.files[fileIndex.cover]
+      const char = prepared.files[fileIndex.char]
+      const memory = prepared.files[fileIndex.memory]
+      const skills = fileIndex.skills >= 0 ? prepared.files[fileIndex.skills] : null
+
+      if (!char.sealMaterial) {
+        throw new Error('Character file upload is missing Seal recovery data. Please retry.')
+      }
+      if (!memory.sealMaterial) {
+        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
+      }
+      if (skills && !skills.sealMaterial) {
+        throw new Error('Skills bundle upload is missing Seal recovery data. Please retry.')
+      }
+      if (!char.blobObjectId) {
+        throw new Error('Character file upload was deduplicated by Walrus. Please modify your character file slightly and retry.')
+      }
+      if (!memory.blobObjectId) {
+        throw new Error('Memory already exists on Walrus. Please modify your memory file slightly and retry.')
+      }
+      if (skills && !skills.blobObjectId) {
+        throw new Error('Skills bundle was deduplicated by Walrus. Please modify your skills file slightly and retry.')
       }
 
-      // 3. Upload memory (encrypted)
-      if (!results.memorySeed) {
-        setUploadPhase('uploading-memory')
-        results.memorySeed = await uploadFile(ctx.memoryFile!, 'encrypted', authHeaders, walletUpload, walletAddress)
+      const results: UploadResults = {
+        ownerAddress: walletAddress,
+        coverImage: {
+          blobId: cover.blobId,
+          blobObjectId: cover.blobObjectId,
+          contentHash: cover.contentHash,
+          blobUrl: cover.blobUrl,
+        },
+        charFile: {
+          blobId: char.blobId,
+          blobObjectId: char.blobObjectId,
+          contentHash: char.contentHash,
+          blobUrl: char.blobUrl,
+          sealMaterial: char.sealMaterial,
+          skillName: char.skillName ?? null,
+        },
+        memorySeed: {
+          blobId: memory.blobId,
+          blobObjectId: memory.blobObjectId,
+          contentHash: memory.contentHash,
+          blobUrl: memory.blobUrl,
+          sealMaterial: memory.sealMaterial,
+        },
+        skillsFile: skills && skills.sealMaterial
+          ? {
+              blobId: skills.blobId,
+              blobObjectId: skills.blobObjectId,
+              contentHash: skills.contentHash,
+              blobUrl: skills.blobUrl,
+              sealMaterial: skills.sealMaterial,
+              skillName: skills.skillName ?? null,
+            }
+          : undefined,
       }
-
-      // 4. Upload skills file (encrypted, optional)
-      if (ctx.skillsFile && !results.skillsFile) {
-        setUploadPhase('uploading-skills')
-        results.skillsFile = await uploadFile(ctx.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
-      }
-
       ctx.setUploadResults(results)
       setUploadPhase('done')
 
       if (process.env.NODE_ENV === 'development') {
         ;(window as any).__e2eLastSealMaterial = {
-          char: results.charFile?.sealMaterial ?? null,
-          memory: results.memorySeed?.sealMaterial ?? null,
-          skills: results.skillsFile?.sealMaterial ?? null,
+          char: char.sealMaterial,
+          memory: memory.sealMaterial,
+          skills: skills?.sealMaterial ?? null,
         }
-      }
-
-      if (!results.coverImage || !results.charFile) {
-        throw new Error('Required uploads missing')
-      }
-      if (!results.memorySeed) {
-        throw new Error('Required uploads missing')
-      }
-      if (!results.charFile.blobObjectId) {
-        throw new Error('Character file upload was deduplicated by Walrus. Please modify your character file slightly and retry.')
-      }
-      if (!results.memorySeed.blobObjectId) {
-        throw new Error('Memory already exists on Walrus. Please modify your memory file slightly and retry.')
-      }
-      if (!results.memorySeed.sealMaterial) {
-        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
-      }
-      if (results.skillsFile && !results.skillsFile.blobObjectId) {
-        throw new Error('Skills bundle was deduplicated by Walrus. Please modify your skills file slightly and retry.')
       }
 
       const parsedTags = ctx.tags.split(',').map((t) => t.trim()).filter(Boolean)
@@ -380,18 +318,23 @@ export default function ImportGasPage() {
         name: ctx.resolvedName,
         description: ctx.resolvedDescription,
         tags: parsedTags,
-        imageUrl: results.coverImage.blobUrl,
-        previewImages: [results.coverImage.blobUrl],
-        protectedBlobObjectId: results.charFile.blobObjectId,
-        foundingMemoryBlobObjectId: results.memorySeed.blobObjectId,
-        skillsBlobObjectId: results.skillsFile?.blobObjectId ?? null,
-        initialSkillName: results.skillsFile?.skillName ?? null,
+        imageUrl: cover.blobUrl,
+        previewImages: [cover.blobUrl],
+        protectedBlobObjectId: char.blobObjectId,
+        foundingMemoryBlobObjectId: memory.blobObjectId,
+        skillsBlobObjectId: skills?.blobObjectId ?? null,
+        initialSkillName: skills?.skillName ?? null,
         skillsVisibility: 'private',
         originRef: ctx.originRef,
         creatorRoyaltyBps: ctx.royalty,
-        sealMaterial: results.charFile.sealMaterial ?? null,
-        memorySealMaterial: results.memorySeed.sealMaterial ?? null,
-        skillsSealMaterial: results.skillsFile?.sealMaterial ?? null,
+        sealMaterial: char.sealMaterial ?? null,
+        memorySealMaterial: memory.sealMaterial ?? null,
+        skillsSealMaterial: skills?.sealMaterial ?? null,
+        attachWalrusCertifyCalls: prepared.attachCertifyCalls,
+        onImportTxExecuted: () => {
+          prepared.clearBatchRecovery()
+          preparedBatchRef.current = null
+        },
       })
     } catch (err) {
       if (!(err instanceof WalrusUploadCancelledError)) {

@@ -16,7 +16,7 @@ import { GrantModal } from '@/components/souls/grant-modal'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
 import { CollectionSection } from '@/components/collections/collection-section'
-import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulGrantStatus, SoulAssetSummary } from '@soulidity/sdk'
+import type { MySoulEntry, SoulCollectionAssetSummary, SoulGrantRecord, SoulGrantStatus, SoulAssetSummary, SoulPurchaseActivity } from '@soulidity/sdk'
 
 const tabs = [
   { id: 'owned', label: 'Owned' },
@@ -254,6 +254,31 @@ function GrantRow({ grant }: { grant: SoulGrantRecord }) {
             : grant.expiresAt
               ? `Expires ${formatDate(grant.expiresAt)}`
               : 'No expiry'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PurchaseActivityRow({ purchase }: { purchase: SoulPurchaseActivity }) {
+  return (
+    <div className="card rounded-xl p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Tag color="success">purchase</Tag>
+            <Tag color="gold">{purchase.totalAtomic ? formatAtomicAmountForDisplay(purchase.totalAtomic) : 'Paid'}</Tag>
+          </div>
+          <div className="mt-1 text-sm font-semibold text-foreground">
+            {purchase.soulName ?? formatAddress(purchase.soulOnChainId)}
+          </div>
+          <div className="mt-1 text-xs text-muted">
+            TX {formatAddress(purchase.txDigest)}
+            {purchase.paidAtomic && <> · List price {formatAtomicAmountForDisplay(purchase.paidAtomic)}</>}
+          </div>
+        </div>
+        <div className="text-xs text-muted">
+          {formatDate(purchase.createdAt)}
         </div>
       </div>
     </div>
@@ -549,7 +574,8 @@ export default function MySoulsPage() {
       )}
 
       {!isLoading && myData && activeTab === 'activity' && (() => {
-        if (myData.grants.length === 0) {
+        const purchases = myData.purchases ?? []
+        if (purchases.length === 0 && myData.grants.length === 0) {
           return <EmptyState icon={'\uD83D\uDD10'} label="No activity yet" sublabel="Grant records and activity will appear here." />
         }
         const filteredGrants = grantStatusFilter === 'all'
@@ -592,11 +618,16 @@ export default function MySoulsPage() {
                 Export CSV
               </button>
             </div>
+            {purchases.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {purchases.map((purchase) => <PurchaseActivityRow key={purchase.id} purchase={purchase} />)}
+              </div>
+            )}
             {filteredGrants.length > 0 ? (
               <div className="flex flex-col gap-3">
                 {filteredGrants.map((grant) => <GrantRow key={grant.id} grant={grant} />)}
               </div>
-            ) : (
+            ) : myData.grants.length > 0 ? (
               <EmptyState
                 icon={'\uD83D\uDD10'}
                 label={`No ${grantStatusFilter} grants`}
@@ -604,6 +635,8 @@ export default function MySoulsPage() {
                 actionLabel="Show all grants"
                 onAction={() => setGrantStatusFilter('all')}
               />
+            ) : (
+              <p className="text-xs text-muted">Grant records will appear here after an authorization is issued.</p>
             )}
           </div>
         )

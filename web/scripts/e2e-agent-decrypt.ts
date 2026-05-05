@@ -22,6 +22,8 @@
  */
 
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
@@ -34,6 +36,11 @@ const AGENT_PRIVATE_KEY = process.env.AGENT_PRIVATE_KEY
 const AGENT_API_KEY = process.env.AGENT_API_KEY!
 const SOUL_ID = process.env.SOUL_ID!
 const SUI_NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet') as 'mainnet' | 'testnet' | 'devnet'
+const CONTENT_KIND = process.env.CONTENT_KIND
+const CONTENT_NAME = process.env.CONTENT_NAME
+const CONTENT_VERSION_INDEX = process.env.CONTENT_VERSION_INDEX
+const COMPARE_FILE = process.env.COMPARE_FILE
+const COMPARE_DIR = process.env.COMPARE_DIR
 
 const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(SUI_NETWORK), network: SUI_NETWORK })
 
@@ -209,7 +216,11 @@ async function main() {
 
   // Step 1: Get access info
   console.log('\n--- Step 1: Get access info ---')
-  const accessRes = await fetch(`${BASE_URL}/api/agent/souls/${encodeURIComponent(SOUL_ID)}/access`, {
+  const accessUrl = new URL(`${BASE_URL}/api/agent/souls/${encodeURIComponent(SOUL_ID)}/access`)
+  if (CONTENT_KIND?.trim()) accessUrl.searchParams.set('kind', CONTENT_KIND.trim())
+  if (CONTENT_NAME?.trim()) accessUrl.searchParams.set('name', CONTENT_NAME.trim())
+  if (CONTENT_VERSION_INDEX?.trim()) accessUrl.searchParams.set('versionIndex', CONTENT_VERSION_INDEX.trim())
+  const accessRes = await fetch(accessUrl, {
     headers: {
       'Authorization': `Bearer ${AGENT_API_KEY}`,
       'x-forwarded-for': '127.0.0.1',
@@ -303,6 +314,21 @@ async function main() {
   } else {
     console.log('\n❌ Content hash MISMATCH!')
     process.exit(1)
+  }
+
+  if (COMPARE_FILE?.trim()) {
+    if (!COMPARE_DIR?.trim()) {
+      throw new Error('COMPARE_DIR is required when COMPARE_FILE is set')
+    }
+    const comparePath = join(COMPARE_DIR, COMPARE_FILE.trim())
+    const expected = new Uint8Array(readFileSync(comparePath))
+    const expectedHash = createHash('sha256').update(expected).digest('hex')
+    if (expectedHash !== hash || expected.length !== decryptedData.length) {
+      throw new Error(
+        `Byte compare failed for ${comparePath}: expected ${expected.length}B/${expectedHash}, decrypted ${decryptedData.length}B/${hash}`,
+      )
+    }
+    console.log(`OK byte compare: ${comparePath} (${expected.length} bytes, sha256=${expectedHash})`)
   }
 }
 

@@ -80,6 +80,8 @@ export interface ImportParams {
   sealMaterial?: PendingSealMaterial | null
   memorySealMaterial?: PendingSealMaterial | null
   skillsSealMaterial?: PendingSealMaterial | null
+  attachWalrusCertifyCalls?: (tx: Transaction) => void | Promise<void>
+  onImportTxExecuted?: () => void
 }
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
@@ -261,7 +263,7 @@ export function useImport() {
           initialSkillName: params.initialSkillName,
           initialSkillVisibility: params.skillsVisibility ?? null,
         })
-        const tx: Transaction = buildImportSoulTx({
+        const tx: Transaction = await buildImportSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
           currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
           name: params.name,
@@ -271,6 +273,7 @@ export function useImport() {
           initialStateConfig,
           originRef: params.originRef,
           creatorRoyaltyBps: params.creatorRoyaltyBps,
+          attachBeforeMint: params.attachWalrusCertifyCalls,
         })
 
         setStatus('signing')
@@ -279,6 +282,7 @@ export function useImport() {
         assertSoulidityTxSucceeded(result, 'Soul import transaction')
         digest = executedDigest
         setTxDigest(executedDigest)
+        try { params.onImportTxExecuted?.() } catch { /* swallow callback errors */ }
         posthog.capture('soul_import_sui_signed', {
           txDigest: executedDigest,
           elapsedMs: Date.now() - startedAt,

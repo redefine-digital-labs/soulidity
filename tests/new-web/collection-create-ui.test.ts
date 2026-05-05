@@ -83,6 +83,15 @@ describe('web collection create regression guards', () => {
     expect(block).not.toContain('recovery.txDigest')
   })
 
+  it('treats batch publish success as Phase 2 content-root sync, not legacy memory-object sync', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+
+    expect(source).toContain('contentOnChainId: string')
+    expect(source).toContain('sync.contentOnChainId')
+    expect(source).not.toContain('sync.memoryOnChainId')
+    expect(source).not.toContain('missing founding memory')
+  })
+
   it('does not enforce a stale supply cap while unlimited mode is active', () => {
     const source = readSource('web/app/collections/create/souls/page.tsx')
     expect(source).toContain('ctx.unlimitedSupply ? undefined : parseCollectionSupplyCapInput(ctx.supplyCap)')

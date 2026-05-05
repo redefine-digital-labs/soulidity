@@ -27,7 +27,6 @@
     "scan:skills": "tsx src/collector/scan-skills.ts",
     "sync:v6-plan": "tsx scripts/export-v6-plan-json.ts",
     "validate:v6-plan": "tsx scripts/export-v6-plan-json.ts --check && node scripts/validate-v6-plan.mjs",
-    "e2e:public-sprite": "tsx web/scripts/e2e-public-sprite-anonymous.ts",
     "vercel:sync-production-env": "tsx scripts/sync-vercel-production-env.ts"
   },
   "dependencies": {

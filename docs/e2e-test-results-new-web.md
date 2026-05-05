@@ -1,10 +1,99 @@
 # E2E Test Results - new-web Soulidity Marketplace
 
-> The 2026-04-28 run is the current wallet-paid Walrus baseline: Chrome DevTools
-> MCP drove the browser flow against `.env.local` on Sui Testnet, with all
-> addresses and payments on testnet only. The 2026-04-27 and 2026-04-24 PASS
-> runs further down are historical references for earlier upload/auth baselines.
-> This is main-flow acceptance evidence, not Sui Mainnet certification.
+> The 2026-05-05 run is the current Phase 2 Mainnet acceptance evidence. Chrome
+> DevTools MCP and terminal scripts drove the flow against `.env.e2e` on Sui
+> Mainnet with real role wallets, wallet-paid Walrus register/certify, backend
+> Walrus batch completion, API boundaries, page smoke checks, and cleanup. The
+> 2026-04-28 and earlier testnet runs remain historical baselines.
+
+---
+
+## 2026-05-05 Run — Phase 8-11 mainnet continuation PASS
+
+**Date:** 2026-05-05
+**Environment:** Sui Mainnet env from `.env.e2e`, `http://localhost:3100`, Chrome DevTools MCP
+**Plan:** `docs/plans/e2e-test-plan.md` Phase 8-11
+**Status:** **PASS for the remaining Phase 8-11 continuation**. The run used the real Buyer wallet on mainnet, confirmed one batch `UploadCostReview`, signed Walrus register once, completed encoded blob writes through `POST /api/walrus/batch/complete`, signed the final import mint/certify PTB once, then completed Phase 9 API boundaries, Phase 10 page smoke, and Phase 11 cleanup.
+
+### Executed
+
+| Step | Result | Evidence |
+|------|--------|----------|
+| Env gate | PASS | `npx tsx scripts/e2e-check-env.ts` reported mainnet env prerequisites present. |
+| Fixtures | PASS | `/Users/admin/Documents/example/{soul.md,memory.md,images.jpeg,skill.zip}` all present. |
+| 8.1 Choose Source | PASS | `/import` rendered "Choose Source"; Local File selected; advanced to `/import/upload`. |
+| 8.2 Upload File | PASS | `soul.md` parsed as Markdown, 3 fields, 1.0 KB; advanced to `/import/map`. |
+| 8.3 Map Fields | PASS | Name `E2E Imported Soul`, description `Imported from local file`; uploaded `soul.md`, `memory.md`, `skill.zip`, and cropped `images.jpeg`. |
+| 8.4 Preview | PASS | Preview rendered Basic Info, Import Source, Soul Character, Memory, Skills & Docs, and policy cards; advanced to `/import/gas`. |
+| 8.5 Cost review | PASS | One `UploadCostReview`: network `mainnet`, payload `4 file · 43.1 KiB`, storage `26 epochs`, wallet signatures `2`, WAL storage `0.077112 WAL`, gas budget estimate `0.100000 SUI`. |
+| 8.5 Walrus register | PASS | First wallet signature created register TX `CjZygLHzjbyPZwtowGxaevj1QqrRW7r6wPekhksVqEwN`. |
+| 8.5 Backend complete | PASS | Browser called `POST /api/walrus/batch/complete`; response 200 with 4 certificates. Saved request/response artifacts: `e2e-artifacts/2026-05-05-phase8/batch-complete-request.network-request`, `e2e-artifacts/2026-05-05-phase8/batch-complete-response.network-response`. |
+| 8.5 Final mint/certify | PASS | Second wallet signature created import TX `74bpBTeLq8i8hWXq8z92eEHG6XF3CS1Tm36LvEuCt8jC`. |
+| 8.6 Success | PASS | `/api/import` returned 200, page reached `/import/success`, Soul Object ID `0xe4ecc314f01e12dbe187c73a3e477b7e3924586865128bb30574ceb9cc92daab`. |
+| 9 API boundary | PASS | `e2e-artifacts/2026-05-05/phase9-api-boundary.json` recorded expected 401/403/404 responses for invalid/no/non-`sk-` agent auth, missing Soul, Agent Beta denial, and public detail miss. |
+| 10 page smoke | PASS | Community, Content Format, Getting Started, Wrap+Link, Leaderboard, Stats, and community follow toggle rendered without `overlay/` references; follow screenshot saved at `e2e-artifacts/2026-05-05/phase10-follow-toggle.png`. |
+| 11 cleanup | PASS | Deleted inactive Soul listing, inactive Collection listing, constructed and cleaned stale paid-access entries, emptied scoped DB tables, and restored `/market` empty state. Screenshot: `e2e-artifacts/2026-05-05/phase11-cleanup.png`. |
+
+### Mainnet objects
+
+| Field | Value |
+|-------|-------|
+| Imported Soul | `0xe4ecc314f01e12dbe187c73a3e477b7e3924586865128bb30574ceb9cc92daab` |
+| Soul State | `0xfab799df7da5c24a47aecfd5fb5c749c18963b5b120831105e55f10d6da36260` |
+| Soul Content | `0x5ed3072b7ec73b8a258f0a6483c9770d6d729314629c4d80b4751b8602fe12ba` |
+| Paid Access List | `0x2299ee6b4c211c6fa82d5540a54d54c51eb1137b6e8c7a2651765b3f2ba0260f` |
+| Register TX | `CjZygLHzjbyPZwtowGxaevj1QqrRW7r6wPekhksVqEwN` |
+| Import TX | `74bpBTeLq8i8hWXq8z92eEHG6XF3CS1Tm36LvEuCt8jC` |
+| Content versions | `3` |
+| Origin ref | `sha256:aad35826f2f798f24cfb634b32b3a3492f83cec07b124009c2c2bae0313f5827` |
+
+### Recovery fixes exercised
+
+| Issue | Fix | Verification |
+|-------|-----|--------------|
+| Initial funding gate failed: Buyer SUI/USDC were below target and master USDC was insufficient for the scripted top-up. | Rebalanced role funds manually, then via `scripts/e2e-fund-roles.ts --execute`. | Seller -> Buyer USDC TX `BCR5fdZjDLwvP361ipYaesxRHTbGyBpRqiKEa7PMeHe5`; Agent Alpha -> Buyer USDC TX `GE98f1r5VbEguyd1kPpTuNSbV7jjKRw57oUiXq9hHo3H`; master top-up TX `4euA6VckaBqqpoNhVhtis2Bq4mdKLfbbG8rxnbsdcrki`. |
+| Actual Phase 8 quote needed `77,112,000` atomic WAL, exceeding the old Buyer `5,000,000` target. | Topped Buyer WAL to `100,000,000` atomic and updated the funding script/plan target to keep that buffer. | Buyer WAL top-up TX `BNNGUDKfdeYNph2MCTQibHzgbQZb21PkqWgsR2M82yLb`; final post-run WAL rebalance TX `3YutBPveStmga6UBUTFtoLfM8Drgpe6ia5Lmje4pCHNA`. |
+| First backend complete attempt returned 502 because Next dev bundled `@mysten/walrus-wasm` and resolved the server WASM path as `/ROOT/.../walrus_wasm_bg.wasm`. | Added `@mysten/walrus` and `@mysten/walrus-wasm` to `serverExternalPackages`. | After dev server restart, `/api/walrus/batch/complete` returned 200. |
+| Final import PTB first failed with `CommandArgumentError { arg_idx: 1, kind: ArgumentWithoutValue } in command 9`. | Moved import certify calls into a new `buildImportSoulTx(... attachBeforeMint)` hook so Walrus Blob objects are certified before mint consumes them as initial content entries. | Retried from persisted register recovery; final import TX succeeded. |
+| Resume sync first failed because shell-sourcing `.env.e2e` stripped JSON quotes from `NEXT_PUBLIC_SEAL_SERVER_CONFIGS`. | Quoted the `.env.e2e` JSON value with shell-safe single quotes. | Restarted dev server, clicked `Resume Sync`, `/api/import` returned 200 and success page rendered. |
+
+### Funding closeout
+
+After the successful import and cleanup, role balances were rebalanced again to the updated targets:
+
+| Role | SUI | WAL | USDC |
+|------|-----|-----|------|
+| Seller | `500000000` | `191552000` | `1105000` |
+| Buyer | `500000000` | `100000000` | `5000000` |
+| Agent Alpha | `300746484` | `0` | `5000000` |
+| Agent Beta | `100000000` | `0` | `0` |
+| Dev | `305567624` | `5000000` | `0` |
+
+Phase 8 post-run SUI top-up TX: `88Ss3FEGcB4uUGxVTUSgcPSHy2jHPrZtZHzsyS2Uner4`. Phase 8 post-run WAL top-up TX: `3YutBPveStmga6UBUTFtoLfM8Drgpe6ia5Lmje4pCHNA`. Phase 11 final rebalance TX: `3LmnLSHUPmqM9Q2eqd3S86HSHt6vrRQG23mcBjdRMVT6`; final dry-run reported `Totals to send: SUI=0 WAL=0 USDC=0`.
+
+### Browser notes
+
+- Current session was Buyer: `/api/auth/me` returned `primarySuiAddress = 0x4ee6484d1871acd303fbc27de35d4dc0397a21a49eb5933ef8a8162cc06ec0f2`.
+- During the write-chain, browser network showed app routes, Sui RPC, and `/api/walrus/batch/complete`; no direct browser request to Walrus storage-node / upload-relay was observed.
+- Resume sync after restart made one Seal mainnet service probe (`https://seal-mainnet-open.overclock.run/v1/service?...`) and `POST /api/import` returned 200.
+- Success-state sessionStorage kept only `soul-import-result`; the `soulidity.walrus-batch-upload-recovery:*` key was cleared after the import TX executed.
+
+### Phase 9-11 continuation evidence
+
+| Step | Result | Evidence |
+|------|--------|----------|
+| 9.1 invalid API key | PASS | Expected and actual HTTP `401`. |
+| 9.2 no auth header | PASS | Expected and actual HTTP `401`. |
+| 9.3 non-`sk-` token | PASS | Expected and actual HTTP `401`. |
+| 9.4 missing Soul | PASS | Expected and actual HTTP `404`. |
+| 9.5 Agent Beta no permission | PASS | Expected and actual HTTP `403`. |
+| 9.6 public detail miss | PASS | Expected and actual HTTP `404`. |
+| 10.1-10.5 page smoke | PASS | `/community`, `/resources/content-format`, `/resources/getting-started`, `/wrap-link`, `/community/leaderboard`, and `/resources/stats` rendered expected headings/states without `overlay/` leakage. |
+| 10.6 follow toggle | PASS | Seller profile follow changed follower count to `1`, unfollow restored it to `0`; screenshot `e2e-artifacts/2026-05-05/phase10-follow-toggle.png`. |
+| 11.0a inactive Soul listing delete | PASS | Listing `0xd0bf191a2b43baa542ad7041d794afaf8fc9bdf5ab8ece787865d7328f203ebc` deleted in TX `Hs8cqyzXhhDcdugV5edJMqgzxtpmFfwGinE6CGH8Hu2`; object query returned not found. |
+| 11.0b inactive Collection listing delete | PASS | Listing `0x8705076c11e6df0d442c8e995af288416fd7a816f27ddb2747d0d801d1d20f90` deleted in TX `Ep5zLCHcGzQSvWbHPFtDVhUHSUmtbfbNCRGm5UBtqgNr`; object query returned not found. |
+| 11.0c stale paid-access cleanup | PASS | Soul B was relisted in TX `9LLNoM5kbYoSdQdkeuzEsf5uG9KvXb9UNEURWtxuYj1x`, purchased by Agent Alpha in TX `B4FoetuJStSKz32CcebcLe6VCULVLrFyGi34qCXMtKQz`, stale entries were cleaned in TX `8iPZF92gbhZKPxg6KHsx1MjfRFkFceEwV8dEQqWJ4T8h`, and the construction listing `0x9bc64e9c15ffa86bd3f921aabdb74adb5a89dd54ca12ad54812f57d77ac8a42a` was deleted in TX `EM24YXparcHWGm15wTk3xJg92wwP9YmXYM7LUaT2byW3`. DB verification returned `remaining: []`. |
+| 11.1 DB cleanup | PASS | Scoped tables `soul_grant_records`, `soul_paid_access_entries`, `soul_paid_access_kind_configs`, `soul_content_version_records`, `soul_prepared_purchases`, `soul_tx_syncs`, `soul_collection_assets`, and `soul_assets` all counted `0`; `/market` rendered `No live Soul listings`. |
 
 ---
 

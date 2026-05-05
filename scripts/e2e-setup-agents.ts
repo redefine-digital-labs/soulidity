@@ -22,7 +22,10 @@ import "./lib/dotenv";
 import { PrismaClient } from "../src/db/prisma-client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { createHash } from "node:crypto";
+import { loadEnvFile } from "./lib/dotenv";
 import { loadKeypairFromEnv } from "./lib/keypair";
+
+loadEnvFile(".env.e2e");
 
 type AgentSpec = {
   label: string;
@@ -108,12 +111,9 @@ async function ensureAgent(
   // can find a sibling kind='human' member to return as `ownerMemberId`.
   const account = { id: ownerAccountId };
 
-  // 1. Member: prefer existing match by (accountId, kind='agent'); otherwise
-  // promote a member already attached to this wallet via WalletBinding (covers
-  // earlier installs where the agent had its own orphan Account).
-  let member = await p.member.findFirst({
-    where: { accountId: account.id, kind: "agent" },
-  });
+  // 1. Member: prefer the fixed E2E handle. Falling back to "any agent on
+  // this account" can make Alpha and Beta race onto the same member.
+  let member = await p.member.findUnique({ where: { handle: spec.handle } });
 
   if (!member) {
     const binding = await p.walletBinding.findUnique({
@@ -125,23 +125,17 @@ async function ensureAgent(
   }
 
   if (!member) {
-    // Reuse stale handle if a previous run left a different display name.
-    const existingHandle = await p.member.findUnique({ where: { handle: spec.handle } });
-    if (existingHandle) {
-      member = existingHandle;
-    } else {
-      member = await p.member.create({
-        data: {
-          accountId: account.id,
-          kind: "agent",
-          agentStatus: "active",
-          apiKey: null,
-          apiKeyHash,
-          handle: spec.handle,
-          displayName: spec.displayName,
-        },
-      });
-    }
+    member = await p.member.create({
+      data: {
+        accountId: account.id,
+        kind: "agent",
+        agentStatus: "active",
+        apiKey: null,
+        apiKeyHash,
+        handle: spec.handle,
+        displayName: spec.displayName,
+      },
+    });
   }
 
   // 3. Sync member fields (idempotent).
@@ -153,21 +147,32 @@ async function ensureAgent(
       agentStatus: "active",
       apiKey: null,
       apiKeyHash,
-      handle: member.handle ?? spec.handle,
-      displayName: member.displayName ?? spec.displayName,
+      handle: spec.handle,
+      displayName: spec.displayName,
     },
   });
 
-  // 4. WalletBinding: idempotent upsert.
-  await p.walletBinding.upsert({
-    where: { chain_address: { chain: "sui", address } },
-    update: { memberId: member.id, isPrimary: true },
-    create: {
-      memberId: member.id,
-      chain: "sui",
-      address,
-      isPrimary: true,
-    },
+  // 4. WalletBinding: each member can have one Sui binding, so update by
+  // member+chain and remove stale address-owned rows before claiming it.
+  await p.$transaction(async (tx) => {
+    const addressBinding = await tx.walletBinding.findUnique({
+      where: { chain_address: { chain: "sui", address } },
+      select: { id: true, memberId: true },
+    });
+    if (addressBinding && addressBinding.memberId !== member.id) {
+      await tx.walletBinding.delete({ where: { id: addressBinding.id } });
+    }
+
+    await tx.walletBinding.upsert({
+      where: { memberId_chain: { memberId: member.id, chain: "sui" } },
+      update: { address, isPrimary: true },
+      create: {
+        memberId: member.id,
+        chain: "sui",
+        address,
+        isPrimary: true,
+      },
+    });
   });
 
   console.log(

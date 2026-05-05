@@ -437,6 +437,7 @@ export default function CreateGasPage() {
           walletAddress,
           suiClient,
           signAndExecute,
+          authHeaders: preflightAuthHeaders,
           confirmQuote: async (quote) => {
             setUploadPhase('awaiting-register-signature')
             const approved = await requestUploadCostApproval(quote)

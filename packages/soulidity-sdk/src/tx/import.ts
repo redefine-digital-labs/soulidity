@@ -28,13 +28,20 @@ export interface ImportSoulTxParams extends MintPtbInputs {
    */
   originRef: string
   creatorRoyaltyBps: number
+  /**
+   * Optional hook to splice extra commands after personal-kiosk setup and
+   * before `mint_imported_in_personal_kiosk`. The batch import flow uses this
+   * to certify Walrus blobs before the mint call consumes those Blob objects
+   * as initial content entries.
+   */
+  attachBeforeMint?: (tx: Transaction) => void | Promise<void>
 }
 
 /**
  * Build a `mint_imported_in_personal_kiosk` PTB. Origin string is stored
  * as the unverified `Soul.origin_ref` Option<String>.
  */
-export function buildImportSoulTx(params: ImportSoulTxParams): Transaction {
+export async function buildImportSoulTx(params: ImportSoulTxParams): Promise<Transaction> {
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -52,6 +59,9 @@ export function buildImportSoulTx(params: ImportSoulTxParams): Transaction {
     buyerKioskId: params.currentKioskId,
     buyerKioskCapOnChainId: params.currentKioskCapOnChainId,
   })
+  if (params.attachBeforeMint) {
+    await params.attachBeforeMint(tx)
+  }
 
   const { initialContentVec, initialStateConfigVec } = buildInitialContentArgs(tx, packageId, {
     initialContent: params.initialContent,

@@ -456,9 +456,20 @@ export interface MySoulEntry extends SoulAssetSummary {
   activeGrantDetails: MySoulActiveGrant[]
 }
 
+export interface SoulPurchaseActivity {
+  id: string
+  txDigest: string
+  soulOnChainId: string
+  soulName: string | null
+  paidAtomic: string | null
+  totalAtomic: string | null
+  createdAt: string
+}
+
 export interface MySoulsResponse {
   owned: MySoulEntry[]
   collections: SoulCollectionAssetSummary[]
+  purchases: SoulPurchaseActivity[]
   grants: SoulGrantRecord[]
 }
 

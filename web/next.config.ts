@@ -38,7 +38,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  serverExternalPackages: ['@prisma/client'],
+  serverExternalPackages: ['@prisma/client', '@mysten/walrus', '@mysten/walrus-wasm'],
   transpilePackages: ['@soulidity/sdk'],
   compiler: {
     removeConsole:

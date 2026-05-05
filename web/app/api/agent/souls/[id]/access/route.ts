@@ -11,6 +11,34 @@ export const dynamic = 'force-dynamic'
 
 const AGENT_ACCESS_RATE_LIMIT = { max: 60, windowMs: 60 * 1000 } as const
 
+function parseContentSelector(request: Request) {
+  const url = new URL(request.url)
+  const rawKind = url.searchParams.get('kind')
+  const rawVersionIndex = url.searchParams.get('versionIndex')
+
+  const kind = rawKind == null || rawKind.trim() === ''
+    ? KIND_SOUL_DOC
+    : Number(rawKind)
+  const versionIndex = rawVersionIndex == null || rawVersionIndex.trim() === ''
+    ? 0
+    : Number(rawVersionIndex)
+
+  if (!Number.isInteger(kind) || kind < 0) {
+    return { error: NextResponse.json({ error: 'kind must be a non-negative integer' }, { status: 400 }) }
+  }
+  if (!Number.isInteger(versionIndex) || versionIndex < 0) {
+    return { error: NextResponse.json({ error: 'versionIndex must be a non-negative integer' }, { status: 400 }) }
+  }
+
+  return {
+    selector: {
+      kind,
+      name: url.searchParams.get('name')?.trim() || CANONICAL_SOUL_DOC_NAME,
+      versionIndex,
+    },
+  }
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -34,6 +62,10 @@ export async function GET(
   }
 
   const { id } = await params
+  const selectorResult = parseContentSelector(request)
+  if ('error' in selectorResult) return selectorResult.error
+  const selector = selectorResult.selector
+
   const soul = await findSoulAssetDetailByRouteId(id)
   if (!soul) {
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
@@ -45,16 +77,16 @@ export async function GET(
     quote: null,
   })
 
-  const soulDocVersion = detail.contentVersions.find(
+  const contentVersion = detail.contentVersions.find(
     (version) =>
-      version.kind === KIND_SOUL_DOC
-      && version.name === CANONICAL_SOUL_DOC_NAME
-      && version.versionIndex === 0
+      version.kind === selector.kind
+      && version.name === selector.name
+      && version.versionIndex === selector.versionIndex
       && version.deletedAt == null
       && version.purgedAt == null,
   )
-  if (!soulDocVersion) {
-    return NextResponse.json({ error: 'Soul document version is not available' }, { status: 409 })
+  if (!contentVersion) {
+    return NextResponse.json({ error: 'Requested content version is not available' }, { status: 409 })
   }
 
   try {
@@ -65,7 +97,7 @@ export async function GET(
         contentOnChainId: detail.contentOnChainId,
         paidAccessListOnChainId: detail.paidAccessListOnChainId,
       },
-      version: soulDocVersion,
+      version: contentVersion,
       viewerAddresses: auth.walletAddresses,
       packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
     })

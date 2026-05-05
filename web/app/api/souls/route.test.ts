@@ -180,4 +180,19 @@ describe('GET /api/souls', () => {
       where: { listingStatus: 'listed' },
     }))
   })
+
+  it('uses newest listing as the tie-breaker for same-price ascending sort', async () => {
+    mockedFindMany.mockResolvedValueOnce([])
+    mockedCount.mockResolvedValueOnce(0)
+    mockedToSoulAssetSummaryList.mockReturnValueOnce([])
+
+    await GET(new NextRequest('http://localhost/api/souls?sort=price_asc'))
+
+    expect(mockedFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: [
+        { listedPriceAtomic: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    }))
+  })
 })

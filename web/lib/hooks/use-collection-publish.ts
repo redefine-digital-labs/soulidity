@@ -161,7 +161,7 @@ interface PublishSyncResponse {
   txDigest: string
   soulOnChainId: string
   stateOnChainId: string
-  memoryOnChainId: string
+  contentOnChainId: string
   listingStatus: string
 }
 
@@ -639,7 +639,7 @@ async function mirrorFastPathPtb2(args: {
     syncs?: Array<{
       soulOnChainId: string
       stateOnChainId: string
-      memoryOnChainId: string | null
+      contentOnChainId: string | null
     }>
   }
   if (!Array.isArray(batchData.syncs) || batchData.syncs.length < recovery.souls.length) {
@@ -647,14 +647,14 @@ async function mirrorFastPathPtb2(args: {
   }
   for (let i = 0; i < recovery.souls.length; i++) {
     const sync = batchData.syncs[i]
-    if (!sync.memoryOnChainId) {
-      throw new FastPathMirrorFailed(`Fast-path batch mirror missing founding memory for Soul #${i + 1}`)
+    if (!sync.contentOnChainId) {
+      throw new FastPathMirrorFailed(`Fast-path batch mirror missing content root for Soul #${i + 1}`)
     }
     recovery.souls[i].mintSync = {
       txDigest: ptb2Digest,
       soulOnChainId: sync.soulOnChainId,
       stateOnChainId: sync.stateOnChainId,
-      memoryOnChainId: sync.memoryOnChainId,
+      contentOnChainId: sync.contentOnChainId,
       listingStatus: 'unlisted',
     }
     recovery.souls[i].bindTxDigest = ptb2Digest
@@ -949,6 +949,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
         completion = await completeBatchWalrusUploadAfterRegister({
           intent,
           registerTxDigest: recovery.collectionPtb1Digest,
+          authHeaders,
         })
       }
 
@@ -1264,7 +1265,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
             syncs?: Array<{
               soulOnChainId: string
               stateOnChainId: string
-              memoryOnChainId: string | null
+              contentOnChainId: string | null
             }>
           }
           if (!Array.isArray(batchData.syncs) || batchData.syncs.length < chunk.soulIndices.length) {
@@ -1273,14 +1274,14 @@ export function useCollectionPublish(draftSignature?: string | null) {
           for (let i = 0; i < chunk.soulIndices.length; i++) {
             const soulIdx = chunk.soulIndices[i]
             const sync = batchData.syncs[i]
-            if (!sync?.memoryOnChainId) {
-              throw new Error(`Chunked publish batch mirror missing founding memory for Soul #${soulIdx + 1}`)
+            if (!sync?.contentOnChainId) {
+              throw new Error(`Chunked publish batch mirror missing content root for Soul #${soulIdx + 1}`)
             }
             recovery.souls[soulIdx].mintSync = {
               txDigest: chunkDigest,
               soulOnChainId: sync.soulOnChainId,
               stateOnChainId: sync.stateOnChainId,
-              memoryOnChainId: sync.memoryOnChainId,
+              contentOnChainId: sync.contentOnChainId,
               listingStatus: 'unlisted',
             }
           }

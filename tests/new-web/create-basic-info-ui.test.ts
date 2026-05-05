@@ -41,6 +41,7 @@ describe('web create basic info regression guards', () => {
     expect(source).toContain("desc: '5%', recommended: true")
     expect(source).toContain('grid grid-cols-4 gap-2.5')
     expect(source).toContain('Recommended')
+    expect(source).toContain('aria-pressed={ctx.royalty === opt.value}')
     expect(source).not.toContain("label: 'Max'")
   })
 })

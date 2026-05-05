@@ -3,30 +3,9 @@
 import { useEffect, useRef } from 'react'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { selectCoinObjectIdsForAmountAcrossPages } from '@soulidity/sdk'
-import {
-  buildConfigurePaidAccessKindTx,
-  buildPurchasePaidAccessTx,
-  buildUpdatePaidAccessKindTx,
-} from '@soulidity/sdk'
 import { buildSetGrantCapacityTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
-
-type E2EContentAccessPurchaseParams = {
-  soulObjectId: string
-  accessListOnChainId: string
-  stateOnChainId: string
-  totalAtomic?: string | number | bigint
-  priceAtomic?: string | number | bigint
-  platformFeeBps?: number
-  coinType?: string
-  paymentCoinObjectIds?: string[]
-}
-
-type E2EContentAccessOwnerParams = {
-  accessListOnChainId: string
-  stateOnChainId: string
-}
 
 declare global {
   interface Window {
@@ -34,9 +13,6 @@ declare global {
       getWalletAddress: () => string | null
       getAuthHeaders: () => Promise<Record<string, string>>
       selectPaymentCoins: (params: { totalAtomic: string | number | bigint; coinType?: string }) => Promise<string[]>
-      purchaseContentAccess: (params: E2EContentAccessPurchaseParams) => Promise<unknown>
-      setContentAccessPrice: (params: E2EContentAccessOwnerParams & { newPriceAtomic: number }) => Promise<unknown>
-      setContentAccessDuration: (params: E2EContentAccessOwnerParams & { newDurationMs?: number | null }) => Promise<unknown>
       setGrantCapacity: (params: { stateObjectId: string; capacity: number }) => Promise<unknown>
     }
   }
@@ -54,21 +30,6 @@ function toAtomic(value: string | number | bigint, fieldName: string) {
     throw new Error(`${fieldName} must be an integer string`)
   }
   return BigInt(value.trim())
-}
-
-function resolveTotalAtomic(params: E2EContentAccessPurchaseParams) {
-  if (params.totalAtomic != null) {
-    return toAtomic(params.totalAtomic, 'totalAtomic')
-  }
-  if (params.priceAtomic == null) {
-    throw new Error('totalAtomic or priceAtomic is required')
-  }
-  const priceAtomic = toAtomic(params.priceAtomic, 'priceAtomic')
-  const platformFeeBps = params.platformFeeBps ?? 250
-  if (!Number.isSafeInteger(platformFeeBps) || platformFeeBps < 0) {
-    throw new Error('platformFeeBps must be a non-negative safe integer')
-  }
-  return priceAtomic + (priceAtomic * BigInt(platformFeeBps)) / 10_000n
 }
 
 export function E2EWalletHelpers() {
@@ -106,19 +67,6 @@ export function E2EWalletHelpers() {
           throw new Error(`Insufficient payment balance for ${totalAtomic.toString()} atomic units`)
         }
         return selected
-      },
-      // Phase 2: ContentAccessList → per-kind SoulPaidAccessList. The legacy
-      // helpers below were the Phase-1 entry points; rewriting the e2e tests
-      // around per-kind paid access is tracked as part of the Phase-2 test
-      // suite refresh. Stub for now so the global hook still loads in dev.
-      purchaseContentAccess: async () => {
-        throw new Error('purchaseContentAccess: Phase 1 helper is gone — use buildPurchasePaidAccessTx with a kind argument')
-      },
-      setContentAccessPrice: async () => {
-        throw new Error('setContentAccessPrice: Phase 1 helper is gone — use buildUpdatePaidAccessKindTx with a kind argument')
-      },
-      setContentAccessDuration: async () => {
-        throw new Error('setContentAccessDuration: Phase 1 helper is gone — use buildUpdatePaidAccessKindTx with a kind argument')
       },
       setGrantCapacity: async (params: { stateObjectId: string; capacity: number }) => {
         const tx = buildSetGrantCapacityTx(params)

@@ -12,6 +12,16 @@ import {
 } from '@/lib/soulidity/repository'
 export const dynamic = 'force-dynamic'
 
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function jsonString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
 const mySoulSelect = {
   ...soulAssetSummarySelect,
   collection: {
@@ -33,7 +43,7 @@ export async function GET() {
 
   const walletAddresses = await getMemberSuiWalletAddresses(identity.memberId)
 
-  const [owned, collections, grants] = await Promise.all([
+  const [owned, collections, purchases, grants] = await Promise.all([
     prisma.soulAsset.findMany({
       where: {
         OR: [
@@ -60,6 +70,14 @@ export async function GET() {
       select: soulCollectionSummarySelect,
       orderBy: { createdAt: 'desc' },
     }),
+    prisma.soulTxSync.findMany({
+      where: {
+        routeKey: 'buy',
+        actorKey: identity.memberId,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }),
     prisma.soulGrantRecord.findMany({
       where: {
         OR: [
@@ -73,6 +91,8 @@ export async function GET() {
     }),
   ])
 
+  const ownedNamesByOnChainId = new Map(owned.map((soul) => [soul.onChainId, soul.name]))
+
   return NextResponse.json({
     owned: owned.map((r) => ({
       ...toSoulAssetSummary(r),
@@ -83,6 +103,19 @@ export async function GET() {
       })),
     })),
     collections: toSoulCollectionSummaryList(collections),
+    purchases: purchases.map((purchase) => {
+      const body = jsonRecord(purchase.responseBody)
+      const soulOnChainId = jsonString(body.soulOnChainId) ?? purchase.resourceKey
+      return {
+        id: purchase.id,
+        txDigest: purchase.txDigest,
+        soulOnChainId,
+        soulName: ownedNamesByOnChainId.get(soulOnChainId) ?? null,
+        paidAtomic: jsonString(body.paidAtomic),
+        totalAtomic: jsonString(body.totalAtomic),
+        createdAt: purchase.createdAt.toISOString(),
+      }
+    }),
     grants: grants.map(toSoulGrantRecord),
   })
 }

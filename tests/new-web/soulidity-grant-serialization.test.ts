@@ -14,6 +14,9 @@ const mockedPrisma = vi.hoisted(() => ({
   soulCollectionAsset: {
     findMany: vi.fn(),
   },
+  soulTxSync: {
+    findMany: vi.fn(),
+  },
   soulGrantRecord: {
     findMany: vi.fn(),
   },
@@ -51,6 +54,49 @@ function makeGrantRecord(overrides: Record<string, unknown> = {}) {
   } as any
 }
 
+function makeSoulSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'soul-db-1',
+    onChainId: soulOnChainId,
+    stateOnChainId: `0x${'5'.repeat(64)}`,
+    contentOnChainId: `0x${'6'.repeat(64)}`,
+    paidAccessListOnChainId: `0x${'7'.repeat(64)}`,
+    name: 'Purchased Soul',
+    description: 'A purchased Soul',
+    imageUrl: '',
+    activeSpriteName: null,
+    activeSpriteVersionIndex: null,
+    activeSpriteDownloadPolicy: null,
+    activeVoiceName: null,
+    activeVoiceVersionIndex: null,
+    activeVoiceDownloadPolicy: null,
+    spriteConfigJson: null,
+    spriteMoodMapJson: null,
+    voiceConfigJson: null,
+    provenanceKind: 'native',
+    personaKind: 'characters',
+    originRef: null,
+    tags: [],
+    previewImages: [],
+    creatorAddress: issuedByAddress,
+    creatorRoyaltyBps: 500,
+    currentOwnerAddress: granteeAddress,
+    currentKioskId: `0x${'8'.repeat(64)}`,
+    currentKioskCapOnChainId: `0x${'9'.repeat(64)}`,
+    listingObjectOnChainId: null,
+    listedPriceAtomic: null,
+    listingStatus: 'held',
+    collectionOnChainId: null,
+    grantCapacity: 1,
+    activeGrantCount: 0,
+    createdAt: new Date('2026-04-12T00:00:00.000Z'),
+    updatedAt: new Date('2026-04-12T00:00:00.000Z'),
+    collection: null,
+    grantRecords: [],
+    ...overrides,
+  } as any
+}
+
 describe('Soul grant serialization', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -63,6 +109,7 @@ describe('Soul grant serialization', () => {
     mockedGetMemberSuiWalletAddresses.mockResolvedValue([])
     mockedPrisma.soulAsset.findMany.mockResolvedValue([])
     mockedPrisma.soulCollectionAsset.findMany.mockResolvedValue([])
+    mockedPrisma.soulTxSync.findMany.mockResolvedValue([])
     mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([makeGrantRecord()])
   })
 
@@ -84,6 +131,60 @@ describe('Soul grant serialization', () => {
           scopes: ['assets'],
         }),
       ],
+      purchases: [],
     })
+  })
+
+  it('returns current member Soul purchase activity from tx sync rows', async () => {
+    mockedPrisma.soulTxSync.findMany.mockResolvedValueOnce([
+      {
+        id: 'tx-sync-1',
+        txDigest: 'abc123',
+        resourceKey: soulOnChainId,
+        responseBody: {
+          soulOnChainId,
+          paidAtomic: '100000',
+          totalAtomic: '107500',
+        },
+        createdAt: new Date('2026-04-12T00:00:00.000Z'),
+      },
+    ])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([makeSoulSummary()])
+
+    const { GET } = await import('../../web/app/api/souls/my/route')
+    const response = await GET()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      purchases: [
+        {
+          txDigest: 'abc123',
+          soulOnChainId,
+          soulName: 'Purchased Soul',
+          paidAtomic: '100000',
+          totalAtomic: '107500',
+          createdAt: '2026-04-12T00:00:00.000Z',
+        },
+      ],
+    })
+  })
+
+  it('keeps agent access route selector and Seal byte-compare script wired', async () => {
+    const routeSource = await import('node:fs').then((fs) =>
+      fs.readFileSync('web/app/api/agent/souls/[id]/access/route.ts', 'utf8'),
+    )
+    const scriptSource = await import('node:fs').then((fs) =>
+      fs.readFileSync('web/scripts/e2e-agent-decrypt.ts', 'utf8'),
+    )
+    const paidAccessScriptSource = await import('node:fs').then((fs) =>
+      fs.readFileSync('web/scripts/e2e-paid-access-lifecycle.ts', 'utf8'),
+    )
+
+    expect(routeSource).toContain("searchParams.get('kind')")
+    expect(routeSource).toContain('version.kind === selector.kind')
+    expect(scriptSource).toContain('CONTENT_KIND')
+    expect(scriptSource).toContain('OK byte compare')
+    expect(paidAccessScriptSource).toContain("@mysten/sui/jsonRpc")
+    expect(paidAccessScriptSource).toContain('new SuiJsonRpcClient')
   })
 })

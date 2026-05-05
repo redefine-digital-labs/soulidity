@@ -23,7 +23,7 @@ describe('Soulidity manifest script wiring', () => {
       'scripts/phase2-retry-failed.ts',
       'scripts/phase2-finish-skipped.ts',
       'scripts/publish-soulidity-and-sync.ts',
-      'web/scripts/e2e-content-access-lifecycle.ts',
+      'web/scripts/e2e-paid-access-lifecycle.ts',
     ]) {
       const contents = source(file)
       expect(

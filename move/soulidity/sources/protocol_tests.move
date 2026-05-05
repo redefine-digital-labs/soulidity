@@ -4333,3 +4333,130 @@ fun soul_state_destroy_helper_smoke() {
     soul::destroy_state_for_testing(state);
     ts::end(scenario);
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Negative tests pinned by docs/plans/e2e-test-plan.md (Phase W1.5)
+//
+// These three tests close the gap that Test 5.8 / 7.10d / 11.0a previously
+// asked the e2e executor to grep for and author at runtime. They are now
+// fixed entry points that the plan can reference by name.
+// ─────────────────────────────────────────────────────────────────────
+
+#[test, expected_failure(abort_code = soulidity::grant::EGrantStillActive)]
+fun destroy_invalidated_grant_aborts_when_grant_still_active() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        spec_invariant_only(),
+        vector::empty(),
+    );
+
+    // Issue a grant that is currently active: epoch matches state, in
+    // active_grants, no expiry. destroy_invalidated_grant must abort because
+    // none of (epoch_mismatch / not_in_active / expired) holds.
+    let _grant_id = issue_default_grant(
+        &mut scenario,
+        MINTER,
+        AGENT,
+        grant::scope_seal(),
+    );
+
+    scenario.next_tx(AGENT);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
+    grant::destroy_invalidated_grant(g, &mut state, &test_clock, scenario.ctx());
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EPaidAccessNotPurchasable)]
+fun purchase_paid_access_aborts_when_price_zero() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        spec_with_sprite_active(),
+        vector::empty(),
+    );
+
+    // configure_paid_access_kind allows price_atomic = 0; the price-gate that
+    // blocks zero-price purchases lives in market::purchase_paid_access.
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    market::configure_paid_access_kind(
+        &config,
+        &kind_registry_obj,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        0,
+        grant::scope_assets(),
+        option::none(),
+        scenario.ctx(),
+    );
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(paid_list);
+    ts::return_shared(state);
+
+    // Non-owner buyer attempts purchase — must abort EPaidAccessNotPurchasable.
+    // BUYER ≠ MINTER so the owner-self check does not preempt the price check.
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    market::purchase_paid_access(
+        &config,
+        &mut paid_list,
+        &state,
+        kind_registry::kind_sprite(),
+        coin::zero<USDC>(scenario.ctx()),
+        &test_clock,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EListingStillActive)]
+fun delete_soul_listing_aborts_when_active() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_native(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        spec_invariant_only(),
+        vector::empty(),
+    );
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let listing = market::list_soul_fixed_price(
+        &config,
+        &registry,
+        &mut kiosk_obj,
+        &cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    // listing.is_active = true here — delete_soul_listing must abort.
+    market::delete_soul_listing(listing, scenario.ctx());
+    abort 42
+}

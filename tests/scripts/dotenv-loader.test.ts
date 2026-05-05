@@ -66,8 +66,8 @@ describe('scripts/lib/dotenv loadEnvFile (R-003)', () => {
       resolve(repoRoot, 'scripts/smoke-soulidity.ts'),
       'utf8',
     )
-    expect(source).toContain("import './lib/dotenv'")
-    expect(source).toContain("import { loadEnvFile } from './lib/dotenv'")
+    expect(source).toMatch(/import\s+['"]\.\/lib\/dotenv['"]/)
+    expect(source).toMatch(/import\s+\{\s*loadEnvFile\s*\}\s+from\s+['"]\.\/lib\/dotenv['"]/)
     expect(source).toMatch(/loadEnvFile\([^)]*\.env\.soulidity-smoke[^)]*\)/)
     // The load must happen BEFORE loadSmokeWallets() reads process.env.
     const loaderIdx = source.indexOf('loadEnvFile(')
@@ -76,6 +76,33 @@ describe('scripts/lib/dotenv loadEnvFile (R-003)', () => {
     expect(walletReaderIdx).toBeGreaterThan(loaderIdx)
     // Honors `SOULIDITY_SMOKE_ENV_FILE` for ad-hoc per-network overrides.
     expect(source).toContain('SOULIDITY_SMOKE_ENV_FILE')
+  })
+
+  it('e2e-setup-agents.ts loads .env.e2e before deriving agent wallets', () => {
+    const repoRoot = resolve(__dirname, '..', '..')
+    const source = readFileSync(
+      resolve(repoRoot, 'scripts/e2e-setup-agents.ts'),
+      'utf8',
+    )
+    expect(source).toMatch(/import\s+['"]\.\/lib\/dotenv['"]/)
+    expect(source).toMatch(/import\s+\{\s*loadEnvFile\s*\}\s+from\s+['"]\.\/lib\/dotenv['"]/)
+    expect(source).toMatch(/loadEnvFile\([^)]*\.env\.e2e[^)]*\)/)
+
+    const loaderIdx = source.indexOf('loadEnvFile(')
+    const agentSpecIdx = source.indexOf('const AGENTS')
+    expect(loaderIdx).toBeGreaterThanOrEqual(0)
+    expect(agentSpecIdx).toBeGreaterThan(loaderIdx)
+  })
+
+  it('e2e-setup-agents.ts keeps agent wallet sync scoped per fixed handle', () => {
+    const repoRoot = resolve(__dirname, '..', '..')
+    const source = readFileSync(
+      resolve(repoRoot, 'scripts/e2e-setup-agents.ts'),
+      'utf8',
+    )
+    expect(source).toContain('handle: spec.handle')
+    expect(source).toContain('memberId_chain')
+    expect(source).not.toMatch(/findFirst\(\s*\{[\s\S]*accountId:\s*account\.id[\s\S]*kind:\s*["']agent["']/)
   })
 
   it('preserves CLI exports captured at module load time', () => {

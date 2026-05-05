@@ -23,17 +23,17 @@ function parseSortOption(value: string | null): SortOption {
   return 'newest'
 }
 
-function buildOrderBy(sort: SortOption): Prisma.SoulAssetOrderByWithRelationInput {
+function buildOrderBy(sort: SortOption): Prisma.SoulAssetOrderByWithRelationInput[] {
   switch (sort) {
     case 'price_asc':
-      return { listedPriceAtomic: 'asc' }
+      return [{ listedPriceAtomic: 'asc' }, { createdAt: 'desc' }]
     case 'price_desc':
-      return { listedPriceAtomic: 'desc' }
+      return [{ listedPriceAtomic: 'desc' }, { createdAt: 'desc' }]
     case 'popular':
-      return { activeGrantCount: 'desc' }
+      return [{ activeGrantCount: 'desc' }, { createdAt: 'desc' }]
     case 'newest':
     default:
-      return { createdAt: 'desc' }
+      return [{ createdAt: 'desc' }]
   }
 }
 

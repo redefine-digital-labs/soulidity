@@ -481,6 +481,7 @@ export default function ImportMapPage() {
               <button
                 key={opt.value}
                 type="button"
+                aria-pressed={ctx.royalty === opt.value}
                 onClick={() => ctx.setRoyalty(opt.value)}
                 className={`relative flex min-h-[72px] min-w-0 flex-col items-center justify-center rounded-2xl border px-2 pb-3 pt-3 text-center transition ${
                   ctx.royalty === opt.value
