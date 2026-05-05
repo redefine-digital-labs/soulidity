@@ -72,6 +72,30 @@ describe('Seal envelope crypto', () => {
     }
   })
 
+  it('accepts Phase 2 content-version document namespaces', async () => {
+    const { generateContentDocumentIdHex } = await import('../../packages/soulidity-sdk/src/content-document-id')
+    const { parseSealEnvelopeSidecar } = await import('../../web/lib/services/seal-crypto.ts')
+    const documentId = generateContentDocumentIdHex({
+      contentObjectId: `0x${'22'.repeat(32)}`,
+      kind: 0,
+      name: 'soul',
+      versionIndex: 0,
+      nonce: FIXED_NONCE,
+    })
+
+    expect(parseSealEnvelopeSidecar({
+      version: 1,
+      mode: 'seal-envelope',
+      documentId,
+      encryptedDek: 'ZW5jcnlwdGVk',
+      iv: VALID_IV_BASE64,
+      cipher: 'AES-GCM-256',
+      mimeType: 'text/markdown',
+      fileName: 'soul.md',
+      contentHash: VALID_CONTENT_HASH,
+    }).documentId).toBe(documentId)
+  })
+
   it('roundtrips a bundle through envelope encryption with a mock Seal client', async () => {
     const { decryptBundle, encryptBundle } = await import('../../web/lib/services/seal-crypto.ts')
 

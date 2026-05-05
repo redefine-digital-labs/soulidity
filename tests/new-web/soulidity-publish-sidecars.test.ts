@@ -184,6 +184,31 @@ describe('Soulidity publish content sidecars', () => {
     expect(accessResolver).not.toContain('generateContentDocumentIdHex')
   })
 
+  it('mirror gate reports malformed sidecar envelopes as sync config errors', async () => {
+    const { buildSyncSealSidecars, SealSidecarSyncConfigError } = await import('../../web/lib/soulidity/mirror/build-seal-sidecars')
+
+    expect(() => buildSyncSealSidecars({
+      contentObjectId: `0x${'11'.repeat(32)}`,
+      entries: [{
+        kind: 0,
+        name: 'soul',
+        versionIndex: 0,
+        sealEncrypted: true,
+        sidecar: {
+          version: 1,
+          mode: 'seal-envelope',
+          documentId: '0x1234',
+          encryptedDek: 'ZW5jcnlwdGVk',
+          iv: 'AAAAAAAAAAAAAAAA',
+          cipher: 'AES-GCM-256',
+          mimeType: 'text/markdown',
+          fileName: 'soul.md',
+          contentHash: 'a'.repeat(64),
+        },
+      }],
+    })).toThrow(SealSidecarSyncConfigError)
+  })
+
   it('smoke matrix mirrors the contentSidecars request contract', () => {
     const raw = readSource(SMOKE_MATRIX_PATH)
     expect(() => JSON.parse(raw)).not.toThrow()

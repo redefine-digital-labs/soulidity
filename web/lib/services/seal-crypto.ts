@@ -19,12 +19,14 @@ const SKILL_DOCUMENT_ID_DOMAIN = 'soul-skill:'
 const SKILL_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
 const ASSET_DOCUMENT_ID_DOMAIN = 'soul-asset:'
 const ASSET_DOCUMENT_ID_NONCE = new Uint8Array(16).fill(0x5a)
+const CONTENT_DOCUMENT_ID_DOMAIN = 'soul-content:'
 const MAX_ENCRYPTED_DEK_BASE64_LENGTH = 16 * 1024
 const DOCUMENT_ID_DOMAIN_SPECS = [
   { domain: DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + DOCUMENT_ID_NONCE_BYTES },
   { domain: MEMORY_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 8 + MEMORY_DOCUMENT_ID_NONCE.length },
   { domain: SKILL_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 1 + 8 + SKILL_DOCUMENT_ID_NONCE.length },
   { domain: ASSET_DOCUMENT_ID_DOMAIN, minSuffixBytes: 32 + 1 + 8 + ASSET_DOCUMENT_ID_NONCE.length },
+  { domain: CONTENT_DOCUMENT_ID_DOMAIN, minSuffixBytes: 4 + 32 + 1 + 8 + DOCUMENT_ID_NONCE_BYTES },
 ] as const
 
 function getCrypto(): Crypto {

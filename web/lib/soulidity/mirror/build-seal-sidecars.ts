@@ -17,7 +17,12 @@
 import { parseSealEnvelopeSidecar } from '@/lib/services/seal-crypto'
 import { isContentDocumentIdForVersion, type SealEnvelopeSidecar } from '@soulidity/sdk'
 
-export class SealSidecarSyncConfigError extends Error {}
+export class SealSidecarSyncConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SealSidecarSyncConfigError'
+  }
+}
 
 export interface ContentSidecarInput {
   /** `ContentSlot.kind` from the on-chain projection. */
@@ -62,7 +67,16 @@ export function buildSyncSealSidecars(
   input: BuildSyncSealSidecarsInput,
 ): BuildSyncSealSidecarsOutput {
   const validatedEntries: ContentSidecarRecord[] = input.entries.map((entry) => {
-    const provided = entry.sidecar ? parseSealEnvelopeSidecar(entry.sidecar) : null
+    let provided: SealEnvelopeSidecar | null = null
+    if (entry.sidecar) {
+      try {
+        provided = parseSealEnvelopeSidecar(entry.sidecar)
+      } catch (error) {
+        throw new SealSidecarSyncConfigError(
+          error instanceof Error ? error.message : 'content sidecar is malformed',
+        )
+      }
+    }
 
     if (entry.sealEncrypted) {
       if (!provided) {
