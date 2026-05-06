@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "start": "node dist/services/walrus-uploader/src/server.js"
   },
   "dependencies": {
     "@mysten/sui": "^2.15.0",

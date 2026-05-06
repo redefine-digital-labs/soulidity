@@ -217,6 +217,121 @@ describe('walrus-uploader HTTP handler', () => {
     })
   })
 
+  it('rejects concurrent uploads sharing one token before they can each buffer the full byte budget', async () => {
+    // Three concurrent /v1/uploads requests share one bearer token whose
+    // 1024-byte budget can fit at most one 600-byte payload. Without the
+    // in-flight reservation, every request would observe the same
+    // remainingByteBudget=1024, stream up to ~1024+overhead bytes, parse
+    // formData, then fail at the post-parse reserve() (which throws and
+    // surfaces through the default catch with status 400 — NOT 413). With
+    // the reservation, only the first request's claim succeeds and the
+    // other two are rejected via the early-return 413 path before any
+    // multipart parsing happens.
+    function buildStreamingRequest(token: string, payload: Uint8Array): Request {
+      const boundary = '----walrus-concurrent-test-boundary'
+      const head = `--${boundary}\r\n`
+        + 'Content-Disposition: form-data; name="walletAddress"\r\n\r\n'
+        + `${WALLET}\r\n`
+        + `--${boundary}\r\n`
+        + 'Content-Disposition: form-data; name="network"\r\n\r\n'
+        + 'mainnet\r\n'
+        + `--${boundary}\r\n`
+        + 'Content-Disposition: form-data; name="payload"; filename="payload.bin"\r\n'
+        + 'Content-Type: application/octet-stream\r\n\r\n'
+      const tail = `\r\n--${boundary}--\r\n`
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new TextEncoder().encode(head))
+          controller.enqueue(payload)
+          controller.enqueue(new TextEncoder().encode(tail))
+          controller.close()
+        },
+      })
+      return new Request('http://uploader.test/v1/uploads', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' })
+    }
+
+    const staging = createMemoryWalrusUploadStaging()
+    let releaseEncodeBlob: (() => void) | null = null
+    const encodeBlobGate = new Promise<void>((resolve) => { releaseEncodeBlob = resolve })
+    let activeEncodeCount = 0
+    let peakEncodeCount = 0
+    const certificate = {
+      signers: [0],
+      serializedMessage: new Uint8Array([8]),
+      signature: new Uint8Array([9]),
+    }
+    const walrusClient = {
+      encodeBlob: vi.fn(async (payload: Uint8Array) => {
+        activeEncodeCount += 1
+        peakEncodeCount = Math.max(peakEncodeCount, activeEncodeCount)
+        try {
+          await encodeBlobGate
+        } finally {
+          activeEncodeCount -= 1
+        }
+        return {
+          blobId: 'blob-id-concurrent',
+          rootHash: new Uint8Array([7, 7, 7]),
+          metadata: { V1: { unencoded_length: BigInt(payload.byteLength) } },
+          sliversByNode: [{ primary: [{ sliver: new Uint8Array([4]) }], secondary: [] }],
+        }
+      }),
+      writeEncodedBlobToNodes: vi.fn(async () => ['confirmation']),
+      getStorageConfirmations: vi.fn(async () => ['confirmation']),
+      certificateFromConfirmations: vi.fn(async () => certificate),
+      systemState: vi.fn(async () => ({
+        committee: { n_shards: 1, members: [{ weight: 1 }] },
+      })),
+    }
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging,
+      createWalrusClient: async () => walrusClient as never,
+      validateRegister: async () => [],
+      nowMs: () => Date.now(),
+    })
+
+    const sharedToken = makeToken(/* fileCount */ 5, /* byteLimit */ 1024)
+    const payloadBytes = new Uint8Array(600).fill(7)
+
+    const requests = [
+      buildStreamingRequest(sharedToken, payloadBytes),
+      buildStreamingRequest(sharedToken, payloadBytes),
+      buildStreamingRequest(sharedToken, payloadBytes),
+    ]
+    const responsesPromise = Promise.all(requests.map((req) => handler(req)))
+
+    // Yield long enough for each handler to authenticate and either reserve
+    // or reject. Then release the encodeBlob gate so the winning upload can
+    // complete.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    releaseEncodeBlob!()
+    const responses = await responsesPromise
+    const statuses = responses.map((r) => r.status).sort((a, b) => a - b)
+
+    expect(statuses).toEqual([200, 413, 413])
+    expect(peakEncodeCount).toBe(1)
+    expect(walrusClient.encodeBlob).toHaveBeenCalledTimes(1)
+
+    // The 413 carries the byte-limit guard message produced by the early
+    // reservation check, distinguishing this regression from the previous
+    // post-parse path which surfaced a 400 with the same message.
+    const rejectedBodies = await Promise.all(
+      responses.filter((r) => r.status === 413).map((r) => r.json()),
+    )
+    for (const body of rejectedBodies) {
+      expect(body).toEqual({ error: 'Walrus uploader token byte limit exceeded' })
+    }
+  })
+
   it('finalizes a completed upload by deleting staged payload state', async () => {
     const staging = createMemoryWalrusUploadStaging()
     const handler = createWalrusUploaderHandler({
