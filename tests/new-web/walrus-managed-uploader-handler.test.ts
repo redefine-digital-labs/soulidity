@@ -127,6 +127,96 @@ describe('walrus-uploader HTTP handler', () => {
     }))
   })
 
+  it('rejects an oversized multipart upload via Content-Length before parsing the body', async () => {
+    const staging = createMemoryWalrusUploadStaging()
+    const walrusClient = {
+      encodeBlob: vi.fn(async () => {
+        throw new Error('encodeBlob must not be called when the byte budget is exceeded')
+      }),
+      writeEncodedBlobToNodes: vi.fn(),
+      getStorageConfirmations: vi.fn(),
+      certificateFromConfirmations: vi.fn(),
+      systemState: vi.fn(),
+    }
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging,
+      createWalrusClient: async () => walrusClient as never,
+      validateRegister: async () => [],
+      nowMs: () => Date.now(),
+    })
+
+    const tinyToken = makeToken(1, 16)
+    const oversizedPayload = new Uint8Array(1024 * 1024)
+    const response = await handler(multipartUploadRequest(tinyToken, oversizedPayload))
+
+    expect(response.status).toBe(413)
+    expect(walrusClient.encodeBlob).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({
+      error: 'Walrus uploader token byte limit exceeded',
+    })
+  })
+
+  it('aborts a chunked multipart upload mid-stream when bytes exceed the token budget', async () => {
+    const staging = createMemoryWalrusUploadStaging()
+    const walrusClient = {
+      encodeBlob: vi.fn(async () => {
+        throw new Error('encodeBlob must not be called when the byte budget is exceeded')
+      }),
+      writeEncodedBlobToNodes: vi.fn(),
+      getStorageConfirmations: vi.fn(),
+      certificateFromConfirmations: vi.fn(),
+      systemState: vi.fn(),
+    }
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging,
+      createWalrusClient: async () => walrusClient as never,
+      validateRegister: async () => [],
+      nowMs: () => Date.now(),
+    })
+
+    const tinyToken = makeToken(1, 16)
+    // Build a multipart body with no Content-Length by streaming chunks. The
+    // first chunk on its own already exceeds the budget + multipart overhead.
+    const boundary = '----walrus-test-boundary'
+    const head = `--${boundary}\r\n`
+      + 'Content-Disposition: form-data; name="walletAddress"\r\n\r\n'
+      + `${WALLET}\r\n`
+      + `--${boundary}\r\n`
+      + 'Content-Disposition: form-data; name="network"\r\n\r\n'
+      + 'mainnet\r\n'
+      + `--${boundary}\r\n`
+      + 'Content-Disposition: form-data; name="payload"; filename="payload.bin"\r\n'
+      + 'Content-Type: application/octet-stream\r\n\r\n'
+    const giant = new Uint8Array(2 * 1024 * 1024)
+    const tail = `\r\n--${boundary}--\r\n`
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(head))
+        controller.enqueue(giant)
+        controller.enqueue(new TextEncoder().encode(tail))
+        controller.close()
+      },
+    })
+    const request = new Request('http://uploader.test/v1/uploads', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tinyToken}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' })
+
+    const response = await handler(request)
+    expect(response.status).toBe(413)
+    expect(walrusClient.encodeBlob).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({
+      error: 'Walrus uploader token byte limit exceeded',
+    })
+  })
+
   it('finalizes a completed upload by deleting staged payload state', async () => {
     const staging = createMemoryWalrusUploadStaging()
     const handler = createWalrusUploaderHandler({
