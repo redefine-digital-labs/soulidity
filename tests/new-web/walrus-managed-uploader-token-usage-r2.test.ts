@@ -23,15 +23,10 @@ function makeTokenPayload(fileCount: number, byteLimit: number) {
 }
 
 interface FakeR2Object {
-  etag: string
   body: string
 }
 
 async function readSignedBody(init: RequestInit | undefined): Promise<string> {
-  // The uploader's signedFetch materializes the signed body as Uint8Array so
-  // fetch can length-prefix it (R2 rejects chunked PUT with 411). Decode it
-  // back to text for the simulator to parse. Older path (Request with stream
-  // body) kept as a defensive fallback.
   if (!init) return ''
   if (init instanceof Request) return await init.clone().text()
   if (init.body instanceof Uint8Array) {
@@ -53,12 +48,8 @@ function buildR2Simulator() {
   const fetchImpl: typeof fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String((input as Request).url ?? input)
     const headers = new Headers(init?.headers)
-    const authorization = headers.get('Authorization')
-    expect(authorization).toMatch(/^AWS4-HMAC-SHA256 /)
+    expect(headers.get('Authorization')).toMatch(/^AWS4-HMAC-SHA256 /)
 
-    // Path is `/{bucket}/{encodedKey}`. We treat the rest of the path as the
-    // key in encoded form so the simulator stays agnostic of how the
-    // production code spells `prefix/jti.json`.
     const parsed = new URL(url)
     const pathParts = parsed.pathname.split('/').filter(Boolean)
     const bucket = pathParts[0]
@@ -70,7 +61,7 @@ function buildR2Simulator() {
     if (method === 'PUT') {
       // Real R2 returns 411 when the PUT body is sent chunked. Make sure the
       // uploader hands fetch a length-prefixable body (Uint8Array | string |
-      // undefined), never a ReadableStream or a Request with a stream body.
+      // undefined), never a ReadableStream / Request with stream body.
       expect(init).not.toBeInstanceOf(Request)
       expect(init?.body instanceof ReadableStream).toBe(false)
       expect(
@@ -78,31 +69,20 @@ function buildR2Simulator() {
         || typeof init?.body === 'string'
         || init?.body instanceof Uint8Array,
       ).toBe(true)
+      // Unconditional write — uploader does NOT use If-Match / If-None-Match
+      // (Cloudflare Container outbound can produce spurious 412s on PUTs
+      // that R2 actually accepted). Reject any reintroduced conditional.
+      expect(headers.get('If-Match')).toBeNull()
+      expect(headers.get('If-None-Match')).toBeNull()
       const body = await readSignedBody(init)
-      const ifMatch = headers.get('If-Match')
-      const ifNoneMatch = headers.get('If-None-Match')
-      const live = objects.get(key)
-      if (ifNoneMatch === '*') {
-        if (live) return new Response('precondition failed', { status: 412 })
-        const etag = `"etag-${(seq += 1)}"`
-        objects.set(key, { etag, body })
-        return new Response('', { status: 200, headers: { ETag: etag } })
-      }
-      if (ifMatch != null) {
-        if (!live || live.etag !== ifMatch) {
-          return new Response('precondition failed', { status: 412 })
-        }
-        const etag = `"etag-${(seq += 1)}"`
-        objects.set(key, { etag, body })
-        return new Response('', { status: 200, headers: { ETag: etag } })
-      }
-      return new Response('missing precondition', { status: 400 })
+      objects.set(key, { body })
+      return new Response('', { status: 200, headers: { ETag: `"e${seq += 1}"` } })
     }
 
     if (method === 'GET') {
       const live = objects.get(key)
       if (!live) return new Response('not found', { status: 404 })
-      return new Response(live.body, { status: 200, headers: { ETag: live.etag } })
+      return new Response(live.body, { status: 200 })
     }
 
     return new Response('unexpected', { status: 500 })
@@ -123,50 +103,25 @@ describe('walrus-uploader R2 token usage guard', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses If-None-Match: * for the first write and accepts the reservation', async () => {
+  it('persists the first reservation through an unconditional PUT', async () => {
     const { fetchImpl, objects } = buildR2Simulator()
     const guard = createR2TokenUsageGuard({ ...GUARD_PARAMS_BASE, nowMs: () => Date.now(), fetchImpl })
     const payload = makeTokenPayload(5, 1024)
 
     await expect(guard.tryReserve(payload, 600)).resolves.toEqual({ ok: true })
     expect(objects.size).toBe(1)
-    // The PUT must have included `If-None-Match: *` for the first write.
-    const calls = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls
-    const firstPut = calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')
-    expect(firstPut).toBeDefined()
-    const headers = new Headers((firstPut![1] as RequestInit).headers)
-    expect(headers.get('If-None-Match')).toBe('*')
+    await expect(guard.getRemainingByteBudget(payload)).resolves.toBe(424)
   })
 
-  it('converges on the per-token byte budget under concurrent CAS conflict', async () => {
+  it('reads the current record and accumulates on the second reservation', async () => {
     const { fetchImpl, objects } = buildR2Simulator()
-    const guardA = createR2TokenUsageGuard({ ...GUARD_PARAMS_BASE, nowMs: () => Date.now(), fetchImpl })
-    const guardB = createR2TokenUsageGuard({ ...GUARD_PARAMS_BASE, nowMs: () => Date.now(), fetchImpl })
-
+    const guard = createR2TokenUsageGuard({ ...GUARD_PARAMS_BASE, nowMs: () => Date.now(), fetchImpl })
     const payload = makeTokenPayload(5, 1024)
 
-    // Three parallel reservations of 600 bytes each — only one fits the
-    // 1024-byte budget. The other two must lose CAS races and exit cleanly.
-    const reservations = await Promise.all([
-      guardA.tryReserve(payload, 600),
-      guardB.tryReserve(payload, 600),
-      guardA.tryReserve(payload, 600),
-    ])
-    const accepted = reservations.filter((r) => r.ok).length
-    expect(accepted).toBe(1)
-    const rejected = reservations.filter((r) => !r.ok)
-    expect(rejected).toHaveLength(2)
-    for (const result of rejected) {
-      if (result.ok) continue
-      expect(result.error).toBe('Walrus uploader token byte limit exceeded')
-    }
-
+    await expect(guard.tryReserve(payload, 400)).resolves.toEqual({ ok: true })
+    await expect(guard.tryReserve(payload, 200)).resolves.toEqual({ ok: true })
     expect(objects.size).toBe(1)
-    await expect(guardA.getRemainingByteBudget(payload)).resolves.toBe(424)
-    await expect(guardB.getRemainingByteBudget(payload)).resolves.toBe(424)
-
-    await guardB.releaseClaim(payload, 600)
-    await expect(guardA.getRemainingByteBudget(payload)).resolves.toBe(1024)
+    await expect(guard.getRemainingByteBudget(payload)).resolves.toBe(424)
   })
 
   it('fails the reservation when the byte budget would overflow', async () => {
@@ -191,5 +146,13 @@ describe('walrus-uploader R2 token usage guard', () => {
       ok: false,
       error: 'Walrus uploader token file count exceeded',
     })
+  })
+
+  it('releaseClaim is a no-op when no record exists', async () => {
+    const { fetchImpl } = buildR2Simulator()
+    const guard = createR2TokenUsageGuard({ ...GUARD_PARAMS_BASE, nowMs: () => Date.now(), fetchImpl })
+    const payload = makeTokenPayload(5, 1024)
+
+    await expect(guard.releaseClaim(payload, 100)).resolves.toBeUndefined()
   })
 })

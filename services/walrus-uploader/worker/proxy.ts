@@ -66,7 +66,12 @@ export default {
     // per-token DO sharding yet. If R2 412 retry rate ever climbs, switch
     // here to `getContainer(env.WALRUS_UPLOADER, hashOfBearerToken)` for
     // sticky routing per-token.
-    const container = getContainer(env.WALRUS_UPLOADER, 'singleton')
+    // Single shared instance — token-usage state lives in R2 so we don't
+    // need per-token DO sharding. The routing name doubles as a deployment
+    // generation token: bumping it (e.g. `prod-v2`) forces requests onto a
+    // fresh Container instance, which is the only way to roll forward
+    // injected secrets that warm-but-stale instances kept from start.
+    const container = getContainer(env.WALRUS_UPLOADER, 'prod-v1')
     return container.fetch(request)
   },
 }

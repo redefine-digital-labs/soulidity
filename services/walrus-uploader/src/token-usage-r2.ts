@@ -2,25 +2,21 @@ import { AwsClient } from 'aws4fetch'
 import type { WalrusUploaderTokenPayload } from '../../../src/shared/walrus-uploader-token.js'
 import type { TokenUsageGuard } from './handler.js'
 
-// CAS retry budget. R2 conditional PUT (`If-Match`/`If-None-Match`) returns
-// 412 on conflict; modest concurrency per token converges in a few retries.
-// Mirrors the GCS backend's tuning so behaviour stays consistent across
-// staging-backend choices.
-const CAS_MAX_RETRIES = 8
-const CAS_RETRY_BASE_DELAY_MS = 5
-const CAS_RETRY_MAX_DELAY_MS = 80
+// Retry budget for transient network errors during the read-modify-write
+// cycle. Conditional writes (`If-Match` / `If-None-Match`) were tried first
+// but Cloudflare Container's outbound HTTP path produces spurious 412s on
+// PUTs that R2 actually accepted (likely due to L4 retransmission seeing a
+// "now exists" precondition fail), so we use unconditional PUTs and accept
+// last-writer-wins semantics for the per-jti counter. The retry budget here
+// only covers genuine network failures.
+const WRITE_MAX_RETRIES = 3
+const WRITE_RETRY_BASE_DELAY_MS = 5
+const WRITE_RETRY_MAX_DELAY_MS = 80
 
 interface UsageRecord {
   expiresAt: number
   fileCount: number
   byteCount: number
-}
-
-interface FetchedUsage {
-  record: UsageRecord | null
-  // ETag for `If-Match` updates. `null` signals "object did not exist", which
-  // becomes `If-None-Match: *` on the write side (put-if-not-exists).
-  etag: string | null
 }
 
 export interface CreateR2TokenUsageGuardParams {
@@ -85,86 +81,71 @@ export function createR2TokenUsageGuard(params: CreateR2TokenUsageGuardParams): 
   const objectUrl = (name: string) => `${endpoint}/${encodeURIComponent(params.bucket)}/${name}`
 
   async function signedFetch(url: string, init: RequestInit = {}) {
+    // aws4fetch's sign() returns a Request whose body is a ReadableStream.
+    // Inside the Cloudflare Container we observed PUTs whose state R2
+    // actually applied still surfaced as 412 to our caller — symptoms of L4
+    // retransmission. Take only the signed *headers* from sign() and issue
+    // the fetch with our original string body so the underlying transport
+    // can length-prefix and not duplicate.
     const signed = await aws.sign(url, init)
-    // Node 22 undici-fetch on a Request with a ReadableStream body uses
-    // chunked transfer encoding, but R2's S3 API requires Content-Length on
-    // PUT and rejects chunked uploads with 411 Length Required. Materialize
-    // the signed body so fetch can length-prefix it.
-    const bytes = await signed.arrayBuffer()
-    const body = bytes.byteLength > 0 ? new Uint8Array(bytes) : undefined
-    const requestInit: RequestInit = {
-      method: signed.method,
-      headers: signed.headers,
-      body,
-    }
-    return (fetchImpl ?? fetch)(signed.url, requestInit)
+    const headers = new Headers(signed.headers)
+    return (fetchImpl ?? fetch)(url, {
+      method: init.method ?? 'GET',
+      headers,
+      body: init.body ?? undefined,
+    })
   }
 
-  async function readUsage(jti: string): Promise<FetchedUsage> {
+  async function readUsage(jti: string): Promise<UsageRecord | null> {
     const response = await signedFetch(objectUrl(objectName(jti)))
-    if (response.status === 404) {
-      return { record: null, etag: null }
-    }
+    if (response.status === 404) return null
     if (!response.ok) {
       throw new Error(`Failed to read R2 token usage for ${jti}: HTTP ${response.status}`)
     }
-    const etag = response.headers.get('etag') ?? response.headers.get('ETag')
-    const record = parseUsageRecord(await response.text())
-    return { record, etag }
+    return parseUsageRecord(await response.text())
   }
 
-  // Persist `next` only if R2's view of the object still matches. Returns
-  // true on accept (200/204), false on 412 (concurrent writer beat us, caller
-  // retries the read-modify-write loop).
-  async function writeUsage(jti: string, next: UsageRecord, expectedEtag: string | null): Promise<boolean> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (expectedEtag == null) {
-      // First write: succeed only if no object exists. Mirrors GCS
-      // `ifGenerationMatch=0`.
-      headers['If-None-Match'] = '*'
-    } else {
-      headers['If-Match'] = expectedEtag
-    }
+  async function writeUsage(jti: string, next: UsageRecord): Promise<void> {
     const response = await signedFetch(objectUrl(objectName(jti)), {
       method: 'PUT',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: serializeUsageRecord(next),
     })
-    if (response.status === 412 || response.status === 409) return false
     if (!response.ok) {
-      throw new Error(`Failed to write R2 token usage for ${jti}: HTTP ${response.status}`)
+      const body = await response.text().catch(() => '')
+      throw new Error(
+        `Failed to write R2 token usage for ${jti}: HTTP ${response.status} body=${body.slice(0, 200)}`,
+      )
     }
-    return true
   }
 
-  // Centralized read-modify-write loop with bounded retries. Same semantics
-  // as the GCS backend so callers see identical behaviour regardless of
-  // STAGING_BACKEND.
-  async function casUpdate<T>(
+  // Read-modify-write with retries on transient network failures only. Two
+  // concurrent reservations on the same jti can race — last writer wins,
+  // which is acceptable for this counter (5-min TTL, single user per token).
+  async function readModifyWrite<T>(
     jti: string,
     mutate: (current: UsageRecord | null) =>
       | { kind: 'commit'; next: UsageRecord; result: T }
       | { kind: 'error'; result: T },
   ): Promise<T> {
     let lastError: unknown = null
-    for (let attempt = 0; attempt < CAS_MAX_RETRIES; attempt += 1) {
-      const fetched = await readUsage(jti)
-      const decision = mutate(fetched.record)
-      if (decision.kind === 'error') return decision.result
+    for (let attempt = 0; attempt < WRITE_MAX_RETRIES; attempt += 1) {
       try {
-        const accepted = await writeUsage(jti, decision.next, fetched.etag)
-        if (accepted) return decision.result
+        const current = await readUsage(jti)
+        const decision = mutate(current)
+        if (decision.kind === 'error') return decision.result
+        await writeUsage(jti, decision.next)
+        return decision.result
       } catch (error) {
         lastError = error
+        const delay = Math.min(
+          WRITE_RETRY_MAX_DELAY_MS,
+          WRITE_RETRY_BASE_DELAY_MS * 2 ** attempt,
+        )
+        await new Promise((resolve) => setTimeout(resolve, delay))
       }
-      const delay = Math.min(
-        CAS_RETRY_MAX_DELAY_MS,
-        CAS_RETRY_BASE_DELAY_MS * 2 ** attempt,
-      )
-      await new Promise((resolve) => setTimeout(resolve, delay))
     }
-    if (lastError) throw lastError
-    throw new Error(`R2 token usage CAS for ${jti} did not converge after ${CAS_MAX_RETRIES} retries`)
+    throw lastError ?? new Error(`R2 token usage update for ${jti} failed`)
   }
 
   function effectiveCurrent(payload: WalrusUploaderTokenPayload, fetched: UsageRecord | null): UsageRecord {
@@ -178,7 +159,7 @@ export function createR2TokenUsageGuard(params: CreateR2TokenUsageGuardParams): 
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     const safeClaim = Math.max(0, Math.trunc(claimBytes))
     type Result = { ok: true } | { ok: false; error: string }
-    return casUpdate<Result>(payload.jti, (fetched) => {
+    return readModifyWrite<Result>(payload.jti, (fetched) => {
       const current = effectiveCurrent(payload, fetched)
       const nextFileCount = current.fileCount + 1
       if (nextFileCount > payload.fileCount) {
@@ -208,7 +189,7 @@ export function createR2TokenUsageGuard(params: CreateR2TokenUsageGuardParams): 
     const safeClaim = Math.max(0, Math.trunc(claimBytes))
     const safeActual = Math.max(0, Math.trunc(actualBytes))
     type Result = { ok: true } | { ok: false; error: string }
-    return casUpdate<Result>(payload.jti, (fetched) => {
+    return readModifyWrite<Result>(payload.jti, (fetched) => {
       const current = fetched ?? {
         expiresAt: payload.exp * 1000,
         fileCount: 1,
@@ -232,7 +213,7 @@ export function createR2TokenUsageGuard(params: CreateR2TokenUsageGuardParams): 
 
   async function releaseClaim(payload: WalrusUploaderTokenPayload, claimBytes: number): Promise<void> {
     const safeClaim = Math.max(0, Math.trunc(claimBytes))
-    await casUpdate<void>(payload.jti, (fetched) => {
+    await readModifyWrite<void>(payload.jti, (fetched) => {
       if (!fetched) return { kind: 'error', result: undefined }
       const nextFileCount = Math.max(0, fetched.fileCount - 1)
       const nextByteCount = Math.max(0, fetched.byteCount - safeClaim)
@@ -250,7 +231,7 @@ export function createR2TokenUsageGuard(params: CreateR2TokenUsageGuardParams): 
 
   async function getRemainingByteBudget(payload: WalrusUploaderTokenPayload): Promise<number> {
     const fetched = await readUsage(payload.jti)
-    const current = effectiveCurrent(payload, fetched.record)
+    const current = effectiveCurrent(payload, fetched)
     return Math.max(0, payload.byteLimit - current.byteCount)
   }
 

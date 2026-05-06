@@ -131,19 +131,20 @@ export function createR2WalrusUploadStaging(params: CreateR2WalrusUploadStagingP
   const objectUrl = (name: string) => `${endpoint}/${encodeURIComponent(params.bucket)}/${name}`
 
   async function signedFetch(url: string, init: RequestInit = {}) {
+    // aws4fetch's sign() returns a Request whose body is a ReadableStream.
+    // Inside the Cloudflare Container we observed PUTs whose state R2
+    // actually applied still surfaced as 412 to our caller, plus subsequent
+    // GETs on the same URL returning the just-PUT body — symptoms of L4
+    // retransmission. Take only the signed *headers* from sign() and issue
+    // the fetch with our original string body so the underlying transport
+    // can length-prefix and not duplicate.
     const signed = await aws.sign(url, init)
-    // Node 22 undici-fetch on a Request with a ReadableStream body uses
-    // chunked transfer encoding, but R2's S3 API requires Content-Length on
-    // PUT and rejects chunked uploads with 411 Length Required. Materialize
-    // the signed body so fetch can length-prefix it.
-    const bytes = await signed.arrayBuffer()
-    const body = bytes.byteLength > 0 ? new Uint8Array(bytes) : undefined
-    const requestInit: RequestInit = {
-      method: signed.method,
-      headers: signed.headers,
-      body,
-    }
-    return (fetchImpl ?? fetch)(signed.url, requestInit)
+    const headers = new Headers(signed.headers)
+    return (fetchImpl ?? fetch)(url, {
+      method: init.method ?? 'GET',
+      headers,
+      body: init.body ?? undefined,
+    })
   }
 
   return {
