@@ -510,6 +510,119 @@ describe('walrus-uploader HTTP handler', () => {
     })
   })
 
+  it('does not block /health on staging.deleteExpired and throttles cleanup across requests', async () => {
+    // R-001 regression. Previously the handler awaited
+    // `deps.staging.deleteExpired(nowMs())` before serving every non-OPTIONS
+    // request, including `/health`. The GCS staging backend amplifies
+    // `deleteExpired` into a full prefix list + per-object body fetch, so a
+    // single legitimate request paid the cost of every abandoned staged
+    // upload sitting under the prefix. The handler now kicks cleanup off
+    // fire-and-forget at a throttled interval; this regression locks both
+    // properties in place.
+
+    const staging = createMemoryWalrusUploadStaging()
+    let pendingResolve: (() => void) | null = null
+    const pending = new Promise<void>((resolve) => { pendingResolve = resolve })
+    const deleteExpiredCalls: number[] = []
+    const stubbedStaging = {
+      ...staging,
+      deleteExpired: vi.fn(async (nowMs: number) => {
+        deleteExpiredCalls.push(nowMs)
+        await pending
+        return 0
+      }),
+    }
+
+    let now = 1_000_000
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging: stubbedStaging,
+      createWalrusClient: async () => {
+        throw new Error('not used')
+      },
+      validateRegister: async () => [],
+      nowMs: () => now,
+      stagingCleanupIntervalMs: 60_000,
+    })
+
+    // First /health: cleanup is kicked off, but the response must NOT wait
+    // for `deleteExpired` to settle. The deferred is still pending here, so
+    // a synchronous-await implementation would hang; this resolves quickly
+    // because the cleanup is detached.
+    const firstResponse = await handler(new Request('http://uploader.test/health', {
+      method: 'GET',
+    }))
+    expect(firstResponse.status).toBe(200)
+    expect(stubbedStaging.deleteExpired).toHaveBeenCalledTimes(1)
+
+    // A second request inside the throttle window does NOT trigger another
+    // cleanup. This guarantees abandoned staged uploads cannot be turned
+    // into a request-rate amplification vector even with the kick-off
+    // detached from the response.
+    now += 1_000
+    const secondResponse = await handler(new Request('http://uploader.test/health', {
+      method: 'GET',
+    }))
+    expect(secondResponse.status).toBe(200)
+    expect(stubbedStaging.deleteExpired).toHaveBeenCalledTimes(1)
+
+    // Resolve the in-flight cleanup so a request after the throttle window
+    // can kick off a fresh run. (If the previous run is still in flight,
+    // the handler also skips the kick-off — protecting against cleanup
+    // pile-up under sustained traffic.)
+    pendingResolve!()
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    now += 60_001
+    const thirdResponse = await handler(new Request('http://uploader.test/health', {
+      method: 'GET',
+    }))
+    expect(thirdResponse.status).toBe(200)
+    expect(stubbedStaging.deleteExpired).toHaveBeenCalledTimes(2)
+    expect(deleteExpiredCalls).toEqual([1_000_000, 1_000_000 + 1_000 + 60_001])
+  })
+
+  it('does not surface staging cleanup failures to the request response', async () => {
+    // Failure isolation: a transient GCS list/delete failure during
+    // background cleanup must not crash request handling. The previous
+    // synchronous-await path turned cleanup errors into 4xx/5xx responses
+    // for every legitimate request until the failure cleared.
+    const staging = createMemoryWalrusUploadStaging()
+    const stubbedStaging = {
+      ...staging,
+      deleteExpired: vi.fn(async () => {
+        throw new Error('GCS list HTTP 503')
+      }),
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging: stubbedStaging,
+      createWalrusClient: async () => {
+        throw new Error('not used')
+      },
+      validateRegister: async () => [],
+      nowMs: () => Date.now(),
+    })
+
+    const response = await handler(new Request('http://uploader.test/health', {
+      method: 'GET',
+    }))
+    expect(response.status).toBe(200)
+
+    // Drain the detached cleanup microtask so the warn assertion is stable.
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(stubbedStaging.deleteExpired).toHaveBeenCalledTimes(1)
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('staging cleanup failed'),
+      expect.stringContaining('GCS list HTTP 503'),
+    )
+  })
+
   it('finalizes a completed upload by deleting staged payload state', async () => {
     const staging = createMemoryWalrusUploadStaging()
     const handler = createWalrusUploaderHandler({

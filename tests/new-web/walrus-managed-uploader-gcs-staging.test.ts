@@ -74,6 +74,81 @@ describe('walrus-uploader GCS staging', () => {
     }))
   })
 
+  it('paginates through deleteExpired results when GCS returns a nextPageToken', async () => {
+    // R-001 regression: the previous deleteExpired implementation issued a
+    // single GCS list request and silently truncated whenever the prefix
+    // exceeded one page. With the handler now throttling cleanup off the
+    // request path, the staging backend must be able to drain backlogs that
+    // span multiple pages on its own.
+    vi.stubEnv('GCS_ACCESS_TOKEN', 'test-access-token')
+    const expiredOne = JSON.stringify({
+      ...stagedUpload({ uploadId: 'upload-page-1', expiresAt: 2_000 }),
+      rootHash: Buffer.from([1, 2, 3]).toString('base64'),
+      metadata: null,
+      sliversByNode: null,
+    })
+    const expiredTwo = JSON.stringify({
+      ...stagedUpload({ uploadId: 'upload-page-2', expiresAt: 1_500 }),
+      rootHash: Buffer.from([1, 2, 3]).toString('base64'),
+      metadata: null,
+      sliversByNode: null,
+    })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const authorization = new Headers(init?.headers).get('Authorization')
+      expect(authorization).toBe('Bearer test-access-token')
+
+      if (url.includes('/o?prefix=walrus-uploader%2F') && !url.includes('pageToken=')) {
+        return new Response(JSON.stringify({
+          items: [{ name: 'walrus-uploader/upload-page-1.json' }],
+          nextPageToken: 'page-2',
+        }), { status: 200 })
+      }
+      if (url.includes('/o?prefix=walrus-uploader%2F') && url.includes('pageToken=page-2')) {
+        return new Response(JSON.stringify({
+          items: [{ name: 'walrus-uploader/upload-page-2.json' }],
+        }), { status: 200 })
+      }
+      if (url.includes('/o/walrus-uploader%2Fupload-page-1.json?alt=media')) {
+        return new Response(expiredOne, { status: 200 })
+      }
+      if (url.includes('/o/walrus-uploader%2Fupload-page-2.json?alt=media')) {
+        return new Response(expiredTwo, { status: 200 })
+      }
+      if (url.includes('/o/walrus-uploader%2Fupload-page-1.json') && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 })
+      }
+      if (url.includes('/o/walrus-uploader%2Fupload-page-2.json') && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 })
+      }
+      return new Response('unexpected request', { status: 500 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const staging = await createGcsWalrusUploadStaging('clawnews-test', 'walrus-uploader')
+
+    await expect(staging.deleteExpired(2_001)).resolves.toBe(2)
+
+    // Both list pages must have been fetched, and both expired uploads
+    // deleted.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/o\?prefix=walrus-uploader%2F$/),
+      expect.anything(),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('pageToken=page-2'),
+      expect.anything(),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/o/walrus-uploader%2Fupload-page-1.json'),
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/o/walrus-uploader%2Fupload-page-2.json'),
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+  })
+
   it('removes expired staged uploads under the configured GCS prefix', async () => {
     vi.stubEnv('GCS_ACCESS_TOKEN', 'test-access-token')
     const expiredUpload = JSON.stringify({
