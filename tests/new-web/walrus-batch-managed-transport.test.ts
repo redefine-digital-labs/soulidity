@@ -177,14 +177,31 @@ describe('Walrus managed upload transport', () => {
     }
   })
 
-  it('times out a hanging managed completion so launch can resume without re-registering', async () => {
+  it('lets managed completion wait for the uploader service instead of aborting in the frontend', async () => {
     vi.useFakeTimers()
     vi.stubEnv('NEXT_PUBLIC_WALRUS_MANAGED_COMPLETE_TIMEOUT_MS', '25')
+    const certificate = {
+      signers: [0],
+      serializedMessage: 'CA',
+      signature: 'CQ',
+    }
+    let abortCount = 0
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      return await new Promise<Response>((_resolve, reject) => {
+      return await new Promise<Response>((resolve) => {
         init?.signal?.addEventListener('abort', () => {
-          reject(new DOMException('Aborted', 'AbortError'))
+          abortCount += 1
         })
+        setTimeout(() => {
+          resolve(new Response(JSON.stringify({
+            uploadId: 'upload-1',
+            blobId: 'blob-id-0',
+            blobObjectId: BLOB_OBJECT_ID,
+            certificate,
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }))
+        }, 50)
       })
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -195,11 +212,22 @@ describe('Walrus managed upload transport', () => {
     const intent = buildManagedResumeIntent(fakeWalrusClient)
 
     try {
-      const pending = expect(completeBatchWalrusUploadAfterRegister({ intent })).rejects.toThrow(
-        'Walrus uploader completion timed out after 25ms for upload upload-1. Retry to resume without registering again.',
-      )
+      const pending = completeBatchWalrusUploadAfterRegister({ intent })
       await vi.advanceTimersByTimeAsync(25)
-      await pending
+      expect(abortCount).toBe(0)
+      await vi.advanceTimersByTimeAsync(25)
+      const result = await pending
+      await result.attachCertifyCalls({ add: vi.fn() } as never)
+      expect(fakeWalrusClient.certifyBlob).toHaveBeenCalledWith({
+        blobId: 'blob-id-0',
+        blobObjectId: BLOB_OBJECT_ID,
+        certificate: {
+          signers: [0],
+          serializedMessage: new Uint8Array([8]),
+          signature: new Uint8Array([9]),
+        },
+        deletable: true,
+      })
     } finally {
       vi.useRealTimers()
       vi.unstubAllEnvs()

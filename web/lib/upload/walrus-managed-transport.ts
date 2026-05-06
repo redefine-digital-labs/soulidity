@@ -22,8 +22,6 @@ export interface ManagedUploaderCertificate {
   certificate: ReturnType<typeof deserializeWalrusCertificate>
 }
 
-const DEFAULT_MANAGED_COMPLETE_TIMEOUT_MS = 300_000
-
 function getManagedUploaderUrl() {
   const url = process.env.NEXT_PUBLIC_WALRUS_UPLOADER_URL?.trim().replace(/\/+$/, '')
   if (!url) {
@@ -33,35 +31,6 @@ function getManagedUploaderUrl() {
     )
   }
   return url
-}
-
-function getManagedCompleteTimeoutMs() {
-  const raw = process.env.NEXT_PUBLIC_WALRUS_MANAGED_COMPLETE_TIMEOUT_MS
-  const parsed = raw ? Number(raw) : NaN
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MANAGED_COMPLETE_TIMEOUT_MS
-}
-
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number, message: string) {
-  const controller = new AbortController()
-  let timeout: ReturnType<typeof setTimeout> | null = null
-  let timedOut = false
-  try {
-    timeout = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-    }, timeoutMs)
-    return await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    })
-  } catch (error) {
-    if (timedOut) {
-      throw new Error(message)
-    }
-    throw error
-  } finally {
-    if (timeout) clearTimeout(timeout)
-  }
 }
 
 function base64ToBytes(value: string): Uint8Array {
@@ -188,8 +157,12 @@ export async function completeManagedWalrusUpload(params: {
   registerTxDigest: string
   blobObjectId: string
 }): Promise<ManagedUploaderCertificate> {
-  const timeoutMs = getManagedCompleteTimeoutMs()
-  const response = await fetchWithTimeout(joinUploaderUrl(params.credentials.url, `/v1/uploads/${encodeURIComponent(params.uploadId)}/complete`), {
+  // Keep the HTTP request open until the uploader service finishes Walrus
+  // storage-node writes and returns a certificate. Cloudflare Workers do not
+  // impose a hard wall-time limit for HTTP requests while the client remains
+  // connected; aborting here would cancel the backend operation in exactly the
+  // long-running phase this managed transport exists to absorb.
+  const response = await fetch(joinUploaderUrl(params.credentials.url, `/v1/uploads/${encodeURIComponent(params.uploadId)}/complete`), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.credentials.token}`,
@@ -201,7 +174,7 @@ export async function completeManagedWalrusUpload(params: {
       registerTxDigest: params.registerTxDigest,
       blobObjectId: params.blobObjectId,
     }),
-  }, timeoutMs, `Walrus uploader completion timed out after ${timeoutMs}ms for upload ${params.uploadId}. Retry to resume without registering again.`)
+  })
   const payload = await response.json().catch(() => null) as {
     uploadId?: unknown
     blobId?: unknown
