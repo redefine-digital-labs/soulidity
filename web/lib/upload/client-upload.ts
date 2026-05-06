@@ -38,6 +38,13 @@ import {
   type SerializedWalrusCertificate,
   type WalrusUploadTransport,
 } from '@/lib/upload/walrus-batch-transport'
+import {
+  completeManagedWalrusUpload,
+  finalizeManagedWalrusUpload,
+  requestManagedWalrusUploaderCredentials,
+  uploadPayloadToManagedWalrusUploader,
+  type ManagedUploaderCredentials,
+} from '@/lib/upload/walrus-managed-transport'
 
 export type SoulUploadKind = 'persona-sprite' | 'soul-content'
 export type SoulUploadType = 'public' | 'encrypted'
@@ -539,13 +546,17 @@ interface BatchWalrusContinuation {
   storageEpochs: number
   suiClient: unknown
   walrusClient: Awaited<ReturnType<typeof createWalrusClient>>
+  transport: WalrusUploadTransport
   prepared: PreparedFile[]
   encodedList: Array<{
+    uploadId?: string | null
     blobId: string
     rootHash: Uint8Array
-    metadata: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['metadata']
-    sliversByNode: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['sliversByNode']
+    size?: number
+    metadata?: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['metadata']
+    sliversByNode?: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['sliversByNode']
   }>
+  managedUploader: ManagedUploaderCredentials | null
   recoveryKey: string
   resumedBlobObjectIds: string[] | null
   quote: WalrusUploadQuote
@@ -575,6 +586,8 @@ export interface PrepareBatchWalrusRegisterIntentParams {
   walletAddress: string
   suiClient: unknown
   confirmQuote: (quote: WalrusUploadQuote) => Promise<boolean>
+  authHeaders?: Record<string, string>
+  transport?: WalrusUploadTransport
   storageEpochs?: number
 }
 
@@ -906,6 +919,68 @@ async function completeEncodedBlobsViaServer(params: {
   })
 }
 
+function requireManagedUploadId(
+  encoded: BatchWalrusContinuation['encodedList'][number],
+  index: number,
+): string {
+  if (!encoded.uploadId) {
+    throw new Error(`Walrus managed upload missing uploadId for blob index ${index}`)
+  }
+  return encoded.uploadId
+}
+
+function requireBrowserEncodedBlob(
+  encoded: BatchWalrusContinuation['encodedList'][number],
+  index: number,
+): {
+  metadata: NonNullable<BatchWalrusContinuation['encodedList'][number]['metadata']>
+  sliversByNode: NonNullable<BatchWalrusContinuation['encodedList'][number]['sliversByNode']>
+} {
+  if (encoded.metadata == null || encoded.sliversByNode == null) {
+    throw new Error(
+      `Walrus ${encoded.uploadId ? 'managed' : 'browser'} upload cannot use local/server sliver completion for blob index ${index}`,
+    )
+  }
+  return {
+    metadata: encoded.metadata,
+    sliversByNode: encoded.sliversByNode,
+  }
+}
+
+async function completeEncodedBlobsViaManagedUploader(params: {
+  credentials: ManagedUploaderCredentials
+  network: 'testnet' | 'mainnet'
+  walletAddress: string
+  registerTxDigest: string
+  encodedList: BatchWalrusContinuation['encodedList']
+  blobObjectIds: string[]
+}): Promise<Array<{
+  blobId: string
+  blobObjectId: string
+  certificate: WalrusCertificate
+}>> {
+  const files = await Promise.all(params.encodedList.map(async (encoded, index) => {
+    const uploadId = requireManagedUploadId(encoded, index)
+    const completed = await completeManagedWalrusUpload({
+      credentials: params.credentials,
+      uploadId,
+      walletAddress: params.walletAddress,
+      network: params.network,
+      registerTxDigest: params.registerTxDigest,
+      blobObjectId: params.blobObjectIds[index],
+    })
+    if (completed.blobId !== encoded.blobId || completed.blobObjectId !== params.blobObjectIds[index]) {
+      throw new Error(`Walrus uploader returned mismatched completion for blob index ${index}`)
+    }
+    return {
+      blobId: completed.blobId,
+      blobObjectId: completed.blobObjectId,
+      certificate: completed.certificate as WalrusCertificate,
+    }
+  }))
+  return files
+}
+
 export async function reclaimWalrusOrphanBlobs(params: {
   orphanBlobs: ReadonlyArray<WalrusOrphanBlob>
   walletAddress: string
@@ -970,6 +1045,7 @@ export async function prepareBatchWalrusRegisterIntent(
   const network = getWalrusNetwork()
   const relayUrl = getUploadRelayUrl(network)
   const storageEpochs = params.storageEpochs ?? DEFAULT_STORAGE_EPOCHS
+  const transport = params.transport ?? getConfiguredWalrusUploadTransport()
 
   // 1a. Read + hash every file in parallel (no encryption yet) so we can
   //     look up any prior recovery record keyed on `(contentHash,
@@ -1033,12 +1109,66 @@ export async function prepareBatchWalrusRegisterIntent(
     calculateRelayTip: async () => 0n,
   })
 
-  // 3. Encode every blob into its full sliver set so the direct upload step
-  // has the bytes ready.
+  const preUploadRecoveryKey = await buildWalrusBatchRecoveryKey({
+    network,
+    walletAddress: params.walletAddress,
+    storageEpochs,
+    files: prepared.map((p) => ({
+      contentHash: p.contentHash,
+      sendObjectTo: p.item.sendObjectTo?.trim() || params.walletAddress,
+    })),
+  })
+  const preUploadRecovery = readWalrusBatchRecovery(preUploadRecoveryKey)
+  const preUploadMayResume =
+    !!preUploadRecovery
+    && preUploadRecovery.walletAddress.toLowerCase() === params.walletAddress.toLowerCase()
+    && preUploadRecovery.network === network
+    && preUploadRecovery.storageEpochs === storageEpochs
+    && preUploadRecovery.blobs.length === prepared.length
+
+  let quoteApprovedBeforeUpload = false
+  if (transport === 'managed' && !preUploadMayResume) {
+    const approved = await params.confirmQuote(quote)
+    if (!approved) {
+      throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
+    }
+    if (!isWalrusUploadQuoteFresh(quote, plan)) {
+      throw new Error('Walrus upload quote expired before wallet signing')
+    }
+    quoteApprovedBeforeUpload = true
+  }
+
+  // 3. Encode every blob. The managed path sends only encrypted payload bytes
+  // to the uploader service; it never ships Walrus slivers through Vercel.
   const client = quoteClient
-  const encodedList = await Promise.all(
-    prepared.map((p) => client.encodeBlob(p.payload)),
-  )
+  const managedUploader = transport === 'managed'
+    ? await requestManagedWalrusUploaderCredentials({
+        walletAddress: params.walletAddress,
+        network,
+        fileCount: prepared.length,
+        byteLimit: prepared.reduce((sum, p) => sum + p.payload.byteLength, 0),
+        authHeaders: params.authHeaders,
+      })
+    : null
+  const encodedList = transport === 'managed'
+    ? await Promise.all(prepared.map(async (p) => {
+        const uploaded = await uploadPayloadToManagedWalrusUploader({
+          credentials: managedUploader!,
+          walletAddress: params.walletAddress,
+          network,
+          payload: p.payload,
+          fileName: p.normalizedFile.name || p.item.kind,
+        })
+        return {
+          uploadId: uploaded.uploadId,
+          blobId: uploaded.blobId,
+          rootHash: uploaded.rootHash,
+          size: uploaded.size,
+        }
+      }))
+    : await Promise.all(
+        prepared.map((p) => client.encodeBlob(p.payload)),
+      )
 
   // 3a. Batch recovery — same orphan / resume / fresh decision tree as
   // before. We freeze it here (pre-signature) so the caller's PTB1 either
@@ -1121,12 +1251,14 @@ export async function prepareBatchWalrusRegisterIntent(
   }
 
   if (mode === 'fresh') {
-    const approved = await params.confirmQuote(quote)
-    if (!approved) {
-      throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
-    }
-    if (!isWalrusUploadQuoteFresh(quote, plan)) {
-      throw new Error('Walrus upload quote expired before wallet signing')
+    if (!quoteApprovedBeforeUpload) {
+      const approved = await params.confirmQuote(quote)
+      if (!approved) {
+        throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
+      }
+      if (!isWalrusUploadQuoteFresh(quote, plan)) {
+        throw new Error('Walrus upload quote expired before wallet signing')
+      }
     }
   }
 
@@ -1136,8 +1268,10 @@ export async function prepareBatchWalrusRegisterIntent(
     storageEpochs,
     suiClient: params.suiClient,
     walrusClient: client,
+    transport,
     prepared,
     encodedList,
+    managedUploader,
     recoveryKey,
     resumedBlobObjectIds,
     quote,
@@ -1214,6 +1348,7 @@ export async function completeBatchWalrusUploadAfterRegister(
       sendObjectTo: p.item.sendObjectTo?.trim() || ctx.walletAddress,
       payloadByteLength: p.payload.byteLength,
       blobId: encodedList[i].blobId,
+      uploadId: encodedList[i].uploadId ?? null,
       blobObjectId: null,
       sealMaterial: p.encrypted?.material ?? null,
     }))
@@ -1241,13 +1376,32 @@ export async function completeBatchWalrusUploadAfterRegister(
     })
   }
 
-  const transport = params.transport ?? getConfiguredWalrusUploadTransport()
-  const uploaded = transport === 'server'
-    ? await completeEncodedBlobsViaServer({
+  const transport = params.transport ?? ctx.transport ?? getConfiguredWalrusUploadTransport()
+  const uploaded = transport === 'managed'
+    ? await completeEncodedBlobsViaManagedUploader({
+        credentials: ctx.managedUploader ?? (() => {
+          throw new Error('Walrus managed uploader credentials are missing from upload intent')
+        })(),
         network,
         walletAddress: ctx.walletAddress,
         registerTxDigest: registerDigest,
         encodedList,
+        blobObjectIds,
+      })
+    : transport === 'server'
+      ? await completeEncodedBlobsViaServer({
+        network,
+        walletAddress: ctx.walletAddress,
+        registerTxDigest: registerDigest,
+        encodedList: encodedList.map((encoded, index) => {
+          const local = requireBrowserEncodedBlob(encoded, index)
+          return {
+            blobId: encoded.blobId,
+            rootHash: encoded.rootHash,
+            metadata: local.metadata,
+            sliversByNode: local.sliversByNode,
+          }
+        }),
         blobObjectIds,
         authHeaders: params.authHeaders,
       })
@@ -1255,12 +1409,13 @@ export async function completeBatchWalrusUploadAfterRegister(
         const browserUploaded: Awaited<ReturnType<typeof writeEncodedBlobAndBuildCertificate>>[] = []
         for (let i = 0; i < prepared.length; i++) {
           const m = encodedList[i]
+          const local = requireBrowserEncodedBlob(m, i)
           browserUploaded.push(await writeEncodedBlobAndBuildCertificate({
             client,
             blobId: m.blobId,
             blobObjectId: blobObjectIds[i],
-            metadata: m.metadata,
-            sliversByNode: m.sliversByNode,
+            metadata: local.metadata,
+            sliversByNode: local.sliversByNode,
             deletable: true,
           }))
         }
@@ -1304,7 +1459,20 @@ export async function completeBatchWalrusUploadAfterRegister(
     files,
     registerTxDigest: registerDigest,
     attachCertifyCalls,
-    clearBatchRecovery: () => clearWalrusBatchRecovery(recoveryKey),
+    clearBatchRecovery: () => {
+      if (transport === 'managed' && ctx.managedUploader) {
+        for (const encoded of encodedList) {
+          if (!encoded.uploadId) continue
+          void finalizeManagedWalrusUpload({
+            credentials: ctx.managedUploader,
+            uploadId: encoded.uploadId,
+            walletAddress: ctx.walletAddress,
+            network,
+          })
+        }
+      }
+      clearWalrusBatchRecovery(recoveryKey)
+    },
   }
 }
 
@@ -1316,6 +1484,8 @@ export async function prepareSoulBlobsForBatchPublish(
     walletAddress: params.walletAddress,
     suiClient: params.suiClient,
     confirmQuote: params.confirmQuote,
+    authHeaders: params.authHeaders,
+    transport: params.transport,
     storageEpochs: params.storageEpochs,
   })
 

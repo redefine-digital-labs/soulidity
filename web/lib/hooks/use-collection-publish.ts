@@ -872,6 +872,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
           walletAddress,
           suiClient,
           confirmQuote: requestUploadCostApproval,
+          authHeaders,
         })
         layout = plan.layout
       }

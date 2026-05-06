@@ -1,4 +1,4 @@
-export type WalrusUploadTransport = 'server' | 'browser'
+export type WalrusUploadTransport = 'managed' | 'server' | 'browser'
 
 type TransportBytes = {
   __walrusTransport: 'bytes'
@@ -164,5 +164,7 @@ export function deserializeWalrusCertificate(certificate: SerializedWalrusCertif
 }
 
 export function getConfiguredWalrusUploadTransport(): WalrusUploadTransport {
-  return process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT === 'browser' ? 'browser' : 'server'
+  const configured = process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT
+  if (configured === 'browser' || configured === 'server') return configured
+  return 'managed'
 }

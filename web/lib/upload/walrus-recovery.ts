@@ -173,6 +173,8 @@ export interface WalrusBatchRecoveryBlob {
   payloadByteLength: number
   /** SDK blobId from the prior `client.encodeBlob(payload)`. */
   blobId: string
+  /** Managed uploader staging id. Present only for managed transport attempts. */
+  uploadId?: string | null
   /** On-chain Blob object id resolved from the register tx; null until
    *  `resolveCreatedBlobObjectIds` succeeds. */
   blobObjectId: string | null
@@ -260,6 +262,7 @@ function isBatchBlob(value: unknown): value is WalrusBatchRecoveryBlob {
     && typeof c.sendObjectTo === 'string'
     && typeof c.payloadByteLength === 'number'
     && typeof c.blobId === 'string'
+    && (c.uploadId === undefined || c.uploadId === null || typeof c.uploadId === 'string')
     && (c.blobObjectId === null || typeof c.blobObjectId === 'string')
     && sealMaterialOk
   )
