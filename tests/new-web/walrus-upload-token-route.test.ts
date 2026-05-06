@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetRateLimitBucketsForTests } from '@/lib/rate-limit'
 import { verifyWalrusUploaderToken } from '../../src/shared/walrus-uploader-token'
 
 const WALLET = `0x${'1'.repeat(64)}`
@@ -23,6 +24,7 @@ describe('POST /api/walrus/upload-token', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    resetRateLimitBucketsForTests()
     vi.stubEnv('WALRUS_UPLOADER_TOKEN_SECRET', SECRET)
     vi.stubEnv('NEXT_PUBLIC_SUI_NETWORK', 'mainnet')
     mockedRequireSoulCreateWalletIdentity.mockResolvedValue({
@@ -91,5 +93,32 @@ describe('POST /api/walrus/upload-token', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'network must match the configured mainnet network',
     })
+  })
+
+  it('rate-limits repeated upload-token mints from one signed-in member', async () => {
+    // Without a rate limit, a signed-in wallet could loop POST /upload-token
+    // → /v1/uploads to force the managed uploader to encode and stage
+    // payloads indefinitely without ever signing the register PTB. The route
+    // applies a 20/5min sliding-window guard keyed on memberId; this test
+    // exhausts the bucket and verifies the 21st mint is rejected with 429.
+    const { POST } = await import('../../web/app/api/walrus/upload-token/route')
+    for (let i = 0; i < 20; i += 1) {
+      const ok = await POST(makeRequest({
+        walletAddress: WALLET,
+        fileCount: 1,
+        byteLimit: 1,
+      }))
+      expect(ok.status).toBe(200)
+    }
+    const limited = await POST(makeRequest({
+      walletAddress: WALLET,
+      fileCount: 1,
+      byteLimit: 1,
+    }))
+    expect(limited.status).toBe(429)
+    await expect(limited.json()).resolves.toEqual({
+      error: 'Too many Walrus upload-token requests, try again later',
+    })
+    expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/)
   })
 })

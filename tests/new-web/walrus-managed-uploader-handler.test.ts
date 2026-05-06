@@ -332,6 +332,146 @@ describe('walrus-uploader HTTP handler', () => {
     }
   })
 
+  it('admits concurrent payload-bytes-declared uploads whose combined payload exactly fits the token byteLimit', async () => {
+    // R-001 regression. Before the payload-aware reservation, four concurrent
+    // multi-file uploads sharing one token would each reserve `Content-Length`
+    // (payload + multipart envelope) and the last reservation would overflow
+    // `byteLimit` even though the token's payload-byte budget is exactly
+    // `4 × payload`. With `X-Walrus-Payload-Bytes` the server reserves
+    // payload bytes 1:1 and all four siblings succeed.
+    const staging = createMemoryWalrusUploadStaging()
+    let releaseEncodeBlob: (() => void) | null = null
+    const encodeBlobGate = new Promise<void>((resolve) => { releaseEncodeBlob = resolve })
+    let encodeCallIndex = 0
+    const certificate = {
+      signers: [0],
+      serializedMessage: new Uint8Array([8]),
+      signature: new Uint8Array([9]),
+    }
+    const walrusClient = {
+      encodeBlob: vi.fn(async (payload: Uint8Array) => {
+        const ix = encodeCallIndex++
+        await encodeBlobGate
+        return {
+          blobId: `blob-id-${ix}`,
+          rootHash: new Uint8Array([7, ix & 0xff, 0]),
+          metadata: { V1: { unencoded_length: BigInt(payload.byteLength) } },
+          sliversByNode: [{ primary: [{ sliver: new Uint8Array([4]) }], secondary: [] }],
+        }
+      }),
+      writeEncodedBlobToNodes: vi.fn(async () => ['confirmation']),
+      getStorageConfirmations: vi.fn(async () => ['confirmation']),
+      certificateFromConfirmations: vi.fn(async () => certificate),
+      systemState: vi.fn(async () => ({
+        committee: { n_shards: 1, members: [{ weight: 1 }] },
+      })),
+    }
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging,
+      createWalrusClient: async () => walrusClient as never,
+      validateRegister: async () => [],
+      nowMs: () => Date.now(),
+    })
+
+    const PAYLOAD_BYTES = 600
+    const FILE_COUNT = 4
+    const sharedToken = makeToken(FILE_COUNT, PAYLOAD_BYTES * FILE_COUNT)
+
+    function buildRequest(token: string, payload: Uint8Array): Request {
+      const form = new FormData()
+      form.set('walletAddress', WALLET)
+      form.set('network', 'mainnet')
+      form.set('payload', new Blob([payload], { type: 'application/octet-stream' }), 'payload.bin')
+      return new Request('http://uploader.test/v1/uploads', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Walrus-Payload-Bytes': String(payload.byteLength),
+        },
+        body: form,
+      })
+    }
+
+    const requests = Array.from({ length: FILE_COUNT }, () =>
+      buildRequest(sharedToken, new Uint8Array(PAYLOAD_BYTES).fill(1)),
+    )
+    const responsesPromise = Promise.all(requests.map((req) => handler(req)))
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    releaseEncodeBlob!()
+    const responses = await responsesPromise
+
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 200, 200])
+    expect(walrusClient.encodeBlob).toHaveBeenCalledTimes(FILE_COUNT)
+  })
+
+  it('rejects a payload-bytes-declared upload that exceeds the declared size', async () => {
+    // Defence-in-depth: a client that declares a small payload but streams a
+    // larger one must be bounded by both the multipart-body cap and the
+    // post-parse payload-bytes assertion. The bounded body errors mid-stream
+    // once total bytes exceed `claim + multipart overhead`, surfacing as 413.
+    const staging = createMemoryWalrusUploadStaging()
+    const walrusClient = {
+      encodeBlob: vi.fn(async () => {
+        throw new Error('encodeBlob must not be called when the budget is exceeded')
+      }),
+      writeEncodedBlobToNodes: vi.fn(),
+      getStorageConfirmations: vi.fn(),
+      certificateFromConfirmations: vi.fn(),
+      systemState: vi.fn(),
+    }
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging,
+      createWalrusClient: async () => walrusClient as never,
+      validateRegister: async () => [],
+      nowMs: () => Date.now(),
+    })
+
+    const token = makeToken(1, 4 * 1024 * 1024)
+    // Declared 16 bytes but actually streams ~2MB. The 64KB multipart
+    // envelope cap is much smaller than the body, so the bounded-body cap
+    // fires before the payload reaches the post-parse byte check.
+    const boundary = '----walrus-lying-payload-bytes'
+    const head = `--${boundary}\r\n`
+      + 'Content-Disposition: form-data; name="walletAddress"\r\n\r\n'
+      + `${WALLET}\r\n`
+      + `--${boundary}\r\n`
+      + 'Content-Disposition: form-data; name="network"\r\n\r\n'
+      + 'mainnet\r\n'
+      + `--${boundary}\r\n`
+      + 'Content-Disposition: form-data; name="payload"; filename="payload.bin"\r\n'
+      + 'Content-Type: application/octet-stream\r\n\r\n'
+    const tail = `\r\n--${boundary}--\r\n`
+    const giant = new Uint8Array(2 * 1024 * 1024)
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(head))
+        controller.enqueue(giant)
+        controller.enqueue(new TextEncoder().encode(tail))
+        controller.close()
+      },
+    })
+    const request = new Request('http://uploader.test/v1/uploads', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Walrus-Payload-Bytes': '16',
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' })
+
+    const response = await handler(request)
+    expect(response.status).toBe(413)
+    expect(walrusClient.encodeBlob).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({
+      error: 'Walrus uploader token byte limit exceeded',
+    })
+  })
+
   it('finalizes a completed upload by deleting staged payload state', async () => {
     const staging = createMemoryWalrusUploadStaging()
     const handler = createWalrusUploaderHandler({
