@@ -108,8 +108,11 @@ describe('walrus batch helper 3-phase split', () => {
       const block = source.slice(fnStart, fnEnd)
       const recoveryDecision = block.indexOf("mode = 'resume'")
       const freshGuard = block.indexOf("if (mode === 'fresh')")
-      const confirmCall = block.indexOf('params.confirmQuote(quote)')
+      const earlyManagedGuard = block.indexOf("transport === 'managed' && !preUploadMayResume")
+      const firstConfirmCall = block.indexOf('params.confirmQuote(quote)')
+      const confirmCall = block.lastIndexOf('params.confirmQuote(quote)')
       expect(recoveryDecision).toBeGreaterThanOrEqual(0)
+      expect(firstConfirmCall).toBeGreaterThan(earlyManagedGuard)
       expect(freshGuard).toBeGreaterThan(recoveryDecision)
       expect(confirmCall).toBeGreaterThan(freshGuard)
       expect(block.slice(freshGuard, confirmCall)).not.toContain("mode = 'resume'")
@@ -239,7 +242,8 @@ describe('walrus batch helper 3-phase split', () => {
       const fnStart = source.indexOf('export async function completeBatchWalrusUploadAfterRegister')
       const fnEnd = source.indexOf('export async function prepareSoulBlobsForBatchPublish', fnStart)
       const block = source.slice(fnStart, fnEnd)
-      expect(block).toContain('clearBatchRecovery: () => clearWalrusBatchRecovery(recoveryKey)')
+      expect(block).toContain('clearBatchRecovery: () => {')
+      expect(block).toContain('clearWalrusBatchRecovery(recoveryKey)')
     })
 
     it('certify-attach helper supports the indices argument for chunked downstream PTBs', () => {

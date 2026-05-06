@@ -1,0 +1,95 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { verifyWalrusUploaderToken } from '../../src/shared/walrus-uploader-token'
+
+const WALLET = `0x${'1'.repeat(64)}`
+const OTHER_WALLET = `0x${'2'.repeat(64)}`
+const SECRET = 'route-secret-with-enough-entropy'
+
+const mockedRequireSoulCreateWalletIdentity = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/soulidity/server', () => ({
+  requireSoulCreateWalletIdentity: mockedRequireSoulCreateWalletIdentity,
+}))
+
+function makeRequest(body: Record<string, unknown>) {
+  return new Request('http://localhost/api/walrus/upload-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+describe('POST /api/walrus/upload-token', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.resetModules()
+    vi.stubEnv('WALRUS_UPLOADER_TOKEN_SECRET', SECRET)
+    vi.stubEnv('NEXT_PUBLIC_SUI_NETWORK', 'mainnet')
+    mockedRequireSoulCreateWalletIdentity.mockResolvedValue({
+      identity: { memberId: 'member-1' },
+      walletAddresses: [WALLET],
+      primarySuiAddress: WALLET,
+    })
+  })
+
+  it('issues a short-lived token scoped to the signed-in wallet and requested upload budget', async () => {
+    const { POST } = await import('../../web/app/api/walrus/upload-token/route')
+    const response = await POST(makeRequest({
+      walletAddress: WALLET,
+      fileCount: 3,
+      byteLimit: 30_000,
+    }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toMatchObject({
+      tokenType: 'Bearer',
+      walletAddress: WALLET,
+      network: 'mainnet',
+      fileCount: 3,
+      byteLimit: 30_000,
+    })
+    expect(typeof body.token).toBe('string')
+    expect(body.expiresAt).toBeGreaterThan(Date.now())
+
+    expect(() =>
+      verifyWalrusUploaderToken(body.token, {
+        secret: SECRET,
+        nowMs: Date.now(),
+        walletAddress: WALLET,
+        network: 'mainnet',
+        fileCount: 3,
+        byteCount: 30_000,
+      }),
+    ).not.toThrow()
+  })
+
+  it('rejects wallets outside the authenticated wallet bindings', async () => {
+    const { POST } = await import('../../web/app/api/walrus/upload-token/route')
+    const response = await POST(makeRequest({
+      walletAddress: OTHER_WALLET,
+      fileCount: 1,
+      byteLimit: 1,
+    }))
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'walletAddress does not match the signed-in wallet',
+    })
+  })
+
+  it('rejects tokens for a network outside the configured Web network', async () => {
+    const { POST } = await import('../../web/app/api/walrus/upload-token/route')
+    const response = await POST(makeRequest({
+      walletAddress: WALLET,
+      network: 'testnet',
+      fileCount: 1,
+      byteLimit: 1,
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'network must match the configured mainnet network',
+    })
+  })
+})

@@ -118,7 +118,7 @@ describe('Walrus batch transport serialization', () => {
 })
 
 describe('completeBatchWalrusUploadAfterRegister server transport', () => {
-  it('uses /api/walrus/batch/complete by default and does not call browser storage-node writers', async () => {
+  it('uses /api/walrus/batch/complete when the legacy server transport is selected', async () => {
     const certificate = {
       signers: [0],
       serializedMessage: new Uint8Array([1]),
@@ -151,6 +151,7 @@ describe('completeBatchWalrusUploadAfterRegister server transport', () => {
       const result = await completeBatchWalrusUploadAfterRegister({
         intent,
         authHeaders: { 'x-csrf-token': 'csrf' },
+        transport: 'server',
       })
 
       expect(fakeWalrusClient.writeEncodedBlobToNodes).not.toHaveBeenCalled()
