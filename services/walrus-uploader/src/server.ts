@@ -13,6 +13,8 @@ import {
 } from './handler.js'
 import { createFilesystemWalrusUploadStaging, type WalrusUploadStaging } from './staging.js'
 
+const WALRUS_STORAGE_NODE_REQUEST_TIMEOUT_MS = 60_000
+
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim()
   if (!value) throw new Error(`${name} is required`)
@@ -34,6 +36,15 @@ async function createWalrusClient(network: 'testnet' | 'mainnet') {
   return new WalrusClient({
     suiClient: getSuiClient(network),
     network,
+    storageNodeClientOptions: {
+      timeout: WALRUS_STORAGE_NODE_REQUEST_TIMEOUT_MS,
+      onError: (error: unknown) => {
+        console.warn(
+          '[walrus-uploader] storage node request failed:',
+          error instanceof Error ? error.message : error,
+        )
+      },
+    },
   }) as unknown as ManagedWalrusClient
 }
 

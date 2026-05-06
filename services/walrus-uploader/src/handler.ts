@@ -19,7 +19,9 @@ export { createFilesystemWalrusUploadStaging, createMemoryWalrusUploadStaging }
 export type { WalrusUploadStaging }
 
 const DEFAULT_STAGE_TTL_MS = 24 * 60 * 60 * 1000
-const WALRUS_STORAGE_WRITE_TIMEOUT_MS = 20_000
+const WALRUS_STORAGE_WRITE_TIMEOUT_MS = 75_000
+const WALRUS_STORAGE_WRITE_MAX_ATTEMPTS = 3
+const WALRUS_STORAGE_WRITE_RETRY_BASE_DELAY_MS = 1_500
 const WALRUS_WEIGHTED_QUORUM_CONFIRMATION_RETRIES = 2
 // Headroom above the token's remaining payload budget for multipart framing
 // (boundary lines, per-part headers, walletAddress/network fields). The actual
@@ -211,6 +213,27 @@ function logWalrusCompleteStage(params: {
   })
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isRetryableStorageWriteError(error: unknown): boolean {
+  const status = typeof (error as { status?: unknown }).status === 'number'
+    ? (error as { status: number }).status
+    : null
+  if (status === 429 || (status != null && status >= 500)) return true
+
+  const message = errorMessage(error).toLowerCase()
+  return message.includes('too many failures while writing blob')
+    || message.includes('timed out writing walrus slivers')
+    || message.includes('request timed out')
+    || message.includes('connection error')
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | null = null
   try {
@@ -223,6 +246,43 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message:
   } finally {
     if (timeout) clearTimeout(timeout)
   }
+}
+
+async function writeEncodedBlobToNodesWithRetry(params: {
+  client: ManagedWalrusClient
+  upload: StagedWalrusUpload
+  blobObjectId: string
+}): Promise<unknown[]> {
+  let lastError: unknown = null
+  for (let attempt = 1; attempt <= WALRUS_STORAGE_WRITE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await withTimeout(
+        params.client.writeEncodedBlobToNodes({
+          blobId: params.upload.blobId,
+          objectId: params.blobObjectId,
+          metadata: params.upload.metadata,
+          sliversByNode: params.upload.sliversByNode,
+          deletable: true,
+        }),
+        WALRUS_STORAGE_WRITE_TIMEOUT_MS,
+        `Timed out writing Walrus slivers for upload ${params.upload.uploadId}`,
+      )
+    } catch (error) {
+      lastError = error
+      if (attempt >= WALRUS_STORAGE_WRITE_MAX_ATTEMPTS || !isRetryableStorageWriteError(error)) {
+        throw error
+      }
+      console.warn('[walrus-uploader] storage write retry', {
+        uploadId: params.upload.uploadId,
+        blobId: params.upload.blobId,
+        attempt,
+        maxAttempts: WALRUS_STORAGE_WRITE_MAX_ATTEMPTS,
+        error: errorMessage(error),
+      })
+      await sleep(WALRUS_STORAGE_WRITE_RETRY_BASE_DELAY_MS * attempt)
+    }
+  }
+  throw lastError ?? new Error(`Walrus storage write failed for upload ${params.upload.uploadId}`)
 }
 
 function hasWalrusWeightedQuorum(params: {
@@ -256,17 +316,7 @@ async function writeEncodedBlobAndBuildCertificate(params: {
   let confirmations: unknown[]
   let writeError: unknown = null
   try {
-    confirmations = await withTimeout(
-      params.client.writeEncodedBlobToNodes({
-        blobId: params.upload.blobId,
-        objectId: params.blobObjectId,
-        metadata: params.upload.metadata,
-        sliversByNode: params.upload.sliversByNode,
-        deletable: true,
-      }),
-      WALRUS_STORAGE_WRITE_TIMEOUT_MS,
-      `Timed out writing Walrus slivers for upload ${params.upload.uploadId}`,
-    )
+    confirmations = await writeEncodedBlobToNodesWithRetry(params)
   } catch (error) {
     writeError = error
     confirmations = await getStorageConfirmations()
@@ -283,6 +333,15 @@ async function writeEncodedBlobAndBuildCertificate(params: {
         deletable: true,
       })
     } catch (certificateError) {
+      if (writeError) {
+        console.warn('[walrus-uploader] certificate build after storage write failure failed', {
+          uploadId: params.upload.uploadId,
+          blobId: params.upload.blobId,
+          confirmations: confirmations.filter(Boolean).length,
+          writeError: errorMessage(writeError),
+          certificateError: errorMessage(certificateError),
+        })
+      }
       if (writeError) throw writeError
       throw certificateError
     }

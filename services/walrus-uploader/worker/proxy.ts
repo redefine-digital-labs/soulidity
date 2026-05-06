@@ -71,7 +71,7 @@ export default {
     // generation token: bumping it (e.g. `prod-v2`) forces requests onto a
     // fresh Container instance, which is the only way to roll forward
     // injected secrets that warm-but-stale instances kept from start.
-    const container = getContainer(env.WALRUS_UPLOADER, 'prod-v2')
+    const container = getContainer(env.WALRUS_UPLOADER, 'prod-v3')
     return container.fetch(request)
   },
 }

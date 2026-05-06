@@ -165,6 +165,88 @@ describe('walrus-uploader HTTP handler', () => {
     }))
   })
 
+  it('retries retryable storage-node write failures before giving up on completion', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-06T00:00:00Z'))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    try {
+      const staging = createMemoryWalrusUploadStaging()
+      const certificate = {
+        signers: [0],
+        serializedMessage: new Uint8Array([8]),
+        signature: new Uint8Array([9]),
+      }
+      const walrusClient = {
+        encodeBlob: vi.fn(async (payload: Uint8Array) => ({
+          blobId: 'blob-id-0',
+          rootHash: new Uint8Array([1, 2, 3]),
+          metadata: { V1: { unencoded_length: BigInt(payload.byteLength) } },
+          sliversByNode: [{ primary: [{ sliver: new Uint8Array([4]) }], secondary: [] }],
+        })),
+        writeEncodedBlobToNodes: vi.fn()
+          .mockRejectedValueOnce(new Error('Too many failures while writing blob blob-id-0 to nodes'))
+          .mockResolvedValueOnce(['confirmation']),
+        getStorageConfirmations: vi.fn(async () => []),
+        certificateFromConfirmations: vi.fn(async (args: { confirmations: unknown[] }) => {
+          if (args.confirmations.length === 0) {
+            throw new Error('Too many invalid confirmations received for blob (0 of 1)')
+          }
+          return certificate
+        }),
+        systemState: vi.fn(async () => ({
+          committee: { n_shards: 1, members: [{ weight: 1 }] },
+        })),
+        getBlobObject: vi.fn(async () => ({
+          id: BLOB_OBJECT_ID,
+          blob_id: '0',
+          deletable: true,
+        })),
+        getBlobType: vi.fn(async () => '0xwalrus::blob::Blob'),
+      }
+      const handler = createWalrusUploaderHandler({
+        tokenSecret: SECRET,
+        staging,
+        createWalrusClient: async () => walrusClient,
+        validateRegister: async () => [{
+          blobId: 'blob-id-0',
+          blobObjectId: BLOB_OBJECT_ID,
+        }],
+        nowMs: () => Date.now(),
+      })
+
+      const uploadResponse = await handler(multipartUploadRequest(makeToken(), new Uint8Array([1, 2, 3])))
+      const upload = await uploadResponse.json()
+      const completePromise = handler(new Request(`http://uploader.test/v1/uploads/${upload.uploadId}/complete`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${makeToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          walletAddress: WALLET,
+          network: 'mainnet',
+          registerTxDigest: TX_DIGEST,
+          blobObjectId: BLOB_OBJECT_ID,
+        }),
+      }))
+
+      await vi.advanceTimersByTimeAsync(1_500)
+
+      const completeResponse = await completePromise
+      expect(completeResponse.status).toBe(200)
+      await expect(completeResponse.json()).resolves.toMatchObject({
+        uploadId: upload.uploadId,
+        blobId: 'blob-id-0',
+        blobObjectId: BLOB_OBJECT_ID,
+      })
+      expect(walrusClient.writeEncodedBlobToNodes).toHaveBeenCalledTimes(2)
+      expect(walrusClient.getStorageConfirmations).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects an oversized multipart upload via Content-Length before parsing the body', async () => {
     const staging = createMemoryWalrusUploadStaging()
     const walrusClient = {
