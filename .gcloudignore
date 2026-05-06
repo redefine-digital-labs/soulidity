@@ -16,8 +16,10 @@
 !services/walrus-uploader/src/handler.ts
 !services/walrus-uploader/src/server.ts
 !services/walrus-uploader/src/staging-gcs.ts
+!services/walrus-uploader/src/staging-r2.ts
 !services/walrus-uploader/src/staging.ts
 !services/walrus-uploader/src/token-usage-gcs.ts
+!services/walrus-uploader/src/token-usage-r2.ts
 !src/
 /src/*
 !src/shared/

@@ -102,6 +102,16 @@ async function createStaging(): Promise<WalrusUploadStaging> {
     const { createGcsWalrusUploadStaging } = await import('./staging-gcs.js')
     return createGcsWalrusUploadStaging(requiredEnv('GCS_BUCKET'), process.env.GCS_PREFIX ?? 'walrus-uploader')
   }
+  if (backend === 'r2') {
+    const { createR2WalrusUploadStaging } = await import('./staging-r2.js')
+    return createR2WalrusUploadStaging({
+      accountId: requiredEnv('R2_ACCOUNT_ID'),
+      bucket: requiredEnv('R2_BUCKET'),
+      accessKeyId: requiredEnv('R2_ACCESS_KEY_ID'),
+      secretAccessKey: requiredEnv('R2_SECRET_ACCESS_KEY'),
+      prefix: process.env.R2_PREFIX ?? 'walrus-uploader',
+    })
+  }
   throw new Error(`Unsupported STAGING_BACKEND: ${backend}`)
 }
 
@@ -118,6 +128,17 @@ async function createTokenUsageGuard(nowMs: () => number): Promise<TokenUsageGua
     return createGcsTokenUsageGuard({
       bucketName: requiredEnv('GCS_BUCKET'),
       prefix: process.env.GCS_TOKEN_USAGE_PREFIX ?? `${process.env.GCS_PREFIX ?? 'walrus-uploader'}/token-usage`,
+      nowMs,
+    })
+  }
+  if (backend === 'r2') {
+    const { createR2TokenUsageGuard } = await import('./token-usage-r2.js')
+    return createR2TokenUsageGuard({
+      accountId: requiredEnv('R2_ACCOUNT_ID'),
+      bucket: requiredEnv('R2_BUCKET'),
+      accessKeyId: requiredEnv('R2_ACCESS_KEY_ID'),
+      secretAccessKey: requiredEnv('R2_SECRET_ACCESS_KEY'),
+      prefix: process.env.R2_TOKEN_USAGE_PREFIX ?? `${process.env.R2_PREFIX ?? 'walrus-uploader'}/token-usage`,
       nowMs,
     })
   }
