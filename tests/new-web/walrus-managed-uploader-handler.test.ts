@@ -39,6 +39,44 @@ describe('walrus-uploader HTTP handler', () => {
     vi.restoreAllMocks()
   })
 
+  it('preflight allows the X-Walrus-Payload-Bytes request header so cross-origin browser uploads are not blocked', async () => {
+    // The browser managed transport sends `X-Walrus-Payload-Bytes` on every
+    // /v1/uploads request so the uploader can reserve the exact payload byte
+    // count (matches the token's payload-byte budget 1:1 instead of the
+    // multipart-envelope-inflated `Content-Length`). Because the uploader is
+    // a separate Cloud Run origin, that custom header triggers a CORS
+    // preflight; if the handler's allow-headers list omits it the browser
+    // blocks the upload before it ever reaches the handler. This regression
+    // verifies the preflight response advertises the header.
+    const staging = createMemoryWalrusUploadStaging()
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging,
+      createWalrusClient: async () => {
+        throw new Error('createWalrusClient must not be called for OPTIONS')
+      },
+      validateRegister: async () => [],
+      nowMs: () => Date.now(),
+    })
+
+    const response = await handler(new Request('http://uploader.test/v1/uploads', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://app.example.com',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization,x-walrus-payload-bytes',
+      },
+    }))
+
+    expect(response.status).toBe(204)
+    const allowedHeaders = (response.headers.get('Access-Control-Allow-Headers') ?? '')
+      .split(',')
+      .map((header) => header.trim().toLowerCase())
+    expect(allowedHeaders).toContain('authorization')
+    expect(allowedHeaders).toContain('content-type')
+    expect(allowedHeaders).toContain('x-walrus-payload-bytes')
+  })
+
   it('stages encrypted payload bytes server-side and completes without client slivers', async () => {
     const staging = createMemoryWalrusUploadStaging()
     const certificate = {
