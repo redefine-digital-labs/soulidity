@@ -94,8 +94,20 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
   const creatorRoyaltyPct = soul.creatorRoyaltyBps / 100
   const collectionRoyaltyPct = soul.collection ? soul.collection.extraRoyaltyBps / 100 : 0
   const creatorRoyaltyReturnsToSeller = soul.isCreator && creatorRoyaltyPct > 0
+  // Mirrors `market::buy_soul_impl`: collection royalty is paid only when the
+  // collection holder differs from the seller. If the seller IS the current
+  // collection holder, the royalty stays with them.
+  const collectionRoyaltyReturnsToSeller =
+    collectionRoyaltyPct > 0
+    && soul.collection != null
+    && soul.collection.currentHolderAddress.toLowerCase() === soul.currentOwnerAddress.toLowerCase()
   const youReceivePct = platformFeePct != null
-    ? (100 - platformFeePct - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct) - collectionRoyaltyPct).toFixed(1)
+    ? (
+        100
+        - platformFeePct
+        - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct)
+        - (collectionRoyaltyReturnsToSeller ? 0 : collectionRoyaltyPct)
+      ).toFixed(1)
     : null
 
   const authorizeHref = priceAtomic != null && priceAtomic > 0n && !belowFloor
@@ -187,7 +199,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           {collectionRoyaltyPct > 0 && (
             <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
               <span className="text-muted">Collection royalty</span>
-              <span>{collectionRoyaltyPct}%</span>
+              <span>{collectionRoyaltyPct}%{collectionRoyaltyReturnsToSeller ? ' (returns to you)' : ''}</span>
             </div>
           )}
           <div className="flex justify-between text-sm px-4 py-2.5">

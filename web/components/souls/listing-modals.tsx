@@ -13,6 +13,24 @@ import { buildDelistSoulTx } from '@soulidity/sdk'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
 import type { SoulAssetDetail } from '@soulidity/sdk'
 
+// Sui wallets (Slush, Suiet, Backpack, Sui Wallet) signal user-initiated
+// cancellation through the thrown Error message. Treat these as a deliberate
+// "no-op" rather than a failure surface.
+function isWalletUserRejection(error: unknown): boolean {
+  if (!error) return false
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase()
+  return (
+    message.includes('user rejected')
+    || message.includes('user reject')
+    || message.includes('user denied')
+    || message.includes('user deny')
+    || message.includes('user cancelled')
+    || message.includes('user canceled')
+    || message.includes('rejected the request')
+    || message.includes('rejected by user')
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /*  Update Price Modal                                                 */
 /* ------------------------------------------------------------------ */
@@ -99,6 +117,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
       setPrice('')
       onClose()
     } catch (e) {
+      if (isWalletUserRejection(e)) return
       const msg = e instanceof Error ? e.message : 'Update price failed'
       setError(msg)
       showToast(`Price update failed: ${msg}`, 'danger')
@@ -222,6 +241,7 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
       showToast('Soul delisted successfully', 'success')
       onClose()
     } catch (e) {
+      if (isWalletUserRejection(e)) return
       const msg = e instanceof Error ? e.message : 'Delist failed'
       setError(msg)
       showToast(`Delist failed: ${msg}`, 'danger')
