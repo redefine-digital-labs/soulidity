@@ -959,7 +959,12 @@ async function completeEncodedBlobsViaManagedUploader(params: {
   blobObjectId: string
   certificate: WalrusCertificate
 }>> {
-  const files = await Promise.all(params.encodedList.map(async (encoded, index) => {
+  const files: Array<{
+    blobId: string
+    blobObjectId: string
+    certificate: WalrusCertificate
+  }> = []
+  for (const [index, encoded] of params.encodedList.entries()) {
     const uploadId = requireManagedUploadId(encoded, index)
     const completed = await completeManagedWalrusUpload({
       credentials: params.credentials,
@@ -972,12 +977,13 @@ async function completeEncodedBlobsViaManagedUploader(params: {
     if (completed.blobId !== encoded.blobId || completed.blobObjectId !== params.blobObjectIds[index]) {
       throw new Error(`Walrus uploader returned mismatched completion for blob index ${index}`)
     }
-    return {
+    const file = {
       blobId: completed.blobId,
       blobObjectId: completed.blobObjectId,
       certificate: completed.certificate as WalrusCertificate,
     }
-  }))
+    files.push(file)
+  }
   return files
 }
 

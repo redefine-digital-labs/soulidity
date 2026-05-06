@@ -183,6 +183,34 @@ function withCors(response: Response, origin: string) {
   })
 }
 
+function memoryUsageSnapshot() {
+  const memory = process.memoryUsage()
+  return {
+    rssBytes: memory.rss,
+    heapUsedBytes: memory.heapUsed,
+    externalBytes: memory.external,
+    arrayBuffersBytes: memory.arrayBuffers,
+  }
+}
+
+function elapsedMs(nowMs: () => number, startMs: number): number {
+  return Math.max(0, nowMs() - startMs)
+}
+
+function logWalrusCompleteStage(params: {
+  uploadId: string
+  stage: string
+  payloadBytes?: number
+  stageMs?: number
+  totalMs?: number
+  error?: string
+}) {
+  console.info('[walrus-uploader] complete', {
+    ...params,
+    memory: memoryUsageSnapshot(),
+  })
+}
+
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | null = null
   try {
@@ -636,49 +664,106 @@ export function createWalrusUploaderHandler(deps: WalrusUploaderHandlerDeps) {
       const completeMatch = /^\/v1\/uploads\/([^/]+)\/complete$/.exec(path)
       if (request.method === 'POST' && completeMatch) {
         const uploadId = decodeURIComponent(completeMatch[1])
-        const upload = await deps.staging.get(uploadId)
-        if (!upload) {
-          return withCors(json({ error: 'uploadId is unknown or expired' }, 404), corsOrigin)
+        const completeStartedAtMs = nowMs()
+        let payloadBytes: number | undefined
+        const logStage = (stage: string, fields: {
+          stageMs?: number
+          totalMs?: number
+          error?: string
+        } = {}) => {
+          logWalrusCompleteStage({
+            uploadId,
+            stage,
+            payloadBytes,
+            ...fields,
+          })
         }
 
-        authenticate(request, {
-          walletAddress: upload.walletAddress,
-          network: upload.network,
-        })
-        const body = parseObjectBody(await request.json().catch(() => null))
-        if (!body) return withCors(json({ error: 'Request body must be a JSON object' }, 400), corsOrigin)
-        const walletAddress = assertString(body.walletAddress, 'walletAddress')
-        const network = assertString(body.network, 'network')
-        const registerTxDigest = assertString(body.registerTxDigest, 'registerTxDigest')
-        const blobObjectId = assertString(body.blobObjectId, 'blobObjectId')
-        if (walletAddress.toLowerCase() !== upload.walletAddress.toLowerCase() || network !== upload.network) {
-          return withCors(json({ error: 'upload completion does not match staged wallet/network' }, 403), corsOrigin)
+        try {
+          let stageStartedAtMs = nowMs()
+          const upload = await deps.staging.get(uploadId)
+          if (!upload) {
+            return withCors(json({ error: 'uploadId is unknown or expired' }, 404), corsOrigin)
+          }
+          payloadBytes = upload.size
+          logStage('staged', {
+            stageMs: elapsedMs(nowMs, stageStartedAtMs),
+            totalMs: elapsedMs(nowMs, completeStartedAtMs),
+          })
+
+          stageStartedAtMs = nowMs()
+          authenticate(request, {
+            walletAddress: upload.walletAddress,
+            network: upload.network,
+          })
+          logStage('authenticated', {
+            stageMs: elapsedMs(nowMs, stageStartedAtMs),
+            totalMs: elapsedMs(nowMs, completeStartedAtMs),
+          })
+
+          stageStartedAtMs = nowMs()
+          const body = parseObjectBody(await request.json().catch(() => null))
+          if (!body) return withCors(json({ error: 'Request body must be a JSON object' }, 400), corsOrigin)
+          const walletAddress = assertString(body.walletAddress, 'walletAddress')
+          const network = assertString(body.network, 'network')
+          const registerTxDigest = assertString(body.registerTxDigest, 'registerTxDigest')
+          const blobObjectId = assertString(body.blobObjectId, 'blobObjectId')
+          if (walletAddress.toLowerCase() !== upload.walletAddress.toLowerCase() || network !== upload.network) {
+            return withCors(json({ error: 'upload completion does not match staged wallet/network' }, 403), corsOrigin)
+          }
+          logStage('parsed_request', {
+            stageMs: elapsedMs(nowMs, stageStartedAtMs),
+            totalMs: elapsedMs(nowMs, completeStartedAtMs),
+          })
+
+          stageStartedAtMs = nowMs()
+          const client = await deps.createWalrusClient(upload.network)
+          await deps.validateRegister({
+            network: upload.network,
+            digest: registerTxDigest,
+            walletAddress,
+            expected: [{ blobId: upload.blobId, blobObjectId }],
+          })
+          logStage('validated_register', {
+            stageMs: elapsedMs(nowMs, stageStartedAtMs),
+            totalMs: elapsedMs(nowMs, completeStartedAtMs),
+          })
+
+          stageStartedAtMs = nowMs()
+          const reusedCertificate = !!upload.certificate
+          const certificate = upload.certificate ?? await writeEncodedBlobAndBuildCertificate({
+            client,
+            upload,
+            blobObjectId,
+          })
+          logStage(reusedCertificate ? 'reused_certificate' : 'built_certificate', {
+            stageMs: elapsedMs(nowMs, stageStartedAtMs),
+            totalMs: elapsedMs(nowMs, completeStartedAtMs),
+          })
+
+          stageStartedAtMs = nowMs()
+          await deps.staging.put({
+            ...upload,
+            certificate,
+          })
+          logStage('persisted_certificate', {
+            stageMs: elapsedMs(nowMs, stageStartedAtMs),
+            totalMs: elapsedMs(nowMs, completeStartedAtMs),
+          })
+
+          return withCors(json({
+            uploadId,
+            blobId: upload.blobId,
+            blobObjectId,
+            certificate: serializeWalrusCertificate(certificate),
+          }), corsOrigin)
+        } catch (error) {
+          logStage('failed', {
+            totalMs: elapsedMs(nowMs, completeStartedAtMs),
+            error: error instanceof Error ? error.message : String(error),
+          })
+          throw error
         }
-
-        const client = await deps.createWalrusClient(upload.network)
-        await deps.validateRegister({
-          network: upload.network,
-          digest: registerTxDigest,
-          walletAddress,
-          expected: [{ blobId: upload.blobId, blobObjectId }],
-        })
-
-        const certificate = upload.certificate ?? await writeEncodedBlobAndBuildCertificate({
-          client,
-          upload,
-          blobObjectId,
-        })
-        await deps.staging.put({
-          ...upload,
-          certificate,
-        })
-
-        return withCors(json({
-          uploadId,
-          blobId: upload.blobId,
-          blobObjectId,
-          certificate: serializeWalrusCertificate(certificate),
-        }), corsOrigin)
       }
 
       const finalizeMatch = /^\/v1\/uploads\/([^/]+)\/finalize$/.exec(path)

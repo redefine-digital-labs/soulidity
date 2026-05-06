@@ -8,13 +8,38 @@ import { getConfiguredWalrusUploadTransport } from '@/lib/upload/walrus-batch-tr
 const WALLET = `0x${'1'.repeat(64)}`
 const BLOB_OBJECT_ID = `0x${'2'.repeat(64)}`
 
-function buildManagedResumeIntent(walrusClient: unknown): BatchWalrusRegisterIntent {
+function blobObjectIdAt(index: number): string {
+  const hex = (index + 2).toString(16)
+  return `0x${hex.repeat(64).slice(0, 64)}`
+}
+
+function buildManagedResumeIntent(walrusClient: unknown, fileCount = 1): BatchWalrusRegisterIntent {
+  const prepared = Array.from({ length: fileCount }, (_, index) => ({
+    index,
+    item: { file: {} as File, uploadType: 'public', kind: 'soul-content' },
+    contentType: 'text/plain',
+    normalizedFile: {} as File,
+    plaintext: new Uint8Array([10 + index]),
+    payload: new Uint8Array([10 + index]),
+    encrypted: null,
+    contentHash: `content-hash-${index}`,
+    skillBundleMetadata: null,
+  }))
+  const encodedList = Array.from({ length: fileCount }, (_, index) => ({
+    uploadId: `upload-${index + 1}`,
+    blobId: `blob-id-${index}`,
+    rootHash: new Uint8Array([index + 1]),
+    size: 10 + index,
+  }))
+  const blobObjectIds = Array.from({ length: fileCount }, (_, index) =>
+    index === 0 ? BLOB_OBJECT_ID : blobObjectIdAt(index),
+  )
   return {
     mode: 'resume',
-    fileCount: 1,
-    blobUrls: ['http://example.test/blob-0'],
-    contentHashes: ['content-hash-0'],
-    skillBundleMetadata: [null],
+    fileCount,
+    blobUrls: Array.from({ length: fileCount }, (_, index) => `http://example.test/blob-${index}`),
+    contentHashes: prepared.map((item) => item.contentHash),
+    skillBundleMetadata: prepared.map((item) => item.skillBundleMetadata),
     quote: { id: 'quote-1' },
     resumedRegisterTxDigest: 'register-tx',
     appendRegisterCalls: vi.fn(),
@@ -25,25 +50,10 @@ function buildManagedResumeIntent(walrusClient: unknown): BatchWalrusRegisterInt
       suiClient: {},
       walrusClient,
       transport: 'managed',
-      prepared: [{
-        index: 0,
-        item: { file: {} as File, uploadType: 'public', kind: 'soul-content' },
-        contentType: 'text/plain',
-        normalizedFile: {} as File,
-        plaintext: new Uint8Array([10]),
-        payload: new Uint8Array([10]),
-        encrypted: null,
-        contentHash: 'content-hash-0',
-        skillBundleMetadata: null,
-      }],
-      encodedList: [{
-        uploadId: 'upload-1',
-        blobId: 'blob-id-0',
-        rootHash: new Uint8Array([1]),
-        size: 10,
-      }],
+      prepared,
+      encodedList,
       recoveryKey: 'recovery-key',
-      resumedBlobObjectIds: [BLOB_OBJECT_ID],
+      resumedBlobObjectIds: blobObjectIds,
       quote: { id: 'quote-1' },
       managedUploader: {
         url: 'https://uploader.example',
@@ -108,6 +118,60 @@ describe('Walrus managed upload transport', () => {
         },
         deletable: true,
       })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('completes managed uploads sequentially to avoid concurrent uploader memory spikes', async () => {
+    const certificate = {
+      signers: [0],
+      serializedMessage: 'CA',
+      signature: 'CQ',
+    }
+    let activeCompletes = 0
+    let peakCompletes = 0
+    const callOrder: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const uploadId = String(input).match(/\/v1\/uploads\/([^/]+)\/complete$/)?.[1]
+      if (!uploadId) throw new Error(`Unexpected managed uploader URL: ${String(input)}`)
+      const index = Number(uploadId.replace('upload-', '')) - 1
+      activeCompletes += 1
+      peakCompletes = Math.max(peakCompletes, activeCompletes)
+      callOrder.push(`start:${uploadId}`)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      callOrder.push(`finish:${uploadId}`)
+      activeCompletes -= 1
+      return new Response(JSON.stringify({
+        uploadId,
+        blobId: `blob-id-${index}`,
+        blobObjectId: index === 0 ? BLOB_OBJECT_ID : blobObjectIdAt(index),
+        certificate,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const fakeWalrusClient = {
+      writeEncodedBlobToNodes: vi.fn(),
+      certifyBlob: vi.fn((args) => ({ certify: args })),
+    }
+    const intent = buildManagedResumeIntent(fakeWalrusClient, 3)
+
+    try {
+      await completeBatchWalrusUploadAfterRegister({ intent })
+
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(peakCompletes).toBe(1)
+      expect(callOrder).toEqual([
+        'start:upload-1',
+        'finish:upload-1',
+        'start:upload-2',
+        'finish:upload-2',
+        'start:upload-3',
+        'finish:upload-3',
+      ])
     } finally {
       vi.unstubAllGlobals()
     }
