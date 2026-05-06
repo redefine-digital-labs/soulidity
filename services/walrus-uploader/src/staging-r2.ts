@@ -132,8 +132,18 @@ export function createR2WalrusUploadStaging(params: CreateR2WalrusUploadStagingP
 
   async function signedFetch(url: string, init: RequestInit = {}) {
     const signed = await aws.sign(url, init)
-    if (fetchImpl) return fetchImpl(signed.url, signed)
-    return fetch(signed.url, signed)
+    // Node 22 undici-fetch on a Request with a ReadableStream body uses
+    // chunked transfer encoding, but R2's S3 API requires Content-Length on
+    // PUT and rejects chunked uploads with 411 Length Required. Materialize
+    // the signed body so fetch can length-prefix it.
+    const bytes = await signed.arrayBuffer()
+    const body = bytes.byteLength > 0 ? new Uint8Array(bytes) : undefined
+    const requestInit: RequestInit = {
+      method: signed.method,
+      headers: signed.headers,
+      body,
+    }
+    return (fetchImpl ?? fetch)(signed.url, requestInit)
   }
 
   return {

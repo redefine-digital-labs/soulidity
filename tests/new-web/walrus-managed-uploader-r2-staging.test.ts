@@ -39,16 +39,23 @@ const STAGING_PARAMS = {
 const OBJECT_URL_PATH = `/${BUCKET}/walrus-uploader/upload-1.json`
 
 async function readSignedBody(init: RequestInit | undefined): Promise<string> {
-  // aws4fetch hands the simulator a Request with a ReadableStream body; pull
-  // it through Request.text() so we see the JSON bytes instead of the string
-  // `[object ReadableStream]`.
+  // The uploader's signedFetch materializes the signed body as Uint8Array so
+  // fetch can length-prefix it (R2 rejects chunked PUT with 411). Decode it
+  // back to text for the simulator to parse. Older path (Request with stream
+  // body) kept as a defensive fallback.
   if (!init) return ''
   if (init instanceof Request) return await init.clone().text()
+  if (init.body instanceof Uint8Array) {
+    return new TextDecoder().decode(init.body)
+  }
+  if (init.body instanceof ArrayBuffer) {
+    return new TextDecoder().decode(new Uint8Array(init.body))
+  }
   if (init.body instanceof ReadableStream) {
     return await new Response(init.body).text()
   }
   if (typeof init.body === 'string') return init.body
-  return String(init.body ?? '')
+  return ''
 }
 
 describe('walrus-uploader R2 staging', () => {
@@ -67,6 +74,17 @@ describe('walrus-uploader R2 staging', () => {
       expect(url).toContain(`https://${ACCOUNT_ID}.r2.cloudflarestorage.com`)
 
       if (init?.method === 'PUT' && url.includes(OBJECT_URL_PATH)) {
+        // Real R2 returns 411 when the PUT body is sent chunked. Guard
+        // against regression: the uploader must hand fetch a
+        // length-prefixable body (Uint8Array | string | undefined), never
+        // a ReadableStream or a Request with a stream body.
+        expect(init).not.toBeInstanceOf(Request)
+        expect(init.body instanceof ReadableStream).toBe(false)
+        expect(
+          init.body == null
+          || typeof init.body === 'string'
+          || init.body instanceof Uint8Array,
+        ).toBe(true)
         storedBody = await readSignedBody(init)
         return new Response('', { status: 200, headers: { ETag: '"etag-1"' } })
       }

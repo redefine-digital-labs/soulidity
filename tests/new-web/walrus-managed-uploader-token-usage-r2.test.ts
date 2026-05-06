@@ -28,16 +28,23 @@ interface FakeR2Object {
 }
 
 async function readSignedBody(init: RequestInit | undefined): Promise<string> {
-  // aws4fetch hands us a Request with a ReadableStream body; pull it through
-  // Request.text() so the simulator sees the JSON bytes instead of the string
-  // `[object ReadableStream]`.
+  // The uploader's signedFetch materializes the signed body as Uint8Array so
+  // fetch can length-prefix it (R2 rejects chunked PUT with 411). Decode it
+  // back to text for the simulator to parse. Older path (Request with stream
+  // body) kept as a defensive fallback.
   if (!init) return ''
   if (init instanceof Request) return await init.clone().text()
+  if (init.body instanceof Uint8Array) {
+    return new TextDecoder().decode(init.body)
+  }
+  if (init.body instanceof ArrayBuffer) {
+    return new TextDecoder().decode(new Uint8Array(init.body))
+  }
   if (init.body instanceof ReadableStream) {
     return await new Response(init.body).text()
   }
   if (typeof init.body === 'string') return init.body
-  return String(init.body ?? '')
+  return ''
 }
 
 function buildR2Simulator() {
@@ -61,6 +68,16 @@ function buildR2Simulator() {
     const method = init?.method ?? 'GET'
 
     if (method === 'PUT') {
+      // Real R2 returns 411 when the PUT body is sent chunked. Make sure the
+      // uploader hands fetch a length-prefixable body (Uint8Array | string |
+      // undefined), never a ReadableStream or a Request with a stream body.
+      expect(init).not.toBeInstanceOf(Request)
+      expect(init?.body instanceof ReadableStream).toBe(false)
+      expect(
+        init?.body == null
+        || typeof init?.body === 'string'
+        || init?.body instanceof Uint8Array,
+      ).toBe(true)
       const body = await readSignedBody(init)
       const ifMatch = headers.get('If-Match')
       const ifNoneMatch = headers.get('If-None-Match')
