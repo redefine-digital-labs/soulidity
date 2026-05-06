@@ -181,6 +181,20 @@ describe('walrus batch helper 3-phase split', () => {
       expect(persistSecond).toBeGreaterThan(resolveCall)
     })
 
+    it('bounds register object-id resolution so post-sign recovery can surface a retryable error', () => {
+      const helperStart = source.indexOf('async function resolveCreatedBlobObjectIds')
+      expect(helperStart).toBeGreaterThanOrEqual(0)
+      const helperEnd = source.indexOf('async function writeEncodedBlobAndBuildCertificate', helperStart)
+      expect(helperEnd).toBeGreaterThan(helperStart)
+      const helper = source.slice(helperStart, helperEnd)
+
+      expect(source).toContain('WALRUS_REGISTER_RESOLVE_TIMEOUT_MS')
+      expect(helper).toContain('withTimeout(')
+      expect(helper).toContain('client.waitForTransaction({ digest: params.digest')
+      expect(helper).toContain('timeout: WALRUS_REGISTER_RESOLVE_TIMEOUT_MS')
+      expect(helper).toContain('Timed out resolving Walrus register transaction')
+    })
+
     it('keeps the browser rollback path sequential when writeEncodedBlobAndBuildCertificate is selected', () => {
       const fnStart = source.indexOf('export async function completeBatchWalrusUploadAfterRegister')
       const fnEnd = source.indexOf('export async function prepareSoulBlobsForBatchPublish', fnStart)

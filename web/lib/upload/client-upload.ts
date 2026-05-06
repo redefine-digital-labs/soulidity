@@ -115,6 +115,7 @@ const DEFAULT_MAINNET_AGGREGATOR_URL = 'https://aggregator.mainnet.walrus.mirai.
 const QUOTE_RELAY_TIP_MAX_MIST = BigInt(Number.MAX_SAFE_INTEGER)
 const WALRUS_WEIGHTED_QUORUM_CONFIRMATION_RETRIES = 2
 const WALRUS_STORAGE_WRITE_TIMEOUT_MS = 20_000
+const WALRUS_REGISTER_RESOLVE_TIMEOUT_MS = 60_000
 
 function getWalrusWasmUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_WALRUS_WASM_URL
@@ -710,11 +711,19 @@ async function resolveCreatedBlobObjectIds(params: {
   const { blobIdFromInt } = await import('@mysten/walrus')
   const client = params.suiClient as SuiClientForBlobLookup
   const expectedBlobType = await params.walrusClient.getBlobType()
-  await client.waitForTransaction({ digest: params.digest })
-  const tx = await client.getTransactionBlock({
-    digest: params.digest,
-    options: { showObjectChanges: true, showEffects: true },
-  })
+  await withTimeout(
+    client.waitForTransaction({ digest: params.digest, timeout: WALRUS_REGISTER_RESOLVE_TIMEOUT_MS }),
+    WALRUS_REGISTER_RESOLVE_TIMEOUT_MS + 5_000,
+    `Timed out resolving Walrus register transaction ${params.digest}`,
+  )
+  const tx = await withTimeout(
+    client.getTransactionBlock({
+      digest: params.digest,
+      options: { showObjectChanges: true, showEffects: true },
+    }),
+    WALRUS_REGISTER_RESOLVE_TIMEOUT_MS,
+    `Timed out reading Walrus register transaction ${params.digest}`,
+  )
   const createdBlobObjectIds: string[] = []
   for (const change of tx.objectChanges ?? []) {
     if (
@@ -732,8 +741,12 @@ async function resolveCreatedBlobObjectIds(params: {
       + `${params.expectedBlobIds.length} were expected. Digest: ${params.digest}`,
     )
   }
-  const decoded = await Promise.all(
-    createdBlobObjectIds.map((objectId) => params.walrusClient.getBlobObject(objectId)),
+  const decoded = await withTimeout(
+    Promise.all(
+      createdBlobObjectIds.map((objectId) => params.walrusClient.getBlobObject(objectId)),
+    ),
+    WALRUS_REGISTER_RESOLVE_TIMEOUT_MS,
+    `Timed out decoding Walrus Blob objects for register transaction ${params.digest}`,
   )
   // Use a per-blobId queue rather than `Map<string, string>` so duplicate
   // expected blobIds (e.g. the same public payload reused as both cover image

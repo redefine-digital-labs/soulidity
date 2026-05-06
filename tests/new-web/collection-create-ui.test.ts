@@ -91,6 +91,24 @@ describe('web collection create regression guards', () => {
     expect(completionStatusIdx).toBeLessThan(completionCallIdx)
   })
 
+  it('uses bounded waits and fetches for post-paid collection publish boundaries', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+
+    expect(source).toContain('COLLECTION_PUBLISH_FETCH_TIMEOUT_MS')
+    expect(source).toContain('COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS')
+    expect(source).toContain('fetchCollectionPublishJson')
+    expect(source).toContain('waitForCollectionPublishTransaction')
+    expect(source).toContain('withCollectionPublishTimeout(')
+
+    expect(source).toContain("await waitForCollectionPublishTransaction(suiClient, recovery.collectionPtb1Digest")
+    expect(source).toContain("await fetchCollectionPublishJson<CollectionSyncResponse>('/api/collections/create'")
+    expect(source).toContain("await fetchCollectionPublishJson<{ listingStatus?: string }>(")
+    expect(source).toContain("await fetchCollectionPublishJson<{")
+    expect(source).not.toContain("await fetch('/api/collections/create'")
+    expect(source).not.toContain("await fetch('/api/souls/publish/batch'")
+    expect(source).not.toContain('const addRes = await fetch(')
+  })
+
   it('hydrates collection v12 recovery from collectionPtb1Digest instead of the removed txDigest field', () => {
     const provider = readSource('web/components/providers/create-collection-provider.tsx')
     const hydrateStart = provider.indexOf('// Hydrate draft inputs from recovery state')

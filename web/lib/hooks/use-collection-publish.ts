@@ -69,6 +69,18 @@ const FAST_PATH_GAS_CAP_MIST = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 5_000_000_000
 })()
 
+const COLLECTION_PUBLISH_FETCH_TIMEOUT_MS = (() => {
+  const raw = process.env.NEXT_PUBLIC_COLLECTION_PUBLISH_FETCH_TIMEOUT_MS
+  const parsed = raw ? Number(raw) : NaN
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 120_000
+})()
+
+const COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS = (() => {
+  const raw = process.env.NEXT_PUBLIC_COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS
+  const parsed = raw ? Number(raw) : NaN
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 90_000
+})()
+
 interface SoulUploadRecovery {
   protectedBlobObjectId: string
   sealMaterial: PendingSealMaterial
@@ -335,6 +347,104 @@ function hasValidOptionalLegacyAssetsSealMaterial(value: unknown): boolean {
   return value == null || isPendingSealMaterial(value)
 }
 
+function extractErrorMessage(payload: unknown, fallback: string) {
+  if (payload && typeof payload === 'object') {
+    const error = (payload as { error?: unknown }).error
+    if (typeof error === 'string' && error.length > 0) return error
+  }
+  return fallback
+}
+
+async function withCollectionPublishTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+async function fetchCollectionPublishResponse(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  label: string,
+) {
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  let timedOut = false
+  try {
+    timeout = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, COLLECTION_PUBLISH_FETCH_TIMEOUT_MS)
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(`${label} timed out after ${COLLECTION_PUBLISH_FETCH_TIMEOUT_MS}ms. Retry to resume without signing already-completed transactions again.`)
+    }
+    throw error
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+async function fetchCollectionPublishJson<T>(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  label: string,
+): Promise<T> {
+  const response = await fetchCollectionPublishResponse(input, init, label)
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, `${label} failed with HTTP ${response.status}`))
+  }
+  return (payload ?? {}) as T
+}
+
+async function waitForCollectionPublishTransaction(
+  suiClient: ReturnType<typeof useSuiClient>,
+  digest: string,
+  label: string,
+  options?: Record<string, unknown>,
+) {
+  return withCollectionPublishTimeout(
+    suiClient.waitForTransaction({
+      digest,
+      ...(options ? { options: options as never } : {}),
+      timeout: COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS,
+    }),
+    COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS + 5_000,
+    `${label} timed out while waiting for Sui transaction ${digest}. Retry to resume from the recorded digest.`,
+  )
+}
+
+async function getCollectionPublishTransactionBlock(
+  suiClient: ReturnType<typeof useSuiClient>,
+  digest: string,
+  label: string,
+) {
+  return withCollectionPublishTimeout(
+    suiClient.getTransactionBlock({
+      digest,
+      options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true } as never,
+    }),
+    COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS,
+    `${label} timed out while loading Sui transaction ${digest}. Retry to resume from the recorded digest.`,
+  )
+}
+
 function sanitizeRecoveryState(raw: string | null, userId: string | undefined): RecoveryState | null {
   if (!raw || !userId) return null
   try {
@@ -361,7 +471,7 @@ function sanitizeRecoveryState(raw: string | null, userId: string | undefined): 
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress: string) {
   const url = `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`
-  const res = await fetch(url, { cache: 'no-store', headers })
+  const res = await fetchCollectionPublishResponse(url, { cache: 'no-store', headers }, 'Personal kiosk preflight')
   if (res.status === 404) return null
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
@@ -615,33 +725,35 @@ async function mirrorFastPathPtb2(args: {
       suiClient,
     }))
   }
-  const batchRes = await fetch('/api/souls/publish/batch', {
-    method: 'POST',
-    headers: { ...authHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      txDigest: ptb2Digest,
-      collectionOnChainId: authoredCollectionData.collectionOnChainId,
-      expectedSoulCount: recovery.souls.length,
-      expectedBindCount: recovery.souls.length,
-      syncBodies,
-    }),
-  })
-  if (!batchRes.ok) {
-    const body = await batchRes.json().catch(() => ({}))
-    throw new FastPathMirrorFailed(
-      `batch mirror failed: ${
-        body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
-          ? (body as { error: string }).error
-          : batchRes.statusText
-      }`,
-    )
-  }
-  const batchData = await batchRes.json() as {
+  let batchData: {
     syncs?: Array<{
       soulOnChainId: string
       stateOnChainId: string
       contentOnChainId: string | null
     }>
+  }
+  try {
+    batchData = await fetchCollectionPublishJson<{
+      syncs?: Array<{
+        soulOnChainId: string
+        stateOnChainId: string
+        contentOnChainId: string | null
+      }>
+    }>('/api/souls/publish/batch', {
+      method: 'POST',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        txDigest: ptb2Digest,
+        collectionOnChainId: authoredCollectionData.collectionOnChainId,
+        expectedSoulCount: recovery.souls.length,
+        expectedBindCount: recovery.souls.length,
+        syncBodies,
+      }),
+    }, 'Fast-path batch mirror')
+  } catch (error) {
+    throw new FastPathMirrorFailed(
+      `batch mirror failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
   if (!Array.isArray(batchData.syncs) || batchData.syncs.length < recovery.souls.length) {
     throw new FastPathMirrorFailed('Fast-path batch mirror returned fewer syncs than minted souls')
@@ -958,28 +1070,20 @@ export function useCollectionPublish(draftSignature?: string | null) {
 
       // ── Phase 4: Wait PTB1 finality + mirror collection create [+ listing] ──
       if (recovery.collectionPtb1Digest) {
-        await suiClient.waitForTransaction({
-          digest: recovery.collectionPtb1Digest,
-          options: { showEffects: true } as never,
-        })
+        await waitForCollectionPublishTransaction(suiClient, recovery.collectionPtb1Digest, 'Collection PTB1 finality', { showEffects: true })
       }
 
       let collectionData = recovery.collectionData
       if (!collectionData && recovery.collectionPtb1Digest) {
         setStatus('syncing')
-        const syncRes = await fetch('/api/collections/create', {
+        collectionData = await fetchCollectionPublishJson<CollectionSyncResponse>('/api/collections/create', {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             txDigest: recovery.collectionPtb1Digest,
             floorPriceAtomic: recovery.collectionMeta?.floorPriceAtomic ?? null,
           }),
-        })
-        if (!syncRes.ok) {
-          const body = await syncRes.json().catch(() => ({}))
-          throw new Error(body.error || 'Failed to mirror collection creation')
-        }
-        collectionData = await syncRes.json()
+        }, 'Collection create mirror')
         recovery.collectionData = collectionData
         setRecoveryState({ ...recovery })
       }
@@ -993,19 +1097,15 @@ export function useCollectionPublish(draftSignature?: string | null) {
         && recovery.collectionPtb1Digest
         && collectionData.listingStatus !== 'listed'
       ) {
-        const listRes = await fetch(
+        const listData = await fetchCollectionPublishJson<{ listingStatus?: string }>(
           `/api/collections/${encodeURIComponent(collectionData.collectionOnChainId)}/list`,
           {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({ txDigest: recovery.collectionPtb1Digest, action: 'list' }),
           },
+          'Collection-right listing mirror',
         )
-        if (!listRes.ok) {
-          const body = await listRes.json().catch(() => ({}))
-          throw new Error(body.error || 'Failed to mirror collection-right listing')
-        }
-        const listData = await listRes.json().catch(() => ({})) as { listingStatus?: string }
         collectionData = { ...collectionData, listingStatus: listData.listingStatus ?? collectionData.listingStatus }
         recovery.collectionData = collectionData
         setRecoveryState({ ...recovery })
@@ -1062,10 +1162,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
           recovery,
           authHeaders,
           authoredCollectionData: collectionData,
-          txResultForMirror: await suiClient.getTransactionBlock({
-            digest: recovery.fastPathPtb2Digest,
-            options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true } as never,
-          }),
+          txResultForMirror: await getCollectionPublishTransactionBlock(suiClient, recovery.fastPathPtb2Digest, 'Fast-path PTB2 transaction'),
           ptb2Digest: recovery.fastPathPtb2Digest,
           suiClient,
           persistRecovery: setRecoveryState,
@@ -1219,10 +1316,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
         const chunkNeedsMirror = chunk.soulIndices.some((idx) => !recovery.souls[idx].mintSync)
         if (chunkNeedsMirror) {
           if (!chunkTxResult) {
-            chunkTxResult = await suiClient.getTransactionBlock({
-              digest: chunkDigest,
-              options: { showEvents: true, showObjectChanges: true, showEffects: true, showInput: true } as never,
-            })
+            chunkTxResult = await getCollectionPublishTransactionBlock(suiClient, chunkDigest, 'Chunked mint transaction')
           }
           const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
           const mintEvents = extractAllSoulMintedToKioskEvents(chunkTxResult as never, packageId)
@@ -1249,7 +1343,13 @@ export function useCollectionPublish(draftSignature?: string | null) {
               suiClient,
             }))
           }
-          const batchRes = await fetch('/api/souls/publish/batch', {
+          const batchData = await fetchCollectionPublishJson<{
+            syncs?: Array<{
+              soulOnChainId: string
+              stateOnChainId: string
+              contentOnChainId: string | null
+            }>
+          }>('/api/souls/publish/batch', {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1259,18 +1359,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
               expectedBindCount: 0,
               syncBodies,
             }),
-          })
-          if (!batchRes.ok) {
-            const body = await batchRes.json().catch(() => ({}))
-            throw new Error(body.error || 'Failed to mirror chunked publish batch')
-          }
-          const batchData = await batchRes.json() as {
-            syncs?: Array<{
-              soulOnChainId: string
-              stateOnChainId: string
-              contentOnChainId: string | null
-            }>
-          }
+          }, 'Chunked publish batch mirror')
           if (!Array.isArray(batchData.syncs) || batchData.syncs.length < chunk.soulIndices.length) {
             throw new Error('Chunked publish batch mirror returned fewer syncs than minted souls')
           }
@@ -1329,18 +1418,14 @@ export function useCollectionPublish(draftSignature?: string | null) {
           if (!soul.mintSync) {
             throw new Error(`Soul "${soul.input.name}" mint mirror missing during bind sync`)
           }
-          const addRes = await fetch(`/api/collections/${encodeURIComponent(collectionData.collectionOnChainId)}/add-soul`, {
+          await fetchCollectionPublishJson<Record<string, unknown>>(`/api/collections/${encodeURIComponent(collectionData.collectionOnChainId)}/add-soul`, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               txDigest: chunkDigest,
               soulOnChainId: soul.mintSync.soulOnChainId,
             }),
-          })
-          if (!addRes.ok) {
-            const body = await addRes.json().catch(() => ({}))
-            throw new Error(body.error || `Failed to bind Soul "${soul.input.name}" to collection`)
-          }
+          }, `Bind Soul "${soul.input.name}" to collection`)
           soul.bindTxDigest = chunkDigest
           setRecoveryState({ ...recovery, souls: [...recovery.souls] })
           setProgress((p) => ({ ...p, boundSouls: countBoundSouls(recovery.souls) }))
@@ -1436,7 +1521,16 @@ async function tryFastPathPtb2(args: {
   tx.setSender(walletAddress)
   const bytes = await tx.build({ client: suiClient as never, onlyTransactionKind: false })
 
-  const dryRun = await suiClient.dryRunTransactionBlock({ transactionBlock: bytes })
+  let dryRun
+  try {
+    dryRun = await withCollectionPublishTimeout(
+      suiClient.dryRunTransactionBlock({ transactionBlock: bytes }),
+      COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS,
+      `Fast-path dry-run timed out after ${COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS}ms`,
+    )
+  } catch (error) {
+    throw new FastPathFallback(error instanceof Error ? error.message : String(error))
+  }
   if (dryRun.effects.status.status !== 'success') {
     const errMsg = dryRun.effects.status.error || 'Unknown dry-run failure'
     if (/missing object|changed object|not exist|version/i.test(errMsg)) {
