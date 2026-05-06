@@ -71,6 +71,26 @@ describe('web collection create regression guards', () => {
     expect(source).toContain('emptyCollection: batchSouls.length === 0')
   })
 
+  it('shows a distinct post-sign Walrus completion status instead of waiting for signature', () => {
+    const preview = readSource('web/app/collections/create/preview/page.tsx')
+
+    expect(preview).toContain("'completing-walrus': 'Completing Walrus upload…'")
+    expect(preview).toContain("status === 'completing-walrus'")
+  })
+
+  it('moves collection launch out of signing status before post-register Walrus completion', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
+    const signingIdx = source.indexOf("setStatus('signing')")
+    const digestIdx = source.indexOf('setTxDigest(ptb1Digest)', signingIdx)
+    const completionStatusIdx = source.indexOf("setStatus('completing-walrus')", digestIdx)
+    const completionCallIdx = source.indexOf('completeBatchWalrusUploadAfterRegister({', digestIdx)
+
+    expect(signingIdx).toBeGreaterThanOrEqual(0)
+    expect(digestIdx).toBeGreaterThan(signingIdx)
+    expect(completionStatusIdx).toBeGreaterThan(digestIdx)
+    expect(completionStatusIdx).toBeLessThan(completionCallIdx)
+  })
+
   it('hydrates collection v12 recovery from collectionPtb1Digest instead of the removed txDigest field', () => {
     const provider = readSource('web/components/providers/create-collection-provider.tsx')
     const hydrateStart = provider.indexOf('// Hydrate draft inputs from recovery state')

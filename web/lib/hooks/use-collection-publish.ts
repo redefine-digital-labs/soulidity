@@ -141,6 +141,7 @@ export type CollectionPublishStatus =
   | 'uploading'
   | 'building'
   | 'signing'
+  | 'completing-walrus'
   | 'syncing'
   | 'minting-souls'
   | 'binding-souls'
@@ -945,6 +946,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
         'Walrus is uploading slivers for your new collection. Closing this tab now will orphan the registered Blob objects on-chain.',
       )
       if (intent) {
+        setStatus('completing-walrus')
         // Use the live intent (mode='fresh' or 'resume') with the recorded
         // PTB1 digest. Resume mode internally reuses prior register data.
         completion = await completeBatchWalrusUploadAfterRegister({

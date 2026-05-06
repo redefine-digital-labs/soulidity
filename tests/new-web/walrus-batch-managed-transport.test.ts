@@ -176,4 +176,34 @@ describe('Walrus managed upload transport', () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it('times out a hanging managed completion so launch can resume without re-registering', async () => {
+    vi.useFakeTimers()
+    vi.stubEnv('NEXT_PUBLIC_WALRUS_MANAGED_COMPLETE_TIMEOUT_MS', '25')
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'))
+        })
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const fakeWalrusClient = {
+      writeEncodedBlobToNodes: vi.fn(),
+      certifyBlob: vi.fn((args) => ({ certify: args })),
+    }
+    const intent = buildManagedResumeIntent(fakeWalrusClient)
+
+    try {
+      const pending = expect(completeBatchWalrusUploadAfterRegister({ intent })).rejects.toThrow(
+        'Walrus uploader completion timed out after 25ms for upload upload-1. Retry to resume without registering again.',
+      )
+      await vi.advanceTimersByTimeAsync(25)
+      await pending
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
 })

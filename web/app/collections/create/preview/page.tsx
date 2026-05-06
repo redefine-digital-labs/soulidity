@@ -169,6 +169,7 @@ const statusLabels: Record<string, string> = {
   'preparing-souls': 'Preparing Soul assets…',
   building: 'Building transaction…',
   signing: 'Waiting for signature…',
+  'completing-walrus': 'Completing Walrus upload…',
   syncing: 'Syncing on-chain state…',
   'minting-souls': 'Minting Souls…',
   'binding-souls': 'Binding Souls to collection…',
@@ -576,6 +577,8 @@ export default function PreviewPage() {
             <h3 className="text-lg font-bold text-foreground">
               {status === 'uploading'
                 ? 'Uploading collection assets…'
+                : status === 'completing-walrus'
+                  ? 'Completing Walrus Upload…'
                 : status === 'minting-souls'
                 ? `Minting Soul ${progress.mintedSouls + 1} of ${progress.totalSouls}…`
                 : status === 'binding-souls'
