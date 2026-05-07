@@ -65,7 +65,36 @@ function buildManagedResumeIntent(walrusClient: unknown, fileCount = 1): BatchWa
 
 describe('Walrus managed upload transport', () => {
   it('defaults new uploads to the managed uploader transport', () => {
-    expect(getConfiguredWalrusUploadTransport()).toBe('managed')
+    const previous = process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT
+    delete process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT
+    try {
+      expect(getConfiguredWalrusUploadTransport()).toBe('managed')
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT
+      } else {
+        process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT = previous
+      }
+    }
+  })
+
+  it('accepts each explicit Walrus upload transport mode', () => {
+    for (const transport of ['managed', 'browser', 'server'] as const) {
+      vi.stubEnv('NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT', transport)
+      expect(getConfiguredWalrusUploadTransport()).toBe(transport)
+    }
+    vi.unstubAllEnvs()
+  })
+
+  it('rejects invalid Walrus upload transport configuration', () => {
+    vi.stubEnv('NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT', 'legacy')
+    try {
+      expect(() => getConfiguredWalrusUploadTransport()).toThrow(
+        'Invalid NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT="legacy"',
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('completes via the uploader service without sending slivers to Vercel batch route', async () => {
@@ -123,7 +152,74 @@ describe('Walrus managed upload transport', () => {
     }
   })
 
-  it('completes managed uploads sequentially to avoid concurrent uploader memory spikes', async () => {
+  it('completes managed uploads with default concurrency 1 while preserving certificate order', async () => {
+    const certificate = {
+      signers: [0],
+      serializedMessage: 'CA',
+      signature: 'CQ',
+    }
+    let activeCompletes = 0
+    let peakCompletes = 0
+    const callOrder: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const uploadId = String(input).match(/\/v1\/uploads\/([^/]+)\/complete$/)?.[1]
+      if (!uploadId) throw new Error(`Unexpected managed uploader URL: ${String(input)}`)
+      const index = Number(uploadId.replace('upload-', '')) - 1
+      activeCompletes += 1
+      peakCompletes = Math.max(peakCompletes, activeCompletes)
+      callOrder.push(`start:${uploadId}`)
+      await new Promise((resolve) => setTimeout(resolve, [30, 10, 0, 0, 0][index] ?? 0))
+      callOrder.push(`finish:${uploadId}`)
+      activeCompletes -= 1
+      return new Response(JSON.stringify({
+        uploadId,
+        blobId: `blob-id-${index}`,
+        blobObjectId: index === 0 ? BLOB_OBJECT_ID : blobObjectIdAt(index),
+        certificate,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const fakeWalrusClient = {
+      writeEncodedBlobToNodes: vi.fn(),
+      certifyBlob: vi.fn((args) => ({ certify: args })),
+    }
+    const intent = buildManagedResumeIntent(fakeWalrusClient, 5)
+
+    try {
+      const result = await completeBatchWalrusUploadAfterRegister({ intent })
+      await result.attachCertifyCalls({ add: vi.fn() } as never)
+
+      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(peakCompletes).toBe(1)
+      expect(callOrder).toEqual([
+        'start:upload-1',
+        'finish:upload-1',
+        'start:upload-2',
+        'finish:upload-2',
+        'start:upload-3',
+        'finish:upload-3',
+        'start:upload-4',
+        'finish:upload-4',
+        'start:upload-5',
+        'finish:upload-5',
+      ])
+      expect(fakeWalrusClient.certifyBlob.mock.calls.map(([args]) => args.blobId)).toEqual([
+        'blob-id-0',
+        'blob-id-1',
+        'blob-id-2',
+        'blob-id-3',
+        'blob-id-4',
+      ])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('lets managed completion opt into concurrency 3 via env override', async () => {
+    vi.stubEnv('NEXT_PUBLIC_WALRUS_MANAGED_COMPLETE_CONCURRENCY', '3')
     const certificate = {
       signers: [0],
       serializedMessage: 'CA',
@@ -157,22 +253,16 @@ describe('Walrus managed upload transport', () => {
       writeEncodedBlobToNodes: vi.fn(),
       certifyBlob: vi.fn((args) => ({ certify: args })),
     }
-    const intent = buildManagedResumeIntent(fakeWalrusClient, 3)
+    const intent = buildManagedResumeIntent(fakeWalrusClient, 5)
 
     try {
       await completeBatchWalrusUploadAfterRegister({ intent })
 
-      expect(fetchMock).toHaveBeenCalledTimes(3)
-      expect(peakCompletes).toBe(1)
-      expect(callOrder).toEqual([
-        'start:upload-1',
-        'finish:upload-1',
-        'start:upload-2',
-        'finish:upload-2',
-        'start:upload-3',
-        'finish:upload-3',
-      ])
+      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(peakCompletes).toBe(3)
+      expect(callOrder.slice(0, 3)).toEqual(['start:upload-1', 'start:upload-2', 'start:upload-3'])
     } finally {
+      vi.unstubAllEnvs()
       vi.unstubAllGlobals()
     }
   })

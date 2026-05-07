@@ -164,7 +164,10 @@ export function deserializeWalrusCertificate(certificate: SerializedWalrusCertif
 }
 
 export function getConfiguredWalrusUploadTransport(): WalrusUploadTransport {
-  const configured = process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT
-  if (configured === 'browser' || configured === 'server') return configured
-  return 'managed'
+  const configured = process.env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT?.trim()
+  if (!configured) return 'managed'
+  if (configured === 'managed' || configured === 'browser' || configured === 'server') return configured
+  throw new Error(
+    `Invalid NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT="${configured}". Expected managed, browser, or server.`,
+  )
 }

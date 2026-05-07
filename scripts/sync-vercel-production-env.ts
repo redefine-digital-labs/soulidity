@@ -67,6 +67,10 @@ const REQUIRED_PRODUCTION_KEYS = [
   'DEEPSEEK_API_KEY',
 ] as const
 
+const PRODUCTION_WALRUS_UPLOADER_URL = 'https://uploader.soulidity.ai'
+const RETIRED_WALRUS_UPLOADER_URL = 'https://walrus-uploader-ppj673f2za-uc.a.run.app'
+const WALRUS_UPLOAD_TRANSPORTS = ['managed', 'browser', 'server'] as const
+
 type CliOptions = {
   apply: boolean
   envFile: string
@@ -103,6 +107,10 @@ function parseCliOptions(argv: string[]): CliOptions {
 
 function isSensitiveKey(key: string) {
   return !key.startsWith('NEXT_PUBLIC_')
+}
+
+function normalizeBaseUrl(value: string | undefined) {
+  return value?.trim().replace(/\/+$/, '') ?? ''
 }
 
 function assertProductionEnv(env: Record<string, string>) {
@@ -148,6 +156,26 @@ function assertProductionEnv(env: Record<string, string>) {
   const hasServerSealConfig = Boolean(env.SEAL_SERVER_CONFIGS?.trim())
   if (!hasPublicSealConfig && !hasServerSealConfig) {
     errors.push('Missing Seal key server config for mainnet: set NEXT_PUBLIC_SEAL_SERVER_CONFIGS or SEAL_SERVER_CONFIGS')
+  }
+
+  const walrusTransport = env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT?.trim() || 'managed'
+  const walrusUploaderUrl = normalizeBaseUrl(env.NEXT_PUBLIC_WALRUS_UPLOADER_URL)
+  const hasWalrusUploaderUrl = Boolean(walrusUploaderUrl)
+  const hasWalrusUploaderTokenSecret = Boolean(env.WALRUS_UPLOADER_TOKEN_SECRET?.trim())
+  if (!WALRUS_UPLOAD_TRANSPORTS.includes(walrusTransport as typeof WALRUS_UPLOAD_TRANSPORTS[number])) {
+    errors.push('NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT must be managed, browser, or server')
+  } else if (walrusTransport === 'managed') {
+    if (walrusUploaderUrl !== PRODUCTION_WALRUS_UPLOADER_URL) {
+      errors.push(`Managed Walrus production env requires NEXT_PUBLIC_WALRUS_UPLOADER_URL=${PRODUCTION_WALRUS_UPLOADER_URL}`)
+    }
+    if (!hasWalrusUploaderTokenSecret) {
+      errors.push('Managed Walrus production env requires WALRUS_UPLOADER_TOKEN_SECRET')
+    }
+  } else if (hasWalrusUploaderUrl || hasWalrusUploaderTokenSecret) {
+    errors.push(`NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=${walrusTransport} must not sync NEXT_PUBLIC_WALRUS_UPLOADER_URL or WALRUS_UPLOADER_TOKEN_SECRET`)
+  }
+  if (walrusUploaderUrl === RETIRED_WALRUS_UPLOADER_URL) {
+    errors.push(`Refusing retired Walrus uploader URL: ${RETIRED_WALRUS_UPLOADER_URL}`)
   }
 
   const threshold = Number.parseInt(env.NEXT_PUBLIC_SEAL_THRESHOLD ?? '', 10)

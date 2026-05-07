@@ -5,8 +5,16 @@ import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const SCRIPT = 'scripts/sync-vercel-production-env.ts'
+const PRODUCTION_WALRUS_UPLOADER_URL = 'https://uploader.soulidity.ai'
+const RETIRED_WALRUS_UPLOADER_URL = 'https://walrus-uploader-ppj673f2za-uc.a.run.app'
 
 const tempDirs: string[] = []
+const productionSupportEnv = {
+  UPSTASH_REDIS_REST_URL: 'https://example.upstash.io',
+  UPSTASH_REDIS_REST_TOKEN: 'test-upstash-token',
+  NEXT_PUBLIC_POSTHOG_KEY: 'phc_testprojectkey',
+  NEXT_PUBLIC_POSTHOG_HOST: '/ingest',
+}
 
 function writeEnvFile(extra: Record<string, string>) {
   const dir = mkdtempSync(join(tmpdir(), 'clawnews-env-sync-'))
@@ -55,11 +63,9 @@ describe('Vercel production env sync guardrails', () => {
 
   it('includes shared rate limiting and frontend PostHog env in dry-run output', () => {
     const envFile = writeEnvFile({
-      UPSTASH_REDIS_REST_URL: 'https://example.upstash.io',
-      UPSTASH_REDIS_REST_TOKEN: 'test-upstash-token',
-      NEXT_PUBLIC_POSTHOG_KEY: 'phc_testprojectkey',
-      NEXT_PUBLIC_POSTHOG_HOST: '/ingest',
+      ...productionSupportEnv,
       NEXT_PUBLIC_POSTHOG_SESSION_REPLAY: 'true',
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
     })
 
     const result = runSync(envFile)
@@ -74,10 +80,8 @@ describe('Vercel production env sync guardrails', () => {
 
   it('does not require PostHog session replay env to sync production env', () => {
     const envFile = writeEnvFile({
-      UPSTASH_REDIS_REST_URL: 'https://example.upstash.io',
-      UPSTASH_REDIS_REST_TOKEN: 'test-upstash-token',
-      NEXT_PUBLIC_POSTHOG_KEY: 'phc_testprojectkey',
-      NEXT_PUBLIC_POSTHOG_HOST: '/ingest',
+      ...productionSupportEnv,
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
     })
 
     const result = runSync(envFile)
@@ -85,4 +89,69 @@ describe('Vercel production env sync guardrails', () => {
     expect(result.status).toBe(0)
     expect(result.stdout).not.toContain('NEXT_PUBLIC_POSTHOG_SESSION_REPLAY')
   })
+
+  it('allows managed Walrus production env with the managed domain and token secret', () => {
+    const envFile = writeEnvFile({
+      ...productionSupportEnv,
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'managed',
+      NEXT_PUBLIC_WALRUS_UPLOADER_URL: PRODUCTION_WALRUS_UPLOADER_URL,
+      WALRUS_UPLOADER_TOKEN_SECRET: 'test-uploader-secret',
+    })
+
+    const result = runSync(envFile)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('- NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT')
+    expect(result.stdout).toContain('- NEXT_PUBLIC_WALRUS_UPLOADER_URL')
+    expect(result.stdout).toContain('- WALRUS_UPLOADER_TOKEN_SECRET (sensitive)')
+    expect(result.stdout).not.toContain(RETIRED_WALRUS_UPLOADER_URL)
+  })
+
+  it('rejects managed Walrus production env with the retired Cloud Run uploader URL', () => {
+    const envFile = writeEnvFile({
+      ...productionSupportEnv,
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'managed',
+      NEXT_PUBLIC_WALRUS_UPLOADER_URL: `${RETIRED_WALRUS_UPLOADER_URL}/`,
+      WALRUS_UPLOADER_TOKEN_SECRET: 'test-uploader-secret',
+    })
+
+    const result = runSync(envFile)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`Refusing retired Walrus uploader URL: ${RETIRED_WALRUS_UPLOADER_URL}`)
+  })
+
+  it('rejects managed Walrus production env without uploader URL or token secret', () => {
+    const envFile = writeEnvFile({
+      ...productionSupportEnv,
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'managed',
+    })
+
+    const result = runSync(envFile)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(
+      `Managed Walrus production env requires NEXT_PUBLIC_WALRUS_UPLOADER_URL=${PRODUCTION_WALRUS_UPLOADER_URL}`,
+    )
+    expect(result.stderr).toContain('Managed Walrus production env requires WALRUS_UPLOADER_TOKEN_SECRET')
+  })
+
+  it.each(['browser', 'server'] as const)(
+    'rejects %s Walrus rollback env when uploader credentials are still present',
+    (transport) => {
+      const envFile = writeEnvFile({
+        ...productionSupportEnv,
+        NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: transport,
+        NEXT_PUBLIC_WALRUS_UPLOADER_URL: PRODUCTION_WALRUS_UPLOADER_URL,
+        WALRUS_UPLOADER_TOKEN_SECRET: 'test-uploader-secret',
+      })
+
+      const result = runSync(envFile)
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(
+        `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=${transport} must not sync NEXT_PUBLIC_WALRUS_UPLOADER_URL or WALRUS_UPLOADER_TOKEN_SECRET`,
+      )
+    },
+  )
 })

@@ -116,6 +116,9 @@ const QUOTE_RELAY_TIP_MAX_MIST = BigInt(Number.MAX_SAFE_INTEGER)
 const WALRUS_WEIGHTED_QUORUM_CONFIRMATION_RETRIES = 2
 const WALRUS_STORAGE_WRITE_TIMEOUT_MS = 20_000
 const WALRUS_REGISTER_RESOLVE_TIMEOUT_MS = 60_000
+const DEFAULT_MANAGED_COMPLETE_CONCURRENCY = 1
+const MIN_MANAGED_COMPLETE_CONCURRENCY = 1
+const MAX_MANAGED_COMPLETE_CONCURRENCY = 4
 
 function getWalrusWasmUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_WALRUS_WASM_URL
@@ -155,6 +158,47 @@ function getAggregatorUrl(network: 'testnet' | 'mainnet') {
 
 function getBlobUrl(blobId: string, network: 'testnet' | 'mainnet') {
   return `${getAggregatorUrl(network)}/v1/blobs/${encodeURIComponent(blobId)}`
+}
+
+function getManagedCompleteConcurrency(): number {
+  const raw = process.env.NEXT_PUBLIC_WALRUS_MANAGED_COMPLETE_CONCURRENCY?.trim()
+  if (!raw) return DEFAULT_MANAGED_COMPLETE_CONCURRENCY
+
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed)) return DEFAULT_MANAGED_COMPLETE_CONCURRENCY
+
+  return Math.max(
+    MIN_MANAGED_COMPLETE_CONCURRENCY,
+    Math.min(MAX_MANAGED_COMPLETE_CONCURRENCY, parsed),
+  )
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+  let failed = false
+
+  async function runWorker(): Promise<void> {
+    while (!failed && nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      try {
+        results[index] = await worker(items[index] as T, index)
+      } catch (error) {
+        failed = true
+        throw error
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker()),
+  )
+  return results
 }
 
 function cloneBytes(bytes: Uint8Array) {
@@ -972,32 +1016,30 @@ async function completeEncodedBlobsViaManagedUploader(params: {
   blobObjectId: string
   certificate: WalrusCertificate
 }>> {
-  const files: Array<{
-    blobId: string
-    blobObjectId: string
-    certificate: WalrusCertificate
-  }> = []
-  for (const [index, encoded] of params.encodedList.entries()) {
-    const uploadId = requireManagedUploadId(encoded, index)
-    const completed = await completeManagedWalrusUpload({
-      credentials: params.credentials,
-      uploadId,
-      walletAddress: params.walletAddress,
-      network: params.network,
-      registerTxDigest: params.registerTxDigest,
-      blobObjectId: params.blobObjectIds[index],
-    })
-    if (completed.blobId !== encoded.blobId || completed.blobObjectId !== params.blobObjectIds[index]) {
-      throw new Error(`Walrus uploader returned mismatched completion for blob index ${index}`)
-    }
-    const file = {
-      blobId: completed.blobId,
-      blobObjectId: completed.blobObjectId,
-      certificate: completed.certificate as WalrusCertificate,
-    }
-    files.push(file)
-  }
-  return files
+  return mapWithConcurrency(
+    params.encodedList,
+    getManagedCompleteConcurrency(),
+    async (encoded, index) => {
+      const uploadId = requireManagedUploadId(encoded, index)
+      const blobObjectId = params.blobObjectIds[index]
+      const completed = await completeManagedWalrusUpload({
+        credentials: params.credentials,
+        uploadId,
+        walletAddress: params.walletAddress,
+        network: params.network,
+        registerTxDigest: params.registerTxDigest,
+        blobObjectId,
+      })
+      if (completed.blobId !== encoded.blobId || completed.blobObjectId !== blobObjectId) {
+        throw new Error(`Walrus uploader returned mismatched completion for blob index ${index}`)
+      }
+      return {
+        blobId: completed.blobId,
+        blobObjectId: completed.blobObjectId,
+        certificate: completed.certificate as WalrusCertificate,
+      }
+    },
+  )
 }
 
 export async function reclaimWalrusOrphanBlobs(params: {

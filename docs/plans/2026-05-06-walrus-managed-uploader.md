@@ -1,8 +1,9 @@
-# Walrus Managed Uploader: Google Cloud Staging
+# Walrus Managed Uploader: Production Endpoint
 
 ## Spec
 - Browser keeps plaintext custody: `soul.md`, `memory.md`, and other source files are read and Seal-encrypted locally before any network upload.
 - Browser no longer sends Walrus encoded slivers through Vercel by default. The default transport is `managed`; `browser` remains the emergency rollback and `server` remains legacy test-only.
+- Production Web always points managed uploads at `https://uploader.soulidity.ai`.
 - The managed uploader accepts encrypted payload bytes, stages encoded Walrus data in GCS, validates the user-paid register transaction, writes storage nodes, returns certificates, and deletes staging after mint success.
 - Token auth is wallet-scoped, network-scoped, short-lived, and budgeted by file count and encrypted byte limit. The uploader token secret is server-only and exists only in Vercel server env plus Cloud Run env.
 - Google Cloud staging runs on Cloud Run with the existing Node/Docker uploader image and `STAGING_BACKEND=gcs`. Cloud Run local disk is not used as persistent staging.
@@ -22,7 +23,9 @@
 - Uploader route: `POST /v1/uploads/:id/finalize`
   - Called after mint/certify succeeds. Deletes staged encoded data and cached certificate.
 
-## Google Cloud Resources
+## Google Cloud Deployment Shape
+The uploader can still be deployed with the Cloud Run/GCS shape below, but the Web production env must use the managed domain, not a raw `run.app` URL.
+
 1. Create or choose:
    - Google Cloud project: `<project-id>`
    - Region: `<region>`, for example `us-central1`
@@ -65,7 +68,7 @@
    - `UPLOAD_STAGE_TTL_MS=86400000`
    - `CORS_ORIGIN=https://www.soulidity.ai`
    - `SUI_FULLNODE_URL=<optional dedicated mainnet fullnode>`
-4. Verify the Cloud Run service before wiring Web:
+4. Verify the raw Cloud Run service before wiring the managed domain:
    ```sh
    curl -fsS https://<cloud-run-service>.run.app/health
    ```
@@ -74,7 +77,7 @@
 ## Vercel Web Env
 - `NEXT_PUBLIC_SUI_NETWORK=mainnet`
 - `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=managed`
-- `NEXT_PUBLIC_WALRUS_UPLOADER_URL=https://<cloud-run-service>.run.app`
+- `NEXT_PUBLIC_WALRUS_UPLOADER_URL=https://uploader.soulidity.ai`
 - `WALRUS_UPLOADER_TOKEN_SECRET=<same secret as Cloud Run>`
 - Optional token budgets:
   - `WALRUS_UPLOADER_TOKEN_TTL_MS=300000`
@@ -94,7 +97,7 @@
 2. Deploy Cloud Run and confirm `/health` is OK.
 3. Deploy Vercel with the managed uploader env:
    - `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=managed`
-   - `NEXT_PUBLIC_WALRUS_UPLOADER_URL=https://<cloud-run-service>.run.app`
+   - `NEXT_PUBLIC_WALRUS_UPLOADER_URL=https://uploader.soulidity.ai`
    - `WALRUS_UPLOADER_TOKEN_SECRET=<same secret>`
 4. In a browser, create a Soul with three files under 10KB.
 5. Network acceptance:
@@ -114,7 +117,7 @@
 ## Rollback
 - Fast rollback: set `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=browser` and redeploy Web.
 - Legacy diagnostic path: set `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=server`, but do not use it for Vercel production uploads that may exceed request-body limits.
-- If Cloud Run must be disabled, remove `NEXT_PUBLIC_WALRUS_UPLOADER_URL` from Vercel after switching transport away from `managed`.
+- When switching transport away from `managed`, remove both `NEXT_PUBLIC_WALRUS_UPLOADER_URL` and `WALRUS_UPLOADER_TOKEN_SECRET` from Vercel Production before syncing env.
 
 ## References
 - Cloud Run deploy from source or image: https://cloud.google.com/run/docs/deploying
