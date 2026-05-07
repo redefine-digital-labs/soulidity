@@ -179,7 +179,7 @@ describe('resolveIdentity', () => {
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
       domain: 'clawnews.example.com',
-      purpose: 'agent-join',
+      purpose: 'login',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
@@ -196,6 +196,73 @@ describe('resolveIdentity', () => {
       kind: 'human',
     })
     expect(mockedPrisma.member.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('accepts a challenge issued by /api/auth/wallet-challenge (purpose=login) via x-agent headers', async () => {
+    // Regression: the x-agent path must consume the same `'login'` purpose
+    // that `/api/auth/wallet-challenge` issues. A purpose mismatch here would
+    // make the wallet-signature auth branch unreachable for any client that
+    // follows the documented public flow.
+    const nonce = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const normalizedAddress = `0x${'0'.repeat(63)}1`
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': normalizedAddress,
+      'x-agent-signature': 'signature',
+      'x-agent-message': nonce,
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: normalizedAddress,
+      nonce,
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
+      purpose: 'login',
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      member: { id: 'agent-member', accountId: 'agent-account', kind: 'agent' },
+    })
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => normalizedAddress,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toMatchObject({
+      memberId: 'agent-member',
+      accountId: 'agent-account',
+      kind: 'agent',
+    })
+  })
+
+  it('rejects a non-login challenge purpose on the x-agent path', async () => {
+    // Symmetric guard: only `'login'` challenges are valid for x-agent header
+    // auth — challenges issued for other purposes (e.g. desktop-link) must
+    // not be reusable here.
+    const nonce = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const normalizedAddress = `0x${'0'.repeat(63)}2`
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': normalizedAddress,
+      'x-agent-signature': 'signature',
+      'x-agent-message': nonce,
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: normalizedAddress,
+      nonce,
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
+      purpose: 'desktop-link',
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
+    expect(mockedPrisma.walletBinding.findFirst).not.toHaveBeenCalled()
   })
 })
 
@@ -283,7 +350,7 @@ describe('requireMutationIdentity', () => {
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
       domain: 'clawnews.example.com',
-      purpose: 'agent-join',
+      purpose: 'login',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
