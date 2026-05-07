@@ -353,6 +353,47 @@ describe('completeDesktopDeviceSession', () => {
     ).rejects.toBeInstanceOf(DesktopDeviceSessionConflictError)
   })
 
+  it('same-account replay of an already-confirmed session is idempotent and does not roll back a rotated agent API key', async () => {
+    // Repro for the R-001 path: link a pet, rotate the agent API key, then
+    // re-submit the same userCode while signed into the same account. Pre-fix
+    // the confirmed-session branch unconditionally re-ran
+    // `persistConfirmedDesktopPet`, which rewrote `Member.apiKeyHash` back to
+    // the deterministic device-session seed and cleared `apiKeyRotationId`,
+    // silently invalidating the rotated `sk-*` on disk.
+    const now = new Date('2026-04-12T11:00:00Z')
+    const confirmedAt = new Date('2026-04-12T10:05:00Z')
+    const session = {
+      id: 'session-1',
+      accountId: 'account-123',
+      agentAddress: '0xagent123',
+      deviceCode: 'device-abc',
+      userCode: 'ABCD-EFGH',
+      expiresAt: new Date('2026-04-12T10:10:00Z'),
+      confirmedAt,
+      pollIntervalSeconds: 5,
+      status: 'confirmed',
+    }
+    mockedPrisma.desktopDeviceSession.findUnique.mockResolvedValueOnce(session)
+
+    const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
+    const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', { now })
+
+    expect(result.status).toBe('confirmed')
+    if (result.status === 'confirmed') {
+      expect(result.accountId).toBe('account-123')
+      expect(result.confirmedAt).toBe(confirmedAt.toISOString())
+    }
+
+    // No write-side prisma calls — confirmed-session replay is pure read.
+    expect(mockedPrisma.$transaction).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopPet.update).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopPet.create).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopDeviceSession.update).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopDeviceSession.updateMany).not.toHaveBeenCalled()
+    expect(mockedPrisma.walletBinding.findUnique).not.toHaveBeenCalled()
+  })
+
   it('returns expired when concurrent poll expires session during complete', async () => {
     const session = {
       id: 'session-1',
