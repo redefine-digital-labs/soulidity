@@ -63,7 +63,7 @@ function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectr
       },
       activePersona: null,
     }),
-    unlinkDesktopDevice: vi.fn().mockResolvedValue({ ok: true }),
+    unlinkDesktopDevice: vi.fn().mockResolvedValue({ ok: true, remoteRevoked: true }),
     deviceStartLink: vi.fn(),
     deviceGetLinkUrl: vi.fn(),
     devicePoll: vi.fn(),
@@ -378,7 +378,7 @@ describe('SettingsTab desktop auth restore', () => {
       }),
       deviceGetLinkUrl: vi.fn().mockResolvedValue('http://link'),
       devicePoll: vi.fn().mockResolvedValue({ status: 'confirmed', accountId: 'acct_cuid_1234' }),
-      unlinkDesktopDevice: vi.fn().mockResolvedValue({ ok: true }),
+      unlinkDesktopDevice: vi.fn().mockResolvedValue({ ok: true, remoteRevoked: true }),
     })
 
     await renderWithApi(api)
