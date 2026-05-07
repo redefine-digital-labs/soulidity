@@ -71,7 +71,7 @@ interface ResetCounts {
   soulUploadBinding: number
   soulTxSync: number
   desktopCatalogSoulEntry: number
-  desktopProfileWithActiveSoul: number
+  desktopPetWithActiveSoul: number
   soulAsset: number
   soulCollectionAsset: number
 }
@@ -87,7 +87,7 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
     soulUploadBinding,
     soulTxSync,
     desktopCatalogSoulEntry,
-    desktopProfileWithActiveSoul,
+    desktopPetWithActiveSoul,
     soulAsset,
     soulCollectionAsset,
   ] = await Promise.all([
@@ -100,7 +100,7 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
     prisma.soulUploadBinding.count(),
     prisma.soulTxSync.count(),
     prisma.desktopCatalogEntry.count({ where: { sourceType: 'soul' } }),
-    prisma.desktopProfile.count({ where: { activeSourceType: 'soul' } }),
+    prisma.desktopPet.count({ where: { activeSourceType: 'soul' } }),
     prisma.soulAsset.count(),
     prisma.soulCollectionAsset.count(),
   ])
@@ -115,7 +115,7 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
     soulUploadBinding,
     soulTxSync,
     desktopCatalogSoulEntry,
-    desktopProfileWithActiveSoul,
+    desktopPetWithActiveSoul,
     soulAsset,
     soulCollectionAsset,
   }
@@ -132,7 +132,7 @@ function printCounts(label: string, counts: ResetCounts) {
   console.log(`  SoulUploadBinding:                      ${counts.soulUploadBinding}`)
   console.log(`  SoulTxSync:                             ${counts.soulTxSync}`)
   console.log(`  DesktopCatalogEntry (sourceType=soul):  ${counts.desktopCatalogSoulEntry}`)
-  console.log(`  DesktopProfile (activeSourceType=soul): ${counts.desktopProfileWithActiveSoul}`)
+  console.log(`  DesktopPet (activeSourceType=soul):     ${counts.desktopPetWithActiveSoul}`)
   console.log(`  SoulAsset:                              ${counts.soulAsset}`)
   console.log(`  SoulCollectionAsset:                    ${counts.soulCollectionAsset}`)
 }
@@ -175,7 +175,7 @@ async function main() {
       prisma.soulUploadBinding.deleteMany({}),
       prisma.soulTxSync.deleteMany({}),
       prisma.desktopCatalogEntry.deleteMany({ where: { sourceType: 'soul' } }),
-      prisma.desktopProfile.updateMany({
+      prisma.desktopPet.updateMany({
         where: { activeSourceType: 'soul' },
         data: { activeSourceType: null, activeSourceRef: null },
       }),
@@ -197,7 +197,7 @@ async function main() {
       after.soulUploadBinding +
       after.soulTxSync +
       after.desktopCatalogSoulEntry +
-      after.desktopProfileWithActiveSoul +
+      after.desktopPetWithActiveSoul +
       after.soulAsset +
       after.soulCollectionAsset
     if (residual > 0) {

@@ -100,6 +100,7 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
     { label: 'Profile', href: profileHref ?? null },
     { label: 'Settings', href: '/profile' },
     { label: 'My Souls', href: '/my-souls' },
+    { label: 'My Pets', href: '/account/pets' },
     { label: 'Wrap + Link', href: '/wrap-link' },
   ]
 

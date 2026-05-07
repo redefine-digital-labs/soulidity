@@ -69,17 +69,28 @@ declare global {
       getSecretStorageStatus: () => Promise<'encrypted' | 'legacy' | 'missing'>
 
       // ── 设备绑定 ──
-      deviceStartLink: (agentAddress: string) => Promise<{
+      deviceStartLink: () => Promise<{
         deviceCode: string; userCode: string; expiresAt: string; pollInterval: number
       }>
       devicePoll: (deviceCode: string) => Promise<{
-        status: string; accountId?: string; desktopAccessToken?: string; expiresAt?: string | null
+        status: string
+        accountId?: string
+        error?: string
+        expiresAt?: string | null
+        pollInterval?: number
       }>
       deviceGetLinkUrl: () => Promise<string>
 
       // ── Desktop auth ──
       getDesktopAuthStatus: () => Promise<{ hasToken: boolean; accountId: string | null }>
-      unlinkDesktopDevice: () => Promise<{ ok: true } | { ok: false; error: string }>
+      unlinkDesktopDevice: () => Promise<
+        { ok: true; remoteRevoked: boolean } | { ok: false; error: string; status?: number }
+      >
+      agentRotateApiKey: () => Promise<{ ok: true } | { ok: false; error: string }>
+      agentGetApiKeyStatus: () => Promise<{ hasKey: boolean; storedAt: number | null }>
+      agentResetIdentity: () => Promise<
+        { ok: true; remoteRevoked: boolean } | { ok: false; error: string; status?: number }
+      >
       getDesktopRuntimeConfig: () => Promise<{
         suiNetwork: string
         webBaseUrl: string

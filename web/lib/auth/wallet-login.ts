@@ -1,12 +1,8 @@
 import { prisma } from '@/lib/prisma'
-import {
-  buildChallengeMessage,
-  normalizeSuiWalletAddress,
-} from '@/lib/auth/challenge'
-import { isUuid } from '@/lib/is-uuid'
+import { normalizeSuiWalletAddress } from '@/lib/auth/challenge'
+import { consumeWalletChallengeForPurpose } from '@/lib/auth/wallet-challenge'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
 import { allocateUniqueHandle, resolveHandleSeed } from '@/lib/handle'
-import { verifyPersonalMessageSignature } from '@/lib/sui-verify'
 import { captureServerEvent, captureServerException } from '@/lib/observability/posthog-server'
 
 export type WalletLoginErrorReason =
@@ -100,62 +96,34 @@ async function loginWithWalletSignatureImpl(
     throw new WalletLoginError('invalid_address')
   }
 
-  if (!isUuid(input.nonce)) {
-    throw new WalletLoginError('invalid_nonce')
-  }
   // zkLogin signatures (base64-encoded JWT + proof + ephemeral key + sig) routinely
   // exceed 2KB; cap is to bound DB / verify cost, not protocol-correct length.
   if (input.signature.length === 0 || input.signature.length > 8192) {
     throw new WalletLoginError('signature_invalid')
   }
 
-  const challenge = await prisma.walletChallenge.findUnique({
-    where: { nonce: input.nonce },
+  const consumeResult = await consumeWalletChallengeForPurpose({
+    nonce: input.nonce,
+    address: normalizedAddress,
+    purpose: 'login',
+    signature: input.signature,
   })
-  if (!challenge) throw new WalletLoginError('challenge_not_found')
-  if (challenge.address !== normalizedAddress) throw new WalletLoginError('address_mismatch')
-  if (challenge.usedAt) throw new WalletLoginError('challenge_used')
-  if (challenge.expiresAt < new Date()) throw new WalletLoginError('challenge_expired')
-
-  const challengeDomain = challenge.domain?.trim()
-  if (!challengeDomain) {
-    throw new WalletLoginError('domain_missing')
-  }
-
-  const expectedMessage = buildChallengeMessage(
-    challengeDomain,
-    normalizedAddress,
-    input.nonce,
-    challenge.expiresAt,
-  )
-
-  const messageBytes = new TextEncoder().encode(expectedMessage)
-  let publicKey: Awaited<ReturnType<typeof verifyPersonalMessageSignature>>
-  try {
-    publicKey = await verifyPersonalMessageSignature(messageBytes, input.signature, {
-      address: normalizedAddress,
-    })
-  } catch (error) {
-    console.error('[wallet-login] verify failed', {
-      addr: normalizedAddress,
-      sigPrefix: input.signature.slice(0, 8),
-      sigLen: input.signature.length,
-      err: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-    })
-    throw new WalletLoginError('signature_invalid')
-  }
-
-  const recoveredAddress = normalizeSuiWalletAddress(publicKey.toSuiAddress())
-  if (recoveredAddress !== normalizedAddress) {
-    throw new WalletLoginError('signer_mismatch')
-  }
-
-  const consumed = await prisma.walletChallenge.updateMany({
-    where: { nonce: input.nonce, usedAt: null },
-    data: { usedAt: new Date() },
-  })
-  if (consumed.count === 0) {
-    throw new WalletLoginError('challenge_used')
+  if (!consumeResult.ok) {
+    if (consumeResult.reason === 'signature_invalid') {
+      console.error('[wallet-login] verify failed', {
+        addr: normalizedAddress,
+        sigPrefix: input.signature.slice(0, 8),
+        sigLen: input.signature.length,
+        ...(consumeResult.cause ? { cause: consumeResult.cause } : {}),
+      })
+    }
+    // `challenge_purpose_mismatch` is functionally indistinguishable from
+    // `challenge_not_found` for a confused caller — collapse it to keep the
+    // existing WalletLoginError union surface stable.
+    const reason = consumeResult.reason === 'challenge_purpose_mismatch'
+      ? 'challenge_not_found'
+      : consumeResult.reason
+    throw new WalletLoginError(reason)
   }
 
   // Lookup #1 — wallet binding (most common path, user already exists)

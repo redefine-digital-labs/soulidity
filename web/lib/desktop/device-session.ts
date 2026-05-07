@@ -3,7 +3,11 @@ import { randomBytes } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@db/prisma-client'
 import { isUniqueConstraintError } from '@shared/prisma-errors'
-import { generateDesktopAccessTokenForDeviceSession } from '@/lib/desktop/auth'
+import {
+  generateAgentApiKeyForDeviceSession,
+  generateDesktopAccessTokenForDeviceSession,
+  type DesktopPetIdentity,
+} from '@/lib/desktop/auth'
 import type {
   DesktopDeviceCompleteResponse,
   DesktopDevicePollResponse,
@@ -12,6 +16,8 @@ import type {
 
 export const DESKTOP_DEVICE_POLL_INTERVAL_SECONDS = 5
 export const DESKTOP_DEVICE_SESSION_TTL_MS = 10 * 60 * 1000
+
+export const DEFAULT_DESKTOP_PET_LABEL = 'Desktop pet'
 
 const DEVICE_CODE_BYTES = 24
 const USER_CODE_LENGTH = 8
@@ -29,6 +35,7 @@ const deviceSessionStartSelect = {
 const deviceSessionPollSelect = {
   id: true,
   accountId: true,
+  agentAddress: true,
   deviceCode: true,
   expiresAt: true,
   pollIntervalSeconds: true,
@@ -38,6 +45,7 @@ const deviceSessionPollSelect = {
 const deviceSessionPollResultSelect = {
   status: true,
   accountId: true,
+  agentAddress: true,
   expiresAt: true,
   pollIntervalSeconds: true,
 } as const
@@ -56,6 +64,7 @@ const deviceSessionCompleteSelect = {
 
 const deviceSessionCompleteResultSelect = {
   accountId: true,
+  agentAddress: true,
   deviceCode: true,
   userCode: true,
   expiresAt: true,
@@ -102,6 +111,7 @@ function toPollResponse(session: {
   expiresAt: Date
   pollIntervalSeconds: number
   desktopAccessToken?: string | null
+  agentApiKey?: string | null
 }): DesktopDevicePollResponse {
   const shared = {
     expiresAt: asIso(session.expiresAt),
@@ -114,6 +124,7 @@ function toPollResponse(session: {
       accountId: session.accountId,
       deepLink: null,
       ...(session.desktopAccessToken ? { desktopAccessToken: session.desktopAccessToken } : {}),
+      ...(session.agentApiKey ? { agentApiKey: session.agentApiKey } : {}),
       ...shared,
     }
   }
@@ -139,7 +150,6 @@ function toCompleteConfirmedResponse(session: {
   expiresAt: Date
   confirmedAt: Date | null
   pollIntervalSeconds: number
-  desktopAccessToken?: string
 }): DesktopDeviceCompleteResponse {
   if (session.status !== 'confirmed' || !session.accountId || !session.confirmedAt) {
     throw new Error('Desktop device session is not confirmed')
@@ -151,7 +161,6 @@ function toCompleteConfirmedResponse(session: {
     deviceCode: session.deviceCode,
     userCode: session.userCode,
     deepLink: null,
-    ...(session.desktopAccessToken ? { desktopAccessToken: session.desktopAccessToken } : {}),
     expiresAt: asIso(session.expiresAt),
     confirmedAt: asIso(session.confirmedAt),
     pollInterval: session.pollIntervalSeconds,
@@ -177,45 +186,207 @@ export class DesktopDeviceSessionConflictError extends Error {
   }
 }
 
-async function persistConfirmedDesktopSession(
+/**
+ * Thrown when the requested `agentAddress` is already bound (via
+ * `WalletBinding`) to a different account or to a non-pet (`kind='human'`)
+ * member. Surfaced as 409 by the `/complete` route.
+ */
+export class DesktopPetAddressConflictError extends Error {
+  constructor(message = 'This desktop pet address is already bound to another account') {
+    super(message)
+    this.name = 'DesktopPetAddressConflictError'
+  }
+}
+
+export interface PersistedDesktopPetCredentials {
+  desktopAccessToken: string
+  agentApiKey: string
+}
+
+export type { DesktopPetIdentity }
+
+interface PersistConfirmedDesktopPetParams {
+  accountId: string
+  sessionId: string
+  deviceCode: string
+  agentAddress: string
+  now: Date
+}
+
+/**
+ * Idempotent persist of a confirmed desktop pet. Runs inside the
+ * `completeDesktopDeviceSession` transaction.
+ *
+ * Branch matrix (matches the plan §B contract):
+ *
+ * 1. `WalletBinding(chain='sui', address=agentAddress)` does not exist →
+ *    create a new `Member(kind='agent')` with the deterministic apiKey hash,
+ *    create the wallet binding, create the `DesktopPet` row.
+ * 2. Binding exists, member is a `kind='agent'` belonging to the same
+ *    account → reuse the member, refresh `apiKeyHash`, set
+ *    `agentStatus='active'`, clear all rotation fields, upsert the pet.
+ * 3. Binding exists, member is a `kind='agent'` on a different account →
+ *    throw `DesktopPetAddressConflictError`.
+ * 4. Binding exists but member is a `kind='human'` → throw
+ *    `DesktopPetAddressConflictError` (someone else owns this address).
+ * 5. A `DesktopPet` row already exists for `(accountId, agentAddress)` →
+ *    update the token hash / issued-at / agent-member binding without
+ *    creating a duplicate. The `label` is preserved; the default is only
+ *    applied to brand-new rows.
+ */
+export async function persistConfirmedDesktopPet(
   tx: Prisma.TransactionClient,
-  params: {
-    accountId: string
-    sessionId: string
-    deviceCode: string
-    agentAddress?: string | null
-    now: Date
-  },
-) {
-  const { hash } = generateDesktopAccessTokenForDeviceSession(params.deviceCode)
-  const existingProfile = await tx.desktopProfile.findUnique({
-    where: { accountId: params.accountId },
-    select: { desktopAccessTokenHash: true },
+  params: PersistConfirmedDesktopPetParams,
+): Promise<{ desktopPetId: string; agentMemberId: string; tokenHash: string; agentApiKeyHash: string }> {
+  const { accountId, agentAddress, now } = params
+  const tokenSeeds = generateDesktopAccessTokenForDeviceSession(params.deviceCode)
+  const apiKeySeeds = generateAgentApiKeyForDeviceSession(params.deviceCode)
+
+  const binding = await tx.walletBinding.findUnique({
+    where: { chain_address: { chain: 'sui', address: agentAddress } },
+    select: {
+      id: true,
+      memberId: true,
+      member: {
+        select: {
+          id: true,
+          accountId: true,
+          kind: true,
+        },
+      },
+    },
   })
 
-  const sharedUpdate = {
-    ...(params.agentAddress ? { agentAddress: params.agentAddress } : {}),
-    desktopAccessTokenHash: hash,
+  let agentMemberId: string
+
+  if (!binding) {
+    // Branch 1: create fresh agent member + wallet binding.
+    const agentMember = await tx.member.create({
+      data: {
+        accountId,
+        kind: 'agent',
+        agentStatus: 'active',
+        apiKey: null,
+        apiKeyHash: apiKeySeeds.hash,
+        apiKeyRotationId: null,
+        pendingApiKeyHash: null,
+        pendingApiKeyRotationId: null,
+        pendingApiKeyRotationExpiresAt: null,
+      },
+      select: { id: true },
+    })
+    agentMemberId = agentMember.id
+
+    await tx.walletBinding.create({
+      data: {
+        memberId: agentMemberId,
+        chain: 'sui',
+        address: agentAddress,
+        isPrimary: true,
+        verifiedAt: now,
+      },
+    })
+  } else if (binding.member.kind !== 'agent' || binding.member.accountId !== accountId) {
+    // Branch 3 + 4: binding belongs to a human, or to an agent on a
+    // different account. Either way the address is owned elsewhere.
+    throw new DesktopPetAddressConflictError()
+  } else {
+    // Branch 2: revive the existing same-account agent member. Refresh hash,
+    // flip status back to active, clear all rotation breadcrumbs.
+    agentMemberId = binding.member.id
+    await tx.member.update({
+      where: { id: agentMemberId },
+      data: {
+        agentStatus: 'active',
+        apiKey: null,
+        apiKeyHash: apiKeySeeds.hash,
+        apiKeyRotationId: null,
+        pendingApiKeyHash: null,
+        pendingApiKeyRotationId: null,
+        pendingApiKeyRotationExpiresAt: null,
+      },
+    })
   }
 
-  await tx.desktopProfile.upsert({
-    where: { accountId: params.accountId },
-    create: {
-      accountId: params.accountId,
-      ...sharedUpdate,
-      desktopAccessTokenIssuedAt: params.now,
+  // Branch 5 (folded into upsert): pet row already exists for
+  // (accountId, agentAddress). The unique `(accountId, agentAddress)` index
+  // makes upsert atomic; the `agentMemberId` unique on `Member` makes the
+  // member-side reuse safe.
+  const existingPet = await tx.desktopPet.findUnique({
+    where: {
+      accountId_agentAddress: {
+        accountId,
+        agentAddress,
+      },
     },
-    update: {
-      ...sharedUpdate,
-      ...(existingProfile?.desktopAccessTokenHash !== hash
-        ? { desktopAccessTokenIssuedAt: params.now }
-        : {}),
-    },
+    select: { id: true, label: true },
   })
 
+  let desktopPetId: string
+
+  if (existingPet) {
+    const updated = await tx.desktopPet.update({
+      where: { id: existingPet.id },
+      data: {
+        agentMemberId,
+        desktopAccessTokenHash: tokenSeeds.hash,
+        desktopAccessTokenIssuedAt: now,
+      },
+      select: { id: true },
+    })
+    desktopPetId = updated.id
+  } else {
+    try {
+      const created = await tx.desktopPet.create({
+        data: {
+          accountId,
+          agentAddress,
+          agentMemberId,
+          label: DEFAULT_DESKTOP_PET_LABEL,
+          desktopAccessTokenHash: tokenSeeds.hash,
+          desktopAccessTokenIssuedAt: now,
+        },
+        select: { id: true },
+      })
+      desktopPetId = created.id
+    } catch (error) {
+      // Race: a concurrent confirm landed first. Re-read and update so the
+      // transaction is idempotent.
+      if (isUniqueConstraintError(error)) {
+        const racePet = await tx.desktopPet.findUnique({
+          where: {
+            accountId_agentAddress: {
+              accountId,
+              agentAddress,
+            },
+          },
+          select: { id: true },
+        })
+        if (!racePet) {
+          throw error
+        }
+        const updated = await tx.desktopPet.update({
+          where: { id: racePet.id },
+          data: {
+            agentMemberId,
+            desktopAccessTokenHash: tokenSeeds.hash,
+            desktopAccessTokenIssuedAt: now,
+          },
+          select: { id: true },
+        })
+        desktopPetId = updated.id
+      } else {
+        throw error
+      }
+    }
+  }
+
+  // Expire only sibling sessions that target the *same* (accountId,
+  // agentAddress). Other pets owned by the same account stay valid.
   await tx.desktopDeviceSession.updateMany({
     where: {
-      accountId: params.accountId,
+      accountId,
+      agentAddress,
       status: 'confirmed',
       id: { not: params.sessionId },
     },
@@ -223,6 +394,13 @@ async function persistConfirmedDesktopSession(
       status: 'expired',
     },
   })
+
+  return {
+    desktopPetId,
+    agentMemberId,
+    tokenHash: tokenSeeds.hash,
+    agentApiKeyHash: apiKeySeeds.hash,
+  }
 }
 
 export async function startDesktopDeviceSession(
@@ -291,8 +469,38 @@ export async function pollDesktopDeviceSession(
   })
 
   if (updatedSession.status === 'confirmed' && updatedSession.accountId) {
-    const { token } = generateDesktopAccessTokenForDeviceSession(session.deviceCode)
-    return toPollResponse({ ...updatedSession, desktopAccessToken: token })
+    const tokenSeeds = generateDesktopAccessTokenForDeviceSession(session.deviceCode)
+    const apiKeySeeds = generateAgentApiKeyForDeviceSession(session.deviceCode)
+
+    // Only surface the deterministic agent API key while it still matches
+    // the on-chain hash. Once the desktop calls the rotate endpoint,
+    // `Member.apiKeyHash` diverges and we MUST stop returning the stale key
+    // to anyone polling.
+    let agentApiKey: string | null = null
+    if (updatedSession.agentAddress) {
+      const pet = await prisma.desktopPet.findUnique({
+        where: {
+          accountId_agentAddress: {
+            accountId: updatedSession.accountId,
+            agentAddress: updatedSession.agentAddress,
+          },
+        },
+        select: {
+          agentMember: {
+            select: { apiKeyHash: true },
+          },
+        },
+      })
+      if (pet?.agentMember?.apiKeyHash === apiKeySeeds.hash) {
+        agentApiKey = apiKeySeeds.apiKey
+      }
+    }
+
+    return toPollResponse({
+      ...updatedSession,
+      desktopAccessToken: tokenSeeds.token,
+      agentApiKey,
+    })
   }
 
   return toPollResponse(updatedSession)
@@ -350,29 +558,22 @@ export async function completeDesktopDeviceSession(
       throw new DesktopDeviceSessionConflictError()
     }
 
-    const confirmedSession = await prisma.$transaction(async (tx) => {
-      await persistConfirmedDesktopSession(tx, {
-        accountId,
-        sessionId: session.id,
-        deviceCode: session.deviceCode,
-        agentAddress: session.agentAddress,
-        now,
-      })
-
-      return tx.desktopDeviceSession.findUnique({
-        where: { id: session.id },
-        select: deviceSessionCompleteResultSelect,
-      })
-    })
-
-    if (!confirmedSession || confirmedSession.status === 'expired') {
-      return toStatusResponse(session)
-    }
-
+    // Idempotent same-account replay. The original confirm transaction
+    // already wrote the pet/member rows, so re-running `persistConfirmedDesktopPet`
+    // here would unconditionally rewrite `Member.apiKeyHash` back to the
+    // deterministic device-session seed and clear `apiKeyRotationId` /
+    // pending rotation fields — silently invalidating any agent API key
+    // rotated through `/api/desktop/me/agent-key/rotate`. Confirmed sessions
+    // are read-only after the initial confirm; a new `userCode` must be
+    // started for a fresh link.
     return toCompleteConfirmedResponse({
-      ...confirmedSession,
-      accountId,
-      confirmedAt: confirmedSession.confirmedAt ?? now,
+      status: session.status,
+      accountId: session.accountId ?? accountId,
+      deviceCode: session.deviceCode,
+      userCode: session.userCode,
+      expiresAt: session.expiresAt,
+      confirmedAt: session.confirmedAt ?? now,
+      pollIntervalSeconds: session.pollIntervalSeconds,
     })
   }
 
@@ -405,13 +606,15 @@ export async function completeDesktopDeviceSession(
       select: deviceSessionCompleteResultSelect,
     })
 
-    await persistConfirmedDesktopSession(tx, {
-      accountId,
-      sessionId: session.id,
-      deviceCode: session.deviceCode,
-      agentAddress: session.agentAddress,
-      now,
-    })
+    if (session.agentAddress) {
+      await persistConfirmedDesktopPet(tx, {
+        accountId,
+        sessionId: session.id,
+        deviceCode: session.deviceCode,
+        agentAddress: session.agentAddress,
+        now,
+      })
+    }
 
     return confirmed
   })

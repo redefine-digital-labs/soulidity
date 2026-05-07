@@ -72,6 +72,23 @@ export function buildAgentJoinChallengeMessage(
   ].join('\n')
 }
 
+export function buildDesktopLinkChallengeMessage(
+  domain: string,
+  address: string,
+  nonce: string,
+  expiresAt: Date,
+): string {
+  return [
+    `${domain} wants to link a desktop pet to your Sui account:`,
+    address,
+    '',
+    'Clawnews desktop pet link',
+    '',
+    `Nonce: ${nonce}`,
+    `Expiration Time: ${expiresAt.toISOString()}`,
+  ].join('\n')
+}
+
 export function getWalletChallengeCleanupCutoff(now = Date.now()): Date {
   return new Date(now - STALE_WALLET_CHALLENGE_RETENTION_MS)
 }

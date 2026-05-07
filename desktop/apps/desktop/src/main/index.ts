@@ -28,7 +28,27 @@ import {
 } from '@soulidity/shared'
 import { startStatusWatcher, stopStatusWatcher, getCurrentAgentStatus, publishAgentStatus } from './status-watcher'
 import { startAgentMonitor, stopAgentMonitor } from './agent-monitor'
-import { generateAgentKeypair, loadAgentKeypair, exportAgentAddress, getSecretStorageStatus } from './agent-wallet'
+import {
+  generateAgentKeypair,
+  loadAgentKeypair,
+  exportAgentAddress,
+  getSecretStorageStatus,
+  signAgentPersonalMessage,
+  clearAgentKeypair,
+} from './agent-wallet'
+import {
+  storeAgentApiKey,
+  clearAgentApiKey,
+  rotateAgentApiKey,
+  configureAgentApiKeyStoreFetcher,
+  getAgentApiKeyStatus,
+} from './agent-api-key-store'
+import {
+  handleDevicePollResponse,
+  type RawPollResponse,
+} from './device-poll'
+import { performAgentResetIdentity } from './agent-reset-identity'
+import { performAgentUnlink } from './agent-unlink'
 import { registerWalletIpc } from './auth/wallet-ipc'
 import {
   executeTask,
@@ -768,6 +788,15 @@ registerWalletIpc()
 // ── 设备绑定 IPC ──────────────────────────────────────────
 const WEB_BASE_URL = getDesktopWebBaseUrl()
 
+// Wire agent-api-key-store's rotation fetcher to the configured web URL.
+// Tests that import agent-api-key-store directly inject their own fetcher;
+// the main process binds it once here so `rotateAgentApiKey()` works.
+configureAgentApiKeyStoreFetcher(async (pathname, init) => {
+  const response = await fetch(`${WEB_BASE_URL}${pathname}`, init)
+  const body = await response.json().catch(() => null)
+  return { status: response.status, body }
+})
+
 function getLocalDesktopRuntimeConfig() {
   return {
     suiNetwork: process.env.NEXT_PUBLIC_SUI_NETWORK?.trim() || 'mainnet',
@@ -886,18 +915,61 @@ async function fetchDesktopJson<T>(pathname: string, init: RequestInit = {}, act
   return readJsonOrThrow<T>(response, action, pathname)
 }
 
-ipcMain.handle('device:start-link', async (_event, agentAddress: string) => {
-  const pathname = '/api/desktop/device/start'
-  const res = await fetch(`${WEB_BASE_URL}${pathname}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentAddress }),
+// `device:poll` per-deviceCode failure counter. Tracked in-process so a retry
+// budget is enforced for the same device session without leaking between
+// distinct sessions. Cleared on confirmed-success, expiry, invalid_code, or
+// after the failure cap is hit.
+const devicePollAttempts = new Map<string, number>()
+
+ipcMain.handle('device:start-link', async () => {
+  // Main owns the agent identity — never trust a renderer-supplied address.
+  // Ensure-generated path: load the existing pet keypair, or generate one.
+  let keypair = await loadAgentKeypair()
+  if (!keypair) {
+    keypair = await generateAgentKeypair()
+  }
+
+  // Step 1: ask for a fresh `desktop-link` challenge for our pet address.
+  const challengePath = '/api/desktop/device/challenge'
+  const challengeRes = await fetch(`${WEB_BASE_URL}${challengePath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: keypair.address }),
   })
+  const challenge = await readJsonOrThrow<{
+    address: string
+    nonce: string
+    message: string
+    expiresAt: string
+    domain: string
+  }>(challengeRes, 'Request desktop-link challenge', challengePath)
+
+  // Step 2: sign the challenge message inside main with the pet keypair.
+  const messageBytes = new TextEncoder().encode(challenge.message)
+  const { signature } = await signAgentPersonalMessage(messageBytes)
+
+  // Step 3: hand challenge + signature to /start. 401 → typed signature error.
+  const startPath = '/api/desktop/device/start'
+  const startRes = await fetch(`${WEB_BASE_URL}${startPath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      agentAddress: keypair.address,
+      nonce: challenge.nonce,
+      signature,
+    }),
+  })
+
+  if (startRes.status === 401) {
+    throw new Error('desktop-link signature rejected')
+  }
+
   return readJsonOrThrow<{
     deviceCode: string
     userCode: string
     expiresAt: string
     pollInterval: number
-  }>(res, 'Start desktop link', pathname)
+  }>(startRes, 'Start desktop link', startPath)
 })
 
 ipcMain.handle('device:poll', async (_event, deviceCode: string) => {
@@ -906,42 +978,95 @@ ipcMain.handle('device:poll', async (_event, deviceCode: string) => {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceCode }),
   })
-  const data = await readJsonOrThrow<{
-    status: string
-    accountId?: string
-    desktopAccessToken?: string
-    expiresAt?: string | null
-  }>(res, 'Poll desktop link status', pathname)
+  const data = await readJsonOrThrow<RawPollResponse>(
+    res,
+    'Poll desktop link status',
+    pathname,
+  )
 
-  // Store desktop access token when confirmed. If local storage fails (e.g.
-  // safeStorage unavailable), log and continue — repeated polls return the
-  // same token for the confirmed device session, so the next poll can retry.
-  if (data.status === 'confirmed' && typeof data.desktopAccessToken === 'string' && data.desktopAccessToken.length > 0 && typeof data.accountId === 'string') {
-    try {
-      storeDesktopToken(data.desktopAccessToken, data.accountId)
-    } catch (error) {
-      console.error('[device:poll] Failed to store desktop token locally, will retry on next poll', error)
-    }
+  const attempts = devicePollAttempts.get(deviceCode) ?? 0
+  const { renderer, nextAttempts } = handleDevicePollResponse(data, attempts, {
+    storeDesktopToken,
+    storeAgentApiKey,
+  })
+
+  if (nextAttempts === null) {
+    devicePollAttempts.delete(deviceCode)
+  } else {
+    devicePollAttempts.set(deviceCode, nextAttempts)
   }
 
-  return data
+  // On confirmed success, broadcast so other windows / floating ball update.
+  if (renderer.status === 'confirmed' && typeof renderer.accountId === 'string') {
+    broadcastToAllWindows('desktop-auth:changed', {
+      hasToken: true,
+      accountId: renderer.accountId,
+    })
+  }
+
+  return renderer
 })
 
 ipcMain.handle('device:get-link-url', () => `${WEB_BASE_URL}/desktop/link`)
 
 // ── Desktop Auth ─────────────────────────────────────────
 ipcMain.handle('desktop-auth:status', () => getDesktopAuthStatus())
-ipcMain.handle('desktop-auth:unlink', () => {
-  try {
-    clearDesktopToken()
+ipcMain.handle('desktop-auth:unlink', async () => {
+  // Tear down server-side `DesktopPet` + bound agent `Member` first via
+  // `/api/desktop/me/revoke`, then clear the desktop token + agent API key
+  // locally. The agent keypair is intentionally preserved — `revokeDesktopPet`
+  // keeps the `WalletBinding` so a subsequent device-link reuses the same
+  // agent address. Callers that want a fresh agent identity must use
+  // `agent:reset-identity` instead.
+  const result = await performAgentUnlink({
+    loadDesktopToken,
+    fetcher: async (pathname, init) => {
+      const response = await fetch(`${WEB_BASE_URL}${pathname}`, init)
+      const body = await response.json().catch(() => null)
+      return { status: response.status, body }
+    },
+    clearDesktopToken,
+    clearAgentApiKey,
+  })
+
+  if (result.ok) {
     broadcastToAllWindows('desktop-auth:changed', { hasToken: false, accountId: null })
-    return { ok: true as const }
-  } catch (error) {
-    return {
-      ok: false as const,
-      error: error instanceof Error ? error.message : String(error),
-    }
   }
+
+  return result
+})
+
+ipcMain.handle('agent:rotate-api-key', async () => {
+  // Delegates to T7's single-flight rotation. Do not log the apiKey.
+  return rotateAgentApiKey()
+})
+
+ipcMain.handle('agent:get-api-key-status', () => {
+  // Renderer-safe view of the local agent API key state. Never returns the
+  // plaintext `sk-*`; only metadata that's safe to surface in Settings.
+  const status = getAgentApiKeyStatus()
+  return { hasKey: status.hasKey, storedAt: status.storedAt }
+})
+
+ipcMain.handle('agent:reset-identity', async () => {
+  const result = await performAgentResetIdentity({
+    loadDesktopToken,
+    fetcher: async (pathname, init) => {
+      const response = await fetch(`${WEB_BASE_URL}${pathname}`, init)
+      const body = await response.json().catch(() => null)
+      return { status: response.status, body }
+    },
+    clearDesktopToken,
+    clearAgentApiKey,
+    clearAgentKeypair,
+  })
+
+  if (result.ok) {
+    broadcastToAllWindows('desktop-auth:changed', { hasToken: false, accountId: null })
+    broadcastToAllWindows('agent-keypair:changed', { hasKeypair: false })
+  }
+
+  return result
 })
 ipcMain.handle('desktop-auth:runtime-config', async () => {
   const localConfig = getLocalDesktopRuntimeConfig()

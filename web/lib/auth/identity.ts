@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
-import {
-  buildChallengeMessage,
-  normalizeSuiWalletAddress,
-} from '@/lib/auth/challenge'
+import { normalizeSuiWalletAddress } from '@/lib/auth/challenge'
+import { consumeWalletChallengeForPurpose } from '@/lib/auth/wallet-challenge'
 import { isUuid } from '@/lib/is-uuid'
 import { getRequestHeaders } from '@/lib/request-headers'
 import { getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
-import { verifyPersonalMessageSignature } from '@/lib/sui-verify'
 import {
   SESSION_COOKIE_NAME,
   verifySession,
@@ -147,51 +144,31 @@ async function resolveWalletIdentity(
   if (addressRateLimit.limited) return null
 
   try {
-    const challenge = await prisma.walletChallenge.findUnique({
-      where: { nonce },
-    })
-    if (!challenge) return null
-    if (challenge.address !== normalizedAddress) return null
-    if (challenge.usedAt) return null
-    if (challenge.expiresAt < new Date()) return null
-
-    const challengeDomain = challenge.domain?.trim()
-    if (!challengeDomain) {
-      console.warn('Wallet challenge missing stored domain, rejecting challenge', { nonce })
-      return null
-    }
-
-    const expectedMessage = buildChallengeMessage(
-      challengeDomain,
-      normalizedAddress,
+    // Consumes the same `'login'` purpose challenge issued by the public
+    // `/api/auth/wallet-challenge` route. Agents and humans share the wallet-
+    // challenge issuance path; the agent-vs-human distinction is enforced
+    // downstream via `walletBinding.member.kind`, not via challenge purpose.
+    const consumeResult = await consumeWalletChallengeForPurpose({
       nonce,
-      challenge.expiresAt,
-    )
-    const msg = new TextEncoder().encode(expectedMessage)
-    let publicKey: Awaited<ReturnType<typeof verifyPersonalMessageSignature>>
-    try {
-      publicKey = await verifyPersonalMessageSignature(msg, signature, {
-        address: normalizedAddress,
-      })
-    } catch {
-      return null
-    }
-
-    if (normalizeSuiWalletAddress(publicKey.toSuiAddress()) !== normalizedAddress) {
-      return null
-    }
-
-    const result = await prisma.walletChallenge.updateMany({
-      where: { nonce, usedAt: null },
-      data: { usedAt: new Date() },
+      address: normalizedAddress,
+      purpose: 'login',
+      signature,
     })
-    if (result.count === 0) return null
+    if (!consumeResult.ok) {
+      console.warn('[wallet-identity] challenge consume failed', {
+        address: redactWalletAddress(normalizedAddress),
+        nonce,
+        reason: consumeResult.reason,
+        ...(consumeResult.cause ? { cause: consumeResult.cause } : {}),
+      })
+      return null
+    }
 
     const binding = await prisma.walletBinding.findFirst({
       where: { chain: 'sui', address: normalizedAddress },
       select: {
         member: {
-          select: { id: true, accountId: true, kind: true },
+          select: { id: true, accountId: true, kind: true, agentStatus: true },
         },
       },
     })
@@ -199,6 +176,17 @@ async function resolveWalletIdentity(
 
     const kind = binding.member.kind
     if (kind !== 'human' && kind !== 'agent') return null
+
+    // A revoked / unlinked desktop pet keeps its `WalletBinding` (so the
+    // operator can re-link the same wallet later via a fresh device-pair
+    // flow — see `revokeDesktopPet` in `web/lib/desktop/revoke.ts`), but
+    // its bound agent `Member` is set to `agentStatus='disabled'` and its
+    // `apiKeyHash` is cleared. The `sk-*` API-key path (`resolveAgentByApiKey`)
+    // already filters on `agentStatus: 'active'`; the wallet-signature path
+    // must do the same so a disabled agent can't keep authenticating with
+    // its local keypair. Humans don't carry agent lifecycle state, so this
+    // check applies only to the agent branch.
+    if (kind === 'agent' && binding.member.agentStatus !== 'active') return null
 
     return {
       accountId: binding.member.accountId,
