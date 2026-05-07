@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetRateLimitBucketsForTests } from '@/lib/rate-limit'
 import { verifyWalrusUploaderToken } from '../../src/shared/walrus-uploader-token'
 
@@ -24,6 +24,7 @@ describe('POST /api/walrus/upload-token', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.resetModules()
+    vi.useRealTimers()
     resetRateLimitBucketsForTests()
     vi.stubEnv('WALRUS_UPLOADER_TOKEN_SECRET', SECRET)
     vi.stubEnv('NEXT_PUBLIC_SUI_NETWORK', 'mainnet')
@@ -32,6 +33,10 @@ describe('POST /api/walrus/upload-token', () => {
       walletAddresses: [WALLET],
       primarySuiAddress: WALLET,
     })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('issues a short-lived token scoped to the signed-in wallet and requested upload budget', async () => {
@@ -58,6 +63,33 @@ describe('POST /api/walrus/upload-token', () => {
       verifyWalrusUploaderToken(body.token, {
         secret: SECRET,
         nowMs: Date.now(),
+        walletAddress: WALLET,
+        network: 'mainnet',
+        fileCount: 3,
+        byteCount: 30_000,
+      }),
+    ).not.toThrow()
+  })
+
+  it('defaults uploader tokens to a ten minute lifetime for slow Walrus uploads', async () => {
+    const now = new Date('2026-05-07T08:45:00Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
+    const { POST } = await import('../../web/app/api/walrus/upload-token/route')
+    const response = await POST(makeRequest({
+      walletAddress: WALLET,
+      fileCount: 3,
+      byteLimit: 30_000,
+    }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.expiresAt).toBe(now.getTime() + 10 * 60 * 1000)
+    expect(() =>
+      verifyWalrusUploaderToken(body.token, {
+        secret: SECRET,
+        nowMs: now.getTime() + 10 * 60 * 1000 - 1,
         walletAddress: WALLET,
         network: 'mainnet',
         fileCount: 3,

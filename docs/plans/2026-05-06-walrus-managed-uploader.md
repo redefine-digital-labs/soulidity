@@ -1,12 +1,11 @@
-# Walrus Managed Uploader: Production Endpoint
+# Walrus Managed Uploader: DigitalOcean Production Endpoint
 
 ## Spec
-- Browser keeps plaintext custody: `soul.md`, `memory.md`, and other source files are read and Seal-encrypted locally before any network upload.
+- Browser keeps plaintext custody: `soul.md`, `memory.md`, and other source files are read and Seal-encrypted locally before upload.
 - Browser no longer sends Walrus encoded slivers through Vercel by default. The default transport is `managed`; `browser` remains the emergency rollback and `server` remains legacy test-only.
-- Production Web always points managed uploads at `https://uploader.soulidity.ai`.
-- The managed uploader accepts encrypted payload bytes, stages encoded Walrus data in GCS, validates the user-paid register transaction, writes storage nodes, returns certificates, and deletes staging after mint success.
-- Token auth is wallet-scoped, network-scoped, short-lived, and budgeted by file count and encrypted byte limit. The uploader token secret is server-only and exists only in Vercel server env plus Cloud Run env.
-- Google Cloud staging runs on Cloud Run with the existing Node/Docker uploader image and `STAGING_BACKEND=gcs`. Cloud Run local disk is not used as persistent staging.
+- Production Web points managed uploads at `https://uploader.soulidity.ai`.
+- The only supported managed uploader deployment is a DigitalOcean Node/Docker service using filesystem staging at `/data/walrus-uploader`.
+- Token auth is wallet-scoped, network-scoped, short-lived, and budgeted by file count and encrypted byte limit. The uploader token secret is server-only and exists only in Vercel server env plus DigitalOcean uploader env.
 - The wallet flow stays at about two confirmations for multi-file create-soul: one Walrus register transaction, then the final mint/certify PTB. Each logical content file keeps its own `blobId` and `blobObjectId`.
 
 ## Runtime Contract
@@ -23,68 +22,77 @@
 - Uploader route: `POST /v1/uploads/:id/finalize`
   - Called after mint/certify succeeds. Deletes staged encoded data and cached certificate.
 
-## Google Cloud Deployment Shape
-The uploader can still be deployed with the Cloud Run/GCS shape below, but the Web production env must use the managed domain, not a raw `run.app` URL.
+## DigitalOcean Shape
+- Owner: Soulidity infrastructure operator.
+- Hostname: `uploader.soulidity.ai`.
+- Host: DigitalOcean droplet.
+- Process: Docker container or systemd-managed Node process built from `services/walrus-uploader`.
+- Persistent data: bind mount `/data/walrus-uploader` into the container and set `UPLOAD_DATA_DIR=/data/walrus-uploader`.
+- Edge: Caddy terminates TLS for `uploader.soulidity.ai` and proxies to `127.0.0.1:8080`.
+- Production CORS must allow the current production aliases:
+  - `https://www.soulidity.ai`
+  - `https://soulidity.ai`
+  - `https://clawnews-chi.vercel.app`
+  - `https://clawnews-soulidity-ai.vercel.app`
+  - `https://clawnews-git-master-soulidity-ai.vercel.app`
+  - `https://clawnews-mu.vercel.app`
 
-1. Create or choose:
-   - Google Cloud project: `<project-id>`
-   - Region: `<region>`, for example `us-central1`
-   - Cloud Run service: `walrus-uploader`
-   - Artifact Registry repository: `clawnews`
-   - GCS bucket: `<your bucket>`
-   - Cloud Run service account: `walrus-uploader@<project-id>.iam.gserviceaccount.com`
-2. Grant the service account bucket-level object access only on the staging bucket:
-   ```sh
-   gcloud storage buckets add-iam-policy-binding gs://<your bucket> \
-     --member=serviceAccount:walrus-uploader@<project-id>.iam.gserviceaccount.com \
-     --role=roles/storage.objectUser
-   ```
-   Required capability is object create/read/list/delete on this bucket. Use a custom bucket-level role with those object permissions if the project cannot grant `roles/storage.objectUser`.
+## Uploader Env
+Use `services/walrus-uploader/digitalocean.env.example` as the template:
 
-## Cloud Run Deployment
-1. Build and push the uploader image from repo root:
-   ```sh
-   gcloud builds submit \
-     --config services/walrus-uploader/cloudbuild.yaml \
-     --substitutions=_IMAGE=<region>-docker.pkg.dev/<project-id>/clawnews/walrus-uploader:staging \
-     .
-   ```
-2. Copy `services/walrus-uploader/cloud-run.env.example` to a private local env file, fill the bucket and shared secret, then deploy:
-   ```sh
-   gcloud run deploy walrus-uploader \
-     --image <region>-docker.pkg.dev/<project-id>/clawnews/walrus-uploader:staging \
-     --region <region> \
-     --service-account walrus-uploader@<project-id>.iam.gserviceaccount.com \
-     --allow-unauthenticated \
-     --timeout 20m \
-     --env-vars-file <private-cloud-run-env.yaml>
-   ```
-3. Cloud Run env:
-   - `NEXT_PUBLIC_SUI_NETWORK=mainnet`
-   - `WALRUS_UPLOADER_TOKEN_SECRET=<same secret as Vercel>`
-   - `STAGING_BACKEND=gcs`
-   - `GCS_BUCKET=<your bucket>`
-   - `GCS_PREFIX=walrus-uploader`
-   - `UPLOAD_STAGE_TTL_MS=86400000`
-   - `CORS_ORIGIN=https://www.soulidity.ai`
-   - `SUI_FULLNODE_URL=<optional dedicated mainnet fullnode>`
-4. Verify the raw Cloud Run service before wiring the managed domain:
-   ```sh
-   curl -fsS https://<cloud-run-service>.run.app/health
-   ```
-   Expected response: `{"ok":true}`.
+```sh
+NEXT_PUBLIC_SUI_NETWORK=mainnet
+PORT=8080
+WALRUS_UPLOADER_TOKEN_SECRET=<same secret as Vercel>
+UPLOAD_DATA_DIR=/data/walrus-uploader
+UPLOAD_STAGE_TTL_MS=86400000
+CORS_ORIGIN=https://www.soulidity.ai,https://soulidity.ai,https://clawnews-chi.vercel.app,https://clawnews-soulidity-ai.vercel.app,https://clawnews-git-master-soulidity-ai.vercel.app,https://clawnews-mu.vercel.app
+SUI_FULLNODE_URL=<optional dedicated mainnet fullnode>
+```
+
+Do not set `STAGING_BACKEND` unless it is `filesystem`; non-filesystem staging is rejected at startup.
 
 ## Vercel Web Env
 - `NEXT_PUBLIC_SUI_NETWORK=mainnet`
 - `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=managed`
 - `NEXT_PUBLIC_WALRUS_UPLOADER_URL=https://uploader.soulidity.ai`
-- `WALRUS_UPLOADER_TOKEN_SECRET=<same secret as Cloud Run>`
+- `WALRUS_UPLOADER_TOKEN_SECRET=<same secret as DigitalOcean uploader>`
 - Optional token budgets:
-  - `WALRUS_UPLOADER_TOKEN_TTL_MS=300000`
+  - `WALRUS_UPLOADER_TOKEN_TTL_MS=600000`
   - `WALRUS_UPLOADER_TOKEN_MAX_FILES=64`
   - `WALRUS_UPLOADER_TOKEN_MAX_BYTES=536870912`
 
 `WALRUS_UPLOADER_TOKEN_SECRET` must never be exposed through `NEXT_PUBLIC_*`.
+
+## DigitalOcean Deploy
+1. Build the uploader image from repo root:
+   ```sh
+   docker build -f services/walrus-uploader/Dockerfile -t soulidity/walrus-uploader:latest .
+   ```
+2. Ensure the persistent directory exists on the droplet:
+   ```sh
+   sudo mkdir -p /data/walrus-uploader
+   sudo chown -R 1000:1000 /data/walrus-uploader
+   ```
+3. Run the container on the droplet:
+   ```sh
+   docker run -d --name walrus-uploader --restart unless-stopped \
+     --env-file /etc/soulidity/walrus-uploader.env \
+     -v /data/walrus-uploader:/data/walrus-uploader \
+     -p 127.0.0.1:8080:8080 \
+     soulidity/walrus-uploader:latest
+   ```
+4. Caddy routes `uploader.soulidity.ai` to `127.0.0.1:8080`.
+5. Verify before using it from Web:
+   ```sh
+   curl -fsS https://uploader.soulidity.ai/health
+   curl -fsSI -X OPTIONS https://uploader.soulidity.ai/v1/uploads/test \
+     -H 'Origin: https://www.soulidity.ai' \
+     -H 'Access-Control-Request-Method: POST' \
+     -H 'Access-Control-Request-Headers: authorization,x-walrus-payload-bytes'
+   ```
+
+Expected health response: `{"ok":true}`. The preflight response must include the matching `Access-Control-Allow-Origin` for the request origin.
 
 ## Smoke Test
 1. Run local verification before deploy:
@@ -92,36 +100,26 @@ The uploader can still be deployed with the Cloud Run/GCS shape below, but the W
    npm test
    npm --prefix web run build
    npm --prefix services/walrus-uploader run build
-   npm --prefix services/walrus-uploader audit --json
    ```
-2. Deploy Cloud Run and confirm `/health` is OK.
-3. Deploy Vercel with the managed uploader env:
-   - `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=managed`
-   - `NEXT_PUBLIC_WALRUS_UPLOADER_URL=https://uploader.soulidity.ai`
-   - `WALRUS_UPLOADER_TOKEN_SECRET=<same secret>`
-4. In a browser, create a Soul with three files under 10KB.
+2. Deploy the DigitalOcean uploader and confirm `/health` plus CORS preflight are OK.
+3. Deploy Vercel with the managed uploader env.
+4. In a browser, create a Soul or collection with small files.
 5. Network acceptance:
    - Browser shows `POST /api/walrus/upload-token`.
-   - Browser sends multipart payloads to the Cloud Run uploader.
+   - Browser sends multipart payloads to `https://uploader.soulidity.ai/v1/uploads`.
    - Browser sends small uploader `complete` requests with `registerTxDigest` and `blobObjectId`.
    - Browser does not send a large `/api/walrus/batch/complete` body.
 6. Mint acceptance:
    - Register transaction happens once for the upload batch.
    - Final mint/certify succeeds.
    - Browser calls uploader `/finalize` after mint success.
-   - The matching `gs://<your bucket>/walrus-uploader/<uploadId>.json` staging objects are deleted.
+   - The matching `/data/walrus-uploader/<uploadId>.json` staging files are deleted.
 7. Retry acceptance:
    - Refresh/retry resumes from the existing register digest.
    - Retry does not register again and does not charge another Walrus storage fee for the same staged upload.
 
 ## Rollback
-- Fast rollback: set `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=browser` and redeploy Web.
+- Fast Web rollback: set `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=browser` and redeploy Web.
+- Uploader rollback: restart the previous Docker image on the DigitalOcean droplet with the same `/data/walrus-uploader` volume and env.
 - Legacy diagnostic path: set `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=server`, but do not use it for Vercel production uploads that may exceed request-body limits.
 - When switching transport away from `managed`, remove both `NEXT_PUBLIC_WALRUS_UPLOADER_URL` and `WALRUS_UPLOADER_TOKEN_SECRET` from Vercel Production before syncing env.
-
-## References
-- Cloud Run deploy from source or image: https://cloud.google.com/run/docs/deploying
-- Cloud Run service env vars: https://cloud.google.com/run/docs/configuring/services/environment-variables
-- Cloud Run request timeout: https://cloud.google.com/run/docs/configuring/request-timeout
-- Cloud Run quotas and request/response limits: https://cloud.google.com/run/quotas
-- Cloud Storage IAM roles: https://cloud.google.com/storage/docs/access-control/iam-roles

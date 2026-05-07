@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const SCRIPT = 'scripts/sync-vercel-production-env.ts'
 const PRODUCTION_WALRUS_UPLOADER_URL = 'https://uploader.soulidity.ai'
-const RETIRED_WALRUS_UPLOADER_URL = 'https://walrus-uploader-ppj673f2za-uc.a.run.app'
 
 const tempDirs: string[] = []
 const productionSupportEnv = {
@@ -104,21 +103,6 @@ describe('Vercel production env sync guardrails', () => {
     expect(result.stdout).toContain('- NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT')
     expect(result.stdout).toContain('- NEXT_PUBLIC_WALRUS_UPLOADER_URL')
     expect(result.stdout).toContain('- WALRUS_UPLOADER_TOKEN_SECRET (sensitive)')
-    expect(result.stdout).not.toContain(RETIRED_WALRUS_UPLOADER_URL)
-  })
-
-  it('rejects managed Walrus production env with the retired Cloud Run uploader URL', () => {
-    const envFile = writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'managed',
-      NEXT_PUBLIC_WALRUS_UPLOADER_URL: `${RETIRED_WALRUS_UPLOADER_URL}/`,
-      WALRUS_UPLOADER_TOKEN_SECRET: 'test-uploader-secret',
-    })
-
-    const result = runSync(envFile)
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain(`Refusing retired Walrus uploader URL: ${RETIRED_WALRUS_UPLOADER_URL}`)
   })
 
   it('rejects managed Walrus production env without uploader URL or token secret', () => {

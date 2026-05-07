@@ -44,7 +44,7 @@ describe('walrus-uploader HTTP handler', () => {
     // /v1/uploads request so the uploader can reserve the exact payload byte
     // count (matches the token's payload-byte budget 1:1 instead of the
     // multipart-envelope-inflated `Content-Length`). Because the uploader is
-    // a separate Cloud Run origin, that custom header triggers a CORS
+    // a separate DigitalOcean origin, that custom header triggers a CORS
     // preflight; if the handler's allow-headers list omits it the browser
     // blocks the upload before it ever reaches the handler. This regression
     // verifies the preflight response advertises the header.
@@ -75,6 +75,37 @@ describe('walrus-uploader HTTP handler', () => {
     expect(allowedHeaders).toContain('authorization')
     expect(allowedHeaders).toContain('content-type')
     expect(allowedHeaders).toContain('x-walrus-payload-bytes')
+  })
+
+  it('echoes the matching configured CORS origin for production aliases', async () => {
+    const staging = createMemoryWalrusUploadStaging()
+    const handler = createWalrusUploaderHandler({
+      tokenSecret: SECRET,
+      staging,
+      createWalrusClient: async () => {
+        throw new Error('createWalrusClient must not be called for OPTIONS')
+      },
+      validateRegister: async () => [],
+      corsOrigin: [
+        'https://www.soulidity.ai',
+        'https://soulidity.ai',
+        'https://clawnews-soulidity-ai.vercel.app',
+      ].join(','),
+      nowMs: () => Date.now(),
+    })
+
+    const response = await handler(new Request('http://uploader.test/v1/uploads', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://soulidity.ai',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization,x-walrus-payload-bytes',
+      },
+    }))
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://soulidity.ai')
+    expect(response.headers.get('Vary')).toBe('Origin')
   })
 
   it('stages encrypted payload bytes server-side and completes without client slivers', async () => {
@@ -595,10 +626,8 @@ describe('walrus-uploader HTTP handler', () => {
   it('does not block /health on staging.deleteExpired and throttles cleanup across requests', async () => {
     // R-001 regression. Previously the handler awaited
     // `deps.staging.deleteExpired(nowMs())` before serving every non-OPTIONS
-    // request, including `/health`. The GCS staging backend amplifies
-    // `deleteExpired` into a full prefix list + per-object body fetch, so a
-    // single legitimate request paid the cost of every abandoned staged
-    // upload sitting under the prefix. The handler now kicks cleanup off
+    // request, including `/health`. A single legitimate request paid the
+    // cleanup cost for abandoned staged uploads. The handler now kicks cleanup off
     // fire-and-forget at a throttled interval; this regression locks both
     // properties in place.
 
@@ -666,7 +695,7 @@ describe('walrus-uploader HTTP handler', () => {
   })
 
   it('does not surface staging cleanup failures to the request response', async () => {
-    // Failure isolation: a transient GCS list/delete failure during
+    // Failure isolation: a transient staging cleanup failure during
     // background cleanup must not crash request handling. The previous
     // synchronous-await path turned cleanup errors into 4xx/5xx responses
     // for every legitimate request until the failure cleared.
@@ -674,7 +703,7 @@ describe('walrus-uploader HTTP handler', () => {
     const stubbedStaging = {
       ...staging,
       deleteExpired: vi.fn(async () => {
-        throw new Error('GCS list HTTP 503')
+        throw new Error('staging cleanup HTTP 503')
       }),
     }
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -701,7 +730,7 @@ describe('walrus-uploader HTTP handler', () => {
     expect(stubbedStaging.deleteExpired).toHaveBeenCalledTimes(1)
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('staging cleanup failed'),
-      expect.stringContaining('GCS list HTTP 503'),
+      expect.stringContaining('staging cleanup HTTP 503'),
     )
   })
 
