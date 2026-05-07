@@ -183,7 +183,12 @@ describe('resolveIdentity', () => {
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      member: { id: 'wallet-member', accountId: 'wallet-account', kind: 'human' },
+      member: {
+        id: 'wallet-member',
+        accountId: 'wallet-account',
+        kind: 'human',
+        agentStatus: null,
+      },
     })
     mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
       toSuiAddress: () => normalizedAddress,
@@ -223,7 +228,12 @@ describe('resolveIdentity', () => {
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      member: { id: 'agent-member', accountId: 'agent-account', kind: 'agent' },
+      member: {
+        id: 'agent-member',
+        accountId: 'agent-account',
+        kind: 'agent',
+        agentStatus: 'active',
+      },
     })
     mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
       toSuiAddress: () => normalizedAddress,
@@ -235,6 +245,91 @@ describe('resolveIdentity', () => {
       accountId: 'agent-account',
       kind: 'agent',
     })
+  })
+
+  it('rejects a disabled agent member on the x-agent path even when the wallet binding still exists', async () => {
+    // Regression for the desktop-pet revoke / unlink flow:
+    // `revokeDesktopPet()` (web/lib/desktop/revoke.ts) intentionally preserves
+    // the `WalletBinding` so the operator can re-link the same wallet later,
+    // but flips the bound agent `Member.agentStatus` to `'disabled'` and
+    // clears every API-key hash. The `sk-*` path already filters on
+    // `agentStatus: 'active'` (resolve-agent.ts); this asserts the
+    // wallet-signature path does the same — a deleted/revoked pet must not
+    // be able to keep authenticating just because it still holds the local
+    // keypair that signs login-purpose challenges.
+    const nonce = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+    const normalizedAddress = `0x${'0'.repeat(63)}3`
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': normalizedAddress,
+      'x-agent-signature': 'signature',
+      'x-agent-message': nonce,
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: normalizedAddress,
+      nonce,
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
+      purpose: 'login',
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      member: {
+        id: 'disabled-agent-member',
+        accountId: 'agent-account',
+        kind: 'agent',
+        agentStatus: 'disabled',
+      },
+    })
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => normalizedAddress,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
+  })
+
+  it('rejects an agent with null agentStatus on the x-agent path (defense in depth)', async () => {
+    // Defensive guard: only the literal `'active'` value should authenticate.
+    // Any other value (including null / undefined for forward compatibility
+    // with new lifecycle states) must fail closed on the wallet-signature
+    // branch, matching the `sk-*` path.
+    const nonce = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+    const normalizedAddress = `0x${'0'.repeat(63)}4`
+    process.env.TRUST_PROXY_HEADERS = 'true'
+
+    mockedHeaders.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-agent-address': normalizedAddress,
+      'x-agent-signature': 'signature',
+      'x-agent-message': nonce,
+    }))
+    mockedPrisma.walletChallenge.findUnique.mockResolvedValue({
+      address: normalizedAddress,
+      nonce,
+      usedAt: null,
+      expiresAt: new Date('2099-03-21T00:05:00.000Z'),
+      domain: 'clawnews.example.com',
+      purpose: 'login',
+    })
+    mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
+    mockedPrisma.walletBinding.findFirst.mockResolvedValue({
+      member: {
+        id: 'null-status-agent-member',
+        accountId: 'agent-account',
+        kind: 'agent',
+        agentStatus: null,
+      },
+    })
+    mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
+      toSuiAddress: () => normalizedAddress,
+    })
+
+    const { resolveIdentity } = await import('../../web/lib/auth/identity.ts')
+    await expect(resolveIdentity()).resolves.toBeNull()
   })
 
   it('rejects a non-login challenge purpose on the x-agent path', async () => {
@@ -354,7 +449,12 @@ describe('requireMutationIdentity', () => {
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
-      member: { id: 'agent-member', accountId: 'agent-account', kind: 'agent' },
+      member: {
+        id: 'agent-member',
+        accountId: 'agent-account',
+        kind: 'agent',
+        agentStatus: 'active',
+      },
     })
     mockedVerify.verifyPersonalMessageSignature.mockResolvedValue({
       toSuiAddress: () => normalizedAddress,
