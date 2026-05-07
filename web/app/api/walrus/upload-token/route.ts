@@ -15,13 +15,13 @@ import {
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const DEFAULT_TOKEN_TTL_MS = 5 * 60 * 1000
+const DEFAULT_TOKEN_TTL_MS = 10 * 60 * 1000
 const DEFAULT_MAX_FILES = 64
 const DEFAULT_MAX_BYTES = 512 * 1024 * 1024
 
 // Per-member rate limit on upload-token issuance. Each token authorises up to
 // `WALRUS_UPLOADER_TOKEN_MAX_FILES` × `WALRUS_UPLOADER_TOKEN_MAX_BYTES` of
-// staged uploader work (CPU + GCS) before any Walrus storage TX is signed.
+// staged uploader work before any Walrus storage TX is signed.
 // Without a gate here, a signed-in wallet could loop token issuance and
 // `/v1/uploads` to force the managed uploader to encode and stage payloads
 // indefinitely (the managed transport's per-token byte guard does not bound

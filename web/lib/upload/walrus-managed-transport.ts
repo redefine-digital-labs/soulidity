@@ -158,10 +158,9 @@ export async function completeManagedWalrusUpload(params: {
   blobObjectId: string
 }): Promise<ManagedUploaderCertificate> {
   // Keep the HTTP request open until the uploader service finishes Walrus
-  // storage-node writes and returns a certificate. Cloudflare Workers do not
-  // impose a hard wall-time limit for HTTP requests while the client remains
-  // connected; aborting here would cancel the backend operation in exactly the
-  // long-running phase this managed transport exists to absorb.
+  // storage-node writes and returns a certificate. Aborting here would cancel
+  // the backend operation in exactly the long-running phase this managed
+  // transport exists to absorb.
   const response = await fetch(joinUploaderUrl(params.credentials.url, `/v1/uploads/${encodeURIComponent(params.uploadId)}/complete`), {
     method: 'POST',
     headers: {

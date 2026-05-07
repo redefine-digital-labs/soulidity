@@ -68,7 +68,6 @@ const REQUIRED_PRODUCTION_KEYS = [
 ] as const
 
 const PRODUCTION_WALRUS_UPLOADER_URL = 'https://uploader.soulidity.ai'
-const RETIRED_WALRUS_UPLOADER_URL = 'https://walrus-uploader-ppj673f2za-uc.a.run.app'
 const WALRUS_UPLOAD_TRANSPORTS = ['managed', 'browser', 'server'] as const
 
 type CliOptions = {
@@ -174,10 +173,6 @@ function assertProductionEnv(env: Record<string, string>) {
   } else if (hasWalrusUploaderUrl || hasWalrusUploaderTokenSecret) {
     errors.push(`NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=${walrusTransport} must not sync NEXT_PUBLIC_WALRUS_UPLOADER_URL or WALRUS_UPLOADER_TOKEN_SECRET`)
   }
-  if (walrusUploaderUrl === RETIRED_WALRUS_UPLOADER_URL) {
-    errors.push(`Refusing retired Walrus uploader URL: ${RETIRED_WALRUS_UPLOADER_URL}`)
-  }
-
   const threshold = Number.parseInt(env.NEXT_PUBLIC_SEAL_THRESHOLD ?? '', 10)
   if (!Number.isFinite(threshold) || threshold <= 0) {
     errors.push('NEXT_PUBLIC_SEAL_THRESHOLD must be a positive integer for mainnet')

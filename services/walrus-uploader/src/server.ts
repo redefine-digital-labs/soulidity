@@ -9,11 +9,10 @@ import {
   createWalrusUploaderHandler,
   type ManagedWalrusClient,
   type RegisterValidationParams,
-  type TokenUsageGuard,
 } from './handler.js'
-import { createFilesystemWalrusUploadStaging, type WalrusUploadStaging } from './staging.js'
+import { createFilesystemWalrusUploadStaging } from './staging.js'
 
-const WALRUS_STORAGE_NODE_REQUEST_TIMEOUT_MS = 60_000
+const WALRUS_STORAGE_NODE_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim()
@@ -104,63 +103,19 @@ async function validateRegister(params: RegisterValidationParams) {
   return params.expected
 }
 
-async function createStaging(): Promise<WalrusUploadStaging> {
-  const backend = process.env.STAGING_BACKEND ?? 'filesystem'
-  if (backend === 'filesystem') {
-    return createFilesystemWalrusUploadStaging(process.env.UPLOAD_DATA_DIR ?? '/data/walrus-uploader')
+function assertDigitalOceanFilesystemMode() {
+  const backend = process.env.STAGING_BACKEND?.trim()
+  if (backend && backend !== 'filesystem') {
+    throw new Error('Only STAGING_BACKEND=filesystem is supported for the DigitalOcean uploader')
   }
-  if (backend === 'gcs') {
-    const { createGcsWalrusUploadStaging } = await import('./staging-gcs.js')
-    return createGcsWalrusUploadStaging(requiredEnv('GCS_BUCKET'), process.env.GCS_PREFIX ?? 'walrus-uploader')
-  }
-  if (backend === 'r2') {
-    const { createR2WalrusUploadStaging } = await import('./staging-r2.js')
-    return createR2WalrusUploadStaging({
-      accountId: requiredEnv('R2_ACCOUNT_ID'),
-      bucket: requiredEnv('R2_BUCKET'),
-      accessKeyId: requiredEnv('R2_ACCESS_KEY_ID'),
-      secretAccessKey: requiredEnv('R2_SECRET_ACCESS_KEY'),
-      prefix: process.env.R2_PREFIX ?? 'walrus-uploader',
-    })
-  }
-  throw new Error(`Unsupported STAGING_BACKEND: ${backend}`)
-}
-
-// Token usage state must be shared across every Cloud Run instance behind the
-// same uploader, otherwise a single bearer token's documented byte/file budget
-// is multiplied by warm-instance count. We follow the staging backend choice:
-// the GCS backend uses a per-`jti` GCS object and `if-generation-match` for
-// atomic CAS; filesystem/in-memory deploys keep the in-process map (assumes
-// single-instance deployment).
-async function createTokenUsageGuard(nowMs: () => number): Promise<TokenUsageGuard> {
-  const backend = process.env.STAGING_BACKEND ?? 'filesystem'
-  if (backend === 'gcs') {
-    const { createGcsTokenUsageGuard } = await import('./token-usage-gcs.js')
-    return createGcsTokenUsageGuard({
-      bucketName: requiredEnv('GCS_BUCKET'),
-      prefix: process.env.GCS_TOKEN_USAGE_PREFIX ?? `${process.env.GCS_PREFIX ?? 'walrus-uploader'}/token-usage`,
-      nowMs,
-    })
-  }
-  if (backend === 'r2') {
-    const { createR2TokenUsageGuard } = await import('./token-usage-r2.js')
-    return createR2TokenUsageGuard({
-      accountId: requiredEnv('R2_ACCOUNT_ID'),
-      bucket: requiredEnv('R2_BUCKET'),
-      accessKeyId: requiredEnv('R2_ACCESS_KEY_ID'),
-      secretAccessKey: requiredEnv('R2_SECRET_ACCESS_KEY'),
-      prefix: process.env.R2_TOKEN_USAGE_PREFIX ?? `${process.env.R2_PREFIX ?? 'walrus-uploader'}/token-usage`,
-      nowMs,
-    })
-  }
-  return createInMemoryTokenUsageGuard({ nowMs })
 }
 
 const network = getNetwork()
 const port = Number(process.env.PORT ?? 8080)
 const nowMs = () => Date.now()
-const staging = await createStaging()
-const tokenUsage = await createTokenUsageGuard(nowMs)
+assertDigitalOceanFilesystemMode()
+const staging = createFilesystemWalrusUploadStaging(process.env.UPLOAD_DATA_DIR ?? '/data/walrus-uploader')
+const tokenUsage = createInMemoryTokenUsageGuard({ nowMs })
 const handler = createWalrusUploaderHandler({
   tokenSecret: requiredEnv('WALRUS_UPLOADER_TOKEN_SECRET'),
   staging,

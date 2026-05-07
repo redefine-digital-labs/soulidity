@@ -19,7 +19,7 @@ export { createFilesystemWalrusUploadStaging, createMemoryWalrusUploadStaging }
 export type { WalrusUploadStaging }
 
 const DEFAULT_STAGE_TTL_MS = 24 * 60 * 60 * 1000
-const WALRUS_STORAGE_WRITE_TIMEOUT_MS = 75_000
+const WALRUS_STORAGE_WRITE_TIMEOUT_MS = 10 * 60 * 1000
 const WALRUS_STORAGE_WRITE_MAX_ATTEMPTS = 3
 const WALRUS_STORAGE_WRITE_RETRY_BASE_DELAY_MS = 1_500
 const WALRUS_WEIGHTED_QUORUM_CONFIRMATION_RETRIES = 2
@@ -29,9 +29,9 @@ const WALRUS_WEIGHTED_QUORUM_CONFIRMATION_RETRIES = 2
 const WALRUS_UPLOAD_MULTIPART_OVERHEAD_BYTES = 64 * 1024
 // Default throttle for the per-instance staging cleanup. Cleanup runs at most
 // once every 5 minutes per warm instance and never blocks the request path
-// (see `maybeKickOffStagingCleanup`). The previous behavior awaited a full
-// prefix scan + per-object reads on every non-OPTIONS request, which the GCS
-// staging backend amplified into a request-path latency / cost vector.
+// (see `maybeKickOffStagingCleanup`). The previous behavior awaited cleanup
+// on every non-OPTIONS request, turning abandoned local staging files into a
+// request-path latency vector.
 const DEFAULT_STAGING_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
 export interface ManagedWalrusClient {
@@ -82,11 +82,9 @@ export interface WalrusUploaderHandlerDeps {
   nowMs?: () => number
   stageTtlMs?: number
   corsOrigin?: string
-  // Token usage / byte-budget guard. When omitted, every handler instance
-  // creates its own in-memory guard; on Cloud Run with multiple warm
-  // instances that yields per-instance budgets and multiplies the documented
-  // token limit. Production should inject a guard backed by shared atomic
-  // state (see `createGcsTokenUsageGuard`).
+  // Token usage / byte-budget guard. The DigitalOcean deployment is a
+  // single Node process, so the default in-memory guard is the production
+  // source of truth for a token's short-lived file and byte budget.
   tokenUsage?: TokenUsageGuard
   // Minimum interval between staging cleanup runs from this handler instance.
   // Cleanup is fire-and-forget and never blocks the request response. Tests
@@ -170,6 +168,20 @@ function createBoundedRequestBody(
     },
   })
   return body.pipeThrough(transform)
+}
+
+function parseAllowedCorsOrigins(config: string): string[] {
+  const origins = config
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+  return origins.length > 0 ? origins : ['*']
+}
+
+function resolveCorsOrigin(allowedOrigins: readonly string[], requestOrigin: string | null): string {
+  if (allowedOrigins.includes('*')) return '*'
+  if (requestOrigin && allowedOrigins.includes(requestOrigin)) return requestOrigin
+  return allowedOrigins[0] ?? '*'
 }
 
 function withCors(response: Response, origin: string) {
@@ -373,11 +385,8 @@ async function writeEncodedBlobAndBuildCertificate(params: {
   throw new Error(`Walrus certificate weighted quorum guard could not evaluate upload ${params.upload.uploadId}`)
 }
 
-// Per-instance in-memory token usage guard. Suitable for local development,
-// tests, and single-instance deploys. Multi-instance Cloud Run deployments
-// must inject a shared-state guard (see `createGcsTokenUsageGuard`) so the
-// documented per-token byte/file budget cannot be multiplied across warm
-// instances.
+// Per-process in-memory token usage guard. Suitable for local development,
+// tests, and the single-node DigitalOcean uploader deployment.
 export function createInMemoryTokenUsageGuard(opts: { nowMs: () => number }): TokenUsageGuard {
   const { nowMs } = opts
   const usages = new Map<string, TokenUsage>()
@@ -485,20 +494,17 @@ export function createInMemoryTokenUsageGuard(opts: { nowMs: () => number }): To
 export function createWalrusUploaderHandler(deps: WalrusUploaderHandlerDeps) {
   const nowMs = deps.nowMs ?? (() => Date.now())
   const stageTtlMs = deps.stageTtlMs ?? DEFAULT_STAGE_TTL_MS
-  const corsOrigin = deps.corsOrigin ?? '*'
+  const allowedCorsOrigins = parseAllowedCorsOrigins(deps.corsOrigin ?? '*')
   const tokenUsage = deps.tokenUsage ?? createInMemoryTokenUsageGuard({ nowMs })
   const stagingCleanupIntervalMs = deps.stagingCleanupIntervalMs ?? DEFAULT_STAGING_CLEANUP_INTERVAL_MS
 
   // Throttled, fire-and-forget staging cleanup. Previously every non-OPTIONS
-  // request blocked on `deps.staging.deleteExpired(nowMs())`, which the GCS
-  // backend amplifies into a full prefix list + per-object body read before
-  // the handler can serve `/health`, `/v1/uploads`, `/complete`, or
-  // `/finalize`. The throttle bounds the cleanup rate to once per
-  // `stagingCleanupIntervalMs` per warm instance, the kick-off is detached
-  // from the request response, and any failure is contained inside this
-  // function so it cannot fail request handling. Multi-instance deployments
-  // amortize cleanup across instances; pagination + bounded per-run work
-  // belongs to the staging backend itself (see `staging-gcs.ts`).
+  // request blocked on `deps.staging.deleteExpired(nowMs())` before the
+  // handler could serve `/health`, `/v1/uploads`, `/complete`, or `/finalize`.
+  // The throttle bounds cleanup to once per `stagingCleanupIntervalMs` per
+  // process, the kick-off is detached from the request response, and any
+  // failure is contained inside this function so it cannot fail request
+  // handling.
   let lastStagingCleanupAtMs = 0
   let stagingCleanupInFlight = false
   const maybeKickOffStagingCleanup = () => {
@@ -541,6 +547,8 @@ export function createWalrusUploaderHandler(deps: WalrusUploaderHandlerDeps) {
   }
 
   return async function handleWalrusUploaderRequest(request: Request): Promise<Response> {
+    const corsOrigin = resolveCorsOrigin(allowedCorsOrigins, request.headers.get('origin'))
+
     if (request.method === 'OPTIONS') {
       return withCors(new Response(null, { status: 204 }), corsOrigin)
     }
