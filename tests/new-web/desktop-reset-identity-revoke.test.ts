@@ -118,6 +118,29 @@ describe('POST /api/desktop/me/revoke', () => {
     expect(response.status).toBe(401)
     expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
   })
+
+  it('passes allowExpiredDesktopToken: true through to requireDesktopIdentity (so a 90-day-stale dtk_ still revokes a still-existing pet)', async () => {
+    // Regression for R-001: without this flag, a `dtk_*` whose
+    // `desktopAccessTokenIssuedAt` is past the 90-day rotation window
+    // would be rejected at requireDesktopIdentity even when the
+    // underlying DesktopPet row still exists, returning 401. The desktop
+    // reset helper would then misclassify that 401 as "pet already gone"
+    // and erase its keypair while leaving an active pet/member/api-key
+    // behind on the server.
+    mockedPrisma.desktopPet.delete.mockResolvedValue({ id: PET_IDENTITY.id })
+    mockedPrisma.member.update.mockResolvedValue({ id: PET_IDENTITY.agentMemberId })
+
+    const { POST } = await import('../../web/app/api/desktop/me/revoke/route')
+    await POST(buildRequest())
+
+    expect(mockedRequireDesktopIdentity).toHaveBeenCalledWith(
+      expect.any(Request),
+      expect.objectContaining({
+        mutation: true,
+        allowExpiredDesktopToken: true,
+      }),
+    )
+  })
 })
 
 describe('post-revoke effects on token + agent key resolution', () => {

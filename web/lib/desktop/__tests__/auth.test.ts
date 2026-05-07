@@ -166,6 +166,54 @@ describe('verifyDesktopAccessToken', () => {
 
     vi.useRealTimers()
   })
+
+  it('returns the pet for an expired token when allowExpired is set (revoke path)', async () => {
+    // Regression: revoke must succeed even past the 90-day rotation window
+    // so that 401 from /api/desktop/me/revoke uniquely means "pet row
+    // gone", not "token stale but pet still active". Without this branch
+    // the desktop reset helper would conflate the two and silently leave
+    // server-side pet/member/api-key state behind.
+    vi.useFakeTimers()
+    const now = new Date('2026-07-15T10:00:00Z')
+    vi.setSystemTime(now)
+
+    const { token, hash } = generateDesktopAccessToken()
+
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
+      accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
+      desktopAccessTokenHash: hash,
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+    })
+
+    const result = await verifyDesktopAccessToken(token, { allowExpired: true })
+    expect(result).toEqual({
+      accountId: 'account-123',
+      desktopPet: {
+        id: 'pet-1',
+        accountId: 'account-123',
+        agentAddress: '0xagent',
+        agentMemberId: 'member-9',
+      },
+    })
+
+    vi.useRealTimers()
+  })
+
+  it('still returns null for a non-matching hash even with allowExpired', async () => {
+    // allowExpired only relaxes the age check — it does NOT relax the
+    // hash-match check. A token whose hash does not match any row must
+    // still fail (so 401 from the revoke route still uniquely means
+    // "no pet matches this token", which is what the desktop relies on).
+    const { token } = generateDesktopAccessToken()
+
+    mockPetFindUnique.mockResolvedValue(null)
+
+    const result = await verifyDesktopAccessToken(token, { allowExpired: true })
+    expect(result).toBeNull()
+  })
 })
 
 // ── Token rotation ────────────────────────────────────────
