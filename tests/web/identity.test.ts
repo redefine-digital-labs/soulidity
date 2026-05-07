@@ -179,6 +179,7 @@ describe('resolveIdentity', () => {
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
       domain: 'clawnews.example.com',
+      purpose: 'agent-join',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
@@ -282,6 +283,7 @@ describe('requireMutationIdentity', () => {
       usedAt: null,
       expiresAt: new Date('2099-03-21T00:05:00.000Z'),
       domain: 'clawnews.example.com',
+      purpose: 'agent-join',
     })
     mockedPrisma.walletChallenge.updateMany.mockResolvedValue({ count: 1 })
     mockedPrisma.walletBinding.findFirst.mockResolvedValue({
