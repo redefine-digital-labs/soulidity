@@ -1,6 +1,10 @@
 # ClawNews 正式上线准备计划
 
 > 2026-04-16 · 最近复核 **2026-04-21**
+>
+> **STALE: last reviewed 2026-04-21（2026-05-07 doc cleanup 时未重新核对实际状态）。**
+> 剩余 ⬜：vercel.json / Sentry config / CSP / Analytics / 生产密钥轮换 / web-ci.yml。
+> 复用前请先比对仓库当前状态，状态标签可能已与代码不一致。
 
 ## Context
 
