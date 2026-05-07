@@ -5,7 +5,11 @@ import { assertObjectInputsExist } from '@soulidity/sdk'
 import { buildPersonalJoinSoulTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
-import { uploadSoulPayload } from '@/lib/upload/client-upload'
+import {
+  prepareSoulBlobsForBatchPublish,
+  type BatchSoulUploadFile,
+  type PreparedSoulBlobs,
+} from '@/lib/upload/client-upload'
 import { type PendingSealMaterial } from '@/lib/upload/client-seal'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 import type { KioskNft } from '@/lib/hooks/use-kiosk-nfts'
@@ -195,28 +199,18 @@ function withMime(file: File): File {
   return new File([file], file.name, { type: expected })
 }
 
-async function uploadFile(
-  file: File,
-  type: 'public' | 'encrypted',
-  headers: Record<string, string>,
-  wallet: {
-    walletAddress: string
-    suiClient: unknown
-    signAndExecute: ReturnType<typeof useWalletSign>['signAndExecute']
-    confirmQuote: ReturnType<typeof useUploadCostReview>['requestUploadCostApproval']
-  },
-  sendObjectTo?: string,
-) {
-  return uploadSoulPayload({
-    file: withMime(file),
-    uploadType: type,
-    kind: 'soul-content',
-    authHeaders: headers,
-    sendObjectTo: sendObjectTo ?? null,
-    walletAddress: wallet.walletAddress,
-    suiClient: wallet.suiClient,
-    signAndExecute: wallet.signAndExecute,
-    confirmQuote: wallet.confirmQuote,
+function buildBatchFingerprint(walletAddress: string, files: BatchSoulUploadFile[]): string {
+  return JSON.stringify({
+    walletAddress: walletAddress.toLowerCase(),
+    files: files.map((f) => ({
+      name: f.file.name,
+      size: f.file.size,
+      lastModified: f.file.lastModified,
+      type: f.file.type,
+      uploadType: f.uploadType,
+      kind: f.kind,
+      sendObjectTo: f.sendObjectTo?.trim().toLowerCase() ?? null,
+    })),
   })
 }
 
@@ -229,6 +223,11 @@ export function useWrapPublish() {
   const { getAuthHeaders, user } = useAuth()
   const { requestUploadCostApproval } = useUploadCostReview()
   const recoveryRef = useRef<WrapRecoveryState | null>(null)
+  const preparedBatchRef = useRef<{
+    walletAddress: string
+    fingerprint: string
+    prepared: PreparedSoulBlobs
+  } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -279,37 +278,90 @@ export function useWrapPublish() {
         setResult(null)
         setStatus('uploading')
         const walletAddress = suiWallet.address
-        const walletUpload = {
-          walletAddress,
-          suiClient,
-          signAndExecute,
-          confirmQuote: requestUploadCostApproval,
+
+        const fileIndex = { char: -1, memory: -1, skills: -1 }
+        const batchFiles: BatchSoulUploadFile[] = []
+
+        fileIndex.char = batchFiles.length
+        batchFiles.push({
+          file: withMime(params.charFile),
+          uploadType: 'encrypted',
+          kind: 'soul-content',
+          sendObjectTo: walletAddress,
+        })
+
+        fileIndex.memory = batchFiles.length
+        batchFiles.push({
+          file: withMime(params.memoryFile),
+          uploadType: 'encrypted',
+          kind: 'soul-content',
+          sendObjectTo: walletAddress,
+        })
+
+        if (params.skillsFile) {
+          fileIndex.skills = batchFiles.length
+          batchFiles.push({
+            file: withMime(params.skillsFile),
+            uploadType: 'encrypted',
+            kind: 'soul-content',
+            sendObjectTo: walletAddress,
+          })
         }
 
-        // 1. Upload character file (encrypted)
-        const charUpload = await uploadFile(params.charFile, 'encrypted', authHeaders, walletUpload, walletAddress)
+        const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
+        await assertObjectInputsExist(suiClient, {
+          'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
+          'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+          'Source NFT': params.nft.objectId,
+        })
+
+        const fingerprint = buildBatchFingerprint(walletAddress, batchFiles)
+        const cachedBatch = preparedBatchRef.current
+        const reusable =
+          !!cachedBatch
+          && cachedBatch.walletAddress === walletAddress
+          && cachedBatch.fingerprint === fingerprint
+
+        let prepared: PreparedSoulBlobs
+        if (reusable) {
+          prepared = cachedBatch.prepared
+        } else {
+          if (cachedBatch) preparedBatchRef.current = null
+          prepared = await prepareSoulBlobsForBatchPublish({
+            files: batchFiles,
+            walletAddress,
+            suiClient,
+            signAndExecute,
+            authHeaders,
+            confirmQuote: requestUploadCostApproval,
+          })
+          preparedBatchRef.current = { walletAddress, fingerprint, prepared }
+        }
+
+        const charUpload = prepared.files[fileIndex.char]
+        const memUpload = prepared.files[fileIndex.memory]
+        const skillsUpload = fileIndex.skills >= 0 ? prepared.files[fileIndex.skills] : null
+
         if (!charUpload.blobObjectId) {
           throw new Error('Character file was deduplicated. Please modify the content to make it unique.')
         }
-
-        // 2. Upload memory file (encrypted)
-        const memUpload = await uploadFile(params.memoryFile, 'encrypted', authHeaders, walletUpload, walletAddress)
         if (!memUpload.blobObjectId) {
           throw new Error('Memory file was deduplicated. Please modify the content to make it unique.')
+        }
+        if (skillsUpload && !skillsUpload.blobObjectId) {
+          throw new Error('Skills file was deduplicated. Please modify the content to make it unique.')
+        }
+        if (!charUpload.sealMaterial) {
+          throw new Error('Character file upload is missing Seal recovery data.')
         }
         if (!memUpload.sealMaterial) {
           throw new Error('Memory file upload is missing Seal recovery data.')
         }
-
-        // 3. Upload skills file (encrypted, optional)
-        let skillsUpload = null
-        if (params.skillsFile) {
-          skillsUpload = await uploadFile(params.skillsFile, 'encrypted', authHeaders, walletUpload, walletAddress)
+        if (skillsUpload && !skillsUpload.sealMaterial) {
+          throw new Error('Skills file upload is missing Seal recovery data.')
         }
 
-        // 4. Resolve kiosk + build TX
         setStatus('building')
-        const personalKiosk = await resolvePersonalKiosk(authHeaders, walletAddress)
         await assertObjectInputsExist(suiClient, {
           'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
           'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
@@ -319,7 +371,7 @@ export function useWrapPublish() {
           'Source NFT': params.nft.objectId,
         })
 
-        const tx = buildPersonalJoinSoulTx({
+        const tx = await buildPersonalJoinSoulTx({
           currentKioskId: personalKiosk?.currentKioskId ?? null,
           currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
           sourceObjectId: params.nft.objectId,
@@ -338,13 +390,15 @@ export function useWrapPublish() {
           }),
           originRef: `sui:${params.nft.objectId}`,
           creatorRoyaltyBps: params.royalty,
+          attachBeforeMint: prepared.attachCertifyCalls,
         })
 
-        // 5. Sign & execute
         setStatus('signing')
         const txResult = await signAndExecute(tx)
         const executedDigest = txResult.digest
         assertSoulidityTxSucceeded(txResult, 'Soul personal join transaction')
+        prepared.clearBatchRecovery()
+        preparedBatchRef.current = null
         digest = executedDigest
         setTxDigest(executedDigest)
 

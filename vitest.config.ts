@@ -45,6 +45,10 @@ export default defineConfig({
       // driver from @playwright/test; they are invoked via `playwright test`
       // from the desktop workspace instead.
       'desktop/apps/desktop/e2e/**',
+      // The desktop workspace keeps local/ignored Vitest scratch specs under
+      // desktop/**. Root `npm test` should cover tracked root/web tests only;
+      // desktop package validation is invoked from the desktop workspace.
+      'desktop/**/*.test.ts',
     ],
   },
 })

@@ -19,6 +19,7 @@ const SUI_CLOCK_OBJECT_ID = '0x6'
 export interface PersonalJoinTxParams extends MintPtbInputs {
   currentKioskId?: string | null
   currentKioskCapOnChainId?: string | null
+  attachBeforeMint?: (tx: Transaction) => void | Promise<void>
   /** ID of the Object<T> that is being joined (kiosk-locked under T's TransferPolicy). */
   sourceObjectId: string
   /** Fully-qualified Move type of the source object, e.g. `0xabc::module::Type`. */
@@ -36,7 +37,7 @@ export interface PersonalJoinTxParams extends MintPtbInputs {
  * which records the source object id in `KioskRegistry` and consumes it as
  * provenance for the new Soul.
  */
-export function buildPersonalJoinSoulTx(params: PersonalJoinTxParams): Transaction {
+export async function buildPersonalJoinSoulTx(params: PersonalJoinTxParams): Promise<Transaction> {
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -78,6 +79,10 @@ export function buildPersonalJoinSoulTx(params: PersonalJoinTxParams): Transacti
     target: `${kioskPackageId}::personal_kiosk::return_val`,
     arguments: [personalKiosk.buyerKioskCap, kioskOwnerCap, borrowHotPotato],
   })
+
+  if (params.attachBeforeMint) {
+    await params.attachBeforeMint(tx)
+  }
 
   const { initialContentVec, initialStateConfigVec } = buildInitialContentArgs(tx, packageId, {
     initialContent: params.initialContent,
