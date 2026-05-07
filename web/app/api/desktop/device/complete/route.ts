@@ -4,6 +4,7 @@ import { requireMutationIdentity } from '@/lib/auth/identity'
 import {
   completeDesktopDeviceSession,
   DesktopDeviceSessionConflictError,
+  DesktopPetAddressConflictError,
 } from '@/lib/desktop/device-session'
 
 export const dynamic = 'force-dynamic'
@@ -45,12 +46,17 @@ export async function POST(request: Request) {
       return NextResponse.json(result, { status: 410 })
     }
 
-    // Strip desktop-only credentials from the browser response.
-    // The desktop receives the bearer token through the poll channel instead.
-    const { desktopAccessToken: _token, deviceCode: _code, ...browserResult } = result
+    // Strip desktop-only credentials from the browser response. The helper
+    // already omits `desktopAccessToken` / `agentApiKey`, but the browser
+    // route also drops `deviceCode` defensively so the human linker never
+    // sees raw secrets even if the helper changes.
+    const { deviceCode: _code, ...browserResult } = result
     return NextResponse.json(browserResult)
   } catch (error) {
     if (error instanceof DesktopDeviceSessionConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    if (error instanceof DesktopPetAddressConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 })
     }
 

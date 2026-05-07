@@ -42,6 +42,7 @@ function makeChallenge(overrides: Partial<{
   domain: string | null
   expiresAt: Date
   usedAt: Date | null
+  purpose: string
 }> = {}) {
   return {
     address: NORMALIZED_WALLET,
@@ -49,6 +50,7 @@ function makeChallenge(overrides: Partial<{
     domain: 'clawnews.example.com',
     expiresAt: new Date('2099-03-21T00:05:00.000Z'),
     usedAt: null,
+    purpose: 'login',
     ...overrides,
   }
 }

@@ -144,6 +144,7 @@ model Account {
   members               Member[]
   desktopDeviceSessions DesktopDeviceSession[]
   desktopProfile        DesktopProfile?
+  desktopPets           DesktopPet[]
 
   @@map("accounts")
 }
@@ -169,6 +170,11 @@ model Member {
   agentStatus String?  @default("active") @map("agent_status")
   joinedAt    DateTime @default(now()) @map("joined_at") @db.Timestamptz
 
+  apiKeyRotationId               String?   @unique @map("api_key_rotation_id")
+  pendingApiKeyHash              String?   @map("pending_api_key_hash")
+  pendingApiKeyRotationId        String?   @unique @map("pending_api_key_rotation_id")
+  pendingApiKeyRotationExpiresAt DateTime? @map("pending_api_key_rotation_expires_at") @db.Timestamptz
+
   posts                  Post[]
   comments               Comment[]
   postVotes              PostVote[]
@@ -185,6 +191,7 @@ model Member {
   following              Follow[]               @relation("follower")
   followers              Follow[]               @relation("following")
   bookmarks              Bookmark[]
+  desktopPet             DesktopPet?            @relation("DesktopPetAgentMember")
 
   @@index([tgId])
   @@index([accountId, kind])
@@ -297,8 +304,10 @@ model WalletChallenge {
   expiresAt DateTime  @map("expires_at") @db.Timestamptz
   usedAt    DateTime? @map("used_at") @db.Timestamptz
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  purpose   String    @default("login")
 
   @@index([address, expiresAt])
+  @@index([purpose, address, expiresAt])
   @@map("wallet_challenges")
 }
 
@@ -733,19 +742,36 @@ model DesktopDeviceSession {
 }
 
 model DesktopProfile {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String   @unique @map("account_id") @db.Uuid
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  preferences Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("desktop_profiles")
+}
+
+model DesktopPet {
   id                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  accountId                  String    @unique @map("account_id") @db.Uuid
+  accountId                  String    @map("account_id") @db.Uuid
   account                    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  agentAddress               String?   @map("agent_address")
+  agentAddress               String    @map("agent_address")
+  agentMemberId              String    @unique @map("agent_member_id") @db.Uuid
+  agentMember                Member    @relation("DesktopPetAgentMember", fields: [agentMemberId], references: [id], onDelete: Restrict)
+  label                      String
+  desktopAccessTokenHash     String?   @unique(map: "desktop_pets_desktop_access_token_hash_key") @map("desktop_access_token_hash")
+  desktopAccessTokenIssuedAt DateTime? @map("desktop_access_token_issued_at") @db.Timestamptz
   activeSourceType           String?   @map("active_source_type")
   activeSourceRef            String?   @map("active_source_ref")
-  desktopAccessTokenHash     String?   @unique(map: "desktop_profiles_desktop_access_token_hash_key") @map("desktop_access_token_hash")
-  desktopAccessTokenIssuedAt DateTime? @map("desktop_access_token_issued_at") @db.Timestamptz
-  preferences                Json?
   lastSyncedAt               DateTime? @map("last_synced_at") @db.Timestamptz
+  lastSeenAt                 DateTime? @map("last_seen_at") @db.Timestamptz
   createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@index([activeSourceType, activeSourceRef])
-  @@map("desktop_profiles")
+  @@unique([accountId, agentAddress], map: "desktop_pets_account_agent_address_key")
+  @@index([accountId, updatedAt(sort: Desc)])
+  @@index([accountId, activeSourceType, activeSourceRef], map: "desktop_pets_account_active_source_idx")
+  @@index([agentAddress])
+  @@map("desktop_pets")
 }

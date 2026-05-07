@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { requireDesktopIdentity } from '@/lib/desktop/auth'
 import {
   DesktopActivePersonaNotFoundError,
+  DesktopPetNotFoundError,
   setDesktopActivePersona,
 } from '@/lib/desktop/profile'
 import type { DesktopCatalogSourceType } from '@/lib/types/desktop'
@@ -34,6 +35,10 @@ export async function PUT(request: Request) {
   const auth = await requireDesktopIdentity(request, { mutation: true })
   if (auth.error) {
     return auth.error
+  }
+
+  if (!auth.desktopPet) {
+    return NextResponse.json({ error: 'Desktop pet identity required' }, { status: 403 })
   }
 
   let body: unknown
@@ -78,13 +83,18 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const response = await setDesktopActivePersona(auth.accountId!, {
+    const response = await setDesktopActivePersona({
+      accountId: auth.accountId,
+      desktopPetId: auth.desktopPet.id,
       sourceType,
       sourceRef,
     })
 
     return NextResponse.json(response)
   } catch (error) {
+    if (error instanceof DesktopPetNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 })
+    }
     if (error instanceof DesktopActivePersonaNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 })
     }

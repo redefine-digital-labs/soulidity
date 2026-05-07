@@ -20,6 +20,19 @@ import { useAgentRuntime } from '../../hooks/useAgentRuntime'
 type TaskAgent = 'claude' | 'codex'
 type ToastKind = 'info' | 'success' | 'error' | 'attention'
 
+/**
+ * Renderer-only view of the desktop binding state. Drives the small dot in
+ * the corner of the floating ball:
+ *   - 'unbound'    → neutral grey (no dtk_* on disk)
+ *   - 'attention'  → yellow      (dtk_* present but /me failed to verify)
+ *   - 'linked'     → green       (dtk_* present and /me returned identity)
+ *   - 'unknown'    → neutral grey (haven't checked yet)
+ *
+ * No credential is read here — only `getDesktopAuthStatus` (boolean) and
+ * `getDesktopMe` (verification round-trip) are consulted.
+ */
+type AuthBadgeState = 'unknown' | 'unbound' | 'attention' | 'linked'
+
 interface ToastState {
   id: number
   kind: ToastKind
@@ -170,6 +183,7 @@ export function FloatingBall(): React.JSX.Element {
   const [taskPanel, setTaskPanel] = useState<TaskPanelState | null>(null)
   const [localTasks, setLocalTasks] = useState<Record<string, PetTaskSummary>>({})
   const [enhancedMotion, setEnhancedMotion] = useState(false)
+  const [authBadge, setAuthBadge] = useState<AuthBadgeState>('unknown')
 
   const ballRef = useRef<HTMLDivElement>(null)
   const toastIdRef = useRef(0)
@@ -373,6 +387,56 @@ export function FloatingBall(): React.JSX.Element {
   }, [isDropTargetActive, isDragging, isHovered, taskPanel])
 
   useEffect(() => {
+    let cancelled = false
+
+    const refreshAuthBadge = async (): Promise<void> => {
+      try {
+        const status = await window.electronAPI.getDesktopAuthStatus()
+        if (cancelled) return
+        if (!status.hasToken) {
+          setAuthBadge('unbound')
+          return
+        }
+        try {
+          const me = await window.electronAPI.getDesktopMe()
+          if (cancelled) return
+          // `me` shape parity with SettingsTab: a profile.accountId means the
+          // dtk validated end-to-end. Anything else is a soft "needs attention".
+          const profile = me && typeof me === 'object'
+            ? (me as Record<string, unknown>).profile
+            : null
+          const accountId = profile && typeof profile === 'object'
+            ? (profile as Record<string, unknown>).accountId
+            : null
+          if (typeof accountId === 'string' && accountId.length > 0) {
+            setAuthBadge('linked')
+          } else {
+            setAuthBadge('attention')
+          }
+        } catch {
+          if (cancelled) return
+          setAuthBadge('attention')
+        }
+      } catch {
+        if (cancelled) return
+        setAuthBadge('unknown')
+      }
+    }
+
+    void refreshAuthBadge()
+    // Re-poll occasionally so a successful link from the main window flips
+    // the badge without restarting the floating ball. The 60s cadence is a
+    // light-touch fallback; main also broadcasts `desktop-auth:changed` but
+    // that channel is ignored here intentionally to keep the surface tiny.
+    const interval = setInterval(() => { void refreshAuthBadge() }, 60_000)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
+  useEffect(() => {
     const overlayHeight = taskPanel
       ? EXPANDED_WINDOW_HEIGHT
       : Math.min(
@@ -393,6 +457,20 @@ export function FloatingBall(): React.JSX.Element {
   const handleOpenAgentTab = useCallback(async () => {
     await window.electronAPI.openMainWindowTab('agent')
   }, [])
+
+  const handleOpenSettingsTab = useCallback((event: React.MouseEvent) => {
+    // Stop the badge click from feeding the surrounding ball-drag handler.
+    event.stopPropagation()
+    void window.electronAPI.openMainWindowTab('settings')
+  }, [])
+
+  const authBadgeLabel = authBadge === 'linked'
+    ? 'Pet linked'
+    : authBadge === 'attention'
+      ? 'Pet needs attention'
+      : authBadge === 'unbound'
+        ? 'Pet not linked yet'
+        : 'Pet status unknown'
 
   const handleQuickApprove = useCallback(async () => {
     if (!topPermission) return
@@ -980,6 +1058,18 @@ export function FloatingBall(): React.JSX.Element {
             height={120}
             idlePause
           />
+          <button
+            type="button"
+            className={`auth-badge auth-badge--${authBadge}`}
+            onClick={handleOpenSettingsTab}
+            onMouseDown={(event) => event.stopPropagation()}
+            title={authBadgeLabel}
+            aria-label={authBadgeLabel}
+          >
+            <span aria-hidden="true">
+              {authBadge === 'linked' ? '✓' : authBadge === 'attention' ? '!' : authBadge === 'unbound' ? '?' : '·'}
+            </span>
+          </button>
         </div>
         {showPresenceLabel && presenceLabel && (
           <div className="presence-label">{presenceLabel}</div>

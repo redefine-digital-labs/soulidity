@@ -99,19 +99,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('get-secret-storage-status'),
 
   // ── 设备绑定 ──
-  deviceStartLink: (agentAddress: string): Promise<{
+  deviceStartLink: (): Promise<{
     deviceCode: string; userCode: string; expiresAt: string; pollInterval: number
-  }> => ipcRenderer.invoke('device:start-link', agentAddress),
+  }> => ipcRenderer.invoke('device:start-link'),
   devicePoll: (deviceCode: string): Promise<{
-    status: string; accountId?: string; desktopAccessToken?: string; expiresAt?: string | null
+    status: string
+    accountId?: string
+    error?: string
+    expiresAt?: string | null
+    pollInterval?: number
   }> => ipcRenderer.invoke('device:poll', deviceCode),
   deviceGetLinkUrl: (): Promise<string> => ipcRenderer.invoke('device:get-link-url'),
 
   // ── Desktop auth ──
   getDesktopAuthStatus: (): Promise<{ hasToken: boolean; accountId: string | null }> =>
     ipcRenderer.invoke('desktop-auth:status'),
-  unlinkDesktopDevice: (): Promise<{ ok: true } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('desktop-auth:unlink'),
+  unlinkDesktopDevice: (): Promise<
+    { ok: true; remoteRevoked: boolean } | { ok: false; error: string; status?: number }
+  > => ipcRenderer.invoke('desktop-auth:unlink'),
+  // Renderer never sees the rotated `sk-*` key — it's stored via safeStorage in main.
+  agentRotateApiKey: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('agent:rotate-api-key'),
+  // Sanitized status — `hasKey` boolean + `storedAt` epoch ms; no plaintext.
+  agentGetApiKeyStatus: (): Promise<{ hasKey: boolean; storedAt: number | null }> =>
+    ipcRenderer.invoke('agent:get-api-key-status'),
+  // Reset pet identity: server revoke first, then wipe local credentials + keypair.
+  agentResetIdentity: (): Promise<
+    { ok: true; remoteRevoked: boolean } | { ok: false; error: string; status?: number }
+  > => ipcRenderer.invoke('agent:reset-identity'),
   getDesktopRuntimeConfig: (): Promise<{
     suiNetwork: string
     webBaseUrl: string

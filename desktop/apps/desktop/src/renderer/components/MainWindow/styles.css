@@ -1113,3 +1113,69 @@
   line-height: 1.4;
   word-break: break-word;
 }
+
+.settings-field__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(240, 240, 240, 0.8);
+}
+
+.settings-field__status--ok {
+  color: #d4f5dd;
+}
+
+.settings-field__status--missing {
+  color: #ffc7c7;
+}
+
+.settings-field__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9aa0a6;
+  flex-shrink: 0;
+}
+
+.settings-field__status-dot--ok {
+  background: #3aa459;
+  box-shadow: 0 0 0 2px rgba(58, 164, 89, 0.18);
+}
+
+.settings-field__status-dot--missing {
+  background: #c63d3d;
+  box-shadow: 0 0 0 2px rgba(198, 61, 61, 0.18);
+}
+
+.settings-section__danger-zone {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-section__danger-zone summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(240, 240, 240, 0.74);
+  letter-spacing: 0.02em;
+  outline: none;
+}
+
+.settings-section__danger-zone[open] summary {
+  margin-bottom: 8px;
+  color: #ffc7c7;
+}
+
+.settings-section__danger-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

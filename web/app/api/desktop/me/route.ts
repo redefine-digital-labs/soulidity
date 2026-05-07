@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { requireDesktopIdentity } from '@/lib/desktop/auth'
-import { getDesktopMe } from '@/lib/desktop/profile'
+import { DesktopPetNotFoundError, getDesktopMe } from '@/lib/desktop/profile'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +11,20 @@ export async function GET(request: Request) {
     return auth.error
   }
 
-  const response = await getDesktopMe(auth.accountId!)
-  return NextResponse.json(response)
+  if (!auth.desktopPet) {
+    return NextResponse.json({ error: 'Desktop pet identity required' }, { status: 403 })
+  }
+
+  try {
+    const response = await getDesktopMe({
+      accountId: auth.accountId,
+      desktopPetId: auth.desktopPet.id,
+    })
+    return NextResponse.json(response)
+  } catch (error) {
+    if (error instanceof DesktopPetNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 })
+    }
+    throw error
+  }
 }

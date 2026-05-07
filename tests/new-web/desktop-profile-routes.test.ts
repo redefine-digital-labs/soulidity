@@ -16,12 +16,27 @@ vi.mock('@/lib/desktop/profile', () => {
     }
   }
 
+  class MockedDesktopPetNotFoundError extends Error {
+    constructor(message = 'Desktop pet not found for this account') {
+      super(message)
+      this.name = 'DesktopPetNotFoundError'
+    }
+  }
+
   return {
     DesktopActivePersonaNotFoundError: MockedDesktopActivePersonaNotFoundError,
+    DesktopPetNotFoundError: MockedDesktopPetNotFoundError,
     getDesktopMe: mockedGetDesktopMe,
     setDesktopActivePersona: mockedSetDesktopActivePersona,
   }
 })
+
+const PET_IDENTITY = {
+  id: 'pet-abc',
+  accountId: 'account-123',
+  agentAddress: '0xagent123',
+  agentMemberId: 'member-agent-1',
+}
 
 describe('GET /api/desktop/me', () => {
   beforeEach(() => {
@@ -29,14 +44,16 @@ describe('GET /api/desktop/me', () => {
     vi.resetModules()
     mockedRequireDesktopIdentity.mockResolvedValue({
       accountId: 'account-123',
+      desktopPet: PET_IDENTITY,
     })
   })
 
-  it('returns the signed-in desktop profile', async () => {
+  it('returns the signed-in desktop profile (with pet identity)', async () => {
     const meResponse = {
       profile: {
         accountId: 'account-123',
         agentAddress: '0xagent123',
+        primarySuiAddress: null,
         activeSourceType: null,
         activeSourceRef: null,
         preferences: null,
@@ -53,6 +70,35 @@ describe('GET /api/desktop/me', () => {
 
     expect(body.profile.accountId).toBe('account-123')
     expect(body.profile.agentAddress).toBe('0xagent123')
+    expect(mockedGetDesktopMe).toHaveBeenCalledWith({
+      accountId: 'account-123',
+      desktopPetId: PET_IDENTITY.id,
+    })
+  })
+
+  it('returns 403 when desktop pet identity is missing (browser cookie path)', async () => {
+    mockedRequireDesktopIdentity.mockResolvedValue({
+      accountId: 'account-123',
+      identity: { accountId: 'account-123', kind: 'human' },
+    })
+
+    const { GET } = await import('../../web/app/api/desktop/me/route')
+    const response = await GET(new Request('http://localhost/api/desktop/me'))
+
+    expect(response.status).toBe(403)
+    const body = await response.json()
+    expect(body.error).toBe('Desktop pet identity required')
+    expect(mockedGetDesktopMe).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when DesktopPetNotFoundError is thrown', async () => {
+    const { DesktopPetNotFoundError } = await import('../../web/lib/desktop/profile')
+    mockedGetDesktopMe.mockRejectedValue(new DesktopPetNotFoundError())
+
+    const { GET } = await import('../../web/app/api/desktop/me/route')
+    const response = await GET(new Request('http://localhost/api/desktop/me'))
+
+    expect(response.status).toBe(404)
   })
 
   it('rejects non-human identities', async () => {
@@ -73,14 +119,16 @@ describe('PUT /api/desktop/me/active-persona', () => {
     vi.resetModules()
     mockedRequireDesktopIdentity.mockResolvedValue({
       accountId: 'account-123',
+      desktopPet: PET_IDENTITY,
     })
   })
 
-  it('updates active persona', async () => {
+  it('updates active persona using desktopPet id', async () => {
     const meResponse = {
       profile: {
         accountId: 'account-123',
         agentAddress: '0xagent123',
+        primarySuiAddress: null,
         activeSourceType: 'starter',
         activeSourceRef: 'aurora',
         preferences: null,
@@ -99,6 +147,28 @@ describe('PUT /api/desktop/me/active-persona', () => {
     const body = await response.json()
 
     expect(body.profile.activeSourceType).toBe('starter')
+    expect(mockedSetDesktopActivePersona).toHaveBeenCalledWith({
+      accountId: 'account-123',
+      desktopPetId: PET_IDENTITY.id,
+      sourceType: 'starter',
+      sourceRef: 'aurora',
+    })
+  })
+
+  it('returns 403 when desktop pet identity is missing (browser cookie path)', async () => {
+    mockedRequireDesktopIdentity.mockResolvedValue({
+      accountId: 'account-123',
+      identity: { accountId: 'account-123', kind: 'human' },
+    })
+
+    const { PUT } = await import('../../web/app/api/desktop/me/active-persona/route')
+    const response = await PUT(new Request('http://localhost', {
+      method: 'PUT',
+      body: JSON.stringify({ sourceType: 'starter', sourceRef: 'aurora' }),
+    }))
+
+    expect(response.status).toBe(403)
+    expect(mockedSetDesktopActivePersona).not.toHaveBeenCalled()
   })
 
   it('returns 400 for invalid sourceType', async () => {
@@ -119,6 +189,19 @@ describe('PUT /api/desktop/me/active-persona', () => {
     const response = await PUT(new Request('http://localhost', {
       method: 'PUT',
       body: JSON.stringify({ sourceType: 'starter', sourceRef: 'nonexistent' }),
+    }))
+
+    expect(response.status).toBe(404)
+  })
+
+  it('returns 404 when DesktopPetNotFoundError is thrown', async () => {
+    const { DesktopPetNotFoundError } = await import('../../web/lib/desktop/profile')
+    mockedSetDesktopActivePersona.mockRejectedValue(new DesktopPetNotFoundError())
+
+    const { PUT } = await import('../../web/app/api/desktop/me/active-persona/route')
+    const response = await PUT(new Request('http://localhost', {
+      method: 'PUT',
+      body: JSON.stringify({ sourceType: 'starter', sourceRef: 'aurora' }),
     }))
 
     expect(response.status).toBe(404)

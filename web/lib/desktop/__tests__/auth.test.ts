@@ -1,22 +1,34 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-import { generateDesktopAccessToken, verifyDesktopAccessToken } from '../auth'
+import {
+  __resetDesktopLastSeenThrottleForTests,
+  generateDesktopAccessToken,
+  verifyDesktopAccessToken,
+} from '../auth'
 
 const DESKTOP_TOKEN_PREFIX = 'dtk_'
 
 // ── Mock prisma ────────────────────────────────────────────
-const mockFindUnique = vi.fn()
+const mockPetFindUnique = vi.fn()
+const mockPetUpdate = vi.fn()
+const mockProfileFindUnique = vi.fn()
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
+    desktopPet: {
+      findUnique: (...args: unknown[]) => mockPetFindUnique(...args),
+      update: (...args: unknown[]) => mockPetUpdate(...args),
+    },
     desktopProfile: {
-      findUnique: (...args: unknown[]) => mockFindUnique(...args),
+      findUnique: (...args: unknown[]) => mockProfileFindUnique(...args),
     },
   },
 }))
 
 beforeEach(() => {
   vi.clearAllMocks()
+  __resetDesktopLastSeenThrottleForTests()
+  mockPetUpdate.mockResolvedValue({})
 })
 
 // ── generateDesktopAccessToken ────────────────────────────
@@ -58,7 +70,7 @@ describe('verifyDesktopAccessToken', () => {
   it('returns null for a token without the dtk_ prefix', async () => {
     const result = await verifyDesktopAccessToken('invalid_token')
     expect(result).toBeNull()
-    expect(mockFindUnique).not.toHaveBeenCalled()
+    expect(mockPetFindUnique).not.toHaveBeenCalled()
   })
 
   it('returns null for an empty dtk_ token', async () => {
@@ -66,35 +78,65 @@ describe('verifyDesktopAccessToken', () => {
     expect(result).toBeNull()
   })
 
-  it('returns null when no matching profile is found', async () => {
-    mockFindUnique.mockResolvedValue(null)
+  it('returns null when no matching pet is found', async () => {
+    mockPetFindUnique.mockResolvedValue(null)
 
     const { token } = generateDesktopAccessToken()
     const result = await verifyDesktopAccessToken(token)
 
     expect(result).toBeNull()
-    expect(mockFindUnique).toHaveBeenCalledTimes(1)
+    expect(mockPetFindUnique).toHaveBeenCalledTimes(1)
   })
 
-  it('returns accountId when the token hash matches an indexed profile column', async () => {
+  it('returns accountId + desktopPet when the token hash matches a pet row', async () => {
     const { token, hash } = generateDesktopAccessToken()
 
-    mockFindUnique.mockResolvedValue({
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
       accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
       desktopAccessTokenHash: hash,
       desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
 
     const result = await verifyDesktopAccessToken(token)
 
-    expect(result).toEqual({ accountId: 'account-123' })
+    expect(result).toEqual({
+      accountId: 'account-123',
+      desktopPet: {
+        id: 'pet-1',
+        accountId: 'account-123',
+        agentAddress: '0xagent',
+        agentMemberId: 'member-9',
+      },
+    })
+  })
+
+  it('does not query desktop_profiles on the verify path (regression)', async () => {
+    const { token, hash } = generateDesktopAccessToken()
+
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
+      accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
+      desktopAccessTokenHash: hash,
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+    })
+
+    await verifyDesktopAccessToken(token)
+    expect(mockProfileFindUnique).not.toHaveBeenCalled()
   })
 
   it('returns null when the stored hash does not match the token', async () => {
     const { token } = generateDesktopAccessToken()
 
-    mockFindUnique.mockResolvedValue({
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
       accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
       desktopAccessTokenHash: 'wrong_hash_value',
       desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
@@ -110,8 +152,11 @@ describe('verifyDesktopAccessToken', () => {
 
     const { token, hash } = generateDesktopAccessToken()
 
-    mockFindUnique.mockResolvedValue({
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
       accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
       desktopAccessTokenHash: hash,
       desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
@@ -120,6 +165,54 @@ describe('verifyDesktopAccessToken', () => {
     expect(result).toBeNull()
 
     vi.useRealTimers()
+  })
+
+  it('returns the pet for an expired token when allowExpired is set (revoke path)', async () => {
+    // Regression: revoke must succeed even past the 90-day rotation window
+    // so that 401 from /api/desktop/me/revoke uniquely means "pet row
+    // gone", not "token stale but pet still active". Without this branch
+    // the desktop reset helper would conflate the two and silently leave
+    // server-side pet/member/api-key state behind.
+    vi.useFakeTimers()
+    const now = new Date('2026-07-15T10:00:00Z')
+    vi.setSystemTime(now)
+
+    const { token, hash } = generateDesktopAccessToken()
+
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
+      accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
+      desktopAccessTokenHash: hash,
+      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+    })
+
+    const result = await verifyDesktopAccessToken(token, { allowExpired: true })
+    expect(result).toEqual({
+      accountId: 'account-123',
+      desktopPet: {
+        id: 'pet-1',
+        accountId: 'account-123',
+        agentAddress: '0xagent',
+        agentMemberId: 'member-9',
+      },
+    })
+
+    vi.useRealTimers()
+  })
+
+  it('still returns null for a non-matching hash even with allowExpired', async () => {
+    // allowExpired only relaxes the age check — it does NOT relax the
+    // hash-match check. A token whose hash does not match any row must
+    // still fail (so 401 from the revoke route still uniquely means
+    // "no pet matches this token", which is what the desktop relies on).
+    const { token } = generateDesktopAccessToken()
+
+    mockPetFindUnique.mockResolvedValue(null)
+
+    const result = await verifyDesktopAccessToken(token, { allowExpired: true })
+    expect(result).toBeNull()
   })
 })
 
@@ -137,8 +230,11 @@ describe('token rotation', () => {
     const fresh = generateDesktopAccessToken()
 
     // Store now has the fresh hash
-    mockFindUnique.mockResolvedValue({
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
       accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
       desktopAccessTokenHash: fresh.hash,
       desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
@@ -151,13 +247,16 @@ describe('token rotation', () => {
   it('new token succeeds verification after hash is replaced in the store', async () => {
     const fresh = generateDesktopAccessToken()
 
-    mockFindUnique.mockResolvedValue({
+    mockPetFindUnique.mockResolvedValue({
+      id: 'pet-1',
       accountId: 'account-123',
+      agentAddress: '0xagent',
+      agentMemberId: 'member-9',
       desktopAccessTokenHash: fresh.hash,
       desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
     })
 
     const result = await verifyDesktopAccessToken(fresh.token)
-    expect(result).toEqual({ accountId: 'account-123' })
+    expect(result).toMatchObject({ accountId: 'account-123' })
   })
 })

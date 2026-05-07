@@ -71,6 +71,12 @@ export interface DesktopPersonaManifest extends DesktopCatalogItem {
   downloadMode?: 'direct' | 'authenticated'
 }
 
+export interface DesktopDeviceStartRequest {
+  agentAddress: string
+  nonce: string
+  signature: string
+}
+
 export interface DesktopDeviceStartResponse {
   deviceCode: string
   userCode: string
@@ -89,6 +95,7 @@ export type DesktopDevicePollResponse =
       accountId: string
       deepLink: string | null
       desktopAccessToken?: string
+      agentApiKey?: string
       expiresAt: string
       pollInterval: number
     }
@@ -109,12 +116,19 @@ export interface DesktopDeviceCompleteResponse {
   deviceCode: string
   userCode: string
   deepLink: string | null
-  desktopAccessToken?: string
   expiresAt: string
   confirmedAt: string
   pollInterval: number
 }
 
+/**
+ * Combined view returned by `GET /api/desktop/me`. Most fields originate from
+ * the account-level `DesktopProfile` row (`accountId`, `preferences`,
+ * `updatedAt`), but `agentAddress`, `activeSourceType`, `activeSourceRef`,
+ * and `lastSyncedAt` are sourced from the caller's `DesktopPet` row
+ * (per-pet, resolved via the `dtk_*` desktop access token). The
+ * `DesktopProfile` row no longer stores those fields.
+ */
 export interface DesktopProfile {
   accountId: string
   agentAddress: string | null

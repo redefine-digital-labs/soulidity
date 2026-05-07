@@ -7,25 +7,30 @@ import type {
   DesktopProfile,
 } from '@/lib/types/desktop'
 
+// T4: Active-source state lives on `DesktopPet` (per-pet), not on the
+// account-level `DesktopProfile` row. The DesktopProfile row continues to
+// own only `preferences` for the human account; the pet row owns
+// `agentAddress`, `activeSourceType`, `activeSourceRef`, and `lastSyncedAt`.
+// Callers must always pass the caller's `desktopPetId` (resolved from the
+// `dtk_*` token via `requireDesktopIdentity`).
+
 const desktopProfileSelect = {
+  accountId: true,
+  preferences: true,
+  updatedAt: true,
+} as const
+
+const desktopPetSelect = {
+  id: true,
   accountId: true,
   agentAddress: true,
   activeSourceType: true,
   activeSourceRef: true,
-  preferences: true,
   lastSyncedAt: true,
-  updatedAt: true,
 } as const
 
 type DesktopProfileRow = Prisma.DesktopProfileGetPayload<{ select: typeof desktopProfileSelect }>
-
-function asIso(value: Date | null) {
-  return value ? value.toISOString() : null
-}
-
-function isDesktopCatalogSourceType(value: string | null): value is DesktopCatalogSourceType {
-  return value === 'starter' || value === 'soul'
-}
+type DesktopPetRow = Prisma.DesktopPetGetPayload<{ select: typeof desktopPetSelect }>
 
 const SENSITIVE_PREFERENCE_KEYS = new Set([
   'desktopAccessTokenPending',
@@ -76,15 +81,24 @@ async function resolvePrimarySuiAddress(accountId: string): Promise<string | nul
   return account?.members[0]?.walletBindings[0]?.address ?? null
 }
 
-function toDesktopProfile(row: DesktopProfileRow, primarySuiAddress: string | null): DesktopProfile {
+function toDesktopProfile(
+  row: DesktopProfileRow,
+  pet: DesktopPetRow,
+  primarySuiAddress: string | null,
+): DesktopProfile {
+  const activeSourceType =
+    pet.activeSourceType === 'starter' || pet.activeSourceType === 'soul'
+      ? (pet.activeSourceType as DesktopCatalogSourceType)
+      : null
+
   return {
     accountId: row.accountId,
-    agentAddress: row.agentAddress ?? null,
+    agentAddress: pet.agentAddress,
     primarySuiAddress,
-    activeSourceType: isDesktopCatalogSourceType(row.activeSourceType) ? row.activeSourceType : null,
-    activeSourceRef: row.activeSourceRef,
+    activeSourceType,
+    activeSourceRef: pet.activeSourceRef,
     preferences: normalizeDesktopPreferences(row.preferences),
-    lastSyncedAt: asIso(row.lastSyncedAt),
+    lastSyncedAt: pet.lastSyncedAt ? pet.lastSyncedAt.toISOString() : null,
     updatedAt: row.updatedAt.toISOString(),
   }
 }
@@ -96,74 +110,83 @@ export class DesktopActivePersonaNotFoundError extends Error {
   }
 }
 
-async function upsertDesktopProfile(
-  accountId: string,
-  params: {
-    activeSourceType?: DesktopCatalogSourceType | null
-    activeSourceRef?: string | null
-    lastSyncedAt?: Date | null
-  } = {},
-) {
-  const hasActiveSourceType = 'activeSourceType' in params
-  const hasActiveSourceRef = 'activeSourceRef' in params
-  const hasLastSyncedAt = 'lastSyncedAt' in params
+export class DesktopPetNotFoundError extends Error {
+  constructor(message = 'Desktop pet not found for this account') {
+    super(message)
+    this.name = 'DesktopPetNotFoundError'
+  }
+}
 
-  return prisma.desktopProfile.upsert({
+async function ensureDesktopProfile(accountId: string): Promise<DesktopProfileRow> {
+  const existing = await prisma.desktopProfile.findUnique({
     where: { accountId },
-    create: {
-      accountId,
-      ...(hasActiveSourceType ? { activeSourceType: params.activeSourceType ?? null } : {}),
-      ...(hasActiveSourceRef ? { activeSourceRef: params.activeSourceRef ?? null } : {}),
-      ...(hasLastSyncedAt ? { lastSyncedAt: params.lastSyncedAt ?? null } : {}),
-    },
-    update: {
-      ...(hasActiveSourceType ? { activeSourceType: params.activeSourceType ?? null } : {}),
-      ...(hasActiveSourceRef ? { activeSourceRef: params.activeSourceRef ?? null } : {}),
-      ...(hasLastSyncedAt ? { lastSyncedAt: params.lastSyncedAt ?? null } : {}),
-    },
+    select: desktopProfileSelect,
+  })
+  if (existing) {
+    return existing
+  }
+  return prisma.desktopProfile.create({
+    data: { accountId },
     select: desktopProfileSelect,
   })
 }
 
-export async function getDesktopMe(accountId: string): Promise<DesktopMeResponse> {
-  let profileRow = await prisma.desktopProfile.findUnique({
-    where: { accountId },
-    select: desktopProfileSelect,
+async function findOwnedDesktopPet(params: {
+  accountId: string
+  desktopPetId: string
+}): Promise<DesktopPetRow> {
+  const pet = await prisma.desktopPet.findUnique({
+    where: { id: params.desktopPetId },
+    select: desktopPetSelect,
   })
-  if (!profileRow) {
-    profileRow = await upsertDesktopProfile(accountId)
-  }
-  const primarySuiAddress = await resolvePrimarySuiAddress(accountId)
-  const profile = toDesktopProfile(profileRow, primarySuiAddress)
 
-  if (!profile.activeSourceType || !profile.activeSourceRef) {
-    return {
-      profile,
-      activePersona: null,
+  if (!pet || pet.accountId !== params.accountId) {
+    throw new DesktopPetNotFoundError()
+  }
+
+  return pet
+}
+
+async function buildDesktopMeResponse(params: {
+  accountId: string
+  pet: DesktopPetRow
+}): Promise<DesktopMeResponse> {
+  const profileRow = await ensureDesktopProfile(params.accountId)
+  const primarySuiAddress = await resolvePrimarySuiAddress(params.accountId)
+  const profile = toDesktopProfile(profileRow, params.pet, primarySuiAddress)
+
+  let activePersona = null
+  if (params.pet.activeSourceType && params.pet.activeSourceRef) {
+    const sourceType =
+      params.pet.activeSourceType === 'starter' || params.pet.activeSourceType === 'soul'
+        ? (params.pet.activeSourceType as DesktopCatalogSourceType)
+        : null
+    if (sourceType) {
+      activePersona = await findDesktopPersonaManifestBySource({
+        sourceType,
+        sourceRef: params.pet.activeSourceRef,
+      })
     }
   }
 
-  const activePersona = await findDesktopPersonaManifestBySource({
-    sourceType: profile.activeSourceType,
-    sourceRef: profile.activeSourceRef,
-  })
-
-  return {
-    profile,
-    activePersona,
-  }
+  return { profile, activePersona }
 }
 
-export async function setDesktopActivePersona(
-  accountId: string,
-  params: {
-    sourceType: DesktopCatalogSourceType | null
-    sourceRef: string | null
-    now?: Date
-  },
-): Promise<DesktopMeResponse> {
-  const now = params.now ?? new Date()
+export async function getDesktopMe(params: {
+  accountId: string
+  desktopPetId: string
+}): Promise<DesktopMeResponse> {
+  const pet = await findOwnedDesktopPet(params)
+  return buildDesktopMeResponse({ accountId: params.accountId, pet })
+}
 
+export async function setDesktopActivePersona(params: {
+  accountId: string
+  desktopPetId: string
+  sourceType: DesktopCatalogSourceType | null
+  sourceRef: string | null
+  now?: Date
+}): Promise<DesktopMeResponse> {
   if (params.sourceType && params.sourceRef) {
     const activePersona = await findDesktopPersonaManifestBySource({
       sourceType: params.sourceType,
@@ -173,27 +196,36 @@ export async function setDesktopActivePersona(
     if (!activePersona) {
       throw new DesktopActivePersonaNotFoundError()
     }
+  }
 
-    const profileRow = await upsertDesktopProfile(accountId, {
-      activeSourceType: params.sourceType,
-      activeSourceRef: params.sourceRef,
-      lastSyncedAt: now,
+  const lastSyncedAt = params.now ?? new Date()
+
+  let updatedPet: DesktopPetRow
+  try {
+    updatedPet = await prisma.desktopPet.update({
+      where: {
+        // Composite uniqueness — pet id must belong to this account.
+        id: params.desktopPetId,
+        accountId: params.accountId,
+      },
+      data: {
+        activeSourceType: params.sourceType,
+        activeSourceRef: params.sourceRef,
+        lastSyncedAt,
+      },
+      select: desktopPetSelect,
     })
-
-    return {
-      profile: toDesktopProfile(profileRow, await resolvePrimarySuiAddress(accountId)),
-      activePersona,
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2025'
+    ) {
+      throw new DesktopPetNotFoundError()
     }
+    throw error
   }
 
-  const profileRow = await upsertDesktopProfile(accountId, {
-    activeSourceType: null,
-    activeSourceRef: null,
-    lastSyncedAt: now,
-  })
-
-  return {
-    profile: toDesktopProfile(profileRow, await resolvePrimarySuiAddress(accountId)),
-    activePersona: null,
-  }
+  return buildDesktopMeResponse({ accountId: params.accountId, pet: updatedPet })
 }
