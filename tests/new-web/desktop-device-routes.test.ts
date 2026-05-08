@@ -219,6 +219,8 @@ describe('POST /api/desktop/device/complete', () => {
       expiresAt: '2026-04-12T10:10:00.000Z',
       confirmedAt: '2026-04-12T10:05:00.000Z',
       pollInterval: 5,
+      petId: 'pet-1',
+      agentAddress: '0xagent123',
     })
 
     const { POST } = await import('../../web/app/api/desktop/device/complete/route')
@@ -230,6 +232,10 @@ describe('POST /api/desktop/device/complete', () => {
 
     expect(body.status).toBe('confirmed')
     expect(body.accountId).toBe('account-123')
+    // Browser-safe fields drive the post-link auto-authorize UX:
+    expect(body.petId).toBe('pet-1')
+    expect(body.agentAddress).toBe('0xagent123')
+    // Secrets must not leak through the cookie path:
     expect(body).not.toHaveProperty('desktopAccessToken')
     expect(body).not.toHaveProperty('agentApiKey')
     expect(body).not.toHaveProperty('deviceCode')

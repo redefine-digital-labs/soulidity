@@ -284,6 +284,12 @@ describe('completeDesktopDeviceSession', () => {
     })
     expect(result).not.toHaveProperty('desktopAccessToken')
     expect(result).not.toHaveProperty('agentApiKey')
+    if (result.status === 'confirmed') {
+      // Browser-safe pet hand-off for the post-link auto-authorize UX:
+      // freshly persisted pet id + the linked agent address.
+      expect(result.petId).toBe('pet-1')
+      expect(result.agentAddress).toBe('0xagent123')
+    }
   })
 
   it('throws DesktopPetAddressConflictError when address belongs to another account', async () => {
@@ -374,6 +380,10 @@ describe('completeDesktopDeviceSession', () => {
       status: 'confirmed',
     }
     mockedPrisma.desktopDeviceSession.findUnique.mockResolvedValueOnce(session)
+    // Replay still reads the existing pet so the confirmed response can
+    // surface `petId` for the auto-authorize UX. This is a pure read — no
+    // upsert, no apiKey rotation.
+    mockedPrisma.desktopPet.findUnique.mockResolvedValueOnce({ id: 'existing-pet-1' })
 
     const { completeDesktopDeviceSession } = await import('../../web/lib/desktop/device-session')
     const result = await completeDesktopDeviceSession('ABCD-EFGH', 'account-123', { now })
@@ -382,6 +392,8 @@ describe('completeDesktopDeviceSession', () => {
     if (result.status === 'confirmed') {
       expect(result.accountId).toBe('account-123')
       expect(result.confirmedAt).toBe(confirmedAt.toISOString())
+      expect(result.petId).toBe('existing-pet-1')
+      expect(result.agentAddress).toBe('0xagent123')
     }
 
     // No write-side prisma calls — confirmed-session replay is pure read.
@@ -392,6 +404,17 @@ describe('completeDesktopDeviceSession', () => {
     expect(mockedPrisma.desktopDeviceSession.update).not.toHaveBeenCalled()
     expect(mockedPrisma.desktopDeviceSession.updateMany).not.toHaveBeenCalled()
     expect(mockedPrisma.walletBinding.findUnique).not.toHaveBeenCalled()
+    // The pet read is the only DB hit — by the unique key we stored at
+    // confirm time. Verifies we don't rotate or overwrite anything.
+    expect(mockedPrisma.desktopPet.findUnique).toHaveBeenCalledWith({
+      where: {
+        accountId_agentAddress: {
+          accountId: 'account-123',
+          agentAddress: '0xagent123',
+        },
+      },
+      select: { id: true },
+    })
   })
 
   it('returns expired when concurrent poll expires session during complete', async () => {

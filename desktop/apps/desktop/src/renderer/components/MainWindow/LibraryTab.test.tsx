@@ -130,7 +130,7 @@ describe('LibraryTab', () => {
     })
   }
 
-  it('keeps My Souls cards visible but disables invalid or marketplace-restricted downloads', async () => {
+  it('gates owned protected sprites by active asset-scope grant: granted ones download, ungranted ones surface "Authorize on web"', async () => {
     const api = createElectronApi({
       getDesktopRuntimeConfig: vi.fn().mockResolvedValue({
         suiNetwork: 'testnet',
@@ -156,6 +156,10 @@ describe('LibraryTab', () => {
         hasMore: false,
       }),
       soulGetMySouls: vi.fn().mockResolvedValue([
+        // No grant for this owned protected Soul → must show
+        // "Authorize on web", not Download. Replaces the legacy global
+        // walletMismatch banner that fired even when no protected
+        // download was happening.
         {
           id: 'soul:owned-owner-only',
           sourceType: 'soul',
@@ -167,7 +171,9 @@ describe('LibraryTab', () => {
           listingStatus: 'held',
           listedPriceAtomic: null,
           spriteDownloadPolicy: 'owner_only',
+          agentSpriteGrant: null,
         },
+        // Active grant for this owned allowlist Soul → Download enabled.
         {
           id: 'soul:owned-allowlist',
           sourceType: 'soul',
@@ -179,6 +185,11 @@ describe('LibraryTab', () => {
           listingStatus: 'held',
           listedPriceAtomic: null,
           spriteDownloadPolicy: 'allowlist',
+          agentSpriteGrant: {
+            active: true,
+            grantOnChainId: '0xgrant1',
+            expiresAt: null,
+          },
         },
         {
           id: 'soul:owned-missing',
@@ -191,6 +202,7 @@ describe('LibraryTab', () => {
           listingStatus: 'held',
           listedPriceAtomic: null,
           spriteDownloadPolicy: 'missing',
+          agentSpriteGrant: null,
         },
       ]),
     })
@@ -201,15 +213,25 @@ describe('LibraryTab', () => {
     expect(container.textContent).toContain('Owned Allowlist')
     expect(container.textContent).toContain('Owned Missing')
 
+    // Only the granted protected Soul plus any incidentally-public Souls
+    // produce an enabled Download. The owner-only Soul without a grant
+    // must surface "Authorize on web", and the marketplace-protected Soul
+    // surfaces "Owner Only" with the marketplace gate.
     const downloadButtons = findButtons(container, 'Download')
-    expect(downloadButtons).toHaveLength(2)
-    expect(downloadButtons.every((button) => !button.disabled)).toBe(true)
+    expect(downloadButtons).toHaveLength(1)
+    expect(downloadButtons[0]?.disabled).toBe(false)
+
+    const authorizeButton = findButton(container, 'Authorize on web')
+    expect(authorizeButton).toBeDefined()
+    expect(authorizeButton?.disabled).toBe(true)
 
     const missingButton = findButton(container, 'Sprite Missing')
     expect(missingButton?.disabled).toBe(true)
 
-    const ownerOnlyButton = findButton(container, 'Owner Only')
-    expect(ownerOnlyButton?.disabled).toBe(true)
+    // Marketplace context for owner-only sprites still shows the
+    // section-specific gate, never the granted-agent path.
+    const marketplaceLocked = findButton(container, 'Owner Only')
+    expect(marketplaceLocked?.disabled).toBe(true)
   })
 
   it('keeps other cards downloadable while one catalog item is mid-download', async () => {

@@ -6,10 +6,14 @@ const mockedPrisma = vi.hoisted(() => ({
   desktopPet: {
     delete: vi.fn(),
     findUnique: vi.fn(),
+    update: vi.fn(),
   },
   member: {
     update: vi.fn(),
     findFirst: vi.fn(),
+  },
+  soulGrantRecord: {
+    findMany: vi.fn(),
   },
   $transaction: vi.fn(),
 }))
@@ -19,6 +23,9 @@ function resetMocks() {
   mockedPrisma.$transaction.mockImplementation(
     (fn: (tx: typeof mockedPrisma) => Promise<unknown>) => fn(mockedPrisma),
   )
+  // Default: no active asset-scope grants. Tests targeting the partial
+  // teardown branch override this with their own resolved value.
+  mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
 }
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
@@ -117,6 +124,57 @@ describe('POST /api/desktop/me/revoke', () => {
 
     expect(response.status).toBe(401)
     expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+  })
+
+  it('does a PARTIAL teardown when active asset-scope grants exist on-chain — keeps the pet row visible for owner-side cleanup', async () => {
+    // Active grants survive a row delete; the revoke route must keep the
+    // DesktopPet row alive so /account/pets can target it for revoke.
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
+      {
+        onChainId: '0xgrant-1',
+        soulOnChainId: '0xsoul-1',
+        expiresAt: null,
+      },
+    ])
+    mockedPrisma.desktopPet.update.mockResolvedValue({ id: PET_IDENTITY.id })
+    mockedPrisma.member.update.mockResolvedValue({ id: PET_IDENTITY.agentMemberId })
+
+    const { POST } = await import('../../web/app/api/desktop/me/revoke/route')
+    const response = await POST(buildRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.partial).toBe(true)
+    expect(body.reason).toBe('active-asset-grants-remain')
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      grantOnChainId: '0xgrant-1',
+      soulOnChainId: '0xsoul-1',
+    })
+
+    // Critical: no full delete. The pet row is preserved so the owner can
+    // target the lingering on-chain grants from /account/pets.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    // Credentials cleared so the local dtk_ + sk- both stop working.
+    expect(mockedPrisma.desktopPet.update).toHaveBeenCalledWith({
+      where: { id: PET_IDENTITY.id, accountId: PET_IDENTITY.accountId },
+      data: {
+        desktopAccessTokenHash: null,
+        desktopAccessTokenIssuedAt: null,
+      },
+    })
+    expect(mockedPrisma.member.update).toHaveBeenCalledWith({
+      where: { id: PET_IDENTITY.agentMemberId },
+      data: {
+        agentStatus: 'disabled',
+        apiKey: null,
+        apiKeyHash: null,
+        apiKeyRotationId: null,
+        pendingApiKeyHash: null,
+        pendingApiKeyRotationId: null,
+        pendingApiKeyRotationExpiresAt: null,
+      },
+    })
   })
 
   it('passes allowExpiredDesktopToken: true through to requireDesktopIdentity (so a 90-day-stale dtk_ still revokes a still-existing pet)', async () => {

@@ -10,6 +10,10 @@ const mockedPrisma = vi.hoisted(() => ({
     update: vi.fn(),
     delete: vi.fn(),
   },
+  soulGrantRecord: {
+    groupBy: vi.fn(),
+    findMany: vi.fn(),
+  },
   member: {
     update: vi.fn(),
   },
@@ -21,6 +25,10 @@ function resetMocks() {
   mockedPrisma.$transaction.mockImplementation(
     (fn: (tx: typeof mockedPrisma) => Promise<unknown>) => fn(mockedPrisma),
   )
+  // Default: no active asset grants for any pet. Tests that care about a
+  // non-zero count override this with their own resolved value.
+  mockedPrisma.soulGrantRecord.groupBy.mockResolvedValue([])
+  mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
 }
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
@@ -322,6 +330,7 @@ describe('DELETE /api/account/pets/[id]', () => {
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({
       accountId: ACCOUNT_ID,
       agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
     })
     mockedPrisma.desktopPet.delete.mockResolvedValue({ id: PET_ID })
     mockedPrisma.member.update.mockResolvedValue({ id: AGENT_MEMBER_ID })
@@ -338,7 +347,7 @@ describe('DELETE /api/account/pets/[id]', () => {
 
     expect(mockedPrisma.desktopPet.findUnique).toHaveBeenCalledWith({
       where: { id: PET_ID },
-      select: { accountId: true, agentMemberId: true },
+      select: { accountId: true, agentMemberId: true, agentAddress: true },
     })
     expect(mockedPrisma.desktopPet.delete).toHaveBeenCalledWith({
       where: { id: PET_ID, accountId: ACCOUNT_ID },
@@ -372,11 +381,49 @@ describe('DELETE /api/account/pets/[id]', () => {
     expect(mockedPrisma.member.update).not.toHaveBeenCalled()
   })
 
+  it('returns 409 with the active grant list when on-chain asset-scope grants would be orphaned', async () => {
+    // Reproduction for the unlink invariant: deleting the pet row while
+    // grants still authorise its agentAddress on-chain would strand
+    // sprite-download access. The route must surface the list so the user
+    // can revoke first via the wallet-signed flow.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
+      {
+        onChainId: '0xgrant-1',
+        soulOnChainId: '0xsoul-1',
+        expiresAt: null,
+      },
+    ])
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      grantOnChainId: '0xgrant-1',
+      soulOnChainId: '0xsoul-1',
+    })
+    // Crucially: nothing was deleted, no member was disabled.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
   it('returns 404 when the pet belongs to a different account (cross-account isolation)', async () => {
     mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({
       accountId: OTHER_ACCOUNT_ID,
       agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
     })
 
     const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
