@@ -209,6 +209,43 @@ describe('GET /api/account/pets', () => {
     expect(body.error).toMatch(/human/i)
     expect(mockedPrisma.desktopPet.findMany).not.toHaveBeenCalled()
   })
+
+  it('scopes the activeAssetGrantCount aggregate to grants the caller can revoke (R-001)', async () => {
+    // Regression for R-001: counting *every* grant whose grantee matches the
+    // pet's agentAddress (regardless of which Soul issued it) lets account A
+    // see a non-zero count for grants issued by account B's Soul to A's pet
+    // address. The PetCard then shows a "Revoke sprite downloads"
+    // affordance whose modal (`/grantable-souls`) is empty because that
+    // route filters by `currentOwnerMemberId === identity.memberId`. The
+    // unlink blocker (`findActiveAssetGrantsForPet`) applies the same
+    // ownership predicate, so the card claims grants exist while unlink
+    // proceeds. The aggregate must use the same predicate.
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findMany.mockResolvedValue([
+      buildPetRow({ agentAddress: '0xagent-1' }),
+    ])
+    mockedPrisma.soulGrantRecord.groupBy.mockResolvedValue([
+      { granteeAddress: '0xagent-1', _count: { _all: 2 } },
+    ])
+
+    const { GET } = await import('../../web/app/api/account/pets/route')
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.pets[0].activeAssetGrantCount).toBe(2)
+    expect(mockedPrisma.soulGrantRecord.groupBy).toHaveBeenCalledTimes(1)
+    const [groupByArgs] = mockedPrisma.soulGrantRecord.groupBy.mock.calls[0]
+    expect(groupByArgs).toMatchObject({
+      by: ['granteeAddress'],
+      where: expect.objectContaining({
+        granteeAddress: { in: ['0xagent-1'] },
+        status: 'active',
+        scopes: { has: 'assets' },
+        soul: { currentOwnerMemberId: HUMAN_MEMBER_ID },
+      }),
+    })
+  })
 })
 
 // ── PATCH /api/account/pets/[id] ─────────────────────────────────────────
