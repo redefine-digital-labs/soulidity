@@ -375,12 +375,14 @@ function LibraryTabInner({
         )}
       </section>
 
-      {ownerOnlyDownloadReady && walletMismatch && (
-        <div className="persona-card__status persona-card__status--error" style={{ marginBottom: 12 }}>
-          The desktop pet keypair cannot sign for the bound Sui wallet. Protected sprite downloads are
-          disabled until you sign in on the web app.
-        </div>
-      )}
+      {/*
+        The walletMismatch banner used to live here, but it ran on every
+        Library open whether or not the user was about to download a
+        protected sprite — turning a permission caveat into a startup error.
+        The matching disabled state still surfaces inside each PersonaCard
+        whose Download button would actually be blocked, so the same signal
+        reaches the user only at the moment of action.
+      */}
 
       {downloaded.length > 0 && (
         <section className="settings-section">
