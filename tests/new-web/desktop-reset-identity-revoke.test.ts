@@ -20,6 +20,7 @@ const mockedPrisma = vi.hoisted(() => ({
   },
   soulGrantRecord: {
     findMany: vi.fn(),
+    updateMany: vi.fn(),
   },
   $transaction: vi.fn(),
 }))
@@ -32,6 +33,9 @@ function resetMocks() {
   // Default: no active asset-scope grants. Tests targeting the partial
   // teardown branch override this with their own resolved value.
   mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+  // Default: stale-row self-heal is a no-op; tests that drive a stale
+  // row through validation override per-call.
+  mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 0 })
   // Default: caller owns no Souls, so the on-chain re-check inside
   // `findActiveAssetGrantsForPet` is a no-op. Tests that exercise the
   // on-chain branch override this with their own resolved value.
@@ -162,8 +166,26 @@ describe('POST /api/desktop/me/revoke', () => {
         onChainId: '0xgrant-1',
         soulOnChainId: '0xsoul-1',
         expiresAt: null,
+        soul: { stateOnChainId: '0xstate-1' },
       },
     ])
+    // Per-row chain validation must confirm the slot is still live for
+    // this grantee (R-001): the mirror row is trusted only when the
+    // chain agrees.
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-1',
+      granteeAddress: PET_IDENTITY.agentAddress,
+      scopeMask: 8, // SOUL_GRANT_SCOPE_ASSETS
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
     mockedPrisma.desktopPet.update.mockResolvedValue({ id: PET_IDENTITY.id })
     mockedPrisma.member.update.mockResolvedValue({ id: PET_IDENTITY.agentMemberId })
 
@@ -202,6 +224,59 @@ describe('POST /api/desktop/me/revoke', () => {
         pendingApiKeyRotationId: null,
         pendingApiKeyRotationExpiresAt: null,
       },
+    })
+  })
+
+  it('does a FULL teardown when a stale mirror row is self-healed because the chain has no slot (R-001)', async () => {
+    // Regression for R-001: when `grant::revoke` lands on chain but the
+    // post-TX mirror update is lost (browser navigated away,
+    // `/api/account/pets/[id]/grant-mirror` failed before
+    // `endSoulGrantProjectionFromChain` ran), the local mirror keeps a
+    // `status='active'` row even though the chain slot is gone. Without
+    // per-row chain validation, every subsequent bearer revoke would
+    // see grants.length > 0 and preserve the pet row forever — the
+    // user has no way to converge because re-signing revoke aborts
+    // with `EGrantNotFound`. The blocker now self-heals the stale row
+    // and the route proceeds with a clean full delete.
+    mockedPrisma.member.findFirst.mockResolvedValue({ id: 'human-member-1' })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-stale',
+        soulOnChainId: '0xsoul-stale',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-stale' },
+      },
+    ])
+    // Mirror validation: chain has zero active slots for this Soul.
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 2, // ownership epoch advanced — every old grant slot is dead
+    })
+    mockedPrisma.soulGrantRecord.updateMany.mockResolvedValueOnce({ count: 1 })
+    // Post-validation chain-only fallback: enumerate owned Souls and
+    // re-confirm there are no live grants.
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([])
+    mockedPrisma.desktopPet.delete.mockResolvedValue({ id: PET_IDENTITY.id })
+    mockedPrisma.member.update.mockResolvedValue({ id: PET_IDENTITY.agentMemberId })
+
+    const { POST } = await import('../../web/app/api/desktop/me/revoke/route')
+    const response = await POST(buildRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    // Full teardown — no partial flag.
+    expect(body).toEqual({ ok: true })
+    // Stale row got self-healed so future calls converge.
+    expect(mockedPrisma.soulGrantRecord.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { onChainId: { in: ['0xgrant-stale'] } },
+        data: expect.objectContaining({ status: 'invalidated' }),
+      }),
+    )
+    expect(mockedPrisma.desktopPet.delete).toHaveBeenCalledWith({
+      where: { id: PET_IDENTITY.id, accountId: PET_IDENTITY.accountId },
     })
   })
 

@@ -12,10 +12,18 @@ const mockedPrisma = vi.hoisted(() => ({
   soulAsset: {
     findMany: vi.fn(),
   },
+  soulGrantRecord: {
+    findMany: vi.fn(),
+    updateMany: vi.fn(),
+  },
 }))
 
 function resetMocks() {
   vi.resetAllMocks()
+  // Default: empty mirror — tests that exercise the mirror path
+  // override per-call.
+  mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+  mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 0 })
 }
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
@@ -129,20 +137,52 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
     expect(mockedPrisma.soulAsset.findMany).not.toHaveBeenCalled()
   })
 
-  it('runs the two split queries (grantable + active) and surfaces both lists', async () => {
+  it('runs the validated active-grant lookup + grantable + enrichment queries and surfaces both lists', async () => {
     mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
     mockedPrisma.desktopPet.findUnique.mockResolvedValue(makePet())
 
-    // First call → grantable list (currently owned + protected sprite + no active grant for this pet)
-    // Second call → souls already covered by active asset-scope grant
-    let call = 0
-    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: { where: unknown }) => {
-      call += 1
-      if (call === 1) {
-        // grantable side
+    // (a) Mirror has one active asset-scope grant row.
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-1',
+        soulOnChainId: '0xowned-2',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-2' },
+      },
+    ])
+    // (b) Per-row chain validation confirms the slot is still live for
+    // this grantee (R-001).
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-1',
+      granteeAddress: AGENT_ADDRESS,
+      scopeMask: 8,
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+
+    // (c) Two soulAsset.findMany calls in parallel: grantable list +
+    // active-grant Soul metadata enrichment.
+    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: {
+      where: Record<string, unknown>
+      select?: Record<string, unknown>
+    }) => {
+      // Grantable list query: filtered by `activeSpriteDownloadPolicy`.
+      if (args.where.activeSpriteDownloadPolicy) {
         expect(args.where).toMatchObject({
           currentOwnerMemberId: HUMAN_MEMBER_ID,
           activeSpriteDownloadPolicy: { in: ['owner_only', 'allowlist'] },
+        })
+        // Validated active soul ids must be excluded so the same Soul
+        // does not appear in both lists.
+        expect(args.where).toMatchObject({
+          onChainId: { notIn: ['0xowned-2'] },
         })
         return [{
           onChainId: '0xowned-1',
@@ -155,25 +195,22 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
           activeSpriteDownloadPolicy: 'owner_only',
         }]
       }
-      // active side
-      expect(args.where).toMatchObject({
-        currentOwnerMemberId: HUMAN_MEMBER_ID,
-        grantRecords: {
-          some: expect.objectContaining({
-            status: 'active',
-            granteeAddress: AGENT_ADDRESS,
-            scopes: { has: 'assets' },
-          }),
-        },
-      })
-      return [{
-        onChainId: '0xowned-2',
-        stateOnChainId: '0xstate-2',
-        name: 'Owned B',
-        imageUrl: 'image-b.png',
-        previewImages: [],
-        grantRecords: [{ onChainId: '0xgrant-1', expiresAt: null }],
-      }]
+      // Enrichment query: by validated active soul ids.
+      const inFilter = (args.where.onChainId as { in?: string[] } | undefined)?.in
+      if (inFilter) {
+        expect(args.where).toMatchObject({
+          onChainId: { in: ['0xowned-2'] },
+          currentOwnerMemberId: HUMAN_MEMBER_ID,
+        })
+        return [{
+          onChainId: '0xowned-2',
+          stateOnChainId: '0xstate-2',
+          name: 'Owned B',
+          imageUrl: 'image-b.png',
+          previewImages: [],
+        }]
+      }
+      return []
     })
 
     const { GET } = await import('../../web/app/api/account/pets/[id]/grantable-souls/route')
@@ -196,6 +233,10 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
     })
 
     expect(mockedPrisma.soulAsset.findMany).toHaveBeenCalledTimes(2)
+    // The mirror row was validated against the chain, not blindly
+    // trusted (regression for R-001 stale-row class).
+    expect(mockedGetSoulStateObject).toHaveBeenCalledTimes(1)
+    expect(mockedGetActiveGrantSlotForGrantee).toHaveBeenCalledTimes(1)
   })
 
   it('grantable query restricts by currentOwnerMemberId (only Souls owned by the human caller)', async () => {
@@ -220,16 +261,40 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
     mockedPrisma.desktopPet.findUnique.mockResolvedValue(
       makePet({ desktopAccessTokenHash: null, agentStatus: 'disabled' }),
     )
-    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: { where: unknown }) => {
-      // The route should only run the active-grant query in this state.
+
+    // Mirror has one row; chain validation confirms it.
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-1',
+        soulOnChainId: '0xowned-2',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-2' },
+      },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-1',
+      granteeAddress: AGENT_ADDRESS,
+      scopeMask: 8,
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+
+    // Only the enrichment query should run — the partial-revoke pet
+    // skips the grantable-list query entirely.
+    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: {
+      where: Record<string, unknown>
+    }) => {
+      const inFilter = (args.where.onChainId as { in?: string[] } | undefined)?.in
+      expect(inFilter).toEqual(['0xowned-2'])
       expect(args.where).toMatchObject({
         currentOwnerMemberId: HUMAN_MEMBER_ID,
-        grantRecords: {
-          some: expect.objectContaining({
-            granteeAddress: AGENT_ADDRESS,
-            scopes: { has: 'assets' },
-          }),
-        },
       })
       return [{
         onChainId: '0xowned-2',
@@ -237,7 +302,6 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
         name: 'Owned B',
         imageUrl: 'image-b.png',
         previewImages: [],
-        grantRecords: [{ onChainId: '0xgrant-1', expiresAt: null }],
       }]
     })
 
@@ -252,33 +316,53 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
       soulOnChainId: '0xowned-2',
       grantOnChainId: '0xgrant-1',
     })
-    // Only the active-grant query should have run.
+    // Only the enrichment query should have run for soulAsset.findMany.
     expect(mockedPrisma.soulAsset.findMany).toHaveBeenCalledTimes(1)
   })
 
   it('grantable query excludes Souls that already have an active asset-scope grant for this pet', async () => {
     mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
     mockedPrisma.desktopPet.findUnique.mockResolvedValue(makePet())
+
+    // Validated active grants list contains one Soul; the grantable
+    // query must exclude it via `onChainId: { notIn: [...] }` so the
+    // same Soul never appears in both lists.
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-existing',
+        soulOnChainId: '0xowned-existing',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-existing' },
+      },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-existing',
+      granteeAddress: AGENT_ADDRESS,
+      scopeMask: 8,
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
     mockedPrisma.soulAsset.findMany.mockResolvedValue([])
 
     const { GET } = await import('../../web/app/api/account/pets/[id]/grantable-souls/route')
     await GET(jsonRequest(), { params: Promise.resolve({ id: PET_ID }) })
 
-    const grantableCall = mockedPrisma.soulAsset.findMany.mock.calls[0]?.[0] as {
-      where: {
-        grantRecords: {
-          none: {
-            status: string
-            granteeAddress: string
-            scopes: { has: string }
-          }
-        }
-      }
-    }
-    expect(grantableCall.where.grantRecords.none).toMatchObject({
-      status: 'active',
-      granteeAddress: AGENT_ADDRESS,
-      scopes: { has: 'assets' },
+    const grantableCall = mockedPrisma.soulAsset.findMany.mock.calls.find(
+      (call) =>
+        (call[0] as { where: Record<string, unknown> }).where.activeSpriteDownloadPolicy != null,
+    )
+    expect(grantableCall).toBeDefined()
+    expect((grantableCall![0] as { where: Record<string, unknown> }).where).toMatchObject({
+      currentOwnerMemberId: HUMAN_MEMBER_ID,
+      activeSpriteDownloadPolicy: { in: ['owner_only', 'allowlist'] },
+      onChainId: { notIn: ['0xowned-existing'] },
     })
   })
 
@@ -295,29 +379,25 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
     mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
     mockedPrisma.desktopPet.findUnique.mockResolvedValue(makePet())
 
-    // Branch by the `where` shape so this test does not depend on
-    // Promise.all evaluation order across the parallel mirror queries.
+    // Branch by the `where` / `take` shape so this test does not depend
+    // on Promise.all evaluation order.
     mockedPrisma.soulAsset.findMany.mockImplementation(async (args: {
       where: Record<string, unknown>
       select?: Record<string, unknown>
       take?: number
     }) => {
-      // (1) grantable mirror query — `activeSpriteDownloadPolicy: { in: [...] }`
+      // (1) grantable list query.
       if (args.where?.activeSpriteDownloadPolicy) {
         return []
       }
-      // (2) active-grant mirror query — `grantRecords: { some: ... }`
-      if ((args.where?.grantRecords as { some?: unknown } | undefined)?.some) {
-        return []
-      }
-      // (3) on-chain helper's owned-Soul enumeration — `take:
+      // (2) on-chain helper's owned-Soul enumeration — `take:
       // MAX_ONCHAIN_RECHECK_SOULS + 1 = 201` (one row past the cap to
       // detect overflow without a separate count round-trip), slim
       // select.
       if (args.take === 201 && args.select && !args.select.name) {
         return [{ onChainId: '0xsoul-onchain', stateOnChainId: '0xstate-onchain' }]
       }
-      // (4) enrichment lookup — `onChainId: { in: [...] }` with display select.
+      // (3) enrichment lookup — `onChainId: { in: [...] }` with display select.
       if ((args.where?.onChainId as { in?: string[] } | undefined)?.in) {
         return [{
           onChainId: '0xsoul-onchain',
@@ -360,9 +440,6 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
       grantOnChainId: '0xgrant-onchain',
       expiresAt: null,
     })
-    // Sanity-check the call sequence: 2 mirror queries, then the on-chain
-    // enumeration, then the enrichment lookup.
-    expect(mockedPrisma.soulAsset.findMany).toHaveBeenCalledTimes(4)
     expect(mockedGetActiveGrantSlotForGrantee).toHaveBeenCalledTimes(1)
   })
 
@@ -387,7 +464,6 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
       select?: Record<string, unknown>
     }) => {
       if (args.where?.activeSpriteDownloadPolicy) return []
-      if ((args.where?.grantRecords as { some?: unknown } | undefined)?.some) return []
       // On-chain helper's owned-Soul enumeration — `take: 201`.
       if (args.take === 201 && args.select && !args.select.name) {
         return overflowingOwnedSouls
@@ -421,7 +497,6 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
       select?: Record<string, unknown>
     }) => {
       if (args.where?.activeSpriteDownloadPolicy) return []
-      if ((args.where?.grantRecords as { some?: unknown } | undefined)?.some) return []
       if (args.take === 201 && args.select && !args.select.name) {
         return [{ onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' }]
       }
@@ -438,27 +513,59 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
     expect(body.incompleteRecheck).toEqual({ reason: 'rpc-error' })
   })
 
-  it('skips the on-chain fallback entirely when the mirror already returned active grants (no extra RPC)', async () => {
-    // Sanity check that the common fast path stays single-DB-call and
-    // never reaches `findActiveAssetGrantsForPetOnChain` — the on-chain
-    // re-check is only there for the mirror-empty edge case.
+  it('skips the empty-mirror chain enumeration when the mirror+chain already validated active grants (only per-row validation runs)', async () => {
+    // R-001 fix: even when the mirror has rows we MUST per-row
+    // validate them against the chain so a stale `status='active'`
+    // row can't surface as a phantom revokable grant. We do, however,
+    // still skip the empty-mirror full owned-Soul enumeration when at
+    // least one mirror row validates clean — so `take: 201` enumeration
+    // never fires.
     mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
     mockedPrisma.desktopPet.findUnique.mockResolvedValue(makePet())
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-mirror',
+        soulOnChainId: '0xowned-mirror',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-mirror' },
+      },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-mirror',
+      granteeAddress: AGENT_ADDRESS,
+      scopeMask: 8,
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
     mockedPrisma.soulAsset.findMany.mockImplementation(async (args: {
       where: Record<string, unknown>
+      select?: Record<string, unknown>
+      take?: number
     }) => {
+      // Grantable-list query.
       if (args.where?.activeSpriteDownloadPolicy) return []
-      if ((args.where?.grantRecords as { some?: unknown } | undefined)?.some) {
+      // Enrichment lookup for the validated active grant.
+      if ((args.where?.onChainId as { in?: string[] } | undefined)?.in) {
         return [{
           onChainId: '0xowned-mirror',
           stateOnChainId: '0xstate-mirror',
           name: 'Mirror Soul',
           imageUrl: 'mirror-image.png',
           previewImages: [],
-          grantRecords: [{ onChainId: '0xgrant-mirror', expiresAt: null }],
         }]
       }
-      throw new Error('Unexpected soulAsset.findMany call when mirror was non-empty')
+      // Empty-mirror chain enumeration MUST NOT fire.
+      if (args.take === 201) {
+        throw new Error('Empty-mirror chain enumeration should not run when validation surfaces grants')
+      }
+      throw new Error('Unexpected soulAsset.findMany call shape')
     })
 
     const { GET } = await import('../../web/app/api/account/pets/[id]/grantable-souls/route')
@@ -471,7 +578,67 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
       soulOnChainId: '0xowned-mirror',
       grantOnChainId: '0xgrant-mirror',
     })
-    expect(mockedGetSoulStateObject).not.toHaveBeenCalled()
-    expect(mockedGetActiveGrantSlotForGrantee).not.toHaveBeenCalled()
+    // Per-row validation ran exactly once for the single mirror row.
+    expect(mockedGetSoulStateObject).toHaveBeenCalledTimes(1)
+    expect(mockedGetActiveGrantSlotForGrantee).toHaveBeenCalledTimes(1)
+  })
+
+  it('self-heals stale mirror rows whose chain slot is gone, then falls through to the chain-only fallback (R-001)', async () => {
+    // Regression for R-001 stale-row class: a `status='active'` row
+    // whose on-chain slot is gone (revoke TX landed, mirror POST
+    // missed, OR ownership transfer bumped ownership_epoch) used to
+    // surface as a phantom revokable grant. The route now validates
+    // against the chain, marks the row `invalidated`, and falls
+    // through to the empty-mirror chain enumeration so the user
+    // genuinely sees an empty active-grants list.
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue(makePet())
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-stale',
+        soulOnChainId: '0xowned-stale',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-stale' },
+      },
+    ])
+    // Chain validation: state shows zero active slots.
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: {
+      where: Record<string, unknown>
+      select?: Record<string, unknown>
+      take?: number
+    }) => {
+      // Grantable-list query: no excluded ids because validation
+      // emptied the active list.
+      if (args.where?.activeSpriteDownloadPolicy) {
+        expect(args.where).not.toHaveProperty('onChainId')
+        return []
+      }
+      // Empty-mirror chain enumeration runs with no owned Souls.
+      if (args.take === 201) {
+        return []
+      }
+      return []
+    })
+
+    const { GET } = await import('../../web/app/api/account/pets/[id]/grantable-souls/route')
+    const response = await GET(jsonRequest(), { params: Promise.resolve({ id: PET_ID }) })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.activeAssetGrants).toEqual([])
+    // Self-heal write fired so the next call converges without
+    // operator intervention.
+    expect(mockedPrisma.soulGrantRecord.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { onChainId: { in: ['0xgrant-stale'] } },
+        data: expect.objectContaining({ status: 'invalidated' }),
+      }),
+    )
   })
 })
