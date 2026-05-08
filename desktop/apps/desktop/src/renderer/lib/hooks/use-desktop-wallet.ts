@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSuiClient } from '@mysten/dapp-kit'
-import type { Transaction } from '@mysten/sui/transactions'
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SuiTxResult = any
 
 interface DesktopSuiWallet {
   address: string
@@ -11,25 +7,33 @@ interface DesktopSuiWallet {
   createdAt: number
 }
 
-async function waitForTransactionBestEffort(
-  client: ReturnType<typeof useSuiClient>,
-  digest: string,
-) {
-  try {
-    await client.waitForTransaction({ digest })
-  } catch (error) {
-    console.warn('[sui] Transaction confirmation polling failed', { digest, error })
+interface AgentKeypairInfo {
+  address: string
+  publicKey: string
+  createdAt?: number
+}
+
+function normalizeKeypair(value: unknown): DesktopSuiWallet | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<AgentKeypairInfo>
+  if (typeof candidate.address !== 'string' || typeof candidate.publicKey !== 'string') return null
+  return {
+    address: candidate.address,
+    publicKey: candidate.publicKey,
+    createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : 0,
   }
 }
 
 /**
- * Renderer-side Sui wallet surface for the desktop app. The actual Ed25519
- * keypair lives in the main process (encrypted via Electron `safeStorage`).
- * Renderer builds transactions, ships raw bytes to main for approval + signing,
- * and executes the signed bundle through dapp-kit's Sui RPC client.
+ * Renderer-side surface for the desktop's local Sui identity.
  *
- * Returns `{ suiWallet, suiClient, signAndExecute, signPersonalMessage,
- * refresh, generate, importSecret, reset }`.
+ * The desktop has exactly one local keypair: the agent keypair, auto-generated
+ * on first launch and held encrypted in main via Electron `safeStorage`. After
+ * the user runs Link to Web Account, that local address inherits access from
+ * the linked web wallet — no separate desktop-only wallet is needed.
+ *
+ * Returns `{ suiWallet, suiClient, signPersonalMessage }`. Renderer ships raw
+ * message bytes to main for signing; the keypair never leaves main.
  */
 export function useDesktopWallet() {
   const suiClient = useSuiClient()
@@ -40,10 +44,10 @@ export function useDesktopWallet() {
 
     async function fetchWallet() {
       try {
-        const info = await window.electronAPI.walletGetInfo()
-        if (!cancelled) setSuiWallet(info)
+        const info = await window.electronAPI.loadAgentKeypair()
+        if (!cancelled) setSuiWallet(normalizeKeypair(info))
       } catch (error) {
-        console.warn('[wallet] failed to read wallet info', error)
+        console.warn('[wallet] failed to read agent keypair', error)
         if (!cancelled) setSuiWallet(null)
       }
     }
@@ -54,69 +58,17 @@ export function useDesktopWallet() {
     }
   }, [])
 
-  const refresh = useCallback(async () => {
-    const info = await window.electronAPI.walletGetInfo()
-    setSuiWallet(info)
-    return info
-  }, [])
-
-  const generate = useCallback(async () => {
-    const info = await window.electronAPI.walletGenerate()
-    setSuiWallet(info)
-    return info
-  }, [])
-
-  const importSecret = useCallback(async (secret: string) => {
-    const info = await window.electronAPI.walletImport(secret)
-    setSuiWallet(info)
-    return info
-  }, [])
-
-  const reset = useCallback(async () => {
-    await window.electronAPI.walletReset()
-    setSuiWallet(null)
-  }, [])
-
   const signPersonalMessage = useCallback(async (message: Uint8Array): Promise<string> => {
     if (!suiWallet) {
-      throw new Error('Generate or import a wallet before signing')
+      throw new Error('Local Sui address is not ready yet')
     }
-    const result = await window.electronAPI.walletSignMessage(message)
+    const result = await window.electronAPI.agentSignPersonalMessage(message)
     return result.signature
   }, [suiWallet])
-
-  const signAndExecute = useCallback(async (tx: Transaction): Promise<SuiTxResult> => {
-    if (!suiWallet) {
-      throw new Error('Generate or import a wallet before signing transactions')
-    }
-
-    tx.setSenderIfNotSet(suiWallet.address)
-    const rawBytes = await tx.build({ client: suiClient })
-    const { signature } = await window.electronAPI.walletSignTransaction(rawBytes)
-
-    const result = await suiClient.executeTransactionBlock({
-      transactionBlock: rawBytes,
-      signature,
-      options: {
-        showEffects: true,
-        showInput: true,
-        showObjectChanges: true,
-        showEvents: true,
-      },
-    })
-
-    await waitForTransactionBestEffort(suiClient, result.digest)
-    return result
-  }, [suiClient, suiWallet])
 
   return {
     suiWallet,
     suiClient,
-    signAndExecute,
     signPersonalMessage,
-    refresh,
-    generate,
-    importSecret,
-    reset,
   }
 }

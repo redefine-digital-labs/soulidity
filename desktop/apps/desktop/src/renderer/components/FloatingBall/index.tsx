@@ -20,19 +20,6 @@ import { useAgentRuntime } from '../../hooks/useAgentRuntime'
 type TaskAgent = 'claude' | 'codex'
 type ToastKind = 'info' | 'success' | 'error' | 'attention'
 
-/**
- * Renderer-only view of the desktop binding state. Drives the small dot in
- * the corner of the floating ball:
- *   - 'unbound'    → neutral grey (no dtk_* on disk)
- *   - 'attention'  → yellow      (dtk_* present but /me failed to verify)
- *   - 'linked'     → green       (dtk_* present and /me returned identity)
- *   - 'unknown'    → neutral grey (haven't checked yet)
- *
- * No credential is read here — only `getDesktopAuthStatus` (boolean) and
- * `getDesktopMe` (verification round-trip) are consulted.
- */
-type AuthBadgeState = 'unknown' | 'unbound' | 'attention' | 'linked'
-
 interface ToastState {
   id: number
   kind: ToastKind
@@ -183,7 +170,7 @@ export function FloatingBall(): React.JSX.Element {
   const [taskPanel, setTaskPanel] = useState<TaskPanelState | null>(null)
   const [localTasks, setLocalTasks] = useState<Record<string, PetTaskSummary>>({})
   const [enhancedMotion, setEnhancedMotion] = useState(false)
-  const [authBadge, setAuthBadge] = useState<AuthBadgeState>('unknown')
+  const [hideTasks, setHideTasks] = useState(false)
 
   const ballRef = useRef<HTMLDivElement>(null)
   const toastIdRef = useRef(0)
@@ -232,11 +219,19 @@ export function FloatingBall(): React.JSX.Element {
     () => mergeActiveTasks(statusTasks, fallbackTasks),
     [fallbackTasks, statusTasks],
   )
-  const showTaskTooltip = isHovered && activeTasks.length > 0 && !taskPanel
+  // Hide Tasks suppresses the task panel UI, but the rest of the component
+  // must treat the panel as if it were closed: otherwise the window stays
+  // expanded (460x500), `setIgnoreMouseEvents(false)` keeps the invisible
+  // pet window intercepting clicks, and attention/presence labels stay
+  // suppressed because their gates only check `taskPanel`. Funnel every
+  // visibility / sizing / mouse-event decision through this derived value
+  // instead of `taskPanel` directly.
+  const visibleTaskPanel = hideTasks ? null : taskPanel
+  const showTaskTooltip = isHovered && activeTasks.length > 0 && !visibleTaskPanel
   const topPermission = runtimeSnapshot?.pendingPermissions[0] ?? null
   const topQuestion = runtimeSnapshot?.pendingQuestions[0] ?? null
   const topAttention = topPermission ?? topQuestion
-  const showAttentionBubble = Boolean(topAttention) && !taskPanel
+  const showAttentionBubble = Boolean(topAttention) && !visibleTaskPanel
   const showUpdateBubble = updateStatus.state === 'available'
     || updateStatus.state === 'downloading'
     || updateStatus.state === 'downloaded'
@@ -254,7 +249,7 @@ export function FloatingBall(): React.JSX.Element {
           : effectiveMood !== 'idle'
             ? formatMoodLabel(effectiveMood)
             : null
-  const showPresenceLabel = !enhancedMotion && Boolean(presenceLabel) && !taskPanel
+  const showPresenceLabel = !enhancedMotion && Boolean(presenceLabel) && !visibleTaskPanel
 
   useEffect(() => {
     return () => {
@@ -294,7 +289,9 @@ export function FloatingBall(): React.JSX.Element {
 
     const configPromise = window.electronAPI.getConfig?.()
     configPromise?.then((config) => {
-      if (!disposed) setEnhancedMotion(Boolean(config.petEnhancedMotion))
+      if (disposed) return
+      setEnhancedMotion(Boolean(config.petEnhancedMotion))
+      setHideTasks(Boolean(config.hideTasks))
     }).catch(() => {})
 
     window.electronAPI.getCurrentAgentStatus()
@@ -365,6 +362,7 @@ export function FloatingBall(): React.JSX.Element {
 
     const unsubscribeConfig = window.electronAPI.onConfigChanged?.((config) => {
       setEnhancedMotion(Boolean(config.petEnhancedMotion))
+      setHideTasks(Boolean(config.hideTasks))
     })
 
     return () => {
@@ -379,65 +377,15 @@ export function FloatingBall(): React.JSX.Element {
   }, [setMoodFor, showToast])
 
   useEffect(() => {
-    if (taskPanel) {
+    if (visibleTaskPanel) {
       window.electronAPI.setIgnoreMouseEvents(false)
     } else if (!isHovered && !isDragging && !isDropTargetActive) {
       window.electronAPI.setIgnoreMouseEvents(true)
     }
-  }, [isDropTargetActive, isDragging, isHovered, taskPanel])
+  }, [isDropTargetActive, isDragging, isHovered, visibleTaskPanel])
 
   useEffect(() => {
-    let cancelled = false
-
-    const refreshAuthBadge = async (): Promise<void> => {
-      try {
-        const status = await window.electronAPI.getDesktopAuthStatus()
-        if (cancelled) return
-        if (!status.hasToken) {
-          setAuthBadge('unbound')
-          return
-        }
-        try {
-          const me = await window.electronAPI.getDesktopMe()
-          if (cancelled) return
-          // `me` shape parity with SettingsTab: a profile.accountId means the
-          // dtk validated end-to-end. Anything else is a soft "needs attention".
-          const profile = me && typeof me === 'object'
-            ? (me as Record<string, unknown>).profile
-            : null
-          const accountId = profile && typeof profile === 'object'
-            ? (profile as Record<string, unknown>).accountId
-            : null
-          if (typeof accountId === 'string' && accountId.length > 0) {
-            setAuthBadge('linked')
-          } else {
-            setAuthBadge('attention')
-          }
-        } catch {
-          if (cancelled) return
-          setAuthBadge('attention')
-        }
-      } catch {
-        if (cancelled) return
-        setAuthBadge('unknown')
-      }
-    }
-
-    void refreshAuthBadge()
-    // Re-poll occasionally so a successful link from the main window flips
-    // the badge without restarting the floating ball. The 60s cadence is a
-    // light-touch fallback; main also broadcasts `desktop-auth:changed` but
-    // that channel is ignored here intentionally to keep the surface tiny.
-    const interval = setInterval(() => { void refreshAuthBadge() }, 60_000)
-
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [])
-
-  useEffect(() => {
-    const overlayHeight = taskPanel
+    const overlayHeight = visibleTaskPanel
       ? EXPANDED_WINDOW_HEIGHT
       : Math.min(
         520,
@@ -449,28 +397,14 @@ export function FloatingBall(): React.JSX.Element {
       )
 
     window.electronAPI.resizePetWindow(
-      taskPanel ? EXPANDED_WINDOW_WIDTH : BASE_WINDOW_WIDTH,
+      visibleTaskPanel ? EXPANDED_WINDOW_WIDTH : BASE_WINDOW_WIDTH,
       overlayHeight + WINDOW_PADDING * 2,
     )
-  }, [activeTasks.length, isHovered, showAttentionBubble, showUpdateBubble, taskPanel, toast])
+  }, [activeTasks.length, isHovered, showAttentionBubble, showUpdateBubble, visibleTaskPanel, toast])
 
   const handleOpenAgentTab = useCallback(async () => {
     await window.electronAPI.openMainWindowTab('agent')
   }, [])
-
-  const handleOpenSettingsTab = useCallback((event: React.MouseEvent) => {
-    // Stop the badge click from feeding the surrounding ball-drag handler.
-    event.stopPropagation()
-    void window.electronAPI.openMainWindowTab('settings')
-  }, [])
-
-  const authBadgeLabel = authBadge === 'linked'
-    ? 'Pet linked'
-    : authBadge === 'attention'
-      ? 'Pet needs attention'
-      : authBadge === 'unbound'
-        ? 'Pet not linked yet'
-        : 'Pet status unknown'
 
   const handleQuickApprove = useCallback(async () => {
     if (!topPermission) return
@@ -483,7 +417,7 @@ export function FloatingBall(): React.JSX.Element {
   }, [topPermission])
 
   useEffect(() => {
-    if (!enhancedMotion || taskPanel || transientMood || isDragging) return
+    if (!enhancedMotion || visibleTaskPanel || transientMood || isDragging) return
 
     const randomTimer = setInterval(() => {
       const rand = Math.random()
@@ -501,7 +435,7 @@ export function FloatingBall(): React.JSX.Element {
       clearInterval(randomTimer)
       clearInterval(snoringTimer)
     }
-  }, [enhancedMotion, isDragging, setMoodFor, taskPanel, transientMood])
+  }, [enhancedMotion, isDragging, setMoodFor, visibleTaskPanel, transientMood])
 
   const dragStyle: React.CSSProperties | undefined = isDragging
     ? {
@@ -518,14 +452,14 @@ export function FloatingBall(): React.JSX.Element {
 
   const handleRootMouseLeave = useCallback(() => {
     setIsHovered(false)
-    if (!isDragging && !taskPanel && !isDropTargetActive) {
+    if (!isDragging && !visibleTaskPanel && !isDropTargetActive) {
       window.electronAPI.setIgnoreMouseEvents(true)
     }
     if (isPettingRef.current) {
       isPettingRef.current = false
       petCountRef.current = 0
     }
-  }, [isDragging, isDropTargetActive, taskPanel])
+  }, [isDragging, isDropTargetActive, visibleTaskPanel])
 
   const handleBallMouseMove = useCallback(() => {
     if (isDragging) return
@@ -613,7 +547,7 @@ export function FloatingBall(): React.JSX.Element {
       if (rect) {
         const isOverBall = event.clientX >= rect.left && event.clientX <= rect.right
           && event.clientY >= rect.top && event.clientY <= rect.bottom
-        if (!isOverBall && !taskPanel && !isDropTargetActive) {
+        if (!isOverBall && !visibleTaskPanel && !isDropTargetActive) {
           window.electronAPI.setIgnoreMouseEvents(true)
         }
       }
@@ -638,7 +572,7 @@ export function FloatingBall(): React.JSX.Element {
     listenersRef.current = { onMove, onUp }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-  }, [handleSingleClick, isDropTargetActive, setMoodFor, taskPanel])
+  }, [handleSingleClick, isDropTargetActive, setMoodFor, visibleTaskPanel])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -819,7 +753,7 @@ export function FloatingBall(): React.JSX.Element {
 
   return (
     <div
-      className={`ball-root${taskPanel ? ' ball-root--expanded' : ''}${enhancedMotion ? '' : ' ball-root--reduced-effects'}`}
+      className={`ball-root${visibleTaskPanel ? ' ball-root--expanded' : ''}${enhancedMotion ? '' : ' ball-root--reduced-effects'}`}
       onMouseEnter={handleRootMouseEnter}
       onMouseLeave={handleRootMouseLeave}
       onDragEnter={handleDragEnter}
@@ -893,7 +827,7 @@ export function FloatingBall(): React.JSX.Element {
           </div>
         )}
 
-        {taskPanel && (
+        {visibleTaskPanel && (
           <div className="task-panel">
             <div className="task-panel__header">
               <div>
@@ -1030,7 +964,7 @@ export function FloatingBall(): React.JSX.Element {
         )}
       </div>
 
-      {isDropTargetActive && (
+      {isDropTargetActive && !hideTasks && (
         <div className="drop-overlay">
           <div className="drop-overlay__card">
             <div className="drop-overlay__title">把文件丢给宠物</div>
@@ -1058,18 +992,6 @@ export function FloatingBall(): React.JSX.Element {
             height={120}
             idlePause
           />
-          <button
-            type="button"
-            className={`auth-badge auth-badge--${authBadge}`}
-            onClick={handleOpenSettingsTab}
-            onMouseDown={(event) => event.stopPropagation()}
-            title={authBadgeLabel}
-            aria-label={authBadgeLabel}
-          >
-            <span aria-hidden="true">
-              {authBadge === 'linked' ? '✓' : authBadge === 'attention' ? '!' : authBadge === 'unbound' ? '?' : '·'}
-            </span>
-          </button>
         </div>
         {showPresenceLabel && presenceLabel && (
           <div className="presence-label">{presenceLabel}</div>

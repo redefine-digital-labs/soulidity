@@ -146,8 +146,8 @@ function getDownloadDisabledState(
   if (isProtectedSpritePolicy(persona.spriteDownloadPolicy)) {
     const label = persona.spriteDownloadPolicy === 'allowlist' ? 'Allowlist' : 'Owner Only'
     const protectedHint = persona.spriteDownloadPolicy === 'allowlist'
-      ? 'Allowlist-protected sprite. The desktop wallet will decrypt it locally.'
-      : 'Owner-only sprite. The desktop wallet will decrypt it locally.'
+      ? 'Allowlist-protected sprite. The local Sui address will decrypt it.'
+      : 'Owner-only sprite. The local Sui address will decrypt it.'
     if (section === 'marketplace') {
       return {
         disabled: true,
@@ -162,7 +162,7 @@ function getDownloadDisabledState(
       return {
         disabled: true,
         label: 'Wallet Mismatch',
-        hint: 'The connected desktop wallet does not match the bound Sui wallet for this account.',
+        hint: 'The desktop pet keypair cannot sign for the bound Sui wallet. Use the web app to download protected sprites.',
       }
     }
     return { disabled: false, label: 'Download', hint: protectedHint }
@@ -377,8 +377,8 @@ function LibraryTabInner({
 
       {ownerOnlyDownloadReady && walletMismatch && (
         <div className="persona-card__status persona-card__status--error" style={{ marginBottom: 12 }}>
-          The connected desktop wallet does not match the bound Sui wallet for this account. Protected sprite
-          downloads are disabled until the wallets match.
+          The desktop pet keypair cannot sign for the bound Sui wallet. Protected sprite downloads are
+          disabled until you sign in on the web app.
         </div>
       )}
 
@@ -479,6 +479,12 @@ function LibraryTabInner({
 function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: string | null }) {
   const { signPersonalMessage, suiClient, suiWallet } = useDesktopWallet()
 
+  // After the desktop pet identity split, `suiWallet.address` is the local
+  // pet/agent keypair, not the user's bound Sui wallet. Owner-only / allowlist
+  // sprites are encrypted to the bound wallet, so the desktop pet cannot sign
+  // the Seal session — and the manifest route's F-278 backstop also rejects
+  // any `viewer` that is not in the bound wallet set. Detect the mismatch up
+  // front so the UI never advertises a Download button that we know will fail.
   const walletMismatch = useMemo(
     () => Boolean(primarySuiAddress && suiWallet?.address && !sameWalletAddress(primarySuiAddress, suiWallet.address)),
     [primarySuiAddress, suiWallet?.address],
@@ -486,12 +492,12 @@ function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: strin
 
   const downloadProtectedSoul = useCallback(async (item: PersonaItem) => {
     if (!suiWallet?.address) {
-      return { error: 'No Sui wallet is available for this desktop session.' }
+      return { error: 'Local Sui address is not ready yet.' }
     }
 
     if (walletMismatch) {
       return {
-        error: 'The connected desktop wallet does not match the bound Sui wallet for this account.',
+        error: 'The desktop pet keypair cannot sign for the bound Sui wallet. Use the web app to download protected sprites.',
       }
     }
 

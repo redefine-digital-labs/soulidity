@@ -1,29 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { normalizeSuiAddress } from '@mysten/sui/utils'
 
 interface AgentKeypairInfo {
   address: string
-}
-
-interface DesktopSuiWalletInfo {
-  address: string
-  publicKey: string
-  createdAt: number
-}
-
-type SuiWalletPanel =
-  | { phase: 'loading' }
-  | { phase: 'present'; info: DesktopSuiWalletInfo }
-  | { phase: 'missing' }
-  | { phase: 'importing' }
-
-function sameSuiAddress(left: string | null | undefined, right: string | null | undefined): boolean {
-  if (!left || !right) return false
-  try {
-    return normalizeSuiAddress(left) === normalizeSuiAddress(right)
-  } catch {
-    return left === right
-  }
 }
 
 const LINK_VERIFICATION_FAILED_MESSAGE = 'Saved desktop link could not be verified. Unlink this device and link again.'
@@ -99,11 +77,6 @@ function buildPetsLinkUrl(rawLinkUrl: string, userCode: string): string {
 export function SettingsTab(): React.JSX.Element {
   const [keypair, setKeypair] = useState<AgentKeypairInfo | null>(null)
   const [copied, setCopied] = useState(false)
-  const [suiWalletCopied, setSuiWalletCopied] = useState(false)
-  const [suiWalletPanel, setSuiWalletPanel] = useState<SuiWalletPanel>({ phase: 'loading' })
-  const [suiWalletBusy, setSuiWalletBusy] = useState<null | 'generate' | 'import' | 'reset'>(null)
-  const [suiWalletError, setSuiWalletError] = useState<string | null>(null)
-  const [suiWalletImportSecret, setSuiWalletImportSecret] = useState('')
   const [linkState, setLinkState] = useState<LinkState>({ phase: 'restoring' })
   const [unlinking, setUnlinking] = useState(false)
   const [enhancedMotion, setEnhancedMotion] = useState(false)
@@ -237,98 +210,12 @@ export function SettingsTab(): React.JSX.Element {
     }
   }, [getVerifiedDesktopIdentity, refreshApiKeyStatus, stopPolling])
 
-  useEffect(() => {
-    let cancelled = false
-    void window.electronAPI.walletGetInfo().then((info) => {
-      if (cancelled) return
-      setSuiWalletPanel(info ? { phase: 'present', info } : { phase: 'missing' })
-    }).catch((err: unknown) => {
-      if (cancelled) return
-      setSuiWalletPanel({ phase: 'missing' })
-      setSuiWalletError(err instanceof Error ? err.message : 'Failed to read desktop Sui wallet')
-    })
-    return () => { cancelled = true }
-  }, [])
-
   const handleCopyAddress = useCallback(async () => {
     if (!keypair?.address) return
     await navigator.clipboard.writeText(keypair.address)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [keypair])
-
-  const handleCopySuiWalletAddress = useCallback(async () => {
-    if (suiWalletPanel.phase !== 'present') return
-    await navigator.clipboard.writeText(suiWalletPanel.info.address)
-    setSuiWalletCopied(true)
-    setTimeout(() => setSuiWalletCopied(false), 2000)
-  }, [suiWalletPanel])
-
-  const handleGenerateSuiWallet = useCallback(async () => {
-    setSuiWalletBusy('generate')
-    setSuiWalletError(null)
-    try {
-      const info = await window.electronAPI.walletGenerate()
-      setSuiWalletPanel({ phase: 'present', info })
-    } catch (err) {
-      setSuiWalletError(err instanceof Error ? err.message : 'Failed to generate desktop Sui wallet')
-    } finally {
-      setSuiWalletBusy(null)
-    }
-  }, [])
-
-  const handleStartImportSuiWallet = useCallback(() => {
-    setSuiWalletPanel({ phase: 'importing' })
-    setSuiWalletImportSecret('')
-    setSuiWalletError(null)
-  }, [])
-
-  const handleCancelImportSuiWallet = useCallback(async () => {
-    setSuiWalletImportSecret('')
-    setSuiWalletError(null)
-    try {
-      const info = await window.electronAPI.walletGetInfo()
-      setSuiWalletPanel(info ? { phase: 'present', info } : { phase: 'missing' })
-    } catch {
-      setSuiWalletPanel({ phase: 'missing' })
-    }
-  }, [])
-
-  const handleSubmitImportSuiWallet = useCallback(async () => {
-    const secret = suiWalletImportSecret.trim()
-    if (!secret) {
-      setSuiWalletError('Paste a Sui private key (bech32, base64, or hex) before importing.')
-      return
-    }
-    setSuiWalletBusy('import')
-    setSuiWalletError(null)
-    try {
-      const info = await window.electronAPI.walletImport(secret)
-      setSuiWalletPanel({ phase: 'present', info })
-      setSuiWalletImportSecret('')
-    } catch (err) {
-      setSuiWalletError(err instanceof Error ? err.message : 'Failed to import desktop Sui wallet')
-    } finally {
-      setSuiWalletBusy(null)
-    }
-  }, [suiWalletImportSecret])
-
-  const handleResetSuiWallet = useCallback(async () => {
-    if (!window.confirm('Reset the desktop Sui wallet? You will need to back up its private key elsewhere first to keep controlling its assets.')) {
-      return
-    }
-    setSuiWalletBusy('reset')
-    setSuiWalletError(null)
-    try {
-      await window.electronAPI.walletReset()
-      setSuiWalletPanel({ phase: 'missing' })
-      setSuiWalletImportSecret('')
-    } catch (err) {
-      setSuiWalletError(err instanceof Error ? err.message : 'Failed to reset desktop Sui wallet')
-    } finally {
-      setSuiWalletBusy(null)
-    }
-  }, [])
 
   const handleStartLink = useCallback(async () => {
     // Main owns the agent keypair: it will generate one if none is present.
@@ -486,6 +373,15 @@ export function SettingsTab(): React.JSX.Element {
           stopPolling()
           setLinkState({ phase: 'idle' })
           setKeypair(null)
+          // Mint a fresh keypair right away so the Pet ID doesn't sit on
+          // "Generating..." until the next app restart (main only regenerates
+          // eagerly in `app.whenReady()`).
+          try {
+            const fresh = await window.electronAPI.generateAgentKeypair()
+            if (fresh) setKeypair(fresh as AgentKeypairInfo)
+          } catch (err) {
+            console.warn('[reset-identity] regenerate keypair failed', err)
+          }
           setApiKeyStatus(null)
           setRotationFlash(null)
           setResetConfirming(false)
@@ -552,10 +448,10 @@ export function SettingsTab(): React.JSX.Element {
   return (
     <div className="tab-content">
       <section className="settings-section">
-        <h3 className="settings-section__title">Agent Wallet</h3>
+        <h3 className="settings-section__title">Pet Identity</h3>
 
         <div className="settings-field">
-          <span className="settings-field__label">Sui Address</span>
+          <span className="settings-field__label">Pet ID</span>
           <div className="settings-field__input-group">
             <input
               type="text"
@@ -574,10 +470,6 @@ export function SettingsTab(): React.JSX.Element {
             </button>
           </div>
         </div>
-      </section>
-
-      <section className="settings-section">
-        <h3 className="settings-section__title">Account Link</h3>
 
         {linkState.phase === 'restoring' && (
           <div className="link-panel">
@@ -642,17 +534,6 @@ export function SettingsTab(): React.JSX.Element {
             <p className="link-panel__status">
               {linkState.suiAddress ? 'Linked to Sui wallet' : 'Linked to account'}
             </p>
-
-            <div className="settings-field">
-              <span className="settings-field__label">Pet ID</span>
-              <input
-                type="text"
-                className="settings-field__input"
-                value={keypair ? truncateAddress(keypair.address) : '—'}
-                readOnly
-                title={keypair?.address}
-              />
-            </div>
 
             <div className="settings-field">
               <span className="settings-field__label">Linked account</span>
@@ -783,122 +664,6 @@ export function SettingsTab(): React.JSX.Element {
             )}
           </div>
         )}
-      </section>
-
-      <section className="settings-section">
-        <h3 className="settings-section__title">Desktop Sui Wallet</h3>
-        <p className="extract-notice">
-          The desktop Sui wallet signs mint transactions and decrypts owner-only Souls in Library. The private key never leaves the main process — every signing or destructive action requires native confirmation.
-        </p>
-
-        {(() => {
-          const linkedSuiAddress = linkState.phase === 'confirmed' ? linkState.suiAddress : null
-          const presentAddress = suiWalletPanel.phase === 'present' ? suiWalletPanel.info.address : null
-          const walletMismatch = Boolean(
-            linkedSuiAddress && presentAddress && !sameSuiAddress(linkedSuiAddress, presentAddress),
-          )
-
-          return (
-            <>
-              {suiWalletPanel.phase === 'loading' && (
-                <div className="link-panel">
-                  <p className="link-panel__status">Checking desktop Sui wallet...</p>
-                </div>
-              )}
-
-              {suiWalletPanel.phase === 'present' && (
-                <>
-                  <div className="settings-field">
-                    <span className="settings-field__label">Sui Address</span>
-                    <div className="settings-field__input-group">
-                      <input
-                        type="text"
-                        className="settings-field__input"
-                        value={truncateAddress(suiWalletPanel.info.address)}
-                        readOnly
-                        title={suiWalletPanel.info.address}
-                      />
-                      <button
-                        className="settings-field__toggle"
-                        onClick={() => { void handleCopySuiWalletAddress() }}
-                        title={suiWalletCopied ? 'Copied!' : 'Copy address'}
-                      >
-                        {suiWalletCopied ? '✓' : '⎘'}
-                      </button>
-                    </div>
-                  </div>
-                  {walletMismatch && (
-                    <p className="link-panel__error">
-                      This desktop Sui wallet does not match the bound primary Sui wallet for the linked account. Mint and protected Library downloads will be rejected until both addresses match.
-                    </p>
-                  )}
-                  <button
-                    className="link-button link-button--secondary"
-                    onClick={() => { void handleResetSuiWallet() }}
-                    disabled={suiWalletBusy !== null}
-                  >
-                    {suiWalletBusy === 'reset' ? 'Resetting…' : 'Reset Desktop Sui Wallet'}
-                  </button>
-                </>
-              )}
-
-              {suiWalletPanel.phase === 'missing' && (
-                <div className="link-panel">
-                  <p className="link-panel__status">No desktop Sui wallet is configured yet.</p>
-                  <button
-                    className="link-button"
-                    onClick={() => { void handleGenerateSuiWallet() }}
-                    disabled={suiWalletBusy !== null}
-                  >
-                    {suiWalletBusy === 'generate' ? 'Generating…' : 'Generate Sui Wallet'}
-                  </button>
-                  <button
-                    className="link-button link-button--secondary"
-                    onClick={handleStartImportSuiWallet}
-                    disabled={suiWalletBusy !== null}
-                  >
-                    Import Existing Key
-                  </button>
-                </div>
-              )}
-
-              {suiWalletPanel.phase === 'importing' && (
-                <div className="link-panel">
-                  <p className="link-panel__instruction">
-                    Paste a Sui private key (bech32 `suiprivkey...`, base64, or hex). The key is sent to the main process once and never logged.
-                  </p>
-                  <textarea
-                    className="settings-field__input"
-                    rows={3}
-                    value={suiWalletImportSecret}
-                    onChange={(event) => setSuiWalletImportSecret(event.target.value)}
-                    placeholder="suiprivkey1..."
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                  <button
-                    className="link-button"
-                    onClick={() => { void handleSubmitImportSuiWallet() }}
-                    disabled={suiWalletBusy !== null || suiWalletImportSecret.trim().length === 0}
-                  >
-                    {suiWalletBusy === 'import' ? 'Importing…' : 'Import Key'}
-                  </button>
-                  <button
-                    className="link-button link-button--secondary"
-                    onClick={() => { void handleCancelImportSuiWallet() }}
-                    disabled={suiWalletBusy !== null}
-                  >
-                    Cancel Import
-                  </button>
-                </div>
-              )}
-
-              {suiWalletError && (
-                <p className="link-panel__error">{suiWalletError}</p>
-              )}
-            </>
-          )
-        })()}
       </section>
 
       <section className="settings-section">

@@ -1,4 +1,4 @@
-export const DEFAULT_WEB_BASE_URL = 'https://clawnews-mu.vercel.app'
+export const DEFAULT_WEB_BASE_URL = 'https://www.soulidity.ai'
 export function getDesktopWebBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   const configuredBaseUrl = env['SOULIDITY_WEB_URL']?.trim() || env['NEXT_PUBLIC_BASE_URL']?.trim()
   if (configuredBaseUrl) {
