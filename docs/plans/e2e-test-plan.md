@@ -202,7 +202,7 @@
 
 **测试以前端实际暴露的功能为准；UI 上不存在的能力不纳入主验收：**
 
-1. **Create wizard 不上传 sprite / voice**：当前 `/create` 4 步只接受 cover + soul.md + memory.md + skill.zip；fixture 也不含 persona sprite / voice。任何"sprite 上传 / persona 激活"步骤如果在 UI 上没有入口，**禁止**通过 `evaluate_script` 直接构造 File 或调 SDK 兜底；这种白盒路径属于"代码侧能力存在但产品未发布"，不计入用户验收。
+1. **Create wizard 不上传 sprite / voice**：当前 `/create` 4 步只接受 cover + soul.md + memory.md + skills.zip；fixture 也不含 persona sprite / voice。任何"sprite 上传 / persona 激活"步骤如果在 UI 上没有入口，**禁止**通过 `evaluate_script` 直接构造 File 或调 SDK 兜底；这种白盒路径属于"代码侧能力存在但产品未发布"，不计入用户验收。
 2. **UI 没有的就跳过整段，而不是绕过**：如果 Phase X 的某个测试只能通过白盒脚本 / SDK 直调实现，且 UI 无对应入口，那该测试整段从主验收里删除（不是改为白盒执行），并在测试数量汇总里减计；只把"UI 入口存在但失败"的情况按"测试纪律"流程定位 + 修源 + 重测。
 3. **Move CLI 调用是例外**：Phase 5.8 / 7.10h / 11.0a-b 等"运维语义"测试（KioskRegistry 矩阵、destroy_invalidated_grant、delete listing）由 `sui client call` / `sui move test` 固化，理由是这些 entry function 本身就不面向终端用户，只面向运维 / 协议自我守护。这部分**保留**，但要在每条测试开头说明"非 UI 路径，校验合约语义"。
 4. **Agent API 是另一类例外**：`web/scripts/e2e-agent-*.ts` 验证的是 agent SDK / API key 调用契约，不是 web UI；Phase 7.x 主流程保留。
@@ -287,7 +287,7 @@ click "Login" 按钮（button:has-text("Login")）
 | `soul.md` | 1K | Soul Character 文件（memory management template） |
 | `memory.md` | 1K | Founding Memory 文件 |
 | `images.jpeg` | 4.8K, 225×225 JPEG | Cover 图片 |
-| `skill.zip` | 5.6K, ZIP 含 SKILL.md frontmatter | Skills Bundle |
+| `skills.zip` | 5.6K, ZIP 含 SKILL.md frontmatter | Skills Bundle |
 
 ### Collection — `/Users/admin/Documents/example-collection/`
 
@@ -297,7 +297,7 @@ click "Login" 按钮（button:has-text("Login")）
 | `1/soul.md` | 1K | 子文件夹 Soul Character |
 | `1/memory.md` | 1K | 子文件夹 Memory |
 | `1/images.jpeg` | 4.8K | 子文件夹 Cover |
-| `1/skill.zip` | 5.6K | 子文件夹 Skills |
+| `1/skills.zip` | 5.6K | 子文件夹 Skills |
 
 ---
 
@@ -831,12 +831,12 @@ done
 ls -la /Users/admin/Documents/example/soul.md \
        /Users/admin/Documents/example/memory.md \
        /Users/admin/Documents/example/images.jpeg \
-       /Users/admin/Documents/example/skill.zip \
+       /Users/admin/Documents/example/skills.zip \
        /Users/admin/Documents/example-collection/soul-collection-template.xlsx \
        /Users/admin/Documents/example-collection/1/soul.md \
        /Users/admin/Documents/example-collection/1/memory.md \
        /Users/admin/Documents/example-collection/1/images.jpeg \
-       /Users/admin/Documents/example-collection/1/skill.zip
+       /Users/admin/Documents/example-collection/1/skills.zip
 ```
 
 ### -1.5 确认 Dev Server 运行 + Env 完整性
@@ -1080,9 +1080,9 @@ fi
 8. **Skills 上传:**
    ```
    upload_file(selector: 'input[data-e2e="skills-input"]',
-               filePath: '/Users/admin/Documents/example/skill.zip')
+               filePath: '/Users/admin/Documents/example/skills.zip')
    ```
-9. `wait_for` text "skill.zip"（确认文件名出现）
+9. `wait_for` text "skills.zip"（确认文件名出现）
 
 ### Test 1.4: 创建向导 Step 3 — Preview（2×2 Review Grid）
 1. `click` "Next: Soul Awakened →" 按钮（`button:has-text("Next: Soul Awakened")`）
@@ -1109,7 +1109,7 @@ fi
    | `images.jpeg`（cover） | 否（public） | `6bf46961d19d8ed0` | 文件本体 | 否（与其他文件 hash 不同） |
    | `soul.md`（char） | 是 | `aad35826f2f798f2` | AES-GCM 密文（每次随机 IV） | 否（密文 hash 每次都不同） |
    | `memory.md` | 是 | `aad35826f2f798f2` | AES-GCM 密文（每次随机 IV） | 否（同上；plaintext 与 soul.md 撞 hash 但密文仍不同） |
-   | `skill.zip` | 是 | `9e6fd6fc45432333` | AES-GCM 密文（每次随机 IV） | 否 |
+   | `skills.zip` | 是 | `9e6fd6fc45432333` | AES-GCM 密文（每次随机 IV） | 否 |
 
    注意：`soul.md` 与 `memory.md` 当前 fixture **plaintext 完全相同（均 1018 字节，`aad35826…` hash）**，但 AES-GCM 用每次随机的 DEK + IV，所以 Walrus blob ID 不会重合，dedupe 不生效。如果未来 Walrus relay 增加 plaintext-level dedupe 或 fixture 内容差异化，**预期次数会变**——按本表为基线，实际偏离时只能修源（fixture / dedupe 实现）后修订表格，禁止把"实际是 3 次"当作"4 次预期错了"绕过断言。每次确认后由 e2e-wallet-stub 签 Walrus register/certify TX。
 4. e2e-wallet-stub 接管 Soul mint 签名（内存 keypair，0 popup）
@@ -1155,7 +1155,7 @@ fi
 1. `navigate_page` → `http://localhost:3100/create`
 2. Name: `E2E Soul Beta NW`，Description: `E2E test Soul B — held, not listed`
 3. Cover: `upload_file` ← `/Users/admin/Documents/example/images.jpeg`
-4. Content: 同 Test 1.3 — soul.md, memory.md, skill.zip 均来自 `/Documents/example/`
+4. Content: 同 Test 1.3 — soul.md, memory.md, skills.zip 均来自 `/Documents/example/`
 5. Preview → Gas → Sign & Deploy
 6. Deploy 阶段同 Test 1.6 处理 `UploadCostReview`；fresh run 预期 4 次确认（与 Test 1.6 相同的 fixture，dedupe 后可能更少；以首次 dry-run 实测为准）
 7. 从 success 页捕获 **SOUL_B_ID**
@@ -1329,7 +1329,7 @@ XLSX_B64=$(base64 -i /Users/admin/Documents/example-collection/soul-collection-t
 SOUL_B64=$(base64 -i /Users/admin/Documents/example-collection/1/soul.md)
 MEM_B64=$(base64 -i /Users/admin/Documents/example-collection/1/memory.md)
 IMG_B64=$(base64 -i /Users/admin/Documents/example-collection/1/images.jpeg)
-SKILL_B64=$(base64 -i /Users/admin/Documents/example-collection/1/skill.zip)
+SKILL_B64=$(base64 -i /Users/admin/Documents/example-collection/1/skills.zip)
 ```
 
 然后注入浏览器：
@@ -1354,8 +1354,8 @@ evaluate_script(`
       'example-collection/1/memory.md'));
     dt.items.add(b64toFile('${IMG_B64}', 'images.jpeg', 'image/jpeg',
       'example-collection/1/images.jpeg'));
-    dt.items.add(b64toFile('${SKILL_B64}', 'skill.zip', 'application/zip',
-      'example-collection/1/skill.zip'));
+    dt.items.add(b64toFile('${SKILL_B64}', 'skills.zip', 'application/zip',
+      'example-collection/1/skills.zip'));
 
     const input = document.querySelector('input[type="file"][webkitdirectory]');
     Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
@@ -2480,7 +2480,7 @@ npx tsx web/scripts/e2e-paid-access-lifecycle.ts revoke
    upload_file(selector: cover image upload zone input,
                filePath: '/Users/admin/Documents/example/images.jpeg')
    ```
-7. 上传 Skills Bundle: `/Users/admin/Documents/example/skill.zip`
+7. 上传 Skills Bundle: `/Users/admin/Documents/example/skills.zip`
 8. `click` "Continue" 按钮
 9. `wait_for` URL 含 `/import/preview`
 
@@ -2581,7 +2581,7 @@ Phase 9 测试数：10 → 6（保留 9.1-9.6）。
 ### Test 10.2: Resources — Content Format + Getting Started
 1. `navigate_page` → `http://localhost:3100/resources/content-format`
 2. `wait_for` text "soul.md" 或 "Content Format"
-3. `evaluate_script` 验证页面含 soul.md / memory.md / skill.zip 格式说明
+3. `evaluate_script` 验证页面含 soul.md / memory.md / skills.zip 格式说明
 4. `navigate_page` → `http://localhost:3100/resources/getting-started`
 5. `wait_for` 页面加载完成（无 error overlay）
 

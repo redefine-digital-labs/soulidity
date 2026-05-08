@@ -24,7 +24,6 @@ vi.mock('../../lib/hooks/use-desktop-wallet', () => ({
   useDesktopWallet: () => ({
     suiWallet: { address: '0xwallet123', publicKey: 'pk', createdAt: 0 },
     signPersonalMessage: vi.fn().mockResolvedValue('0xsig'),
-    signAndExecute: vi.fn(),
     suiClient: {},
   }),
 }))

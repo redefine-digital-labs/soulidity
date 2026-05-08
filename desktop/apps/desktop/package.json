@@ -98,7 +98,7 @@
     "@soulidity/shared": "workspace:*",
     "@tanstack/react-query": "5.100.6",
     "chokidar": "^5.0.0",
-    "electron-store": "11.0.2",
+    "electron-store": "^8.2.0",
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {

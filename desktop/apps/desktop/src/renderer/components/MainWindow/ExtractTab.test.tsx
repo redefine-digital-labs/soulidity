@@ -121,6 +121,9 @@ function makeDraft(overrides: Partial<ExtractSoulDraft> = {}): ExtractSoulDraft 
     coverImageFileName: 'extract-cover.svg',
     coverImageMimeType: 'image/svg+xml',
     coverImageGenerated: true,
+    coverImagePrompt: '',
+    characterType: '',
+    extraDescription: '',
     soulMarkdown: '# Soul Character\n\n## Core Truths\n- What this Soul is here to do: help.\n',
     memoryMarkdown: '# Founding Memory\n\n## Origin Snapshot\n- Where this Soul starts: here.\n',
     skillsArchive: null,
@@ -141,6 +144,7 @@ type MockElectronApi = Pick<
   | 'extraction:import-openclaw-draft'
   | 'extraction:create-local-draft'
   | 'extraction:open-web-create'
+  | 'extraction:start-mint-handoff'
   | 'extraction:scan-progress'
 >
 
@@ -171,6 +175,7 @@ function createElectronApi(overrides: Partial<MockElectronApi> = {}): MockElectr
       name: 'Codex Draft',
     })),
     'extraction:open-web-create': vi.fn().mockResolvedValue(undefined),
+    'extraction:start-mint-handoff': vi.fn().mockResolvedValue(undefined),
     'extraction:scan-progress': vi.fn().mockReturnValue(() => {}),
     ...overrides,
   }
@@ -184,6 +189,26 @@ async function click(container: HTMLDivElement, label: string) {
     await flushEffects()
     await flushEffects()
   })
+}
+
+async function setTextareaByLabel(container: HTMLDivElement, labelText: string, value: string) {
+  const labels = Array.from(container.querySelectorAll('span.settings-field__label'))
+  const label = labels.find((node) => node.textContent === labelText)
+  expect(label).toBeTruthy()
+  const textarea = label!.parentElement!.querySelector('textarea') as HTMLTextAreaElement | null
+  expect(textarea).toBeTruthy()
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+  await act(async () => {
+    setter.call(textarea!, value)
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushEffects()
+    await flushEffects()
+  })
+}
+
+async function submitDirectionWithCharacterType(container: HTMLDivElement, agentLabel: string, characterType = 'AI Coder') {
+  await setTextareaByLabel(container, 'Character Type *', characterType)
+  await click(container, `Generate Draft with ${agentLabel}`)
 }
 
 describe('ExtractTab', () => {
@@ -340,14 +365,95 @@ describe('ExtractTab', () => {
 
     await click(container, 'Start Scan')
     await click(container, 'Create with Codex')
+    // Direction step is now interposed between source-selection and the LLM
+    // call so the user can name the character before the agent drafts.
+    await submitDirectionWithCharacterType(container, 'Codex', 'AI Coder')
 
     expect(createLocalDraft).toHaveBeenCalledWith({
       agent: 'codex',
       scanResults: [makeScanResult()],
+      direction: {
+        characterType: 'AI Coder',
+        extraDescription: '',
+      },
     })
     expect(container.textContent).toContain('Created with Codex')
     const nameInput = container.querySelector('input[type="text"]') as HTMLInputElement | null
     expect(nameInput?.value).toBe('Codex Draft')
+  })
+
+  it('disables Generate Draft on the Direction step until a character type is entered', async () => {
+    await renderWithApi(createElectronApi({
+      'extraction:get-openclaw-import-status': vi.fn().mockResolvedValue(makeOpenClawStatus({
+        ready: false,
+        soulFilePath: null,
+        memoryFilePath: null,
+        detail: 'OpenClaw workspace is missing SOUL.md.',
+      })),
+      'extraction:get-local-agent-statuses': vi.fn().mockResolvedValue(makeAgentStatuses([
+        { agent: 'codex', status: 'available', detail: 'Ready.' },
+      ])),
+    }))
+
+    await click(container, 'Start Scan')
+    await click(container, 'Create with Codex')
+
+    const findGenerateButton = () => Array.from(container.querySelectorAll('button'))
+      .find((node) => node.textContent?.includes('Generate Draft with Codex')) as HTMLButtonElement | undefined
+
+    const initialButton = findGenerateButton()
+    expect(initialButton?.disabled).toBe(true)
+
+    await setTextareaByLabel(container, 'Character Type *', 'AI Coder')
+
+    const enabledButton = findGenerateButton()
+    expect(enabledButton?.disabled).toBe(false)
+  })
+
+  it('renders the LLM cover image prompt on the Review step and lets the user edit it', async () => {
+    const llmCoverPrompt = 'A square cyberpunk illustration of a coder silhouette on a neon-lit rooftop at dusk; magenta and teal palette; cinematic backlight; no close-up faces.'
+    const createLocalDraft = vi.fn().mockResolvedValue(makeDraft({
+      creationSource: { kind: 'local-agent', label: 'Created with Codex', agent: 'codex' },
+      name: 'Codex Draft',
+      coverImagePrompt: llmCoverPrompt,
+      characterType: 'AI Coder',
+      extraDescription: 'cyberpunk',
+    }))
+
+    await renderWithApi(createElectronApi({
+      'extraction:get-openclaw-import-status': vi.fn().mockResolvedValue(makeOpenClawStatus({
+        ready: false,
+        soulFilePath: null,
+        memoryFilePath: null,
+        detail: 'OpenClaw workspace is missing SOUL.md.',
+      })),
+      'extraction:get-local-agent-statuses': vi.fn().mockResolvedValue(makeAgentStatuses([
+        { agent: 'codex', status: 'available', detail: 'Ready.' },
+      ])),
+      'extraction:create-local-draft': createLocalDraft,
+    }))
+
+    await click(container, 'Start Scan')
+    await click(container, 'Create with Codex')
+    await submitDirectionWithCharacterType(container, 'Codex', 'AI Coder')
+
+    expect(container.textContent).toContain('Cover Image Prompt')
+    const textareas = Array.from(container.querySelectorAll('textarea')) as HTMLTextAreaElement[]
+    const promptTextarea = textareas.find((node) => node.value === llmCoverPrompt)
+    expect(promptTextarea).toBeTruthy()
+
+    // Edit the cover prompt — the textarea is reactive against draft state and
+    // must reflect manual overrides. This guards against the cover prompt being
+    // accidentally bound read-only in a future refactor.
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+    await act(async () => {
+      setter.call(promptTextarea!, 'Manual override prompt')
+      promptTextarea!.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushEffects()
+    })
+
+    const updatedTextareas = Array.from(container.querySelectorAll('textarea')) as HTMLTextAreaElement[]
+    expect(updatedTextareas.some((node) => node.value === 'Manual override prompt')).toBe(true)
   })
 
   it('treats the generated cover as required until the user uploads a replacement', async () => {
@@ -372,6 +478,7 @@ describe('ExtractTab', () => {
 
     await click(container, 'Start Scan')
     await click(container, 'Create with Codex')
+    await submitDirectionWithCharacterType(container, 'Codex')
 
     expect(container.textContent).toContain('Cover image is required before web create')
     expect(container.textContent).toContain('Upload Cover Image')
@@ -398,22 +505,54 @@ describe('ExtractTab', () => {
     expect(container.textContent).toContain('Upload Cover Image')
   })
 
-  it('routes saved local drafts to the web create flow instead of desktop mint', async () => {
-    const openWebCreate = vi.fn().mockResolvedValue(undefined)
+  it('Mint By Web is gated on a real cover image and triggers the mint hand-off IPC', async () => {
+    const startMintHandoff = vi.fn().mockResolvedValue(undefined)
+
+    // Default makeDraft uses the generated SVG placeholder, which the
+    // hand-off rejects. Stub a draft with a real cover so the button is
+    // enabled and the IPC call can be observed.
+    const draftWithRealCover = makeDraft({
+      coverImageDataUrl: 'data:image/png;base64,UE5HUkVBTA==',
+      coverImageFileName: 'real-cover.png',
+      coverImageMimeType: 'image/png',
+      coverImageGenerated: false,
+    })
+
     await renderWithApi(createElectronApi({
-      'desktop:create-draft:load': vi.fn().mockResolvedValue(makeDraft()),
-      'extraction:open-web-create': openWebCreate,
+      'desktop:create-draft:load': vi.fn().mockResolvedValue(draftWithRealCover),
+      'extraction:start-mint-handoff': startMintHandoff,
     }))
 
-    expect(container.textContent).toContain('Create on Web')
-    expect(container.textContent).toContain('wallet-paid web create flow')
-    expect(container.textContent).toContain('Open Web Create')
+    expect(container.textContent).toContain('Mint By Web')
+    expect(container.textContent).not.toContain('Mint Directly')
     expect(container.textContent).not.toContain('Load Desktop Mint')
     expect(container.textContent).not.toContain('Mint on Sui')
 
-    await click(container, 'Open Web Create')
+    const button = Array.from(container.querySelectorAll('button')).find((node) => node.textContent?.includes('Mint By Web')) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
 
-    expect(openWebCreate).toHaveBeenCalledTimes(1)
+    await click(container, 'Mint By Web')
+
+    expect(startMintHandoff).toHaveBeenCalledTimes(1)
+    const arg = startMintHandoff.mock.calls[0]?.[0] as { coverImageMimeType: string; name: string }
+    expect(arg.coverImageMimeType).toBe('image/png')
+    expect(arg.name).toBe(draftWithRealCover.name)
+  })
+
+  it('Mint By Web is disabled while the saved draft still has the SVG placeholder cover', async () => {
+    const startMintHandoff = vi.fn().mockResolvedValue(undefined)
+    // Default makeDraft has coverImageGenerated: true + image/svg+xml.
+    await renderWithApi(createElectronApi({
+      'desktop:create-draft:load': vi.fn().mockResolvedValue(makeDraft()),
+      'extraction:start-mint-handoff': startMintHandoff,
+    }))
+
+    const button = Array.from(container.querySelectorAll('button')).find((node) => node.textContent?.includes('Mint By Web')) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(container.textContent).toContain('Upload a real cover image first')
+
+    await click(container, 'Mint By Web')
+    expect(startMintHandoff).not.toHaveBeenCalled()
   })
 
   it('does not expose the retired desktop mint path for new local drafts', async () => {
@@ -431,9 +570,10 @@ describe('ExtractTab', () => {
 
     await click(container, 'Start Scan')
     await click(container, 'Create with Codex')
+    await submitDirectionWithCharacterType(container, 'Codex')
 
-    expect(container.textContent).toContain('Create on Web')
-    expect(container.textContent).toContain('Open Web Create')
+    expect(container.textContent).toContain('Mint By Web')
+    expect(container.textContent).not.toContain('Mint Directly')
     expect(container.textContent).not.toContain('Desktop wallet auth')
     expect(container.textContent).not.toContain('Mint on Sui')
     expect(container.textContent ?? '').not.toMatch(/[A-Z_]+_PRIVY_APP_ID/)
