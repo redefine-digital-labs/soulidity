@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SuiClientProvider } from '@mysten/dapp-kit'
 import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
-import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { usePersonaLibrary, type PersonaItem } from '../../hooks/usePersonaLibrary'
 import {
   loadDecryptedContentVersion,
@@ -16,34 +15,6 @@ type RuntimeConfig = {
   suiNetwork: string
   authReady: boolean
   authBlocker: string | null
-}
-
-type DesktopMeResponse = {
-  profile: {
-    accountId: string
-    primarySuiAddress: string | null
-  }
-}
-
-async function ipcGetDesktopMe(): Promise<DesktopMeResponse | null> {
-  const api = window.electronAPI
-  if (!api?.getDesktopMe) return null
-
-  try {
-    return (await api.getDesktopMe()) as DesktopMeResponse | null
-  } catch {
-    return null
-  }
-}
-
-function sameWalletAddress(left: string | null | undefined, right: string | null | undefined) {
-  if (!left || !right) return false
-
-  try {
-    return normalizeSuiAddress(left) === normalizeSuiAddress(right)
-  } catch {
-    return false
-  }
 }
 
 type SuiNetwork = 'mainnet' | 'testnet'
@@ -129,7 +100,6 @@ function getDownloadDisabledState(
   persona: PersonaItem,
   section: CardSection,
   ownerOnlyReady: boolean,
-  walletMismatch: boolean,
 ) {
   if (persona.isCached) {
     return { disabled: false, label: 'Download', hint: null as string | null }
@@ -146,23 +116,26 @@ function getDownloadDisabledState(
   if (isProtectedSpritePolicy(persona.spriteDownloadPolicy)) {
     const label = persona.spriteDownloadPolicy === 'allowlist' ? 'Allowlist' : 'Owner Only'
     const protectedHint = persona.spriteDownloadPolicy === 'allowlist'
-      ? 'Allowlist-protected sprite. The local Sui address will decrypt it.'
-      : 'Owner-only sprite. The local Sui address will decrypt it.'
+      ? 'Allowlist-protected sprite. The desktop pet grant will decrypt it.'
+      : 'Owner-only sprite. The desktop pet grant will decrypt it.'
     if (section === 'marketplace') {
       return {
         disabled: true,
         label,
-        hint: 'Protected sprites must be downloaded from My Souls with desktop wallet auth.',
+        hint: 'Protected sprites must be downloaded from My Souls with an active grant for this pet.',
       }
     }
     if (!ownerOnlyReady) {
       return { disabled: true, label: 'Wallet Required', hint: 'Desktop wallet auth must be ready before private sprite download.' }
     }
-    if (walletMismatch) {
+    if (!persona.agentSpriteGrant?.active) {
+      // Per-Soul grant gate. Replaces the legacy global walletMismatch
+      // blocker that fired even when an owner had not yet authorized any
+      // pet for any Soul. Direct the user to the web app to authorize.
       return {
         disabled: true,
-        label: 'Wallet Mismatch',
-        hint: 'The desktop pet keypair cannot sign for the bound Sui wallet. Use the web app to download protected sprites.',
+        label: 'Authorize on web',
+        hint: 'Open My Desktop Pets on the web app and authorize this Soul for the linked pet to enable downloads.',
       }
     }
     return { disabled: false, label: 'Download', hint: protectedHint }
@@ -179,7 +152,6 @@ function PersonaCard({
   persona,
   section,
   ownerOnlyReady,
-  walletMismatch,
   onDownload,
   onActivate,
   onRemove,
@@ -187,12 +159,11 @@ function PersonaCard({
   persona: PersonaItem
   section: CardSection
   ownerOnlyReady: boolean
-  walletMismatch: boolean
   onDownload?: () => void
   onActivate?: () => void
   onRemove?: () => void
 }): React.JSX.Element {
-  const downloadState = getDownloadDisabledState(persona, section, ownerOnlyReady, walletMismatch)
+  const downloadState = getDownloadDisabledState(persona, section, ownerOnlyReady)
   const listedPrice = formatListedPrice(persona.listedPriceAtomic)
 
   return (
@@ -283,11 +254,9 @@ function PersonaCard({
 
 function LibraryTabInner({
   ownerOnlyDownloadReady,
-  walletMismatch,
   downloadProtectedSoul,
 }: {
   ownerOnlyDownloadReady: boolean
-  walletMismatch: boolean
   downloadProtectedSoul?: (item: PersonaItem) => Promise<{ error?: string } | void>
 }) {
   const {
@@ -376,12 +345,12 @@ function LibraryTabInner({
       </section>
 
       {/*
-        The walletMismatch banner used to live here, but it ran on every
-        Library open whether or not the user was about to download a
-        protected sprite — turning a permission caveat into a startup error.
-        The matching disabled state still surfaces inside each PersonaCard
-        whose Download button would actually be blocked, so the same signal
-        reaches the user only at the moment of action.
+        The walletMismatch banner that used to live here surfaced for every
+        Library open even though the desktop pet keypair never signs for
+        the bound human wallet anyway. With per-Soul `agentSpriteGrant`
+        gating below, the user only sees the relevant signal at the moment
+        of action — and only when their pet has not yet been authorized
+        for that specific Soul.
       */}
 
       {downloaded.length > 0 && (
@@ -394,7 +363,6 @@ function LibraryTabInner({
                 persona={persona}
                 section="downloaded"
                 ownerOnlyReady={ownerOnlyDownloadReady}
-                walletMismatch={walletMismatch}
                 onActivate={handleActivate(persona.catalogId)}
                 onRemove={handleRemove(persona.catalogId)}
               />
@@ -415,7 +383,6 @@ function LibraryTabInner({
                   persona={persona}
                   section="owned"
                   ownerOnlyReady={ownerOnlyDownloadReady}
-                  walletMismatch={walletMismatch}
                   onDownload={handleDownload(persona.catalogId)}
                   onActivate={handleActivate(persona.catalogId)}
                   onRemove={handleRemove(persona.catalogId)}
@@ -451,7 +418,6 @@ function LibraryTabInner({
                   persona={persona}
                   section="marketplace"
                   ownerOnlyReady={false}
-                  walletMismatch={walletMismatch}
                   onDownload={handleDownload(persona.catalogId)}
                   onActivate={handleActivate(persona.catalogId)}
                   onRemove={handleRemove(persona.catalogId)}
@@ -478,28 +444,17 @@ function LibraryTabInner({
   )
 }
 
-function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: string | null }) {
+function LibraryTabWalletInner() {
   const { signPersonalMessage, suiClient, suiWallet } = useDesktopWallet()
-
-  // After the desktop pet identity split, `suiWallet.address` is the local
-  // pet/agent keypair, not the user's bound Sui wallet. Owner-only / allowlist
-  // sprites are encrypted to the bound wallet, so the desktop pet cannot sign
-  // the Seal session — and the manifest route's F-278 backstop also rejects
-  // any `viewer` that is not in the bound wallet set. Detect the mismatch up
-  // front so the UI never advertises a Download button that we know will fail.
-  const walletMismatch = useMemo(
-    () => Boolean(primarySuiAddress && suiWallet?.address && !sameWalletAddress(primarySuiAddress, suiWallet.address)),
-    [primarySuiAddress, suiWallet?.address],
-  )
 
   const downloadProtectedSoul = useCallback(async (item: PersonaItem) => {
     if (!suiWallet?.address) {
       return { error: 'Local Sui address is not ready yet.' }
     }
 
-    if (walletMismatch) {
+    if (!item.agentSpriteGrant?.active) {
       return {
-        error: 'The desktop pet keypair cannot sign for the bound Sui wallet. Use the web app to download protected sprites.',
+        error: 'This pet has no active sprite grant for this Soul. Authorize it from My Desktop Pets on the web app.',
       }
     }
 
@@ -510,9 +465,13 @@ function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: strin
     }
 
     try {
+      // No `viewer` query — the manifest route resolves the viewer from
+      // the desktop bearer token's pet identity. Sending a `viewer` here
+      // would only be accepted if it equalled the pet keypair anyway, so
+      // omitting it keeps the call shape simpler and impossible to drift.
       const manifestPayload = await fetchManifest({
         catalogId: item.catalogId,
-        viewer: suiWallet.address,
+        viewer: null,
       })
       const manifest = parsePrivateManifest(manifestPayload)
       const access = parseContentAccessResponse(manifest.sprite.privateAccess)
@@ -537,12 +496,11 @@ function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: strin
         error: error instanceof Error ? error.message : 'Failed to decrypt protected sprite',
       }
     }
-  }, [signPersonalMessage, suiClient, suiWallet?.address, walletMismatch])
+  }, [signPersonalMessage, suiClient, suiWallet?.address])
 
   return (
     <LibraryTabInner
       ownerOnlyDownloadReady
-      walletMismatch={walletMismatch}
       downloadProtectedSoul={downloadProtectedSoul}
     />
   )
@@ -551,25 +509,9 @@ function LibraryTabWalletInner({ primarySuiAddress }: { primarySuiAddress: strin
 function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | null }) {
   const ownerOnlyEnabled = Boolean(runtimeConfig?.authReady)
   const [queryClient] = useState(() => new QueryClient())
-  const [primarySuiAddress, setPrimarySuiAddress] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!ownerOnlyEnabled) return
-
-    let cancelled = false
-    void ipcGetDesktopMe().then((me) => {
-      if (!cancelled) {
-        setPrimarySuiAddress(me?.profile?.primarySuiAddress ?? null)
-      }
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [ownerOnlyEnabled])
 
   if (!ownerOnlyEnabled) {
-    return <LibraryTabInner ownerOnlyDownloadReady={false} walletMismatch={false} />
+    return <LibraryTabInner ownerOnlyDownloadReady={false} />
   }
 
   const network = runtimeConfig!.suiNetwork as SuiNetwork
@@ -578,7 +520,7 @@ function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | n
   return (
     <QueryClientProvider client={queryClient}>
       <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-        <LibraryTabWalletInner primarySuiAddress={primarySuiAddress} />
+        <LibraryTabWalletInner />
       </SuiClientProvider>
     </QueryClientProvider>
   )

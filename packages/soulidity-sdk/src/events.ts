@@ -987,11 +987,7 @@ export function extractCollectionListingCancelledEvent(transaction: TransactionL
 
 // ── grant.move ────────────────────────────────────────────────────────
 
-export function extractSoulGrantIssuedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantIssued`, trustedPackageIds)
-  if (!event) {
-    throw new OnChainVerificationError('SoulGrantIssued event is missing from the transaction')
-  }
+function parseSoulGrantIssuedEvent(event: Record<string, unknown>) {
   const scopeMask = readNumber(event.scope_mask, 'SoulGrantIssued scope_mask')
   return {
     grantId: readObjectId(event.grant_id, 'SoulGrantIssued grant_id'),
@@ -1004,11 +1000,29 @@ export function extractSoulGrantIssuedEvent(transaction: TransactionLike, packag
   }
 }
 
-export function extractSoulGrantRevokedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantRevoked`, trustedPackageIds)
+export function extractSoulGrantIssuedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantIssued`, trustedPackageIds)
   if (!event) {
-    throw new OnChainVerificationError('SoulGrantRevoked event is missing from the transaction')
+    throw new OnChainVerificationError('SoulGrantIssued event is missing from the transaction')
   }
+  return parseSoulGrantIssuedEvent(event)
+}
+
+/**
+ * Extract every `SoulGrantIssued` event in emission order. Used by post-TX
+ * mirror routes that handle batched `grant::issue_to_grantee` PTBs (see
+ * `buildBatchIssueGrantsTx`); pair events to expected souls by `soulId`.
+ */
+export function extractAllSoulGrantIssuedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::grant::SoulGrantIssued`, trustedPackageIds)
+  return events.map(parseSoulGrantIssuedEvent)
+}
+
+function parseSoulGrantRevokedEvent(event: Record<string, unknown>) {
   return {
     grantId: readObjectId(event.grant_id, 'SoulGrantRevoked grant_id'),
     soulId: readObjectId(event.soul_id, 'SoulGrantRevoked soul_id'),
@@ -1017,11 +1031,28 @@ export function extractSoulGrantRevokedEvent(transaction: TransactionLike, packa
   }
 }
 
-export function extractSoulGrantSupersededEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
-  const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantSuperseded`, trustedPackageIds)
+export function extractSoulGrantRevokedEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantRevoked`, trustedPackageIds)
   if (!event) {
-    throw new OnChainVerificationError('SoulGrantSuperseded event is missing from the transaction')
+    throw new OnChainVerificationError('SoulGrantRevoked event is missing from the transaction')
   }
+  return parseSoulGrantRevokedEvent(event)
+}
+
+/**
+ * Extract every `SoulGrantRevoked` event in emission order. Used by post-TX
+ * mirror routes that handle batched `grant::revoke` PTBs.
+ */
+export function extractAllSoulGrantRevokedEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::grant::SoulGrantRevoked`, trustedPackageIds)
+  return events.map(parseSoulGrantRevokedEvent)
+}
+
+function parseSoulGrantSupersededEvent(event: Record<string, unknown>) {
   return {
     oldGrantId: readObjectId(event.old_grant_id, 'SoulGrantSuperseded old_grant_id'),
     newGrantId: readObjectId(event.new_grant_id, 'SoulGrantSuperseded new_grant_id'),
@@ -1029,6 +1060,28 @@ export function extractSoulGrantSupersededEvent(transaction: TransactionLike, pa
     granteeAddress: readAddress(event.grantee, 'SoulGrantSuperseded grantee'),
     supersededByAddress: readAddress(event.superseded_by, 'SoulGrantSuperseded superseded_by'),
   }
+}
+
+export function extractSoulGrantSupersededEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
+  const event = extractTypedEvent(transaction, `${packageId}::grant::SoulGrantSuperseded`, trustedPackageIds)
+  if (!event) {
+    throw new OnChainVerificationError('SoulGrantSuperseded event is missing from the transaction')
+  }
+  return parseSoulGrantSupersededEvent(event)
+}
+
+/**
+ * Extract every `SoulGrantSuperseded` event in emission order. Batch issue
+ * PTBs may emit one per superseded slot; mirror routes pair by `soulId` so
+ * each affected `SoulGrantRecord` row can be marked `superseded` correctly.
+ */
+export function extractAllSoulGrantSupersededEvents(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const events = extractAllTypedEvents(transaction, `${packageId}::grant::SoulGrantSuperseded`, trustedPackageIds)
+  return events.map(parseSoulGrantSupersededEvent)
 }
 
 export function extractSoulGrantExpiredEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {

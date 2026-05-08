@@ -10,6 +10,10 @@ export const SOULIDITY_TX_SYNC_ROUTE_KEYS = [
   'grant:revoke',
   'grant:revoke-scope',
   'grant:capacity',
+  // Pet-scoped batch grant issue/revoke driven by `/account/pets` PetCard.
+  // One row per (memberId, petId, txDigest) so wallet retries dedupe.
+  'pet-grant:issue',
+  'pet-grant:revoke',
   // Phase 2 typed-content writes (replaces memory/skills/assets/metadata legacy keys).
   'content:append',
   'content:delete',

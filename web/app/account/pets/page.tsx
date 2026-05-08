@@ -20,6 +20,10 @@ function PetsPanel() {
   const searchParams = useSearchParams()
   const initialCode = searchParams.get('link')
   const [state, setState] = useState<FetchState>({ status: 'idle' })
+  // `autoOpenGrantPetId` flips on once after a fresh link so the matching
+  // PetCard opens the issue dialog — the wallet sign still happens
+  // explicitly inside the dialog.
+  const [autoOpenGrantPetId, setAutoOpenGrantPetId] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setState((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }))
@@ -50,6 +54,16 @@ function PetsPanel() {
     }
   }, [getAuthHeaders])
 
+  const handleLinked = useCallback(
+    async (result: { petId: string | null }) => {
+      if (result.petId) {
+        setAutoOpenGrantPetId(result.petId)
+      }
+      await refresh()
+    },
+    [refresh],
+  )
+
   useEffect(() => {
     if (!authenticated) return
     void refresh()
@@ -69,7 +83,7 @@ function PetsPanel() {
       </div>
 
       <div className="mb-6">
-        <LinkPetDialog initialCode={initialCode} onLinked={refresh} />
+        <LinkPetDialog initialCode={initialCode} onLinked={handleLinked} />
       </div>
 
       {state.status === 'loading' || state.status === 'idle' ? (
@@ -103,7 +117,12 @@ function PetsPanel() {
         <ul className="space-y-3">
           {state.pets.map((pet) => (
             <li key={pet.id}>
-              <PetCard pet={pet} onMutate={refresh} />
+              <PetCard
+                pet={pet}
+                onMutate={refresh}
+                autoOpenGrant={autoOpenGrantPetId === pet.id ? 'issue' : null}
+                onAutoOpenConsumed={() => setAutoOpenGrantPetId(null)}
+              />
             </li>
           ))}
         </ul>

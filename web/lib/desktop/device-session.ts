@@ -150,6 +150,8 @@ function toCompleteConfirmedResponse(session: {
   expiresAt: Date
   confirmedAt: Date | null
   pollIntervalSeconds: number
+  petId?: string | null
+  agentAddress?: string | null
 }): DesktopDeviceCompleteResponse {
   if (session.status !== 'confirmed' || !session.accountId || !session.confirmedAt) {
     throw new Error('Desktop device session is not confirmed')
@@ -164,7 +166,35 @@ function toCompleteConfirmedResponse(session: {
     expiresAt: asIso(session.expiresAt),
     confirmedAt: asIso(session.confirmedAt),
     pollInterval: session.pollIntervalSeconds,
+    petId: session.petId ?? null,
+    agentAddress: session.agentAddress ?? null,
   }
+}
+
+/**
+ * Resolve `(petId, agentAddress)` for a confirmed session. Same-account
+ * replay must NOT rotate the pet credentials, so this only reads — it does
+ * not create or update anything. Returns nulls when the session has no
+ * `agentAddress` (legacy device-start without wallet sig) or the pet row
+ * was already revoked between confirm and replay.
+ */
+async function lookupConfirmedPetSummary(params: {
+  accountId: string | null
+  agentAddress: string | null
+}): Promise<{ petId: string | null; agentAddress: string | null }> {
+  if (!params.accountId || !params.agentAddress) {
+    return { petId: null, agentAddress: params.agentAddress ?? null }
+  }
+  const pet = await prisma.desktopPet.findUnique({
+    where: {
+      accountId_agentAddress: {
+        accountId: params.accountId,
+        agentAddress: params.agentAddress,
+      },
+    },
+    select: { id: true },
+  })
+  return { petId: pet?.id ?? null, agentAddress: params.agentAddress }
 }
 
 function toStatusResponse(session: {
@@ -566,6 +596,10 @@ export async function completeDesktopDeviceSession(
     // rotated through `/api/desktop/me/agent-key/rotate`. Confirmed sessions
     // are read-only after the initial confirm; a new `userCode` must be
     // started for a fresh link.
+    const replaySummary = await lookupConfirmedPetSummary({
+      accountId: session.accountId,
+      agentAddress: session.agentAddress,
+    })
     return toCompleteConfirmedResponse({
       status: session.status,
       accountId: session.accountId ?? accountId,
@@ -574,10 +608,12 @@ export async function completeDesktopDeviceSession(
       expiresAt: session.expiresAt,
       confirmedAt: session.confirmedAt ?? now,
       pollIntervalSeconds: session.pollIntervalSeconds,
+      petId: replaySummary.petId,
+      agentAddress: replaySummary.agentAddress,
     })
   }
 
-  const confirmedSession = await prisma.$transaction(async (tx) => {
+  const transactionResult = await prisma.$transaction(async (tx) => {
     const current = await tx.desktopDeviceSession.findUnique({
       where: { id: session.id },
       select: { status: true, accountId: true },
@@ -588,12 +624,13 @@ export async function completeDesktopDeviceSession(
         throw new DesktopDeviceSessionConflictError()
       }
       if (!current || current.status === 'expired') {
-        return null
+        return { confirmed: null, desktopPetId: null as string | null }
       }
-      return tx.desktopDeviceSession.findUnique({
+      const replay = await tx.desktopDeviceSession.findUnique({
         where: { id: session.id },
         select: deviceSessionCompleteResultSelect,
       })
+      return { confirmed: replay, desktopPetId: null as string | null }
     }
 
     const confirmed = await tx.desktopDeviceSession.update({
@@ -606,22 +643,43 @@ export async function completeDesktopDeviceSession(
       select: deviceSessionCompleteResultSelect,
     })
 
+    let desktopPetId: string | null = null
     if (session.agentAddress) {
-      await persistConfirmedDesktopPet(tx, {
+      const persisted = await persistConfirmedDesktopPet(tx, {
         accountId,
         sessionId: session.id,
         deviceCode: session.deviceCode,
         agentAddress: session.agentAddress,
         now,
       })
+      desktopPetId = persisted.desktopPetId
     }
 
-    return confirmed
+    return { confirmed, desktopPetId }
   })
 
+  const confirmedSession = transactionResult.confirmed
   if (!confirmedSession || confirmedSession.status === 'expired') {
     return toStatusResponse(session)
   }
 
-  return toCompleteConfirmedResponse(confirmedSession)
+  let petId = transactionResult.desktopPetId
+  let agentAddress = confirmedSession.agentAddress ?? null
+  if (!petId && agentAddress && confirmedSession.accountId) {
+    // Replay landed mid-transaction (current.status was 'confirmed') — the
+    // pet row already exists; surface its id so the browser can open the
+    // authorize step on the rerun.
+    const summary = await lookupConfirmedPetSummary({
+      accountId: confirmedSession.accountId,
+      agentAddress,
+    })
+    petId = summary.petId
+    agentAddress = summary.agentAddress
+  }
+
+  return toCompleteConfirmedResponse({
+    ...confirmedSession,
+    petId,
+    agentAddress,
+  })
 }

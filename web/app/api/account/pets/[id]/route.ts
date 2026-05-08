@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { requireMutationIdentity } from '@/lib/auth/identity'
 import { prisma } from '@/lib/prisma'
-import { revokeDesktopPet } from '@/lib/desktop/revoke'
+import { findActiveAssetGrantsForPet, revokeDesktopPet } from '@/lib/desktop/revoke'
 
 export const dynamic = 'force-dynamic'
 
@@ -123,12 +123,25 @@ export async function PATCH(
 /**
  * Unlink a desktop pet from the calling account.
  *
- * Cookie-based human auth + CSRF. The transaction:
+ * Cookie-based human auth + CSRF. The flow:
  *
  * 1. Looks up the pet and verifies it belongs to the caller. Cross-account
  *    or non-existent ids both return 404.
- * 2. Deletes the `DesktopPet` row (invalidates any `dtk_*`).
- * 3. Disables the bound agent `Member` and clears all API key hashes
+ * 2. Pre-checks for active, non-expired asset-scope grants targeting the
+ *    pet's `agentAddress`. The blocker is authoritative: it consults the
+ *    `SoulGrantRecord` mirror first and re-checks the chain directly when
+ *    the mirror is empty, so a stale or never-mirrored on-chain grant
+ *    cannot fail-open this teardown. Active on-chain grants survive a row
+ *    delete, so blindly removing the row would strand the desktop pet
+ *    with usable sprite-download access. When any are found, returns 409
+ *    with the grant list and tells the user to revoke them via the
+ *    wallet-signed PetCard flow first. When the on-chain re-check itself
+ *    is `incomplete` (e.g. the caller owns more Souls than the per-call
+ *    cap or a transient RPC failed), the route fails closed with HTTP
+ *    503 and a `retryable: true` body so the user retries instead of
+ *    silently orphaning a grant the helper couldn't see.
+ * 3. Otherwise: deletes the `DesktopPet` row (invalidates any `dtk_*`),
+ *    disables the bound agent `Member`, and clears all API key hashes
  *    (active + pending), invalidating any committed `sk-*`.
  *
  * `WalletBinding` is intentionally preserved so the same desktop pet
@@ -153,17 +166,48 @@ export async function DELETE(
 
   const { id } = await params
 
+  const pet = await prisma.desktopPet.findUnique({
+    where: { id },
+    select: { accountId: true, agentMemberId: true, agentAddress: true },
+  })
+  if (!pet || pet.accountId !== identity.accountId) {
+    return NextResponse.json({ error: 'Desktop pet not found' }, { status: 404 })
+  }
+
+  const grantsResult = await findActiveAssetGrantsForPet({
+    agentAddress: pet.agentAddress,
+    ownerMemberId: identity.memberId,
+  })
+  if (grantsResult.grants.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          'Revoke this desktop pet\'s active sprite grants from PetCard before unlinking — on-chain grants survive row deletion.',
+        activeAssetGrants: grantsResult.grants,
+      },
+      { status: 409 },
+    )
+  }
+  // Fail closed when the on-chain re-check could not exhaustively prove
+  // there are no further grants. An empty `grants` list with
+  // `incomplete=true` is NOT a clean "no active grants" — it means the
+  // helper hit the per-call Soul cap or a transient RPC error and
+  // cannot rule out a live grant we'd be orphaning. The user retries;
+  // we do not delete.
+  if (grantsResult.incomplete) {
+    return NextResponse.json(
+      {
+        error:
+          'Could not verify on-chain grant state for this desktop pet. Please retry.',
+        retryable: true,
+        reason: grantsResult.incompleteReason,
+      },
+      { status: 503 },
+    )
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
-      const pet = await tx.desktopPet.findUnique({
-        where: { id },
-        select: { accountId: true, agentMemberId: true },
-      })
-
-      if (!pet || pet.accountId !== identity.accountId) {
-        throw new PetNotFoundError()
-      }
-
       await revokeDesktopPet(tx, {
         desktopPetId: id,
         agentMemberId: pet.agentMemberId,
@@ -171,18 +215,11 @@ export async function DELETE(
       })
     })
   } catch (err) {
-    if (err instanceof PetNotFoundError || isP2025(err)) {
+    if (isP2025(err)) {
       return NextResponse.json({ error: 'Desktop pet not found' }, { status: 404 })
     }
     throw err
   }
 
   return NextResponse.json({ ok: true })
-}
-
-class PetNotFoundError extends Error {
-  constructor() {
-    super('Desktop pet not found')
-    this.name = 'PetNotFoundError'
-  }
 }

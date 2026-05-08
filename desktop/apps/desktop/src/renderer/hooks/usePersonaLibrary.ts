@@ -2,6 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 type PersonaSpriteDownloadPolicy = 'public' | 'owner_only' | 'allowlist' | 'missing' | 'invalid'
 
+/** Mirrors `DesktopAgentSpriteGrant` from web/lib/types/desktop.ts. */
+export interface AgentSpriteGrantSummary {
+  active: boolean
+  grantOnChainId: string
+  expiresAt: string | null
+}
+
 export interface PersonaItem {
   catalogId: string
   sourceType: 'starter' | 'soul'
@@ -21,6 +28,13 @@ export interface PersonaItem {
    */
   activeSpriteName?: string | null
   activeSpriteVersionIndex?: number | null
+  /**
+   * Set on My Souls items when the desktop pet has an active asset-scope
+   * `SoulGrant` for this Soul. `null` means no active grant — the
+   * protected Download button should surface "Authorize on web" rather
+   * than attempting a Seal session that the manifest route will reject.
+   */
+  agentSpriteGrant?: AgentSpriteGrantSummary | null
   isCached: boolean
   isActive: boolean
   downloadProgress: number | null
@@ -51,6 +65,7 @@ interface CatalogItem {
   spriteDownloadPolicy: PersonaSpriteDownloadPolicy
   activeSpriteName?: string | null
   activeSpriteVersionIndex?: number | null
+  agentSpriteGrant?: AgentSpriteGrantSummary | null
 }
 
 interface CatalogPage {
@@ -205,6 +220,7 @@ export function usePersonaLibrary(options: UsePersonaLibraryOptions = {}): Libra
       spriteDownloadPolicy: item.spriteDownloadPolicy,
       activeSpriteName: item.activeSpriteName ?? null,
       activeSpriteVersionIndex: item.activeSpriteVersionIndex ?? null,
+      agentSpriteGrant: item.agentSpriteGrant ?? null,
       isCached: cachedIds.has(spriteId),
       isActive: item.id === activeId,
       downloadProgress: progressMapRef.current.get(item.id) ?? null,

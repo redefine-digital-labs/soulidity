@@ -30,6 +30,22 @@ export interface DesktopSpriteManifest {
   error?: string | null
 }
 
+/**
+ * UI marker for an asset-scope `SoulGrant` that authorises the calling
+ * desktop pet's agent address to download protected sprites of this Soul.
+ * Computed by `/api/desktop/me/souls` against the pet bearer token; null
+ * everywhere else (public catalog, browser cookie path).
+ *
+ * The marker is presentation-only — `/api/desktop/catalog/[id]` still
+ * verifies access through `resolveContentAccessPayload` against live
+ * on-chain grant slots before issuing Seal session parameters.
+ */
+export interface DesktopAgentSpriteGrant {
+  active: boolean
+  grantOnChainId: string
+  expiresAt: string | null
+}
+
 export interface DesktopCatalogItem {
   id: string
   sourceType: DesktopCatalogSourceType
@@ -49,6 +65,9 @@ export interface DesktopCatalogItem {
   activeSpriteName?: string | null
   activeSpriteVersionIndex?: number | null
   activeSpriteDownloadPolicy?: DesktopSpriteDownloadPolicy | null
+  /** Set on My Souls items when the desktop pet has an active asset-scope
+   *  grant. Marketplace items always leave this undefined. */
+  agentSpriteGrant?: DesktopAgentSpriteGrant | null
   updatedAt: string
 }
 
@@ -69,6 +88,15 @@ export interface DesktopPersonaManifest extends DesktopCatalogItem {
   onChainId?: string
   /** direct = public file URLs (starter), authenticated = needs desktop token (soul) */
   downloadMode?: 'direct' | 'authenticated'
+}
+
+/**
+ * `DesktopCatalogItem` extended with explicit owned-souls fields. Returned
+ * by `/api/desktop/me/souls` so the renderer can pre-decide whether a
+ * protected download is currently authorised for the desktop pet.
+ */
+export interface DesktopMySoulsItem extends DesktopCatalogItem {
+  agentSpriteGrant: DesktopAgentSpriteGrant | null
 }
 
 export interface DesktopDeviceStartRequest {
@@ -119,6 +147,16 @@ export interface DesktopDeviceCompleteResponse {
   expiresAt: string
   confirmedAt: string
   pollInterval: number
+  /**
+   * Browser-safe pet identifier — populated whenever the linked session has
+   * a desktop pet (i.e. the device-start flow carried an `agentAddress`).
+   * Used by the post-link auto-authorize UX to immediately fetch the
+   * grantable-souls list without a second round-trip. NEVER includes
+   * `desktopAccessToken` or `agentApiKey`; those remain on the desktop poll
+   * response only.
+   */
+  petId?: string | null
+  agentAddress?: string | null
 }
 
 /**

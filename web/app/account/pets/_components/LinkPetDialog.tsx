@@ -14,7 +14,15 @@ type LinkStatus =
 
 interface LinkPetDialogProps {
   initialCode: string | null
-  onLinked: () => void | Promise<void>
+  /**
+   * Called after the device session is confirmed. The optional `petId` is
+   * the freshly-linked DesktopPet row id (when the device-start carried a
+   * wallet sig). Pages use it to auto-open the asset-grant authorize step
+   * — wallet still signs explicitly; the server never silently issues
+   * grants. `null` means the link succeeded but the session had no agent
+   * address (legacy fallback).
+   */
+  onLinked: (result: { petId: string | null }) => void | Promise<void>
 }
 
 function normalizeCode(value: string): string {
@@ -67,6 +75,8 @@ export function LinkPetDialog({ initialCode, onLinked }: LinkPetDialogProps) {
         let data: {
           status?: string
           error?: string
+          petId?: string | null
+          agentAddress?: string | null
         } = {}
         try {
           data = (await response.json()) as typeof data
@@ -85,7 +95,7 @@ export function LinkPetDialog({ initialCode, onLinked }: LinkPetDialogProps) {
 
         if (data.status === 'confirmed') {
           setStatus({ kind: 'confirmed' })
-          await onLinked()
+          await onLinked({ petId: data.petId ?? null })
           return
         }
 
