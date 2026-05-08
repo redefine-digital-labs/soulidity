@@ -240,15 +240,57 @@ describe('ExtractTab', () => {
       })
     }
 
+    const setTextareaByLabel = async (labelText: string, value: string) => {
+      const labels = Array.from(container.querySelectorAll('span.settings-field__label'))
+      const label = labels.find((candidate) => candidate.textContent === labelText)
+      expect(label).toBeTruthy()
+      const textarea = label!.parentElement!.querySelector('textarea') as HTMLTextAreaElement | null
+      expect(textarea).toBeTruthy()
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+      await act(async () => {
+        setter.call(textarea!, value)
+        textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+        await flushPromises()
+      })
+    }
+
     await clickButton('Start Scan')
     await clickButton('Create with Codex')
+    await setTextareaByLabel('Character Type *', 'AI Coder')
+    await clickButton('Generate Draft with Codex')
     await act(async () => {
       vi.advanceTimersByTime(150)
       await flushPromises()
     })
 
     expect(container.textContent).toContain('Created with Codex')
-    expect(window.electronAPI['extraction:create-local-draft']).toHaveBeenCalledTimes(1)
+    expect(window.electronAPI['extraction:create-local-draft']).toHaveBeenCalledWith({
+      agent: 'codex',
+      scanResults: [{
+        agentType: 'codex',
+        coverage: 'partial',
+        unsupportedMetrics: [],
+        sessionCount: 1,
+        totalTurns: 2,
+        scanPeriod: { from: 0, to: 0 },
+        sourceFiles: [],
+        features: {
+          avgTurnsPerSession: 2,
+          avgResponseLength: 10,
+          toolUsageFrequency: {},
+          topTools: ['Read'],
+          primaryLanguages: ['TypeScript'],
+          avgSessionDurationMs: 0,
+          peakHours: [],
+          usesCodeBlocks: false,
+          avgCodeBlocksPerResponse: 0,
+        },
+      }],
+      direction: {
+        characterType: 'AI Coder',
+        extraDescription: '',
+      },
+    })
     expect(window.electronAPI['extraction:open-web-create']).not.toHaveBeenCalled()
     expect(window.electronAPI['desktop:create-draft:save']).toHaveBeenCalled()
 
