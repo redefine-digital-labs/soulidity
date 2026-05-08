@@ -129,6 +129,11 @@ describe('POST /api/desktop/me/revoke', () => {
   it('does a PARTIAL teardown when active asset-scope grants exist on-chain — keeps the pet row visible for owner-side cleanup', async () => {
     // Active grants survive a row delete; the revoke route must keep the
     // DesktopPet row alive so /account/pets can target it for revoke.
+    // The route resolves the account's human member id first and only
+    // counts grants on Souls owned by that human as blockers (so a grant
+    // issued by a different owner's Soul to this pet's address does not
+    // strand the pet row — see findActiveAssetGrantsForPet).
+    mockedPrisma.member.findFirst.mockResolvedValue({ id: 'human-member-1' })
     mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
       {
         onChainId: '0xgrant-1',
