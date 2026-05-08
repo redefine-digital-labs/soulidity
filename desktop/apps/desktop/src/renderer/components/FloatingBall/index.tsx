@@ -832,41 +832,41 @@ export function FloatingBall(): React.JSX.Element {
             <div className="task-panel__header">
               <div>
                 <div className="task-panel__title">
-                  {taskPanel.phase === 'compose'
+                  {visibleTaskPanel.phase === 'compose'
                     ? 'Review Task'
-                    : taskPanel.phase === 'approval'
+                    : visibleTaskPanel.phase === 'approval'
                       ? 'Write Approval'
-                      : taskPanel.running
+                      : visibleTaskPanel.running
                         ? '任务执行中'
                         : '任务输出'}
                 </div>
                 <div className="task-panel__subtitle">
-                  {taskPanel.files.length > 0 ? `${taskPanel.files.length} 个文件` : '拖入文件后开始'}
+                  {visibleTaskPanel.files.length > 0 ? `${visibleTaskPanel.files.length} 个文件` : '拖入文件后开始'}
                 </div>
               </div>
               <button
                 className="task-panel__ghost"
-                onClick={taskPanel.running ? handleCancelTask : handleClosePanel}
+                onClick={visibleTaskPanel.running ? handleCancelTask : handleClosePanel}
               >
-                {taskPanel.running ? 'Cancel' : 'Close'}
+                {visibleTaskPanel.running ? 'Cancel' : 'Close'}
               </button>
             </div>
 
-            {taskPanel.files.length > 0 && (
+            {visibleTaskPanel.files.length > 0 && (
               <div className="task-panel__files">
-                {taskPanel.files.map((filePath) => (
+                {visibleTaskPanel.files.map((filePath) => (
                   <span key={filePath} className="task-panel__file-chip">{basename(filePath)}</span>
                 ))}
               </div>
             )}
 
-            {taskPanel.phase === 'compose' && (
+            {visibleTaskPanel.phase === 'compose' && (
               <>
                 <div className="task-panel__agents">
                   {(['codex', 'claude'] as TaskAgent[]).map((agent) => (
                     <button
                       key={agent}
-                      className={`task-panel__agent ${taskPanel.agent === agent ? 'task-panel__agent--active' : ''}`}
+                      className={`task-panel__agent ${visibleTaskPanel.agent === agent ? 'task-panel__agent--active' : ''}`}
                       onClick={() => handleAgentChange(agent)}
                     >
                       {formatAgentLabel(agent)}
@@ -878,7 +878,7 @@ export function FloatingBall(): React.JSX.Element {
                   {(['read', 'write'] as TaskExecutionMode[]).map((mode) => (
                     <button
                       key={mode}
-                      className={`task-panel__mode ${taskPanel.executionMode === mode ? 'task-panel__mode--active' : ''}`}
+                      className={`task-panel__mode ${visibleTaskPanel.executionMode === mode ? 'task-panel__mode--active' : ''}`}
                       onClick={() => handleExecutionModeChange(mode)}
                     >
                       {mode === 'read' ? 'Read Only' : 'Write'}
@@ -886,7 +886,7 @@ export function FloatingBall(): React.JSX.Element {
                   ))}
                 </div>
                 <div className="task-panel__hint">
-                  {taskPanel.executionMode === 'read'
+                  {visibleTaskPanel.executionMode === 'read'
                     ? 'Read-only 模式会把 Codex 跑在只读沙箱里，并限制 Claude 只用 Bash/Read。'
                     : 'Write 模式默认先走一次明确审批，再允许 agent 修改文件。'}
                 </div>
@@ -895,23 +895,23 @@ export function FloatingBall(): React.JSX.Element {
                   ref={instructionRef}
                   className="task-panel__textarea"
                   placeholder="基于这些文件交代任务。例如：比较这些文件里的交互差异并给出修复方案。"
-                  value={taskPanel.instruction}
+                  value={visibleTaskPanel.instruction}
                   onChange={handleInstructionChange}
                 />
 
-                {taskPanel.error && (
-                  <div className="task-panel__error">{taskPanel.error}</div>
+                {visibleTaskPanel.error && (
+                  <div className="task-panel__error">{visibleTaskPanel.error}</div>
                 )}
 
                 <div className="task-panel__actions">
                   <button className="task-panel__primary" onClick={handleSubmitTask}>
-                    {taskPanel.executionMode === 'write' ? 'Review Write Plan' : 'Run Now'}
+                    {visibleTaskPanel.executionMode === 'write' ? 'Review Write Plan' : 'Run Now'}
                   </button>
                 </div>
               </>
             )}
 
-            {taskPanel.phase === 'approval' && (
+            {visibleTaskPanel.phase === 'approval' && (
               <>
                 <div className="task-panel__approval">
                   <div className="task-panel__approval-title">You are about to allow write access</div>
@@ -926,10 +926,10 @@ export function FloatingBall(): React.JSX.Element {
                     first line. Long text scrolls inside the pre block.
                   */}
                   <pre className="task-panel__approval-instruction">
-                    {taskPanel.instruction.trim()}
+                    {visibleTaskPanel.instruction.trim()}
                   </pre>
                   <div className="task-panel__approval-copy">
-                    Agent: {formatAgentLabel(taskPanel.agent)} · Scope: {taskPanel.files.length > 0 ? `${taskPanel.files.length} file(s)` : 'workspace'}
+                    Agent: {formatAgentLabel(visibleTaskPanel.agent)} · Scope: {visibleTaskPanel.files.length > 0 ? `${visibleTaskPanel.files.length} file(s)` : 'workspace'}
                   </div>
                 </div>
                 <div className="task-panel__actions">
@@ -946,17 +946,17 @@ export function FloatingBall(): React.JSX.Element {
               </>
             )}
 
-            {taskPanel.phase === 'output' && (
+            {visibleTaskPanel.phase === 'output' && (
               <>
                 <div className="task-panel__status">
-                  {taskPanel.running
-                    ? `${formatAgentLabel(taskPanel.agent)} 正在处理`
-                    : taskPanel.error
-                      ? `执行失败：${taskPanel.error}`
+                  {visibleTaskPanel.running
+                    ? `${formatAgentLabel(visibleTaskPanel.agent)} 正在处理`
+                    : visibleTaskPanel.error
+                      ? `执行失败：${visibleTaskPanel.error}`
                       : '执行完成'}
                 </div>
                 <pre className="task-panel__output">
-                  {taskPanel.output || '等待输出...'}
+                  {visibleTaskPanel.output || '等待输出...'}
                 </pre>
               </>
             )}
