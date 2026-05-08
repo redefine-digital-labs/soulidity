@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedRequireDesktopIdentity = vi.hoisted(() => vi.fn())
 
+const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
+const mockedGetActiveGrantSlotForGrantee = vi.hoisted(() => vi.fn())
+
 const mockedPrisma = vi.hoisted(() => ({
   desktopPet: {
     delete: vi.fn(),
@@ -11,6 +14,9 @@ const mockedPrisma = vi.hoisted(() => ({
   member: {
     update: vi.fn(),
     findFirst: vi.fn(),
+  },
+  soulAsset: {
+    findMany: vi.fn(),
   },
   soulGrantRecord: {
     findMany: vi.fn(),
@@ -26,6 +32,10 @@ function resetMocks() {
   // Default: no active asset-scope grants. Tests targeting the partial
   // teardown branch override this with their own resolved value.
   mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+  // Default: caller owns no Souls, so the on-chain re-check inside
+  // `findActiveAssetGrantsForPet` is a no-op. Tests that exercise the
+  // on-chain branch override this with their own resolved value.
+  mockedPrisma.soulAsset.findMany.mockResolvedValue([])
 }
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
@@ -36,6 +46,19 @@ vi.mock('@/lib/desktop/auth', async () => {
   return {
     ...actual,
     requireDesktopIdentity: mockedRequireDesktopIdentity,
+  }
+})
+
+// Stub the Sui RPC helpers used by the authoritative on-chain re-check so
+// tests never hit the network. Both default to "no grants on chain"; the
+// dedicated re-check tests override per-call.
+vi.mock('@soulidity/sdk', async () => {
+  const actual = await vi.importActual<typeof import('@soulidity/sdk')>('@soulidity/sdk')
+  return {
+    ...actual,
+    getSoulStateObject: mockedGetSoulStateObject,
+    getActiveGrantSlotForGrantee: mockedGetActiveGrantSlotForGrantee,
+    getRequiredSoulidityEnv: vi.fn(() => '0xdeadbeef'),
   }
 })
 
@@ -180,6 +203,54 @@ describe('POST /api/desktop/me/revoke', () => {
         pendingApiKeyRotationExpiresAt: null,
       },
     })
+  })
+
+  it('does a PARTIAL teardown when the mirror is empty but the chain still has an active asset-scope grant', async () => {
+    // Regression for R-001: the pet authorize flow signs
+    // `grant::issue_to_grantee` first and only mirrors the result via
+    // `/api/account/pets/[id]/grant-mirror` afterward. If that mirror
+    // POST fails (or the grant was issued from outside this UI), the
+    // bearer-revoke blocker would otherwise see an empty mirror and
+    // tear the pet row down — leaving the live on-chain grant with no
+    // convergent revoke surface. The blocker therefore falls through to
+    // an authoritative on-chain re-check, which this test seeds.
+    mockedPrisma.member.findFirst.mockResolvedValue({ id: 'human-member-1' })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-onchain', stateOnChainId: '0xstate-onchain' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-onchain',
+      granteeAddress: PET_IDENTITY.agentAddress,
+      scopeMask: 8, // SOUL_GRANT_SCOPE_ASSETS
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+    mockedPrisma.desktopPet.update.mockResolvedValue({ id: PET_IDENTITY.id })
+    mockedPrisma.member.update.mockResolvedValue({ id: PET_IDENTITY.agentMemberId })
+
+    const { POST } = await import('../../web/app/api/desktop/me/revoke/route')
+    const response = await POST(buildRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.partial).toBe(true)
+    expect(body.reason).toBe('active-asset-grants-remain')
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      grantOnChainId: '0xgrant-onchain',
+      soulOnChainId: '0xsoul-onchain',
+    })
+    // Critical: the on-chain re-check must keep the pet row alive even
+    // when the mirror was empty.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
   })
 
   it('passes allowExpiredDesktopToken: true through to requireDesktopIdentity (so a 90-day-stale dtk_ still revokes a still-existing pet)', async () => {

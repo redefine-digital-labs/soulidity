@@ -3,12 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockedRequireIdentity = vi.hoisted(() => vi.fn())
 const mockedRequireMutationIdentity = vi.hoisted(() => vi.fn())
 
+const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
+const mockedGetActiveGrantSlotForGrantee = vi.hoisted(() => vi.fn())
+
 const mockedPrisma = vi.hoisted(() => ({
   desktopPet: {
     findMany: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+  },
+  soulAsset: {
+    findMany: vi.fn(),
   },
   soulGrantRecord: {
     groupBy: vi.fn(),
@@ -29,6 +35,10 @@ function resetMocks() {
   // non-zero count override this with their own resolved value.
   mockedPrisma.soulGrantRecord.groupBy.mockResolvedValue([])
   mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+  // Default: caller owns no Souls, so the on-chain re-check inside
+  // `findActiveAssetGrantsForPet` is a no-op. Tests that exercise the
+  // on-chain branch override this with their own resolved value.
+  mockedPrisma.soulAsset.findMany.mockResolvedValue([])
 }
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
@@ -42,6 +52,19 @@ vi.mock('@web/lib/auth/identity', () => ({
   requireIdentity: mockedRequireIdentity,
   requireMutationIdentity: mockedRequireMutationIdentity,
 }))
+
+// Stub the Sui RPC helpers used by the authoritative on-chain re-check so
+// tests never hit the network. Both default to "no grants on chain"; the
+// dedicated re-check tests override per-call.
+vi.mock('@soulidity/sdk', async () => {
+  const actual = await vi.importActual<typeof import('@soulidity/sdk')>('@soulidity/sdk')
+  return {
+    ...actual,
+    getSoulStateObject: mockedGetSoulStateObject,
+    getActiveGrantSlotForGrantee: mockedGetActiveGrantSlotForGrantee,
+    getRequiredSoulidityEnv: vi.fn(() => '0xdeadbeef'),
+  }
+})
 
 const ACCOUNT_ID = 'account-1'
 const OTHER_ACCOUNT_ID = 'account-2'
@@ -416,6 +439,102 @@ describe('DELETE /api/account/pets/[id]', () => {
     // Crucially: nothing was deleted, no member was disabled.
     expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
     expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 with the on-chain grant list when the mirror is empty but the chain still has an active asset-scope grant', async () => {
+    // Regression for R-001: the pet authorize / unauthorize flow signs
+    // `grant::issue_to_grantee` first and only mirrors the result via
+    // `/api/account/pets/[id]/grant-mirror` afterward. If that mirror
+    // POST fails (or a grant is issued from outside this UI), the
+    // `SoulGrantRecord` table reports zero rows even though the chain
+    // still authorises the pet `agentAddress`. Reading the mirror alone
+    // would let the cookie DELETE orphan a live on-chain grant.
+    //
+    // The blocker therefore re-checks the chain whenever the mirror is
+    // empty. This test seeds an empty mirror but a present on-chain
+    // grant slot and asserts the route still returns 409 with the slot's
+    // grant id surfaced.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-onchain', stateOnChainId: '0xstate-onchain' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-onchain',
+      granteeAddress: '0xagent',
+      scopeMask: 8, // SOUL_GRANT_SCOPE_ASSETS
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      grantOnChainId: '0xgrant-onchain',
+      soulOnChainId: '0xsoul-onchain',
+      expiresAt: null,
+    })
+    // Critical: the on-chain re-check must keep teardown blocked even
+    // when the mirror was empty.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('proceeds with full teardown when both the mirror AND the on-chain re-check find no asset-scope grants', async () => {
+    // Sanity check that the new on-chain branch is actually a no-op when
+    // chain agrees with the empty mirror — no false-positive 409s.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-onchain', stateOnChainId: '0xstate-onchain' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+    mockedPrisma.desktopPet.delete.mockResolvedValue({ id: PET_ID })
+    mockedPrisma.member.update.mockResolvedValue({ id: AGENT_MEMBER_ID })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ ok: true })
+    // Slot lookup must NOT fire when activeGrantCount is 0 — that's the
+    // RPC saving we get from the on-chain shortcut.
+    expect(mockedGetActiveGrantSlotForGrantee).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopPet.delete).toHaveBeenCalled()
+    expect(mockedPrisma.member.update).toHaveBeenCalled()
   })
 
   it('returns 404 when the pet belongs to a different account (cross-account isolation)', async () => {
