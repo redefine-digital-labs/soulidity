@@ -1505,18 +1505,48 @@ ipcMain.handle('agent:sign-personal-message', (_event, message: Uint8Array | Arr
 })
 
 // ── System Tray ────────────────────────────────────────────
-function createTray(): void {
-  const iconPath = app.isPackaged
+function getAppIconPath(): string {
+  return app.isPackaged
     ? join(process.resourcesPath, 'icon.png')
     : join(__dirname, '..', '..', 'resources', 'icon.png')
+}
 
-  const icon = nativeImage.createFromPath(iconPath)
+function createTray(): void {
+  const icon = nativeImage.createFromPath(getAppIconPath())
   const resized = icon.resize({ width: 16, height: 16 })
 
   tray = new Tray(resized)
 
   tray.setToolTip('Soulidity Desktop Companion')
   tray.setContextMenu(Menu.buildFromTemplate(buildTrayMenuTemplate()))
+}
+
+// macOS dock icon override.
+//
+// Dev sessions launch the generic `Electron.app` binary, whose plist points
+// the dock at `electron.icns` (the bare atom). Packaged installs ship under
+// `Soulidity.app` with the proper plist, but we still call setIcon there so
+// the same Soulidity glyph is guaranteed regardless of which build path the
+// user is running. No-op on non-darwin and when `app.dock` is unavailable
+// (e.g. tests, headless CI).
+function applyMacDockIcon(): void {
+  if (process.platform !== 'darwin' || !app.dock) return
+  try {
+    const icon = nativeImage.createFromPath(getAppIconPath())
+    if (!icon.isEmpty()) {
+      app.dock.setIcon(icon)
+    }
+    // Force the dock icon visible. Electron normally shows it by default, but
+    // when the only initial window is the transparent + alwaysOnTop +
+    // skipTaskbar pet ball some macOS versions / Electron 41 fail to surface
+    // the dock entry until a standard window opens. Explicit show() is a
+    // no-op when the icon is already visible.
+    void app.dock.show().catch((err) => {
+      console.warn('[main] app.dock.show() failed:', err)
+    })
+  } catch (err) {
+    console.warn('[main] failed to apply macOS dock icon:', err)
+  }
 }
 
 // ── App 生命周期 ───────────────────────────────────────────
@@ -1595,6 +1625,7 @@ app.whenReady().then(async () => {
   })
   generateAgentKeypair().catch((err) => console.warn('Agent keypair generation deferred:', err.message))
 
+  applyMacDockIcon()
   createBallWindow()
   createTray()
   void performUpdateCheck(false)
