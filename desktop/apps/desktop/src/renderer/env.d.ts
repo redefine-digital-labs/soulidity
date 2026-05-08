@@ -132,6 +132,7 @@ declare global {
       'extraction:create-local-draft': (input: CreateLocalExtractDraftInput) => Promise<ExtractSoulDraft>
       'extraction:open-web-create': () => Promise<void>
       'extraction:start-mint-handoff': (draft: ExtractSoulDraft) => Promise<void>
+      'extraction:on-draft-cleared': (callback: (detail: { reason: string }) => void) => () => void
       'extraction:scan-progress': (callback: (progress: ScanProgress) => void) => () => void
 
       // ── Shell ──

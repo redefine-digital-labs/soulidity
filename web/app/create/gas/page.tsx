@@ -209,6 +209,22 @@ export default function CreateGasPage() {
       completedDigestRef.current = publishData.txDigest
       setPublishResult(publishData)
       showToast('Soul minted successfully!', 'success')
+
+      // Notify the desktop app if this mint originated from a Mint By Web
+      // hand-off. The /create page hydration step stashes the hand-off token
+      // in sessionStorage; here we fire `soulidity://mint-completed?token=...`
+      // so the desktop's protocol handler clears its local draft and resets
+      // ExtractTab. Browsers raise an OS-level "Open Soulidity?" prompt for
+      // soulidity:// URLs instead of navigating, so this is safe to fire
+      // before the router.replace below.
+      try {
+        const handoffToken = sessionStorage.getItem('soulidity-desktop-handoff-token')
+        if (handoffToken) {
+          sessionStorage.removeItem('soulidity-desktop-handoff-token')
+          window.location.href = `soulidity://mint-completed?token=${encodeURIComponent(handoffToken)}`
+        }
+      } catch { /* sessionStorage / scheme handler may be unavailable */ }
+
       router.replace('/create/success')
     }
   }, [status, publishData, setPublishResult, router, showToast])

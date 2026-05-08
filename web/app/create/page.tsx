@@ -179,6 +179,16 @@ export default function CreateSoulPage() {
           }
         }
 
+        // Stash the token for the mint-success deep-link callback. The gas
+        // page reads this on a successful publish and fires a
+        // `soulidity://mint-completed?token=<tok>` URL so the desktop app's
+        // protocol handler can clear the local draft. sessionStorage is per
+        // tab and survives the in-app router.push to /create/content,
+        // /create/gas, /create/success without leaking across tabs.
+        try {
+          sessionStorage.setItem('soulidity-desktop-handoff-token', handoffToken)
+        } catch { /* sessionStorage may be unavailable in private mode */ }
+
         // Strip the consumed token from the URL — keeps refreshes / shares
         // from re-issuing the GET (server returns 410 on second use anyway,
         // but a clean URL avoids surfacing that error to the user).

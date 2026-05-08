@@ -545,6 +545,38 @@ export function ExtractTab(): React.JSX.Element {
     }
   }, [])
 
+  // Listen for the deep-link mint-completed callback. The web `/create/gas`
+  // page fires `soulidity://mint-completed?token=...` after a Mint By Web
+  // hand-off finishes minting; the main process clears the on-disk draft and
+  // emits `extraction:draft-cleared` here so the wizard resets to a clean
+  // Scan step instead of leaving the user staring at a draft that no longer
+  // matches anything (the Soul is already on-chain, in their wallet).
+  useEffect(() => {
+    const subscribe = getOptionalElectronMethod<
+      (callback: (detail: { reason: string }) => void) => () => void
+    >('extraction:on-draft-cleared')
+    if (!subscribe) return
+    return subscribe(() => {
+      setStep('scan')
+      setDraft(null)
+      setScanResults(null)
+      setScanProgress([])
+      setScanError(null)
+      setOpenClawStatus(null)
+      setSelectedOpenClawSkillId('')
+      setLocalAgentStatuses([])
+      setActiveDraftAction(null)
+      setActionError(null)
+      setCoverActionError(null)
+      setPendingDirectionAgent(null)
+      setDirectionCharacterType('')
+      setDirectionExtraDescription('')
+      setDirectionError(null)
+      setCoverPromptCopied(false)
+      setSourceResolutionError(null)
+    })
+  }, [])
+
   useEffect(() => {
     if (!hasHydratedDraftRef.current || !draft) {
       return

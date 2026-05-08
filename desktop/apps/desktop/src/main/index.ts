@@ -239,6 +239,29 @@ function handleDeepLink(url: string): void {
 
     if (parsed.hostname === 'settings' || parsed.pathname === '//settings') {
       createMainWindow()
+      return
+    }
+
+    // soulidity://mint-completed?token=mh_... — fired by the web /create/gas
+    // page right after a Mint By Web hand-off finishes minting. Clears the
+    // on-disk draft store and notifies the renderer so ExtractTab resets to
+    // its scan step instead of leaving the user looking at the just-minted
+    // draft. We accept the deep link unconditionally (no token verification
+    // here) — at worst a hostile fire of this URL clears a local draft, and
+    // the user can rebuild it; nothing on-chain or in any remote DB is
+    // affected by clearing local state.
+    if (parsed.hostname === 'mint-completed') {
+      try {
+        clearExtractSoulDraft()
+      } catch (err) {
+        console.warn('[main] failed to clear extract draft on mint-completed deep link:', err)
+      }
+      broadcastToAllWindows('extraction:draft-cleared', { reason: 'mint-completed' })
+      // Bring the main window forward so the user sees the empty Scan step
+      // when they switch back from the browser, rather than discovering the
+      // reset only on a later focus.
+      createMainWindow()
+      return
     }
     // soulidity://install-sprite?id=xxx — 预留
   } catch {

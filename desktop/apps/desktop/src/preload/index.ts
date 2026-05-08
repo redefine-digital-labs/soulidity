@@ -197,6 +197,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('extraction:open-web-create'),
   'extraction:start-mint-handoff': (draft: ExtractSoulDraft): Promise<void> =>
     ipcRenderer.invoke('extraction:start-mint-handoff', draft),
+  'extraction:on-draft-cleared': (callback: (detail: { reason: string }) => void): (() => void) => {
+    const listener = (_event: unknown, detail: { reason: string }) => callback(detail)
+    ipcRenderer.on('extraction:draft-cleared', listener)
+    return () => { ipcRenderer.removeListener('extraction:draft-cleared', listener) }
+  },
   'extraction:scan-progress': (callback: (progress: ScanProgress) => void): (() => void) => {
     const listener = (_event: unknown, progress: ScanProgress) => callback(progress)
     ipcRenderer.on('extraction:scan-progress', listener)
