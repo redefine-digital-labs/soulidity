@@ -37,6 +37,9 @@ export interface ExtractSoulDraft {
   coverImageFileName: string
   coverImageMimeType: string
   coverImageGenerated: boolean
+  coverImagePrompt: string
+  characterType: string
+  extraDescription: string
   soulMarkdown: string
   memoryMarkdown: string
   skillsArchive: {
@@ -70,6 +73,9 @@ export interface CreateExtractSoulDraftSeed {
   memoryMarkdown?: string | null
   skillsArchive?: ExtractSoulDraft['skillsArchive']
   royaltyBps?: number
+  coverImagePrompt?: string | null
+  characterType?: string | null
+  extraDescription?: string | null
 }
 
 const DEFAULT_ROYALTY_BPS = 500
@@ -302,6 +308,9 @@ export function createExtractSoulDraftFromSeed(
     coverImageFileName: 'extract-cover.svg',
     coverImageMimeType: 'image/svg+xml',
     coverImageGenerated: true,
+    coverImagePrompt: seed.coverImagePrompt?.trim() ?? '',
+    characterType: seed.characterType?.trim() ?? '',
+    extraDescription: seed.extraDescription?.trim() ?? '',
     soulMarkdown: seed.soulMarkdown?.trim() ?? '',
     memoryMarkdown: seed.memoryMarkdown?.trim() ?? '',
     skillsArchive: seed.skillsArchive ?? null,

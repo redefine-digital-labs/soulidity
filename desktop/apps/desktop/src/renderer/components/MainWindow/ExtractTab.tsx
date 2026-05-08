@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  CreateLocalExtractDraftDirection,
   CreateLocalExtractDraftInput,
   ExtractSoulDraft,
   ImportOpenClawDraftInput,
@@ -13,7 +14,7 @@ import {
   refreshExtractSoulDraftCover,
 } from '@soulidity/shared'
 
-type Step = 'scan' | 'review' | 'create'
+type Step = 'scan' | 'review' | 'direction' | 'create'
 
 function getElectronMethod<T extends (...args: any[]) => any>(name: string, missingMessage: string): T {
   const api = (window as any).electronAPI as Record<string, unknown> | undefined
@@ -231,6 +232,9 @@ function normalizeLoadedDraft(rawDraft: ExtractSoulDraft | null): ExtractSoulDra
     coverImageFileName,
     coverImageMimeType,
     coverImageGenerated: inferCoverGenerated(record, coverImageFileName, coverImageMimeType),
+    coverImagePrompt: asString(record.coverImagePrompt),
+    characterType: asString(record.characterType),
+    extraDescription: asString(record.extraDescription),
     soulMarkdown: asString(record.soulMarkdown),
     memoryMarkdown: asString(record.memoryMarkdown),
     skillsArchive: normalizeSkillsArchive(record.skillsArchive),
@@ -321,6 +325,19 @@ async function ipcOpenWebCreate(): Promise<void> {
     return await invoke()
   } catch (err) {
     throw asIpcError(err, 'Failed to open web create')
+  }
+}
+
+async function ipcStartMintHandoff(draft: ExtractSoulDraft): Promise<void> {
+  const invoke = getElectronMethod<(draft: ExtractSoulDraft) => Promise<void>>(
+    'extraction:start-mint-handoff',
+    'Mint hand-off IPC not available — is the companion up to date?',
+  )
+
+  try {
+    return await invoke(draft)
+  } catch (err) {
+    throw asIpcError(err, 'Failed to start mint hand-off')
   }
 }
 
@@ -469,36 +486,6 @@ function hasCustomCoverImage(draft: ExtractSoulDraft) {
   return Boolean(asString(draft.coverImageDataUrl).trim()) && !draft.coverImageGenerated
 }
 
-function WebCreatePanel() {
-  const [openError, setOpenError] = useState<string | null>(null)
-
-  const handleOpenWebCreate = useCallback(async () => {
-    try {
-      setOpenError(null)
-      await ipcOpenWebCreate()
-    } catch (err) {
-      setOpenError(err instanceof Error ? err.message : 'Failed to open web create')
-    }
-  }, [])
-
-  return (
-    <section className="settings-section">
-      <h3 className="settings-section__title">Create on Web</h3>
-      <p className="extract-notice">
-        Desktop local draft creation is still available, but final upload and mint now use the wallet-paid web create flow.
-      </p>
-      {openError && (
-        <p className="link-panel__error" style={{ marginBottom: 12 }}>
-          {openError}
-        </p>
-      )}
-      <button type="button" className="link-button" onClick={handleOpenWebCreate}>
-        Open Web Create
-      </button>
-    </section>
-  )
-}
-
 export function ExtractTab(): React.JSX.Element {
   const [step, setStep] = useState<Step>('scan')
   const [scanResults, setScanResults] = useState<SessionScanResult[] | null>(null)
@@ -514,6 +501,16 @@ export function ExtractTab(): React.JSX.Element {
   const [actionError, setActionError] = useState<string | null>(null)
   const [coverActionError, setCoverActionError] = useState<string | null>(null)
   const [draft, setDraft] = useState<ExtractSoulDraft | null>(null)
+  // Direction step (between review and create when the user picks a local
+  // codex/claude agent). `pendingDirectionAgent` holds the agent the user
+  // selected on the review screen; the actual LLM call is deferred until they
+  // submit the Direction form so the user's character-type input becomes part
+  // of the prompt context.
+  const [pendingDirectionAgent, setPendingDirectionAgent] = useState<LocalExtractAgent | null>(null)
+  const [directionCharacterType, setDirectionCharacterType] = useState('')
+  const [directionExtraDescription, setDirectionExtraDescription] = useState('')
+  const [directionError, setDirectionError] = useState<string | null>(null)
+  const [coverPromptCopied, setCoverPromptCopied] = useState(false)
 
   const unsubRef = useRef<(() => void) | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -672,22 +669,61 @@ export function ExtractTab(): React.JSX.Element {
     }
   }, [scanResults, selectedOpenClawSkillId])
 
-  const handleCreateWithAgent = useCallback(async (agent: LocalExtractAgent) => {
-    if (!scanResults) return
-
+  const handleCreateWithAgent = useCallback((agent: LocalExtractAgent) => {
+    // The actual LLM call is deferred to the Direction step so the user's
+    // character-type input can be folded into the prompt context.
     setActionError(null)
-    setActiveDraftAction(agent)
+    setDirectionError(null)
+    setPendingDirectionAgent(agent)
+    setStep('direction')
+  }, [])
+
+  const handleBackToReviewFromDirection = useCallback(() => {
+    setDirectionError(null)
+    setStep('review')
+  }, [])
+
+  const handleSubmitDirection = useCallback(async () => {
+    if (!scanResults) return
+    if (!pendingDirectionAgent) return
+    const characterType = directionCharacterType.trim()
+    if (!characterType) {
+      setDirectionError('Character type is required.')
+      return
+    }
+    setDirectionError(null)
+    setActiveDraftAction(pendingDirectionAgent)
 
     try {
-      const nextDraft = await ipcCreateLocalDraft({ agent, scanResults })
+      const direction: CreateLocalExtractDraftDirection = {
+        characterType,
+        extraDescription: directionExtraDescription.trim(),
+      }
+      const nextDraft = await ipcCreateLocalDraft({
+        agent: pendingDirectionAgent,
+        scanResults,
+        direction,
+      })
       setDraft(nextDraft)
       setStep('create')
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Local draft creation failed')
+      setDirectionError(err instanceof Error ? err.message : 'Local draft creation failed')
     } finally {
       setActiveDraftAction(null)
     }
-  }, [scanResults])
+  }, [scanResults, pendingDirectionAgent, directionCharacterType, directionExtraDescription])
+
+  const handleCopyCoverPrompt = useCallback(async () => {
+    if (!draft?.coverImagePrompt) return
+    try {
+      await navigator.clipboard.writeText(draft.coverImagePrompt)
+      setCoverPromptCopied(true)
+      window.setTimeout(() => setCoverPromptCopied(false), 1500)
+    } catch {
+      // Clipboard write may fail in restrictive contexts (e.g. older webviews).
+      // Silently no-op; the textarea content is still visible for manual copy.
+    }
+  }, [draft?.coverImagePrompt])
 
   const handleOpenWebCreate = useCallback(async () => {
     setActionError(null)
@@ -697,6 +733,20 @@ export function ExtractTab(): React.JSX.Element {
       setActionError(err instanceof Error ? err.message : 'Failed to open web create')
     }
   }, [])
+
+  const [isStartingMintHandoff, setIsStartingMintHandoff] = useState(false)
+  const handleStartMintHandoff = useCallback(async () => {
+    if (!draft) return
+    setActionError(null)
+    setIsStartingMintHandoff(true)
+    try {
+      await ipcStartMintHandoff(draft)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to start mint hand-off')
+    } finally {
+      setIsStartingMintHandoff(false)
+    }
+  }, [draft])
 
   const handlePickCoverImage = useCallback(async () => {
     setCoverActionError(null)
@@ -992,6 +1042,75 @@ export function ExtractTab(): React.JSX.Element {
     )
   }
 
+  if (step === 'direction') {
+    const agentLabel = pendingDirectionAgent ? formatLocalAgentLabel(pendingDirectionAgent) : 'agent'
+    const characterTypeReady = directionCharacterType.trim().length > 0
+    const isGenerating = activeDraftAction === pendingDirectionAgent && pendingDirectionAgent !== null
+    return (
+      <div className="tab-content">
+        <section className="settings-section">
+          <h3 className="settings-section__title">Direction</h3>
+          <p className="extract-notice">
+            Tell {agentLabel} the character you want before it starts drafting. Your direction is folded into the prompt as the primary anchor; local-session evidence becomes supporting context.
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-field">
+            <span className="settings-field__label">Character Type *</span>
+            <textarea
+              className="settings-field__input extract-textarea"
+              value={directionCharacterType}
+              onChange={(event) => setDirectionCharacterType(event.target.value)}
+              rows={2}
+              maxLength={200}
+              placeholder="e.g. AI Coder · Mentor · Strategist · Researcher"
+              disabled={isGenerating}
+            />
+          </div>
+
+          <div className="settings-field">
+            <span className="settings-field__label">Additional Notes (optional)</span>
+            <textarea
+              className="settings-field__input extract-textarea"
+              value={directionExtraDescription}
+              onChange={(event) => setDirectionExtraDescription(event.target.value)}
+              rows={5}
+              maxLength={1000}
+              placeholder="Style, vibe, palette hints, or anything else the agent should bias the draft toward."
+              disabled={isGenerating}
+            />
+          </div>
+        </section>
+
+        {directionError && (
+          <section className="settings-section">
+            <p className="link-panel__error">{directionError}</p>
+          </section>
+        )}
+
+        <section className="settings-section extract-actions">
+          <button
+            type="button"
+            className="link-button link-button--secondary"
+            onClick={handleBackToReviewFromDirection}
+            disabled={isGenerating}
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => { void handleSubmitDirection() }}
+            disabled={!characterTypeReady || isGenerating || !pendingDirectionAgent}
+          >
+            {isGenerating ? `Generating with ${agentLabel}...` : `Generate Draft with ${agentLabel}`}
+          </button>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="tab-content">
       <section className="settings-section">
@@ -1089,65 +1208,6 @@ export function ExtractTab(): React.JSX.Element {
           </section>
 
           <section className="settings-section">
-            <h3 className="settings-section__title">Extracted Signal</h3>
-            <div className="settings-field">
-              <span className="settings-field__label">Traits</span>
-              <input
-                type="text"
-                className="settings-field__input"
-                value={formatListInput(draft.traits)}
-                onChange={(event) => updateDraft((current) => ({
-                  ...current,
-                  traits: parseListInput(event.target.value),
-                  updatedAt: new Date().toISOString(),
-                }))}
-              />
-            </div>
-
-            <div className="settings-field">
-              <span className="settings-field__label">Communication Style</span>
-              <textarea
-                className="settings-field__input extract-textarea"
-                value={draft.communicationStyle}
-                onChange={(event) => updateDraft((current) => ({
-                  ...current,
-                  communicationStyle: event.target.value,
-                  updatedAt: new Date().toISOString(),
-                }))}
-                rows={3}
-              />
-            </div>
-
-            <div className="settings-field">
-              <span className="settings-field__label">Expertise</span>
-              <input
-                type="text"
-                className="settings-field__input"
-                value={formatListInput(draft.expertise)}
-                onChange={(event) => updateDraft((current) => ({
-                  ...current,
-                  expertise: parseListInput(event.target.value),
-                  updatedAt: new Date().toISOString(),
-                }))}
-              />
-            </div>
-
-            <div className="settings-field">
-              <span className="settings-field__label">Work Style</span>
-              <textarea
-                className="settings-field__input extract-textarea"
-                value={draft.workStyle}
-                onChange={(event) => updateDraft((current) => ({
-                  ...current,
-                  workStyle: event.target.value,
-                  updatedAt: new Date().toISOString(),
-                }))}
-                rows={3}
-              />
-            </div>
-          </section>
-
-          <section className="settings-section">
             <h3 className="settings-section__title">Living Content</h3>
             <div className="settings-field">
               <span className="settings-field__label">soul.md</span>
@@ -1213,6 +1273,34 @@ export function ExtractTab(): React.JSX.Element {
               >
                 {hasCustomCoverImage(draft) ? 'Replace Cover' : 'Upload Cover Image'}
               </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <span className="settings-field__label" style={{ margin: 0 }}>Cover Image Prompt</span>
+                  <button
+                    type="button"
+                    className="link-button link-button--secondary"
+                    style={{ display: 'inline-flex', width: 'fit-content', padding: '4px 10px', fontSize: 12 }}
+                    onClick={() => { void handleCopyCoverPrompt() }}
+                    disabled={!draft.coverImagePrompt}
+                  >
+                    {coverPromptCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <textarea
+                  className="settings-field__input extract-textarea"
+                  value={draft.coverImagePrompt}
+                  onChange={(event) => updateDraft((current) => ({
+                    ...current,
+                    coverImagePrompt: event.target.value,
+                    updatedAt: new Date().toISOString(),
+                  }))}
+                  rows={6}
+                  placeholder="Not generated yet. Re-create the draft via Direction step, or write a 120-220 word English image-gen prompt manually."
+                />
+                <p className="extract-status" style={{ fontSize: 11, opacity: 0.7, margin: 0 }}>
+                  Paste this prompt into DALL-E · Midjourney · Stable Diffusion · FLUX · Gemini Studio to generate a 1:1 cover, then upload the PNG above.
+                </p>
+              </div>
               <label className="link-button link-button--secondary" style={{ display: 'inline-flex', width: 'fit-content', cursor: 'pointer' }}>
                 {draft.skillsArchive ? 'Replace skills.zip' : 'Attach skills.zip'}
                 <input type="file" accept=".zip,application/zip" style={{ display: 'none' }} onChange={handleSkillsFileChange} />
@@ -1221,6 +1309,46 @@ export function ExtractTab(): React.JSX.Element {
                 <p className="extract-status">Attached: {draft.skillsArchive.fileName}</p>
               )}
             </div>
+          </section>
+
+          <section className="settings-section" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/*
+              Mint Directly is intentionally absent. Desktop's local Sui keypair
+              is the agent-wallet (auto-generated per install) and is *not* the
+              user's main wallet — using it to sign the mint PTB would land the
+              Soul on the agent address, violating the "Single wallet per user"
+              system invariant in CLAUDE.md and hiding the Soul from the user's
+              market view. Mint stays on web until desktop has user-main-wallet
+              signing.
+
+              Mint By Web POSTs the draft (text fields + cover dataURL +
+              skills.zip base64) to /api/desktop/mint-handoff and opens the web
+              /create page with a one-shot token; the web side hydrates the
+              CreateSoulProvider so the user only signs and pays for Walrus +
+              mint via their browser wallet.
+            */}
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => { void handleStartMintHandoff() }}
+              style={{ width: '100%' }}
+              disabled={!hasCustomCoverImage(draft) || isStartingMintHandoff}
+              title={
+                !hasCustomCoverImage(draft)
+                  ? 'Upload a real cover image (PNG / JPEG / WebP) before continuing.'
+                  : undefined
+              }
+            >
+              {isStartingMintHandoff ? 'Sending draft to web...' : 'Mint By Web'}
+            </button>
+            {!hasCustomCoverImage(draft) && (
+              <p className="extract-status" style={{ margin: 0, fontSize: 12 }}>
+                Upload a real cover image first — Mint By Web needs it to skip the cover step on the web side.
+              </p>
+            )}
+            {actionError && (
+              <p className="link-panel__error" style={{ margin: 0 }}>{actionError}</p>
+            )}
           </section>
 
           <section className="settings-section" style={{ display: 'flex', gap: 8 }}>
@@ -1233,8 +1361,6 @@ export function ExtractTab(): React.JSX.Element {
               Back
             </button>
           </section>
-
-          <WebCreatePanel />
         </>
       )}
     </div>

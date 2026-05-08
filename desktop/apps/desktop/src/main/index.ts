@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray, type MenuItemConstructorOptions, type OpenDialogOptions } from 'electron'
 import { basename, extname, join, resolve as resolvePath } from 'path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import Store from 'electron-store'
@@ -49,7 +49,6 @@ import {
 } from './device-poll'
 import { performAgentResetIdentity } from './agent-reset-identity'
 import { performAgentUnlink } from './agent-unlink'
-import { registerWalletIpc } from './auth/wallet-ipc'
 import {
   executeTask,
   cancelTask,
@@ -65,7 +64,13 @@ import {
   pruneCache, getCacheStats, listCachedSprites
 } from './cache-manager'
 import { downloadSoulPersona } from './soul-downloader'
-import { storeDesktopToken, loadDesktopToken, clearDesktopToken, getDesktopAuthStatus } from './desktop-auth-store'
+import {
+  storeDesktopToken,
+  loadDesktopToken,
+  clearDesktopToken,
+  getDesktopAuthStatus,
+  loadDesktopTokenIssuingWebBaseUrl,
+} from './desktop-auth-store'
 import { clearExtractSoulDraft, loadExtractSoulDraft, saveExtractSoulDraft } from './extract-draft-store'
 import { scanSessions } from './soul-extraction/session-scanner'
 import { createLocalExtractDraft, getLocalExtractAgentStatuses } from './soul-extraction/local-draft-generator'
@@ -119,6 +124,39 @@ const compatMirrorWriter = createCompatMirrorWriter({ write: writeCompatMirrorNo
 function broadcastToAllWindows(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(channel, payload)
+  }
+}
+
+function buildHideTasksMenuItem(): MenuItemConstructorOptions {
+  return {
+    label: 'Hide Tasks',
+    type: 'checkbox',
+    checked: Boolean(store.get('hideTasks', false)),
+    click: () => {
+      setHideTasksValue(!Boolean(store.get('hideTasks', false)))
+    },
+  }
+}
+
+function buildTrayMenuTemplate(): MenuItemConstructorOptions[] {
+  return [
+    { label: 'Show Character', click: () => { if (ballWin) { ballWin.show() } else { createBallWindow() } } },
+    { label: 'Hide Character', click: () => { hidePetWindow() } },
+    { type: 'separator' },
+    { label: 'Settings', click: () => createMainWindow() },
+    buildHideTasksMenuItem(),
+    { type: 'separator' },
+    { label: 'Check for Updates', click: () => { void performUpdateCheck(true) } },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
+  ]
+}
+
+function setHideTasksValue(next: boolean): void {
+  store.set('hideTasks', next)
+  broadcastToAllWindows('config:changed', { ...store.store })
+  if (tray) {
+    tray.setContextMenu(Menu.buildFromTemplate(buildTrayMenuTemplate()))
   }
 }
 
@@ -394,8 +432,29 @@ function createBallWindow(): void {
     ballWin = null
   })
 
+  // Surface renderer / preload failures into the main-process log so a
+  // silently-broken pet window (e.g. preload throws, renderer process dies)
+  // is still discoverable from `pnpm dev` output without opening devtools.
+  ballWin.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('[ball] did-fail-load', { errorCode, errorDescription, validatedURL })
+  })
+  ballWin.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[ball] render-process-gone', details)
+  })
+  ballWin.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error('[ball] preload-error', preloadPath, error?.message ?? error)
+  })
+
   if (process.env['NODE_ENV'] === 'development' && process.env['ELECTRON_RENDERER_URL']) {
     ballWin.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    // macOS quirk: a transparent + alwaysOnTop + skipTaskbar BrowserWindow that
+    // is created with `show: false` and revealed via `ready-to-show` can land in
+    // a "composited but never painted" state — `isVisible()` reports true but
+    // the window does not appear in `System Events`' window list and is not
+    // drawn on screen. Opening devtools in detach mode forces a first paint and
+    // unblocks the compositor. Dev-only; production build does not need it
+    // because packaged Electron exercises a different paint path.
+    ballWin.webContents.openDevTools({ mode: 'detach' })
   } else {
     ballWin.loadFile(join(__dirname, '../renderer/index.html'))
   }
@@ -685,7 +744,16 @@ const MAIN_WIN_MIN_W = 400
 const MAIN_WIN_MIN_H = 500
 
 function createMainWindow(): void {
-  if (mainWin) { mainWin.focus(); return }
+  if (mainWin) {
+    // The window may be created with `show: false` waiting on ready-to-show, or
+    // minimized / occluded. `focus()` alone is a no-op while hidden, which is
+    // why repeated Settings clicks looked like nothing happened — they were all
+    // early-returning here. Restore + show forces it visible on every click.
+    if (mainWin.isMinimized()) mainWin.restore()
+    if (!mainWin.isVisible()) mainWin.show()
+    mainWin.focus()
+    return
+  }
 
   const display = screen.getPrimaryDisplay()
   const workArea = display.workArea
@@ -747,6 +815,7 @@ ipcMain.on('contextmenu:show', () => {
 
   const menu = Menu.buildFromTemplate([
     { label: 'Settings', click: () => createMainWindow() },
+    buildHideTasksMenuItem(),
     { label: 'Hide Character', click: () => hidePetWindow() },
     { label: 'Check for Updates', click: () => { void performUpdateCheck(true) } },
     { type: 'separator' },
@@ -781,9 +850,6 @@ ipcMain.handle('config:set', (_event, config: Record<string, unknown>) => {
   }
   broadcastToAllWindows('config:changed', { ...store.store })
 })
-
-// ── User wallet IPC ─────────────────────────────────────
-registerWalletIpc()
 
 // ── 设备绑定 IPC ──────────────────────────────────────────
 const WEB_BASE_URL = getDesktopWebBaseUrl()
@@ -1018,10 +1084,18 @@ ipcMain.handle('desktop-auth:unlink', async () => {
   // keeps the `WalletBinding` so a subsequent device-link reuses the same
   // agent address. Callers that want a fresh agent identity must use
   // `agent:reset-identity` instead.
+  //
+  // Target the *issuing* web base URL when we know it: if the user repointed
+  // `SOULIDITY_WEB_URL` after linking, the currently-configured `WEB_BASE_URL`
+  // is a different server that has no record of this token, so revoke would
+  // 401 ("already gone") and the original server's pet would be orphaned.
+  // Tokens saved before webBaseUrl tracking existed fall back to the current
+  // base URL — that's the only address callers had at the time anyway.
+  const revokeBaseUrl = loadDesktopTokenIssuingWebBaseUrl() ?? WEB_BASE_URL
   const result = await performAgentUnlink({
     loadDesktopToken,
     fetcher: async (pathname, init) => {
-      const response = await fetch(`${WEB_BASE_URL}${pathname}`, init)
+      const response = await fetch(`${revokeBaseUrl}${pathname}`, init)
       const body = await response.json().catch(() => null)
       return { status: response.status, body }
     },
@@ -1049,10 +1123,16 @@ ipcMain.handle('agent:get-api-key-status', () => {
 })
 
 ipcMain.handle('agent:reset-identity', async () => {
+  // Same issuing-URL routing as `desktop-auth:unlink`: the revoke must hit
+  // the server that issued the token, otherwise a user who repointed
+  // `SOULIDITY_WEB_URL` between sessions would silently orphan their pet on
+  // the original server while the current server's reset path 401s its way
+  // through `isAlreadyRevokedStatus` and clears local state anyway.
+  const revokeBaseUrl = loadDesktopTokenIssuingWebBaseUrl() ?? WEB_BASE_URL
   const result = await performAgentResetIdentity({
     loadDesktopToken,
     fetcher: async (pathname, init) => {
-      const response = await fetch(`${WEB_BASE_URL}${pathname}`, init)
+      const response = await fetch(`${revokeBaseUrl}${pathname}`, init)
       const body = await response.json().catch(() => null)
       return { status: response.status, body }
     },
@@ -1297,6 +1377,50 @@ ipcMain.handle('extraction:open-web-create', async () => {
   await shell.openExternal(validateOpenExternalUrl(new URL('/create', WEB_BASE_URL).toString()))
 })
 
+ipcMain.handle('extraction:start-mint-handoff', async (_event, draft: ExtractSoulDraft) => {
+  // Cover image must be a real upload (not the SVG placeholder) before the
+  // hand-off — mirrors the product gating on the Mint By Web button. The web
+  // server also rejects `image/svg+xml` payloads, so this just turns a slow
+  // round-trip rejection into a fast local error.
+  if (
+    draft.coverImageGenerated
+    || !draft.coverImageDataUrl
+    || draft.coverImageMimeType === 'image/svg+xml'
+  ) {
+    throw new Error('Upload a real cover image before starting the mint hand-off.')
+  }
+
+  const payload = {
+    name: draft.name,
+    description: draft.description,
+    tags: draft.tags,
+    royaltyBps: draft.royaltyBps,
+    soulMarkdown: draft.soulMarkdown,
+    memoryMarkdown: draft.memoryMarkdown,
+    coverImageDataUrl: draft.coverImageDataUrl,
+    coverImageFileName: draft.coverImageFileName,
+    coverImageMimeType: draft.coverImageMimeType,
+    coverImagePrompt: draft.coverImagePrompt,
+    characterType: draft.characterType,
+    extraDescription: draft.extraDescription,
+    skillsArchive: draft.skillsArchive,
+  }
+
+  const result = await fetchDesktopJson<{ token: string; expiresAt: string }>(
+    '/api/desktop/mint-handoff',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    'Start mint hand-off',
+  )
+
+  const url = new URL('/create', WEB_BASE_URL)
+  url.searchParams.set('handoff', result.token)
+  await shell.openExternal(validateOpenExternalUrl(url.toString()))
+})
+
 // ── Shell ─────────────────────────────────────────────────
 ipcMain.handle('shell:open-external', async (_event, url: string) => {
   await shell.openExternal(validateOpenExternalUrl(url))
@@ -1352,6 +1476,10 @@ ipcMain.handle('generate-agent-keypair', () => generateAgentKeypair())
 ipcMain.handle('load-agent-keypair', () => loadAgentKeypair())
 ipcMain.handle('export-agent-address', () => exportAgentAddress())
 ipcMain.handle('get-secret-storage-status', () => getSecretStorageStatus())
+ipcMain.handle('agent:sign-personal-message', (_event, message: Uint8Array | ArrayBuffer) => {
+  const bytes = message instanceof Uint8Array ? message : new Uint8Array(message)
+  return signAgentPersonalMessage(bytes)
+})
 
 // ── System Tray ────────────────────────────────────────────
 function createTray(): void {
@@ -1361,49 +1489,11 @@ function createTray(): void {
 
   const icon = nativeImage.createFromPath(iconPath)
   const resized = icon.resize({ width: 16, height: 16 })
-  if (process.platform === 'darwin') {
-    resized.setTemplateImage(true)
-  }
 
   tray = new Tray(resized)
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show Character',
-      click: () => { if (ballWin) { ballWin.show() } else { createBallWindow() } }
-    },
-    {
-      label: 'Hide Character',
-      click: () => { hidePetWindow() }
-    },
-    { type: 'separator' },
-    {
-      label: 'Settings',
-      click: () => createMainWindow()
-    },
-    { type: 'separator' },
-    {
-      label: 'Check for Updates',
-      click: () => { void performUpdateCheck(true) }
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => app.quit()
-    }
-  ])
-
   tray.setToolTip('Soulidity Desktop Companion')
-  tray.setContextMenu(contextMenu)
-  tray.on('click', () => {
-    if (ballWin?.isVisible()) {
-      hidePetWindow()
-    } else if (ballWin) {
-      ballWin.show()
-    } else {
-      createBallWindow()
-    }
-  })
+  tray.setContextMenu(Menu.buildFromTemplate(buildTrayMenuTemplate()))
 }
 
 // ── App 生命周期 ───────────────────────────────────────────

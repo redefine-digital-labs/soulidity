@@ -91,12 +91,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   uninstallHooks: (targets?: SupportedAgentSource[]): Promise<HookInstallStatus[]> =>
     ipcRenderer.invoke('hooks:uninstall', targets),
 
-  // ── Agent wallet ──
+  // ── Agent wallet (the unified local Sui identity for this desktop) ──
   generateAgentKeypair: (): Promise<unknown> => ipcRenderer.invoke('generate-agent-keypair'),
   loadAgentKeypair: (): Promise<unknown> => ipcRenderer.invoke('load-agent-keypair'),
   exportAgentAddress: (): Promise<string> => ipcRenderer.invoke('export-agent-address'),
   getSecretStorageStatus: (): Promise<'encrypted' | 'legacy' | 'missing'> =>
     ipcRenderer.invoke('get-secret-storage-status'),
+  agentSignPersonalMessage: (message: Uint8Array): Promise<{ signature: string }> =>
+    ipcRenderer.invoke('agent:sign-personal-message', message),
 
   // ── 设备绑定 ──
   deviceStartLink: (): Promise<{
@@ -136,20 +138,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('desktop-auth:runtime-config'),
   getDesktopMe: (): Promise<unknown> =>
     ipcRenderer.invoke('desktop-auth:me'),
-
-  // ── User wallet (Sui keypair held in main via safeStorage) ──
-  walletGetInfo: (): Promise<{ address: string; publicKey: string; createdAt: number } | null> =>
-    ipcRenderer.invoke('wallet:get-info'),
-  walletGenerate: (): Promise<{ address: string; publicKey: string; createdAt: number }> =>
-    ipcRenderer.invoke('wallet:generate'),
-  walletImport: (secretKeyInput: string): Promise<{ address: string; publicKey: string; createdAt: number }> =>
-    ipcRenderer.invoke('wallet:import', secretKeyInput),
-  walletReset: (): Promise<void> =>
-    ipcRenderer.invoke('wallet:reset'),
-  walletSignMessage: (message: Uint8Array): Promise<{ signature: string }> =>
-    ipcRenderer.invoke('wallet:sign-message', message),
-  walletSignTransaction: (rawBytes: Uint8Array): Promise<{ signature: string }> =>
-    ipcRenderer.invoke('wallet:sign-transaction', rawBytes),
 
   // ── Desktop create draft ──
   'desktop:create-draft:load': (): Promise<ExtractSoulDraft | null> =>
@@ -207,6 +195,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('extraction:create-local-draft', input),
   'extraction:open-web-create': (): Promise<void> =>
     ipcRenderer.invoke('extraction:open-web-create'),
+  'extraction:start-mint-handoff': (draft: ExtractSoulDraft): Promise<void> =>
+    ipcRenderer.invoke('extraction:start-mint-handoff', draft),
   'extraction:scan-progress': (callback: (progress: ScanProgress) => void): (() => void) => {
     const listener = (_event: unknown, progress: ScanProgress) => callback(progress)
     ipcRenderer.on('extraction:scan-progress', listener)

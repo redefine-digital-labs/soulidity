@@ -24,12 +24,12 @@ export const metadata: Metadata = {
 
 const docs = [
   { emoji: '🚀', title: 'Getting Started', desc: 'Connect your wallet, browse Souls, make your first purchase, and understand the ownership model.', href: '/resources/getting-started' },
-  { emoji: '📐', title: 'Soul Content Format', desc: 'Canonical soul.md, founding memory, and skill.zip contract for the fresh-deploy content architecture.', href: '/resources/content-format' },
+  { emoji: '📐', title: 'Soul Content Format', desc: 'Canonical soul.md, founding memory, and skills.zip contract for the fresh-deploy content architecture.', href: '/resources/content-format' },
   { emoji: '🔐', title: 'SoulGrant — Authorization API', desc: 'Issue, scope, supersede, and revoke AI agent access to Soul data via Seal, Memory, and Skills.', href: '/resources/soulgrant-api' },
   { emoji: '📜', title: 'Smart Contract Reference', desc: 'SoulSeries, SoulRelease, SoulGrant, SoulCollection — Move module docs, object schemas, event types.', href: '/resources/smart-contracts' },
   { emoji: '🌊', title: 'Walrus & Seal Integration', desc: 'How Soul data is encrypted at rest on Walrus and access-controlled via Seal policy objects.', href: '/resources/walrus-seal' },
   { emoji: '📖', title: 'Soul Memory Architecture', desc: 'Append-only memory on Walrus — Memory at mint, SoulGrant write-back flow, and immutability guarantees.', href: '/resources/memory-architecture' },
-  { emoji: '🧠', title: 'Skills & Docs Revisions', desc: 'How skill.zip bundles map to skillName/versionIndex, privacy modes, and soft-delete behavior.', href: '/resources/skills-revisions' },
+  { emoji: '🧠', title: 'Skills & Docs Revisions', desc: 'How skills.zip bundles map to skillName/versionIndex, privacy modes, and soft-delete behavior.', href: '/resources/skills-revisions' },
   { emoji: '🔗', title: 'Wrap + Link Guide', desc: 'Add a Soul layer on top of any existing NFT without touching the original contract.', href: '/resources/wrap-link' },
   { emoji: '⚙️', title: 'API & SDK Reference', desc: 'REST endpoints, TypeScript SDK, and integration patterns for builders on Soulidity.', href: '/resources/api-sdk' },
 ]

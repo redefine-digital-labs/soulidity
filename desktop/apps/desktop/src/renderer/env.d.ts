@@ -62,11 +62,12 @@ declare global {
       repairHooks: (targets?: SupportedAgentSource[]) => Promise<HookInstallStatus[]>
       uninstallHooks: (targets?: SupportedAgentSource[]) => Promise<HookInstallStatus[]>
 
-      // ── Agent wallet ──
+      // ── Agent wallet (the unified local Sui identity for this desktop) ──
       generateAgentKeypair: () => Promise<unknown>
       loadAgentKeypair: () => Promise<unknown>
       exportAgentAddress: () => Promise<string>
       getSecretStorageStatus: () => Promise<'encrypted' | 'legacy' | 'missing'>
+      agentSignPersonalMessage: (message: Uint8Array) => Promise<{ signature: string }>
 
       // ── 设备绑定 ──
       deviceStartLink: () => Promise<{
@@ -99,14 +100,6 @@ declare global {
       }>
       getDesktopMe: () => Promise<unknown>
 
-      // ── User wallet (Sui keypair held in main via safeStorage) ──
-      walletGetInfo: () => Promise<{ address: string; publicKey: string; createdAt: number } | null>
-      walletGenerate: () => Promise<{ address: string; publicKey: string; createdAt: number }>
-      walletImport: (secretKeyInput: string) => Promise<{ address: string; publicKey: string; createdAt: number }>
-      walletReset: () => Promise<void>
-      walletSignMessage: (message: Uint8Array) => Promise<{ signature: string }>
-      walletSignTransaction: (rawBytes: Uint8Array) => Promise<{ signature: string }>
-
       // ── Desktop create draft ──
       'desktop:create-draft:load': () => Promise<ExtractSoulDraft | null>
       'desktop:create-draft:save': (draft: ExtractSoulDraft) => Promise<void>
@@ -138,6 +131,7 @@ declare global {
       'extraction:import-openclaw-draft': (input: ImportOpenClawDraftInput) => Promise<ExtractSoulDraft>
       'extraction:create-local-draft': (input: CreateLocalExtractDraftInput) => Promise<ExtractSoulDraft>
       'extraction:open-web-create': () => Promise<void>
+      'extraction:start-mint-handoff': (draft: ExtractSoulDraft) => Promise<void>
       'extraction:scan-progress': (callback: (progress: ScanProgress) => void) => () => void
 
       // ── Shell ──

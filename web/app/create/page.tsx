@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { PageContainer } from '@/components/layout/page-container'
@@ -9,6 +9,45 @@ import { Input, Textarea } from '@/components/ui/input'
 import { buttonStyles } from '@/components/ui/button'
 import { CoverImagePicker } from '@/components/ui/cover-image-picker'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
+
+interface DesktopMintHandoffPayload {
+  name: string
+  description: string
+  tags: string[]
+  royaltyBps: number
+  soulMarkdown: string
+  memoryMarkdown: string
+  coverImageDataUrl: string
+  coverImageFileName: string
+  coverImageMimeType: string
+  coverImagePrompt: string
+  characterType: string
+  extraDescription: string
+  skillsArchive: {
+    fileName: string
+    mimeType: string
+    dataBase64: string
+  } | null
+}
+
+function dataUrlToFile(dataUrl: string, fileName: string, fallbackMime: string): Promise<File> {
+  return fetch(dataUrl)
+    .then((r) => r.blob())
+    .then((blob) => new File([blob], fileName || 'cover', { type: blob.type || fallbackMime || 'application/octet-stream' }))
+}
+
+function base64ToFile(base64: string, fileName: string, mimeType: string): File {
+  const bin = atob(base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' })
+  return new File([blob], fileName, { type: blob.type })
+}
+
+function markdownToFile(text: string, fileName: string): File {
+  const blob = new Blob([text], { type: 'text/markdown' })
+  return new File([blob], fileName, { type: 'text/markdown' })
+}
 
 const royaltyOptions = [
   { value: 0, label: 'Off', desc: '0%' },
@@ -52,6 +91,112 @@ export default function CreateSoulPage() {
     )
   }, [collectionOnChainId, setCollectionBindTarget])
 
+  // ── Desktop "Mint By Web" hand-off hydration ────────────────────────────
+  // The desktop app POSTs the local draft to /api/desktop/mint-handoff and
+  // opens this page with `?handoff=<token>`. We GET the payload once (server
+  // marks it consumed), inject the fields into the CreateSoulProvider, then
+  // strip the token from the URL. The hydrate is best-effort — failures
+  // (token expired, accountId mismatch, network) leave the page in its
+  // default empty state so the user can fill the form manually.
+  const handoffToken = (searchParams.get('handoff')?.trim() ?? '')
+  const ctxRef = useRef(ctx)
+  ctxRef.current = ctx
+  // Track the last token value we attempted, not a single-shot boolean. A
+  // boolean would lock out every subsequent hand-off opened into this
+  // mounted page (e.g. desktop opens a second Mint By Web URL into the same
+  // tab, or the user pastes a fresh `?handoff=<token>` while still on /create),
+  // dropping the user's latest draft silently.
+  const handoffStartedTokenRef = useRef<string | null>(null)
+  const [handoffError, setHandoffError] = useState<string | null>(null)
+  const [isHydratingHandoff, setIsHydratingHandoff] = useState(false)
+
+  useEffect(() => {
+    if (!handoffToken || handoffStartedTokenRef.current === handoffToken) return
+    handoffStartedTokenRef.current = handoffToken
+    // A new token supersedes any prior hand-off's surfaced error / loading
+    // copy so the UI reflects the new attempt rather than stale messaging
+    // from the previous token.
+    setHandoffError(null)
+
+    let cancelled = false
+    setIsHydratingHandoff(true)
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/desktop/mint-handoff/${encodeURIComponent(handoffToken)}`,
+          { credentials: 'include', cache: 'no-store' },
+        )
+        if (!res.ok) {
+          let message = `Hand-off failed: ${res.status}`
+          try {
+            const body = await res.json()
+            if (body && typeof body.error === 'string') message = body.error
+          } catch { /* ignore */ }
+          throw new Error(message)
+        }
+        const body = (await res.json()) as { payload?: unknown }
+        const payload = body.payload as DesktopMintHandoffPayload | undefined
+        if (!payload || cancelled) return
+
+        const c = ctxRef.current
+        c.setName(typeof payload.name === 'string' ? payload.name : '')
+        c.setDescription(typeof payload.description === 'string' ? payload.description : '')
+        c.setTags(Array.isArray(payload.tags) ? payload.tags.join(', ') : '')
+        if (typeof payload.royaltyBps === 'number' && Number.isFinite(payload.royaltyBps)) {
+          c.setRoyalty(Math.max(0, Math.min(2500, Math.round(payload.royaltyBps))))
+        }
+
+        if (payload.coverImageDataUrl && payload.coverImageMimeType !== 'image/svg+xml') {
+          try {
+            const file = await dataUrlToFile(
+              payload.coverImageDataUrl,
+              payload.coverImageFileName || 'cover',
+              payload.coverImageMimeType || 'image/png',
+            )
+            if (!cancelled) c.setCoverImage(file)
+          } catch (err) {
+            console.warn('[create] cover hand-off failed to decode', err)
+          }
+        }
+
+        if (typeof payload.soulMarkdown === 'string' && payload.soulMarkdown) {
+          c.setCharFile(markdownToFile(payload.soulMarkdown, 'soul.md'))
+        }
+        if (typeof payload.memoryMarkdown === 'string' && payload.memoryMarkdown) {
+          c.setMemoryFile(markdownToFile(payload.memoryMarkdown, 'memory.md'))
+        }
+        if (payload.skillsArchive?.dataBase64) {
+          try {
+            const file = base64ToFile(
+              payload.skillsArchive.dataBase64,
+              payload.skillsArchive.fileName || 'skills.zip',
+              payload.skillsArchive.mimeType || 'application/zip',
+            )
+            c.setSkillsFile(file)
+          } catch (err) {
+            console.warn('[create] skills.zip hand-off failed to decode', err)
+          }
+        }
+
+        // Strip the consumed token from the URL — keeps refreshes / shares
+        // from re-issuing the GET (server returns 410 on second use anyway,
+        // but a clean URL avoids surfacing that error to the user).
+        const url = new URL(window.location.href)
+        url.searchParams.delete('handoff')
+        router.replace(`${url.pathname}${url.search}${url.hash}`)
+      } catch (err) {
+        if (!cancelled) {
+          setHandoffError(err instanceof Error ? err.message : 'Mint hand-off failed.')
+        }
+      } finally {
+        if (!cancelled) setIsHydratingHandoff(false)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [handoffToken, router])
+
   function handleNext() {
     const nextErrors: Record<string, string> = {}
     if (!ctx.name.trim()) nextErrors.name = 'Required'
@@ -68,6 +213,16 @@ export default function CreateSoulPage() {
   return (
     <div className="relative z-10 border-t border-purple/20">
       <PageContainer size="sm" className="space-y-6 pt-7 sm:pt-9">
+        {isHydratingHandoff && (
+          <div className="rounded-xl border border-purple/35 bg-card2/60 px-4 py-3 text-sm text-muted">
+            Importing draft from desktop...
+          </div>
+        )}
+        {handoffError && (
+          <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
+            Mint hand-off failed: {handoffError}. You can still fill the form manually below.
+          </div>
+        )}
         <SectionHeader
           label="Create Soul"
           title={ctx.collectionBindTarget ? 'Step 1 — Add Soul to Collection' : 'Step 1 — Basic Info'}

@@ -38,8 +38,14 @@ export interface ImportOpenClawDraftInput {
   skillId?: string | null
 }
 
+export interface CreateLocalExtractDraftDirection {
+  characterType: string
+  extraDescription: string
+}
+
 export interface CreateLocalExtractDraftInput {
   agent: LocalExtractAgent
   scanResults: import('./soul-profile').SessionScanResult[]
+  direction?: CreateLocalExtractDraftDirection
 }
 

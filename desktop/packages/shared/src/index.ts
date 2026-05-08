@@ -109,6 +109,7 @@ export type {
   OpenClawImportStatus,
   ImportOpenClawDraftInput,
   CreateLocalExtractDraftInput,
+  CreateLocalExtractDraftDirection,
 } from './types/extract-flow'
 
 export type {

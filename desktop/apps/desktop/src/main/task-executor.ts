@@ -2,7 +2,7 @@
  * TaskExecutor — spawn Claude Code / Codex CLI processes and stream output via IPC.
  *
  * Inspired by Confirmo's execute-claude-task pattern:
- * - spawn `claude -p "..." --output-format stream-json`
+ * - spawn `claude -p "..." --output-format stream-json --verbose`
  * - parse stdout line by line as JSON
  * - push text chunks to renderer via webContents.send
  */
@@ -226,10 +226,16 @@ export function resolveCliCommand(
     case 'claude':
       return {
         cmd: 'claude',
+        // `--verbose` is mandatory whenever `-p` (`--print`) is combined with
+        // `--output-format stream-json`. Claude CLI ≥ 2.1 rejects the spawn
+        // outright with `Error: When using --print, --output-format=stream-json
+        // requires --verbose`. Keep the flag adjacent to `--output-format` so
+        // the binding is obvious to future readers.
         args: executionMode === 'write'
           ? [
             '-p', prompt,
             '--output-format', 'stream-json',
+            '--verbose',
             '--allowedTools', 'Bash,Read,Write,Edit',
             '--dangerously-skip-permissions',
           ]
@@ -240,6 +246,7 @@ export function resolveCliCommand(
           : [
             '-p', prompt,
             '--output-format', 'stream-json',
+            '--verbose',
             '--allowedTools', 'Read,Grep,Glob',
           ],
       }

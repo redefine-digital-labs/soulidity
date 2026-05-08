@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import type {
+  CreateLocalExtractDraftDirection,
   CreateLocalExtractDraftInput,
   ExtractSoulDraft,
   LocalExtractAgent,
@@ -23,6 +24,7 @@ type DraftPayload = {
   workStyle: string
   soulMarkdown: string
   memoryMarkdown: string
+  coverImagePrompt: string
 }
 
 const READ_ONLY_AGENT_TIMEOUT_MS = 120_000
@@ -461,6 +463,10 @@ function parseDraftPayload(source: string): DraftPayload {
   const workStyle = typeof record.workStyle === 'string' ? record.workStyle.trim() : ''
   const soulMarkdown = typeof record.soulMarkdown === 'string' ? record.soulMarkdown.trim() : ''
   const memoryMarkdown = typeof record.memoryMarkdown === 'string' ? record.memoryMarkdown.trim() : ''
+  // `coverImagePrompt` is optional output: older prompts / older model versions
+  // may not return it. Fall back to '' so the surface degrades to "no prompt
+  // available, edit manually" instead of failing the whole draft generation.
+  const coverImagePrompt = typeof record.coverImagePrompt === 'string' ? record.coverImagePrompt.trim() : ''
 
   if (!name || !description || !communicationStyle || !workStyle || !soulMarkdown || !memoryMarkdown) {
     throw new Error('Local agent JSON is missing required draft fields.')
@@ -484,16 +490,41 @@ function parseDraftPayload(source: string): DraftPayload {
     workStyle,
     soulMarkdown,
     memoryMarkdown,
+    coverImagePrompt,
   }
 }
 
-function buildPrompt(agent: LocalExtractAgent, bundle: ExtractContextBundle) {
+function buildPrompt(
+  agent: LocalExtractAgent,
+  bundle: ExtractContextBundle,
+  direction?: CreateLocalExtractDraftDirection,
+) {
+  // Build the optional "user direction" block. When the user has given an
+  // explicit character type / extra description, treat that as the dominant
+  // anchor for personality fields and let local-session evidence become
+  // supporting context. This keeps the output aligned with what the user
+  // actually wants instead of whatever pattern dominates their recent sessions.
+  const directionBlock: string[] = []
+  const characterType = direction?.characterType?.trim() ?? ''
+  const extraDescription = direction?.extraDescription?.trim() ?? ''
+  if (characterType || extraDescription) {
+    directionBlock.push(
+      'User direction for this Soul:',
+      `- Character type: ${characterType || '(not provided)'}`,
+      `- Additional notes: ${extraDescription || '(none)'}`,
+      'Treat the user direction as the primary anchor when filling out personality fields.',
+      'Evidence from local sessions is supporting context, not the dominant signal.',
+      '',
+    )
+  }
+
   return [
     `You are ${agent === 'codex' ? 'Codex' : 'Claude Code'} running in an isolated read-only extract flow to prepare a Soulidity create draft.`,
     'Use only the structured evidence and source materials included in this prompt.',
     'Do not inspect additional files or directories. Do not rely on any local context outside this prompt.',
     'Return ONLY valid JSON. No markdown fences. No commentary.',
     '',
+    ...directionBlock,
     'JSON schema:',
     '{',
     '  "name": "short soul name",',
@@ -504,16 +535,18 @@ function buildPrompt(agent: LocalExtractAgent, bundle: ExtractContextBundle) {
     '  "expertise": ["domain 1", "domain 2"],',
     '  "workStyle": "how this soul operates",',
     '  "soulMarkdown": "# Soul Character\\n...",',
-    '  "memoryMarkdown": "# Founding Memory\\n..."',
+    '  "memoryMarkdown": "# Founding Memory\\n...",',
+    '  "coverImagePrompt": "120-220 word English prompt for an image-generation model"',
     '}',
     '',
     'Content rules:',
     '- soulMarkdown must start with "# Soul Character" and include the sections: Core Truths, Boundaries, Vibe, Knowledge, Continuity.',
     '- memoryMarkdown must start with "# Founding Memory" and include the sections: Origin Snapshot, Initial Direction.',
+    '- coverImagePrompt is one coherent English paragraph (120-220 words) suitable to feed into an image-generation model (DALL-E, Midjourney, Stable Diffusion, FLUX, Gemini Studio, etc.) to produce a 1:1 square cover image. Describe atmosphere, palette, composition, lighting, and a specific medium (cinematic / illustration / 3D render / abstract geometry / pixel art — pick exactly one). Do not include real-person names. Do not request close-up faces. Stay internally consistent with traits, communicationStyle, and workStyle.',
     '- Write in a distinct soul-native voice. Make it feel personal, not generic assistant copy.',
-    '- Every claim must stay grounded in the evidence and source materials below. If signal is weak, say less instead of inventing lore.',
+    '- Every claim must stay grounded in the evidence, user direction, and source materials below. If signal is weak, say less instead of inventing lore.',
     '- If OpenClaw source materials are present, treat SOUL.md as the primary identity source. Use AGENTS.md, TOOLS.md, IDENTITY.md, USER.md, and session excerpts only as supporting context.',
-    '- If OpenClaw is absent, infer cautiously from the scan evidence and recent session excerpts only.',
+    '- If OpenClaw is absent, infer cautiously from the user direction (if provided), the scan evidence, and recent session excerpts only.',
     '- Prefer stable patterns over one-off moments. Keep boundaries explicit and avoid marketing language.',
     '',
     'Aggregated evidence:',
@@ -558,7 +591,7 @@ export async function getLocalExtractAgentStatuses(): Promise<LocalExtractAgentS
 
 export async function createLocalExtractDraft(input: CreateLocalExtractDraftInput): Promise<ExtractSoulDraft> {
   const bundle = buildContextBundle(input.scanResults)
-  const response = await runReadOnlyAgent(input.agent, buildPrompt(input.agent, bundle))
+  const response = await runReadOnlyAgent(input.agent, buildPrompt(input.agent, bundle, input.direction))
   const payload = parseDraftPayload(response)
 
   return createExtractSoulDraftFromSeed({
@@ -577,5 +610,8 @@ export async function createLocalExtractDraft(input: CreateLocalExtractDraftInpu
     evidence: bundle.evidence,
     soulMarkdown: payload.soulMarkdown,
     memoryMarkdown: payload.memoryMarkdown,
+    coverImagePrompt: payload.coverImagePrompt,
+    characterType: input.direction?.characterType ?? '',
+    extraDescription: input.direction?.extraDescription ?? '',
   })
 }

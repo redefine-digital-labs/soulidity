@@ -22,7 +22,7 @@ export default function ContentFormatPage() {
         <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Soul Content Format</h1>
         <p className="text-sm text-muted">
-          Fresh-deploy content contract for `soul.md`, `memory.md`, and `skill.zip`. The template previews below are imported from the same shared module used by create and import flows.
+          Fresh-deploy content contract for `soul.md`, `memory.md`, and `skills.zip`. The template previews below are imported from the same shared module used by create and import flows.
         </p>
       </div>
 
@@ -31,7 +31,7 @@ export default function ContentFormatPage() {
         <ul className="text-sm text-muted space-y-2">
           <li><strong className="text-foreground">soul.md</strong> uses the shared five-section Soul Character template and is Seal encrypted by default.</li>
           <li><strong className="text-foreground">memory.md</strong> uses the shared founding memory template, is Seal encrypted by default, and is mirrored by `(memoryOnChainId, timestampKey)`.</li>
-          <li><strong className="text-foreground">skill.zip</strong> is the only accepted skills payload. `SKILL.md` frontmatter `name` becomes the on-chain `skillName` key.</li>
+          <li><strong className="text-foreground">skills.zip</strong> is the only accepted skills payload. `SKILL.md` frontmatter `name` becomes the on-chain `skillName` key.</li>
         </ul>
       </div>
 

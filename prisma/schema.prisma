@@ -145,6 +145,7 @@ model Account {
   desktopDeviceSessions DesktopDeviceSession[]
   desktopProfile        DesktopProfile?
   desktopPets           DesktopPet[]
+  desktopMintHandoffs   DesktopMintHandoff[]
 
   @@map("accounts")
 }
@@ -774,4 +775,28 @@ model DesktopPet {
   @@index([accountId, activeSourceType, activeSourceRef], map: "desktop_pets_account_active_source_idx")
   @@index([agentAddress])
   @@map("desktop_pets")
+}
+
+// One-shot handoff envelope for the desktop "Mint By Web" flow. Desktop POSTs
+// the local draft (text fields + cover image dataURL + skills.zip base64) to
+// `/api/desktop/mint-handoff` and receives a `token`. The desktop then opens
+// the web `/create?handoff=<token>` URL; web hydrates by calling
+// `/api/desktop/mint-handoff/[token]` (web session cookie auth, must belong to
+// the same `accountId` that issued the handoff). Rows are consumed once
+// (`consumedAt` set) and expire 5 minutes after creation. Stale rows can be
+// pruned by `DELETE FROM desktop_mint_handoffs WHERE expires_at < now()` —
+// payload is up to ~1MB (cover image + skills.zip) so cleanup matters.
+model DesktopMintHandoff {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token      String    @unique @map("token")
+  accountId  String    @map("account_id") @db.Uuid
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  payload    Json      @map("payload")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("desktop_mint_handoffs")
 }
