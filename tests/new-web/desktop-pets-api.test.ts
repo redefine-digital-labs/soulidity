@@ -574,6 +574,121 @@ describe('DELETE /api/account/pets/[id]', () => {
     expect(mockedPrisma.member.update).toHaveBeenCalled()
   })
 
+  it('returns 503 (fails closed) when the on-chain re-check is incomplete due to owner-soul overflow (R-001)', async () => {
+    // Regression for R-001: the original on-chain re-check capped the
+    // owned-Soul scan at MAX_ONCHAIN_RECHECK_SOULS=200 with no overflow
+    // signal. A caller holding more Souls than the cap could have an
+    // active grant on a Soul outside the (un-ordered) page, and the
+    // helper would silently return [] — letting DELETE proceed and
+    // orphan the live grant. The helper now refuses to scan further
+    // and signals incomplete; the route must fail closed with 503.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    // 201 owned Souls — one row past the cap. Slim select, no `name`.
+    const overflowingOwnedSouls = Array.from({ length: 201 }, (_, i) => ({
+      onChainId: `0xsoul-${i}`,
+      stateOnChainId: `0xstate-${i}`,
+    }))
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce(overflowingOwnedSouls)
+    // Have every state read return zero grants — even if the helper
+    // scans every cap'd Soul, it should still return incomplete=true
+    // because the overflow row was present.
+    mockedGetSoulStateObject.mockResolvedValue({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body.retryable).toBe(true)
+    expect(body.reason).toBe('owner-soul-overflow')
+    // Critical: no delete, no member disable.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 (fails closed) when an on-chain SoulState read fails transiently (R-001)', async () => {
+    // Regression for R-001: per-Soul state read errors used to be
+    // logged and silently `continue`d, which fail-opens any single
+    // owned Soul whose RPC was failing right now. The helper now
+    // tracks the failure and signals incomplete; the route must fail
+    // closed with 503.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' },
+    ])
+    mockedGetSoulStateObject.mockRejectedValueOnce(new Error('RPC timeout'))
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body.retryable).toBe(true)
+    expect(body.reason).toBe('rpc-error')
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 (fails closed) when the on-chain grant-slot lookup fails transiently (R-001)', async () => {
+    // Regression for R-001: per-Soul grant-slot read errors used to
+    // be logged and silently `continue`d. The helper now tracks the
+    // failure (we know `activeGrantCount > 0` for the Soul, but
+    // can't determine whether the slot targets our grantee) and
+    // signals incomplete.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockRejectedValueOnce(new Error('dynamic field RPC failed'))
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body.reason).toBe('rpc-error')
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
   it('returns 404 when the pet belongs to a different account (cross-account isolation)', async () => {
     mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({

@@ -253,6 +253,73 @@ describe('POST /api/desktop/me/revoke', () => {
     expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
   })
 
+  it('does a PARTIAL teardown when the on-chain re-check is incomplete due to owner-soul overflow (R-001)', async () => {
+    // Regression for R-001: when the caller owns more Souls than the
+    // per-call cap, the on-chain re-check can no longer prove there
+    // are no active grants. The bearer revoke route must fail closed —
+    // preserve the pet row so /account/pets keeps a revoke surface for
+    // any grant we couldn't see, and clear desktop credentials so the
+    // local `dtk_*`/`sk-*` stop working immediately.
+    mockedPrisma.member.findFirst.mockResolvedValue({ id: 'human-member-1' })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    const overflowingOwnedSouls = Array.from({ length: 201 }, (_, i) => ({
+      onChainId: `0xsoul-${i}`,
+      stateOnChainId: `0xstate-${i}`,
+    }))
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce(overflowingOwnedSouls)
+    mockedGetSoulStateObject.mockResolvedValue({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+    mockedPrisma.desktopPet.update.mockResolvedValue({ id: PET_IDENTITY.id })
+    mockedPrisma.member.update.mockResolvedValue({ id: PET_IDENTITY.agentMemberId })
+
+    const { POST } = await import('../../web/app/api/desktop/me/revoke/route')
+    const response = await POST(buildRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.partial).toBe(true)
+    expect(body.reason).toBe('on-chain-recheck-incomplete')
+    expect(body.incompleteReason).toBe('owner-soul-overflow')
+    expect(body.activeAssetGrants).toEqual([])
+    // Critical: row preserved, credentials cleared.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopPet.update).toHaveBeenCalledWith({
+      where: { id: PET_IDENTITY.id, accountId: PET_IDENTITY.accountId },
+      data: {
+        desktopAccessTokenHash: null,
+        desktopAccessTokenIssuedAt: null,
+      },
+    })
+  })
+
+  it('does a PARTIAL teardown when an on-chain SoulState read fails transiently (R-001)', async () => {
+    // Same fail-closed contract: a transient RPC failure on a single
+    // owned Soul means we can't prove that Soul has no active grant
+    // for the grantee. The bearer revoke must preserve the pet row.
+    mockedPrisma.member.findFirst.mockResolvedValue({ id: 'human-member-1' })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' },
+    ])
+    mockedGetSoulStateObject.mockRejectedValueOnce(new Error('RPC timeout'))
+    mockedPrisma.desktopPet.update.mockResolvedValue({ id: PET_IDENTITY.id })
+    mockedPrisma.member.update.mockResolvedValue({ id: PET_IDENTITY.agentMemberId })
+
+    const { POST } = await import('../../web/app/api/desktop/me/revoke/route')
+    const response = await POST(buildRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.partial).toBe(true)
+    expect(body.reason).toBe('on-chain-recheck-incomplete')
+    expect(body.incompleteReason).toBe('rpc-error')
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+  })
+
   it('passes allowExpiredDesktopToken: true through to requireDesktopIdentity (so a 90-day-stale dtk_ still revokes a still-existing pet)', async () => {
     // Regression for R-001: without this flag, a `dtk_*` whose
     // `desktopAccessTokenIssuedAt` is past the 90-day rotation window

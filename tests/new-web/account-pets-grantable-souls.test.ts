@@ -310,8 +310,11 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
       if ((args.where?.grantRecords as { some?: unknown } | undefined)?.some) {
         return []
       }
-      // (3) on-chain helper's owned-Soul enumeration — `take: 200`, slim select.
-      if (args.take === 200 && args.select && !args.select.name) {
+      // (3) on-chain helper's owned-Soul enumeration — `take:
+      // MAX_ONCHAIN_RECHECK_SOULS + 1 = 201` (one row past the cap to
+      // detect overflow without a separate count round-trip), slim
+      // select.
+      if (args.take === 201 && args.select && !args.select.name) {
         return [{ onChainId: '0xsoul-onchain', stateOnChainId: '0xstate-onchain' }]
       }
       // (4) enrichment lookup — `onChainId: { in: [...] }` with display select.
@@ -361,6 +364,78 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
     // enumeration, then the enrichment lookup.
     expect(mockedPrisma.soulAsset.findMany).toHaveBeenCalledTimes(4)
     expect(mockedGetActiveGrantSlotForGrantee).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces incompleteRecheck=owner-soul-overflow when the on-chain re-check cannot enumerate every Soul (R-001)', async () => {
+    // Regression for R-001: when the chain re-check is incomplete
+    // (caller owns more Souls than the per-call cap, or transient
+    // RPC failure), the route must surface that to the UI instead of
+    // returning an empty active-grants list. Otherwise the PetCard
+    // shows "no grants to revoke" while the cookie DELETE blocker
+    // (using the same helper) returns 503 — leaving the user with no
+    // signing surface and no explanation.
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue(makePet())
+
+    const overflowingOwnedSouls = Array.from({ length: 201 }, (_, i) => ({
+      onChainId: `0xsoul-${i}`,
+      stateOnChainId: `0xstate-${i}`,
+    }))
+    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: {
+      where: Record<string, unknown>
+      take?: number
+      select?: Record<string, unknown>
+    }) => {
+      if (args.where?.activeSpriteDownloadPolicy) return []
+      if ((args.where?.grantRecords as { some?: unknown } | undefined)?.some) return []
+      // On-chain helper's owned-Soul enumeration — `take: 201`.
+      if (args.take === 201 && args.select && !args.select.name) {
+        return overflowingOwnedSouls
+      }
+      return []
+    })
+    // Every state read returns zero grants — but the helper still
+    // signals incomplete because the overflow row was present.
+    mockedGetSoulStateObject.mockResolvedValue({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+
+    const { GET } = await import('../../web/app/api/account/pets/[id]/grantable-souls/route')
+    const response = await GET(jsonRequest(), { params: Promise.resolve({ id: PET_ID }) })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.activeAssetGrants).toEqual([])
+    expect(body.incompleteRecheck).toEqual({ reason: 'owner-soul-overflow' })
+  })
+
+  it('surfaces incompleteRecheck=rpc-error when an on-chain SoulState read fails (R-001)', async () => {
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue(makePet())
+    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: {
+      where: Record<string, unknown>
+      take?: number
+      select?: Record<string, unknown>
+    }) => {
+      if (args.where?.activeSpriteDownloadPolicy) return []
+      if ((args.where?.grantRecords as { some?: unknown } | undefined)?.some) return []
+      if (args.take === 201 && args.select && !args.select.name) {
+        return [{ onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' }]
+      }
+      return []
+    })
+    mockedGetSoulStateObject.mockRejectedValueOnce(new Error('RPC timeout'))
+
+    const { GET } = await import('../../web/app/api/account/pets/[id]/grantable-souls/route')
+    const response = await GET(jsonRequest(), { params: Promise.resolve({ id: PET_ID }) })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.activeAssetGrants).toEqual([])
+    expect(body.incompleteRecheck).toEqual({ reason: 'rpc-error' })
   })
 
   it('skips the on-chain fallback entirely when the mirror already returned active grants (no extra RPC)', async () => {
