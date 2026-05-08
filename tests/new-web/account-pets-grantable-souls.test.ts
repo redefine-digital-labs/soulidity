@@ -43,11 +43,25 @@ const AGENT_IDENTITY = {
   kind: 'agent' as const,
 }
 
-function makePet(overrides: Partial<{ accountId: string; agentAddress: string }> = {}) {
+function makePet(
+  overrides: Partial<{
+    accountId: string
+    agentAddress: string
+    desktopAccessTokenHash: string | null
+    agentStatus: string | null
+  }> = {},
+) {
   return {
     id: PET_ID,
     accountId: overrides.accountId ?? ACCOUNT_ID,
     agentAddress: overrides.agentAddress ?? AGENT_ADDRESS,
+    desktopAccessTokenHash:
+      overrides.desktopAccessTokenHash !== undefined
+        ? overrides.desktopAccessTokenHash
+        : 'hash-of-dtk',
+    agentMember: {
+      agentStatus: overrides.agentStatus !== undefined ? overrides.agentStatus : 'active',
+    },
   }
 }
 
@@ -177,6 +191,52 @@ describe('GET /api/account/pets/[id]/grantable-souls', () => {
 
     const grantableCall = mockedPrisma.soulAsset.findMany.mock.calls[0]?.[0] as { where: { currentOwnerMemberId?: string } }
     expect(grantableCall.where.currentOwnerMemberId).toBe(HUMAN_MEMBER_ID)
+  })
+
+  it('returns no grantable souls but still lists active grants when the pet is in the partial-revoke state', async () => {
+    // After `POST /api/desktop/me/revoke` runs the partial path
+    // (active grants remain), the row stays alive but the bearer hash
+    // is cleared and the agent member is disabled. From this state
+    // the user must only be able to revoke — issuing fresh grants
+    // would target an agent with no usable credential.
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue(
+      makePet({ desktopAccessTokenHash: null, agentStatus: 'disabled' }),
+    )
+    mockedPrisma.soulAsset.findMany.mockImplementation(async (args: { where: unknown }) => {
+      // The route should only run the active-grant query in this state.
+      expect(args.where).toMatchObject({
+        currentOwnerMemberId: HUMAN_MEMBER_ID,
+        grantRecords: {
+          some: expect.objectContaining({
+            granteeAddress: AGENT_ADDRESS,
+            scopes: { has: 'assets' },
+          }),
+        },
+      })
+      return [{
+        onChainId: '0xowned-2',
+        stateOnChainId: '0xstate-2',
+        name: 'Owned B',
+        imageUrl: 'image-b.png',
+        previewImages: [],
+        grantRecords: [{ onChainId: '0xgrant-1', expiresAt: null }],
+      }]
+    })
+
+    const { GET } = await import('../../web/app/api/account/pets/[id]/grantable-souls/route')
+    const response = await GET(jsonRequest(), { params: Promise.resolve({ id: PET_ID }) })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.souls).toEqual([])
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      soulOnChainId: '0xowned-2',
+      grantOnChainId: '0xgrant-1',
+    })
+    // Only the active-grant query should have run.
+    expect(mockedPrisma.soulAsset.findMany).toHaveBeenCalledTimes(1)
   })
 
   it('grantable query excludes Souls that already have an active asset-scope grant for this pet', async () => {

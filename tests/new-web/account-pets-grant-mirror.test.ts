@@ -94,12 +94,17 @@ vi.mock('@soulidity/sdk', async () => {
 const ACCOUNT_ID = 'account-1'
 const HUMAN_MEMBER_ID = '33333333-3333-4333-8333-333333333333'
 const PET_ID = '11111111-1111-4111-8111-111111111111'
-const AGENT_ADDRESS = '0xagent'
-const HUMAN_WALLET = '0xhuman'
-const SOUL_A = '0xsoul-a'
-const SOUL_B = '0xsoul-b'
-const STATE_A = '0xstate-a'
-const STATE_B = '0xstate-b'
+// `parseRequiredObjectId` from `@soulidity/sdk` runs the actual Sui
+// address validator (not mocked). These need to be valid 64-hex-char
+// Sui object ids so the route's input validation passes through to
+// the credential gate / event-shape assertions we actually care
+// about exercising.
+const AGENT_ADDRESS = `0x${'a1'.repeat(32)}`
+const HUMAN_WALLET = `0x${'b2'.repeat(32)}`
+const SOUL_A = `0x${'c3'.repeat(32)}`
+const SOUL_B = `0x${'d4'.repeat(32)}`
+const STATE_A = `0x${'e5'.repeat(32)}`
+const STATE_B = `0x${'f6'.repeat(32)}`
 
 const HUMAN_AUTH = {
   identity: { accountId: ACCOUNT_ID, memberId: HUMAN_MEMBER_ID, kind: 'human' as const },
@@ -181,10 +186,64 @@ describe('POST /api/account/pets/[id]/grant-mirror — auth & validation', () =>
     expect(response.status).toBe(404)
   })
 
+  it('rejects an issue request with 409 when the pet is in the partial-revoke state', async () => {
+    // Bearer hash cleared + agent member disabled = pet is revoke-only.
+    // Issuing fresh grants would target an agent with no usable
+    // credential, so the route must reject before mirroring anything.
+    mockedRequireHumanWalletIdentity.mockResolvedValue(HUMAN_AUTH)
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      id: PET_ID,
+      accountId: ACCOUNT_ID,
+      agentAddress: AGENT_ADDRESS,
+      desktopAccessTokenHash: null,
+      agentMember: { agentStatus: 'disabled' },
+    })
+    const { POST } = await import('../../web/app/api/account/pets/[id]/grant-mirror/route')
+    const response = await POST(jsonRequest({ action: 'issue', txDigest: 'd', expectedSoulIds: [SOUL_A] }), {
+      params: Promise.resolve({ id: PET_ID }),
+    })
+    expect(response.status).toBe(409)
+    expect(mockedWaitForTransactionBestEffort).not.toHaveBeenCalled()
+    expect(mockedSyncGrantProjectionFromChain).not.toHaveBeenCalled()
+  })
+
+  it('still allows revoke when the pet is in the partial-revoke state', async () => {
+    // The pet row is preserved precisely so the human owner can revoke
+    // remaining on-chain grants from `/account/pets`. Disabling revoke
+    // here would strand them.
+    mockedRequireHumanWalletIdentity.mockResolvedValue(HUMAN_AUTH)
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      id: PET_ID,
+      accountId: ACCOUNT_ID,
+      agentAddress: AGENT_ADDRESS,
+      desktopAccessTokenHash: null,
+      agentMember: { agentStatus: 'disabled' },
+    })
+    mockedPrisma.soulAsset.findMany.mockResolvedValue([ownedSoulMirror(SOUL_A, STATE_A)])
+    mockedExtractAllSoulGrantRevokedEvents.mockReturnValue([
+      { grantId: '0xg-A', soulId: SOUL_A, revokedByAddress: HUMAN_WALLET, granteeAddress: AGENT_ADDRESS },
+    ])
+
+    const { POST } = await import('../../web/app/api/account/pets/[id]/grant-mirror/route')
+    const response = await POST(
+      jsonRequest({ action: 'revoke', txDigest: 'tx-revoke-disabled', expectedSoulIds: [SOUL_A] }),
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    expect(response.status).toBe(200)
+    expect(mockedEndSoulGrantProjectionFromChain).toHaveBeenCalledWith({
+      grantOnChainId: '0xg-A',
+      status: 'revoked',
+    })
+  })
+
   it('returns 400 for an unknown action', async () => {
     mockedRequireHumanWalletIdentity.mockResolvedValue(HUMAN_AUTH)
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({
-      id: PET_ID, accountId: ACCOUNT_ID, agentAddress: AGENT_ADDRESS,
+      id: PET_ID,
+      accountId: ACCOUNT_ID,
+      agentAddress: AGENT_ADDRESS,
+      desktopAccessTokenHash: 'hash-of-dtk',
+      agentMember: { agentStatus: 'active' },
     })
     const { POST } = await import('../../web/app/api/account/pets/[id]/grant-mirror/route')
     const response = await POST(jsonRequest({ action: 'wat', txDigest: 'd', expectedSoulIds: [SOUL_A] }), {
@@ -196,7 +255,11 @@ describe('POST /api/account/pets/[id]/grant-mirror — auth & validation', () =>
   it('returns 400 when expectedSoulIds is empty', async () => {
     mockedRequireHumanWalletIdentity.mockResolvedValue(HUMAN_AUTH)
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({
-      id: PET_ID, accountId: ACCOUNT_ID, agentAddress: AGENT_ADDRESS,
+      id: PET_ID,
+      accountId: ACCOUNT_ID,
+      agentAddress: AGENT_ADDRESS,
+      desktopAccessTokenHash: 'hash-of-dtk',
+      agentMember: { agentStatus: 'active' },
     })
     const { POST } = await import('../../web/app/api/account/pets/[id]/grant-mirror/route')
     const response = await POST(jsonRequest({ action: 'issue', txDigest: 'd', expectedSoulIds: [] }), {
@@ -208,7 +271,11 @@ describe('POST /api/account/pets/[id]/grant-mirror — auth & validation', () =>
   it('returns the cached idempotent response for repeated digests', async () => {
     mockedRequireHumanWalletIdentity.mockResolvedValue(HUMAN_AUTH)
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({
-      id: PET_ID, accountId: ACCOUNT_ID, agentAddress: AGENT_ADDRESS,
+      id: PET_ID,
+      accountId: ACCOUNT_ID,
+      agentAddress: AGENT_ADDRESS,
+      desktopAccessTokenHash: 'hash-of-dtk',
+      agentMember: { agentStatus: 'active' },
     })
     mockedGetStoredSoulidityTxSync.mockResolvedValue({
       statusCode: 200,
@@ -229,7 +296,11 @@ describe('POST /api/account/pets/[id]/grant-mirror — issue path', () => {
   beforeEach(() => {
     mockedRequireHumanWalletIdentity.mockResolvedValue(HUMAN_AUTH)
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({
-      id: PET_ID, accountId: ACCOUNT_ID, agentAddress: AGENT_ADDRESS,
+      id: PET_ID,
+      accountId: ACCOUNT_ID,
+      agentAddress: AGENT_ADDRESS,
+      desktopAccessTokenHash: 'hash-of-dtk',
+      agentMember: { agentStatus: 'active' },
     })
   })
 
@@ -361,7 +432,11 @@ describe('POST /api/account/pets/[id]/grant-mirror — revoke path', () => {
   beforeEach(() => {
     mockedRequireHumanWalletIdentity.mockResolvedValue(HUMAN_AUTH)
     mockedPrisma.desktopPet.findUnique.mockResolvedValue({
-      id: PET_ID, accountId: ACCOUNT_ID, agentAddress: AGENT_ADDRESS,
+      id: PET_ID,
+      accountId: ACCOUNT_ID,
+      agentAddress: AGENT_ADDRESS,
+      desktopAccessTokenHash: 'hash-of-dtk',
+      agentMember: { agentStatus: 'active' },
     })
   })
 
