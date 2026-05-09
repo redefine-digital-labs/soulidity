@@ -34,12 +34,21 @@ const mockedExtractSoulStateConfigUpsertedEvent = vi.hoisted(() => vi.fn())
 const mockedExtractSoulStateConfigDeletedEvent = vi.hoisted(() => vi.fn())
 const mockedGetSoulStateConfigEntry = vi.hoisted(() => vi.fn())
 const mockedParseRequiredTxDigest = vi.hoisted(() => vi.fn())
-const mockedPrisma = vi.hoisted(() => ({
-  soulAsset: {
-    findFirst: vi.fn(),
-    updateMany: vi.fn(),
-  },
-}))
+const mockedPrisma = vi.hoisted(() => {
+  const stub = {
+    soulAsset: {
+      findFirst: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    // The post-Phase-2 sync route wraps mirror writes + the SoulTxSync
+    // idempotency write in a single `$transaction` so 500-on-success-write
+    // can no longer leave half-committed state. The mirror helpers are
+    // mocked separately, so the test only needs a tx callback that runs
+    // the inner function with the same stub client.
+    $transaction: vi.fn(async (cb: (client: unknown) => unknown) => cb(stub)),
+  }
+  return stub
+})
 
 vi.mock('@/lib/soulidity/repository', () => ({
   findContentVersionsByRouteId: mockedFindContentVersionsByRouteId,
@@ -407,6 +416,8 @@ describe('POST /api/souls/[id]/content/sync', () => {
       name: 'market-scout',
       versionIndex: 2,
     })
+    // Mirror helpers run inside `prisma.$transaction` post-fix, so the
+    // second arg is the transaction client. Allow it via `expect.anything()`.
     expect(mockedSyncContentVersionProjectionFromChain).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
       contentOnChainId: CONTENT_ID,
@@ -424,14 +435,14 @@ describe('POST /api/souls/[id]/content/sync', () => {
       downloadPolicy: 'owner_only',
       sealSidecar: { documentId: '0xdoc' },
       createdAtMs: 123,
-    })
+    }, expect.anything())
     expect(mockedStoreSoulidityTxSync).toHaveBeenCalledWith(expect.objectContaining({
       routeKey: 'content:append',
       txDigest: TX_DIGEST,
       actorKey: 'member-1',
       resourceKey: `${SOUL_ID}:2:market-scout`,
       statusCode: 200,
-    }))
+    }), expect.anything())
   })
 
   it('returns a stored sync response before re-reading chain data', async () => {
@@ -504,13 +515,13 @@ describe('POST /api/souls/[id]/content/sync', () => {
       kind: 1,
       name: 'default',
       versionIndex: 3,
-    })
+    }, expect.anything())
     expect(mockedMarkContentVersionPurgedFromChain).toHaveBeenCalledWith({
       contentOnChainId: CONTENT_ID,
       kind: 1,
       name: 'default',
       versionIndex: 3,
-    })
+    }, expect.anything())
   })
 
   it('updates the active sprite projection from ActiveBindingUpdated events', async () => {

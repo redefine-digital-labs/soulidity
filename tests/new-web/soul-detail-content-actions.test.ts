@@ -23,8 +23,14 @@ describe('Soul detail content action source contract', () => {
     const hook = source('web/lib/hooks/use-soul-content-actions.ts')
 
     expect(hook).toContain('uploadSoulPayload')
-    expect(hook).toContain('buildAppendContentVersionAsOwnerTx')
-    expect(hook).toContain('buildAppendContentVersionAsGrantedAgentTx')
+    // Append now splices into the Walrus certify PTB so a single skill
+    // upload costs 2 wallet signatures instead of 3 (register +
+    // certify+append). The legacy standalone `buildAppendContentVersion*Tx`
+    // helpers still exist in the SDK for non-upload callers (scripts), but
+    // the hook uses the in-PTB `addAppendContentVersion*Calls` helpers.
+    expect(hook).toContain('addAppendContentVersionAsOwnerCalls')
+    expect(hook).toContain('addAppendContentVersionAsGrantedAgentCalls')
+    expect(hook).toContain('attachAfterCertify')
     expect(hook).toContain('buildDeleteContentVersionAsOwnerTx')
     expect(hook).toContain('buildDeleteContentVersionAsGrantedAgentTx')
     expect(hook).toContain('buildPurgeContentVersionAsOwnerTx')
