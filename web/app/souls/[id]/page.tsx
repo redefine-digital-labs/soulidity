@@ -893,6 +893,7 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
                 type="checkbox"
                 checked={setActiveAfterUpload}
                 onChange={(e) => setSetActiveAfterUpload(e.target.checked)}
+                className="h-4 w-4 accent-purple"
               />
               Set active
             </label>
@@ -906,7 +907,7 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
           disabled={pendingAction !== null || !sheetFile || (role === 'owner' && !configFile) || !configValid}
           onClick={() => void handleUpload()}
         >
-          {pendingAction === 'append' ? 'Uploading...' : 'Append sprite'}
+          {pendingAction === 'append' ? 'Uploading…' : 'Append sprite'}
         </Button>
       </div>
     </Subcard>
@@ -977,7 +978,7 @@ function SkillsAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
               disabled={pendingAction !== null || !bundleFile || !skillName}
               onClick={() => void handleUpload()}
             >
-              {pendingAction === 'append' ? 'Uploading...' : 'Append skill'}
+              {pendingAction === 'append' ? 'Uploading…' : 'Append skill'}
             </Button>
           </div>
         </div>
@@ -1021,8 +1022,9 @@ function MemoryAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
         value={body}
         onChange={(e) => setBody(e.target.value)}
         rows={5}
+        aria-label="Memory entry"
         className="sd-grant-input min-h-[120px] resize-y font-sans leading-5"
-        placeholder="Memory entry..."
+        placeholder="Memory entry…"
       />
       <div className="mt-3 flex justify-end">
         <Button
@@ -1031,7 +1033,7 @@ function MemoryAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
           disabled={pendingAction !== null || !trimmed}
           onClick={() => void handleUpload()}
         >
-          {pendingAction === 'append' ? 'Uploading...' : 'Append memory'}
+          {pendingAction === 'append' ? 'Uploading…' : 'Append memory'}
         </Button>
       </div>
     </Subcard>
@@ -1226,7 +1228,7 @@ function MemoryRow({
               title={canDecrypt ? undefined : 'Owner / grant only'}
               onClick={() => void handleDecrypt()}
             >
-              {pendingAction === 'open' ? 'Decrypting...' : canDecrypt ? 'Decrypt' : 'Owner / grant only'}
+              {pendingAction === 'open' ? 'Decrypting…' : canDecrypt ? 'Decrypt' : 'Owner / grant only'}
             </Button>
             {!entry.deletedAt && (
               <Button
