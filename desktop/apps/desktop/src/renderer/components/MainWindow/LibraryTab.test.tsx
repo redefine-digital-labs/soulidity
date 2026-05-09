@@ -94,6 +94,12 @@ function findButtons(container: HTMLElement, label: string) {
   ) as HTMLButtonElement[]
 }
 
+function findBadges(container: HTMLElement, label: string) {
+  return Array.from(container.querySelectorAll('.persona-card__badge')).filter(
+    (badge) => badge.textContent?.trim() === label,
+  ) as HTMLElement[]
+}
+
 describe('LibraryTab', () => {
   let container: HTMLDivElement
   let root: Root | null = null
@@ -150,6 +156,7 @@ describe('LibraryTab', () => {
           listingStatus: 'listed',
           listedPriceAtomic: '1000000',
           spriteDownloadPolicy: 'owner_only',
+          activeSpriteVersionIndex: 1,
         }],
         page: 1,
         pageSize: 12,
@@ -171,6 +178,7 @@ describe('LibraryTab', () => {
           listingStatus: 'held',
           listedPriceAtomic: null,
           spriteDownloadPolicy: 'owner_only',
+          activeSpriteVersionIndex: 2,
           agentSpriteGrant: null,
         },
         // Active grant for this owned allowlist Soul → Download enabled.
@@ -185,6 +193,7 @@ describe('LibraryTab', () => {
           listingStatus: 'held',
           listedPriceAtomic: null,
           spriteDownloadPolicy: 'allowlist',
+          activeSpriteVersionIndex: 3,
           agentSpriteGrant: {
             active: true,
             grantOnChainId: '0xgrant1',
@@ -204,6 +213,19 @@ describe('LibraryTab', () => {
           spriteDownloadPolicy: 'missing',
           agentSpriteGrant: null,
         },
+        {
+          id: 'soul:owned-invalid',
+          sourceType: 'soul',
+          sourceRef: '0xinvalid',
+          title: 'Owned Invalid',
+          description: 'owned',
+          thumbnail: 'thumb.png',
+          coverImage: 'cover.png',
+          listingStatus: 'held',
+          listedPriceAtomic: null,
+          spriteDownloadPolicy: 'invalid',
+          agentSpriteGrant: null,
+        },
       ]),
     })
 
@@ -212,6 +234,13 @@ describe('LibraryTab', () => {
     expect(container.textContent).toContain('Owned Locked')
     expect(container.textContent).toContain('Owned Allowlist')
     expect(container.textContent).toContain('Owned Missing')
+    expect(container.textContent).toContain('Owned Invalid')
+    expect(findBadges(container, 'Sprite Available')).toHaveLength(3)
+    expect(container.textContent).not.toContain('Sprite v')
+    expect(container.textContent).not.toContain('Sprite Missing')
+    expect(container.textContent).not.toContain('Sprite Invalid')
+    expect(container.textContent).not.toContain('This soul has no valid sprite metadata yet.')
+    expect(container.textContent).not.toContain('The sprite metadata exists but does not match the desktop contract.')
 
     // Only the granted protected Soul plus any incidentally-public Souls
     // produce an enabled Download. The owner-only Soul without a grant
@@ -225,8 +254,8 @@ describe('LibraryTab', () => {
     expect(authorizeButton).toBeDefined()
     expect(authorizeButton?.disabled).toBe(true)
 
-    const missingButton = findButton(container, 'Sprite Missing')
-    expect(missingButton?.disabled).toBe(true)
+    expect(findButton(container, 'Sprite Missing')).toBeUndefined()
+    expect(findButton(container, 'Sprite Invalid')).toBeUndefined()
 
     // Marketplace context for owner-only sprites still shows the
     // section-specific gate, never the granted-agent path.
@@ -254,6 +283,7 @@ describe('LibraryTab', () => {
             listingStatus: 'listed',
             listedPriceAtomic: '1000000',
             spriteDownloadPolicy: 'public',
+            activeSpriteVersionIndex: 7,
           },
           {
             id: 'soul:2',
@@ -266,6 +296,7 @@ describe('LibraryTab', () => {
             listingStatus: 'listed',
             listedPriceAtomic: '2000000',
             spriteDownloadPolicy: 'public',
+            activeSpriteVersionIndex: 8,
           },
         ],
         page: 1,
@@ -281,6 +312,9 @@ describe('LibraryTab', () => {
     })
 
     await renderWithApi(api)
+
+    expect(findBadges(container, 'Sprite Available')).toHaveLength(2)
+    expect(container.textContent).not.toContain('Sprite v')
 
     const [firstDownload, secondDownload] = findButtons(container, 'Download')
     expect(firstDownload).toBeDefined()

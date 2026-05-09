@@ -39,10 +39,12 @@ describe('Soul detail grant panel source contract', () => {
     expect(page).not.toContain('Open agent session')
   })
 
-  it('does not render an enabled no-op memory decrypt action', () => {
+  it('wires memory decrypt through content actions instead of a disabled placeholder', () => {
     const page = source('web/app/souls/[id]/page.tsx')
 
-    expect(page).toContain('Memory decrypt flow not yet wired')
-    expect(page).not.toContain("{canDecrypt ? '🔓 Decrypt' : '🔒 Owner / grant only'}")
+    expect(page).toContain('actions.decryptContentVersion(entry)')
+    expect(page).toContain("title={canDecrypt ? undefined : 'Owner / grant only'}")
+    expect(page).not.toContain('Memory decrypt flow not yet wired')
+    expect(page).not.toContain('Decrypt unavailable')
   })
 })
