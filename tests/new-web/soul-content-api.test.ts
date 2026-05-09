@@ -54,6 +54,8 @@ vi.mock('@/lib/soulidity/server', () => ({
 
 vi.mock('@/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
+  getRequestIp: () => null,
+  getAnonymousRateLimitFingerprint: () => null,
 }))
 
 vi.mock('@/lib/soulidity/access', async () => {
@@ -185,6 +187,11 @@ describe('GET /api/souls/[id]/content/[kind]/[name]/[versionIndex]/access', () =
       kindName: 'skill',
       name: 'market-scout',
       versionIndex: 2,
+      readModeMask: 1, // READ_OWNER only — not public-plaintext-eligible
+      sealEncrypted: true,
+      downloadPolicy: 'owner_only',
+      deletedAt: null,
+      purgedAt: null,
     })
     mockedGetRequiredSoulidityEnv.mockReturnValue(PACKAGE_ID)
     mockedResolveContentAccessPayload.mockResolvedValue({
@@ -200,6 +207,7 @@ describe('GET /api/souls/[id]/content/[kind]/[name]/[versionIndex]/access', () =
 
     expect(response.status).toBe(200)
     expect(mockedFindContentVersionByRouteId).toHaveBeenCalledWith(SOUL_ID, 2, 'market-scout', 2)
+    expect(mockedRequireHumanWalletIdentity).toHaveBeenCalled()
     expect(mockedResolveContentAccessPayload).toHaveBeenCalledWith({
       soul: {
         onChainId: SOUL_ID,
@@ -215,6 +223,113 @@ describe('GET /api/souls/[id]/content/[kind]/[name]/[versionIndex]/access', () =
       viewerAddresses: [WALLET],
       packageId: PACKAGE_ID,
     })
+  })
+
+  it('serves public plaintext slots to anonymous visitors without wallet auth or Seal config (R-001)', async () => {
+    // Public plaintext sprite: READ_PUBLIC bit set + downloadPolicy=public + !sealEncrypted.
+    mockedFindContentVersionByRouteId.mockResolvedValue({
+      id: 'sprite-7',
+      soulOnChainId: SOUL_ID,
+      contentOnChainId: CONTENT_ID,
+      kind: 4, // KIND_SPRITE
+      kindName: 'sprite',
+      name: 'idle-front',
+      versionIndex: 7,
+      readModeMask: 1 | 2 | 8, // READ_OWNER | READ_GRANT | READ_PUBLIC
+      sealEncrypted: false,
+      downloadPolicy: 'public',
+      deletedAt: null,
+      purgedAt: null,
+    })
+    mockedResolveContentAccessPayload.mockResolvedValue({
+      visibility: 'public-plaintext',
+      slot: { kind: 4, name: 'idle-front', versionIndex: 7 },
+      artifact: {
+        walrusBlobUrl: 'https://walrus.example/blob-sprite-7',
+        walrusBlobId: 'blob-sprite-7',
+        blobObjectId: BLOB_OBJECT_ID,
+      },
+    })
+    mockedRequireHumanWalletIdentity.mockResolvedValue({ error: { status: 401 } })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/content/[kind]/[name]/[versionIndex]/access/route')
+    const response = await GET(new Request('http://localhost/access'), accessParams('sprite', 'idle-front', '7'))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      visibility: 'public-plaintext',
+      artifact: { walrusBlobUrl: 'https://walrus.example/blob-sprite-7' },
+    })
+    // No wallet auth, no Seal-config gating for the public plaintext path.
+    expect(mockedRequireHumanWalletIdentity).not.toHaveBeenCalled()
+    // Resolver invoked with empty viewer addresses so the public branch fires.
+    expect(mockedResolveContentAccessPayload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        viewerAddresses: [],
+      }),
+    )
+    // Anonymous rate-limit bucket, not the per-member one.
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      expect.stringMatching(/^anon-content-access:/),
+      expect.any(Object),
+    )
+  })
+
+  it('still requires wallet auth when the slot is sealed even if READ_PUBLIC is set', async () => {
+    // Sealed-public slot: READ_PUBLIC + sealEncrypted=true → resolver returns
+    // a Seal session response, so the route still needs auth + Seal config.
+    mockedFindContentVersionByRouteId.mockResolvedValue({
+      id: 'sealed-pub',
+      soulOnChainId: SOUL_ID,
+      contentOnChainId: CONTENT_ID,
+      kind: 2,
+      kindName: 'skill',
+      name: 'market-scout',
+      versionIndex: 2,
+      readModeMask: 1 | 2 | 8, // includes READ_PUBLIC
+      sealEncrypted: true,
+      downloadPolicy: 'public',
+      deletedAt: null,
+      purgedAt: null,
+    })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/content/[kind]/[name]/[versionIndex]/access/route')
+    const response = await GET(new Request('http://localhost/access'), accessParams())
+
+    expect(response.status).toBe(200)
+    expect(mockedRequireHumanWalletIdentity).toHaveBeenCalled()
+    expect(mockedTakeRateLimitToken).toHaveBeenCalledWith(
+      expect.stringMatching(/^human-content-access:/),
+      expect.any(Object),
+    )
+  })
+
+  it('rejects unauthenticated requests for non-public slots with the auth error', async () => {
+    // Owner-only plaintext slot: not eligible for the public path; visitor
+    // without auth gets the auth error from the auth-required branch.
+    mockedFindContentVersionByRouteId.mockResolvedValue({
+      id: 'owner-only',
+      soulOnChainId: SOUL_ID,
+      contentOnChainId: CONTENT_ID,
+      kind: 2,
+      kindName: 'skill',
+      name: 'market-scout',
+      versionIndex: 2,
+      readModeMask: 1, // READ_OWNER only
+      sealEncrypted: true,
+      downloadPolicy: 'owner_only',
+      deletedAt: null,
+      purgedAt: null,
+    })
+    const authError = new Response('unauthorized', { status: 401 })
+    mockedRequireHumanWalletIdentity.mockResolvedValue({ error: authError })
+
+    const { GET } = await import('../../web/app/api/souls/[id]/content/[kind]/[name]/[versionIndex]/access/route')
+    const response = await GET(new Request('http://localhost/access'), accessParams())
+
+    expect(response).toBe(authError)
+    expect(mockedRequireHumanWalletIdentity).toHaveBeenCalled()
+    expect(mockedResolveContentAccessPayload).not.toHaveBeenCalled()
   })
 })
 
