@@ -9,29 +9,39 @@ import {
 } from '@soulidity/sdk'
 import type { SoulDownloadPolicy } from '@soulidity/sdk'
 
+// Sync routes need to wrap projection writes + idempotency writes in a
+// single `prisma.$transaction` so a transient failure on the second write
+// can't leave the first one half-committed (the failure mode that surfaced
+// as 500-but-data-already-mirrored on /content/sync). Helpers accept an
+// optional client so they work both inside and outside a transaction.
+type MirrorDbClient = Prisma.TransactionClient | typeof prisma
+
 /**
  * Phase 2 unified content-version mirror. Called by post-TX sync routes
  * for every `ContentVersionAppended` event emitted by `content::*` /
  * `market::*` paths.
  */
-export async function upsertContentVersionProjection(params: {
-  soulOnChainId: string
-  contentOnChainId: string
-  kind: number
-  kindName: string
-  name: string
-  versionIndex: number
-  blobObjectId: string
-  blobId?: string | null
-  readModeMask: number
-  opMask: number
-  grantScopeMask: number
-  isPublic: boolean
-  sealEncrypted: boolean
-  downloadPolicy: SoulDownloadPolicy
-  sealSidecar?: SealEnvelopeSidecar | null
-  createdAtMs: number | bigint
-}) {
+export async function upsertContentVersionProjection(
+  params: {
+    soulOnChainId: string
+    contentOnChainId: string
+    kind: number
+    kindName: string
+    name: string
+    versionIndex: number
+    blobObjectId: string
+    blobId?: string | null
+    readModeMask: number
+    opMask: number
+    grantScopeMask: number
+    isPublic: boolean
+    sealEncrypted: boolean
+    downloadPolicy: SoulDownloadPolicy
+    sealSidecar?: SealEnvelopeSidecar | null
+    createdAtMs: number | bigint
+  },
+  client: MirrorDbClient = prisma,
+) {
   // Defensive: invariant kinds must use their canonical names. The chain
   // already enforces this via `EMemoryNameMismatch` / `ESoulDocNameMismatch`,
   // but bad data would corrupt the mirror PK so we double-check.
@@ -49,7 +59,7 @@ export async function upsertContentVersionProjection(params: {
   const downloadPolicyU8 = downloadPolicyToU8(params.downloadPolicy)
   const createdAtMs = BigInt(params.createdAtMs)
 
-  return prisma.soulContentVersionRecord.upsert({
+  return client.soulContentVersionRecord.upsert({
     where: {
       contentOnChainId_kind_name_versionIndex: {
         contentOnChainId: params.contentOnChainId,
@@ -93,14 +103,17 @@ export async function upsertContentVersionProjection(params: {
   })
 }
 
-export async function markContentVersionDeleted(params: {
-  contentOnChainId: string
-  kind: number
-  name: string
-  versionIndex: number
-  deletedAt?: Date | null
-}) {
-  return prisma.soulContentVersionRecord.update({
+export async function markContentVersionDeleted(
+  params: {
+    contentOnChainId: string
+    kind: number
+    name: string
+    versionIndex: number
+    deletedAt?: Date | null
+  },
+  client: MirrorDbClient = prisma,
+) {
+  return client.soulContentVersionRecord.update({
     where: {
       contentOnChainId_kind_name_versionIndex: {
         contentOnChainId: params.contentOnChainId,
@@ -115,14 +128,17 @@ export async function markContentVersionDeleted(params: {
   })
 }
 
-export async function markContentVersionPurged(params: {
-  contentOnChainId: string
-  kind: number
-  name: string
-  versionIndex: number
-  purgedAt?: Date | null
-}) {
-  return prisma.soulContentVersionRecord.update({
+export async function markContentVersionPurged(
+  params: {
+    contentOnChainId: string
+    kind: number
+    name: string
+    versionIndex: number
+    purgedAt?: Date | null
+  },
+  client: MirrorDbClient = prisma,
+) {
+  return client.soulContentVersionRecord.update({
     where: {
       contentOnChainId_kind_name_versionIndex: {
         contentOnChainId: params.contentOnChainId,

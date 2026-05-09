@@ -58,13 +58,30 @@ export interface SoulUploadResult {
   skillName?: string | null
   storageTxDigest: string
   certifyTxDigest: string
+  /**
+   * Full TX result of the certify call. Populated by the single-blob path
+   * so callers that supplied an `attachAfterCertify` callback can extract
+   * events (e.g. `ContentVersionAppended`) from here without an extra
+   * `getTransactionBlock` RPC. Optional because the batch publish path
+   * splices every blob's `certify_blob` into the caller's mint PTB, so
+   * each per-blob result has no dedicated certify TX of its own.
+   */
+  certifyTxResult?: WalrusSignAndExecuteResult
   quoteId: string
 }
 
-export type SignAndExecuteWalrusTx = (tx: Transaction) => Promise<{
+// The dapp-kit-backed signAndExecute returns a SuiTxResultWithEffects
+// (with `events`, `objectChanges`, etc). Walrus' WriteBlobFlow only needs
+// `digest` and minimal `effects.status`, but we widen the return type with
+// `unknown` extras so callers can pass the full result back through to
+// extract events from the combined certify+append PTB without an extra
+// `getTransactionBlock` RPC.
+export type WalrusSignAndExecuteResult = {
   digest: string
   effects?: { status?: { status?: string; error?: string } }
-}>
+} & Record<string, unknown>
+
+export type SignAndExecuteWalrusTx = (tx: Transaction) => Promise<WalrusSignAndExecuteResult>
 
 /**
  * Thrown when the user declines the upload-cost review modal. Treated as an
@@ -93,6 +110,18 @@ export interface UploadSoulPayloadParams {
   // ZIP-shaped payloads such as cover archives) do not. Default false so a
   // generic ZIP upload no longer fails the skill-bundle parser.
   extractSkillMetadata?: boolean
+  /**
+   * Optional callback invoked AFTER the Walrus `certify_blob` moveCall has
+   * been added to the certify PTB but BEFORE the wallet signs. Use this to
+   * splice an additional moveCall (typically Soulidity
+   * `content::append_version_as_owner`) into the same PTB so the wallet
+   * sees a single combined signature instead of two — register stays its
+   * own signature because it must commit before the off-chain blob upload.
+   * The callback receives the in-flight Walrus Blob object id; the caller
+   * is responsible for using `tx.object(blobObjectId)` (or equivalent)
+   * when adding its moveCall.
+   */
+  attachAfterCertify?: (tx: Transaction, blobObjectId: string) => void
 }
 
 interface UploadBlobResult {
@@ -100,6 +129,12 @@ interface UploadBlobResult {
   blobObjectId: string
   storageTxDigest: string
   certifyTxDigest: string
+  /**
+   * Full result of the certify TX. Present so callers that splice
+   * additional moveCalls via `attachAfterCertify` can extract events from
+   * the combined PTB without an extra `getTransactionBlock` RPC.
+   */
+  certifyTxResult: WalrusSignAndExecuteResult
 }
 
 interface SuiClientWithCache {
@@ -320,7 +355,8 @@ async function uploadSingleBlob(params: {
   recoveryKey: string
   contentHash: string
   network: 'testnet' | 'mainnet'
-}) {
+  attachAfterCertify?: (tx: Transaction, blobObjectId: string) => void
+}): Promise<UploadBlobResult> {
   const existing = readWalrusUploadRecovery(params.recoveryKey)
   const matchesExisting = (record: WalrusUploadRecoveryRecord | null) =>
     !!record
@@ -432,18 +468,42 @@ async function uploadSingleBlob(params: {
   }
 
   const certifyTx = flow.certify()
+  // Splice the caller's append moveCall into the certify PTB before
+  // signing. The Blob object exists on chain post-register, so the
+  // appended moveCall references it via `tx.object(blobObjectId)` — this
+  // is what drops the per-skill prompt count from 3 → 2.
+  if (params.attachAfterCertify && uploaded.blobObjectId) {
+    params.attachAfterCertify(certifyTx, uploaded.blobObjectId)
+  }
   const certifyResult = await params.signAndExecute(certifyTx)
   assertSuiTxSucceeded(certifyResult, 'Walrus certify transaction')
-  const certified = await flow.getBlob()
 
-  // Successful end-to-end run — recovery is no longer needed.
+  // Certify (and any spliced post-certify Move calls — e.g. soulidity
+  // append/setStateConfig/setActiveContent) already succeeded on chain. Drop
+  // recovery before any further async step so a transient post-success read
+  // failure cannot leave us in a state where the next retry rebuilds the
+  // certify PTB and replays the spliced moveCalls (double-append, or abort
+  // on already-certified blob).
   clearWalrusUploadRecovery(params.recoveryKey)
 
+  // Best-effort post-success read of the certified Blob object. If this
+  // throws or times out we fall back to the values already known from
+  // `flow.upload()` — `uploaded.blobId` is the same deterministic blob ID
+  // and `uploaded.blobObjectId` is the on-chain object id we just certified
+  // — so the caller still receives the certify digest needed for /content/sync.
+  let certified: Awaited<ReturnType<typeof flow.getBlob>> | null = null
+  try {
+    certified = await flow.getBlob()
+  } catch {
+    certified = null
+  }
+
   return {
-    blobId: certified.blobId,
-    blobObjectId: certified.blobObjectId || uploaded.blobObjectId,
+    blobId: certified?.blobId ?? uploaded.blobId,
+    blobObjectId: certified?.blobObjectId || uploaded.blobObjectId,
     storageTxDigest: txDigest,
     certifyTxDigest: certifyResult.digest,
+    certifyTxResult: certifyResult,
   }
 }
 
@@ -460,6 +520,7 @@ async function uploadPayloadToWalrus(params: {
   network: 'testnet' | 'mainnet'
   relayUrl: string
   payloadHash: string
+  attachAfterCertify?: (tx: Transaction, blobObjectId: string) => void
 }): Promise<UploadBlobResult> {
   void params.name
   void params.contentHash
@@ -488,6 +549,7 @@ async function uploadPayloadToWalrus(params: {
     recoveryKey,
     contentHash: params.payloadHash,
     network: params.network,
+    attachAfterCertify: params.attachAfterCertify,
   })
 }
 
@@ -1665,6 +1727,7 @@ export async function uploadSoulPayload(params: UploadSoulPayloadParams): Promis
     // re-encrypt with a fresh DEK and produce a different ciphertext blobId)
     // still surface the prior orphaned register via the same key.
     payloadHash: contentHash,
+    attachAfterCertify: params.attachAfterCertify,
   })
 
   plaintext.fill(0)
@@ -1679,6 +1742,7 @@ export async function uploadSoulPayload(params: UploadSoulPayloadParams): Promis
     skillName: skillBundleMetadata?.skillName ?? null,
     storageTxDigest: uploaded.storageTxDigest,
     certifyTxDigest: uploaded.certifyTxDigest,
+    certifyTxResult: uploaded.certifyTxResult,
     quoteId: quote.id,
   }
 }

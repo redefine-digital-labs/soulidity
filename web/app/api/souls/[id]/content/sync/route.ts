@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { Prisma } from '@db/prisma-client'
 import { prisma } from '@/lib/prisma'
 import { requireHumanWalletIdentity, assertTransactionSender } from '@/lib/soulidity/server'
 import { findSoulAssetByRouteId } from '@/lib/soulidity/repository'
@@ -21,6 +22,7 @@ import {
   extractContentVersionAppendedEvent,
   extractContentVersionDeletedEvent,
   extractContentVersionPurgedEvent,
+  extractAllSoulStateConfigUpsertedEvents,
   extractSoulStateConfigDeletedEvent,
   extractSoulStateConfigUpsertedEvent,
   getRequiredSoulidityEnv,
@@ -33,6 +35,8 @@ import {
 } from '@soulidity/sdk'
 
 export const dynamic = 'force-dynamic'
+
+type SyncDbClient = Prisma.TransactionClient | typeof prisma
 
 type ContentSyncAction =
   | 'append'
@@ -153,6 +157,7 @@ async function mirrorAppend(params: {
   soulOnChainId: string
   contentOnChainId: string | null
   stateOnChainId: string
+  client: SyncDbClient
 }) {
   const { kind, name } = parseContentTarget(params.body)
   if (kind == null) return badRequest('kind is required')
@@ -242,7 +247,7 @@ async function mirrorAppend(params: {
     downloadPolicy: event.downloadPolicy,
     sealSidecar: validatedEntries[0]?.validatedSidecar ?? null,
     createdAtMs: event.createdAtMs,
-  })
+  }, params.client)
 
   return NextResponse.json({
     action: 'append',
@@ -263,6 +268,7 @@ async function mirrorDeleteOrPurge(params: {
   soulOnChainId: string
   contentOnChainId: string | null
   stateOnChainId: string
+  client: SyncDbClient
 }) {
   const { kind, name, versionIndex } = parseContentTarget(params.body)
   if (kind == null) return badRequest('kind is required')
@@ -292,14 +298,14 @@ async function mirrorDeleteOrPurge(params: {
       kind: event.kind,
       name: event.name,
       versionIndex: event.versionIndex,
-    })
+    }, params.client)
   } else {
     await markContentVersionPurgedFromChain({
       contentOnChainId: event.contentId,
       kind: event.kind,
       name: event.name,
       versionIndex: event.versionIndex,
-    })
+    }, params.client)
   }
 
   return NextResponse.json({
@@ -321,6 +327,7 @@ async function mirrorActiveBinding(params: {
   soulOnChainId: string
   contentOnChainId: string | null
   stateOnChainId: string
+  client: SyncDbClient
 }) {
   const { kind, name, versionIndex } = parseContentTarget(params.body)
   if (kind == null) return badRequest('kind is required')
@@ -351,7 +358,7 @@ async function mirrorActiveBinding(params: {
   if (!data) {
     return NextResponse.json({ error: 'Active binding kind is not mirrored by the web projection' }, { status: 422 })
   }
-  await prisma.soulAsset.updateMany({
+  await params.client.soulAsset.updateMany({
     where: { onChainId: params.soulOnChainId, contentOnChainId: params.contentOnChainId },
     data,
   })
@@ -375,12 +382,20 @@ async function mirrorStateConfig(params: {
   soulOnChainId: string
   contentOnChainId: string | null
   stateOnChainId: string
+  client: SyncDbClient
 }) {
   const key = parseString(params.body.key)
   if (!key) return badRequest('key is required')
 
+  // A combined certify+append+config+setActive sprite-upload PTB can emit
+  // multiple `SoulStateConfigUpserted` events in one TX (e.g.
+  // sprite_config_json + sprite_mood_map_json), so for the upsert path we
+  // pull every event and pick the one matching the requested `key`. The
+  // delete path stays single-event because nothing else in the codebase
+  // batches deletes.
   const event = params.action === 'state-config:upsert'
-    ? extractSoulStateConfigUpsertedEvent(params.transaction as never, params.packageId)
+    ? (extractAllSoulStateConfigUpsertedEvents(params.transaction as never, params.packageId).find((e) => e.key === key)
+        ?? extractSoulStateConfigUpsertedEvent(params.transaction as never, params.packageId))
     : extractSoulStateConfigDeletedEvent(params.transaction as never, params.packageId)
   const mismatch = assertEventTarget({
     event,
@@ -425,7 +440,7 @@ async function mirrorStateConfig(params: {
 
   const data = stateConfigUpdate(key, value)
   if (data) {
-    await prisma.soulAsset.updateMany({
+    await params.client.soulAsset.updateMany({
       where: { onChainId: params.soulOnChainId, stateOnChainId: params.stateOnChainId },
       data,
     })
@@ -438,6 +453,21 @@ async function mirrorStateConfig(params: {
     stateOnChainId: event.stateId,
     key: event.key,
   })
+}
+
+// Pin every uncaught throw to a category so the response body and the
+// server log share a discriminator. Future "Failed to mirror …" reports
+// can be diagnosed straight from the Network panel without grepping logs.
+type SyncErrorCode = 'rpc' | 'event-extract' | 'seal-sidecar' | 'prisma' | 'unknown'
+
+function classifySyncError(error: unknown): SyncErrorCode {
+  if (error instanceof SealSidecarSyncConfigError) return 'seal-sidecar'
+  const name = error instanceof Error ? error.name : ''
+  const message = error instanceof Error ? error.message : String(error)
+  if (name.startsWith('PrismaClient') || name === 'PrismaClientKnownRequestError') return 'prisma'
+  if (/event .*not found|extract.*event|event payload|matching event/i.test(message)) return 'event-extract'
+  if (/getTransactionBlock|waitForTransaction|RPC|rpc|fetch failed|ECONN|timeout/i.test(message)) return 'rpc'
+  return 'unknown'
 }
 
 export async function POST(
@@ -477,49 +507,80 @@ export async function POST(
   }
 
   try {
+    // Tx finality + sender check happen outside `$transaction` since they
+    // are the slowest RPC calls; the DB transaction wraps just the mirror
+    // write + the SoulTxSync idempotency write so a transient idempotency
+    // failure can no longer leave the projection half-committed (the
+    // pre-fix symptom: 500 response + skill row already in DB on refresh).
     await waitForTransactionBestEffort(txDigest)
     const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
     const transaction = await getSuccessfulTransactionBlock(txDigest)
     const senderError = assertTransactionSender(readTransactionSender(transaction), auth.walletAddresses)
     if (senderError) return senderError
 
-    const shared = {
-      body,
-      transaction,
-      packageId,
-      soulOnChainId: soul.onChainId,
-      contentOnChainId: soul.contentOnChainId,
-      stateOnChainId: soul.stateOnChainId,
-    }
+    const { response, responseBody } = await prisma.$transaction(async (tx) => {
+      const shared = {
+        body,
+        transaction,
+        packageId,
+        soulOnChainId: soul.onChainId,
+        contentOnChainId: soul.contentOnChainId,
+        stateOnChainId: soul.stateOnChainId,
+        client: tx,
+      }
 
-    const response = action === 'append'
-      ? await mirrorAppend(shared)
-      : action === 'delete' || action === 'purge'
-        ? await mirrorDeleteOrPurge({ ...shared, action })
-        : action === 'active-bind' || action === 'active-clear'
-          ? await mirrorActiveBinding({ ...shared, action })
-          : await mirrorStateConfig({ ...shared, action })
+      const inner = action === 'append'
+        ? await mirrorAppend(shared)
+        : action === 'delete' || action === 'purge'
+          ? await mirrorDeleteOrPurge({ ...shared, action })
+          : action === 'active-bind' || action === 'active-clear'
+            ? await mirrorActiveBinding({ ...shared, action })
+            : await mirrorStateConfig({ ...shared, action })
 
-    const responseBody = await response.clone().json().catch(() => ({}))
-    if (response.ok) {
-      await storeSoulidityTxSync({
-        routeKey,
-        txDigest,
-        actorKey: auth.identity.memberId,
-        resourceKey,
-        statusCode: response.status,
-        responseBody,
-      })
-    }
+      const innerBody = await inner.clone().json().catch(() => ({}))
+      if (inner.ok) {
+        await storeSoulidityTxSync({
+          routeKey,
+          txDigest,
+          actorKey: auth.identity.memberId,
+          resourceKey,
+          statusCode: inner.status,
+          responseBody: innerBody,
+        }, tx)
+      }
+      return { response: inner, responseBody: innerBody }
+    }, {
+      // mirrorAppend / mirrorStateConfig still issue one RPC read inside
+      // the txn (resolveWalrusBlobId / getSoulStateConfigEntry) before the
+      // DB write — the default 5s txn budget is too tight when the Sui RPC
+      // is slow. 20s gives realistic headroom while still bounding pool
+      // hold time. 5s maxWait keeps queueing behavior close to default.
+      timeout: 20_000,
+      maxWait: 5_000,
+    })
 
+    void responseBody
     return response
   } catch (error) {
+    const errorCode = classifySyncError(error)
     console.error('[soul-content-sync] Failed to mirror Soulidity content transaction', {
       memberId: auth.identity.memberId,
       txDigest,
       action,
-      error,
+      errorCode,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
     })
-    return NextResponse.json({ error: 'Failed to mirror Soulidity content transaction' }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: 'Failed to mirror Soulidity content transaction',
+        errorCode,
+        ...(process.env.NODE_ENV !== 'production' && error instanceof Error
+          ? { cause: error.message }
+          : {}),
+      },
+      { status: 500 },
+    )
   }
 }

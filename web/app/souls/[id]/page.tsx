@@ -12,6 +12,7 @@ import { Tag } from '@/components/ui/tag'
 import { Button, buttonStyles } from '@/components/ui/button'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
+import { PurgeConfirmModal } from '@/components/souls/purge-confirm-modal'
 import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
 import { formatAtomicAmountForDisplay, NO_DOWNLOAD_POLICY, READ_GRANT, READ_OWNER, READ_PUBLIC } from '@soulidity/sdk'
@@ -636,6 +637,7 @@ function ContentPanel({
   const canDelete = canDeleteContent(role, soul, viewerAddress, kind)
   const canPurge = canPurgeContent(role)
   const canSetActive = canSetActiveContent(role)
+  const [purgeTarget, setPurgeTarget] = useState<SoulContentVersionRecord | null>(null)
 
   const tags: React.ReactNode = (
     <>
@@ -756,7 +758,7 @@ function ContentPanel({
                         variant="danger"
                         size="sm"
                         disabled={pendingAction !== null}
-                        onClick={() => void actions.purgeContentVersion(v)}
+                        onClick={() => setPurgeTarget(v)}
                       >
                         Purge
                       </Button>
@@ -773,6 +775,22 @@ function ContentPanel({
           </div>
         )}
       </div>
+
+      <PurgeConfirmModal
+        open={purgeTarget !== null}
+        version={purgeTarget}
+        pending={pendingAction === 'purge'}
+        onClose={() => setPurgeTarget(null)}
+        onConfirm={async () => {
+          if (!purgeTarget) return
+          // Let `purgeContentVersion` errors propagate so
+          // `PurgeConfirmModal.handleConfirm()` renders the failure inline.
+          // `contentActionError` is also set on the panel, but that banner
+          // sits behind the modal overlay while purge stays open for retry.
+          await actions.purgeContentVersion(purgeTarget)
+          setPurgeTarget(null)
+        }}
+      />
     </div>
   )
 }
@@ -957,7 +975,7 @@ function SkillsAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
         <div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Append skill bundle</div>
+              <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Add skill bundle</div>
               <div className="mt-1 text-[12px] text-muted">Upload a .zip bundle with SKILL.md frontmatter. The skill name becomes the content slot.</div>
             </div>
             {skillName && <Tag color="teal">{skillName}</Tag>}
@@ -1100,6 +1118,23 @@ function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
   const canDecrypt = role === 'owner' || viewerGrantForKind(soul, viewerAddress, KIND_MEMORY) !== null
   const canPurge = canPurgeContent(role)
   const { pendingAction, contentActionError } = actions
+  const [purgeTarget, setPurgeTarget] = useState<SoulContentVersionRecord | null>(null)
+  const purgeModal = (
+    <PurgeConfirmModal
+      open={purgeTarget !== null}
+      version={purgeTarget}
+      pending={pendingAction === 'purge'}
+      onClose={() => setPurgeTarget(null)}
+      onConfirm={async () => {
+        if (!purgeTarget) return
+        // Propagate purge failures so the modal's local error renders
+        // inline; the modal stays open because `setPurgeTarget(null)`
+        // only runs on success.
+        await actions.purgeContentVersion(purgeTarget)
+        setPurgeTarget(null)
+      }}
+    />
+  )
   const tags = (
     <>
       <Tag color="teal">{versions.length} {versions.length === 1 ? 'entry' : 'entries'}</Tag>
@@ -1127,6 +1162,7 @@ function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
           label="No memory entries yet"
           sublabel="Once the agent runtime or a memory grant holder appends an entry, the encrypted log will appear here."
         />
+        {purgeModal}
       </div>
     )
   }
@@ -1154,9 +1190,11 @@ function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
             canPurge={canPurge && Boolean(v.deletedAt)}
             pendingAction={pendingAction}
             actions={actions}
+            onRequestPurge={(entry) => setPurgeTarget(entry)}
           />
         ))}
       </div>
+      {purgeModal}
     </div>
   )
 }
@@ -1168,6 +1206,7 @@ function MemoryRow({
   canPurge,
   pendingAction,
   actions,
+  onRequestPurge,
 }: {
   entry: SoulContentVersionRecord
   canDecrypt: boolean
@@ -1175,6 +1214,7 @@ function MemoryRow({
   canPurge: boolean
   pendingAction: ContentActions['pendingAction']
   actions: ContentActions
+  onRequestPurge: (entry: SoulContentVersionRecord) => void
 }) {
   const [open, setOpen] = useState(false)
   const [plaintext, setPlaintext] = useState<string | null>(null)
@@ -1255,7 +1295,7 @@ function MemoryRow({
                 variant="danger"
                 size="sm"
                 disabled={pendingAction !== null}
-                onClick={() => void actions.purgeContentVersion(entry)}
+                onClick={() => onRequestPurge(entry)}
               >
                 Purge
               </Button>

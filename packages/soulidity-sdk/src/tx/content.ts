@@ -7,7 +7,7 @@
  * keys construct their own dry-run PTBs via `@mysten/seal`. See
  * `web/lib/soulidity/access.ts` for the access resolver entry point.
  */
-import { Transaction } from '@mysten/sui/transactions'
+import { Transaction, type TransactionArgument } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '../env'
 import { downloadPolicyToU8 } from '../kinds'
 import type { SoulDownloadPolicy } from '../types'
@@ -40,12 +40,21 @@ export interface AppendContentVersionAsOwnerParams extends ContentRoots {
   contentBlobObjectId: string
 }
 
-export function buildAppendContentVersionAsOwnerTx(
+/**
+ * Splice the `content::append_version_as_owner` moveCall into an existing
+ * transaction. Used by the upload flow so a single PTB can run Walrus
+ * `certify_blob` + Soulidity append in one wallet signature, dropping the
+ * skill-upload prompt count from 3 → 2. Returns the appended version
+ * index as a `TransactionArgument` so callers can chain it into a
+ * `set_active_content` moveCall in the same PTB (sprite uploads with
+ * `setActive: true` rely on this).
+ */
+export function addAppendContentVersionAsOwnerCalls(
+  tx: Transaction,
   params: AppendContentVersionAsOwnerParams,
-): Transaction {
+): TransactionArgument {
   const { packageId } = loadContentEnv()
-  const tx = new Transaction()
-  tx.moveCall({
+  const result = tx.moveCall({
     target: `${packageId}::content::append_version_as_owner`,
     arguments: [
       tx.object(params.contentObjectId),
@@ -59,6 +68,16 @@ export function buildAppendContentVersionAsOwnerTx(
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
+  // `append_version_as_owner` returns `u64` (the new version index). The
+  // moveCall proxy is itself the single-return argument. Cast pins it.
+  return result as unknown as TransactionArgument
+}
+
+export function buildAppendContentVersionAsOwnerTx(
+  params: AppendContentVersionAsOwnerParams,
+): Transaction {
+  const tx = new Transaction()
+  addAppendContentVersionAsOwnerCalls(tx, params)
   return tx
 }
 
@@ -66,12 +85,17 @@ export interface AppendContentVersionAsGrantedAgentParams extends AppendContentV
   soulGrantObjectId: string
 }
 
-export function buildAppendContentVersionAsGrantedAgentTx(
+/**
+ * Granted-agent variant of `addAppendContentVersionAsOwnerCalls`. Same
+ * justification: lets the upload flow combine certify+append into one
+ * signature when the appender is a scoped grantee instead of the owner.
+ */
+export function addAppendContentVersionAsGrantedAgentCalls(
+  tx: Transaction,
   params: AppendContentVersionAsGrantedAgentParams,
-): Transaction {
+): TransactionArgument {
   const { packageId } = loadContentEnv()
-  const tx = new Transaction()
-  tx.moveCall({
+  const result = tx.moveCall({
     target: `${packageId}::content::append_version_as_granted_agent`,
     arguments: [
       tx.object(params.contentObjectId),
@@ -86,6 +110,14 @@ export function buildAppendContentVersionAsGrantedAgentTx(
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
+  return result as unknown as TransactionArgument
+}
+
+export function buildAppendContentVersionAsGrantedAgentTx(
+  params: AppendContentVersionAsGrantedAgentParams,
+): Transaction {
+  const tx = new Transaction()
+  addAppendContentVersionAsGrantedAgentCalls(tx, params)
   return tx
 }
 
@@ -176,9 +208,24 @@ export interface SetActiveContentParams extends ContentRoots {
   versionIndex: number
 }
 
-export function buildSetActiveContentTx(params: SetActiveContentParams): Transaction {
+/**
+ * `versionIndex` accepts either a literal value (legacy single-tx
+ * standalone use) or an in-PTB `TransactionArgument` so the upload flow
+ * can chain the index returned by `append_version_as_owner` straight into
+ * `set_active_content` within the same wallet signature.
+ */
+export interface AddSetActiveContentParams extends Omit<SetActiveContentParams, 'versionIndex'> {
+  versionIndex: number | bigint | TransactionArgument
+}
+
+export function addSetActiveContentCalls(
+  tx: Transaction,
+  params: AddSetActiveContentParams,
+): void {
   const { packageId, marketConfigId } = loadContentEnv()
-  const tx = new Transaction()
+  const versionArg = typeof params.versionIndex === 'number' || typeof params.versionIndex === 'bigint'
+    ? tx.pure.u64(BigInt(params.versionIndex))
+    : params.versionIndex
   tx.moveCall({
     target: `${packageId}::market::set_active_content`,
     arguments: [
@@ -188,9 +235,14 @@ export function buildSetActiveContentTx(params: SetActiveContentParams): Transac
       tx.object(params.stateObjectId),
       tx.pure.u32(params.kind),
       tx.pure.string(params.name),
-      tx.pure.u64(BigInt(params.versionIndex)),
+      versionArg,
     ],
   })
+}
+
+export function buildSetActiveContentTx(params: SetActiveContentParams): Transaction {
+  const tx = new Transaction()
+  addSetActiveContentCalls(tx, params)
   return tx
 }
 
@@ -198,9 +250,11 @@ export interface ClearActiveContentParams extends ContentRoots {
   kind: number
 }
 
-export function buildClearActiveContentTx(params: ClearActiveContentParams): Transaction {
+export function addClearActiveContentCalls(
+  tx: Transaction,
+  params: ClearActiveContentParams,
+): void {
   const { packageId, marketConfigId } = loadContentEnv()
-  const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::market::clear_active_content`,
     arguments: [
@@ -211,6 +265,11 @@ export function buildClearActiveContentTx(params: ClearActiveContentParams): Tra
       tx.pure.u32(params.kind),
     ],
   })
+}
+
+export function buildClearActiveContentTx(params: ClearActiveContentParams): Transaction {
+  const tx = new Transaction()
+  addClearActiveContentCalls(tx, params)
   return tx
 }
 
@@ -227,9 +286,11 @@ function utf8Bytes(value: string): number[] {
   return Array.from(new TextEncoder().encode(value))
 }
 
-export function buildSetStateConfigTx(params: SetStateConfigParams): Transaction {
+export function addSetStateConfigCalls(
+  tx: Transaction,
+  params: SetStateConfigParams,
+): void {
   const { packageId, marketConfigId } = loadContentEnv()
-  const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::market::set_state_config`,
     arguments: [
@@ -239,6 +300,11 @@ export function buildSetStateConfigTx(params: SetStateConfigParams): Transaction
       tx.pure.vector('u8', utf8Bytes(params.valueUtf8)),
     ],
   })
+}
+
+export function buildSetStateConfigTx(params: SetStateConfigParams): Transaction {
+  const tx = new Transaction()
+  addSetStateConfigCalls(tx, params)
   return tx
 }
 
@@ -247,9 +313,11 @@ export interface DeleteStateConfigParams {
   key: string
 }
 
-export function buildDeleteStateConfigTx(params: DeleteStateConfigParams): Transaction {
+export function addDeleteStateConfigCalls(
+  tx: Transaction,
+  params: DeleteStateConfigParams,
+): void {
   const { packageId, marketConfigId } = loadContentEnv()
-  const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::market::delete_state_config`,
     arguments: [
@@ -258,5 +326,10 @@ export function buildDeleteStateConfigTx(params: DeleteStateConfigParams): Trans
       tx.pure.string(params.key),
     ],
   })
+}
+
+export function buildDeleteStateConfigTx(params: DeleteStateConfigParams): Transaction {
+  const tx = new Transaction()
+  addDeleteStateConfigCalls(tx, params)
   return tx
 }

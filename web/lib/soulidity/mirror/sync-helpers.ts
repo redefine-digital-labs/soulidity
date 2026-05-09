@@ -6,7 +6,14 @@
  *      if needed) via this layer.
  *   2. Pass extracted event data to the appropriate `upsert*` writer.
  */
+import type { Prisma } from '@db/prisma-client'
+import type { prisma } from '@/lib/prisma'
 import type { SealEnvelopeSidecar } from '@soulidity/sdk'
+
+// Optional Prisma transaction client for content-version helpers — sync
+// routes pass `tx` so the projection write atomically commits with the
+// SoulTxSync idempotency write.
+type ContentSyncDbClient = Prisma.TransactionClient | typeof prisma
 import {
   endActiveSoulGrantProjections,
   endSoulGrantProjection,
@@ -231,45 +238,54 @@ export async function endActiveSoulGrantProjectionsFromChain(params: {
 
 // ── Content version sync (replaces memory/skill/asset triple) ───────────
 
-export async function syncContentVersionProjectionFromChain(params: {
-  soulOnChainId: string
-  contentOnChainId: string
-  kind: number
-  kindName: string
-  name: string
-  versionIndex: number
-  blobObjectId: string
-  blobId?: string | null
-  readModeMask: number
-  opMask: number
-  grantScopeMask: number
-  isPublic: boolean
-  sealEncrypted: boolean
-  downloadPolicy: SoulDownloadPolicy
-  sealSidecar?: SealEnvelopeSidecar | null
-  createdAtMs: number | bigint
-}) {
-  return upsertContentVersionProjection(params)
+export async function syncContentVersionProjectionFromChain(
+  params: {
+    soulOnChainId: string
+    contentOnChainId: string
+    kind: number
+    kindName: string
+    name: string
+    versionIndex: number
+    blobObjectId: string
+    blobId?: string | null
+    readModeMask: number
+    opMask: number
+    grantScopeMask: number
+    isPublic: boolean
+    sealEncrypted: boolean
+    downloadPolicy: SoulDownloadPolicy
+    sealSidecar?: SealEnvelopeSidecar | null
+    createdAtMs: number | bigint
+  },
+  client?: ContentSyncDbClient,
+) {
+  return upsertContentVersionProjection(params, client)
 }
 
-export async function markContentVersionDeletedFromChain(params: {
-  contentOnChainId: string
-  kind: number
-  name: string
-  versionIndex: number
-  deletedAt?: Date | null
-}) {
-  return markContentVersionDeleted(params)
+export async function markContentVersionDeletedFromChain(
+  params: {
+    contentOnChainId: string
+    kind: number
+    name: string
+    versionIndex: number
+    deletedAt?: Date | null
+  },
+  client?: ContentSyncDbClient,
+) {
+  return markContentVersionDeleted(params, client)
 }
 
-export async function markContentVersionPurgedFromChain(params: {
-  contentOnChainId: string
-  kind: number
-  name: string
-  versionIndex: number
-  purgedAt?: Date | null
-}) {
-  return markContentVersionPurged(params)
+export async function markContentVersionPurgedFromChain(
+  params: {
+    contentOnChainId: string
+    kind: number
+    name: string
+    versionIndex: number
+    purgedAt?: Date | null
+  },
+  client?: ContentSyncDbClient,
+) {
+  return markContentVersionPurged(params, client)
 }
 
 // ── Paid access sync ────────────────────────────────────────────────────

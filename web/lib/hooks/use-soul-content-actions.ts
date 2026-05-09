@@ -16,9 +16,13 @@ import {
   SOUL_GRANT_SCOPE_ASSETS,
   SOUL_GRANT_SCOPE_MEMORY,
   SOUL_GRANT_SCOPE_SKILLS,
+  addAppendContentVersionAsGrantedAgentCalls,
+  addAppendContentVersionAsOwnerCalls,
+  addSetActiveContentCalls,
+  addSetStateConfigCalls,
   assertObjectInputsExist,
-  buildAppendContentVersionAsGrantedAgentTx,
-  buildAppendContentVersionAsOwnerTx,
+  extractSkillBundleMetadata,
+  hasZipSignature,
   buildClearActiveContentTx,
   buildDeleteContentVersionAsGrantedAgentTx,
   buildDeleteContentVersionAsOwnerTx,
@@ -401,6 +405,7 @@ export function useSoulContentActions({
     }
     if (!suiWallet) throw new Error('Connect a Sui wallet before appending content')
     if (!soul.contentOnChainId) throw new Error('Soul content root is not available')
+    const contentOnChainId = soul.contentOnChainId
     const grant = role === 'grantee'
       ? findGrantForWallet(soul.activeGrants, suiWallet.address, params.kind)
       : null
@@ -412,6 +417,28 @@ export function useSoulContentActions({
     setContentActionError(null)
     try {
       const authHeaders = await getAuthHeaders()
+      // The append moveCall's `name` argument must be known BEFORE the
+      // certify+append PTB is signed. Skill bundles parse it from the
+      // SKILL.md frontmatter; other kinds receive it from the caller. Do
+      // the parse here so the in-PTB callback below can use it directly.
+      let resolvedName: string | null = params.name ?? null
+      if (params.kind === KIND_SKILL) {
+        const fileBytes = new Uint8Array(await params.file.arrayBuffer())
+        if (!hasZipSignature(fileBytes)) {
+          throw new Error('Skill bundle must be a .zip archive')
+        }
+        const metadata = extractSkillBundleMetadata(fileBytes)
+        resolvedName = metadata.skillName
+      }
+      if (!resolvedName) {
+        throw new Error(params.kind === KIND_SKILL
+          ? 'Skills bundle must include SKILL.md frontmatter name'
+          : 'A name is required for non-skill content versions')
+      }
+
+      const kindRegistryObjectId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID')
+      const stateOnChainId = soul.stateOnChainId
+
       const upload = await uploadSoulPayload({
         file: params.file,
         uploadType: params.uploadType,
@@ -431,37 +458,71 @@ export function useSoulContentActions({
           const totalMist = quote.relayTipMist + quote.walStorageCost + quote.walWriteCost + quote.gasBudgetMist
           return window.confirm(`Approve Walrus storage: ${totalMist.toString()} MIST for ${quote.storageEpochs} epoch(s)?`)
         },
+        // Splice every post-certify Soulidity moveCall into the Walrus
+        // certify PTB so a full upload (incl. sprite config + setActive)
+        // costs exactly 2 wallet signatures: register, then
+        // certify+append+config+setActive. `register_blob` must stay its
+        // own signature because it commits on chain BEFORE the off-chain
+        // blob upload — validators have nothing to certify until then.
+        attachAfterCertify: (tx, blobObjectId) => {
+          const common = {
+            contentObjectId: contentOnChainId,
+            stateObjectId: stateOnChainId,
+            kindRegistryObjectId,
+            kind: params.kind,
+            name: resolvedName as string,
+            slotReadModeMask: params.slotReadModeMask,
+            downloadPolicy: params.downloadPolicy,
+            contentBlobObjectId: blobObjectId,
+          }
+          // The append moveCall returns the new version index as a u64;
+          // capture it as a TransactionArgument so set_active_content can
+          // reference the just-appended slot in the same PTB without us
+          // having to predict the index off chain.
+          const versionIndexArg = role === 'grantee'
+            ? addAppendContentVersionAsGrantedAgentCalls(tx, {
+                ...common,
+                soulGrantObjectId: grant!.onChainId,
+              })
+            : addAppendContentVersionAsOwnerCalls(tx, common)
+
+          if (params.kind === KIND_SPRITE && role === 'owner') {
+            // SoulState.config_ext writes don't need the append result —
+            // they only depend on the SoulState object id, which is a
+            // shared reference already in the PTB.
+            if (params.spriteConfigJson) {
+              addSetStateConfigCalls(tx, {
+                stateObjectId: stateOnChainId,
+                key: 'sprite_config_json',
+                valueUtf8: params.spriteConfigJson,
+              })
+            }
+            if (params.spriteMoodMapJson) {
+              addSetStateConfigCalls(tx, {
+                stateObjectId: stateOnChainId,
+                key: 'sprite_mood_map_json',
+                valueUtf8: params.spriteMoodMapJson,
+              })
+            }
+            if (params.setActive) {
+              addSetActiveContentCalls(tx, {
+                contentObjectId: contentOnChainId,
+                stateObjectId: stateOnChainId,
+                kindRegistryObjectId,
+                kind: params.kind,
+                name: resolvedName as string,
+                versionIndex: versionIndexArg,
+              })
+            }
+          }
+        },
       })
 
-      const name = params.kind === KIND_SKILL
-        ? upload.skillName
-        : params.name
-      if (!name) {
-        throw new Error('Skills bundle must include SKILL.md frontmatter name')
-      }
-
-      await assertObjectInputsExist(suiClient, {
-        'Soul content': soul.contentOnChainId,
-        'Soul state': soul.stateOnChainId,
-        'Walrus Blob': upload.blobObjectId,
-      })
-
-      const common = {
-        contentObjectId: soul.contentOnChainId,
-        stateObjectId: soul.stateOnChainId,
-        kindRegistryObjectId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'),
-        kind: params.kind,
-        name,
-        slotReadModeMask: params.slotReadModeMask,
-        downloadPolicy: params.downloadPolicy,
-        contentBlobObjectId: upload.blobObjectId,
-      }
-      const tx = role === 'grantee'
-        ? buildAppendContentVersionAsGrantedAgentTx({ ...common, soulGrantObjectId: grant!.onChainId })
-        : buildAppendContentVersionAsOwnerTx(common)
-      const result = await signAndExecute(tx)
       const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-      const event = extractContentVersionAppendedEvent(result as never, packageId)
+      if (!upload.certifyTxResult) {
+        throw new Error('Certify TX result missing — append moveCall was not spliced into the upload PTB')
+      }
+      const event = extractContentVersionAppendedEvent(upload.certifyTxResult as never, packageId)
       const sidecars = await buildContentSidecarsForVersionsWithSuiClient({
         suiClient,
         packageId,
@@ -481,7 +542,7 @@ export function useSoulContentActions({
 
       await postSync({
         action: 'append',
-        txDigest: result.digest,
+        txDigest: upload.certifyTxDigest,
         kind: event.kind,
         name: event.name,
         blobId: upload.blobId,
@@ -489,15 +550,36 @@ export function useSoulContentActions({
         sealSidecar: sidecars[0]?.sidecar ?? null,
       })
 
+      // The combined PTB also emitted state-config + active-binding
+      // events when relevant. Mirror them with their own postSync calls
+      // against the same `certifyTxDigest`; the sync route's idempotency
+      // table is keyed by `(routeKey, txDigest, actor, resourceKey)` so
+      // each action stores independently.
       if (params.kind === KIND_SPRITE && role === 'owner') {
         if (params.spriteConfigJson) {
-          await setStateConfig('sprite_config_json', params.spriteConfigJson)
+          await postSync({
+            action: 'state-config:upsert',
+            txDigest: upload.certifyTxDigest,
+            key: 'sprite_config_json',
+            value: params.spriteConfigJson,
+          })
         }
         if (params.spriteMoodMapJson) {
-          await setStateConfig('sprite_mood_map_json', params.spriteMoodMapJson)
+          await postSync({
+            action: 'state-config:upsert',
+            txDigest: upload.certifyTxDigest,
+            key: 'sprite_mood_map_json',
+            value: params.spriteMoodMapJson,
+          })
         }
         if (params.setActive) {
-          await setActiveContent(event.kind, event.name, event.versionIndex)
+          await postSync({
+            action: 'active-bind',
+            txDigest: upload.certifyTxDigest,
+            kind: event.kind,
+            name: event.name,
+            versionIndex: event.versionIndex,
+          })
         }
       }
 
@@ -509,7 +591,7 @@ export function useSoulContentActions({
     } finally {
       setPendingAction(null)
     }
-  }, [getAuthHeaders, invalidateSoul, postSync, role, setActiveContent, setStateConfig, signAndExecute, soul.activeGrants, soul.contentOnChainId, soul.stateOnChainId, suiClient, suiWallet])
+  }, [getAuthHeaders, invalidateSoul, postSync, role, signAndExecute, soul.activeGrants, soul.contentOnChainId, soul.stateOnChainId, suiClient, suiWallet])
 
   const deleteContentVersion = useCallback(async (version: SoulContentVersionRecord) => {
     if (role !== 'owner' && role !== 'grantee') {
