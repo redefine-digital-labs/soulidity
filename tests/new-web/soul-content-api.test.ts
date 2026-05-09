@@ -30,6 +30,9 @@ const mockedExtractContentVersionAppendedEvent = vi.hoisted(() => vi.fn())
 const mockedExtractContentVersionDeletedEvent = vi.hoisted(() => vi.fn())
 const mockedExtractContentVersionPurgedEvent = vi.hoisted(() => vi.fn())
 const mockedExtractActiveBindingUpdatedEvent = vi.hoisted(() => vi.fn())
+const mockedExtractSoulStateConfigUpsertedEvent = vi.hoisted(() => vi.fn())
+const mockedExtractSoulStateConfigDeletedEvent = vi.hoisted(() => vi.fn())
+const mockedGetSoulStateConfigEntry = vi.hoisted(() => vi.fn())
 const mockedParseRequiredTxDigest = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulAsset: {
@@ -94,6 +97,9 @@ vi.mock('@soulidity/sdk', async () => {
     extractContentVersionDeletedEvent: mockedExtractContentVersionDeletedEvent,
     extractContentVersionPurgedEvent: mockedExtractContentVersionPurgedEvent,
     extractActiveBindingUpdatedEvent: mockedExtractActiveBindingUpdatedEvent,
+    extractSoulStateConfigUpsertedEvent: mockedExtractSoulStateConfigUpsertedEvent,
+    extractSoulStateConfigDeletedEvent: mockedExtractSoulStateConfigDeletedEvent,
+    getSoulStateConfigEntry: mockedGetSoulStateConfigEntry,
     parseRequiredTxDigest: mockedParseRequiredTxDigest,
   }
 })
@@ -428,5 +434,110 @@ describe('POST /api/souls/[id]/content/sync', () => {
         activeSpriteDownloadPolicy: 'owner_only',
       },
     })
+  })
+
+  it('mirrors state-config:upsert with the chain-derived value, ignoring the request body value (R-001)', async () => {
+    mockedExtractSoulStateConfigUpsertedEvent.mockReturnValue({
+      stateId: STATE_ID,
+      soulId: SOUL_ID,
+      updaterAddress: WALLET,
+      key: 'sprite_config_json',
+    })
+    mockedGetSoulStateConfigEntry.mockResolvedValue({ value: '{"chain":"truth"}' })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/content/sync/route')
+    const response = await POST(
+      jsonRequest(`/api/souls/${SOUL_ID}/content/sync`, {
+        action: 'state-config:upsert',
+        txDigest: TX_DIGEST,
+        key: 'sprite_config_json',
+        value: '{"client":"forged"}',
+      }),
+      syncParams(),
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedGetSoulStateConfigEntry).toHaveBeenCalledWith({
+      stateObjectId: STATE_ID,
+      packageId: PACKAGE_ID,
+      key: 'sprite_config_json',
+    })
+    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
+      where: { onChainId: SOUL_ID, stateOnChainId: STATE_ID },
+      data: { spriteConfigJson: '{"chain":"truth"}' },
+    })
+  })
+
+  it('rejects state-config:upsert when the chain has no entry for the key', async () => {
+    mockedExtractSoulStateConfigUpsertedEvent.mockReturnValue({
+      stateId: STATE_ID,
+      soulId: SOUL_ID,
+      updaterAddress: WALLET,
+      key: 'sprite_config_json',
+    })
+    mockedGetSoulStateConfigEntry.mockResolvedValue(null)
+
+    const { POST } = await import('../../web/app/api/souls/[id]/content/sync/route')
+    const response = await POST(
+      jsonRequest(`/api/souls/${SOUL_ID}/content/sync`, {
+        action: 'state-config:upsert',
+        txDigest: TX_DIGEST,
+        key: 'sprite_config_json',
+        value: '{"client":"value"}',
+      }),
+      syncParams(),
+    )
+
+    expect(response.status).toBe(409)
+    expect(mockedPrisma.soulAsset.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('clears the projection on state-config:delete only when the chain confirms absence', async () => {
+    mockedExtractSoulStateConfigDeletedEvent.mockReturnValue({
+      stateId: STATE_ID,
+      soulId: SOUL_ID,
+      updaterAddress: WALLET,
+      key: 'voice_config_json',
+    })
+    mockedGetSoulStateConfigEntry.mockResolvedValue(null)
+
+    const { POST } = await import('../../web/app/api/souls/[id]/content/sync/route')
+    const response = await POST(
+      jsonRequest(`/api/souls/${SOUL_ID}/content/sync`, {
+        action: 'state-config:delete',
+        txDigest: TX_DIGEST,
+        key: 'voice_config_json',
+      }),
+      syncParams(),
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockedPrisma.soulAsset.updateMany).toHaveBeenCalledWith({
+      where: { onChainId: SOUL_ID, stateOnChainId: STATE_ID },
+      data: { voiceConfigJson: null },
+    })
+  })
+
+  it('rejects state-config:delete when the chain still holds the key', async () => {
+    mockedExtractSoulStateConfigDeletedEvent.mockReturnValue({
+      stateId: STATE_ID,
+      soulId: SOUL_ID,
+      updaterAddress: WALLET,
+      key: 'voice_config_json',
+    })
+    mockedGetSoulStateConfigEntry.mockResolvedValue({ value: 'still-here' })
+
+    const { POST } = await import('../../web/app/api/souls/[id]/content/sync/route')
+    const response = await POST(
+      jsonRequest(`/api/souls/${SOUL_ID}/content/sync`, {
+        action: 'state-config:delete',
+        txDigest: TX_DIGEST,
+        key: 'voice_config_json',
+      }),
+      syncParams(),
+    )
+
+    expect(response.status).toBe(409)
+    expect(mockedPrisma.soulAsset.updateMany).not.toHaveBeenCalled()
   })
 })
