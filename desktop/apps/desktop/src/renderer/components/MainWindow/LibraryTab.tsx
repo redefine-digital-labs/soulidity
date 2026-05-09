@@ -68,6 +68,12 @@ function isProtectedSpritePolicy(value: unknown): value is ProtectedSpriteDownlo
   return value === 'owner_only' || value === 'allowlist'
 }
 
+function hasAvailableSpritePolicy(
+  value: PersonaItem['spriteDownloadPolicy'],
+): value is 'public' | ProtectedSpriteDownloadPolicy {
+  return value === 'public' || isProtectedSpritePolicy(value)
+}
+
 function parsePrivateManifest(payload: unknown): PrivateManifestPayload {
   if (
     !isRecord(payload)
@@ -105,12 +111,8 @@ function getDownloadDisabledState(
     return { disabled: false, label: 'Download', hint: null as string | null }
   }
 
-  if (persona.spriteDownloadPolicy === 'missing') {
-    return { disabled: true, label: 'Sprite Missing', hint: 'This soul has no valid sprite metadata yet.' }
-  }
-
-  if (persona.spriteDownloadPolicy === 'invalid') {
-    return { disabled: true, label: 'Sprite Invalid', hint: 'The sprite metadata exists but does not match the desktop contract.' }
+  if (!hasAvailableSpritePolicy(persona.spriteDownloadPolicy)) {
+    return null
   }
 
   if (isProtectedSpritePolicy(persona.spriteDownloadPolicy)) {
@@ -193,9 +195,9 @@ function PersonaCard({
           {persona.listingStatus === 'listed' && (
             <span className="persona-card__badge persona-card__badge--listed">Listed</span>
           )}
-          {persona.activeSpriteVersionIndex != null && (
+          {hasAvailableSpritePolicy(persona.spriteDownloadPolicy) && (
             <span className="persona-card__badge persona-card__badge--version">
-              Sprite v{persona.activeSpriteVersionIndex}
+              Sprite Available
             </span>
           )}
         </div>
@@ -208,7 +210,7 @@ function PersonaCard({
         {persona.downloadError && (
           <div className="persona-card__status persona-card__status--error">{persona.downloadError}</div>
         )}
-        {!persona.downloadError && downloadState.hint && (
+        {!persona.downloadError && downloadState?.hint && (
           <div className="persona-card__status">{downloadState.hint}</div>
         )}
       </div>
@@ -228,7 +230,7 @@ function PersonaCard({
           <button className="persona-card__btn" onClick={onActivate}>
             Activate
           </button>
-        ) : !persona.isCached && onDownload ? (
+        ) : !persona.isCached && onDownload && downloadState ? (
           <button
             className="persona-card__btn"
             onClick={onDownload}

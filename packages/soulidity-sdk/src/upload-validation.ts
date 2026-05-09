@@ -16,6 +16,22 @@ export const SKILL_BUNDLE_INVALID_FRONTMATTER_ERROR = "Can't use this ZIP file. 
 export const INVALID_SKILL_BUNDLE_ERROR = "Can't use this skill bundle. Upload a .zip file with SKILL.md at the root or inside one folder, and make sure SKILL.md frontmatter includes name."
 export const SKILL_BUNDLE_FORMAT_SUMMARY = 'Upload a .zip file. The archive can place SKILL.md at the root or inside one folder. SKILL.md must start with frontmatter and include name.'
 export const SKILL_BUNDLE_FRONTMATTER_EXAMPLE = SKILL_MD_TEMPLATE
+
+// Mirrors `content::assert_valid_content_name` in the Move package: 1..=32
+// bytes, restricted to lowercase ASCII letters, digits, `_`, or `-`. Mint /
+// append paths must validate slot names against this grammar before paying
+// for Walrus storage and signing the on-chain mutation, otherwise the
+// transaction aborts with `EContentNameInvalidChar` / `EContentNameInvalidLength`
+// after the upload has already been billed.
+export const CONTENT_NAME_MAX_LEN = 32
+const CONTENT_NAME_PATTERN = /^[a-z0-9_-]+$/
+export const SKILL_BUNDLE_NAME_GRAMMAR_ERROR = `Skill bundle name must be 1–${CONTENT_NAME_MAX_LEN} characters of lowercase letters, digits, "_" or "-".`
+
+export function isValidContentSlotName(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  if (value.length === 0 || value.length > CONTENT_NAME_MAX_LEN) return false
+  return CONTENT_NAME_PATTERN.test(value)
+}
 const PUBLIC_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const PUBLIC_METADATA_MIME_TYPES = new Set(['application/json'])
 const PUBLIC_ZIP_MIME_TYPES = new Set(['application/zip', 'application/x-zip-compressed'])
@@ -201,6 +217,9 @@ export async function validateSelectedSkillBundle(
   const bytes = new Uint8Array(await file.arrayBuffer())
   try {
     const metadata = parseSkillBundleMetadata(bytes)
+    if (!isValidContentSlotName(metadata.skillName)) {
+      return { ok: false, error: SKILL_BUNDLE_NAME_GRAMMAR_ERROR }
+    }
     return { ok: true, skillName: metadata.skillName }
   } catch (error) {
     return {

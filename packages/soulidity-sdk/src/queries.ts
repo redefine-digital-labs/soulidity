@@ -773,6 +773,84 @@ export async function getSoulStateObject(
   }
 }
 
+function readVectorU8AsUtf8(value: unknown, fieldName: string): string {
+  // Sui RPC returns `vector<u8>` in `showContent` mode as a `number[]` of byte
+  // values; some adapters surface it as a UTF-8 string directly. Tolerate both
+  // and reject anything else so a malformed payload cannot silently mirror.
+  if (Array.isArray(value)) {
+    const bytes = new Uint8Array(value.length)
+    for (let index = 0; index < value.length; index += 1) {
+      const byte = value[index]
+      if (typeof byte !== 'number' || !Number.isInteger(byte) || byte < 0 || byte > 255) {
+        throw new OnChainVerificationError(`${fieldName} contains a non-byte element`)
+      }
+      bytes[index] = byte
+    }
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+}
+
+/**
+ * Read a single `SoulState.config_ext[key]` entry from chain. Returns `null`
+ * when the key has never been written, was deleted, or the underlying table
+ * lookup fails with "dynamic field not found".
+ *
+ * Used by mirror routes that must NOT trust the request body's `value` —
+ * `SoulStateConfigUpserted` events only carry `(state_id, soul_id, updater,
+ * key)`, so the mirrored value has to come from chain reads or it can be
+ * desynced by a stale / forged sync request.
+ */
+export async function getSoulStateConfigEntry(params: {
+  stateObjectId: string
+  packageId: string
+  key: string
+}): Promise<{ value: string } | null> {
+  const stateResponse = await suiClient.getObject({
+    id: params.stateObjectId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = `${normalizePackageId(params.packageId)}::soul::SoulState`
+  const { fields } = expectMoveObject(stateResponse, params.stateObjectId, expectedTypePrefix)
+  const configTableId = readNestedObjectId(fields.config_ext, 'SoulState config_ext')
+  if (!configTableId) {
+    return null
+  }
+
+  try {
+    const fieldObject = await suiClient.getDynamicFieldObject({
+      parentId: configTableId,
+      name: { type: '0x1::string::String', value: params.key },
+    })
+    if (isMissingObjectResponse(fieldObject)) {
+      return null
+    }
+    const content = fieldObject.data?.content
+    const dynamicFields = content && typeof content === 'object' && 'fields' in content
+      ? asRecord((content as { fields?: unknown }).fields)
+      : null
+    const dynamicInnerFields = dynamicFields ? asRecord(dynamicFields.fields) : null
+    const rawValue = dynamicFields?.value ?? dynamicInnerFields?.value
+    if (rawValue == null) {
+      return null
+    }
+    return {
+      value: readVectorU8AsUtf8(rawValue, `SoulState config_ext[${params.key}]`),
+    }
+  } catch (error) {
+    if (isDynamicFieldNotFound(error)) {
+      return null
+    }
+    throw error
+  }
+}
+
 /**
  * Read the shared `SoulContent` object on chain. Phase 2 collapses the legacy
  * `SoulMetadata` / `SoulSkills` / `SoulAssets` / `SoulMemory` quartet into this

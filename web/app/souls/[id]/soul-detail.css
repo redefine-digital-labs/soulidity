@@ -123,6 +123,30 @@
 .sd-grant-input:focus { border-color: var(--purple); }
 .sd-grant-input::placeholder { color: var(--text-faint); }
 
+.sd-file-input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.sd-file-input:focus { border-color: var(--purple); }
+.sd-file-input::file-selector-button {
+  margin-right: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--purple);
+  color: #fff;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 /* ── Progress bar ───────────────────────────────────────────────── */
 .sd-progress {
   height: 6px;

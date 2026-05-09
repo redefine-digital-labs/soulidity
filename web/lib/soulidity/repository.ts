@@ -909,6 +909,36 @@ export async function findContentVersionsByRouteId(
   return findContentVersionsByKind(soul.onChainId, kind, options)
 }
 
+export async function findContentVersionByRouteId(
+  routeId: string,
+  kind: number,
+  name: string,
+  versionIndex: number,
+): Promise<SoulContentVersionRecord | null> {
+  const where = buildSoulRouteWhere(routeId)
+  if (!where) return null
+
+  const soul = await prisma.soulAsset.findFirst({
+    where,
+    select: { onChainId: true, contentOnChainId: true },
+  })
+  if (!soul?.contentOnChainId) return null
+
+  const row = await prisma.soulContentVersionRecord.findUnique({
+    where: {
+      contentOnChainId_kind_name_versionIndex: {
+        contentOnChainId: soul.contentOnChainId,
+        kind,
+        name,
+        versionIndex,
+      },
+    },
+    select: soulContentVersionSelect,
+  })
+
+  return row ? toSoulContentVersionRecord(row) : null
+}
+
 // ── Deprecated phase-1 shims ─────────────────────────────────────────────
 
 /**

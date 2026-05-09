@@ -305,6 +305,9 @@ export function useWrapPublish() {
             uploadType: 'encrypted',
             kind: 'soul-content',
             sendObjectTo: walletAddress,
+            // Skills bundle requires SKILL.md frontmatter parsing; other batch
+            // entries (char file, memory file) do not.
+            extractSkillMetadata: true,
           })
         }
 

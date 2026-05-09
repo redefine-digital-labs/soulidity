@@ -89,6 +89,10 @@ export interface UploadSoulPayloadParams {
   signAndExecute: SignAndExecuteWalrusTx
   confirmQuote: (quote: WalrusUploadQuote) => Promise<boolean>
   storageEpochs?: number
+  // Only skill-bundle uploads must contain `SKILL.md`; sprite ZIPs (and other
+  // ZIP-shaped payloads such as cover archives) do not. Default false so a
+  // generic ZIP upload no longer fails the skill-bundle parser.
+  extractSkillMetadata?: boolean
 }
 
 interface UploadBlobResult {
@@ -499,6 +503,10 @@ export interface BatchSoulUploadFile {
   kind: SoulUploadKind
   /** Optional override; defaults to walletAddress. Each blob can be transferred to a different recipient. */
   sendObjectTo?: string | null
+  // Only skill-bundle uploads must contain `SKILL.md`; sprite ZIPs (and other
+  // ZIP-shaped payloads) do not. Default false so a generic ZIP upload no
+  // longer fails the skill-bundle parser.
+  extractSkillMetadata?: boolean
 }
 
 export interface PreparedSoulBlobs {
@@ -683,7 +691,7 @@ async function preparePayload(
    */
   materialOverride?: PendingSealMaterial | null,
 ): Promise<PreparedFile> {
-  const skillBundleMetadata = hasZipSignature(base.plaintext)
+  const skillBundleMetadata = item.extractSkillMetadata && hasZipSignature(base.plaintext)
     ? extractSkillBundleMetadata(base.plaintext)
     : null
   // Only reuse the persisted material when the plaintext fingerprint still
@@ -1590,7 +1598,7 @@ export async function uploadSoulPayload(params: UploadSoulPayloadParams): Promis
   const signatureError = validateSoulUploadSignature(plaintext, uploadType, contentType)
   if (signatureError) throw new Error(signatureError)
 
-  const skillBundleMetadata = hasZipSignature(plaintext)
+  const skillBundleMetadata = params.extractSkillMetadata && hasZipSignature(plaintext)
     ? extractSkillBundleMetadata(plaintext)
     : null
   const contentHash = await sha256Hex(plaintext)

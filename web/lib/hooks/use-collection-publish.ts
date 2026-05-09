@@ -563,6 +563,9 @@ function buildBatchUploadPlan(params: {
         uploadType: 'encrypted',
         kind: 'soul-content',
         sendObjectTo: params.walletAddress,
+        // Skills bundle requires SKILL.md frontmatter parsing; char/memory
+        // batch entries do not.
+        extractSkillMetadata: true,
       })
     }
 

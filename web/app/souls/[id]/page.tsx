@@ -14,14 +14,18 @@ import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
 import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
-import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import { formatAtomicAmountForDisplay, NO_DOWNLOAD_POLICY, READ_GRANT, READ_OWNER, READ_PUBLIC } from '@soulidity/sdk'
 import { KIND_MEMORY, KIND_SKILL, KIND_SPRITE } from '@soulidity/sdk'
 import { useGrant } from '@/lib/hooks/use-grant'
-import { SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
+import { useSoulContentActions } from '@/lib/hooks/use-soul-content-actions'
+import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
+import { parsePersonaSpriteConfig, PERSONA_SPRITE_CONFIG_ERROR, validateSelectedSkillBundle } from '@soulidity/sdk'
+import { SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
 import type { SoulAssetDetail, SoulContentVersionRecord, SoulGrantRecord } from '@soulidity/sdk'
 import './soul-detail.css'
 
 type Role = 'owner' | 'grantee' | 'visitor'
+type ContentActions = ReturnType<typeof useSoulContentActions>
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function formatAddress(value: string | null | undefined) {
@@ -78,6 +82,55 @@ function findActiveGrantForAddress(grants: SoulGrantRecord[], address: string) {
   const normalized = normalizeSuiAddressForCompare(address)
   if (!normalized) return null
   return grants.find((grant) => normalizeSuiAddressForCompare(grant.granteeAddress) === normalized) ?? null
+}
+
+function contentVersionsForKind(rows: SoulContentVersionRecord[], kind: number) {
+  return rows
+    .filter((r) => r.kind === kind && r.purgedAt == null)
+    .sort((a, b) => b.versionIndex - a.versionIndex)
+}
+
+function scopeMaskForKind(kind: number) {
+  if (kind === KIND_SPRITE) return SOUL_GRANT_SCOPE_ASSETS
+  if (kind === KIND_SKILL) return SOUL_GRANT_SCOPE_SKILLS
+  if (kind === KIND_MEMORY) return SOUL_GRANT_SCOPE_MEMORY
+  return 0
+}
+
+function grantIncludesScope(grant: SoulGrantRecord, scopeMask: number) {
+  if (scopeMask === SOUL_GRANT_SCOPE_ASSETS) return grant.scopes.includes('assets')
+  if (scopeMask === SOUL_GRANT_SCOPE_SKILLS) return grant.scopes.includes('skills')
+  if (scopeMask === SOUL_GRANT_SCOPE_MEMORY) return grant.scopes.includes('memory')
+  return false
+}
+
+function viewerGrantForKind(soul: SoulAssetDetail, viewerAddress: string | null | undefined, kind: number) {
+  const normalized = normalizeSuiAddressForCompare(viewerAddress)
+  if (!normalized) return null
+  const scopeMask = scopeMaskForKind(kind)
+  return soul.activeGrants.find((grant) =>
+    grant.status === 'active'
+    && normalizeSuiAddressForCompare(grant.granteeAddress) === normalized
+    && grantIncludesScope(grant, scopeMask),
+  ) ?? null
+}
+
+function canAppendContent(role: Role, soul: SoulAssetDetail, viewerAddress: string | null | undefined, kind: number) {
+  if (role === 'owner') return true
+  if (role !== 'grantee') return false
+  return viewerGrantForKind(soul, viewerAddress, kind) !== null
+}
+
+function canDeleteContent(role: Role, soul: SoulAssetDetail, viewerAddress: string | null | undefined, kind: number) {
+  return canAppendContent(role, soul, viewerAddress, kind)
+}
+
+function canPurgeContent(role: Role) {
+  return role === 'owner'
+}
+
+function canSetActiveContent(role: Role) {
+  return role === 'owner'
 }
 
 // ── CopyChip ─────────────────────────────────────────────────────────
@@ -418,7 +471,19 @@ function QuickStats({ soul }: { soul: SoulAssetDetail }) {
 // ── Workspace tabs ───────────────────────────────────────────────────
 type TabId = 'info' | 'sprite' | 'skills' | 'memory' | 'grants'
 
-function Workspace({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetDetail; role: Role; detailQueryId: string; viewerId?: string | null }) {
+function Workspace({
+  soul,
+  role,
+  detailQueryId,
+  viewerId,
+  viewerAddress,
+}: {
+  soul: SoulAssetDetail
+  role: Role
+  detailQueryId: string
+  viewerId?: string | null
+  viewerAddress?: string | null
+}) {
   const [tab, setTab] = useState<TabId>('info')
   const counts = useMemo(
     () => ({
@@ -471,9 +536,9 @@ function Workspace({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetDet
       </div>
 
       {tab === 'info' && <InfoPanel soul={soul} />}
-      {tab === 'sprite' && <SpritePanel soul={soul} role={role} />}
-      {tab === 'skills' && <SkillsPanel soul={soul} role={role} />}
-      {tab === 'memory' && <MemoryPanel soul={soul} role={role} />}
+      {tab === 'sprite' && <SpritePanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
+      {tab === 'skills' && <SkillsPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
+      {tab === 'memory' && <MemoryPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
       {tab === 'grants' && <GrantsPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} />}
     </div>
   )
@@ -542,6 +607,7 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
 function ContentPanel({
   soul,
   role,
+  viewerAddress,
   kind,
   title,
   copy,
@@ -550,9 +616,11 @@ function ContentPanel({
   emptySub,
   versionLabelSingular,
   uploadCard,
+  actions,
 }: {
   soul: SoulAssetDetail
   role: Role
+  viewerAddress?: string | null
   kind: number
   title: string
   copy: string
@@ -561,8 +629,13 @@ function ContentPanel({
   emptySub: string
   versionLabelSingular: string
   uploadCard?: React.ReactNode
+  actions: ContentActions
 }) {
-  const versions = useMemo(() => activeVersions(soul.contentVersions, kind), [soul.contentVersions, kind])
+  const versions = useMemo(() => contentVersionsForKind(soul.contentVersions, kind), [soul.contentVersions, kind])
+  const { pendingAction, contentActionError } = actions
+  const canDelete = canDeleteContent(role, soul, viewerAddress, kind)
+  const canPurge = canPurgeContent(role)
+  const canSetActive = canSetActiveContent(role)
 
   const tags: React.ReactNode = (
     <>
@@ -583,6 +656,11 @@ function ContentPanel({
       <PanelHead title={title} copy={copy} tags={tags} />
 
       {uploadCard}
+      {contentActionError && (
+        <div className="mt-3 rounded-lg border border-danger/35 bg-danger/8 px-3.5 py-2 text-[12px] text-danger">
+          {contentActionError}
+        </div>
+      )}
 
       <div className="mt-4">
         <div className="mb-2.5 flex items-center justify-between">
@@ -599,6 +677,19 @@ function ContentPanel({
             {versions.map((v) => {
               const isActiveSprite =
                 kind === KIND_SPRITE && v.versionIndex === soul.activeSpriteVersionIndex && v.name === soul.activeSpriteName
+              const canOpen =
+                !v.deletedAt
+                && (
+                  role === 'owner'
+                  || viewerGrantForKind(soul, viewerAddress, kind) !== null
+                  || (
+                    role === 'visitor'
+                    && kind === KIND_SPRITE
+                    && v.isPublic
+                    && !v.sealEncrypted
+                    && v.downloadPolicy === 'public'
+                  )
+                )
               return (
                 <div
                   key={v.id}
@@ -611,6 +702,7 @@ function ContentPanel({
                     <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-foreground">
                       <span className="whitespace-nowrap">{v.name || versionLabelSingular}</span>
                       {isActiveSprite && <Tag color="gold">Active</Tag>}
+                      {v.deletedAt && <Tag color="muted">Deleted</Tag>}
                       <Tag color={v.isPublic ? 'gold' : 'purple'}>{v.isPublic ? 'public' : 'private'}</Tag>
                       {v.sealEncrypted && <Tag color="purple">sealed</Tag>}
                     </div>
@@ -622,10 +714,58 @@ function ContentPanel({
                       <span className="whitespace-nowrap font-mono text-[10.5px]">{v.downloadPolicy}</span>
                     </div>
                   </div>
-                  <div className="flex flex-shrink-0 gap-1.5">
-                    <Button variant="outline" size="sm" disabled>
-                      Open
-                    </Button>
+                  <div className="flex flex-shrink-0 flex-wrap gap-1.5">
+                    {canOpen && (
+                      <Button variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void actions.openContentVersion(v)}>
+                        Open
+                      </Button>
+                    )}
+                    {kind === KIND_SPRITE && !v.deletedAt && canSetActive && !isActiveSprite && (
+                      <Button
+                        variant="teal"
+                        size="sm"
+                        disabled={pendingAction !== null}
+                        onClick={() => void actions.setActiveContent(v.kind, v.name, v.versionIndex)}
+                      >
+                        Set active
+                      </Button>
+                    )}
+                    {kind === KIND_SPRITE && !v.deletedAt && canSetActive && isActiveSprite && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={pendingAction !== null}
+                        onClick={() => void actions.clearActiveContent(v.kind)}
+                      >
+                        Clear active
+                      </Button>
+                    )}
+                    {!v.deletedAt && canDelete && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        disabled={pendingAction !== null || isActiveSprite || !canDelete}
+                        title={isActiveSprite ? 'Clear or change the active sprite before deleting this version.' : undefined}
+                        onClick={() => void actions.deleteContentVersion(v)}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                    {v.deletedAt && canPurge && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        disabled={pendingAction !== null}
+                        onClick={() => void actions.purgeContentVersion(v)}
+                      >
+                        Purge
+                      </Button>
+                    )}
+                    {role === 'visitor' && (
+                      <Button variant="outline" size="sm" disabled>
+                        Metadata only
+                      </Button>
+                    )}
                   </div>
                 </div>
               )
@@ -637,21 +777,284 @@ function ContentPanel({
   )
 }
 
-function MigrationNote({ kind }: { kind: 'sprite' | 'skills' | 'memory' }) {
+function readFileText(file: File | null) {
+  return file ? file.text() : Promise.resolve(null)
+}
+
+function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend: boolean; actions: ContentActions }) {
+  const [sheetFile, setSheetFile] = useState<File | null>(null)
+  const [configFile, setConfigFile] = useState<File | null>(null)
+  const [configFileText, setConfigFileText] = useState<string | null>(null)
+  const [configError, setConfigError] = useState<string | null>(null)
+  const [moodMapFile, setMoodMapFile] = useState<File | null>(null)
+  const [visibility, setVisibility] = useState<'public' | 'owner_only'>('owner_only')
+  const [setActiveAfterUpload, setSetActiveAfterUpload] = useState(role === 'owner')
+  const { pendingAction } = actions
+  const configValid = configFile == null || (configFileText != null && parsePersonaSpriteConfig(configFileText) != null)
+
+  if (!canAppend) return null
+
+  async function handleConfigFileChange(file: File | null) {
+    setConfigFile(file)
+    setConfigError(null)
+    if (!file) {
+      setConfigFileText(null)
+      return
+    }
+    const text = await file.text()
+    setConfigFileText(text)
+    // Parse the persona sprite config eagerly so we can keep the upload
+    // disabled and surface the error before the user pays for Walrus storage
+    // and signs the on-chain mutation. Anything that fails this parse would
+    // also be rejected by the desktop resolver downstream, so we never want
+    // it to reach `setStateConfig('sprite_config_json', ...)`.
+    if (!parsePersonaSpriteConfig(text)) {
+      setConfigError(PERSONA_SPRITE_CONFIG_ERROR)
+    }
+  }
+
+  async function handleUpload() {
+    if (!sheetFile) return
+    if (role === 'owner' && !configFile) return
+    if (configFile && !configValid) {
+      setConfigError(PERSONA_SPRITE_CONFIG_ERROR)
+      return
+    }
+    const spriteConfigJson = configFileText ?? await readFileText(configFile)
+    const spriteMoodMapJson = await readFileText(moodMapFile)
+    await actions.appendContentVersion({
+      kind: KIND_SPRITE,
+      name: 'persona-sprite',
+      file: sheetFile,
+      // `content::append_version_impl` hardcodes `seal_encrypted = true` on
+      // every appended slot, and `/content/sync` rejects sealed slots that
+      // arrive without a sidecar. Sprite uploads therefore always go through
+      // the Seal envelope path so the post-TX mirror has a sidecar to store —
+      // including "Public" slots, which are sealed-public (any wallet can
+      // construct a Seal session via `seal_approve_content_public`) rather
+      // than anonymous-plaintext.
+      uploadType: 'encrypted',
+      slotReadModeMask: visibility === 'public' ? READ_OWNER | READ_GRANT | READ_PUBLIC : READ_OWNER | READ_GRANT,
+      downloadPolicy: visibility === 'public' ? 'public' : 'owner_only',
+      setActive: role === 'owner' && setActiveAfterUpload,
+      spriteConfigJson,
+      spriteMoodMapJson,
+    })
+    setSheetFile(null)
+    setConfigFile(null)
+    setConfigFileText(null)
+    setConfigError(null)
+    setMoodMapFile(null)
+  }
+
   return (
-    <div className="rounded-xl border border-dashed border-border bg-card2 p-4 text-[13px] text-muted">
-      The {kind} write panel is migrating to the Phase 2 unified-content surface. The on-chain data is
-      already mirrored above and accessible via the new <code className="font-mono text-teal">/api/souls/[id]/content</code>{' '}
-      endpoints; the upload UI returns when the new ContentPanel ships.
-    </div>
+    <Subcard className="mb-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Append sprite version</div>
+          <div className="mt-1 text-[12px] text-muted">Upload a sprite sheet. Owners also attach the sprite config JSON mirrored into Soul state.</div>
+        </div>
+        <Tag color={role === 'owner' ? 'teal' : 'purple'}>{role === 'owner' ? 'owner write' : 'assets grant'}</Tag>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <label className="block text-[12px] text-muted">
+          <span className="mb-1.5 block font-semibold text-foreground">Sprite sheet</span>
+          <input type="file" accept="image/*,.zip" onChange={(e) => setSheetFile(e.target.files?.[0] ?? null)} className="sd-file-input" />
+        </label>
+        <label className="block text-[12px] text-muted">
+          <span className="mb-1.5 block font-semibold text-foreground">Config JSON</span>
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(e) => void handleConfigFileChange(e.target.files?.[0] ?? null)}
+            className="sd-file-input"
+          />
+          {configError && <span className="mt-1.5 block text-[12px] text-red-500">{configError}</span>}
+        </label>
+        <label className="block text-[12px] text-muted">
+          <span className="mb-1.5 block font-semibold text-foreground">Mood map JSON</span>
+          <input type="file" accept="application/json,.json" onChange={(e) => setMoodMapFile(e.target.files?.[0] ?? null)} className="sd-file-input" />
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block text-[12px] text-muted">
+            <span className="mb-1.5 block font-semibold text-foreground">Access</span>
+            <select
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value === 'public' ? 'public' : 'owner_only')}
+              className="sd-grant-input"
+            >
+              <option value="owner_only">Owner only</option>
+              <option value="public">Public</option>
+            </select>
+          </label>
+          {role === 'owner' && (
+            <label className="mt-6 inline-flex items-center gap-2 text-[12px] text-muted">
+              <input
+                type="checkbox"
+                checked={setActiveAfterUpload}
+                onChange={(e) => setSetActiveAfterUpload(e.target.checked)}
+              />
+              Set active
+            </label>
+          )}
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={pendingAction !== null || !sheetFile || (role === 'owner' && !configFile) || !configValid}
+          onClick={() => void handleUpload()}
+        >
+          {pendingAction === 'append' ? 'Uploading...' : 'Append sprite'}
+        </Button>
+      </div>
+    </Subcard>
   )
 }
 
-function SpritePanel({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
+function SkillsAppendCard({ canAppend, actions }: { canAppend: boolean; actions: ContentActions }) {
+  const [bundleFile, setBundleFile] = useState<File | null>(null)
+  const [skillName, setSkillName] = useState<string | null>(null)
+  const [bundleError, setBundleError] = useState<string | null>(null)
+  const { pendingAction } = actions
+
+  if (!canAppend) return null
+
+  async function handleFile(file: File | null) {
+    setBundleFile(null)
+    setSkillName(null)
+    setBundleError(null)
+    if (!file) return
+    const result = await validateSelectedSkillBundle(file)
+    if (!result.ok) {
+      setBundleError(result.error)
+      return
+    }
+    setBundleFile(file)
+    setSkillName(result.skillName)
+  }
+
+  async function handleUpload() {
+    if (!bundleFile || !skillName) return
+    await actions.appendContentVersion({
+      kind: KIND_SKILL,
+      name: skillName,
+      file: bundleFile,
+      uploadType: 'encrypted',
+      slotReadModeMask: READ_OWNER | READ_GRANT,
+      downloadPolicy: NO_DOWNLOAD_POLICY,
+    })
+    setBundleFile(null)
+    setSkillName(null)
+    setBundleError(null)
+  }
+
+  return (
+    <Subcard className="mb-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Append skill bundle</div>
+              <div className="mt-1 text-[12px] text-muted">Upload a .zip bundle with SKILL.md frontmatter. The skill name becomes the content slot.</div>
+            </div>
+            {skillName && <Tag color="teal">{skillName}</Tag>}
+          </div>
+          <label className="block text-[12px] text-muted">
+            <span className="mb-1.5 block font-semibold text-foreground">Skill bundle zip</span>
+            <input
+              type="file"
+              accept="application/zip,.zip"
+              onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
+              className="sd-file-input"
+            />
+          </label>
+          <div className="mt-3 flex justify-end">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={pendingAction !== null || !bundleFile || !skillName}
+              onClick={() => void handleUpload()}
+            >
+              {pendingAction === 'append' ? 'Uploading...' : 'Append skill'}
+            </Button>
+          </div>
+        </div>
+        <SkillBundleFormatHint error={bundleError} />
+      </div>
+    </Subcard>
+  )
+}
+
+function MemoryAppendCard({ canAppend, actions }: { canAppend: boolean; actions: ContentActions }) {
+  const [body, setBody] = useState('')
+  const { pendingAction } = actions
+  const trimmed = body.trim()
+
+  if (!canAppend) return null
+
+  async function handleUpload() {
+    if (!trimmed) return
+    const file = new File([trimmed], `memory-${Date.now()}.md`, { type: 'text/markdown' })
+    await actions.appendContentVersion({
+      kind: KIND_MEMORY,
+      name: actions.canonicalMemoryName,
+      file,
+      uploadType: 'encrypted',
+      slotReadModeMask: READ_OWNER | READ_GRANT,
+      downloadPolicy: actions.noDownloadPolicy,
+    })
+    setBody('')
+  }
+
+  return (
+    <Subcard className="mb-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Append memory entry</div>
+          <div className="mt-1 text-[12px] text-muted">Write a markdown entry into the canonical memory slot.</div>
+        </div>
+        <Tag color="purple">{actions.canonicalMemoryName}</Tag>
+      </div>
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        rows={5}
+        className="sd-grant-input min-h-[120px] resize-y font-sans leading-5"
+        placeholder="Memory entry..."
+      />
+      <div className="mt-3 flex justify-end">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={pendingAction !== null || !trimmed}
+          onClick={() => void handleUpload()}
+        >
+          {pendingAction === 'append' ? 'Uploading...' : 'Append memory'}
+        </Button>
+      </div>
+    </Subcard>
+  )
+}
+
+interface ContentPanelProps {
+  soul: SoulAssetDetail
+  role: Role
+  detailQueryId: string
+  viewerId?: string | null
+  viewerAddress?: string | null
+}
+
+function SpritePanel({ soul, role, detailQueryId, viewerId, viewerAddress }: ContentPanelProps) {
+  const actions = useSoulContentActions({ soul, role, detailQueryId, viewerId })
+  const canAppend = canAppendContent(role, soul, viewerAddress, KIND_SPRITE)
+
   return (
     <ContentPanel
       soul={soul}
       role={role}
+      viewerAddress={viewerAddress}
       kind={KIND_SPRITE}
       title="Persona Sprite"
       copy="Each sprite version is published on-chain and can be set as the active binding. Public versions stream from Walrus directly; private versions are AES-GCM encrypted and gated by Seal."
@@ -659,16 +1062,21 @@ function SpritePanel({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
       emptyTitle="No sprite versions yet"
       emptySub="When the owner uploads a persona sprite, every version stays addressable on-chain and the latest active binding renders here."
       versionLabelSingular="version"
-      uploadCard={role === 'owner' ? <MigrationNote kind="sprite" /> : undefined}
+      uploadCard={<SpriteAppendCard role={role} canAppend={canAppend} actions={actions} />}
+      actions={actions}
     />
   )
 }
 
-function SkillsPanel({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
+function SkillsPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: ContentPanelProps) {
+  const actions = useSoulContentActions({ soul, role, detailQueryId, viewerId })
+  const canAppend = canAppendContent(role, soul, viewerAddress, KIND_SKILL)
+
   return (
     <ContentPanel
       soul={soul}
       role={role}
+      viewerAddress={viewerAddress}
       kind={KIND_SKILL}
       title="Skills"
       copy="Each skill bundle is appended on-chain as an immutable version. Bundles ship a SKILL.md that names the skill; private bundles are AES-GCM encrypted and Seal-gated."
@@ -676,14 +1084,27 @@ function SkillsPanel({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
       emptyTitle="No skill versions yet"
       emptySub="No skill bundles have been appended to this Soul. Once appended, every version stays addressable on-chain and can be opened or revoked here."
       versionLabelSingular="version"
-      uploadCard={role === 'owner' || role === 'grantee' ? <MigrationNote kind="skills" /> : undefined}
+      uploadCard={<SkillsAppendCard canAppend={canAppend} actions={actions} />}
+      actions={actions}
     />
   )
 }
 
-function MemoryPanel({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
-  const versions = useMemo(() => activeVersions(soul.contentVersions, KIND_MEMORY), [soul.contentVersions])
-  const canDecrypt = role === 'owner' || role === 'grantee'
+function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: ContentPanelProps) {
+  const actions = useSoulContentActions({ soul, role, detailQueryId, viewerId })
+  const versions = useMemo(() => contentVersionsForKind(soul.contentVersions, KIND_MEMORY), [soul.contentVersions])
+  const canAppend = canAppendContent(role, soul, viewerAddress, KIND_MEMORY)
+  const canDelete = canDeleteContent(role, soul, viewerAddress, KIND_MEMORY)
+  const canDecrypt = role === 'owner' || viewerGrantForKind(soul, viewerAddress, KIND_MEMORY) !== null
+  const canPurge = canPurgeContent(role)
+  const { pendingAction, contentActionError } = actions
+  const tags = (
+    <>
+      <Tag color="teal">{versions.length} {versions.length === 1 ? 'entry' : 'entries'}</Tag>
+      {role === 'visitor' && <Tag color="muted">read-only</Tag>}
+      {role === 'grantee' && canDecrypt && <Tag color="purple">memory grant</Tag>}
+    </>
+  )
 
   if (versions.length === 0) {
     return (
@@ -691,13 +1112,14 @@ function MemoryPanel({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
         <PanelHead
           title="Memory log"
           copy="Each entry is an encrypted append to the on-chain memory log, written by the agent runtime, the founder, or any holder with a memory grant. Only the owner or a grant holder can decrypt the body."
-          tags={
-            <>
-              <Tag color="teal">0 entries</Tag>
-              {!canDecrypt && <Tag color="muted">read-only</Tag>}
-            </>
-          }
+          tags={tags}
         />
+        <MemoryAppendCard canAppend={canAppend} actions={actions} />
+        {contentActionError && (
+          <div className="mb-3 rounded-lg border border-danger/35 bg-danger/8 px-3.5 py-2 text-[12px] text-danger">
+            {contentActionError}
+          </div>
+        )}
         <EmptyState
           icon="🧠"
           label="No memory entries yet"
@@ -712,24 +1134,61 @@ function MemoryPanel({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
       <PanelHead
         title="Memory log"
         copy="Each entry is an encrypted append to the on-chain memory log, written by the agent runtime, the founder, or any holder with a memory grant. Only the owner or a grant holder can decrypt the body."
-        tags={
-          <>
-            <Tag color="teal">{versions.length} entries</Tag>
-            {!canDecrypt && <Tag color="muted">read-only</Tag>}
-          </>
-        }
+        tags={tags}
       />
+      <MemoryAppendCard canAppend={canAppend} actions={actions} />
+      {contentActionError && (
+        <div className="mb-3 rounded-lg border border-danger/35 bg-danger/8 px-3.5 py-2 text-[12px] text-danger">
+          {contentActionError}
+        </div>
+      )}
       <div className="space-y-2">
         {versions.map((v) => (
-          <MemoryRow key={v.id} entry={v} canDecrypt={canDecrypt} />
+          <MemoryRow
+            key={v.id}
+            entry={v}
+            canDecrypt={canDecrypt && !v.deletedAt}
+            canDelete={canDelete && !v.deletedAt}
+            canPurge={canPurge && Boolean(v.deletedAt)}
+            pendingAction={pendingAction}
+            actions={actions}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function MemoryRow({ entry, canDecrypt }: { entry: SoulContentVersionRecord; canDecrypt: boolean }) {
+function MemoryRow({
+  entry,
+  canDecrypt,
+  canDelete,
+  canPurge,
+  pendingAction,
+  actions,
+}: {
+  entry: SoulContentVersionRecord
+  canDecrypt: boolean
+  canDelete: boolean
+  canPurge: boolean
+  pendingAction: ContentActions['pendingAction']
+  actions: ContentActions
+}) {
   const [open, setOpen] = useState(false)
+  const [plaintext, setPlaintext] = useState<string | null>(null)
+  const [rowError, setRowError] = useState<string | null>(null)
+
+  async function handleDecrypt() {
+    if (!canDecrypt) return
+    setRowError(null)
+    try {
+      const bytes = await actions.decryptContentVersion(entry)
+      setPlaintext(new TextDecoder().decode(bytes))
+    } catch (error) {
+      setRowError(error instanceof Error ? error.message : 'Failed to decrypt memory entry')
+    }
+  }
+
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--border-soft)] bg-white/[0.015]">
       <button
@@ -741,6 +1200,7 @@ function MemoryRow({ entry, canDecrypt }: { entry: SoulContentVersionRecord; can
         <span className="flex-1 truncate text-[13px] font-medium text-foreground">
           {entry.name || `Memory entry`}
         </span>
+        {entry.deletedAt && <Tag color="muted">Deleted</Tag>}
         <span className="whitespace-nowrap text-[12px] text-muted">{formatRelative(entry.createdAtMs)}</span>
         <span className="text-[var(--text-faint)]" title="Encrypted blob on Walrus">🔒</span>
         <span className="text-[11px] text-[var(--text-faint)]">{open ? '▲' : '▼'}</span>
@@ -752,15 +1212,52 @@ function MemoryRow({ entry, canDecrypt }: { entry: SoulContentVersionRecord; can
           {entry.blobId && <KV k="Walrus blob" v={<CopyChip value={entry.blobId} />} />}
           <KV k="Download policy" v={<span className="font-mono text-[12px]">{entry.downloadPolicy}</span>} />
           <KV k="Created" v={<span>{formatDate(entry.createdAt)}</span>} />
-          <div className="mt-2.5 flex gap-2">
+          {rowError && <div className="mt-2 text-[12px] text-danger">{rowError}</div>}
+          {plaintext && (
+            <pre className="mt-2 max-h-[240px] overflow-auto rounded-lg border border-[var(--border-soft)] bg-black/[0.22] p-3 text-[12px] leading-5 text-foreground whitespace-pre-wrap">
+              {plaintext}
+            </pre>
+          )}
+          <div className="mt-2.5 flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
-              disabled
-              title={canDecrypt ? 'Memory decrypt flow not yet wired' : 'Owner / grant only'}
+              disabled={pendingAction !== null || !canDecrypt}
+              title={canDecrypt ? undefined : 'Owner / grant only'}
+              onClick={() => void handleDecrypt()}
             >
-              {canDecrypt ? 'Decrypt unavailable' : 'Owner / grant only'}
+              {pendingAction === 'open' ? 'Decrypting...' : canDecrypt ? 'Decrypt' : 'Owner / grant only'}
             </Button>
+            {!entry.deletedAt && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pendingAction !== null || !canDecrypt}
+                onClick={() => void actions.openContentVersion(entry)}
+              >
+                Open
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={pendingAction !== null}
+                onClick={() => void actions.deleteContentVersion(entry)}
+              >
+                Delete
+              </Button>
+            )}
+            {canPurge && (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={pendingAction !== null}
+                onClick={() => void actions.purgeContentVersion(entry)}
+              >
+                Purge
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -1169,7 +1666,13 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="sd-body mt-5 grid gap-5" style={{ gridTemplateColumns: 'minmax(0,1fr) 380px' }}>
-        <Workspace soul={soul} role={role} detailQueryId={id} viewerId={user?.id ?? null} />
+        <Workspace
+          soul={soul}
+          role={role}
+          detailQueryId={id}
+          viewerId={user?.id ?? null}
+          viewerAddress={user?.primarySuiAddress ?? null}
+        />
         <Rail soul={soul} role={role} />
       </div>
 

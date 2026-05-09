@@ -212,6 +212,9 @@ export default function ImportGasPage() {
           uploadType: 'encrypted',
           kind: 'soul-content',
           sendObjectTo: walletAddress,
+          // Skills bundle requires SKILL.md frontmatter parsing; other batch
+          // entries (cover image, char file, memory file) do not.
+          extractSkillMetadata: true,
         })
       }
 
