@@ -167,6 +167,16 @@ export function builtinKindName(kind: KindId): string | null {
   return BUILTIN_BY_KIND.get(kind)?.name ?? null
 }
 
+/**
+ * Return the SCOPE_* bit a grant must include to read this kind's
+ * non-public versions. Returns 0 if the kind is unknown or has no
+ * default grant scope (i.e. cannot be granted). Mirrors
+ * `KindDescriptor.default_grant_scope_mask` in the Move kind registry.
+ */
+export function getDefaultGrantScopeMaskForKind(kind: KindId): number {
+  return BUILTIN_BY_KIND.get(kind)?.defaultGrantScopeMask ?? 0
+}
+
 // ── Read-mode helpers ────────────────────────────────────────────────────
 export function readModeMaskToList(
   mask: number,

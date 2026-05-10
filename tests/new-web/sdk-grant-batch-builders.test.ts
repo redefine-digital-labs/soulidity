@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
+import { Transaction } from '@mysten/sui/transactions'
 import {
   MAX_GRANT_BATCH_SIZE,
   SOUL_GRANT_SCOPE_ASSETS,
+  addIssueGrantCalls,
+  addSetGrantCapacityCalls,
   buildBatchIssueGrantsTx,
   buildBatchRevokeGrantsTx,
+  buildIssueGrantTx,
+  buildSetGrantCapacityTx,
 } from '@soulidity/sdk'
 
 const STATE_A = '0x' + 'a'.repeat(64)
@@ -119,5 +124,96 @@ describe('buildBatchRevokeGrantsTx', () => {
         ],
       }),
     ).toThrow(/granteeAddress/)
+  })
+})
+
+describe('addIssueGrantCalls / addSetGrantCapacityCalls injectors', () => {
+  it('addIssueGrantCalls splices a single issue_to_grantee moveCall into an external PTB', () => {
+    const tx = new Transaction()
+    addIssueGrantCalls(tx, {
+      stateObjectId: STATE_A,
+      granteeAddress: GRANTEE,
+      scopeMask: SOUL_GRANT_SCOPE_ASSETS,
+      expiresAtMs: null,
+    })
+    const json = JSON.parse(JSON.stringify(tx.getData()))
+    const moveCalls = (json?.commands ?? []).filter(
+      (cmd: { MoveCall?: { module?: string; function?: string } }) =>
+        cmd?.MoveCall?.module === 'grant' && cmd?.MoveCall?.function === 'issue_to_grantee',
+    )
+    expect(moveCalls).toHaveLength(1)
+  })
+
+  it('addIssueGrantCalls produces the same PTB shape as buildIssueGrantTx', () => {
+    const params = {
+      stateObjectId: STATE_A,
+      granteeAddress: GRANTEE,
+      scopeMask: SOUL_GRANT_SCOPE_ASSETS,
+      expiresAtMs: null,
+    } as const
+    const standalone = buildIssueGrantTx(params)
+    const spliced = new Transaction()
+    addIssueGrantCalls(spliced, params)
+    expect(JSON.parse(JSON.stringify(spliced.getData())).commands).toEqual(
+      JSON.parse(JSON.stringify(standalone.getData())).commands,
+    )
+  })
+
+  it('addIssueGrantCalls rejects past expiry, empty grantee, non-positive scope', () => {
+    expect(() => addIssueGrantCalls(new Transaction(), {
+      stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: 1,
+    })).toThrow(/expiresAtMs/)
+    expect(() => addIssueGrantCalls(new Transaction(), {
+      stateObjectId: STATE_A, granteeAddress: '   ', scopeMask: SOUL_GRANT_SCOPE_ASSETS,
+    })).toThrow(/granteeAddress/)
+    expect(() => addIssueGrantCalls(new Transaction(), {
+      stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: 0,
+    })).toThrow(/scopeMask/)
+  })
+
+  it('addSetGrantCapacityCalls splices a single set_grant_capacity moveCall', () => {
+    const tx = new Transaction()
+    addSetGrantCapacityCalls(tx, { stateObjectId: STATE_A, capacity: 5 })
+    const json = JSON.parse(JSON.stringify(tx.getData()))
+    const moveCalls = (json?.commands ?? []).filter(
+      (cmd: { MoveCall?: { module?: string; function?: string } }) =>
+        cmd?.MoveCall?.module === 'grant' && cmd?.MoveCall?.function === 'set_grant_capacity',
+    )
+    expect(moveCalls).toHaveLength(1)
+  })
+
+  it('addSetGrantCapacityCalls produces the same PTB shape as buildSetGrantCapacityTx', () => {
+    const params = { stateObjectId: STATE_A, capacity: 7 }
+    const standalone = buildSetGrantCapacityTx(params)
+    const spliced = new Transaction()
+    addSetGrantCapacityCalls(spliced, params)
+    expect(JSON.parse(JSON.stringify(spliced.getData())).commands).toEqual(
+      JSON.parse(JSON.stringify(standalone.getData())).commands,
+    )
+  })
+
+  it('addSetGrantCapacityCalls rejects non-positive / unsafe capacity', () => {
+    expect(() => addSetGrantCapacityCalls(new Transaction(), { stateObjectId: STATE_A, capacity: 0 }))
+      .toThrow(/capacity/)
+    expect(() => addSetGrantCapacityCalls(new Transaction(), { stateObjectId: STATE_A, capacity: -1 }))
+      .toThrow(/capacity/)
+    expect(() => addSetGrantCapacityCalls(new Transaction(), { stateObjectId: STATE_A, capacity: Number.NaN }))
+      .toThrow(/capacity/)
+  })
+
+  it('two injector calls in the same PTB compose linearly', () => {
+    const tx = new Transaction()
+    addSetGrantCapacityCalls(tx, { stateObjectId: STATE_A, capacity: 3 })
+    addIssueGrantCalls(tx, {
+      stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: null,
+    })
+    addIssueGrantCalls(tx, {
+      stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: null,
+    })
+    const json = JSON.parse(JSON.stringify(tx.getData()))
+    const grantModuleCalls = (json?.commands ?? []).filter(
+      (cmd: { MoveCall?: { module?: string } }) => cmd?.MoveCall?.module === 'grant',
+    )
+    expect(grantModuleCalls).toHaveLength(3)
   })
 })

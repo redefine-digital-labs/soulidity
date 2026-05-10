@@ -5,9 +5,11 @@ import { requireHumanWalletIdentity, assertTransactionSender } from '@/lib/souli
 import { findSoulAssetByRouteId } from '@/lib/soulidity/repository'
 import { buildSyncSealSidecars, SealSidecarSyncConfigError } from '@/lib/soulidity/mirror/build-seal-sidecars'
 import {
+  endSoulGrantProjectionFromChain,
   markContentVersionDeletedFromChain,
   markContentVersionPurgedFromChain,
   syncContentVersionProjectionFromChain,
+  syncGrantProjectionFromChain,
 } from '@/lib/soulidity/mirror/sync-helpers'
 import {
   getStoredSoulidityTxSync,
@@ -19,6 +21,8 @@ import {
   KIND_AUDIO,
   KIND_SPRITE,
   extractActiveBindingUpdatedEvent,
+  extractAllSoulGrantIssuedEvents,
+  extractAllSoulGrantSupersededEvents,
   extractContentVersionAppendedEvent,
   extractContentVersionDeletedEvent,
   extractContentVersionPurgedEvent,
@@ -27,6 +31,7 @@ import {
   extractSoulStateConfigUpsertedEvent,
   getRequiredSoulidityEnv,
   getSoulStateConfigEntry,
+  getSoulStateObject,
   getSuccessfulTransactionBlock,
   parseRequiredTxDigest,
   readTransactionSender,
@@ -157,6 +162,7 @@ async function mirrorAppend(params: {
   contentOnChainId: string | null
   stateOnChainId: string
   client: SyncDbClient
+  actorMemberId: string
 }) {
   const { kind, name } = parseContentTarget(params.body)
   if (kind == null) return badRequest('kind is required')
@@ -248,6 +254,63 @@ async function mirrorAppend(params: {
     createdAtMs: event.createdAtMs,
   }, params.client)
 
+  // Auto-grant fanout: the owner upload may have spliced a capacity bump
+  // and N `grant::issue_to_grantee` calls into the same PTB. Mirror each
+  // resulting `SoulGrantIssued` and any `SoulGrantSuperseded` here so the
+  // SoulGrantRecord projection stays consistent with chain. Filter by
+  // soulId — a malformed digest with grants for unrelated souls must
+  // never bleed into this Soul's mirror.
+  const issuedEvents = extractAllSoulGrantIssuedEvents(
+    params.transaction as never,
+    params.packageId,
+  ).filter((e) => e.soulId === params.soulOnChainId)
+  const supersededEvents = extractAllSoulGrantSupersededEvents(
+    params.transaction as never,
+    params.packageId,
+  ).filter((e) => e.soulId === params.soulOnChainId)
+
+  for (const issued of issuedEvents) {
+    await syncGrantProjectionFromChain({
+      packageId: params.packageId,
+      grantObjectId: issued.grantId,
+      soulOnChainId: params.soulOnChainId,
+      issuedByMemberId: params.actorMemberId,
+    })
+  }
+  for (const sup of supersededEvents) {
+    await endSoulGrantProjectionFromChain({
+      grantOnChainId: sup.oldGrantId,
+      status: 'superseded',
+      replacedByGrantOnChainId: sup.newGrantId,
+    })
+  }
+
+  // Refresh grantCapacity / activeGrantCount on the SoulAsset row when
+  // the same PTB also bumped capacity or issued/superseded grants. Read
+  // SoulState directly rather than reconstructing the delta from events,
+  // since `syncSoulProjectionFromChain` here would re-resolve the
+  // PersonalKioskCap on every append (heavy and unnecessary).
+  if (issuedEvents.length > 0 || supersededEvents.length > 0) {
+    try {
+      const state = await getSoulStateObject(params.stateOnChainId, params.packageId, {
+        includeActiveGrants: false,
+      })
+      await params.client.soulAsset.updateMany({
+        where: { onChainId: params.soulOnChainId, stateOnChainId: params.stateOnChainId },
+        data: {
+          grantCapacity: state.grantCapacity,
+          activeGrantCount: state.activeGrantCount,
+        },
+      })
+    } catch (error) {
+      console.warn('[soul-content-sync] Failed to refresh grant capacity / count after auto-grant; mirror will catch up on next sync', {
+        soulOnChainId: params.soulOnChainId,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   return NextResponse.json({
     action: 'append',
     txDigest: parseString(params.body.txDigest),
@@ -256,6 +319,9 @@ async function mirrorAppend(params: {
     kind: event.kind,
     name: event.name,
     versionIndex: event.versionIndex,
+    autoGrantedCount: issuedEvents.length,
+    autoGrantedGrantOnChainIds: issuedEvents.map((e) => e.grantId),
+    autoGrantSupersededCount: supersededEvents.length,
   })
 }
 
@@ -528,7 +594,7 @@ export async function POST(
     // response serialization) fails: encryptedDek + iv only live in the
     // browser, and losing them bricks the on-chain Walrus blob forever.
     const inner = action === 'append'
-      ? await mirrorAppend(shared)
+      ? await mirrorAppend({ ...shared, actorMemberId: auth.identity.memberId })
       : action === 'delete' || action === 'purge'
         ? await mirrorDeleteOrPurge({ ...shared, action })
         : action === 'active-bind' || action === 'active-clear'

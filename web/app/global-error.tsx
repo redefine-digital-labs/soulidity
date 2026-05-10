@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
+import { autoReloadOnChunkError } from '@/lib/chunk-error'
 
 export default function GlobalError({
   error,
@@ -12,6 +13,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     captureFrontendException(error, { digest: error.digest, scope: 'global-error' })
+    autoReloadOnChunkError(error)
   }, [error])
 
   return (

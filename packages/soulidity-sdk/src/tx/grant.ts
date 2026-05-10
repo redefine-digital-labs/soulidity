@@ -52,18 +52,26 @@ function assertFutureExpiry(value: number | null | undefined) {
   }
 }
 
-export function buildIssueGrantTx(params: {
+export interface AddIssueGrantParams {
   stateObjectId: string
   granteeAddress: string
   scopeMask: number
   expiresAtMs?: number | null
-}) {
+}
+
+/**
+ * Splice `grant::issue_to_grantee` into an existing PTB. Used by the
+ * auto-grant-on-append flow so a single owner upload signature also
+ * issues N agent grants in the same transaction. Per-grantee idempotent
+ * on-chain (existing slot is superseded), but callers should still
+ * pre-flight against the DB mirror to avoid wasted gas.
+ */
+export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams): void {
   assertGranteeAddress(params.granteeAddress)
   assertScopeMask(params.scopeMask)
   assertFutureExpiry(params.expiresAtMs)
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::issue_to_grantee`,
     arguments: [
@@ -74,6 +82,11 @@ export function buildIssueGrantTx(params: {
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
+}
+
+export function buildIssueGrantTx(params: AddIssueGrantParams) {
+  const tx = new Transaction()
+  addIssueGrantCalls(tx, params)
   return tx
 }
 
@@ -202,15 +215,24 @@ export function buildCleanupInactiveGrantsTx(params: {
   return tx
 }
 
-export function buildSetGrantCapacityTx(params: {
+export interface AddSetGrantCapacityParams {
   stateObjectId: string
   capacity: number
-}) {
+}
+
+/**
+ * Splice `grant::set_grant_capacity` into an existing PTB. Used by the
+ * auto-grant-on-append flow to bump capacity from the default of 1
+ * before issuing N agent grants in the same transaction.
+ */
+export function addSetGrantCapacityCalls(
+  tx: Transaction,
+  params: AddSetGrantCapacityParams,
+): void {
   if (!Number.isSafeInteger(params.capacity) || params.capacity <= 0) {
     throw new Error('capacity must be a positive safe integer')
   }
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::set_grant_capacity`,
     arguments: [
@@ -219,6 +241,11 @@ export function buildSetGrantCapacityTx(params: {
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
+}
+
+export function buildSetGrantCapacityTx(params: AddSetGrantCapacityParams) {
+  const tx = new Transaction()
+  addSetGrantCapacityCalls(tx, params)
   return tx
 }
 

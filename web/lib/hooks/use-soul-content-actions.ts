@@ -18,11 +18,14 @@ import {
   SOUL_GRANT_SCOPE_SKILLS,
   addAppendContentVersionAsGrantedAgentCalls,
   addAppendContentVersionAsOwnerCalls,
+  addIssueGrantCalls,
   addSetActiveContentCalls,
+  addSetGrantCapacityCalls,
   addSetStateConfigCalls,
   assertObjectInputsExist,
   extractSkillBundleMetadata,
   getConfiguredSoulidityNetwork,
+  getDefaultGrantScopeMaskForKind,
   hasZipSignature,
   buildClearActiveContentTx,
   buildDeleteContentVersionAsGrantedAgentTx,
@@ -588,6 +591,47 @@ export function useSoulContentActions({
       const kindRegistryObjectId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID')
       const stateOnChainId = soul.stateOnChainId
 
+      // Auto-grant pre-flight: when the owner uploads a non-public version
+      // of a grantable kind, fan out scope-matched grants to every active
+      // agent in the account that does not already hold a covering grant.
+      // The resolved plan is closed over by `attachAfterCertify` below and
+      // spliced into the same PTB as the append, so a single signature
+      // covers both the upload and the grant fanout.
+      const kindScopeMask = getDefaultGrantScopeMaskForKind(params.kind)
+      const slotIsPublic = (params.slotReadModeMask & READ_PUBLIC) !== 0
+      const shouldAutoGrant = role === 'owner' && !slotIsPublic && kindScopeMask > 0
+      let autoGrantPlan:
+        | {
+            targets: Array<{ memberId: string; address: string }>
+            currentCapacity: number
+            requiredCapacity: number
+          }
+        | null = null
+      if (shouldAutoGrant) {
+        try {
+          const planUrl = `/api/souls/${encodeURIComponent(soul.onChainId)}/auto-grant-targets?scopeMask=${kindScopeMask}`
+          const planResponse = await fetch(planUrl, {
+            cache: 'no-store',
+            headers: authHeaders,
+          })
+          if (planResponse.ok) {
+            const planBody = await planResponse.json() as {
+              targets: Array<{ memberId: string; address: string }>
+              currentCapacity: number
+              requiredCapacity: number
+            }
+            if (planBody.targets.length > 0) {
+              autoGrantPlan = planBody
+            }
+          }
+        } catch {
+          // Auto-grant is best-effort. A pre-flight failure (offline,
+          // 5xx, parsing error) silently degrades to no auto-grants —
+          // the owner can still issue grants via the existing manual
+          // /grant flow without re-uploading.
+        }
+      }
+
       const upload = await uploadSoulPayload({
         file: params.file,
         uploadType: params.uploadType,
@@ -654,6 +698,28 @@ export function useSoulContentActions({
                 kind: params.kind,
                 name: resolvedName as string,
                 versionIndex: versionIndexArg,
+              })
+            }
+          }
+
+          // Auto-grant fanout: bump capacity if needed, then issue one
+          // grant per uncovered agent. The whole PTB is atomic, so a
+          // capacity overflow or rejected grantee aborts the entire
+          // upload — desirable, since we never want a half-mirrored
+          // append.
+          if (autoGrantPlan) {
+            if (autoGrantPlan.requiredCapacity > autoGrantPlan.currentCapacity) {
+              addSetGrantCapacityCalls(tx, {
+                stateObjectId: stateOnChainId,
+                capacity: autoGrantPlan.requiredCapacity,
+              })
+            }
+            for (const target of autoGrantPlan.targets) {
+              addIssueGrantCalls(tx, {
+                stateObjectId: stateOnChainId,
+                granteeAddress: target.address,
+                scopeMask: kindScopeMask,
+                expiresAtMs: null,
               })
             }
           }

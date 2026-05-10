@@ -415,6 +415,9 @@ describe('POST /api/souls/[id]/content/sync', () => {
       kind: 2,
       name: 'market-scout',
       versionIndex: 2,
+      autoGrantedCount: 0,
+      autoGrantedGrantOnChainIds: [],
+      autoGrantSupersededCount: 0,
     })
     // Mirror writes thread the global `prisma` client through to the helpers
     // so a `prisma.$transaction` rollback can never strand the Seal sidecar
