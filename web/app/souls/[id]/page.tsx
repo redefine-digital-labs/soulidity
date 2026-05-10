@@ -1242,7 +1242,7 @@ function MemoryRow({
       >
         <Tag color="teal">v{entry.versionIndex}</Tag>
         <span className="flex-1 truncate text-[13px] font-medium text-foreground">
-          {entry.name || `Memory entry`}
+          {`Memory @ ${formatDate(entry.createdAt)}`}
         </span>
         {entry.deletedAt && <Tag color="muted">Deleted</Tag>}
         <span className="whitespace-nowrap text-[12px] text-muted">{formatRelative(entry.createdAtMs)}</span>
@@ -1270,18 +1270,8 @@ function MemoryRow({
               title={canDecrypt ? undefined : 'Owner / grant only'}
               onClick={() => void handleDecrypt()}
             >
-              {pendingAction === 'open' ? 'Decrypting…' : canDecrypt ? 'Decrypt' : 'Owner / grant only'}
+              {pendingAction === 'open' ? 'Decrypting…' : canDecrypt ? 'Read' : 'Owner / grant only'}
             </Button>
-            {!entry.deletedAt && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pendingAction !== null || !canDecrypt}
-                onClick={() => void actions.openContentVersion(entry)}
-              >
-                Open
-              </Button>
-            )}
             {canDelete && (
               <Button
                 variant="danger"
