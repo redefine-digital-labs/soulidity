@@ -27,7 +27,7 @@ async function createWorkbook(filePath: string) {
   ]).toFile(filePath)
 }
 
-function runReadFile(filePath: string) {
+function runReadFile(filePath: string, allowedRoot: string) {
   return JSON.parse(
     execFileSync(
       process.execPath,
@@ -35,6 +35,12 @@ function runReadFile(filePath: string) {
       {
         cwd: repoRoot,
         encoding: 'utf8',
+        // The default allowlist in path-security.ts is ~/Desktop, ~/Documents,
+        // ~/Downloads, plus DATA_DIR. Dev machines often happen to satisfy
+        // that (the repo is checked out under ~/Desktop), but CI runners
+        // never do. Pin the test's tmp dir as an explicit allowed root so
+        // the script can see the workbook regardless of cwd.
+        env: { ...process.env, ADDITIONAL_ALLOWED_ROOTS: allowedRoot },
       },
     ),
   ) as { success: boolean; content?: string; error?: string }
@@ -54,7 +60,7 @@ describe('read_file xlsx extraction', () => {
     const workbookPath = join(tempDir, 'escaped-cells.xlsx')
     await createWorkbook(workbookPath)
 
-    const result = runReadFile(workbookPath)
+    const result = runReadFile(workbookPath, tempDir)
 
     expect(result).toEqual({
       success: true,
