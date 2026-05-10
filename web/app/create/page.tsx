@@ -100,7 +100,9 @@ export default function CreateSoulPage() {
   // default empty state so the user can fill the form manually.
   const handoffToken = (searchParams.get('handoff')?.trim() ?? '')
   const ctxRef = useRef(ctx)
-  ctxRef.current = ctx
+  useEffect(() => {
+    ctxRef.current = ctx
+  }, [ctx])
   // Track the last token value we attempted, not a single-shot boolean. A
   // boolean would lock out every subsequent hand-off opened into this
   // mounted page (e.g. desktop opens a second Mint By Web URL into the same

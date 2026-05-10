@@ -88,7 +88,7 @@ export function PetCard({ pet, onMutate, autoOpenGrant, onAutoOpenConsumed }: Pe
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [grantDialogMode, setGrantDialogMode] = useState<PetGrantDialogMode | null>(null)
+  const [grantDialogMode, setGrantDialogMode] = useState<PetGrantDialogMode | null>(() => autoOpenGrant ?? null)
   const activeAssetGrantCount = pet.activeAssetGrantCount ?? 0
   // Mirrors the server-side gating in
   // `/api/account/pets/[id]/grant-mirror` (issue path) and
@@ -99,25 +99,16 @@ export function PetCard({ pet, onMutate, autoOpenGrant, onAutoOpenConsumed }: Pe
   const canAuthorizeGrants = pet.agentStatus === 'active'
 
   useEffect(() => {
-    if (!autoOpenGrant) return
-    setGrantDialogMode(autoOpenGrant)
-    onAutoOpenConsumed?.()
-  }, [autoOpenGrant, onAutoOpenConsumed])
-
-  // Reflect server-side updates (e.g. after a refresh) without trampling
-  // an unfinished rename in progress.
-  useEffect(() => {
-    if (!isEditing) {
-      setDraftLabel(pet.label)
-    }
-  }, [pet.label, isEditing])
-
-  useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus()
       inputRef.current.select()
     }
   }, [isEditing])
+
+  const closeGrantDialog = useCallback(() => {
+    setGrantDialogMode(null)
+    if (autoOpenGrant) onAutoOpenConsumed?.()
+  }, [autoOpenGrant, onAutoOpenConsumed])
 
   const startEdit = useCallback(() => {
     setDraftLabel(pet.label)
@@ -393,7 +384,7 @@ export function PetCard({ pet, onMutate, autoOpenGrant, onAutoOpenConsumed }: Pe
           petLabel={pet.label}
           petAgentAddress={pet.agentAddress}
           mode={grantDialogMode}
-          onClose={() => setGrantDialogMode(null)}
+          onClose={closeGrantDialog}
           onCompleted={onMutate}
         />
       )}

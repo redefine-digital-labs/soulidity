@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -31,21 +31,15 @@ function normalizeCode(value: string): string {
 
 export function LinkPetDialog({ initialCode, onLinked }: LinkPetDialogProps) {
   const { getAuthHeaders } = useAuth()
-  const [open, setOpen] = useState(() => Boolean(initialCode && USER_CODE_REGEX.test(normalizeCode(initialCode))))
-  const [code, setCode] = useState(() => (initialCode ? normalizeCode(initialCode) : ''))
+  const normalizedInitialCode = useMemo(() => (
+    initialCode ? normalizeCode(initialCode) : ''
+  ), [initialCode])
+  const hasInitialCode = USER_CODE_REGEX.test(normalizedInitialCode)
+  const [open, setOpen] = useState(() => hasInitialCode)
+  const [code, setCode] = useState(() => normalizedInitialCode)
   const [status, setStatus] = useState<LinkStatus>({ kind: 'idle' })
   const inputRef = useRef<HTMLInputElement | null>(null)
   const dialogId = useId()
-
-  // If the URL deep-link arrives after first render (e.g. soft navigation),
-  // keep the dialog state in sync with the latest `?link=` value.
-  useEffect(() => {
-    if (!initialCode) return
-    const normalized = normalizeCode(initialCode)
-    if (!USER_CODE_REGEX.test(normalized)) return
-    setCode(normalized)
-    setOpen(true)
-  }, [initialCode])
 
   useEffect(() => {
     if (open && inputRef.current) {

@@ -66,7 +66,11 @@ function PetsPanel() {
 
   useEffect(() => {
     if (!authenticated) return
-    void refresh()
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (!cancelled) void refresh()
+    })
+    return () => { cancelled = true }
   }, [authenticated, refresh])
 
   return (
@@ -83,7 +87,11 @@ function PetsPanel() {
       </div>
 
       <div className="mb-6">
-        <LinkPetDialog initialCode={initialCode} onLinked={handleLinked} />
+        <LinkPetDialog
+          key={initialCode ?? 'manual'}
+          initialCode={initialCode}
+          onLinked={handleLinked}
+        />
       </div>
 
       {state.status === 'loading' || state.status === 'idle' ? (
@@ -115,16 +123,19 @@ function PetsPanel() {
         </div>
       ) : (
         <ul className="space-y-3">
-          {state.pets.map((pet) => (
-            <li key={pet.id}>
-              <PetCard
-                pet={pet}
-                onMutate={refresh}
-                autoOpenGrant={autoOpenGrantPetId === pet.id ? 'issue' : null}
-                onAutoOpenConsumed={() => setAutoOpenGrantPetId(null)}
-              />
-            </li>
-          ))}
+          {state.pets.map((pet) => {
+            const autoOpenGrant = autoOpenGrantPetId === pet.id ? 'issue' : null
+            return (
+              <li key={`${pet.id}:${autoOpenGrant ?? 'normal'}`}>
+                <PetCard
+                  pet={pet}
+                  onMutate={refresh}
+                  autoOpenGrant={autoOpenGrant}
+                  onAutoOpenConsumed={() => setAutoOpenGrantPetId(null)}
+                />
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
