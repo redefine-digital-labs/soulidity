@@ -487,6 +487,15 @@ describe('walrus-uploader HTTP handler', () => {
     for (const body of rejectedBodies) {
       expect(body).toEqual({ error: 'Walrus uploader token byte limit exceeded' })
     }
+
+    // The 413-rejected handlers never read their request body. On Node 24 /
+    // linux undici's deferred teardown calls `controller.enqueue` on the
+    // unread stream after the test has finished, surfacing as an unhandled
+    // rejection that fails the run. Cancel each request body explicitly so
+    // the streams are released before vitest asserts on unhandled errors.
+    await Promise.all(
+      requests.map((req) => req.body?.cancel().catch(() => undefined) ?? Promise.resolve()),
+    )
   })
 
   it('admits concurrent payload-bytes-declared uploads whose combined payload exactly fits the token byteLimit', async () => {
