@@ -390,8 +390,14 @@ describe('walrus-uploader HTTP handler', () => {
         + 'Content-Disposition: form-data; name="payload"; filename="payload.bin"\r\n'
         + 'Content-Type: application/octet-stream\r\n\r\n'
       const tail = `\r\n--${boundary}--\r\n`
+      // Pre-queue and close synchronously in `start` instead of doing it in
+      // `pull`. With `pull`, undici on Node 24 / linux can re-invoke the
+      // callback once the rejected concurrent request is dropped, hitting
+      // `controller.enqueue` on an already-closed stream and surfacing as an
+      // unhandled rejection at the end of the run. `start` runs once at
+      // construction time, so there's no later enqueue to race.
       const body = new ReadableStream<Uint8Array>({
-        pull(controller) {
+        start(controller) {
           controller.enqueue(new TextEncoder().encode(head))
           controller.enqueue(payload)
           controller.enqueue(new TextEncoder().encode(tail))
