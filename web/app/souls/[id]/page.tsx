@@ -806,7 +806,6 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
   const [configFile, setConfigFile] = useState<File | null>(null)
   const [configFileText, setConfigFileText] = useState<string | null>(null)
   const [configError, setConfigError] = useState<string | null>(null)
-  const [moodMapFile, setMoodMapFile] = useState<File | null>(null)
   const [visibility, setVisibility] = useState<'public' | 'owner_only'>('owner_only')
   const [setActiveAfterUpload, setSetActiveAfterUpload] = useState(role === 'owner')
   const { pendingAction } = actions
@@ -841,7 +840,6 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
       return
     }
     const spriteConfigJson = configFileText ?? await readFileText(configFile)
-    const spriteMoodMapJson = await readFileText(moodMapFile)
     await actions.appendContentVersion({
       kind: KIND_SPRITE,
       name: 'persona-sprite',
@@ -858,13 +856,11 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
       downloadPolicy: visibility === 'public' ? 'public' : 'owner_only',
       setActive: role === 'owner' && setActiveAfterUpload,
       spriteConfigJson,
-      spriteMoodMapJson,
     })
     setSheetFile(null)
     setConfigFile(null)
     setConfigFileText(null)
     setConfigError(null)
-    setMoodMapFile(null)
   }
 
   return (
@@ -890,10 +886,6 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
             className="sd-file-input"
           />
           {configError && <span className="mt-1.5 block text-[12px] text-red-500">{configError}</span>}
-        </label>
-        <label className="block text-[12px] text-muted">
-          <span className="mb-1.5 block font-semibold text-foreground">Mood map JSON</span>
-          <input type="file" accept="application/json,.json" onChange={(e) => setMoodMapFile(e.target.files?.[0] ?? null)} className="sd-file-input" />
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="block text-[12px] text-muted">
@@ -1302,7 +1294,8 @@ function MemoryRow({
 // ── Grants panel ─────────────────────────────────────────────────────
 function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetDetail; role: Role; detailQueryId: string; viewerId?: string | null }) {
   const canManage = role === 'owner'
-  const [scope, setScope] = useState<'skills' | 'memory'>('skills')
+  const [skillsAndDocsScope, setSkillsAndDocsScope] = useState(true)
+  const [memoryScope, setMemoryScope] = useState(false)
   const [agentAddress, setAgentAddress] = useState('')
   const [reassignmentNotice, setReassignmentNotice] = useState<string | null>(null)
   const { pending, error, issueGrant, revokeGrant } = useGrant(soul)
@@ -1317,10 +1310,14 @@ function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetD
     void queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId, viewerId ?? null] })
   }
 
+  const scopeMask =
+    (skillsAndDocsScope ? (SOUL_GRANT_SCOPE_SKILLS | SOUL_GRANT_SCOPE_SEAL) : 0)
+    | (memoryScope ? SOUL_GRANT_SCOPE_MEMORY : 0)
+
   async function handleAuthorize() {
     const addr = trimmedAgentAddress
     if (!addr) return
-    const scopeMask = scope === 'skills' ? SOUL_GRANT_SCOPE_SKILLS | SOUL_GRANT_SCOPE_SEAL : SOUL_GRANT_SCOPE_MEMORY
+    if (scopeMask === 0) return
     setReassignmentNotice(null)
     try {
       if (capacityFullForNewGrantee) {
@@ -1403,29 +1400,33 @@ function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetD
             {soul.activeGrants.length === 0 ? 'Authorize new grantee' : 'Authorize or update grantee'}
           </div>
 
-          <div role="radiogroup" className="mb-3.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <div role="group" aria-label="Grant scopes" className="mb-3.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {[
               {
-                id: 'skills' as const,
+                id: 'skillsAndDocs' as const,
                 title: 'Skills & Docs',
                 desc: 'Append, read, and decrypt skill bundles & document assets.',
                 color: 'teal' as const,
+                checked: skillsAndDocsScope,
+                toggle: () => setSkillsAndDocsScope((v) => !v),
               },
               {
                 id: 'memory' as const,
                 title: 'Memory',
                 desc: 'Read, decrypt, and append entries to the memory log.',
                 color: 'purple' as const,
+                checked: memoryScope,
+                toggle: () => setMemoryScope((v) => !v),
               },
             ].map((s) => (
               <button
                 key={s.id}
                 type="button"
-                role="radio"
-                aria-checked={scope === s.id}
-                data-selected={scope === s.id ? 'true' : 'false'}
+                role="checkbox"
+                aria-checked={s.checked}
+                data-selected={s.checked ? 'true' : 'false'}
                 className="sd-scope-card"
-                onClick={() => setScope(s.id)}
+                onClick={s.toggle}
               >
                 <div className="flex items-center justify-between">
                   <span
@@ -1433,7 +1434,7 @@ function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetD
                   >
                     {s.title}
                   </span>
-                  <span className="text-[14px] leading-none text-muted">{scope === s.id ? '●' : '○'}</span>
+                  <span className="text-[14px] leading-none text-muted">{s.checked ? '☑' : '☐'}</span>
                 </div>
                 <div className="mt-1.5 text-[12px] leading-[1.45] text-muted">{s.desc}</div>
               </button>
@@ -1456,11 +1457,12 @@ function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetD
           />
           {error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
           {reassignmentNotice && <div className="mt-2 text-[12px] text-gold/90">{reassignmentNotice}</div>}
+          {scopeMask === 0 && <div className="mt-2 text-[12px] text-muted">Select at least one scope.</div>}
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
               size="sm"
-              disabled={pending !== null || !trimmedAgentAddress || capacityFullForNewGrantee}
+              disabled={pending !== null || !trimmedAgentAddress || capacityFullForNewGrantee || scopeMask === 0}
               onClick={handleAuthorize}
             >
               {pending === 'issue' ? 'Authorizing…' : pending === 'revoke' ? 'Revoking…' : '+ Authorize'}

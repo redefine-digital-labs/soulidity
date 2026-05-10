@@ -353,7 +353,6 @@ const PENDING_SYNC_KEY_PREFIX = 'soulidity.content-sync-pending:'
 
 export interface ContentSyncPendingSpriteExtras {
   spriteConfigJson?: string | null
-  spriteMoodMapJson?: string | null
   setActive?: boolean
 }
 
@@ -397,9 +396,6 @@ function isContentSyncPendingRecord(value: unknown): value is ContentSyncPending
       && (c.sprite.spriteConfigJson === undefined
         || c.sprite.spriteConfigJson === null
         || typeof c.sprite.spriteConfigJson === 'string')
-      && (c.sprite.spriteMoodMapJson === undefined
-        || c.sprite.spriteMoodMapJson === null
-        || typeof c.sprite.spriteMoodMapJson === 'string')
       && (c.sprite.setActive === undefined || typeof c.sprite.setActive === 'boolean'))
   return (
     typeof c.soulOnChainId === 'string'

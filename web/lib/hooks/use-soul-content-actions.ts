@@ -79,7 +79,6 @@ interface AppendContentVersionParams {
   downloadPolicy: SoulDownloadPolicy
   setActive?: boolean
   spriteConfigJson?: string | null
-  spriteMoodMapJson?: string | null
 }
 
 const SUI_CLOCK_OBJECT_ID = '0x6'
@@ -398,14 +397,6 @@ export function useSoulContentSyncReplay({
           value: rec.sprite.spriteConfigJson,
         })
       }
-      if (rec.sprite.spriteMoodMapJson) {
-        await postSync({
-          action: 'state-config:upsert',
-          txDigest: rec.certifyTxDigest,
-          key: 'sprite_mood_map_json',
-          value: rec.sprite.spriteMoodMapJson,
-        })
-      }
       if (rec.sprite.setActive) {
         await postSync({
           action: 'active-bind',
@@ -655,13 +646,6 @@ export function useSoulContentActions({
                 valueUtf8: params.spriteConfigJson,
               })
             }
-            if (params.spriteMoodMapJson) {
-              addSetStateConfigCalls(tx, {
-                stateObjectId: stateOnChainId,
-                key: 'sprite_mood_map_json',
-                valueUtf8: params.spriteMoodMapJson,
-              })
-            }
             if (params.setActive) {
               addSetActiveContentCalls(tx, {
                 contentObjectId: contentOnChainId,
@@ -703,7 +687,6 @@ export function useSoulContentActions({
             sprite: params.kind === KIND_SPRITE && role === 'owner'
               ? {
                   spriteConfigJson: params.spriteConfigJson ?? null,
-                  spriteMoodMapJson: params.spriteMoodMapJson ?? null,
                   setActive: Boolean(params.setActive),
                 }
               : undefined,
@@ -753,14 +736,6 @@ export function useSoulContentActions({
             txDigest: upload.certifyTxDigest,
             key: 'sprite_config_json',
             value: params.spriteConfigJson,
-          })
-        }
-        if (params.spriteMoodMapJson) {
-          await postSync({
-            action: 'state-config:upsert',
-            txDigest: upload.certifyTxDigest,
-            key: 'sprite_mood_map_json',
-            value: params.spriteMoodMapJson,
           })
         }
         if (params.setActive) {

@@ -63,7 +63,6 @@ export interface PersonaSpriteOption {
   assetName?: string | null
   visibility?: 'public' | 'private' | null
   spriteConfigJson?: string | null
-  spriteMoodMapJson?: string | null
   /** Pending Seal material when uploaded as encrypted; null when public. */
   material?: PendingSealMaterial | null
 }
@@ -140,12 +139,6 @@ export function buildPhase2InitialContent(args: BuildPhase2MintInputsArgs): Buil
       initialStateConfig.push({
         key: 'sprite_config_json',
         valueUtf8: args.initialSprite.spriteConfigJson,
-      })
-    }
-    if (args.initialSprite.spriteMoodMapJson) {
-      initialStateConfig.push({
-        key: 'sprite_mood_map_json',
-        valueUtf8: args.initialSprite.spriteMoodMapJson,
       })
     }
   }

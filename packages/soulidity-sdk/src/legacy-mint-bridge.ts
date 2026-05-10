@@ -38,7 +38,6 @@ export interface LegacyInitialSpriteInput {
   visibility?: 'public' | 'private'
   downloadPolicy?: SoulDownloadPolicy | null
   spriteConfigJson: string
-  spriteMoodMapJson?: string | null
 }
 
 export interface LegacyMintParams {
@@ -173,9 +172,6 @@ export function buildLegacyInitialStateConfig(
   const sprite = params.initialSprite
   if (sprite?.spriteConfigJson) {
     entries.push({ key: 'sprite_config_json', valueUtf8: sprite.spriteConfigJson })
-  }
-  if (sprite?.spriteMoodMapJson) {
-    entries.push({ key: 'sprite_mood_map_json', valueUtf8: sprite.spriteMoodMapJson })
   }
   return entries
 }

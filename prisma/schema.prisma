@@ -370,7 +370,6 @@ model SoulAsset {
   /// Cached snapshots from `SoulState.config_ext` map. Updated by
   /// `SoulStateConfigUpserted` / `SoulStateConfigDeleted` events.
   spriteConfigJson           String?                    @map("sprite_config_json")
-  spriteMoodMapJson          String?                    @map("sprite_mood_map_json")
   voiceConfigJson            String?                    @map("voice_config_json")
   provenanceKind             String                     @default("native") @map("provenance_kind")
   personaKind                String                     @default("characters") @map("persona_kind")

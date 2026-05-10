@@ -322,7 +322,6 @@ export interface SoulAssetSummary {
   activeVoiceDownloadPolicy: SoulDownloadPolicy | null
   /** Cached `SoulState.config_ext['sprite_config_json']`. */
   spriteConfigJson: string | null
-  spriteMoodMapJson: string | null
   voiceConfigJson: string | null
   provenanceKind: SoulProvenanceKind
   personaKind: SoulPersonaKind

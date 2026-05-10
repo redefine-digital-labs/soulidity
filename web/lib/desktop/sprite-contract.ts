@@ -54,7 +54,6 @@ export async function resolveDesktopSpriteManifest(params: {
   activeSpriteVersionIndex: number | null
   activeSpriteDownloadPolicy: string | null
   spriteConfigJson: string | null
-  spriteMoodMapJson: string | null
   contentVersions?: SoulContentVersionRecord[] | null
 }): Promise<DesktopSpriteManifest> {
   if (!params.contentOnChainId) {
@@ -119,7 +118,6 @@ export async function resolveDesktopSpriteManifest(params: {
       downloadPolicy: activeSpriteDownloadPolicy,
     },
     spriteConfigJson: params.spriteConfigJson,
-    spriteMoodMapJson: params.spriteMoodMapJson,
   }, {
     publicAssetUrl,
     availableVersionIndexes: spriteVersions.map((version) => version.versionIndex),

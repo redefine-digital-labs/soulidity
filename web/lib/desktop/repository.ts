@@ -86,7 +86,6 @@ const soulCatalogSelect = {
   activeSpriteVersionIndex: true,
   activeSpriteDownloadPolicy: true,
   spriteConfigJson: true,
-  spriteMoodMapJson: true,
   listingStatus: true,
   listedPriceAtomic: true,
   updatedAt: true,
@@ -470,7 +469,6 @@ async function resolveSoulSpriteManifest(soul: SoulCatalogRow) {
       soul.activeSpriteVersionIndex == null ? null : Number(soul.activeSpriteVersionIndex),
     activeSpriteDownloadPolicy: normalizeActiveDownloadPolicy(soul.activeSpriteDownloadPolicy),
     spriteConfigJson: soul.spriteConfigJson,
-    spriteMoodMapJson: soul.spriteMoodMapJson,
     contentVersions: soul.contentVersions.map(projectContentVersionRow),
   })
 }

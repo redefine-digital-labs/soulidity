@@ -145,7 +145,6 @@ function activeBindingUpdate(kind: number, binding: null | { name: string; versi
 
 function stateConfigUpdate(key: string, value: string | null) {
   if (key === 'sprite_config_json') return { spriteConfigJson: value }
-  if (key === 'sprite_mood_map_json') return { spriteMoodMapJson: value }
   if (key === 'voice_config_json') return { voiceConfigJson: value }
   return null
 }
@@ -387,12 +386,12 @@ async function mirrorStateConfig(params: {
   const key = parseString(params.body.key)
   if (!key) return badRequest('key is required')
 
-  // A combined certify+append+config+setActive sprite-upload PTB can emit
-  // multiple `SoulStateConfigUpserted` events in one TX (e.g.
-  // sprite_config_json + sprite_mood_map_json), so for the upsert path we
-  // pull every event and pick the one matching the requested `key`. The
-  // delete path stays single-event because nothing else in the codebase
-  // batches deletes.
+  // A combined certify+append+config+setActive sprite-upload PTB can still
+  // emit multiple `SoulStateConfigUpserted` events in one TX (current usage
+  // only batches `sprite_config_json`, but admin flows or future state keys
+  // may share a digest), so for the upsert path we pull every event and
+  // pick the one matching the requested `key`. The delete path stays
+  // single-event because nothing else in the codebase batches deletes.
   const event = params.action === 'state-config:upsert'
     ? (extractAllSoulStateConfigUpsertedEvents(params.transaction as never, params.packageId).find((e) => e.key === key)
         ?? extractSoulStateConfigUpsertedEvent(params.transaction as never, params.packageId))

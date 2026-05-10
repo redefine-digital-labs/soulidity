@@ -542,7 +542,6 @@ export interface MirroredSoulMetadataInput {
   activeSprite: ActiveSpriteVoiceBinding | null
   activeVoice?: ActiveSpriteVoiceBinding | null
   spriteConfigJson: string | null
-  spriteMoodMapJson: string | null
   voiceConfigJson?: string | null
 }
 
@@ -579,28 +578,6 @@ function buildFallbackMoodMap(animations: Record<string, SpriteAnimation>): Part
   }
 
   return moodMap
-}
-
-function parseMoodMapJson(
-  raw: string | null | undefined,
-  animations: Record<string, SpriteAnimation>,
-): Partial<Record<Mood, string>> {
-  if (!raw) {
-    return buildFallbackMoodMap(animations)
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!isRecord(parsed)) {
-      return buildFallbackMoodMap(animations)
-    }
-    return normalizeMoodMap({
-      format: 'sprite-sheet',
-      moodMap: parsed as Partial<Record<Mood, string>>,
-    })
-  } catch {
-    return buildFallbackMoodMap(animations)
-  }
 }
 
 export function resolveMirroredSoulSpriteContract(
@@ -643,7 +620,7 @@ export function resolveMirroredSoulSpriteContract(
     }
   }
 
-  const moodMap = parseMoodMapJson(metadata.spriteMoodMapJson, config.animations)
+  const moodMap = buildFallbackMoodMap(config.animations)
   const persona = {
     format: 'sprite-sheet' as const,
     moodMap,

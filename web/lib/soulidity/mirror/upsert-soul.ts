@@ -10,7 +10,6 @@ interface ActiveBindingMirror {
 
 interface StateConfigMirror {
   spriteConfigJson?: string | null
-  spriteMoodMapJson?: string | null
   voiceConfigJson?: string | null
 }
 
@@ -85,7 +84,6 @@ export async function upsertSoulProjection(params: {
       activeVoiceVersionIndex: params.activeVoice?.versionIndex ?? null,
       activeVoiceDownloadPolicy: params.activeVoice?.downloadPolicy ?? null,
       spriteConfigJson: params.stateConfig?.spriteConfigJson ?? null,
-      spriteMoodMapJson: params.stateConfig?.spriteMoodMapJson ?? null,
       voiceConfigJson: params.stateConfig?.voiceConfigJson ?? null,
       provenanceKind: params.soul.provenanceKind,
       personaKind,
@@ -124,7 +122,6 @@ export async function upsertSoulProjection(params: {
       activeVoiceVersionIndex: params.activeVoice?.versionIndex ?? null,
       activeVoiceDownloadPolicy: params.activeVoice?.downloadPolicy ?? null,
       spriteConfigJson: params.stateConfig?.spriteConfigJson ?? null,
-      spriteMoodMapJson: params.stateConfig?.spriteMoodMapJson ?? null,
       voiceConfigJson: params.stateConfig?.voiceConfigJson ?? null,
       provenanceKind: params.soul.provenanceKind,
       personaKind,

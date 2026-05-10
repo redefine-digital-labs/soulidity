@@ -54,7 +54,6 @@ interface ActiveBindingMirror {
 
 interface StateConfigSnapshot {
   spriteConfigJson?: string | null
-  spriteMoodMapJson?: string | null
   voiceConfigJson?: string | null
 }
 
