@@ -52,10 +52,12 @@ jobs:
         run: npm --prefix web run typecheck || npx tsc --noEmit -p web/tsconfig.json
       - name: Lint web
         run: npm --prefix web run lint
+      - name: Install suiup
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/Mystenlabs/suiup/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install Sui CLI
-        uses: MystenLabs/sui-installer-action@v1
-        with:
-          version: 'latest'
+        run: suiup install sui@testnet -y
       - name: Sui Move build
         run: sui move build --path move/soulidity
       - name: Sui Move test
@@ -97,10 +99,12 @@ jobs:
         run: npm ci
       - name: Install web deps
         run: npm --prefix web ci
+      - name: Install suiup
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/Mystenlabs/suiup/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install Sui CLI
-        uses: MystenLabs/sui-installer-action@v1
-        with:
-          version: 'latest'
+        run: suiup install sui@testnet -y
       - name: Run smoke matrix
         run: npm run smoke:soulidity
       - name: Upload bench artefact
