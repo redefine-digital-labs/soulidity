@@ -37,15 +37,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    // The walrus uploader handler tests deliberately exercise early-413
-    // rejection paths against streaming Request bodies. On Node 24 / linux
-    // undici fires a post-test `controller.enqueue` against the now-closed
-    // request body stream — `Invalid state: ReadableStream is already closed`
-    // — which vitest reports as an unhandled rejection and fails the run.
-    // The rejection originates inside undici's deferred teardown, not our
-    // code, and reproduces only on linux. Suppress the noise rather than
-    // chase undici's body lifecycle here.
-    dangerouslyIgnoreUnhandledErrors: true,
+    setupFiles: ['./tests/setup-undici-rejection-filter.ts'],
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
