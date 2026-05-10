@@ -71,7 +71,6 @@ function makeSoulSummary(overrides: Record<string, unknown> = {}) {
     activeVoiceVersionIndex: null,
     activeVoiceDownloadPolicy: null,
     spriteConfigJson: null,
-    spriteMoodMapJson: null,
     voiceConfigJson: null,
     provenanceKind: 'native',
     personaKind: 'characters',
