@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { SessionKey } from '@mysten/seal'
 import { Transaction } from '@mysten/sui/transactions'
 import { useQueryClient } from '@tanstack/react-query'
@@ -22,6 +22,7 @@ import {
   addSetStateConfigCalls,
   assertObjectInputsExist,
   extractSkillBundleMetadata,
+  getConfiguredSoulidityNetwork,
   hasZipSignature,
   buildClearActiveContentTx,
   buildDeleteContentVersionAsGrantedAgentTx,
@@ -44,6 +45,12 @@ import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { buildContentSidecarsForVersionsWithSuiClient } from '@/lib/hooks/phase2-mint-helpers'
 import { base64ToBytes, createBrowserSealClient, sha256Hex } from '@/lib/upload/client-seal'
 import { uploadSoulPayload, type SoulUploadType } from '@/lib/upload/client-upload'
+import {
+  clearContentSyncPending,
+  persistContentSyncPending,
+  readContentSyncPendingForSoul,
+  type ContentSyncPendingRecord,
+} from '@/lib/upload/walrus-recovery'
 
 export interface UseSoulContentActionsState {
   pendingAction: 'append' | 'open' | 'delete' | 'purge' | 'set-active' | 'clear-active' | null
@@ -53,6 +60,12 @@ export interface UseSoulContentActionsState {
 interface UseSoulContentActionsParams {
   soul: SoulAssetDetail
   role: 'owner' | 'grantee' | 'visitor'
+  detailQueryId: string
+  viewerId?: string | null
+}
+
+interface UseSoulContentSyncReplayParams {
+  soul: SoulAssetDetail
   detailQueryId: string
   viewerId?: string | null
 }
@@ -273,14 +286,16 @@ function contentSyncBody(params: Record<string, unknown>) {
   return JSON.stringify(params)
 }
 
-export function useSoulContentActions({
+function resolveNetwork(): 'testnet' | 'mainnet' | null {
+  const network = getConfiguredSoulidityNetwork()
+  return network === 'testnet' || network === 'mainnet' ? network : null
+}
+
+function useSoulContentSyncRuntime({
   soul,
-  role,
   detailQueryId,
   viewerId,
-}: UseSoulContentActionsParams) {
-  const [pendingAction, setPendingAction] = useState<UseSoulContentActionsState['pendingAction']>(null)
-  const [contentActionError, setContentActionError] = useState<string | null>(null)
+}: UseSoulContentSyncReplayParams) {
   const { getAuthHeaders } = useAuth()
   const { suiWallet, signAndExecute, signPersonalMessage, suiClient } = useWalletSign()
   const queryClient = useQueryClient()
@@ -313,6 +328,149 @@ export function useSoulContentActions({
       throw new Error(message)
     }
   }, [getAuthHeaders, soul.onChainId])
+
+  return {
+    getAuthHeaders,
+    invalidateSoul,
+    postSync,
+    signAndExecute,
+    signPersonalMessage,
+    suiClient,
+    suiWallet,
+  }
+}
+
+export function useSoulContentSyncReplay({
+  soul,
+  detailQueryId,
+  viewerId,
+}: UseSoulContentSyncReplayParams) {
+  const {
+    invalidateSoul,
+    postSync,
+    suiClient,
+    suiWallet,
+  } = useSoulContentSyncRuntime({ soul, detailQueryId, viewerId })
+
+  const replayPendingSync = useCallback(async (rec: ContentSyncPendingRecord) => {
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    let sealSidecar: SealEnvelopeSidecar | null = null
+    if (rec.sealMaterial) {
+      const sidecars = await buildContentSidecarsForVersionsWithSuiClient({
+        suiClient,
+        packageId,
+        contentObjectId: rec.contentOnChainId,
+        pendingByKindName: [{
+          kind: rec.kind,
+          name: rec.name,
+          material: rec.sealMaterial,
+        }],
+        // Move-side `append_version_internal` always sets `seal_encrypted=true`,
+        // so the route's `buildSyncSealSidecars` requires a non-null sidecar
+        // whenever we have material to rebuild it from. Public-plaintext slots
+        // (no material) pass `sidecar: null` and rely on the read-mode mask.
+        versions: [{
+          kind: rec.kind,
+          name: rec.name,
+          versionIndex: rec.versionIndex,
+          sealEncrypted: true,
+        }],
+      })
+      sealSidecar = sidecars[0]?.sidecar ?? null
+    }
+
+    await postSync({
+      action: 'append',
+      txDigest: rec.certifyTxDigest,
+      kind: rec.kind,
+      name: rec.name,
+      blobId: rec.blobId,
+      contentHash: rec.contentHash,
+      sealSidecar,
+    })
+
+    if (rec.sprite) {
+      if (rec.sprite.spriteConfigJson) {
+        await postSync({
+          action: 'state-config:upsert',
+          txDigest: rec.certifyTxDigest,
+          key: 'sprite_config_json',
+          value: rec.sprite.spriteConfigJson,
+        })
+      }
+      if (rec.sprite.spriteMoodMapJson) {
+        await postSync({
+          action: 'state-config:upsert',
+          txDigest: rec.certifyTxDigest,
+          key: 'sprite_mood_map_json',
+          value: rec.sprite.spriteMoodMapJson,
+        })
+      }
+      if (rec.sprite.setActive) {
+        await postSync({
+          action: 'active-bind',
+          txDigest: rec.certifyTxDigest,
+          kind: rec.kind,
+          name: rec.name,
+          versionIndex: rec.versionIndex,
+        })
+      }
+    }
+  }, [postSync, suiClient])
+
+  useEffect(() => {
+    const walletAddress = suiWallet?.address
+    if (!walletAddress) return
+    const network = resolveNetwork()
+    if (!network) return
+    const records = readContentSyncPendingForSoul({
+      soulOnChainId: soul.onChainId,
+      walletAddress,
+      network,
+    })
+    if (records.length === 0) return
+
+    let cancelled = false
+    void (async () => {
+      let anyReplayed = false
+      for (const rec of records) {
+        if (cancelled) return
+        try {
+          await replayPendingSync(rec)
+          clearContentSyncPending(rec.certifyTxDigest)
+          anyReplayed = true
+        } catch (error) {
+          console.warn('[soul-content-sync-replay] failed; will retry on next mount', {
+            certifyTxDigest: rec.certifyTxDigest,
+            soulOnChainId: rec.soulOnChainId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+      if (anyReplayed && !cancelled) invalidateSoul()
+    })()
+
+    return () => { cancelled = true }
+  }, [invalidateSoul, replayPendingSync, soul.onChainId, suiWallet?.address])
+}
+
+export function useSoulContentActions({
+  soul,
+  role,
+  detailQueryId,
+  viewerId,
+}: UseSoulContentActionsParams) {
+  const [pendingAction, setPendingAction] = useState<UseSoulContentActionsState['pendingAction']>(null)
+  const [contentActionError, setContentActionError] = useState<string | null>(null)
+  const {
+    getAuthHeaders,
+    invalidateSoul,
+    postSync,
+    signAndExecute,
+    signPersonalMessage,
+    suiClient,
+    suiWallet,
+  } = useSoulContentSyncRuntime({ soul, detailQueryId, viewerId })
 
   const setStateConfig = useCallback(async (key: string, value: string) => {
     if (role !== 'owner') return
@@ -523,6 +681,39 @@ export function useSoulContentActions({
         throw new Error('Certify TX result missing — append moveCall was not spliced into the upload PTB')
       }
       const event = extractContentVersionAppendedEvent(upload.certifyTxResult as never, packageId)
+      // Persist the post-certify pending-sync state before any further async
+      // work. Walrus + chain are already paid for at this point; `sealMaterial`
+      // (DEK + IV) only lives in browser memory, so a sidecar-build failure,
+      // Vercel timeout, RPC blip, or refresh without this checkpoint would
+      // brick the on-chain blob forever. The detail-level replay hook replays
+      // the sync on next mount and clears the record only after the full sync
+      // chain succeeds.
+      const network = resolveNetwork()
+      const pendingTemplate = network && suiWallet
+        ? {
+            soulOnChainId: soul.onChainId,
+            contentOnChainId,
+            certifyTxDigest: upload.certifyTxDigest,
+            kind: event.kind,
+            name: event.name,
+            versionIndex: event.versionIndex,
+            blobId: upload.blobId,
+            contentHash: upload.contentHash,
+            sealMaterial: upload.sealMaterial ?? null,
+            sprite: params.kind === KIND_SPRITE && role === 'owner'
+              ? {
+                  spriteConfigJson: params.spriteConfigJson ?? null,
+                  spriteMoodMapJson: params.spriteMoodMapJson ?? null,
+                  setActive: Boolean(params.setActive),
+                }
+              : undefined,
+            granteeGrantOnChainId: role === 'grantee' ? grant?.onChainId ?? null : null,
+            walletAddress: suiWallet.address,
+            network,
+          } satisfies Omit<ContentSyncPendingRecord, 'savedAt'>
+        : null
+      if (pendingTemplate) persistContentSyncPending(pendingTemplate)
+
       const sidecars = await buildContentSidecarsForVersionsWithSuiClient({
         suiClient,
         packageId,
@@ -583,6 +774,10 @@ export function useSoulContentActions({
         }
       }
 
+      // Full sync chain succeeded — drop the pending-sync checkpoint. The
+      // chain is the source of truth from here; the DB row owns the sidecar.
+      if (pendingTemplate) clearContentSyncPending(upload.certifyTxDigest)
+
       invalidateSoul()
       return event
     } catch (error) {
@@ -591,7 +786,7 @@ export function useSoulContentActions({
     } finally {
       setPendingAction(null)
     }
-  }, [getAuthHeaders, invalidateSoul, postSync, role, signAndExecute, soul.activeGrants, soul.contentOnChainId, soul.stateOnChainId, suiClient, suiWallet])
+  }, [getAuthHeaders, invalidateSoul, postSync, role, signAndExecute, soul.activeGrants, soul.contentOnChainId, soul.onChainId, soul.stateOnChainId, suiClient, suiWallet])
 
   const deleteContentVersion = useCallback(async (version: SoulContentVersionRecord) => {
     if (role !== 'owner' && role !== 'grantee') {

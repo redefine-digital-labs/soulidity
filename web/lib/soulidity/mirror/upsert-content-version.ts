@@ -9,11 +9,12 @@ import {
 } from '@soulidity/sdk'
 import type { SoulDownloadPolicy } from '@soulidity/sdk'
 
-// Sync routes need to wrap projection writes + idempotency writes in a
-// single `prisma.$transaction` so a transient failure on the second write
-// can't leave the first one half-committed (the failure mode that surfaced
-// as 500-but-data-already-mirrored on /content/sync). Helpers accept an
-// optional client so they work both inside and outside a transaction.
+// Helpers accept an optional client so future routes can thread a
+// `prisma.$transaction` client when they need to atomically batch multiple
+// writes. The single-row upsert/update is naturally idempotent, so the
+// `/content/sync` route deliberately runs it OUTSIDE a transaction —
+// otherwise a downstream rollback would lose the Seal sidecar (the only
+// off-chain copy of the encrypted DEK + IV) and brick the Walrus blob.
 type MirrorDbClient = Prisma.TransactionClient | typeof prisma
 
 /**

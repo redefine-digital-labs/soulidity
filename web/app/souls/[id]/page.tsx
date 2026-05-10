@@ -18,7 +18,7 @@ import { useRequireAuth } from '@/lib/hooks/use-require-auth'
 import { formatAtomicAmountForDisplay, NO_DOWNLOAD_POLICY, READ_GRANT, READ_OWNER, READ_PUBLIC } from '@soulidity/sdk'
 import { KIND_MEMORY, KIND_SKILL, KIND_SPRITE } from '@soulidity/sdk'
 import { useGrant } from '@/lib/hooks/use-grant'
-import { useSoulContentActions } from '@/lib/hooks/use-soul-content-actions'
+import { useSoulContentActions, useSoulContentSyncReplay } from '@/lib/hooks/use-soul-content-actions'
 import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { parsePersonaSpriteConfig, PERSONA_SPRITE_CONFIG_ERROR, validateSelectedSkillBundle } from '@soulidity/sdk'
 import { SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
@@ -485,6 +485,8 @@ function Workspace({
   viewerId?: string | null
   viewerAddress?: string | null
 }) {
+  useSoulContentSyncReplay({ soul, detailQueryId, viewerId })
+
   const [tab, setTab] = useState<TabId>('info')
   const counts = useMemo(
     () => ({

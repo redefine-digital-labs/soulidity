@@ -507,38 +507,43 @@ export async function POST(
   }
 
   try {
-    // Tx finality + sender check happen outside `$transaction` since they
-    // are the slowest RPC calls; the DB transaction wraps just the mirror
-    // write + the SoulTxSync idempotency write so a transient idempotency
-    // failure can no longer leave the projection half-committed (the
-    // pre-fix symptom: 500 response + skill row already in DB on refresh).
     await waitForTransactionBestEffort(txDigest)
     const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
     const transaction = await getSuccessfulTransactionBlock(txDigest)
     const senderError = assertTransactionSender(readTransactionSender(transaction), auth.walletAddresses)
     if (senderError) return senderError
 
-    const { response, responseBody } = await prisma.$transaction(async (tx) => {
-      const shared = {
-        body,
-        transaction,
-        packageId,
-        soulOnChainId: soul.onChainId,
-        contentOnChainId: soul.contentOnChainId,
-        stateOnChainId: soul.stateOnChainId,
-        client: tx,
-      }
+    const shared = {
+      body,
+      transaction,
+      packageId,
+      soulOnChainId: soul.onChainId,
+      contentOnChainId: soul.contentOnChainId,
+      stateOnChainId: soul.stateOnChainId,
+      client: prisma,
+    }
 
-      const inner = action === 'append'
-        ? await mirrorAppend(shared)
-        : action === 'delete' || action === 'purge'
-          ? await mirrorDeleteOrPurge({ ...shared, action })
-          : action === 'active-bind' || action === 'active-clear'
-            ? await mirrorActiveBinding({ ...shared, action })
-            : await mirrorStateConfig({ ...shared, action })
+    // Mirror write — every helper is a single `client.upsert` / `.update` so
+    // it's atomic on its own. Run OUTSIDE `prisma.$transaction` so the Seal
+    // sidecar can never roll back if a downstream step (idempotency write,
+    // response serialization) fails: encryptedDek + iv only live in the
+    // browser, and losing them bricks the on-chain Walrus blob forever.
+    const inner = action === 'append'
+      ? await mirrorAppend(shared)
+      : action === 'delete' || action === 'purge'
+        ? await mirrorDeleteOrPurge({ ...shared, action })
+        : action === 'active-bind' || action === 'active-clear'
+          ? await mirrorActiveBinding({ ...shared, action })
+          : await mirrorStateConfig({ ...shared, action })
 
-      const innerBody = await inner.clone().json().catch(() => ({}))
-      if (inner.ok) {
+    const innerBody = await inner.clone().json().catch(() => ({}))
+
+    // Idempotency record is a perf cache for response replay (the projection
+    // upsert is naturally idempotent on retry). Best-effort so a transient
+    // failure here can't roll back the mirror write or force the caller to
+    // re-pay gas.
+    if (inner.ok) {
+      try {
         await storeSoulidityTxSync({
           routeKey,
           txDigest,
@@ -546,21 +551,20 @@ export async function POST(
           resourceKey,
           statusCode: inner.status,
           responseBody: innerBody,
-        }, tx)
+        })
+      } catch (idemError) {
+        console.warn('[soul-content-sync] idempotency record failed (non-fatal); next replay will retry', {
+          memberId: auth.identity.memberId,
+          txDigest,
+          action,
+          errorName: idemError instanceof Error ? idemError.name : typeof idemError,
+          errorMessage: idemError instanceof Error ? idemError.message : String(idemError),
+        })
       }
-      return { response: inner, responseBody: innerBody }
-    }, {
-      // mirrorAppend / mirrorStateConfig still issue one RPC read inside
-      // the txn (resolveWalrusBlobId / getSoulStateConfigEntry) before the
-      // DB write — the default 5s txn budget is too tight when the Sui RPC
-      // is slow. 20s gives realistic headroom while still bounding pool
-      // hold time. 5s maxWait keeps queueing behavior close to default.
-      timeout: 20_000,
-      maxWait: 5_000,
-    })
+    }
 
-    void responseBody
-    return response
+    void innerBody
+    return inner
   } catch (error) {
     const errorCode = classifySyncError(error)
     console.error('[soul-content-sync] Failed to mirror Soulidity content transaction', {

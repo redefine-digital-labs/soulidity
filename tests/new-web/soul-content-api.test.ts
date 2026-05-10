@@ -416,8 +416,10 @@ describe('POST /api/souls/[id]/content/sync', () => {
       name: 'market-scout',
       versionIndex: 2,
     })
-    // Mirror helpers run inside `prisma.$transaction` post-fix, so the
-    // second arg is the transaction client. Allow it via `expect.anything()`.
+    // Mirror writes thread the global `prisma` client through to the helpers
+    // so a `prisma.$transaction` rollback can never strand the Seal sidecar
+    // (encryptedDek + iv only live in the browser). Allow it via
+    // `expect.anything()`.
     expect(mockedSyncContentVersionProjectionFromChain).toHaveBeenCalledWith({
       soulOnChainId: SOUL_ID,
       contentOnChainId: CONTENT_ID,
@@ -436,13 +438,16 @@ describe('POST /api/souls/[id]/content/sync', () => {
       sealSidecar: { documentId: '0xdoc' },
       createdAtMs: 123,
     }, expect.anything())
+    // The idempotency record is best-effort and runs OUTSIDE any transaction,
+    // so no client argument is threaded — `storeSoulidityTxSync` defaults to
+    // the global `prisma` client.
     expect(mockedStoreSoulidityTxSync).toHaveBeenCalledWith(expect.objectContaining({
       routeKey: 'content:append',
       txDigest: TX_DIGEST,
       actorKey: 'member-1',
       resourceKey: `${SOUL_ID}:2:market-scout`,
       statusCode: 200,
-    }), expect.anything())
+    }))
   })
 
   it('returns a stored sync response before re-reading chain data', async () => {

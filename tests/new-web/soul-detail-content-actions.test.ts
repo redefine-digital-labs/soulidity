@@ -63,4 +63,33 @@ describe('Soul detail content action source contract', () => {
     expect(page).toContain('disabled={pendingAction !== null || isActiveSprite || !canDelete}')
     expect(page).toContain('clearActiveContent')
   })
+
+  it('checkpoints post-certify sync state before rebuilding the Seal sidecar', () => {
+    const hook = source('web/lib/hooks/use-soul-content-actions.ts')
+    const eventIndex = hook.indexOf('const event = extractContentVersionAppendedEvent(upload.certifyTxResult as never, packageId)')
+    const persistIndex = hook.indexOf('persistContentSyncPending(pendingTemplate)', eventIndex)
+    const sidecarIndex = hook.indexOf('const sidecars = await buildContentSidecarsForVersionsWithSuiClient', eventIndex)
+
+    expect(eventIndex).toBeGreaterThan(-1)
+    expect(persistIndex).toBeGreaterThan(eventIndex)
+    expect(sidecarIndex).toBeGreaterThan(eventIndex)
+    expect(persistIndex).toBeLessThan(sidecarIndex)
+  })
+
+  it('mounts pending content-sync replay at the detail workspace level', () => {
+    const page = source('web/app/souls/[id]/page.tsx')
+    const hook = source('web/lib/hooks/use-soul-content-actions.ts')
+    const workspace = page.slice(page.indexOf('function Workspace'), page.indexOf('function PanelHead'))
+    const replayHook = hook.slice(
+      hook.indexOf('export function useSoulContentSyncReplay'),
+      hook.indexOf('export function useSoulContentActions'),
+    )
+
+    expect(page).toContain('useSoulContentSyncReplay')
+    expect(workspace.indexOf('useSoulContentSyncReplay({ soul, detailQueryId, viewerId })')).toBeGreaterThan(-1)
+    expect(workspace.indexOf('useSoulContentSyncReplay({ soul, detailQueryId, viewerId })')).toBeLessThan(workspace.indexOf("{tab === 'info'"))
+    expect(replayHook).toContain('readContentSyncPendingForSoul')
+    expect(replayHook).not.toContain("role !== 'owner'")
+    expect(replayHook).not.toContain("role !== 'owner' && role !== 'grantee'")
+  })
 })

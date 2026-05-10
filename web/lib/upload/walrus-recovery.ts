@@ -332,3 +332,162 @@ export function clearWalrusBatchRecovery(key: string): void {
     /* swallow */
   }
 }
+
+// ---------------------------------------------------------------------------
+// Post-certify pending-sync — for `/content/sync` replay after refresh.
+//
+// The certify+append PTB commits on chain BEFORE `/content/sync` POSTs. If the
+// sync fails (Vercel function timeout, Sui RPC blip, browser closed mid-fetch)
+// the in-memory `sealMaterial` (DEK + IV) is permanently lost — and with it,
+// the ability to decrypt the on-chain Walrus blob.
+//
+// We persist `sealMaterial` + chain context here AS SOON AS the certify TX
+// resolves on the wallet, BEFORE the `/content/sync` POST. The hook clears
+// the record only after the full sync chain (incl. sprite config / set-active
+// extras) succeeds. Next page load detects pending records for the current
+// soul + wallet, rebuilds the sidecar, and replays the sync — no extra wallet
+// signature, no orphaned Walrus ciphertext.
+// ---------------------------------------------------------------------------
+
+const PENDING_SYNC_KEY_PREFIX = 'soulidity.content-sync-pending:'
+
+export interface ContentSyncPendingSpriteExtras {
+  spriteConfigJson?: string | null
+  spriteMoodMapJson?: string | null
+  setActive?: boolean
+}
+
+export interface ContentSyncPendingRecord {
+  soulOnChainId: string
+  contentOnChainId: string
+  certifyTxDigest: string
+  kind: number
+  /** Resolved name (skill bundle name from frontmatter, "default" for memory, etc.). */
+  name: string
+  /** Version index emitted by the on-chain `ContentVersionAppended` event. */
+  versionIndex: number
+  blobId: string
+  /** Plaintext SHA-256 — must equal `sealMaterial.contentHash`. */
+  contentHash: string
+  /** Null for plaintext slots (none today, but reserved). */
+  sealMaterial: PendingSealMaterial | null
+  /** Sprite-upload extras spliced into the same certify+append PTB. */
+  sprite?: ContentSyncPendingSpriteExtras
+  /** Owner-issued append authority. Granted-agent grants are revocable, so
+   *  we record the grant id used so a stale grant can be detected on replay. */
+  granteeGrantOnChainId?: string | null
+  /** Lowercased so scan filters match regardless of address casing. */
+  walletAddress: string
+  network: 'testnet' | 'mainnet'
+  savedAt: number
+}
+
+export function buildContentSyncPendingKey(certifyTxDigest: string): string {
+  return PENDING_SYNC_KEY_PREFIX + certifyTxDigest
+}
+
+function isContentSyncPendingRecord(value: unknown): value is ContentSyncPendingRecord {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Partial<ContentSyncPendingRecord>
+  const sealOk = c.sealMaterial === null || isPendingSealMaterial(c.sealMaterial)
+  const spriteOk =
+    c.sprite === undefined
+    || (c.sprite !== null
+      && typeof c.sprite === 'object'
+      && (c.sprite.spriteConfigJson === undefined
+        || c.sprite.spriteConfigJson === null
+        || typeof c.sprite.spriteConfigJson === 'string')
+      && (c.sprite.spriteMoodMapJson === undefined
+        || c.sprite.spriteMoodMapJson === null
+        || typeof c.sprite.spriteMoodMapJson === 'string')
+      && (c.sprite.setActive === undefined || typeof c.sprite.setActive === 'boolean'))
+  return (
+    typeof c.soulOnChainId === 'string'
+    && typeof c.contentOnChainId === 'string'
+    && typeof c.certifyTxDigest === 'string'
+    && typeof c.kind === 'number'
+    && typeof c.name === 'string'
+    && typeof c.versionIndex === 'number'
+    && typeof c.blobId === 'string'
+    && typeof c.contentHash === 'string'
+    && sealOk
+    && spriteOk
+    && (c.granteeGrantOnChainId === undefined
+      || c.granteeGrantOnChainId === null
+      || typeof c.granteeGrantOnChainId === 'string')
+    && typeof c.walletAddress === 'string'
+    && (c.network === 'testnet' || c.network === 'mainnet')
+    && typeof c.savedAt === 'number'
+  )
+}
+
+export function persistContentSyncPending(record: Omit<ContentSyncPendingRecord, 'savedAt'>): void {
+  const s = storage()
+  if (!s) return
+  try {
+    const payload: ContentSyncPendingRecord = {
+      ...record,
+      walletAddress: record.walletAddress.toLowerCase(),
+      savedAt: Date.now(),
+    }
+    s.setItem(buildContentSyncPendingKey(record.certifyTxDigest), JSON.stringify(payload))
+  } catch {
+    /* swallow */
+  }
+}
+
+export function clearContentSyncPending(certifyTxDigest: string): void {
+  const s = storage()
+  if (!s) return
+  try {
+    s.removeItem(buildContentSyncPendingKey(certifyTxDigest))
+  } catch {
+    /* swallow */
+  }
+}
+
+/**
+ * Scan sessionStorage for pending-sync records bound to a specific
+ * `(soulOnChainId, walletAddress, network)` triple. Drops expired entries
+ * eagerly — the same 24h TTL as the wallet-paid recovery records, since the
+ * sealMaterial is the most sensitive thing we persist client-side and a
+ * page that hasn't loaded in a day is almost certainly never coming back.
+ */
+export function readContentSyncPendingForSoul(params: {
+  soulOnChainId: string
+  walletAddress: string
+  network: 'testnet' | 'mainnet'
+}): ContentSyncPendingRecord[] {
+  const s = storage()
+  if (!s) return []
+  const wallet = params.walletAddress.toLowerCase()
+  const out: ContentSyncPendingRecord[] = []
+  // Snapshot the keys first because `removeItem` while iterating shifts indices.
+  const keys: string[] = []
+  for (let i = 0; i < s.length; i += 1) {
+    const key = s.key(i)
+    if (key && key.startsWith(PENDING_SYNC_KEY_PREFIX)) keys.push(key)
+  }
+  for (const key of keys) {
+    try {
+      const raw = s.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as unknown
+      if (!isContentSyncPendingRecord(parsed)) {
+        try { s.removeItem(key) } catch {}
+        continue
+      }
+      if (Date.now() - parsed.savedAt > TTL_MS) {
+        try { s.removeItem(key) } catch {}
+        continue
+      }
+      if (parsed.network !== params.network) continue
+      if (parsed.soulOnChainId !== params.soulOnChainId) continue
+      if (parsed.walletAddress !== wallet) continue
+      out.push(parsed)
+    } catch {
+      try { s.removeItem(key) } catch {}
+    }
+  }
+  return out
+}
