@@ -42,10 +42,16 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
+      # `npm ci` is strict-validating, but knip's transitive
+      # `@oxc-parser/binding-wasm32-wasi` declares `@emnapi/core/runtime`
+      # 1.10.0 as `peer: true, optional: true` inBundle deps that don't
+      # round-trip cleanly between darwin (where the lock is generated)
+      # and linux (where CI runs). `npm install` reads the same lock but
+      # tolerates that gap.
       - name: Install root deps
-        run: npm ci
+        run: npm install --no-audit --no-fund
       - name: Install web deps
-        run: npm --prefix web ci
+        run: npm --prefix web install --no-audit --no-fund
       - name: Run TS unit + integration tests
         run: npm test
       - name: Run web typecheck
@@ -95,10 +101,16 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
+      # `npm ci` is strict-validating, but knip's transitive
+      # `@oxc-parser/binding-wasm32-wasi` declares `@emnapi/core/runtime`
+      # 1.10.0 as `peer: true, optional: true` inBundle deps that don't
+      # round-trip cleanly between darwin (where the lock is generated)
+      # and linux (where CI runs). `npm install` reads the same lock but
+      # tolerates that gap.
       - name: Install root deps
-        run: npm ci
+        run: npm install --no-audit --no-fund
       - name: Install web deps
-        run: npm --prefix web ci
+        run: npm --prefix web install --no-audit --no-fund
       - name: Install suiup
         run: |
           curl -sSfL https://raw.githubusercontent.com/Mystenlabs/suiup/main/install.sh | sh
