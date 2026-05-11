@@ -610,12 +610,17 @@ function trimContentPreview(rows: SoulContentVersionRow[]): SoulContentVersionRo
 function filterPaidEntriesForViewer(
   rows: SoulPaidAccessEntryRow[],
   viewerAddresses: Set<string>,
+  isOwner: boolean,
 ): SoulPaidAccessEntryRow[] {
-  if (viewerAddresses.size === 0) return rows
-  return rows.filter((row) => {
-    if (!row.revokedAt) return true
-    return viewerAddresses.has(row.buyerAddress.toLowerCase())
-  })
+  // Owner sees every entry (active + revoked) for management / audit.
+  // Non-owners — including the creator after sale and anonymous callers —
+  // only see entries whose buyer address matches one of their wallets.
+  // SoulPaidAccessList is public on-chain, but exposing the full buyer list
+  // via the mirror would leak who else purchased; this filter is the UI/API
+  // privacy seam.
+  if (isOwner) return rows
+  if (viewerAddresses.size === 0) return []
+  return rows.filter((row) => viewerAddresses.has(row.buyerAddress.toLowerCase()))
 }
 
 // ── Detail mappers ───────────────────────────────────────────────────────
@@ -625,6 +630,7 @@ export function toSoulAssetDetail(
   params: {
     viewerMemberId: string | null
     viewerAddresses?: string[]
+    currentOwnershipEpoch?: number | null
     quote?: SoulQuoteBreakdown | null
     platformFeeBps?: number | null
   },
@@ -654,12 +660,14 @@ export function toSoulAssetDetail(
   const paidAccessEntries = filterPaidEntriesForViewer(
     record.paidAccessEntries,
     viewerAddresses,
+    isOwner,
   ).map(toSoulPaidAccessEntryRecord)
 
   return {
     ...toSoulAssetSummary(record),
     creatorMemberId: record.creatorMemberId,
     currentOwnerMemberId: record.currentOwnerMemberId,
+    currentOwnershipEpoch: params.currentOwnershipEpoch ?? null,
     readme: record.readme,
     collection: record.collection ? toSoulCollectionSummary(record.collection) : null,
     activeGrants,

@@ -412,6 +412,8 @@ export interface CollectionDetailResponse extends SoulCollectionAssetDetail {
 export interface SoulAssetDetail extends SoulAssetSummary {
   creatorMemberId: string | null
   currentOwnerMemberId: string | null
+  /** Live `SoulState.ownership_epoch`; paid access with a different snapshot is stale. */
+  currentOwnershipEpoch: number | null
   readme: string | null
   collection: SoulCollectionAssetSummary | null
   activeGrants: SoulGrantRecord[]

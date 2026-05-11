@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildPaidAccessRevokePendingKey,
   buildWalrusUploadRecoveryKey,
+  clearPaidAccessRevokePending,
   clearWalrusUploadRecovery,
+  persistPaidAccessRevokePending,
   persistWalrusUploadRecovery,
+  readPaidAccessRevokePendingForSoul,
   readWalrusUploadRecovery,
+  type PaidAccessRevokePendingRecord,
   type WalrusUploadRecoveryRecord,
 } from '@/lib/upload/walrus-recovery'
 
@@ -103,6 +108,57 @@ describe('walrus upload recovery store', () => {
     parsed.savedAt = Date.now() - (24 * 60 * 60 * 1000) - 1
     window.sessionStorage.setItem(key, JSON.stringify(parsed))
     expect(readWalrusUploadRecovery(key)).toBeNull()
+  })
+
+  it('persists, filters, expires, and clears paid-access revoke sync records', () => {
+    persistPaidAccessRevokePending({
+      soulOnChainId: '0xsoul',
+      txDigest: '0xrevoke1',
+      buyerAddress: '0xBUYER',
+      kind: 2,
+      walletAddress: '0xABC',
+      network: 'testnet',
+    })
+
+    expect(readPaidAccessRevokePendingForSoul({
+      soulOnChainId: '0xsoul',
+      walletAddress: '0xabc',
+      network: 'testnet',
+    })).toMatchObject([{
+      soulOnChainId: '0xsoul',
+      txDigest: '0xrevoke1',
+      buyerAddress: '0xbuyer',
+      kind: 2,
+      walletAddress: '0xabc',
+      network: 'testnet',
+    }])
+    expect(readPaidAccessRevokePendingForSoul({
+      soulOnChainId: '0xsoul',
+      walletAddress: '0xabc',
+      network: 'mainnet',
+    })).toEqual([])
+
+    const key = buildPaidAccessRevokePendingKey('0xrevoke1')
+    const raw = window.sessionStorage.getItem(key)!
+    const parsed = JSON.parse(raw) as PaidAccessRevokePendingRecord
+    parsed.savedAt = Date.now() - (24 * 60 * 60 * 1000) - 1
+    window.sessionStorage.setItem(key, JSON.stringify(parsed))
+    expect(readPaidAccessRevokePendingForSoul({
+      soulOnChainId: '0xsoul',
+      walletAddress: '0xabc',
+      network: 'testnet',
+    })).toEqual([])
+
+    persistPaidAccessRevokePending({
+      soulOnChainId: '0xsoul',
+      txDigest: '0xrevoke2',
+      buyerAddress: '0xbuyer',
+      kind: 2,
+      walletAddress: '0xabc',
+      network: 'testnet',
+    })
+    clearPaidAccessRevokePending('0xrevoke2')
+    expect(window.sessionStorage.getItem(buildPaidAccessRevokePendingKey('0xrevoke2'))).toBeNull()
   })
 })
 

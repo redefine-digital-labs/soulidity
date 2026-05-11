@@ -5,6 +5,7 @@ import { resolveIdentity } from '@/lib/auth/identity'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
+  getSoulStateObject,
   OnChainVerificationError,
   quoteSoulPurchase,
 } from '@soulidity/sdk'
@@ -107,10 +108,32 @@ export async function GET(
 
   let quote = null
   let platformFeeBps: number | null = null
+  let currentOwnershipEpoch: number | null = null
+  let packageId: string | null = null
   try {
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  } catch (detailError) {
+    if (!(detailError instanceof OnChainVerificationError)) {
+      console.warn('[soul-detail] Failed to resolve Soulidity package id', detailError)
+    }
+  }
+
+  if (packageId) {
+    try {
+      const state = await getSoulStateObject(soul.stateOnChainId, packageId, {
+        includeActiveGrants: false,
+      })
+      currentOwnershipEpoch = state.ownershipEpoch
+    } catch (detailError) {
+      if (!(detailError instanceof OnChainVerificationError)) {
+        console.warn('[soul-detail] Failed to fetch SoulState ownership epoch', detailError)
+      }
+    }
+  }
+
+  try {
     const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
-    const config = await getCachedMarketConfig(marketConfigId, packageId)
+    const config = await getCachedMarketConfig(marketConfigId, packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'))
     platformFeeBps = config.platformFeeBps
     const listedPrice = soul.listedPriceAtomic != null ? BigInt(soul.listedPriceAtomic.toString()) : null
     if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
@@ -129,6 +152,7 @@ export async function GET(
   const detail = toSoulAssetDetail(soul, {
     viewerMemberId: identity?.memberId ?? null,
     viewerAddresses: viewerWalletAddresses,
+    currentOwnershipEpoch,
     quote,
     platformFeeBps,
   })

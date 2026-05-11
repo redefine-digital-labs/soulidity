@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useMemo, useState } from 'react'
+import { use, useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
@@ -17,13 +17,20 @@ import { PurgeConfirmModal } from '@/components/souls/purge-confirm-modal'
 import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
 import { formatAtomicAmountForDisplay, NO_DOWNLOAD_POLICY, READ_GRANT, READ_OWNER, READ_PUBLIC } from '@soulidity/sdk'
-import { KIND_MEMORY, KIND_SKILL, KIND_SPRITE } from '@soulidity/sdk'
+import { KIND_AUDIO, KIND_MEMORY, KIND_SKILL, KIND_SOUL_DOC, KIND_SPRITE } from '@soulidity/sdk'
 import { useGrant } from '@/lib/hooks/use-grant'
+import { usePaidAccess } from '@/lib/hooks/use-paid-access'
 import { useSoulContentActions, useSoulContentSyncReplay } from '@/lib/hooks/use-soul-content-actions'
 import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { parsePersonaSpriteConfig, PERSONA_SPRITE_CONFIG_ERROR, validateSelectedSkillBundle } from '@soulidity/sdk'
 import { SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
-import type { SoulAssetDetail, SoulContentVersionRecord, SoulGrantRecord } from '@soulidity/sdk'
+import type {
+  SoulAssetDetail,
+  SoulContentVersionRecord,
+  SoulGrantRecord,
+  SoulPaidAccessEntryRecord,
+  SoulPaidAccessKindConfigRecord,
+} from '@soulidity/sdk'
 import './soul-detail.css'
 
 type Role = 'owner' | 'grantee' | 'visitor'
@@ -494,9 +501,9 @@ function Workspace({
       sprite: activeVersions(soul.contentVersions, KIND_SPRITE).length,
       skills: activeVersions(soul.contentVersions, KIND_SKILL).length,
       memory: activeVersions(soul.contentVersions, KIND_MEMORY).length,
-      grants: soul.activeGrantCount,
+      grants: soul.activeGrantCount + countActivePaidEntries(soul, role, viewerAddress),
     }),
-    [soul.contentVersions, soul.activeGrantCount],
+    [soul, role, viewerAddress],
   )
 
   const tabs: Array<{ id: TabId; label: string; count: number | null }> = [
@@ -543,7 +550,7 @@ function Workspace({
       {tab === 'sprite' && <SpritePanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
       {tab === 'skills' && <SkillsPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
       {tab === 'memory' && <MemoryPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
-      {tab === 'grants' && <GrantsPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} />}
+      {tab === 'grants' && <GrantsPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
     </div>
   )
 }
@@ -1322,7 +1329,19 @@ function MemoryRow({
 }
 
 // ── Grants panel ─────────────────────────────────────────────────────
-function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetDetail; role: Role; detailQueryId: string; viewerId?: string | null }) {
+function GrantsPanel({
+  soul,
+  role,
+  detailQueryId,
+  viewerId,
+  viewerAddress,
+}: {
+  soul: SoulAssetDetail
+  role: Role
+  detailQueryId: string
+  viewerId?: string | null
+  viewerAddress?: string | null
+}) {
   const canManage = role === 'owner'
   const [skillsAndDocsScope, setSkillsAndDocsScope] = useState(true)
   const [memoryScope, setMemoryScope] = useState(false)
@@ -1372,7 +1391,8 @@ function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetD
   }
 
   return (
-    <div className="p-5">
+    <div className="space-y-5 p-5">
+      <section>
       <PanelHead
         title="SoulGrants"
         copy="Authorize an agent to access this Soul on your behalf. Only the grantee can read or append within their scope — no one else, including Soulidity. When capacity is full, revoke the grantee you want to replace before adding a new one."
@@ -1507,8 +1527,297 @@ function GrantsPanel({ soul, role, detailQueryId, viewerId }: { soul: SoulAssetD
           </div>
         </Subcard>
       )}
+      </section>
+
+      <PaidAccessSection
+        soul={soul}
+        role={role}
+        viewerAddress={viewerAddress}
+        detailQueryId={detailQueryId}
+        viewerId={viewerId}
+      />
     </div>
   )
+}
+
+// ── Paid-access section ──────────────────────────────────────────────
+function PaidAccessSection({
+  soul,
+  role,
+  viewerAddress,
+  detailQueryId,
+  viewerId,
+}: {
+  soul: SoulAssetDetail
+  role: Role
+  viewerAddress?: string | null
+  detailQueryId: string
+  viewerId?: string | null
+}) {
+  const canManage = role === 'owner'
+  const queryClient = useQueryClient()
+  const refreshSoulDetail = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId, viewerId ?? null] })
+  }, [detailQueryId, queryClient, viewerId])
+  const { pending, error, revokePaidAccess } = usePaidAccess(soul, { onSynced: refreshSoulDetail })
+
+  async function handleRevoke(entry: SoulPaidAccessEntryRecord) {
+    try {
+      await revokePaidAccess(entry.buyerAddress, entry.kind)
+      refreshSoulDetail()
+    } catch {
+      // surfaced via hook state
+    }
+  }
+
+  const visibleEntries = selectVisiblePaidEntries(soul, role, viewerAddress)
+  const activeConfigs = soul.paidAccessKindConfigs.filter((c) => paidAccessConfigActive(c, soul))
+  const activeVisibleCount = visibleEntries.filter((e) => paidEntryActive(e, soul)).length
+  const tagText = role === 'owner'
+    ? `${activeVisibleCount} active`
+    : activeVisibleCount > 0
+      ? `${activeVisibleCount} you hold`
+      : visibleEntries.length > 0
+        ? `${visibleEntries.length} on file`
+        : '0 active'
+
+  const emptyCopy = role === 'owner'
+    ? activeConfigs.length === 0
+      ? 'No paid-access kind is configured. Configure pricing on-chain to make this Soul purchasable per kind.'
+      : 'No buyer has purchased paid access yet.'
+    : activeConfigs.length === 0
+      ? 'Paid access is not offered for this Soul.'
+      : 'You have not purchased paid access for this Soul.'
+
+  return (
+    <section className="border-t border-[var(--border-soft)] pt-5">
+      <PanelHead
+        title="Paid access"
+        copy="Per-buyer scoped read access purchased on-chain. Each entry binds one buyer to one kind (seal · memory · skills · assets) with optional duration. Owners can revoke at any time (no on-chain refund); entries auto-invalidate on Soul resale."
+        tags={<Tag color="muted">{tagText}</Tag>}
+      />
+
+      {activeConfigs.length > 0 && (
+        <div className="mb-3 grid gap-2 sm:grid-cols-2">
+          {activeConfigs.map((c) => (
+            <PaidConfigCard key={c.id} config={c} />
+          ))}
+        </div>
+      )}
+
+      {visibleEntries.length === 0 ? (
+        <EmptyState icon="💳" label="No paid-access entry" sublabel={emptyCopy} />
+      ) : (
+        <div className="space-y-2">
+          {visibleEntries.map((entry) => (
+            <PaidEntryCard
+              key={entry.id}
+              entry={entry}
+              soul={soul}
+              canManage={canManage}
+              pending={pending !== null}
+              onRevoke={canManage ? () => handleRevoke(entry) : null}
+            />
+          ))}
+        </div>
+      )}
+
+      {canManage && error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
+    </section>
+  )
+}
+
+function PaidConfigCard({ config }: { config: SoulPaidAccessKindConfigRecord }) {
+  return (
+    <Subcard className="!p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+        <span className="font-mono font-semibold text-foreground">
+          {paidAccessKindLabel(config.kind)}
+        </span>
+        <span className="text-muted">
+          {formatAtomicAmountForDisplay(config.priceAtomic)}
+          {' · '}
+          {formatDurationMs(config.durationMs)}
+        </span>
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {paidAccessScopeLabels(config.scopeMask).map((s) => (
+          <Tag key={`${config.id}:${s}`} color="teal">
+            {s}
+          </Tag>
+        ))}
+      </div>
+    </Subcard>
+  )
+}
+
+function PaidEntryCard({
+  entry,
+  soul,
+  canManage,
+  pending,
+  onRevoke,
+}: {
+  entry: SoulPaidAccessEntryRecord
+  soul: SoulAssetDetail
+  canManage: boolean
+  pending: boolean
+  onRevoke: (() => void) | null
+}) {
+  const expired = paidEntryExpired(entry)
+  const stale = paidEntryStale(entry, soul)
+  const active = paidEntryActive(entry, soul)
+  const statusLabel = active ? 'active' : stale ? 'stale' : expired ? 'expired' : 'on file'
+  const isComp = isCompEntry(entry)
+  return (
+    <Subcard className="!p-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Tag color={active ? 'success' : 'muted'}>{statusLabel}</Tag>
+          <Tag color="purple">{paidAccessKindLabel(entry.kind)}</Tag>
+          {paidAccessScopeLabels(entry.scopeMask).map((s) => (
+            <Tag key={`${entry.id}:${s}`} color="teal">
+              {s}
+            </Tag>
+          ))}
+          {isComp && <Tag color="gold">comp</Tag>}
+          <CopyChip value={entry.buyerAddress} />
+        </div>
+        {canManage && onRevoke && (
+          <Button variant="ghost" size="sm" disabled={pending} onClick={onRevoke}>
+            Revoke
+          </Button>
+        )}
+      </div>
+      <div className="mt-3 grid gap-1.5 text-[12px]">
+        <div className="flex justify-between text-muted">
+          <span>{isComp ? 'Granted' : 'Price paid'}</span>
+          <span className="font-mono text-foreground">
+            {isComp ? '0 USDC' : formatAtomicAmountForDisplay(entry.pricePaidAtomic)}
+          </span>
+        </div>
+        <div className="flex justify-between text-muted">
+          <span>Expires</span>
+          <span>{formatExpiresAtMs(entry.expiresAtMs)}</span>
+        </div>
+        <div className="flex justify-between text-muted">
+          <span>Purchased</span>
+          <span>{formatRelative(entry.createdAtMs)}</span>
+        </div>
+      </div>
+    </Subcard>
+  )
+}
+
+function selectVisiblePaidEntries(
+  soul: SoulAssetDetail,
+  role: Role,
+  viewerAddress: string | null | undefined,
+): SoulPaidAccessEntryRecord[] {
+  const all = soul.paidAccessEntries.filter((e) => e.revokedAt == null)
+  if (role === 'owner') return all
+  const v = normalizeSuiAddressForCompare(viewerAddress)
+  if (!v) return []
+  return all.filter((e) => normalizeSuiAddressForCompare(e.buyerAddress) === v)
+}
+
+function countActivePaidEntries(
+  soul: SoulAssetDetail,
+  role: Role,
+  viewerAddress: string | null | undefined,
+): number {
+  return selectVisiblePaidEntries(soul, role, viewerAddress).filter(
+    (e) => paidEntryActive(e, soul),
+  ).length
+}
+
+function paidAccessConfigActive(config: SoulPaidAccessKindConfigRecord, soul: SoulAssetDetail): boolean {
+  return config.deletedAt == null
+    && soul.currentOwnershipEpoch != null
+    && config.ownershipEpochSnapshot === soul.currentOwnershipEpoch
+}
+
+function paidEntryActive(entry: SoulPaidAccessEntryRecord, soul: SoulAssetDetail): boolean {
+  return entry.revokedAt == null
+    && !paidEntryExpired(entry)
+    && soul.currentOwnershipEpoch != null
+    && entry.ownershipEpochSnapshot === soul.currentOwnershipEpoch
+}
+
+function paidEntryStale(entry: SoulPaidAccessEntryRecord, soul: SoulAssetDetail): boolean {
+  return soul.currentOwnershipEpoch != null
+    && entry.ownershipEpochSnapshot !== soul.currentOwnershipEpoch
+}
+
+function paidEntryExpired(entry: SoulPaidAccessEntryRecord): boolean {
+  if (!entry.expiresAtMs) return false
+  try {
+    return BigInt(entry.expiresAtMs) <= BigInt(Date.now())
+  } catch {
+    return false
+  }
+}
+
+function isCompEntry(entry: SoulPaidAccessEntryRecord): boolean {
+  try {
+    return BigInt(entry.pricePaidAtomic) === 0n
+  } catch {
+    return false
+  }
+}
+
+function paidAccessKindLabel(kind: number): string {
+  if (kind === KIND_SOUL_DOC) return 'Soul body'
+  if (kind === KIND_MEMORY) return 'Memory'
+  if (kind === KIND_SKILL) return 'Skill'
+  if (kind === KIND_SPRITE) return 'Sprite'
+  if (kind === KIND_AUDIO) return 'Audio'
+  return `Kind ${kind}`
+}
+
+function paidAccessScopeLabels(mask: number): string[] {
+  const labels: string[] = []
+  if (mask & SOUL_GRANT_SCOPE_SEAL) labels.push('seal')
+  if (mask & SOUL_GRANT_SCOPE_MEMORY) labels.push('memory')
+  if (mask & SOUL_GRANT_SCOPE_SKILLS) labels.push('skills')
+  if (mask & SOUL_GRANT_SCOPE_ASSETS) labels.push('assets')
+  return labels
+}
+
+function formatDurationMs(value: string | number | bigint | null | undefined): string {
+  if (value == null) return 'lifetime'
+  let ms: bigint
+  try {
+    ms = BigInt(value as string | number | bigint)
+  } catch {
+    return '—'
+  }
+  if (ms <= 0n) return 'lifetime'
+  const SEC = 1000n
+  const MIN = 60n * SEC
+  const HR = 60n * MIN
+  const DAY = 24n * HR
+  if (ms >= DAY) {
+    const days = ms / DAY
+    return `${days} ${days === 1n ? 'day' : 'days'}`
+  }
+  if (ms >= HR) {
+    const hrs = ms / HR
+    return `${hrs} ${hrs === 1n ? 'hour' : 'hours'}`
+  }
+  if (ms >= MIN) {
+    const mins = ms / MIN
+    return `${mins} ${mins === 1n ? 'min' : 'mins'}`
+  }
+  const secs = ms / SEC
+  return `${secs} ${secs === 1n ? 'sec' : 'secs'}`
+}
+
+function formatExpiresAtMs(value: string | null): string {
+  if (!value) return 'Never'
+  const ms = Number(value)
+  if (!Number.isFinite(ms)) return '—'
+  return new Date(ms).toLocaleString()
 }
 
 // ── Right rail ───────────────────────────────────────────────────────

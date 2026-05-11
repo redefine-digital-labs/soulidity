@@ -487,3 +487,102 @@ export function readContentSyncPendingForSoul(params: {
   }
   return out
 }
+
+// ---------------------------------------------------------------------------
+// Paid-access revoke pending-sync — the revoke PTB commits on chain before the
+// mirror POST. Persist the digest until `/paid-access` confirms the DB mirror.
+// ---------------------------------------------------------------------------
+
+const PAID_ACCESS_REVOKE_PENDING_KEY_PREFIX = 'soulidity.paid-access-revoke-pending:'
+
+export interface PaidAccessRevokePendingRecord {
+  soulOnChainId: string
+  txDigest: string
+  buyerAddress: string
+  kind: number
+  walletAddress: string
+  network: 'testnet' | 'mainnet'
+  savedAt: number
+}
+
+export function buildPaidAccessRevokePendingKey(txDigest: string): string {
+  return PAID_ACCESS_REVOKE_PENDING_KEY_PREFIX + txDigest
+}
+
+function isPaidAccessRevokePendingRecord(value: unknown): value is PaidAccessRevokePendingRecord {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Partial<PaidAccessRevokePendingRecord>
+  return (
+    typeof c.soulOnChainId === 'string'
+    && typeof c.txDigest === 'string'
+    && typeof c.buyerAddress === 'string'
+    && typeof c.kind === 'number'
+    && typeof c.walletAddress === 'string'
+    && (c.network === 'testnet' || c.network === 'mainnet')
+    && typeof c.savedAt === 'number'
+  )
+}
+
+export function persistPaidAccessRevokePending(record: Omit<PaidAccessRevokePendingRecord, 'savedAt'>): void {
+  const s = storage()
+  if (!s) return
+  try {
+    const payload: PaidAccessRevokePendingRecord = {
+      ...record,
+      buyerAddress: record.buyerAddress.toLowerCase(),
+      walletAddress: record.walletAddress.toLowerCase(),
+      savedAt: Date.now(),
+    }
+    s.setItem(buildPaidAccessRevokePendingKey(record.txDigest), JSON.stringify(payload))
+  } catch {
+    /* swallow */
+  }
+}
+
+export function clearPaidAccessRevokePending(txDigest: string): void {
+  const s = storage()
+  if (!s) return
+  try {
+    s.removeItem(buildPaidAccessRevokePendingKey(txDigest))
+  } catch {
+    /* swallow */
+  }
+}
+
+export function readPaidAccessRevokePendingForSoul(params: {
+  soulOnChainId: string
+  walletAddress: string
+  network: 'testnet' | 'mainnet'
+}): PaidAccessRevokePendingRecord[] {
+  const s = storage()
+  if (!s) return []
+  const wallet = params.walletAddress.toLowerCase()
+  const out: PaidAccessRevokePendingRecord[] = []
+  const keys: string[] = []
+  for (let i = 0; i < s.length; i += 1) {
+    const key = s.key(i)
+    if (key && key.startsWith(PAID_ACCESS_REVOKE_PENDING_KEY_PREFIX)) keys.push(key)
+  }
+  for (const key of keys) {
+    try {
+      const raw = s.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as unknown
+      if (!isPaidAccessRevokePendingRecord(parsed)) {
+        try { s.removeItem(key) } catch {}
+        continue
+      }
+      if (Date.now() - parsed.savedAt > TTL_MS) {
+        try { s.removeItem(key) } catch {}
+        continue
+      }
+      if (parsed.network !== params.network) continue
+      if (parsed.soulOnChainId !== params.soulOnChainId) continue
+      if (parsed.walletAddress !== wallet) continue
+      out.push(parsed)
+    } catch {
+      try { s.removeItem(key) } catch {}
+    }
+  }
+  return out
+}
