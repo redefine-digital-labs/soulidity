@@ -12,6 +12,7 @@ import { Tag } from '@/components/ui/tag'
 import { Button, buttonStyles } from '@/components/ui/button'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { UpdatePriceModal, DelistModal } from '@/components/souls/listing-modals'
+import { AgentGrantRecommendations } from '@/components/souls/agent-grant-recommendations'
 import { PurgeConfirmModal } from '@/components/souls/purge-confirm-modal'
 import { ReportModal } from '@/components/shared/report-modal'
 import { useRequireAuth } from '@/lib/hooks/use-require-auth'
@@ -1076,7 +1077,18 @@ function SpritePanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
       emptyTitle="No sprite versions yet"
       emptySub="When the owner uploads a persona sprite, every version stays addressable on-chain and the latest active binding renders here."
       versionLabelSingular="version"
-      uploadCard={<SpriteAppendCard role={role} canAppend={canAppend} actions={actions} />}
+      uploadCard={
+        <>
+          <AgentGrantRecommendations
+            soul={soul}
+            kindScopeMask={SOUL_GRANT_SCOPE_ASSETS}
+            kindLabel="sprite"
+            role={role}
+            pendingAction={actions.pendingAction}
+          />
+          <SpriteAppendCard role={role} canAppend={canAppend} actions={actions} />
+        </>
+      }
       actions={actions}
     />
   )
@@ -1098,7 +1110,18 @@ function SkillsPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
       emptyTitle="No skill versions yet"
       emptySub="No skill bundles have been appended to this Soul. Once appended, every version stays addressable on-chain and can be opened or revoked here."
       versionLabelSingular="version"
-      uploadCard={<SkillsAppendCard canAppend={canAppend} actions={actions} />}
+      uploadCard={
+        <>
+          <AgentGrantRecommendations
+            soul={soul}
+            kindScopeMask={SOUL_GRANT_SCOPE_SKILLS}
+            kindLabel="skill"
+            role={role}
+            pendingAction={actions.pendingAction}
+          />
+          <SkillsAppendCard canAppend={canAppend} actions={actions} />
+        </>
+      }
       actions={actions}
     />
   )
@@ -1144,6 +1167,13 @@ function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
           title="Memory log"
           copy="Each entry is an encrypted append to the on-chain memory log, written by the agent runtime, the founder, or any holder with a memory grant. Only the owner or a grant holder can decrypt the body."
           tags={tags}
+        />
+        <AgentGrantRecommendations
+          soul={soul}
+          kindScopeMask={SOUL_GRANT_SCOPE_MEMORY}
+          kindLabel="memory"
+          role={role}
+          pendingAction={actions.pendingAction}
         />
         <MemoryAppendCard canAppend={canAppend} actions={actions} />
         {contentActionError && (

@@ -1,0 +1,175 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAuth } from '@/components/providers/auth-provider'
+import { useGrant } from '@/lib/hooks/use-grant'
+
+interface AgentGrantTarget {
+  memberId: string
+  address: string
+  displayName: string | null
+}
+
+interface GrantableSoulRef {
+  onChainId: string
+  stateOnChainId: string
+  activeGrants?: Array<{ granteeAddress: string }>
+}
+
+export interface AgentGrantRecommendationsProps {
+  soul: GrantableSoulRef
+  /** Single-bit scope (`SOUL_GRANT_SCOPE_ASSETS | SKILLS | MEMORY | SEAL`) the
+   *  recommendation should plan for. Must match the kind being uploaded so
+   *  /auto-grant-targets returns the right agent set. */
+  kindScopeMask: number
+  /** Human-readable label that appears in "N agent(s) need <label> access". */
+  kindLabel: string
+  role: 'owner' | 'grantee' | 'visitor'
+  /** Pass through `useSoulContentActions`'s `pendingAction` so the panel
+   *  re-checks the moment an `append` finishes — covers the case where
+   *  auto-grant-on-append silently no-ops (e.g. pre-deploy prod, network
+   *  hiccup, agent paired after the upload PTB was signed). */
+  pendingAction: string | null
+  onAuthorized?: () => void
+}
+
+function truncateAddress(addr: string): string {
+  return addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr
+}
+
+/**
+ * Owner-only nudge that surfaces account agents who still lack a
+ * scope-matched grant for this Soul. Hidden in the silent-success path
+ * — when auto-grant-on-append covers the agent on the upload PTB, the
+ * server's `/auto-grant-targets` returns `targets: []` and this panel
+ * renders nothing. Shown when:
+ *   - the owner uploaded against a deployed build that did not yet have
+ *     the auto-grant route (deploy-window race);
+ *   - the agent was paired after the last upload;
+ *   - the auto-grant pre-flight fetch failed silently (offline / 5xx).
+ *
+ * Per-row "Authorize" reuses `useGrant.issueGrant`, which signs a single
+ * `grant::issue_to_grantee` PTB and mirrors via the existing
+ * `/api/souls/[id]/grant` route — one wallet signature per agent. We
+ * deliberately do not batch into one PTB here because the existing
+ * mirror route extracts a single `SoulGrantIssued` event; batching
+ * would need a new mirror endpoint and is not worth the surface area
+ * for the typical 1-2 pet case.
+ */
+export function AgentGrantRecommendations({
+  soul,
+  kindScopeMask,
+  kindLabel,
+  role,
+  pendingAction,
+  onAuthorized,
+}: AgentGrantRecommendationsProps) {
+  const [targets, setTargets] = useState<AgentGrantTarget[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [grantingAddress, setGrantingAddress] = useState<string | null>(null)
+  const { getAuthHeaders } = useAuth()
+  const grant = useGrant(soul)
+
+  const refresh = useCallback(async () => {
+    if (role !== 'owner') {
+      setTargets([])
+      return
+    }
+    setError(null)
+    try {
+      const headers = await getAuthHeaders()
+      const res = await fetch(
+        `/api/souls/${encodeURIComponent(soul.onChainId)}/auto-grant-targets?scopeMask=${kindScopeMask}`,
+        { cache: 'no-store', headers },
+      )
+      if (res.ok) {
+        const body = await res.json() as { targets?: AgentGrantTarget[] }
+        setTargets(body.targets ?? [])
+        return
+      }
+      // 404 = deployed prod is still on the pre-auto-grant build. Silently
+      // hide so the page doesn't get a yellow banner on every Soul detail
+      // view until Vercel finishes the deploy. Other failures get a
+      // visible message so they can be diagnosed.
+      if (res.status !== 404) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error ?? `Could not check agent grants (HTTP ${res.status})`)
+      }
+      setTargets([])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not check agent grants')
+      setTargets([])
+    }
+  }, [getAuthHeaders, kindScopeMask, role, soul.onChainId])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  // Re-check the moment an append finishes. `pendingAction` is the
+  // hook's transient state ('append' | 'open' | 'delete' | … | null);
+  // we only want the append → null edge.
+  const wasAppendingRef = useRef(false)
+  useEffect(() => {
+    const isAppending = pendingAction === 'append'
+    if (wasAppendingRef.current && !isAppending) {
+      void refresh()
+    }
+    wasAppendingRef.current = isAppending
+  }, [pendingAction, refresh])
+
+  if (role !== 'owner') return null
+  if (targets.length === 0 && !error) return null
+
+  async function handleAuthorize(target: AgentGrantTarget) {
+    setGrantingAddress(target.address)
+    setError(null)
+    try {
+      await grant.issueGrant(target.address, null, kindScopeMask)
+      setTargets((prev) => prev.filter((t) => t.address !== target.address))
+      onAuthorized?.()
+      void refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to authorize agent')
+    } finally {
+      setGrantingAddress(null)
+    }
+  }
+
+  return (
+    <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3.5 py-3 text-[12px]">
+      {targets.length > 0 && (
+        <>
+          <div className="mb-2 font-semibold text-amber-200">
+            {targets.length} agent{targets.length === 1 ? '' : 's'} need {kindLabel} access on this Soul
+          </div>
+          <ul className="space-y-1.5">
+            {targets.map((target) => (
+              <li key={target.address} className="flex items-center justify-between gap-3">
+                <span className="text-muted">
+                  {target.displayName ?? truncateAddress(target.address)}
+                  {target.displayName && (
+                    <span className="ml-1 opacity-60">({truncateAddress(target.address)})</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="rounded border border-amber-500/40 px-2 py-1 text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+                  disabled={grantingAddress !== null}
+                  onClick={() => void handleAuthorize(target)}
+                >
+                  {grantingAddress === target.address ? 'Authorizing…' : 'Authorize'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {error && (
+        <div className={targets.length > 0 ? 'mt-2 text-red-400' : 'text-red-400'}>
+          {error}
+        </div>
+      )}
+    </div>
+  )
+}
