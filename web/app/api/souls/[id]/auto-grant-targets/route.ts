@@ -64,6 +64,8 @@ export async function GET(
       memberId: t.memberId,
       address: t.address,
       displayName: t.displayName,
+      desiredScopeMask: t.desiredScopeMask,
+      isNewGrantee: t.isNewGrantee,
     })),
     currentCapacity: plan.currentCapacity,
     activeGrantCount: plan.activeGrantCount,

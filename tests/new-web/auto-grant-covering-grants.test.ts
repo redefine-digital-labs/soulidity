@@ -14,16 +14,21 @@ vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
 const SOUL_ID = `0x${'a'.repeat(64)}`
 const ACCOUNT_ID = 'account-1'
 
-describe('getGranteesWithActiveGrants', () => {
+const SCOPE_SEAL = 1
+const SCOPE_MEMORY = 2
+const SCOPE_SKILLS = 4
+const SCOPE_ASSETS = 8
+
+describe('getActiveGrantScopeByGrantee', () => {
   beforeEach(() => {
     vi.resetAllMocks()
   })
 
-  it('returns empty Set when granteeAddresses is empty', async () => {
-    const { getGranteesWithActiveGrants } = await import(
+  it('returns empty Map when granteeAddresses is empty', async () => {
+    const { getActiveGrantScopeByGrantee } = await import(
       '../../web/lib/soulidity/auto-grant'
     )
-    const result = await getGranteesWithActiveGrants({
+    const result = await getActiveGrantScopeByGrantee({
       soulOnChainId: SOUL_ID,
       granteeAddresses: [],
     })
@@ -31,21 +36,23 @@ describe('getGranteesWithActiveGrants', () => {
     expect(mockedPrisma.soulGrantRecord.findMany).not.toHaveBeenCalled()
   })
 
-  it('queries by soul + grantees + active + non-expired and returns matched addresses (no scope filter)', async () => {
+  it('returns existing scope masks per grantee from active grants', async () => {
     mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
-      { granteeAddress: '0xagent1' },
-      { granteeAddress: '0xagent3' },
+      { granteeAddress: '0xagent1', scopes: ['seal', 'skills'] },
+      { granteeAddress: '0xagent3', scopes: ['memory'] },
     ])
     const now = new Date('2026-05-10T00:00:00.000Z')
-    const { getGranteesWithActiveGrants } = await import(
+    const { getActiveGrantScopeByGrantee } = await import(
       '../../web/lib/soulidity/auto-grant'
     )
-    const result = await getGranteesWithActiveGrants({
+    const result = await getActiveGrantScopeByGrantee({
       soulOnChainId: SOUL_ID,
       granteeAddresses: ['0xagent1', '0xagent2', '0xagent3'],
       now,
     })
-    expect(result).toEqual(new Set(['0xagent1', '0xagent3']))
+    expect(result.get('0xagent1')).toBe(SCOPE_SEAL | SCOPE_SKILLS)
+    expect(result.get('0xagent2')).toBeUndefined()
+    expect(result.get('0xagent3')).toBe(SCOPE_MEMORY)
     expect(mockedPrisma.soulGrantRecord.findMany).toHaveBeenCalledWith({
       where: {
         soulOnChainId: SOUL_ID,
@@ -56,8 +63,23 @@ describe('getGranteesWithActiveGrants', () => {
           { expiresAt: { gt: now } },
         ],
       },
-      select: { granteeAddress: true },
+      select: { granteeAddress: true, scopes: true },
     })
+  })
+
+  it('merges multiple rows for the same grantee defensively', async () => {
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
+      { granteeAddress: '0xagent1', scopes: ['seal'] },
+      { granteeAddress: '0xagent1', scopes: ['assets'] },
+    ])
+    const { getActiveGrantScopeByGrantee } = await import(
+      '../../web/lib/soulidity/auto-grant'
+    )
+    const result = await getActiveGrantScopeByGrantee({
+      soulOnChainId: SOUL_ID,
+      granteeAddresses: ['0xagent1'],
+    })
+    expect(result.get('0xagent1')).toBe(SCOPE_SEAL | SCOPE_ASSETS)
   })
 })
 
@@ -74,7 +96,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
-      scopeMask: 8,
+      scopeMask: SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 0,
     })
@@ -82,14 +104,41 @@ describe('computeAutoGrantTargets', () => {
     expect(plan.requiredCapacity).toBe(1)
   })
 
-  it('subtracts agents who already hold any active grant on this soul', async () => {
+  it('new grantees get desiredScopeMask == kindScope and consume slots', async () => {
     mockedPrisma.member.findMany.mockResolvedValue([
       { id: 'agent-1', displayName: null, walletBindings: [{ address: '0xagent1' }] },
       { id: 'agent-2', displayName: null, walletBindings: [{ address: '0xagent2' }] },
-      { id: 'agent-3', displayName: null, walletBindings: [{ address: '0xagent3' }] },
+    ])
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+    const { computeAutoGrantTargets } = await import(
+      '../../web/lib/soulidity/auto-grant'
+    )
+    const plan = await computeAutoGrantTargets({
+      accountId: ACCOUNT_ID,
+      soulOnChainId: SOUL_ID,
+      scopeMask: SCOPE_ASSETS,
+      currentCapacity: 1,
+      activeGrantCount: 0,
+    })
+    expect(plan.targets).toHaveLength(2)
+    expect(plan.targets.every((t) => t.desiredScopeMask === SCOPE_ASSETS)).toBe(true)
+    expect(plan.targets.every((t) => t.isNewGrantee)).toBe(true)
+    // 0 existing + 2 new grantees → capacity must be >= 2
+    expect(plan.requiredCapacity).toBe(2)
+  })
+
+  it('expands an agent with a different existing scope to a merged superset mask (regression for sprite upload not granting assets)', async () => {
+    // Agent already holds [seal, skills] on this Soul (e.g. issued
+    // during a prior memory/skill upload). Owner now uploads a sprite
+    // (kindScopeMask = SOUL_GRANT_SCOPE_ASSETS = 8). The new auto-grant
+    // path must issue with the MERGED mask (seal|skills|assets = 13)
+    // so the on-chain `grant::issue` supersede expands the agent's
+    // scope rather than narrowing it down to just [assets].
+    mockedPrisma.member.findMany.mockResolvedValue([
+      { id: 'agent-1', displayName: 'Agent', walletBindings: [{ address: '0xagent1' }] },
     ])
     mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
-      { granteeAddress: '0xagent2' },
+      { granteeAddress: '0xagent1', scopes: ['seal', 'skills'] },
     ])
     const { computeAutoGrantTargets } = await import(
       '../../web/lib/soulidity/auto-grant'
@@ -97,29 +146,25 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
-      scopeMask: 8,
+      scopeMask: SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 1,
     })
-    expect(plan.targets.map((t) => t.address)).toEqual(['0xagent1', '0xagent3'])
-    // activeGrantCount + new targets = 1 + 2 = 3, larger than currentCapacity=1
-    expect(plan.requiredCapacity).toBe(3)
-    expect(plan.activeGrantCount).toBe(1)
-    expect(plan.currentCapacity).toBe(1)
+    expect(plan.targets).toHaveLength(1)
+    expect(plan.targets[0]?.address).toBe('0xagent1')
+    expect(plan.targets[0]?.desiredScopeMask).toBe(SCOPE_SEAL | SCOPE_SKILLS | SCOPE_ASSETS)
+    expect(plan.targets[0]?.isNewGrantee).toBe(false)
+    // Existing grantee → no new slot consumed → required capacity stays at activeGrantCount.
+    expect(plan.requiredCapacity).toBe(1)
   })
 
-  it('skips an agent with a narrow grant for a DIFFERENT scope so the issue PTB cannot narrow them — regression for [F-?] auto-grant scope narrowing', async () => {
-    // The pet only holds an `[assets]` grant (issued by `PetGrantDialog`,
-    // mask 8). The owner now uploads a private memory
-    // (kindScopeMask = SOUL_GRANT_SCOPE_MEMORY = 2). Move's `grant::issue`
-    // would replace the pet's slot wholesale, leaving them with `[memory]`
-    // only and silently dropping `[assets]`. The new filter must treat any
-    // existing-grant grantee as already-served and skip them.
+  it('skips an agent whose existing scope already covers the kind scope', async () => {
     mockedPrisma.member.findMany.mockResolvedValue([
-      { id: 'agent-1', displayName: 'Pet', walletBindings: [{ address: '0xpetagent' }] },
+      { id: 'agent-1', displayName: null, walletBindings: [{ address: '0xagent1' }] },
     ])
     mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
-      { granteeAddress: '0xpetagent' },
+      // Agent already has assets — re-issuing the same kind would be a no-op.
+      { granteeAddress: '0xagent1', scopes: ['seal', 'assets'] },
     ])
     const { computeAutoGrantTargets } = await import(
       '../../web/lib/soulidity/auto-grant'
@@ -127,13 +172,43 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
-      scopeMask: 2, // memory
+      scopeMask: SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 1,
     })
     expect(plan.targets).toEqual([])
-    // No fanout → capacity stays as-is.
     expect(plan.requiredCapacity).toBe(1)
+  })
+
+  it('mixes new and existing grantees and bumps capacity only for new ones', async () => {
+    mockedPrisma.member.findMany.mockResolvedValue([
+      { id: 'a-new', displayName: null, walletBindings: [{ address: '0xnew' }] },
+      { id: 'a-existing', displayName: null, walletBindings: [{ address: '0xexisting' }] },
+    ])
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
+      { granteeAddress: '0xexisting', scopes: ['seal'] },
+    ])
+    const { computeAutoGrantTargets } = await import(
+      '../../web/lib/soulidity/auto-grant'
+    )
+    const plan = await computeAutoGrantTargets({
+      accountId: ACCOUNT_ID,
+      soulOnChainId: SOUL_ID,
+      scopeMask: SCOPE_MEMORY,
+      currentCapacity: 1,
+      activeGrantCount: 1,
+    })
+    expect(plan.targets.map((t) => ({
+      address: t.address,
+      desiredScopeMask: t.desiredScopeMask,
+      isNewGrantee: t.isNewGrantee,
+    }))).toEqual([
+      { address: '0xnew', desiredScopeMask: SCOPE_MEMORY, isNewGrantee: true },
+      { address: '0xexisting', desiredScopeMask: SCOPE_SEAL | SCOPE_MEMORY, isNewGrantee: false },
+    ])
+    // activeGrantCount=1 + 1 new grantee = 2; existing grantee does NOT
+    // add to the capacity requirement because the supersede reuses its slot.
+    expect(plan.requiredCapacity).toBe(2)
   })
 
   it('does not lower currentCapacity below its existing value', async () => {
@@ -147,7 +222,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
-      scopeMask: 8,
+      scopeMask: SCOPE_ASSETS,
       currentCapacity: 100,
       activeGrantCount: 0,
     })
@@ -177,7 +252,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
-      scopeMask: 9, // seal | assets
+      scopeMask: SCOPE_SEAL | SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 0,
     })
@@ -185,7 +260,7 @@ describe('computeAutoGrantTargets', () => {
     expect(mockedPrisma.member.findMany).not.toHaveBeenCalled()
   })
 
-  it('clamps to MAX_GRANT_CAPACITY when target count would overflow', async () => {
+  it('clamps NEW-grantee count to MAX_GRANT_CAPACITY while preserving existing-grantee supersedes', async () => {
     const agents = Array.from({ length: 12 }, (_, i) => ({
       id: `agent-${i}`,
       displayName: null,
@@ -197,16 +272,14 @@ describe('computeAutoGrantTargets', () => {
     const { computeAutoGrantTargets, MAX_GRANT_CAPACITY } = await import(
       '../../web/lib/soulidity/auto-grant'
     )
-    // Pretend the soul is one slot below the ceiling so adding 12 agents would
-    // push past MAX_GRANT_CAPACITY; ensure we cap at the ceiling.
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
-      scopeMask: 8,
+      scopeMask: SCOPE_ASSETS,
       currentCapacity: MAX_GRANT_CAPACITY - 5,
       activeGrantCount: MAX_GRANT_CAPACITY - 5,
     })
-    // Only 5 slots left before MAX_GRANT_CAPACITY
+    // Only 5 NEW-grantee slots left before MAX_GRANT_CAPACITY
     expect(plan.targets).toHaveLength(5)
     expect(plan.requiredCapacity).toBe(MAX_GRANT_CAPACITY)
   })

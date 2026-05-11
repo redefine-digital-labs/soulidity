@@ -602,7 +602,12 @@ export function useSoulContentActions({
       const shouldAutoGrant = role === 'owner' && !slotIsPublic && kindScopeMask > 0
       let autoGrantPlan:
         | {
-            targets: Array<{ memberId: string; address: string }>
+            targets: Array<{
+              memberId: string
+              address: string
+              desiredScopeMask: number
+              isNewGrantee: boolean
+            }>
             currentCapacity: number
             requiredCapacity: number
           }
@@ -616,7 +621,12 @@ export function useSoulContentActions({
           })
           if (planResponse.ok) {
             const planBody = await planResponse.json() as {
-              targets: Array<{ memberId: string; address: string }>
+              targets: Array<{
+                memberId: string
+                address: string
+                desiredScopeMask: number
+                isNewGrantee: boolean
+              }>
               currentCapacity: number
               requiredCapacity: number
             }
@@ -715,10 +725,13 @@ export function useSoulContentActions({
               })
             }
             for (const target of autoGrantPlan.targets) {
+              // Use target.desiredScopeMask (existing | kindScope) so the
+              // on-chain supersede expands the agent's scope instead of
+              // narrowing it. For new grantees, desiredScopeMask == kindScope.
               addIssueGrantCalls(tx, {
                 stateObjectId: stateOnChainId,
                 granteeAddress: target.address,
-                scopeMask: kindScopeMask,
+                scopeMask: target.desiredScopeMask,
                 expiresAtMs: null,
               })
             }
