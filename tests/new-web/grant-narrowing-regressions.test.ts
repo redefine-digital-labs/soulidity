@@ -49,8 +49,14 @@ describe('PetGrantDialog batch issue', () => {
 
     expect(source).toContain("'/api/souls/grant-merge-masks'")
     expect(source).toContain('addedScopeMask: SOUL_GRANT_SCOPE_ASSETS')
-    expect(source).toContain('mergedMaskByItem.set(m.soulOnChainId, m.mergedScopeMask)')
-    expect(source).toContain('mergedMaskByItem.get(item.soulOnChainId) ?? SOUL_GRANT_SCOPE_ASSETS')
+    // R-001: each preflight item now drives both the mergedScopeMask AND
+    // the per-Soul `setCapacityTo` bump. The accumulator stores a
+    // `PreflightDecision` so the bump survives chunking and is read out
+    // when the batch builder runs.
+    expect(source).toContain('decisionBySoul.set(m.soulOnChainId,')
+    expect(source).toContain('mergedScopeMask: m.mergedScopeMask')
+    expect(source).toContain('decisionBySoul.get(item.soulOnChainId)')
+    expect(source).toContain('scopeMask: decision?.mergedScopeMask ?? SOUL_GRANT_SCOPE_ASSETS')
 
     // The bare single-bit scope on every batch row must be gone.
     expect(source).not.toContain('scopeMask: SOUL_GRANT_SCOPE_ASSETS,\n                // Lifetime')
@@ -70,8 +76,34 @@ describe('PetGrantDialog batch issue', () => {
       /for \(const preflightBatch of preflightChunks\)[\s\S]+?fetch\('\/api\/souls\/grant-merge-masks'/,
     )
 
-    // Merged masks must accumulate across chunks (Map kept outside the loop).
-    expect(source).toContain('const mergedMaskByItem = new Map<string, number>()')
+    // Per-soul decisions (merged scope + capacity bump) must accumulate
+    // across chunks (Map kept outside the loop).
+    expect(source).toContain('const decisionBySoul = new Map<string, PreflightDecision>()')
+  })
+
+  // ── R-001: preflight capacity contract is honored in the batch PTB ──
+  it('splices set_grant_capacity into the batch when requiredCapacity > currentCapacity', () => {
+    const source = readSource('web/app/account/pets/_components/PetGrantDialog.tsx')
+
+    // Per-soul decision carries both fields.
+    expect(source).toMatch(/interface PreflightDecision \{[\s\S]+?mergedScopeMask:\s*number[\s\S]+?setCapacityTo:\s*number \| null[\s\S]+?\}/)
+    // setCapacityTo is null when no bump is needed, requiredCapacity otherwise.
+    expect(source).toContain('setCapacityTo:\n                m.requiredCapacity > m.currentCapacity ? m.requiredCapacity : null,')
+    // buildBatchIssueGrantsTx is called with per-item setCapacityTo so the
+    // PTB splices `grant::set_grant_capacity` before `grant::issue` for
+    // any Soul that needs it.
+    expect(source).toContain('setCapacityTo: decision?.setCapacityTo ?? null,')
+  })
+
+  // ── R-001: fail-fast when a Soul would exceed MAX_GRANT_CAPACITY ──
+  it('aborts before signing if any Soul would exceed MAX_GRANT_CAPACITY', () => {
+    const source = readSource('web/app/account/pets/_components/PetGrantDialog.tsx')
+
+    expect(source).toContain("import {")
+    expect(source).toContain('MAX_GRANT_CAPACITY,')
+    // Throw before any `signAndExecute` call so the wallet never sees a
+    // PTB that would abort on-chain.
+    expect(source).toMatch(/m\.isNewGrantee && m\.requiredCapacity > MAX_GRANT_CAPACITY/)
   })
 })
 
@@ -91,9 +123,33 @@ describe('GrantsPanel manual Authorize form', () => {
 
     expect(source).toContain("'/api/souls/grant-merge-masks'")
     expect(source).toContain('addedScopeMask: scopeMask')
-    expect(source).toContain('await issueGrant(addr, null, mergedScopeMask)')
+    expect(source).toContain('await issueGrant(addr, null, mergedScopeMask, { setCapacityTo })')
     // The pre-fix path issued with raw scopeMask. That must not return.
     expect(source).not.toContain('await issueGrant(addr, null, scopeMask)')
+  })
+
+  // ── R-001: preflight isNewGrantee + requiredCapacity govern the gate ──
+  it('honors the preflight requiredCapacity contract before signing', () => {
+    const source = readSource('web/app/souls/[id]/page.tsx')
+
+    // The hard mirror-only block is gone — preflight is authoritative.
+    // (Chain-only existing grants would otherwise be misclassified as
+    // "capacity full new grantee" by the local mirror.)
+    expect(source).not.toMatch(/if \(capacityFullForNewGrantee\) \{[\s\S]+?return\s*$/m)
+
+    // Preflight fields used: isNewGrantee, currentCapacity, requiredCapacity.
+    expect(source).toContain('isNewGrantee: boolean')
+    expect(source).toContain('currentCapacity: number')
+    expect(source).toContain('requiredCapacity: number')
+
+    // Capacity bump is derived from preflight, not from local mirror.
+    expect(source).toContain('const setCapacityTo = requiredCapacity > currentCapacity ? requiredCapacity : null')
+
+    // Fail-fast when the bump would exceed the on-chain ceiling.
+    expect(source).toContain('isNewGrantee && requiredCapacity > MAX_GRANT_CAPACITY')
+
+    // Disable state no longer references the stale-mirror block flag.
+    expect(source).not.toMatch(/disabled=\{[\s\S]+?capacityFullForNewGrantee[\s\S]+?\}/)
   })
 })
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { Transaction } from '@mysten/sui/transactions'
 import {
   MAX_GRANT_BATCH_SIZE,
+  MAX_GRANT_CAPACITY,
   SOUL_GRANT_SCOPE_ASSETS,
   addIssueGrantCalls,
   addSetGrantCapacityCalls,
@@ -89,6 +90,83 @@ describe('buildBatchIssueGrantsTx', () => {
         { stateObjectId: STATE_B, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: null },
       ],
     })
+    expect(countGrantMoveCalls(tx, 'issue_to_grantee')).toBe(2)
+  })
+
+  // ── R-001: per-item setCapacityTo splices set_grant_capacity ─────────
+  it('splices set_grant_capacity before issue_to_grantee for items that carry setCapacityTo', () => {
+    const tx = buildBatchIssueGrantsTx({
+      items: [
+        // STATE_A: needs a bump from 1 → 2.
+        {
+          stateObjectId: STATE_A,
+          granteeAddress: GRANTEE,
+          scopeMask: SOUL_GRANT_SCOPE_ASSETS,
+          setCapacityTo: 2,
+        },
+        // STATE_B: existing grantee supersede, no bump.
+        {
+          stateObjectId: STATE_B,
+          granteeAddress: GRANTEE,
+          scopeMask: SOUL_GRANT_SCOPE_ASSETS,
+          setCapacityTo: null,
+        },
+      ],
+    })
+    // Exactly one capacity bump (STATE_A) and two issue calls (both souls).
+    expect(countGrantMoveCalls(tx, 'set_grant_capacity')).toBe(1)
+    expect(countGrantMoveCalls(tx, 'issue_to_grantee')).toBe(2)
+    // Order must be set_grant_capacity(STATE_A) → issue(STATE_A) → issue(STATE_B).
+    const json = JSON.parse(JSON.stringify(tx.getData()))
+    const grantCommands = (json?.commands ?? []).filter(
+      (cmd: { MoveCall?: { module?: string } }) => cmd?.MoveCall?.module === 'grant',
+    )
+    expect(grantCommands).toHaveLength(3)
+    expect(grantCommands[0].MoveCall.function).toBe('set_grant_capacity')
+    expect(grantCommands[1].MoveCall.function).toBe('issue_to_grantee')
+    expect(grantCommands[2].MoveCall.function).toBe('issue_to_grantee')
+  })
+
+  it('rejects setCapacityTo above MAX_GRANT_CAPACITY before signing', () => {
+    expect(() =>
+      buildBatchIssueGrantsTx({
+        items: [
+          {
+            stateObjectId: STATE_A,
+            granteeAddress: GRANTEE,
+            scopeMask: SOUL_GRANT_SCOPE_ASSETS,
+            setCapacityTo: MAX_GRANT_CAPACITY + 1,
+          },
+        ],
+      }),
+    ).toThrow(/MAX_GRANT_CAPACITY/)
+  })
+
+  it('rejects non-positive / non-safe setCapacityTo', () => {
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      expect(() =>
+        buildBatchIssueGrantsTx({
+          items: [
+            {
+              stateObjectId: STATE_A,
+              granteeAddress: GRANTEE,
+              scopeMask: SOUL_GRANT_SCOPE_ASSETS,
+              setCapacityTo: bad,
+            },
+          ],
+        }),
+      ).toThrow(/setCapacityTo/)
+    }
+  })
+
+  it('omits set_grant_capacity entirely when no item carries setCapacityTo', () => {
+    const tx = buildBatchIssueGrantsTx({
+      items: [
+        { stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS },
+        { stateObjectId: STATE_B, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS },
+      ],
+    })
+    expect(countGrantMoveCalls(tx, 'set_grant_capacity')).toBe(0)
     expect(countGrantMoveCalls(tx, 'issue_to_grantee')).toBe(2)
   })
 })
@@ -199,6 +277,22 @@ describe('addIssueGrantCalls / addSetGrantCapacityCalls injectors', () => {
       .toThrow(/capacity/)
     expect(() => addSetGrantCapacityCalls(new Transaction(), { stateObjectId: STATE_A, capacity: Number.NaN }))
       .toThrow(/capacity/)
+  })
+
+  it('addSetGrantCapacityCalls rejects capacity above MAX_GRANT_CAPACITY', () => {
+    expect(() =>
+      addSetGrantCapacityCalls(new Transaction(), {
+        stateObjectId: STATE_A,
+        capacity: MAX_GRANT_CAPACITY + 1,
+      }),
+    ).toThrow(/MAX_GRANT_CAPACITY/)
+    // Boundary: MAX_GRANT_CAPACITY itself is accepted.
+    expect(() =>
+      addSetGrantCapacityCalls(new Transaction(), {
+        stateObjectId: STATE_A,
+        capacity: MAX_GRANT_CAPACITY,
+      }),
+    ).not.toThrow()
   })
 
   it('two injector calls in the same PTB compose linearly', () => {

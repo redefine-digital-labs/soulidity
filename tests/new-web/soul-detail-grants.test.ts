@@ -28,7 +28,14 @@ describe('Soul detail grant panel source contract', () => {
     expect(page).not.toContain('const activeGrant = soul.activeGrants[0] ?? null')
     expect(page).toContain('findActiveGrantForAddress(soul.activeGrants, trimmedAgentAddress)')
     expect(page).toContain('soul.activeGrantCount >= soul.grantCapacity')
-    expect(page).toContain('Capacity full. Revoke an existing grantee before authorizing a new one.')
+    // R-001: the "capacity full → hard block" behavior has been replaced
+    // with preflight-driven auto-bump. The mirror check is now only a UX
+    // hint ("will be raised automatically"); the real authorization
+    // decision is made off `/grant-merge-masks`'s `isNewGrantee` +
+    // `requiredCapacity` so chain-only existing grants supersede instead
+    // of being misclassified as full-slot blockers.
+    expect(page).toContain('will be raised automatically for a new grantee')
+    expect(page).not.toContain('Capacity full. Revoke an existing grantee before authorizing a new one.')
     expect(page).not.toContain('await revokeGrant(existing.granteeAddress)')
     expect(page).not.toContain('Reassigning revokes the current grant first')
   })
