@@ -130,10 +130,38 @@ describe('GET /api/souls/[id]/auto-grant-targets', () => {
     expect(mockedComputeAutoGrantTargets).toHaveBeenCalledWith({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ON_CHAIN_ID,
+      stateOnChainId: STATE_ON_CHAIN_ID,
       scopeMask: 8,
       currentCapacity: 1,
       activeGrantCount: 0,
     })
+  })
+
+  // ── R-002: fail closed on chain-fallback RPC error ────────────────
+  it('returns 502 when computeAutoGrantTargets throws (chain-fallback fail-closed)', async () => {
+    mockedRequireHumanWalletIdentity.mockResolvedValue({
+      identity: { accountId: ACCOUNT_ID, memberId: HUMAN_MEMBER_ID, kind: 'human' },
+      walletAddresses: ['0xowner'],
+    })
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValue({
+      onChainId: SOUL_ON_CHAIN_ID,
+      stateOnChainId: STATE_ON_CHAIN_ID,
+      currentOwnerMemberId: HUMAN_MEMBER_ID,
+      grantCapacity: 1,
+      activeGrantCount: 0,
+    })
+    // Auto-grant planner propagates RPC errors so the route can fail
+    // closed — returning a single-bit `desiredScopeMask` here would let
+    // the caller's `grant::issue_to_grantee` narrow chain-only grants.
+    mockedComputeAutoGrantTargets.mockRejectedValue(new Error('rpc down'))
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { GET } = await import('../../web/app/api/souls/[id]/auto-grant-targets/route')
+      const response = await GET(jsonRequest('8'), { params: Promise.resolve({ id: SOUL_ROUTE_ID }) })
+      expect(response.status).toBe(502)
+    } finally {
+      consoleSpy.mockRestore()
+    }
   })
 
   it('returns 200 with empty targets when no agents need grants', async () => {

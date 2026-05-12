@@ -36,10 +36,35 @@ describe('agent-grant-recommendations banner', () => {
 
     // Type: target carries desiredScopeMask
     expect(source).toMatch(/desiredScopeMask:\s*number/)
-    // Call site: issueGrant uses target.desiredScopeMask
-    expect(source).toContain('await grant.issueGrant(target.address, null, target.desiredScopeMask)')
+    // Call site: issueGrant uses target.desiredScopeMask + the per-target
+    // capacity bump derived from the response's currentCapacity /
+    // activeGrantCount / isNewGrantee (R-001).
+    expect(source).toContain(
+      'await grant.issueGrant(target.address, null, target.desiredScopeMask, { setCapacityTo })',
+    )
     // Regression guard: the previous single-bit form must NOT come back
     expect(source).not.toContain('await grant.issueGrant(target.address, null, kindScopeMask)')
+    // Regression guard: the previous no-options form must NOT come back
+    // (it left full-capacity new grantees with a guaranteed-abort PTB).
+    expect(source).not.toContain('await grant.issueGrant(target.address, null, target.desiredScopeMask)')
+  })
+
+  // ── R-001: per-target capacity bump must be derived from the response ──
+  it('derives per-target setCapacityTo from the auto-grant-targets response', () => {
+    const source = readSource('web/components/souls/agent-grant-recommendations.tsx')
+
+    // Component must read currentCapacity + activeGrantCount from the
+    // response so it can compute the per-target bump at click time.
+    expect(source).toContain('body.currentCapacity')
+    expect(source).toContain('body.activeGrantCount')
+    // Derivation must match the GrantsPanel preflight contract (F-452):
+    // projected count > current capacity → bump, else null.
+    expect(source).toContain('const projectedActive = activeGrantCount + (target.isNewGrantee ? 1 : 0)')
+    expect(source).toContain('const setCapacityTo = projectedActive > currentCapacity ? projectedActive : null')
+    // Fail-fast above the on-chain ceiling so the wallet never sees a
+    // guaranteed-abort PTB.
+    expect(source).toContain('MAX_GRANT_CAPACITY')
+    expect(source).toContain('setCapacityTo > MAX_GRANT_CAPACITY')
   })
 })
 

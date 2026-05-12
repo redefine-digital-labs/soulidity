@@ -9,9 +9,26 @@ const mockedPrisma = vi.hoisted(() => ({
   },
 }))
 
+// R-002: mirror-miss chain fallback is mocked here. Tests with a populated
+// mirror keep the default (no chain slot) so behaviour matches the
+// pre-fallback baseline. Tests that exercise the chain branch override
+// `getActiveGrantSlotForGrantee` per call.
+const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
+const mockedGetActiveGrantSlotForGrantee = vi.hoisted(() => vi.fn())
+
 vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
+vi.mock('@soulidity/sdk', async () => {
+  const actual = await vi.importActual<typeof import('@soulidity/sdk')>('@soulidity/sdk')
+  return {
+    ...actual,
+    getSoulStateObject: mockedGetSoulStateObject,
+    getActiveGrantSlotForGrantee: mockedGetActiveGrantSlotForGrantee,
+    getRequiredSoulidityEnv: vi.fn(() => '0xdeadbeef'),
+  }
+})
 
 const SOUL_ID = `0x${'a'.repeat(64)}`
+const STATE_ID = `0x${'b'.repeat(64)}`
 const ACCOUNT_ID = 'account-1'
 
 const SCOPE_SEAL = 1
@@ -86,6 +103,14 @@ describe('getActiveGrantScopeByGrantee', () => {
 describe('computeAutoGrantTargets', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    // Default chain stubs: state resolves shallow, no chain slot found.
+    // Tests that need a chain slot override per call.
+    mockedGetSoulStateObject.mockResolvedValue({
+      objectId: STATE_ID,
+      activeGrantsTableId: 'table-A',
+      activeGrantCount: 0,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValue(null)
   })
 
   it('returns empty plan when no agents exist for account', async () => {
@@ -96,6 +121,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 0,
@@ -116,6 +142,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 0,
@@ -146,6 +173,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 1,
@@ -172,6 +200,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 1,
@@ -194,6 +223,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_MEMORY,
       currentCapacity: 1,
       activeGrantCount: 1,
@@ -222,6 +252,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_ASSETS,
       currentCapacity: 100,
       activeGrantCount: 0,
@@ -237,6 +268,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: 0,
       currentCapacity: 1,
       activeGrantCount: 0,
@@ -252,6 +284,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_SEAL | SCOPE_ASSETS,
       currentCapacity: 1,
       activeGrantCount: 0,
@@ -275,6 +308,7 @@ describe('computeAutoGrantTargets', () => {
     const plan = await computeAutoGrantTargets({
       accountId: ACCOUNT_ID,
       soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
       scopeMask: SCOPE_ASSETS,
       currentCapacity: MAX_GRANT_CAPACITY - 5,
       activeGrantCount: MAX_GRANT_CAPACITY - 5,
@@ -282,5 +316,140 @@ describe('computeAutoGrantTargets', () => {
     // Only 5 NEW-grantee slots left before MAX_GRANT_CAPACITY
     expect(plan.targets).toHaveLength(5)
     expect(plan.requiredCapacity).toBe(MAX_GRANT_CAPACITY)
+  })
+
+  // ── R-002 regression: chain-only grant must not be narrowed ─────────
+  it('falls back to the on-chain active grant slot when the mirror has no row (regression for R-002)', async () => {
+    // Agent has no `SoulGrantRecord` row (mirror miss), but on chain
+    // holds {seal, skills}. Without the chain fallback, the planner
+    // would return `desiredScopeMask = SCOPE_ASSETS` and the caller's
+    // `grant::issue_to_grantee` would replace the slot wholesale with
+    // mask=8, dropping {seal, skills}. With the fallback, the planner
+    // sees the chain mask and returns the merged superset 13.
+    mockedPrisma.member.findMany.mockResolvedValue([
+      { id: 'agent-1', displayName: 'Agent', walletBindings: [{ address: '0xagent1' }] },
+    ])
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+    mockedGetSoulStateObject.mockResolvedValue({
+      objectId: STATE_ID,
+      activeGrantsTableId: 'table-A',
+      activeGrantCount: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockImplementation(
+      async (_state: unknown, grantee: string) => {
+        if (grantee === '0xagent1') {
+          return {
+            grantId: 'grant-A',
+            granteeAddress: '0xagent1',
+            scopeMask: SCOPE_SEAL | SCOPE_SKILLS,
+            scopes: ['seal', 'skills'],
+            expiresAtMs: null,
+            ownershipEpochSnapshot: 0,
+          }
+        }
+        return null
+      },
+    )
+
+    const { computeAutoGrantTargets } = await import(
+      '../../web/lib/soulidity/auto-grant'
+    )
+    const plan = await computeAutoGrantTargets({
+      accountId: ACCOUNT_ID,
+      soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
+      scopeMask: SCOPE_ASSETS,
+      currentCapacity: 1,
+      activeGrantCount: 1,
+    })
+    expect(plan.targets).toHaveLength(1)
+    expect(plan.targets[0]?.desiredScopeMask).toBe(SCOPE_SEAL | SCOPE_SKILLS | SCOPE_ASSETS)
+    // Chain-confirmed existing grantee → supersede reuses slot, no
+    // capacity bump needed even though the mirror said it was missing.
+    expect(plan.targets[0]?.isNewGrantee).toBe(false)
+    expect(plan.requiredCapacity).toBe(1)
+  })
+
+  it('skips chain-verification when the chain slot already covers the kind scope', async () => {
+    // Mirror miss but chain has {assets, seal} for the agent — issuing
+    // again with assets would be a no-op so the planner must skip it
+    // (avoid wasting a wallet signature on the recommendation panel).
+    mockedPrisma.member.findMany.mockResolvedValue([
+      { id: 'agent-1', displayName: null, walletBindings: [{ address: '0xagent1' }] },
+    ])
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValue({
+      grantId: 'grant-A',
+      granteeAddress: '0xagent1',
+      scopeMask: SCOPE_SEAL | SCOPE_ASSETS,
+      scopes: ['seal', 'assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 0,
+    })
+
+    const { computeAutoGrantTargets } = await import(
+      '../../web/lib/soulidity/auto-grant'
+    )
+    const plan = await computeAutoGrantTargets({
+      accountId: ACCOUNT_ID,
+      soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
+      scopeMask: SCOPE_ASSETS,
+      currentCapacity: 1,
+      activeGrantCount: 1,
+    })
+    expect(plan.targets).toEqual([])
+  })
+
+  it('fails closed when the on-chain mirror-miss verification throws', async () => {
+    // RPC transient must not be silently treated as `existing = 0` —
+    // doing so would let the caller narrow chain state on supersede.
+    // The planner must propagate the throw so the route returns 502
+    // instead of returning an unsafe single-bit `desiredScopeMask`.
+    mockedPrisma.member.findMany.mockResolvedValue([
+      { id: 'agent-1', displayName: null, walletBindings: [{ address: '0xagent1' }] },
+    ])
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+    mockedGetActiveGrantSlotForGrantee.mockRejectedValue(new Error('rpc down'))
+
+    const { computeAutoGrantTargets } = await import(
+      '../../web/lib/soulidity/auto-grant'
+    )
+    await expect(
+      computeAutoGrantTargets({
+        accountId: ACCOUNT_ID,
+        soulOnChainId: SOUL_ID,
+        stateOnChainId: STATE_ID,
+        scopeMask: SCOPE_ASSETS,
+        currentCapacity: 1,
+        activeGrantCount: 0,
+      }),
+    ).rejects.toThrow(/rpc down/)
+  })
+
+  it('skips the chain fallback when every agent already has a mirror row', async () => {
+    // Optimization invariant: if every candidate's mirror is populated,
+    // no RPC is needed. Locks in the perf contract so a future regression
+    // does not start over-reading chain state for the happy path.
+    mockedPrisma.member.findMany.mockResolvedValue([
+      { id: 'agent-1', displayName: null, walletBindings: [{ address: '0xagent1' }] },
+    ])
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
+      { granteeAddress: '0xagent1', scopes: ['seal'] },
+    ])
+
+    const { computeAutoGrantTargets } = await import(
+      '../../web/lib/soulidity/auto-grant'
+    )
+    await computeAutoGrantTargets({
+      accountId: ACCOUNT_ID,
+      soulOnChainId: SOUL_ID,
+      stateOnChainId: STATE_ID,
+      scopeMask: SCOPE_ASSETS,
+      currentCapacity: 1,
+      activeGrantCount: 1,
+    })
+    expect(mockedGetSoulStateObject).not.toHaveBeenCalled()
+    expect(mockedGetActiveGrantSlotForGrantee).not.toHaveBeenCalled()
   })
 })
