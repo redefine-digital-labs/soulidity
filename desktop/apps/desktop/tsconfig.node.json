@@ -12,7 +12,8 @@
   "include": [
     "electron.vite.config.*",
     "src/main/**/*",
-    "src/preload/**/*"
+    "src/preload/**/*",
+    "src/renderer/lib/soulidity/content-access.ts"
   ],
   "references": [
     { "path": "../../packages/backend" },
