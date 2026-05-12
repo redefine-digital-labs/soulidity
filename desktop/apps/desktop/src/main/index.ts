@@ -63,7 +63,9 @@ import {
   hasCachedSprite, getCachedSprite, cacheSprite, removeCachedSprite,
   pruneCache, getCacheStats, listCachedSprites
 } from './cache-manager'
+import { loadCachedActivePersona } from './active-persona'
 import { downloadSoulPersona } from './soul-downloader'
+import { decryptProtectedSpritePayload } from './protected-sprite-decryptor'
 import {
   storeDesktopToken,
   loadDesktopToken,
@@ -876,6 +878,17 @@ ipcMain.handle('config:set', (_event, config: Record<string, unknown>) => {
 
 // ── 设备绑定 IPC ──────────────────────────────────────────
 const WEB_BASE_URL = getDesktopWebBaseUrl()
+const DESKTOP_API_FETCH_TIMEOUT_MS = 12_000
+
+function createDesktopApiFetchSignal(): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(DESKTOP_API_FETCH_TIMEOUT_MS)
+  }
+
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), DESKTOP_API_FETCH_TIMEOUT_MS)
+  return controller.signal
+}
 
 // Wire agent-api-key-store's rotation fetcher to the configured web URL.
 // Tests that import agent-api-key-store directly inject their own fetcher;
@@ -1279,10 +1292,15 @@ ipcMain.handle('soul:cache-persona', async (_event, params: {
   return { catalogId: params.catalogId, spriteId }
 })
 
+ipcMain.handle('soul:decrypt-protected-sprite', async (_event, params: { access: unknown }) => {
+  return decryptProtectedSpritePayload(params.access)
+})
+
 ipcMain.handle('soul:set-active', async (_event, params: { catalogId: string; sourceType: string; sourceRef: string } | null) => {
   if (!params) {
     store.delete('activePersonaCatalogId')
     store.delete('lastAppliedPersona')
+    broadcastToAllWindows('persona-changed', null)
 
     // Sync reset to server so remote state is cleared
     const token = loadDesktopToken()
@@ -1292,31 +1310,19 @@ ipcMain.handle('soul:set-active', async (_event, params: { catalogId: string; so
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ sourceType: null, sourceRef: null }),
+          signal: createDesktopApiFetchSignal(),
         })
       } catch { /* offline — local cache is fallback */ }
     }
 
-    broadcastToAllWindows('persona-changed', null)
     return
   }
 
-  const cached = getCachedSprite(`catalog-${params.catalogId}`)
-  if (!cached) throw new Error('Persona not cached — download it first')
-
-  let spriteConfig = null
-  try {
-    const configRaw = readFileSync(cached.configPath, 'utf-8')
-    spriteConfig = JSON.parse(configRaw)
-    // Resolve src to absolute file URL
-    if (cached.spritePath) {
-      spriteConfig.src = `file://${cached.spritePath}`
-    }
-  } catch {
-    throw new Error('Failed to load cached persona config')
-  }
+  const persistedPersona = loadCachedActivePersona(params.catalogId, { spriteSource: 'file-url' })
 
   store.set('activePersonaCatalogId', params.catalogId)
-  store.set('lastAppliedPersona', { catalogId: params.catalogId, spriteConfig })
+  store.set('lastAppliedPersona', persistedPersona)
+  broadcastToAllWindows('persona-changed', { catalogId: params.catalogId })
 
   // Sync to web if token available — use the catalog entry's real sourceType/sourceRef
   const token = loadDesktopToken()
@@ -1326,18 +1332,35 @@ ipcMain.handle('soul:set-active', async (_event, params: { catalogId: string; so
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ sourceType: params.sourceType, sourceRef: params.sourceRef }),
+        signal: createDesktopApiFetchSignal(),
       })
       if (!res.ok) {
         console.warn(`[main] active-persona sync failed: ${res.status} ${res.statusText}`)
       }
     } catch { /* offline — local cache is fallback */ }
   }
-
-  broadcastToAllWindows('persona-changed', { spriteConfig })
 })
 
 ipcMain.handle('soul:get-active', () => {
+  const activeCatalogId = store.get('activePersonaCatalogId') as string | undefined
+  if (activeCatalogId) {
+    try {
+      const activePersona = loadCachedActivePersona(activeCatalogId)
+      store.set('lastAppliedPersona', loadCachedActivePersona(activeCatalogId, { spriteSource: 'file-url' }))
+      return activePersona
+    } catch {
+      /* fall back to the last saved payload below */
+    }
+  }
+
   const saved = store.get('lastAppliedPersona') as { catalogId?: string; spriteConfig?: unknown } | undefined
+  if (saved?.catalogId) {
+    try {
+      return loadCachedActivePersona(saved.catalogId)
+    } catch {
+      /* fall back to the saved payload below */
+    }
+  }
   if (saved?.spriteConfig) {
     return { catalogId: saved.catalogId, spriteConfig: saved.spriteConfig }
   }
@@ -1349,6 +1372,7 @@ ipcMain.handle('soul:fetch-catalog', async (_event, params: { page: number; page
   try {
     const res = await fetch(
       `${WEB_BASE_URL}${pathname}`,
+      { signal: createDesktopApiFetchSignal() },
     )
     if (!res.ok) return null
     return await readJsonOrThrow(res, 'Fetch desktop catalog', pathname)
@@ -1364,6 +1388,7 @@ ipcMain.handle('soul:get-my-souls', async () => {
   try {
     const res = await fetch(`${WEB_BASE_URL}${pathname}`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: createDesktopApiFetchSignal(),
     })
     if (!res.ok) return []
     const data = await readJsonOrThrow<{ souls?: unknown[] }>(res, 'Fetch linked desktop souls', pathname)

@@ -1,6 +1,5 @@
-import { SealClient, SessionKey } from '@mysten/seal'
+import { SealClient, SessionKey, type KeyServerConfig } from '@mysten/seal'
 import { Transaction } from '@mysten/sui/transactions'
-import { isValidContentDocumentId, type ContentAccessResponse } from '@soulidity/sdk'
 
 const AES_GCM_ALGORITHM = 'AES-GCM'
 const AES_GCM_CIPHER = 'AES-GCM-256'
@@ -8,10 +7,59 @@ const CONTENT_HASH_BYTES = 32
 const DEK_BYTES = 32
 const IV_BYTES = 12
 const SUI_CLOCK_OBJECT_ID = '0x6'
+const DOCUMENT_ID_VERSION = 1
+const CONTENT_DOCUMENT_ID_DOMAIN = new TextEncoder().encode('soul-content:')
+const KIND_BYTES = 4
+const CONTENT_OBJECT_ID_BYTES = 32
+const VERSION_INDEX_BYTES = 8
+const DOCUMENT_ID_NONCE_BYTES = 16
 
 type FetchLike = typeof fetch
 
-export type SealedContentAccess = Extract<ContentAccessResponse, { visibility: 'sealed' }>
+type ContentAccessKind = 'owner' | 'granted-agent' | 'paid' | 'public'
+
+export interface SealedContentAccess {
+  visibility: 'sealed'
+  artifact: {
+    walrusBlobUrl: string | null
+    walrusBlobId: string | null
+    blobObjectId: string
+  }
+  accessPolicy: {
+    packageId: string
+    stateObjectId: string
+    contentObjectId: string
+    kind: number
+    name: string
+    versionIndex: number
+    moduleName: 'content' | 'paid_access'
+    functionName:
+      | 'seal_approve_content_owner'
+      | 'seal_approve_content_granted_agent'
+      | 'seal_approve_content_public'
+      | 'seal_approve_content_paid_access'
+    soulGrantObjectId: string | null
+    paidAccessListOnChainId?: string | null
+    documentIdHex: string
+  }
+  seal: {
+    network: 'testnet' | 'mainnet'
+    threshold: number
+    verifyKeyServers: boolean
+    serverConfigs: KeyServerConfig[]
+  }
+  sealSidecar: {
+    encryptedDek: string
+    iv: string
+    cipher: string
+    fileName: string
+    mimeType: string
+    contentHash: string
+  }
+  viewerAddress: string
+  accessKind: ContentAccessKind
+  sessionTtlMin: number
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -36,6 +84,28 @@ function hexToBytes(value: string): Uint8Array {
 
 function bytesToHex(bytes: Uint8Array) {
   return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+}
+
+function isValidContentDocumentId(value: string): boolean {
+  let bytes: Uint8Array
+  try {
+    bytes = hexToBytes(value)
+  } catch {
+    return false
+  }
+
+  const minLength = CONTENT_DOCUMENT_ID_DOMAIN.length
+    + 1
+    + KIND_BYTES
+    + CONTENT_OBJECT_ID_BYTES
+    + 1
+    + VERSION_INDEX_BYTES
+    + DOCUMENT_ID_NONCE_BYTES
+  if (bytes.length < minLength) return false
+  for (let index = 0; index < CONTENT_DOCUMENT_ID_DOMAIN.length; index += 1) {
+    if (bytes[index] !== CONTENT_DOCUMENT_ID_DOMAIN[index]) return false
+  }
+  return bytes[CONTENT_DOCUMENT_ID_DOMAIN.length] === DOCUMENT_ID_VERSION
 }
 
 function padBase64(value: string) {
@@ -67,6 +137,10 @@ function getCrypto() {
 
 function toCryptoBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) as Uint8Array<ArrayBuffer>
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 async function sha256Hex(data: Uint8Array) {
@@ -244,7 +318,12 @@ export async function loadDecryptedContentVersion(params: {
     access,
     suiClient: params.suiClient,
   })
-  const encryptedBlobResponse = await fetchImpl(walrusBlobUrl)
+  let encryptedBlobResponse: Response
+  try {
+    encryptedBlobResponse = await fetchImpl(walrusBlobUrl)
+  } catch (error) {
+    throw new Error(`Failed to download encrypted content payload: ${errorMessage(error)}`)
+  }
   if (!encryptedBlobResponse.ok) {
     throw new Error('Failed to download encrypted content payload')
   }
@@ -255,11 +334,16 @@ export async function loadDecryptedContentVersion(params: {
     serverConfigs: access.seal.serverConfigs,
     verifyKeyServers: access.seal.verifyKeyServers,
   })
-  const keyMaterial = new Uint8Array(await sealClient.decrypt({
-    data: base64ToBytes(access.sealSidecar.encryptedDek),
-    sessionKey,
-    txBytes,
-  }))
+  let keyMaterial: Uint8Array
+  try {
+    keyMaterial = new Uint8Array(await sealClient.decrypt({
+      data: base64ToBytes(access.sealSidecar.encryptedDek),
+      sessionKey,
+      txBytes,
+    }))
+  } catch (error) {
+    throw new Error(`Failed to decrypt Seal key material: ${errorMessage(error)}`)
+  }
 
   try {
     if (keyMaterial.length !== DEK_BYTES + CONTENT_HASH_BYTES) {

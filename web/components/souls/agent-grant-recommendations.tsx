@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MAX_GRANT_CAPACITY } from '@soulidity/sdk'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useGrant } from '@/lib/hooks/use-grant'
 
@@ -8,6 +9,27 @@ interface AgentGrantTarget {
   memberId: string
   address: string
   displayName: string | null
+  /**
+   * Mask the on-chain `grant::issue` must carry for this agent. Equals
+   * `existing | kindScopeMask` so the supersede expands the agent's
+   * scope instead of narrowing it (see `auto-grant.ts`). For new
+   * grantees this equals `kindScopeMask`; for existing grantees with a
+   * different prior scope (e.g. `{seal, skills}` + sprite upload), this
+   * is the merged superset (`{seal, skills, assets}`). Must be honored
+   * by `issueGrant` — using the single-bit `kindScopeMask` here would
+   * silently narrow the agent's scope on chain.
+   */
+  desiredScopeMask: number
+  /** `true` when issuing consumes a new grant slot. Used here to decide
+   *  whether the PTB must splice `grant::set_grant_capacity` BEFORE
+   *  `grant::issue_to_grantee` so the chain accepts the new slot. */
+  isNewGrantee: boolean
+}
+
+interface AutoGrantTargetsResponse {
+  targets?: AgentGrantTarget[]
+  currentCapacity?: number
+  activeGrantCount?: number
 }
 
 interface GrantableSoulRef {
@@ -65,6 +87,15 @@ export function AgentGrantRecommendations({
   onAuthorized,
 }: AgentGrantRecommendationsProps) {
   const [targets, setTargets] = useState<AgentGrantTarget[]>([])
+  // Capacity context for per-target `setCapacityTo` derivation at
+  // Authorize click time. `grant::issue_to_grantee` aborts with
+  // `EGrantCapacityExceeded` when a new grantee would push
+  // `active_grant_count` past `grant_capacity`, so the PTB must splice
+  // `grant::set_grant_capacity` for any `isNewGrantee` target while
+  // `activeGrantCount >= currentCapacity`. Refreshed on every fetch so
+  // sequential Authorizes see post-issue capacity counts.
+  const [currentCapacity, setCurrentCapacity] = useState<number>(0)
+  const [activeGrantCount, setActiveGrantCount] = useState<number>(0)
   const [error, setError] = useState<string | null>(null)
   const [grantingAddress, setGrantingAddress] = useState<string | null>(null)
   const { getAuthHeaders } = useAuth()
@@ -83,8 +114,10 @@ export function AgentGrantRecommendations({
         { cache: 'no-store', headers },
       )
       if (res.ok) {
-        const body = await res.json() as { targets?: AgentGrantTarget[] }
+        const body = await res.json() as AutoGrantTargetsResponse
         setTargets(body.targets ?? [])
+        setCurrentCapacity(typeof body.currentCapacity === 'number' ? body.currentCapacity : 0)
+        setActiveGrantCount(typeof body.activeGrantCount === 'number' ? body.activeGrantCount : 0)
         return
       }
       // 404 = deployed prod is still on the pre-auto-grant build. Silently
@@ -125,7 +158,26 @@ export function AgentGrantRecommendations({
     setGrantingAddress(target.address)
     setError(null)
     try {
-      await grant.issueGrant(target.address, null, kindScopeMask)
+      // Per-target capacity bump. `grant::issue_to_grantee` aborts with
+      // `EGrantCapacityExceeded` when a new grantee would push
+      // `active_grant_count` past `grant_capacity`; existing-grantee
+      // supersedes reuse the slot and never need a bump. Mirrors the
+      // GrantsPanel preflight decision in `web/app/souls/[id]/page.tsx`
+      // (F-452) so the recommendation panel cannot sign a guaranteed-
+      // abort PTB at full capacity.
+      const projectedActive = activeGrantCount + (target.isNewGrantee ? 1 : 0)
+      const setCapacityTo = projectedActive > currentCapacity ? projectedActive : null
+      if (setCapacityTo != null && setCapacityTo > MAX_GRANT_CAPACITY) {
+        throw new Error(
+          `This Soul is at the on-chain grant capacity limit (${MAX_GRANT_CAPACITY}). Revoke an existing grantee before authorizing a new one.`,
+        )
+      }
+      // MUST use the plan-returned `desiredScopeMask` (existing | kind),
+      // never the bare `kindScopeMask`. `grant::issue` replaces the slot
+      // wholesale on chain, so passing the single-bit scope would silently
+      // narrow agents that already hold other scopes — exactly the bug
+      // that caused {seal,skills,assets} → {assets} on production.
+      await grant.issueGrant(target.address, null, target.desiredScopeMask, { setCapacityTo })
       setTargets((prev) => prev.filter((t) => t.address !== target.address))
       onAuthorized?.()
       void refresh()

@@ -60,12 +60,52 @@ export function SpriteRenderer({
   const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1
 
   useEffect(() => {
+    let cancelled = false
     const img = new Image()
-    img.src = config.src
-    img.onload = () => {
-      sheetRef.current = processSpriteSheeet(img)
+    sheetRef.current = null
+    frameRef.current = 0
+    lastTimeRef.current = 0
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (canvas && ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
     }
-    return () => { sheetRef.current = null }
+    img.onload = () => {
+      if (cancelled) return
+      const processedSheet = processSpriteSheeet(img)
+      sheetRef.current = processedSheet
+
+      const immediateCanvas = canvasRef.current
+      const immediateCtx = immediateCanvas?.getContext('2d')
+      const resolvedAnimation = resolveAnimationName({
+        animations: config.animations,
+        requestedAnimation: currentAnimRef.current,
+      })
+      const anim = config.animations[resolvedAnimation]
+      const frameIndex = anim?.frames[0] ?? 0
+      const col = frameIndex % config.columns
+      const row = Math.floor(frameIndex / config.columns)
+      if (immediateCanvas && immediateCtx) {
+        immediateCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        immediateCtx.clearRect(0, 0, displayW, displayH)
+        immediateCtx.imageSmoothingEnabled = true
+        immediateCtx.drawImage(
+          processedSheet,
+          col * config.frameWidth, row * config.frameHeight,
+          config.frameWidth, config.frameHeight,
+          0, 0, displayW, displayH,
+        )
+      }
+    }
+    img.onerror = () => {
+      if (cancelled) return
+      sheetRef.current = null
+    }
+    img.src = config.src
+    return () => {
+      cancelled = true
+      sheetRef.current = null
+    }
   }, [config.src])
 
   useEffect(() => {

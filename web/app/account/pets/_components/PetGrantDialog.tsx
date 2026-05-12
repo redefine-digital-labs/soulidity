@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   MAX_GRANT_BATCH_SIZE,
+  MAX_GRANT_CAPACITY,
   SOUL_GRANT_SCOPE_ASSETS,
   buildBatchIssueGrantsTx,
   buildBatchRevokeGrantsTx,
@@ -64,6 +65,14 @@ function chunk<T>(items: ReadonlyArray<T>, size: number): T[][] {
   }
   return out
 }
+
+/**
+ * Must stay ≤ the `MAX_ITEMS` cap enforced by
+ * `web/app/api/souls/grant-merge-masks/route.ts` (currently 100). Sending
+ * a larger preflight rejects with 400 before any wallet signature and
+ * blocks the entire batch — see R-002.
+ */
+const MERGE_PREFLIGHT_BATCH_SIZE = 100
 
 function truncateAddress(value: string): string {
   if (value.length <= 14) return value
@@ -227,18 +236,100 @@ export function PetGrantDialog({
       const authHeaders = await getAuthHeaders()
       const batches = chunk(selectedItems, MAX_GRANT_BATCH_SIZE)
 
+      // Issue path: preflight existing scopes per Soul. `grant::issue`
+      // replaces the grantee's slot wholesale, so issuing with the bare
+      // `SOUL_GRANT_SCOPE_ASSETS` would silently narrow any agent that
+      // already holds other scopes on a Soul (e.g. sprite-upload
+      // auto-grant just expanded them to {seal,skills,assets}, then a
+      // PetGrantDialog issue would knock them back to {assets} only).
+      // The merge endpoint returns `mergedScopeMask = existing | added`
+      // per item; we use it as the on-chain scope so the supersede
+      // strictly EXPANDS the grantee's scopes.
+      //
+      // The endpoint also returns `isNewGrantee`, `currentCapacity`, and
+      // `requiredCapacity` per item (R-001). When a Soul is at capacity
+      // and the pet is a new grantee on that Soul, `grant::issue` would
+      // abort with `EGrantCapacityExceeded` unless `set_grant_capacity`
+      // is spliced into the same PTB. We capture `setCapacityTo` per
+      // item so the per-item batch builder splices the bump in order.
+      //
+      // The endpoint caps each request at `MERGE_PREFLIGHT_BATCH_SIZE`,
+      // so split the preflight into chunks. Sequential — keeps total
+      // RPC pressure bounded and respects the 60/5min rate limit when
+      // a single user authorizes many Souls in a row (R-002).
+      interface PreflightDecision {
+        mergedScopeMask: number
+        setCapacityTo: number | null
+      }
+      const decisionBySoul = new Map<string, PreflightDecision>()
+      if (mode === 'issue') {
+        const preflightChunks = chunk(selectedItems, MERGE_PREFLIGHT_BATCH_SIZE)
+        for (const preflightBatch of preflightChunks) {
+          const mergeResponse = await fetch('/api/souls/grant-merge-masks', {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              items: preflightBatch.map((item) => ({
+                soulOnChainId: item.soulOnChainId,
+                granteeAddress: petAgentAddress,
+                addedScopeMask: SOUL_GRANT_SCOPE_ASSETS,
+              })),
+            }),
+          })
+          if (!mergeResponse.ok) {
+            const body = (await mergeResponse.json().catch(() => ({}))) as { error?: string }
+            throw new Error(body.error || `Failed to compute grant scopes (${mergeResponse.status})`)
+          }
+          const mergeBody = (await mergeResponse.json()) as {
+            items: Array<{
+              soulOnChainId: string
+              mergedScopeMask: number
+              isNewGrantee: boolean
+              currentCapacity: number
+              requiredCapacity: number
+            }>
+          }
+          for (const m of mergeBody.items) {
+            if (m.isNewGrantee && m.requiredCapacity > MAX_GRANT_CAPACITY) {
+              // Fail fast before any wallet signature — bumping past the
+              // on-chain ceiling would always abort. Tell the user which
+              // Soul is the problem so they can revoke an existing
+              // grantee on it manually before retrying.
+              throw new Error(
+                `Soul ${m.soulOnChainId} is at the on-chain grant capacity limit (${MAX_GRANT_CAPACITY}). Revoke an existing grantee on that Soul before authorizing this pet.`,
+              )
+            }
+            decisionBySoul.set(m.soulOnChainId, {
+              mergedScopeMask: m.mergedScopeMask,
+              setCapacityTo:
+                m.requiredCapacity > m.currentCapacity ? m.requiredCapacity : null,
+            })
+          }
+        }
+      }
+
       for (const [batchIndex, batch] of batches.entries()) {
         const tx = mode === 'issue'
           ? buildBatchIssueGrantsTx({
-              items: batch.map((item) => ({
-                stateObjectId: item.stateOnChainId,
-                granteeAddress: petAgentAddress,
-                scopeMask: SOUL_GRANT_SCOPE_ASSETS,
-                // Lifetime grant — pet access ends only via explicit
-                // revoke from PetCard or unlink. See feedback memory
-                // `feedback_grant_no_default_expiry`.
-                expiresAtMs: null,
-              })),
+              items: batch.map((item) => {
+                const decision = decisionBySoul.get(item.soulOnChainId)
+                return {
+                  stateObjectId: item.stateOnChainId,
+                  granteeAddress: petAgentAddress,
+                  scopeMask: decision?.mergedScopeMask ?? SOUL_GRANT_SCOPE_ASSETS,
+                  // Lifetime grant — pet access ends only via explicit
+                  // revoke from PetCard or unlink. See feedback memory
+                  // `feedback_grant_no_default_expiry`.
+                  expiresAtMs: null,
+                  // R-001: splice `set_grant_capacity` before `issue`
+                  // when the preflight said this Soul's capacity must
+                  // be raised to fit a new grantee. `null` for existing
+                  // grantees (supersede reuses the slot) and for souls
+                  // already at sufficient capacity.
+                  setCapacityTo: decision?.setCapacityTo ?? null,
+                }
+              }),
             })
           : buildBatchRevokeGrantsTx({
               items: batch.map((item) => ({

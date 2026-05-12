@@ -120,14 +120,16 @@ function isProtectedSpritePolicy(
   return value === 'owner_only' || value === 'allowlist'
 }
 
+const DEFAULT_WALRUS_PREVIEW_URL = new URL('../../../../../data/assets/walrus_primary.png', import.meta.url).href
+
 const DEFAULT_PERSONA: PersonaItem = {
   catalogId: '__default__',
   sourceType: 'starter',
   sourceRef: 'built-in',
   title: 'Walrus',
   description: 'Built-in default persona with 7 mood animations',
-  thumbnail: '',
-  coverImage: '',
+  thumbnail: DEFAULT_WALRUS_PREVIEW_URL,
+  coverImage: DEFAULT_WALRUS_PREVIEW_URL,
   listingStatus: null,
   listedPriceAtomic: null,
   spriteDownloadPolicy: 'public',
@@ -231,78 +233,86 @@ export function usePersonaLibrary(options: UsePersonaLibraryOptions = {}): Libra
   const refresh = useCallback(async () => {
     setState((previous) => ({ ...previous, isLoading: true }))
 
-    const [cached, activeId, linked, catalogPage, mySoulItems] = await Promise.all([
-      loadCachedSprites(),
-      loadActiveId(),
-      checkLinked(),
-      fetchMarketplacePage(1),
-      checkLinked().then((isLinked) => (isLinked ? fetchMySouls() : [])),
-    ])
+    try {
+      const [cached, activeId, linked, catalogPage, mySoulItems] = await Promise.all([
+        loadCachedSprites(),
+        loadActiveId(),
+        checkLinked(),
+        fetchMarketplacePage(1),
+        checkLinked().then((isLinked) => (isLinked ? fetchMySouls() : [])),
+      ])
 
-    const cachedIds = new Set(cached.map((entry) => entry.spriteId))
+      const cachedIds = new Set(cached.map((entry) => entry.spriteId))
 
-    const downloadedItems: PersonaItem[] = cached.map((meta) => ({
-      catalogId: meta.spriteId.replace(/^catalog-/, ''),
-      sourceType: meta.catalogSourceType ?? 'starter',
-      sourceRef: meta.catalogSourceRef ?? meta.source,
-      title: meta.spriteId.replace(/^catalog-/, ''),
-      description: null,
-      thumbnail: '',
-      coverImage: '',
-      listingStatus: null,
-      listedPriceAtomic: null,
-      spriteDownloadPolicy: 'public',
-      isCached: true,
-      isActive: meta.spriteId.replace(/^catalog-/, '') === activeId,
-      downloadProgress: progressMapRef.current.get(meta.spriteId.replace(/^catalog-/, '')) ?? null,
-      downloadError: errorMapRef.current.get(meta.spriteId.replace(/^catalog-/, '')) ?? null,
-    }))
-
-    const marketplaceItems = (catalogPage?.items ?? []).map((item) => buildPersonaItem(item, cachedIds, activeId))
-    const mySoulPersonas = mySoulItems.map((item) => buildPersonaItem(item, cachedIds, activeId))
-
-    const marketMap = new Map(marketplaceItems.map((item) => [item.catalogId, item]))
-    const mySoulMap = new Map(mySoulPersonas.map((item) => [item.catalogId, item]))
-    const enrichedDownloaded = downloadedItems.map((item) => {
-      const richer = marketMap.get(item.catalogId) ?? mySoulMap.get(item.catalogId)
-      if (!richer) {
-        return item
-      }
-      return {
-        ...richer,
+      const downloadedItems: PersonaItem[] = cached.map((meta) => ({
+        catalogId: meta.spriteId.replace(/^catalog-/, ''),
+        sourceType: meta.catalogSourceType ?? 'starter',
+        sourceRef: meta.catalogSourceRef ?? meta.source,
+        title: meta.spriteId.replace(/^catalog-/, ''),
+        description: null,
+        thumbnail: '',
+        coverImage: '',
+        listingStatus: null,
+        listedPriceAtomic: null,
+        spriteDownloadPolicy: 'public',
         isCached: true,
-        isActive: item.isActive,
-        downloadProgress: item.downloadProgress,
-        downloadError: item.downloadError,
-      }
-    })
+        isActive: meta.spriteId.replace(/^catalog-/, '') === activeId,
+        downloadProgress: progressMapRef.current.get(meta.spriteId.replace(/^catalog-/, '')) ?? null,
+        downloadError: errorMapRef.current.get(meta.spriteId.replace(/^catalog-/, '')) ?? null,
+      }))
 
-    let active: PersonaItem | null = null
-    if (activeId) {
-      active = (
-        enrichedDownloaded.find((item) => item.catalogId === activeId)
-        ?? marketplaceItems.find((item) => item.catalogId === activeId)
-        ?? mySoulPersonas.find((item) => item.catalogId === activeId)
-        ?? null
-      )
-      if (active) {
-        active = { ...active, isActive: true }
-      }
-    }
-    if (!active) {
-      active = { ...DEFAULT_PERSONA }
-    }
+      const marketplaceItems = (catalogPage?.items ?? []).map((item) => buildPersonaItem(item, cachedIds, activeId))
+      const mySoulPersonas = mySoulItems.map((item) => buildPersonaItem(item, cachedIds, activeId))
 
-    setState({
-      activePersona: active,
-      downloaded: enrichedDownloaded.filter((item) => !item.isActive),
-      mySouls: mySoulPersonas,
-      marketplace: marketplaceItems,
-      isLinked: linked,
-      isLoading: false,
-      marketplacePage: catalogPage?.page ?? 1,
-      hasMoreMarketplace: catalogPage?.hasMore ?? false,
-    })
+      const marketMap = new Map(marketplaceItems.map((item) => [item.catalogId, item]))
+      const mySoulMap = new Map(mySoulPersonas.map((item) => [item.catalogId, item]))
+      const enrichedDownloaded = downloadedItems.map((item) => {
+        const richer = marketMap.get(item.catalogId) ?? mySoulMap.get(item.catalogId)
+        if (!richer) {
+          return item
+        }
+        return {
+          ...richer,
+          isCached: true,
+          isActive: item.isActive,
+          downloadProgress: item.downloadProgress,
+          downloadError: item.downloadError,
+        }
+      })
+
+      let active: PersonaItem | null = null
+      if (activeId) {
+        active = (
+          enrichedDownloaded.find((item) => item.catalogId === activeId)
+          ?? marketplaceItems.find((item) => item.catalogId === activeId)
+          ?? mySoulPersonas.find((item) => item.catalogId === activeId)
+          ?? null
+        )
+        if (active) {
+          active = { ...active, isActive: true }
+        }
+      }
+      if (!active) {
+        active = { ...DEFAULT_PERSONA }
+      }
+
+      setState({
+        activePersona: active,
+        downloaded: enrichedDownloaded.filter((item) => !item.isActive),
+        mySouls: mySoulPersonas,
+        marketplace: marketplaceItems,
+        isLinked: linked,
+        isLoading: false,
+        marketplacePage: catalogPage?.page ?? 1,
+        hasMoreMarketplace: catalogPage?.hasMore ?? false,
+      })
+    } catch {
+      setState((previous) => ({
+        ...previous,
+        activePersona: previous.activePersona ?? { ...DEFAULT_PERSONA },
+        isLoading: false,
+      }))
+    }
   }, [buildPersonaItem, checkLinked, fetchMarketplacePage, fetchMySouls, loadActiveId, loadCachedSprites])
 
   useEffect(() => {

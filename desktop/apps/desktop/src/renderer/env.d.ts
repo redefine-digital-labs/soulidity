@@ -117,6 +117,7 @@ declare global {
         spriteBytes: Uint8Array
         configJson: string
       }) => Promise<{ catalogId: string; spriteId: string }>
+      soulDecryptProtectedSprite: (params: { access: unknown }) => Promise<{ bytes: Uint8Array; fileName: string; mimeType: string }>
       onDownloadProgress: (callback: (progress: unknown) => void) => () => void
       soulSetActive: (params: { catalogId: string; sourceType: string; sourceRef: string } | null) => Promise<void>
       soulGetActive: () => Promise<{ catalogId?: string; spriteConfig?: unknown } | null>

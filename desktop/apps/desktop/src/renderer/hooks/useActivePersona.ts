@@ -48,26 +48,29 @@ export function useActivePersona(): ActivePersonaState {
   useEffect(() => {
     let disposed = false
 
+    function applyActiveResult(result: { spriteConfig?: unknown } | null | undefined) {
+      if (result && isSpriteSheetConfig(result.spriteConfig)) {
+        setState({
+          config: result.spriteConfig,
+          isDefault: false,
+          isLoading: false,
+        })
+      } else {
+        setState({
+          config: DEFAULT_SPRITE_CONFIG,
+          isDefault: true,
+          isLoading: false,
+        })
+      }
+    }
+
     async function loadActive() {
       try {
         setState(prev => ({ ...prev, isLoading: true }))
         const result = await window.electronAPI.soulGetActive()
 
         if (disposed) return
-
-        if (result && isSpriteSheetConfig(result.spriteConfig)) {
-          setState({
-            config: result.spriteConfig,
-            isDefault: false,
-            isLoading: false,
-          })
-        } else {
-          setState({
-            config: DEFAULT_SPRITE_CONFIG,
-            isDefault: true,
-            isLoading: false,
-          })
-        }
+        applyActiveResult(result)
       } catch {
         if (!disposed) {
           setState({
@@ -85,23 +88,28 @@ export function useActivePersona(): ActivePersonaState {
     const unsubscribe = window.electronAPI.onPersonaChanged?.((data: unknown) => {
       if (disposed) return
       const personaData = data as { spriteConfig?: unknown } | null
-      if (isSpriteSheetConfig(personaData?.spriteConfig)) {
-        setState({
-          config: personaData.spriteConfig,
-          isDefault: false,
-          isLoading: false,
-        })
-      } else {
-        setState({
-          config: DEFAULT_SPRITE_CONFIG,
-          isDefault: true,
-          isLoading: false,
-        })
+      if (personaData === null) {
+        applyActiveResult(null)
+        return
       }
+      if (isSpriteSheetConfig(personaData?.spriteConfig)) {
+        applyActiveResult(personaData)
+        return
+      }
+      void loadActive()
     })
+
+    const reloadWhenVisible = () => {
+      if (document.visibilityState === 'hidden') return
+      void loadActive()
+    }
+    window.addEventListener('focus', reloadWhenVisible)
+    document.addEventListener('visibilitychange', reloadWhenVisible)
 
     return () => {
       disposed = true
+      window.removeEventListener('focus', reloadWhenVisible)
+      document.removeEventListener('visibilitychange', reloadWhenVisible)
       unsubscribe?.()
     }
   }, [])

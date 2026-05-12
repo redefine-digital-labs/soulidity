@@ -48,13 +48,27 @@ export async function GET(
     )
   }
 
-  const plan = await computeAutoGrantTargets({
-    accountId: auth.identity.accountId,
-    soulOnChainId: soul.onChainId,
-    scopeMask,
-    currentCapacity: soul.grantCapacity,
-    activeGrantCount: soul.activeGrantCount,
-  })
+  let plan
+  try {
+    plan = await computeAutoGrantTargets({
+      accountId: auth.identity.accountId,
+      soulOnChainId: soul.onChainId,
+      stateOnChainId: soul.stateOnChainId,
+      scopeMask,
+      currentCapacity: soul.grantCapacity,
+      activeGrantCount: soul.activeGrantCount,
+    })
+  } catch (error) {
+    // `computeAutoGrantTargets` fails closed when the on-chain
+    // mirror-miss fallback cannot read `SoulState.active_grants` —
+    // returning a single-bit `desiredScopeMask` on RPC failure would let
+    // the caller narrow chain-only grants on supersede.
+    console.error('[auto-grant-targets] plan failed', error)
+    return NextResponse.json(
+      { error: 'Failed to verify on-chain grant state — retry shortly' },
+      { status: 502 },
+    )
+  }
 
   return NextResponse.json({
     soulOnChainId: soul.onChainId,

@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/prisma'
 import {
+  MAX_GRANT_CAPACITY,
   SOUL_GRANT_SCOPE_BITS,
+  getActiveGrantSlotForGrantee,
+  getRequiredSoulidityEnv,
+  getSoulStateObject,
   type SoulGrantScope,
 } from '@soulidity/sdk'
 import {
@@ -8,17 +12,21 @@ import {
   type AccountAgentTarget,
 } from '@/lib/agents/account-agents'
 
-/**
- * Defensive ceiling for the auto-grant capacity bump. Mirrors
- * `MAX_GRANT_CAPACITY` in `move/soulidity/sources/grant.move`. The chain
- * itself rejects values above this, so clamping is purely for friendlier
- * pre-flight errors.
- */
-export const MAX_GRANT_CAPACITY = 10_000
+// Re-export so existing `import { MAX_GRANT_CAPACITY } from '@/lib/soulidity/auto-grant'`
+// callers keep compiling. New code should import directly from `@soulidity/sdk`.
+export { MAX_GRANT_CAPACITY }
 
 export interface ComputeAutoGrantTargetsParams {
   accountId: string
   soulOnChainId: string
+  /**
+   * SoulState object ID. Used by the on-chain fallback below to resolve
+   * `getActiveGrantSlotForGrantee` for any candidate whose
+   * `SoulGrantRecord` mirror row is missing — without this fallback a
+   * stale-backward mirror would silently narrow chain-only grants when
+   * the planner returns `desiredScopeMask = kindScopeMask`.
+   */
+  stateOnChainId: string
   /**
    * Single-bit scope corresponding to the kind being appended (e.g.
    * `KIND_SPRITE` → `SOUL_GRANT_SCOPE_ASSETS`). Used as the FLOOR each
@@ -144,6 +152,39 @@ export async function getActiveGrantScopeByGrantee(params: {
 }
 
 /**
+ * Read on-chain `SoulState.active_grants[grantee]` for each address that
+ * had no `SoulGrantRecord` row. Returns a `grantee → scopeMask` map for
+ * every grantee whose chain slot exists with a non-zero mask. Empty
+ * input short-circuits (no RPC). Any RPC failure throws — auto-grant
+ * MUST fail closed because returning `existing = 0` here would let the
+ * caller issue a single-bit scope and narrow the chain slot.
+ */
+async function readChainMasksForMirrorMisses(params: {
+  stateOnChainId: string
+  granteeAddresses: ReadonlyArray<string>
+}): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (params.granteeAddresses.length === 0) return out
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  // includeActiveGrants=false: each grantee is then resolved through the
+  // table's per-grantee dynamic-field path, which is cheaper than
+  // materializing the whole slot list when many slots exist.
+  const state = await getSoulStateObject(params.stateOnChainId, packageId, {
+    includeActiveGrants: false,
+  })
+  await Promise.all(
+    params.granteeAddresses.map(async (granteeAddress) => {
+      const slot = await getActiveGrantSlotForGrantee(state, granteeAddress)
+      if (slot && slot.scopeMask > 0) {
+        out.set(granteeAddress, slot.scopeMask)
+      }
+    }),
+  )
+  return out
+}
+
+/**
  * Compose the full auto-grant plan for a non-public content append:
  *  - List active agents in the account (those without a Sui binding are
  *    silently skipped; they cannot receive a grant anyway).
@@ -182,9 +223,28 @@ export async function computeAutoGrantTargets(
     now: params.now,
   })
 
+  // Mirror-miss chain fallback. `SoulGrantRecord` is a post-TX mirror; a
+  // grant whose `/content/sync` row failed to land (or was issued from a
+  // path that did not write the mirror) is on chain but absent above.
+  // Treating that as `existing = 0` and queuing a `desiredScopeMask =
+  // kindScopeMask` issue makes `grant::issue` replace the chain slot
+  // wholesale with a single-bit mask — dropping every prior scope
+  // (exactly the regression the `/api/souls/grant-merge-masks` chain
+  // fallback closes for manual grant paths). Verify each mirror-empty
+  // grantee against the on-chain `SoulState.active_grants` table and
+  // promote the chain mask into `existing` before classifying.
+  const chainMaskByGrantee = await readChainMasksForMirrorMisses({
+    stateOnChainId: params.stateOnChainId,
+    granteeAddresses: agents
+      .filter((a) => (existingMaskByGrantee.get(a.address) ?? 0) === 0)
+      .map((a) => a.address),
+  })
+
   const candidates: AutoGrantTarget[] = []
   for (const agent of agents) {
-    const existing = existingMaskByGrantee.get(agent.address) ?? 0
+    const mirrorMask = existingMaskByGrantee.get(agent.address) ?? 0
+    const chainMask = chainMaskByGrantee.get(agent.address) ?? 0
+    const existing = mirrorMask !== 0 ? mirrorMask : chainMask
     if (existing !== 0 && (existing & params.scopeMask) === params.scopeMask) {
       // Already covered — issuing again would be a no-op for the kind
       // and waste a wallet signature.

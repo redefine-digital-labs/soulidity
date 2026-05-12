@@ -10,10 +10,10 @@ type TabId = 'settings' | 'library' | 'agent' | 'extract' | 'hooks'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'settings', label: 'Settings' },
-  { id: 'library', label: 'Library' },
-  { id: 'extract', label: 'Extract' },
-  { id: 'agent', label: 'Agent' },
-  { id: 'hooks', label: 'Hooks' },
+  { id: 'library', label: 'Souls' },
+  { id: 'extract', label: 'Forge' },
+  { id: 'agent', label: 'Runtime' },
+  { id: 'hooks', label: 'Bridges' },
 ]
 
 const TAB_IDS: readonly TabId[] = ['settings', 'library', 'extract', 'agent', 'hooks']

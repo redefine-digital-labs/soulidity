@@ -1,11 +1,29 @@
 'use client'
 
 import { useState } from 'react'
-import { assertObjectInputsExist } from '@soulidity/sdk'
-import { DEFAULT_ISSUE_SCOPE_MASK } from '@soulidity/sdk'
-import { buildIssueGrantTx, buildRevokeGrantScopeTx, buildRevokeGrantTx } from '@soulidity/sdk'
+import { Transaction } from '@mysten/sui/transactions'
+import {
+  DEFAULT_ISSUE_SCOPE_MASK,
+  addIssueGrantCalls,
+  addSetGrantCapacityCalls,
+  assertObjectInputsExist,
+  buildRevokeGrantScopeTx,
+  buildRevokeGrantTx,
+} from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
+
+export interface IssueGrantOptions {
+  /**
+   * When set, splice `grant::set_grant_capacity(state, setCapacityTo)`
+   * into the PTB immediately before `issue_to_grantee`. Required when
+   * `/api/souls/grant-merge-masks` returned `requiredCapacity > currentCapacity`
+   * AND the grantee is new — without it `grant::issue` aborts with
+   * `EGrantCapacityExceeded`. Must be ≤ `MAX_GRANT_CAPACITY` (10_000).
+   * Pass `null` / `undefined` to skip the bump.
+   */
+  setCapacityTo?: number | null
+}
 
 /** Minimal soul shape required by the grant hook. */
 export interface GrantableSoul {
@@ -20,7 +38,12 @@ export function useGrant(soul: GrantableSoul | null) {
   const { suiWallet, signAndExecute, suiClient } = useWalletSign()
   const { getAuthHeaders } = useAuth()
 
-  async function issueGrant(granteeAddress: string, expiresAtMs?: number | null, scopeMask = DEFAULT_ISSUE_SCOPE_MASK) {
+  async function issueGrant(
+    granteeAddress: string,
+    expiresAtMs?: number | null,
+    scopeMask = DEFAULT_ISSUE_SCOPE_MASK,
+    options?: IssueGrantOptions,
+  ) {
     if (!soul || !suiWallet) {
       throw new Error('Sign in and load the Soul before issuing a grant')
     }
@@ -32,7 +55,19 @@ export function useGrant(soul: GrantableSoul | null) {
       await assertObjectInputsExist(suiClient, {
         'Soul state': soul.stateOnChainId,
       })
-      const tx = buildIssueGrantTx({
+      // Compose the PTB inline so an optional capacity bump can be spliced
+      // BEFORE the issue call in the same transaction — the chain executes
+      // commands in order, so `grant::issue` sees the raised capacity.
+      // Skipping the bump is the common case (`setCapacityTo == null`),
+      // which produces the same single-call PTB as `buildIssueGrantTx`.
+      const tx = new Transaction()
+      if (options?.setCapacityTo != null) {
+        addSetGrantCapacityCalls(tx, {
+          stateObjectId: soul.stateOnChainId,
+          capacity: options.setCapacityTo,
+        })
+      }
+      addIssueGrantCalls(tx, {
         stateObjectId: soul.stateOnChainId,
         granteeAddress,
         scopeMask,

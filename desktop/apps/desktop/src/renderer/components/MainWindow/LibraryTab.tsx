@@ -1,13 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { SuiClientProvider } from '@mysten/dapp-kit'
-import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { usePersonaLibrary, type PersonaItem } from '../../hooks/usePersonaLibrary'
-import {
-  loadDecryptedContentVersion,
-  parseContentAccessResponse,
-} from '../../lib/soulidity/content-access'
-import { useDesktopWallet } from '../../lib/hooks/use-desktop-wallet'
 
 type CardSection = 'downloaded' | 'owned' | 'marketplace'
 
@@ -17,7 +9,6 @@ type RuntimeConfig = {
   authBlocker: string | null
 }
 
-type SuiNetwork = 'mainnet' | 'testnet'
 type ProtectedSpriteDownloadPolicy = 'owner_only' | 'allowlist'
 
 type PrivateManifestPayload = {
@@ -43,11 +34,6 @@ type PrivateManifestPayload = {
     privateAccess: unknown
   }
 }
-
-const suiNetworks = {
-  testnet: { url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' as const },
-  mainnet: { url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' as const },
-} as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -446,14 +432,8 @@ function LibraryTabInner({
   )
 }
 
-function LibraryTabWalletInner() {
-  const { signPersonalMessage, suiClient, suiWallet } = useDesktopWallet()
-
+function useProtectedSoulDownloader() {
   const downloadProtectedSoul = useCallback(async (item: PersonaItem) => {
-    if (!suiWallet?.address) {
-      return { error: 'Local Sui address is not ready yet.' }
-    }
-
     if (!item.agentSpriteGrant?.active) {
       return {
         error: 'This pet has no active sprite grant for this Soul. Authorize it from My Desktop Pets on the web app.',
@@ -462,7 +442,8 @@ function LibraryTabWalletInner() {
 
     const fetchManifest = window.electronAPI.soulFetchManifest
     const cachePersona = window.electronAPI.soulCachePersona
-    if (!fetchManifest || !cachePersona) {
+    const decryptProtectedSprite = window.electronAPI.soulDecryptProtectedSprite
+    if (!fetchManifest || !cachePersona || !decryptProtectedSprite) {
       return { error: 'Desktop sprite IPC is not available.' }
     }
 
@@ -476,11 +457,8 @@ function LibraryTabWalletInner() {
         viewer: null,
       })
       const manifest = parsePrivateManifest(manifestPayload)
-      const access = parseContentAccessResponse(manifest.sprite.privateAccess)
-      const decrypted = await loadDecryptedContentVersion({
-        access,
-        signPersonalMessage,
-        suiClient,
+      const decrypted = await decryptProtectedSprite({
+        access: manifest.sprite.privateAccess,
       })
 
       await cachePersona({
@@ -498,33 +476,24 @@ function LibraryTabWalletInner() {
         error: error instanceof Error ? error.message : 'Failed to decrypt protected sprite',
       }
     }
-  }, [signPersonalMessage, suiClient, suiWallet?.address])
+  }, [])
+
+  return downloadProtectedSoul
+}
+
+function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | null }) {
+  const ownerOnlyEnabled = Boolean(runtimeConfig?.authReady)
+  const downloadProtectedSoul = useProtectedSoulDownloader()
+
+  if (!ownerOnlyEnabled) {
+    return <LibraryTabInner ownerOnlyDownloadReady={false} />
+  }
 
   return (
     <LibraryTabInner
       ownerOnlyDownloadReady
       downloadProtectedSoul={downloadProtectedSoul}
     />
-  )
-}
-
-function LibraryTabContent({ runtimeConfig }: { runtimeConfig: RuntimeConfig | null }) {
-  const ownerOnlyEnabled = Boolean(runtimeConfig?.authReady)
-  const [queryClient] = useState(() => new QueryClient())
-
-  if (!ownerOnlyEnabled) {
-    return <LibraryTabInner ownerOnlyDownloadReady={false} />
-  }
-
-  const network = runtimeConfig!.suiNetwork as SuiNetwork
-  const defaultNetwork: SuiNetwork = network in suiNetworks ? network : 'mainnet'
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-        <LibraryTabWalletInner />
-      </SuiClientProvider>
-    </QueryClientProvider>
   )
 }
 

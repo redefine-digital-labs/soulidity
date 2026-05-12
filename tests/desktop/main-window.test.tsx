@@ -51,7 +51,7 @@ describe('MainWindow', () => {
     vi.clearAllMocks()
   })
 
-  it('switches from Settings to Extract when the tab is clicked', async () => {
+  it('switches from Settings to Forge when the tab is clicked', async () => {
     await act(async () => {
       root.render(<MainWindow />)
       await flushPromises()
@@ -61,7 +61,7 @@ describe('MainWindow', () => {
     expect(container.querySelector('[data-testid="extract-tab"]')).toBeNull()
 
     const extractButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Extract',
+      (button) => button.textContent === 'Forge',
     )
     expect(extractButton).toBeDefined()
 
@@ -74,7 +74,7 @@ describe('MainWindow', () => {
     expect(container.querySelector('[data-testid="extract-tab"]')).not.toBeNull()
   })
 
-  it('renders Extract before Agent in the tab strip', async () => {
+  it('renders Forge before Runtime in the tab strip', async () => {
     await act(async () => {
       root.render(<MainWindow />)
       await flushPromises()
@@ -83,6 +83,6 @@ describe('MainWindow', () => {
     const tabLabels = Array.from(container.querySelectorAll('.main-window__tabs button'))
       .map((button) => button.textContent)
 
-    expect(tabLabels).toEqual(['Settings', 'Library', 'Extract', 'Agent', 'Hooks'])
+    expect(tabLabels).toEqual(['Settings', 'Souls', 'Forge', 'Runtime', 'Bridges'])
   })
 })

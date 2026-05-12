@@ -23,7 +23,7 @@ import { usePaidAccess } from '@/lib/hooks/use-paid-access'
 import { useSoulContentActions, useSoulContentSyncReplay } from '@/lib/hooks/use-soul-content-actions'
 import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
 import { parsePersonaSpriteConfig, PERSONA_SPRITE_CONFIG_ERROR, validateSelectedSkillBundle } from '@soulidity/sdk'
-import { SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
+import { MAX_GRANT_CAPACITY, SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
 import type {
   SoulAssetDetail,
   SoulContentVersionRecord,
@@ -1345,13 +1345,23 @@ function GrantsPanel({
   const canManage = role === 'owner'
   const [skillsAndDocsScope, setSkillsAndDocsScope] = useState(true)
   const [memoryScope, setMemoryScope] = useState(false)
+  const [assetsScope, setAssetsScope] = useState(false)
   const [agentAddress, setAgentAddress] = useState('')
   const [reassignmentNotice, setReassignmentNotice] = useState<string | null>(null)
+  const [preflightActive, setPreflightActive] = useState(false)
+  const [preflightError, setPreflightError] = useState<string | null>(null)
   const { pending, error, issueGrant, revokeGrant } = useGrant(soul)
+  const { getAuthHeaders } = useAuth()
   const queryClient = useQueryClient()
   const trimmedAgentAddress = agentAddress.trim()
   const targetActiveGrant = findActiveGrantForAddress(soul.activeGrants, trimmedAgentAddress)
-  const capacityFullForNewGrantee = Boolean(
+  // Mirror-only hint for the helper text below the form. NOT authoritative:
+  // the preflight in `handleAuthorize` will identify chain-only existing
+  // grantees as `isNewGrantee: false` (R-001) and will bump capacity for
+  // truly-new grantees up to `MAX_GRANT_CAPACITY`. The button stays
+  // enabled even when the mirror looks "full" so the preflight can correct
+  // the decision against on-chain truth.
+  const mirrorLooksFullForNewGrantee = Boolean(
     trimmedAgentAddress && !targetActiveGrant && soul.activeGrantCount >= soul.grantCapacity,
   )
 
@@ -1362,18 +1372,82 @@ function GrantsPanel({
   const scopeMask =
     (skillsAndDocsScope ? (SOUL_GRANT_SCOPE_SKILLS | SOUL_GRANT_SCOPE_SEAL) : 0)
     | (memoryScope ? SOUL_GRANT_SCOPE_MEMORY : 0)
+    | (assetsScope ? SOUL_GRANT_SCOPE_ASSETS : 0)
 
   async function handleAuthorize() {
     const addr = trimmedAgentAddress
     if (!addr) return
     if (scopeMask === 0) return
     setReassignmentNotice(null)
+    setPreflightError(null)
     try {
-      if (capacityFullForNewGrantee) {
-        setReassignmentNotice('Capacity full. Revoke an existing grantee before authorizing a new one.')
+      // Always preflight `/grant-merge-masks` before deciding capacity or
+      // scope. The mirror's `activeGrantCount` / `grantCapacity` can lag
+      // behind the chain (post-TX mirror miss, grant issued via another
+      // UI), so a local "capacity full" decision would reject a supersede
+      // that the chain would happily accept. The preflight is the
+      // authoritative source for both:
+      //  - `isNewGrantee` (whether issuing consumes a fresh slot — chain
+      //    fallback already self-heals mirror misses, see R-001 F-450); and
+      //  - `requiredCapacity` / `currentCapacity` (whether the PTB needs
+      //    a `set_grant_capacity` bump before `issue_to_grantee`).
+      setPreflightActive(true)
+      let mergedScopeMask = scopeMask
+      let isNewGrantee = false
+      let requiredCapacity = soul.grantCapacity
+      let currentCapacity = soul.grantCapacity
+      try {
+        const headers = await getAuthHeaders()
+        const mergeRes = await fetch('/api/souls/grant-merge-masks', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: [{
+              soulOnChainId: soul.onChainId,
+              granteeAddress: addr,
+              addedScopeMask: scopeMask,
+            }],
+          }),
+        })
+        if (!mergeRes.ok) {
+          const body = await mergeRes.json().catch(() => ({}))
+          throw new Error(body.error || `Failed to compute merged grant scope (${mergeRes.status})`)
+        }
+        const mergeBody = await mergeRes.json() as {
+          items: Array<{
+            soulOnChainId: string
+            mergedScopeMask: number
+            isNewGrantee: boolean
+            currentCapacity: number
+            requiredCapacity: number
+          }>
+        }
+        const preflightItem = mergeBody.items[0]
+        mergedScopeMask = preflightItem?.mergedScopeMask ?? scopeMask
+        isNewGrantee = preflightItem?.isNewGrantee ?? false
+        currentCapacity = preflightItem?.currentCapacity ?? soul.grantCapacity
+        requiredCapacity = preflightItem?.requiredCapacity ?? currentCapacity
+      } catch (mergeErr) {
+        setPreflightError(mergeErr instanceof Error ? mergeErr.message : 'Failed to compute merged grant scope')
+        return
+      } finally {
+        setPreflightActive(false)
+      }
+
+      // Capacity gate using the preflight's authoritative answer. Existing
+      // grantees (chain-confirmed) supersede their own slot and never need
+      // a bump — `requiredCapacity === currentCapacity`. New grantees may
+      // need the bump; refuse if the bump would exceed the on-chain
+      // ceiling.
+      if (isNewGrantee && requiredCapacity > MAX_GRANT_CAPACITY) {
+        setPreflightError(
+          `Authorizing this grantee would require capacity ${requiredCapacity}, which exceeds the on-chain maximum of ${MAX_GRANT_CAPACITY}. Revoke an existing grantee first.`,
+        )
         return
       }
-      await issueGrant(addr, null, scopeMask)
+      const setCapacityTo = requiredCapacity > currentCapacity ? requiredCapacity : null
+
+      await issueGrant(addr, null, mergedScopeMask, { setCapacityTo })
       refreshSoulDetail()
       setAgentAddress('')
     } catch (e) {
@@ -1468,6 +1542,14 @@ function GrantsPanel({
                 checked: memoryScope,
                 toggle: () => setMemoryScope((v) => !v),
               },
+              {
+                id: 'assets' as const,
+                title: 'Sprite & Audio',
+                desc: 'Read and decrypt persona sprite sheets and voice clips.',
+                color: 'gold' as const,
+                checked: assetsScope,
+                toggle: () => setAssetsScope((v) => !v),
+              },
             ].map((s) => (
               <button
                 key={s.id}
@@ -1480,7 +1562,9 @@ function GrantsPanel({
               >
                 <div className="flex items-center justify-between">
                   <span
-                    className={`font-mono text-[13px] font-semibold ${s.color === 'teal' ? 'text-teal' : 'text-purple'}`}
+                    className={`font-mono text-[13px] font-semibold ${
+                      s.color === 'teal' ? 'text-teal' : s.color === 'purple' ? 'text-purple' : 'text-gold'
+                    }`}
                   >
                     {s.title}
                   </span>
@@ -1506,22 +1590,34 @@ function GrantsPanel({
             className="sd-grant-input"
           />
           {error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
+          {preflightError && <div className="mt-2 text-[12px] text-danger">{preflightError}</div>}
           {reassignmentNotice && <div className="mt-2 text-[12px] text-gold/90">{reassignmentNotice}</div>}
           {scopeMask === 0 && <div className="mt-2 text-[12px] text-muted">Select at least one scope.</div>}
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
               size="sm"
-              disabled={pending !== null || !trimmedAgentAddress || capacityFullForNewGrantee || scopeMask === 0}
+              disabled={
+                pending !== null
+                || preflightActive
+                || !trimmedAgentAddress
+                || scopeMask === 0
+              }
               onClick={handleAuthorize}
             >
-              {pending === 'issue' ? 'Authorizing…' : pending === 'revoke' ? 'Revoking…' : '+ Authorize'}
+              {preflightActive
+                ? 'Checking scope…'
+                : pending === 'issue'
+                  ? 'Authorizing…'
+                  : pending === 'revoke'
+                    ? 'Revoking…'
+                    : '+ Authorize'}
             </Button>
             <span className="ml-auto text-[11px] text-muted">
-              {capacityFullForNewGrantee
-                ? 'Capacity full. Revoke an existing grantee before authorizing a new one.'
-                : targetActiveGrant
-                  ? 'Issuing updates this grantee without touching other active grants.'
+              {targetActiveGrant
+                ? 'Selected scopes will be merged with the grantee\'s existing scopes — never narrows.'
+                : mirrorLooksFullForNewGrantee
+                  ? `Capacity ${soul.activeGrantCount} / ${soul.grantCapacity} — will be raised automatically for a new grantee.`
                   : `Capacity ${soul.activeGrantCount} / ${soul.grantCapacity}`}
             </span>
           </div>

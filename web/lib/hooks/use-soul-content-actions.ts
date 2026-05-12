@@ -591,6 +591,22 @@ export function useSoulContentActions({
       const kindRegistryObjectId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID')
       const stateOnChainId = soul.stateOnChainId
 
+      // Owner's first sprite upload must auto set-active so the desktop
+      // catalog has an `activeSpriteName` to resolve. Without a binding,
+      // `resolveDesktopSpriteManifest` returns `'missing'` and
+      // `LibraryTab` hides the download button — agents and the owner
+      // are stuck even though sprite versions are on chain. The original
+      // setActive checkbox stays default-on, this is belt-and-suspenders
+      // for the case where the user unchecks it on the very first upload.
+      const ownerFirstSpriteForcesActive =
+        params.kind === KIND_SPRITE
+        && role === 'owner'
+        && !soul.activeSpriteName
+      const effectiveSetActive = Boolean(params.setActive) || ownerFirstSpriteForcesActive
+      if (ownerFirstSpriteForcesActive && !params.setActive) {
+        console.info('[soul-content] forcing setActive for first sprite upload — no existing active binding')
+      }
+
       // Auto-grant pre-flight: when the owner uploads a non-public version
       // of a grantable kind, fan out scope-matched grants to every active
       // agent in the account that does not already hold a covering grant.
@@ -700,7 +716,7 @@ export function useSoulContentActions({
                 valueUtf8: params.spriteConfigJson,
               })
             }
-            if (params.setActive) {
+            if (effectiveSetActive) {
               addSetActiveContentCalls(tx, {
                 contentObjectId: contentOnChainId,
                 stateObjectId: stateOnChainId,
@@ -766,7 +782,7 @@ export function useSoulContentActions({
             sprite: params.kind === KIND_SPRITE && role === 'owner'
               ? {
                   spriteConfigJson: params.spriteConfigJson ?? null,
-                  setActive: Boolean(params.setActive),
+                  setActive: effectiveSetActive,
                 }
               : undefined,
             granteeGrantOnChainId: role === 'grantee' ? grant?.onChainId ?? null : null,
@@ -817,7 +833,7 @@ export function useSoulContentActions({
             value: params.spriteConfigJson,
           })
         }
-        if (params.setActive) {
+        if (effectiveSetActive) {
           await postSync({
             action: 'active-bind',
             txDigest: upload.certifyTxDigest,
@@ -840,7 +856,7 @@ export function useSoulContentActions({
     } finally {
       setPendingAction(null)
     }
-  }, [getAuthHeaders, invalidateSoul, postSync, role, signAndExecute, soul.activeGrants, soul.contentOnChainId, soul.onChainId, soul.stateOnChainId, suiClient, suiWallet])
+  }, [getAuthHeaders, invalidateSoul, postSync, role, signAndExecute, soul.activeGrants, soul.activeSpriteName, soul.contentOnChainId, soul.onChainId, soul.stateOnChainId, suiClient, suiWallet])
 
   const deleteContentVersion = useCallback(async (version: SoulContentVersionRecord) => {
     if (role !== 'owner' && role !== 'grantee') {

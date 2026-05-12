@@ -11,11 +11,31 @@ const SUI_CLOCK_OBJECT_ID = '0x6'
  */
 export const MAX_GRANT_BATCH_SIZE = 32
 
+/**
+ * Defensive ceiling for `grant::set_grant_capacity`. Mirrors
+ * `MAX_GRANT_CAPACITY` in `move/soulidity/sources/grant.move::set_grant_capacity`
+ * — the chain itself rejects values above this with `EGrantCapacityExceeded`, so
+ * callers should fail fast off-chain to surface a clear error before signing.
+ */
+export const MAX_GRANT_CAPACITY = 10_000
+
 export interface BatchIssueGrantItem {
   stateObjectId: string
   granteeAddress: string
   scopeMask: number
   expiresAtMs?: number | null
+  /**
+   * When provided, splice `grant::set_grant_capacity(state, setCapacityTo)`
+   * into the PTB immediately before this item's `issue_to_grantee` call.
+   * Used to honor `/api/souls/grant-merge-masks`'s `requiredCapacity`
+   * contract: any item where `requiredCapacity > currentCapacity` must
+   * carry the bump in the same PTB, otherwise `grant::issue` aborts with
+   * `EGrantCapacityExceeded` when the grantee is new.
+   *
+   * Validation: must be a positive safe integer ≤ `MAX_GRANT_CAPACITY`.
+   * Pass `null`/`undefined` to skip the bump.
+   */
+  setCapacityTo?: number | null
 }
 
 export interface BatchRevokeGrantItem {
@@ -49,6 +69,16 @@ function assertScopeMask(value: number) {
 function assertFutureExpiry(value: number | null | undefined) {
   if (value != null && value <= Date.now()) {
     throw new Error('expiresAtMs must be in the future')
+  }
+}
+
+function assertCapacityBump(value: number | null | undefined) {
+  if (value == null) return
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error('setCapacityTo must be a positive safe integer')
+  }
+  if (value > MAX_GRANT_CAPACITY) {
+    throw new Error(`setCapacityTo must be ≤ MAX_GRANT_CAPACITY (${MAX_GRANT_CAPACITY})`)
   }
 }
 
@@ -108,11 +138,26 @@ export function buildBatchIssueGrantsTx(params: {
     assertGranteeAddress(item.granteeAddress)
     assertScopeMask(item.scopeMask)
     assertFutureExpiry(item.expiresAtMs)
+    assertCapacityBump(item.setCapacityTo)
   }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   const tx = new Transaction()
   for (const item of params.items) {
+    // Splice the capacity bump in the same PTB BEFORE the issue. The chain
+    // executes commands in order, so `grant::issue_to_grantee` sees the
+    // raised capacity from the prior `set_grant_capacity` and a new
+    // grantee fits without `EGrantCapacityExceeded`.
+    if (item.setCapacityTo != null) {
+      tx.moveCall({
+        target: `${packageId}::grant::set_grant_capacity`,
+        arguments: [
+          tx.object(item.stateObjectId),
+          tx.pure.u64(item.setCapacityTo),
+          tx.object(SUI_CLOCK_OBJECT_ID),
+        ],
+      })
+    }
     tx.moveCall({
       target: `${packageId}::grant::issue_to_grantee`,
       arguments: [
@@ -231,6 +276,9 @@ export function addSetGrantCapacityCalls(
 ): void {
   if (!Number.isSafeInteger(params.capacity) || params.capacity <= 0) {
     throw new Error('capacity must be a positive safe integer')
+  }
+  if (params.capacity > MAX_GRANT_CAPACITY) {
+    throw new Error(`capacity must be ≤ MAX_GRANT_CAPACITY (${MAX_GRANT_CAPACITY})`)
   }
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   tx.moveCall({

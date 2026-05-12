@@ -163,6 +163,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     configJson: string
   }): Promise<{ catalogId: string; spriteId: string }> =>
     ipcRenderer.invoke('soul:cache-persona', params),
+  soulDecryptProtectedSprite: (params: { access: unknown }): Promise<{ bytes: Uint8Array; fileName: string; mimeType: string }> =>
+    ipcRenderer.invoke('soul:decrypt-protected-sprite', params),
   onDownloadProgress: (callback: (progress: unknown) => void): (() => void) => {
     const listener = (_event: unknown, progress: unknown) => callback(progress)
     ipcRenderer.on('soul:download-progress', listener)
