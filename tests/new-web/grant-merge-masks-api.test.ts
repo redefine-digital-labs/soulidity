@@ -16,6 +16,11 @@ const mockedPrisma = vi.hoisted(() => ({
 
 const mockedRequireHumanWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
+// R-001: mirror-miss chain verification is mocked here. Most cases below
+// have a populated mirror so the chain helpers are never invoked; the
+// dedicated mirror-miss tests override these per-call.
+const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
+const mockedGetActiveGrantSlotForGrantee = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
 vi.mock('@/lib/soulidity/server', () => ({
@@ -24,6 +29,26 @@ vi.mock('@/lib/soulidity/server', () => ({
 vi.mock('@/lib/rate-limit', () => ({
   takeRateLimitToken: mockedTakeRateLimitToken,
 }))
+vi.mock('@soulidity/sdk', async () => {
+  const actual = await vi.importActual<typeof import('@soulidity/sdk')>('@soulidity/sdk')
+  return {
+    ...actual,
+    getSoulStateObject: mockedGetSoulStateObject,
+    getActiveGrantSlotForGrantee: mockedGetActiveGrantSlotForGrantee,
+    getRequiredSoulidityEnv: vi.fn(() => '0xdeadbeef'),
+  }
+})
+
+function soulRow(overrides: Record<string, unknown>) {
+  return {
+    onChainId: SOUL_ID_A,
+    stateOnChainId: `${SOUL_ID_A}-state`,
+    currentOwnerMemberId: HUMAN_MEMBER_ID,
+    grantCapacity: 1,
+    activeGrantCount: 0,
+    ...overrides,
+  }
+}
 
 function jsonRequest(body: unknown): Request {
   return new Request('http://localhost/api/souls/grant-merge-masks', {
@@ -42,6 +67,15 @@ describe('POST /api/souls/grant-merge-masks', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false })
+    // Default chain stubs: state object resolves shallow, grantee lookup
+    // returns no slot. Tests that exercise the chain-verification branch
+    // override these per-call.
+    mockedGetSoulStateObject.mockResolvedValue({
+      objectId: `${SOUL_ID_A}-state`,
+      activeGrantsTableId: null,
+      activeGrantCount: 0,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValue(null)
   })
 
   it('returns 401 when no human wallet identity', async () => {
@@ -116,8 +150,12 @@ describe('POST /api/souls/grant-merge-masks', () => {
       walletAddresses: ['0xowner'],
     })
     mockedPrisma.soulAsset.findMany.mockResolvedValue([
-      { onChainId: SOUL_ID_A, currentOwnerMemberId: HUMAN_MEMBER_ID, grantCapacity: 1, activeGrantCount: 0 },
-      { onChainId: SOUL_ID_B, currentOwnerMemberId: 'someone-else', grantCapacity: 1, activeGrantCount: 0 },
+      soulRow({ onChainId: SOUL_ID_A, stateOnChainId: `${SOUL_ID_A}-state` }),
+      soulRow({
+        onChainId: SOUL_ID_B,
+        stateOnChainId: `${SOUL_ID_B}-state`,
+        currentOwnerMemberId: 'someone-else',
+      }),
     ])
     const { POST } = await import('../../web/app/api/souls/grant-merge-masks/route')
     const response = await POST(jsonRequest({
@@ -135,7 +173,12 @@ describe('POST /api/souls/grant-merge-masks', () => {
       walletAddresses: ['0xowner'],
     })
     mockedPrisma.soulAsset.findMany.mockResolvedValue([
-      { onChainId: SOUL_ID_A, currentOwnerMemberId: HUMAN_MEMBER_ID, grantCapacity: 2, activeGrantCount: 1 },
+      soulRow({
+        onChainId: SOUL_ID_A,
+        stateOnChainId: `${SOUL_ID_A}-state`,
+        grantCapacity: 2,
+        activeGrantCount: 1,
+      }),
     ])
     // Existing grant: agent has [seal, skills] on this Soul (mask 5).
     mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
@@ -170,10 +213,17 @@ describe('POST /api/souls/grant-merge-masks', () => {
       walletAddresses: ['0xowner'],
     })
     mockedPrisma.soulAsset.findMany.mockResolvedValue([
-      { onChainId: SOUL_ID_A, currentOwnerMemberId: HUMAN_MEMBER_ID, grantCapacity: 1, activeGrantCount: 1 },
+      soulRow({
+        onChainId: SOUL_ID_A,
+        stateOnChainId: `${SOUL_ID_A}-state`,
+        grantCapacity: 1,
+        activeGrantCount: 1,
+      }),
     ])
-    // No existing grant for this grantee.
+    // No existing grant for this grantee, and the on-chain re-check also
+    // finds no slot — so this remains a brand-new grantee.
     mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValue(null)
     const { POST } = await import('../../web/app/api/souls/grant-merge-masks/route')
     const response = await POST(jsonRequest({
       items: [{ soulOnChainId: SOUL_ID_A, granteeAddress: AGENT_X, addedScopeMask: SCOPE_MEMORY }],
@@ -202,8 +252,13 @@ describe('POST /api/souls/grant-merge-masks', () => {
       walletAddresses: ['0xowner'],
     })
     mockedPrisma.soulAsset.findMany.mockResolvedValue([
-      { onChainId: SOUL_ID_A, currentOwnerMemberId: HUMAN_MEMBER_ID, grantCapacity: 1, activeGrantCount: 0 },
-      { onChainId: SOUL_ID_B, currentOwnerMemberId: HUMAN_MEMBER_ID, grantCapacity: 1, activeGrantCount: 1 },
+      soulRow({ onChainId: SOUL_ID_A, stateOnChainId: `${SOUL_ID_A}-state` }),
+      soulRow({
+        onChainId: SOUL_ID_B,
+        stateOnChainId: `${SOUL_ID_B}-state`,
+        grantCapacity: 1,
+        activeGrantCount: 1,
+      }),
     ])
     // Different existing scope per soul.
     mockedPrisma.soulGrantRecord.findMany.mockImplementation(async (args: { where: { soulOnChainId: string } }) => {
@@ -212,6 +267,9 @@ describe('POST /api/souls/grant-merge-masks', () => {
       }
       return []
     })
+    // SOUL_A has a true mirror-miss (no DB row); chain also has nothing,
+    // so the resulting existing mask must remain 0 for it.
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValue(null)
     const { POST } = await import('../../web/app/api/souls/grant-merge-masks/route')
     const response = await POST(jsonRequest({
       items: [
@@ -228,5 +286,98 @@ describe('POST /api/souls/grant-merge-masks', () => {
     expect(a?.isNewGrantee).toBe(true)
     expect(b?.mergedScopeMask).toBe(SCOPE_SEAL | SCOPE_ASSETS)
     expect(b?.isNewGrantee).toBe(false)
+  })
+
+  // ── R-001 regression: chain-only grant must not be narrowed ──────────
+  it('falls back to the on-chain active grant slot when the mirror is empty', async () => {
+    mockedRequireHumanWalletIdentity.mockResolvedValue({
+      identity: { accountId: 'a', memberId: HUMAN_MEMBER_ID, kind: 'human' },
+      walletAddresses: ['0xowner'],
+    })
+    mockedPrisma.soulAsset.findMany.mockResolvedValue([
+      soulRow({
+        onChainId: SOUL_ID_A,
+        stateOnChainId: `${SOUL_ID_A}-state`,
+        grantCapacity: 2,
+        activeGrantCount: 1,
+      }),
+    ])
+    // Mirror says: no active grant for AGENT_X on this Soul. Without the
+    // chain fallback the endpoint would return `existingScopeMask = 0`
+    // and the caller would `grant::issue(mask = SCOPE_ASSETS)`, which
+    // replaces the existing on-chain slot with mask=8 and silently
+    // drops the previously-granted {seal, skills}.
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+    // Chain truth: AGENT_X holds {seal, skills} = mask 5 already.
+    mockedGetSoulStateObject.mockResolvedValue({
+      objectId: `${SOUL_ID_A}-state`,
+      activeGrantsTableId: 'table-A',
+      activeGrantCount: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockImplementation(
+      async (_state: unknown, grantee: string) => {
+        if (grantee === AGENT_X) {
+          return {
+            grantId: 'grant-A',
+            granteeAddress: AGENT_X,
+            scopeMask: SCOPE_SEAL | SCOPE_SKILLS,
+            scopes: ['seal', 'skills'],
+            expiresAtMs: null,
+            ownershipEpochSnapshot: 0,
+          }
+        }
+        return null
+      },
+    )
+
+    const { POST } = await import('../../web/app/api/souls/grant-merge-masks/route')
+    const response = await POST(jsonRequest({
+      items: [{ soulOnChainId: SOUL_ID_A, granteeAddress: AGENT_X, addedScopeMask: SCOPE_ASSETS }],
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as {
+      items: Array<{
+        existingScopeMask: number
+        mergedScopeMask: number
+        isNewGrantee: boolean
+        requiredCapacity: number
+      }>
+    }
+    expect(body.items[0]?.existingScopeMask).toBe(SCOPE_SEAL | SCOPE_SKILLS)
+    expect(body.items[0]?.mergedScopeMask).toBe(SCOPE_SEAL | SCOPE_SKILLS | SCOPE_ASSETS)
+    // The grantee already exists on chain — supersede reuses the slot,
+    // so no capacity bump is needed.
+    expect(body.items[0]?.isNewGrantee).toBe(false)
+    expect(body.items[0]?.requiredCapacity).toBe(2)
+  })
+
+  it('fails closed with 502 when the on-chain grant slot read throws', async () => {
+    mockedRequireHumanWalletIdentity.mockResolvedValue({
+      identity: { accountId: 'a', memberId: HUMAN_MEMBER_ID, kind: 'human' },
+      walletAddresses: ['0xowner'],
+    })
+    mockedPrisma.soulAsset.findMany.mockResolvedValue([
+      soulRow({ onChainId: SOUL_ID_A, stateOnChainId: `${SOUL_ID_A}-state` }),
+    ])
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+    mockedGetSoulStateObject.mockResolvedValue({
+      objectId: `${SOUL_ID_A}-state`,
+      activeGrantsTableId: 'table-A',
+      activeGrantCount: 1,
+    })
+    // RPC transient — must not be papered over with `existingScopeMask = 0`.
+    mockedGetActiveGrantSlotForGrantee.mockRejectedValue(new Error('rpc down'))
+
+    // Silence the console.error that fail-closed logs trigger.
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { POST } = await import('../../web/app/api/souls/grant-merge-masks/route')
+      const response = await POST(jsonRequest({
+        items: [{ soulOnChainId: SOUL_ID_A, granteeAddress: AGENT_X, addedScopeMask: SCOPE_ASSETS }],
+      }))
+      expect(response.status).toBe(502)
+    } finally {
+      consoleSpy.mockRestore()
+    }
   })
 })

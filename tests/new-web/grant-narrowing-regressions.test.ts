@@ -55,6 +55,24 @@ describe('PetGrantDialog batch issue', () => {
     // The bare single-bit scope on every batch row must be gone.
     expect(source).not.toContain('scopeMask: SOUL_GRANT_SCOPE_ASSETS,\n                // Lifetime')
   })
+
+  // ── R-002: preflight is chunked to honor the 100-item endpoint cap ──
+  it('chunks the merge preflight at MERGE_PREFLIGHT_BATCH_SIZE so >100 Souls do not 400', () => {
+    const source = readSource('web/app/account/pets/_components/PetGrantDialog.tsx')
+
+    // Constant must be declared and used to drive the chunking.
+    expect(source).toMatch(/const MERGE_PREFLIGHT_BATCH_SIZE = 100\b/)
+    expect(source).toContain('chunk(selectedItems, MERGE_PREFLIGHT_BATCH_SIZE)')
+
+    // The preflight `fetch` must live inside a `for ... of preflightChunks`
+    // loop, not a single un-chunked call.
+    expect(source).toMatch(
+      /for \(const preflightBatch of preflightChunks\)[\s\S]+?fetch\('\/api\/souls\/grant-merge-masks'/,
+    )
+
+    // Merged masks must accumulate across chunks (Map kept outside the loop).
+    expect(source).toContain('const mergedMaskByItem = new Map<string, number>()')
+  })
 })
 
 describe('GrantsPanel manual Authorize form', () => {
