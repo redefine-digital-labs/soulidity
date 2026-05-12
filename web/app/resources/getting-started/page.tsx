@@ -7,7 +7,7 @@ export default function GettingStartedPage() {
         <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Getting Started</h1>
         <p className="text-sm text-muted">
-          This guide covers connecting your wallet, browsing Souls, making your first purchase, and understanding the ownership model.
+          A quick start: connect your wallet, browse Souls, make your first purchase, and understand the ownership model. For the full journey — creating, managing grants, paid access, desktop binding, selling — see the <Link href="/resources/user-guide" className="text-purple hover:text-foreground transition">User Guide</Link>.
         </p>
       </div>
 
@@ -20,6 +20,17 @@ export default function GettingStartedPage() {
           📊 Protocol Stats
         </Link>
       </div>
+
+      <Link
+        href="/resources/user-guide"
+        className="flex items-center justify-between rounded-2xl border border-purple/40 bg-purple/10 px-5 py-4 hover:border-purple transition"
+      >
+        <div>
+          <div className="text-sm font-semibold text-foreground">📖 Looking for the full User Guide?</div>
+          <div className="text-xs text-muted mt-0.5">Creating Souls, managing agent grants, paid access, desktop companion, selling — all in one place.</div>
+        </div>
+        <span className="text-purple text-sm font-medium">→</span>
+      </Link>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">1. Connect Your Wallet</h2>

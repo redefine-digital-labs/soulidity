@@ -85,12 +85,57 @@ export default function TermsPage() {
         <section>
           <h2 className="mb-2 text-base font-bold">5. Grants &amp; Access</h2>
           <p className="text-muted">
-            Soul owners may issue scoped grants (seal, memory, skills) to other
-            addresses or agents, with optional expiry. Grants auto-invalidate upon
-            ownership transfer. Access APIs verify on-chain owner or active grant
-            state before issuing Seal session parameters. You are responsible for
-            the scopes and recipients you authorize.
+            Soul owners may issue scoped grants (seal, memory, skills, assets) to
+            other addresses or agents, with optional expiry. A new grant to an
+            existing grantee fully replaces the prior scope mask rather than
+            unioning with it. Grants auto-invalidate upon ownership transfer.
+            Access APIs verify on-chain owner or active grant state before
+            issuing Seal session parameters. You are responsible for the scopes
+            and recipients you authorize.
           </p>
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-base font-bold">
+            5a. Paid Access — Subscription, Owner-Revocable, Non-Refundable
+          </h2>
+          <p className="text-muted">
+            Some Soul content kinds (currently sprite and audio) support paid
+            access via the on-chain <code>SoulPaidAccessList</code> module.
+            Purchasing paid access entitles the buyer to decrypt the configured
+            content kind under the Soul owner&apos;s currently-effective terms.
+            Paid access is an owner-revocable subscription, not a permanent
+            sale. By purchasing paid access you acknowledge and agree:
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
+            <li>
+              The Soul owner may revoke your access at any time without notice
+              by calling <code>paid_access::revoke_access</code>, and{' '}
+              <strong className="text-foreground">no on-chain refund is issued</strong>{' '}
+              by the protocol.
+            </li>
+            <li>
+              The Soul owner may delete or purge the underlying content version
+              at any time, which makes your entry unable to decrypt anything
+              even without an explicit revoke.
+            </li>
+            <li>
+              Your entry auto-invalidates whenever the Soul changes hands. A new
+              owner may choose not to re-configure paid access for the kind you
+              previously purchased.
+            </li>
+            <li>
+              Time-bound entries expire at the configured timestamp. Lifetime
+              entries (those with no expiry) remain valid only as long as the
+              owner has not revoked them and the ownership epoch has not
+              rotated.
+            </li>
+            <li>
+              Any refund, credit, or guaranteed-term arrangement must be agreed
+              off-chain between you and the Soul owner. Soulidity does not
+              mediate or enforce such arrangements.
+            </li>
+          </ul>
         </section>
 
         <section>

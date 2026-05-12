@@ -1,4 +1,26 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+
+const pageTitle = 'Wrap + Link Guide'
+const pageDescription =
+  'Personal Join — add a Soul layer on top of any existing Sui NFT without touching the original contract. The wrapped NFT keeps its identity; the Soul layer is purely additive.'
+
+export const metadata: Metadata = {
+  title: pageTitle,
+  description: pageDescription,
+  alternates: { canonical: '/resources/wrap-link' },
+  openGraph: {
+    title: `${pageTitle} · Soulidity`,
+    description: pageDescription,
+    url: '/resources/wrap-link',
+    type: 'article',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${pageTitle} · Soulidity`,
+    description: pageDescription,
+  },
+}
 
 export default function WrapLinkPage() {
   return (
@@ -48,7 +70,7 @@ export default function WrapLinkPage() {
             <strong className="text-foreground">Sign the transaction.</strong> The client calls <code>buildPersonalJoinSoulTx</code> which assembles the full PTB: borrow the kiosk cap, place the source NFT, call <code>market::mint_joined_in_personal_kiosk</code>, return the kiosk cap.
           </li>
           <li>
-            <strong className="text-foreground">Post-TX sync.</strong> After the TX succeeds, the app calls the publish API which mirrors the <code>SoulAsset</code>, <code>SoulState</code>, <code>SoulMemory</code>, and optionally <code>SoulSkills</code> rows into the DB.
+            <strong className="text-foreground">Post-TX sync.</strong> After the TX succeeds, the app calls the publish API which mirrors the <code>SoulAsset</code>, <code>SoulState</code>, and the unified <code>SoulContent</code> slots (soul.md, founding memory, initial skills, optional sprite) into the DB. See <Link href="/resources/content-format" className="text-purple hover:text-foreground transition">Content Format</Link>.
           </li>
         </ol>
       </div>
@@ -96,11 +118,20 @@ export default function WrapLinkPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Provenance on-chain</h2>
         <p className="text-sm text-muted">
-          The <code>origin_ref</code> field on the <code>Soul</code> object permanently records the wrapped NFT&apos;s identity. It is a human-readable string set by the UI at wrap time. The <code>SoulCreated</code> event carries <code>provenance_kind = 2</code> so indexers can distinguish personal-join Souls from native mints.
+          The <code>origin_ref</code> field on the <code>Soul</code> object permanently records the wrapped NFT&apos;s identity. It is a human-readable string set by the UI at wrap time and is <em>not</em> verified on-chain after mint — surfaces should label personal-join provenance accordingly. The <code>SoulCreated</code> event carries <code>provenance_kind = 2</code> so indexers can distinguish personal-join Souls from native mints.
         </p>
         <p className="text-sm text-muted">
           The source NFT is never locked, burned, or modified. You can still trade the source NFT independently. The Soul layer is purely additive — revoking it would require the Soul owner to manually burn or abandon the Soul object.
         </p>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+        <h2 className="text-lg font-semibold">When not to wrap</h2>
+        <ul className="text-sm text-muted space-y-2">
+          <li>If the source NFT already has Soulidity provenance (you wrapped it before), wrapping again would create a second Soul with the same <code>origin_ref</code>. The contract does not deduplicate — wrap discipline is a UI / off-chain concern.</li>
+          <li>If you do not control the source NFT&apos;s personal kiosk, the kiosk placement step will fail. Make sure the source is in your kiosk before signing.</li>
+          <li>If your goal is purely on-chain transferability without persona content, a native mint (<code>market::mint_native_in_personal_kiosk</code>) is simpler.</li>
+        </ul>
       </div>
 
       <div className="flex items-center gap-3">

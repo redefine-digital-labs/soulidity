@@ -93,10 +93,29 @@ export default function PrivacyPage() {
         <section>
           <h2 className="mb-2 text-base font-bold">3. Soul Content Storage</h2>
           <p className="text-muted">
-            Encrypted Soul bundles (memory, skills, assets) are stored on Walrus, a
-            decentralized blob store. Decryption keys are gated by Seal policy tied
-            to on-chain ownership and active grants. We do not read or index the
-            plaintext contents of your Soul bundles.
+            Encrypted Soul bundles (soul.md, memory entries, skill versions,
+            sprites, audio) are stored on Walrus, a decentralized blob store.
+            Decryption keys are gated by Seal policy tied to on-chain ownership,
+            active grants, or active paid-access entries. We do not read or index
+            the plaintext contents of your Soul bundles.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-base font-bold">
+            3a. Desktop Companion Local Decryption
+          </h2>
+          <p className="text-muted">
+            When the Soulidity Desktop client renders a Soul with a protected
+            persona sprite, the Walrus ciphertext is fetched and decrypted
+            locally by the desktop app using Seal access derived from your
+            wallet or agent grant. The current desktop flow returns the
+            decrypted sprite bytes to the renderer so it can populate the local
+            persona cache, and the main process stores that cache under the
+            app&apos;s local user-data directory for reuse. Plaintext protected
+            assets, Seal session keys, and Walrus blob bodies are not
+            transmitted to Soulidity servers or included in Soulidity-side
+            telemetry.
           </p>
         </section>
 

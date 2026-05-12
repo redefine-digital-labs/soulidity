@@ -1,4 +1,26 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+
+const pageTitle = 'Soul Memory Architecture'
+const pageDescription =
+  'Phase 2 Soul memory under KIND_MEMORY — single canonical name, append-only versions, auto-grant on append, soft delete and hard purge, immutability guarantees.'
+
+export const metadata: Metadata = {
+  title: pageTitle,
+  description: pageDescription,
+  alternates: { canonical: '/resources/memory-architecture' },
+  openGraph: {
+    title: `${pageTitle} · Soulidity`,
+    description: pageDescription,
+    url: '/resources/memory-architecture',
+    type: 'article',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${pageTitle} · Soulidity`,
+    description: pageDescription,
+  },
+}
 
 export default function MemoryArchitecturePage() {
   return (
@@ -7,7 +29,7 @@ export default function MemoryArchitecturePage() {
         <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Soul Memory Architecture</h1>
         <p className="text-sm text-muted">
-          Soul Memory is an append-only, timestamp-indexed log of encrypted blobs on Walrus. Each entry is permanently anchored on-chain. Entries cannot be deleted or modified after writing.
+          Soul memory under Phase 2 is the <code>(kind=KIND_MEMORY, name=&quot;default&quot;, version_index=N)</code> column of the unified <code>SoulContent</code> object. Each entry is a Seal-encrypted blob on Walrus, with an immutable on-chain pointer and a strict append + soft-delete + hard-purge lifecycle.
         </p>
       </div>
 
@@ -22,115 +44,140 @@ export default function MemoryArchitecturePage() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">On-Chain Structure</h2>
+        <h2 className="text-lg font-semibold">On-chain shape</h2>
+        <p className="text-sm text-muted">
+          Memory lives as <code>ContentSlot</code> rows under the <code>SoulContent</code> object. There is no separate <code>SoulMemory</code> shared object after Phase 2.
+        </p>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
-          <code>{`// Shared object — one per Soul, bound at mint
-public struct SoulMemory has key {
-    id: UID,
-    soul_id: ID,
-    entries: Table<u64, ID>,      // timestamp_key (ms) → blob_object_id
-    entry_count: u64,
-}
+          <code>{`// All memory versions for a Soul:
+items[ContentKey { kind: 1 /* KIND_MEMORY */, name: "default" }]
+  → vector<ContentSlot>
 
-// Walrus Blob stored as dynamic object field
-public struct MemoryBlobKey has copy, drop, store {
-    timestamp_key: u64,
+// One entry:
+ContentSlot {
+  version: u64,
+  kind: 1,
+  blob_object_id: ID,          // Walrus Blob
+  is_public: false,            // memory is never public
+  deleted: bool,
+  purged: bool,
+  download_policy: 1,          // OWNER_ONLY
+  grant_scope_mask: 2,         // SCOPE_MEMORY
+  read_mode_mask: OWNER | GRANT,
+  op_mask: APPEND | DELETE | PURGE,
+  seal_encrypted: true,
+  created_at_ms: u64,
 }`}</code>
         </pre>
-        <p className="text-sm text-muted">
-          The <code>entries</code> table maps a <code>timestamp_key</code> (milliseconds from the Sui clock at write time) to the Walrus <code>Blob</code> object ID. If two entries land in the same millisecond, the contract increments the key until it finds a free slot. The <code>Blob</code> object itself is stored as a dynamic object field under <code>MemoryBlobKey</code>, making it inspectable on-chain.
+        <p className="text-xs text-muted">
+          The canonical name for memory is <code>&quot;default&quot;</code>; the on-chain assertion <code>content::assert_canonical_name_for_kind</code> rejects any other name for <code>KIND_MEMORY</code>. The version index is the 0-based vector index — the first founding memory is <code>(1, &quot;default&quot;, 0)</code>.
         </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Writer Kinds</h2>
+        <h2 className="text-lg font-semibold">Writer paths</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50">
-                <th className="text-left py-2 pr-4 text-foreground font-semibold">Kind</th>
-                <th className="text-left py-2 pr-4 text-foreground font-semibold">Value</th>
-                <th className="text-left py-2 text-foreground font-semibold">Who</th>
+                <th className="text-left py-2 pr-4 text-foreground font-semibold">Caller</th>
+                <th className="text-left py-2 pr-4 text-foreground font-semibold">Entry</th>
+                <th className="text-left py-2 text-foreground font-semibold">Notes</th>
               </tr>
             </thead>
             <tbody className="text-muted">
               <tr className="border-b border-border/30">
-                <td className="py-2 pr-4 font-mono text-xs">founder</td>
-                <td className="py-2 pr-4 font-mono text-xs">0</td>
-                <td className="py-2 text-xs">Called during mint — the creator&apos;s founding memory entry</td>
+                <td className="py-2 pr-4 text-xs">creator at mint</td>
+                <td className="py-2 pr-4 font-mono text-xs">market::mint_*</td>
+                <td className="py-2 text-xs">Optional founding memory is appended as <code>(1, &quot;default&quot;, 0)</code> in the same PTB.</td>
               </tr>
               <tr className="border-b border-border/30">
-                <td className="py-2 pr-4 font-mono text-xs">owner</td>
-                <td className="py-2 pr-4 font-mono text-xs">1</td>
-                <td className="py-2 text-xs">Soul owner appending via <code>memory::append_as_owner</code></td>
+                <td className="py-2 pr-4 text-xs">owner</td>
+                <td className="py-2 pr-4 font-mono text-xs">content::append_version_as_owner</td>
+                <td className="py-2 text-xs">Pushes a new version. version_index is auto-incremented.</td>
               </tr>
               <tr>
-                <td className="py-2 pr-4 font-mono text-xs">granted-agent</td>
-                <td className="py-2 pr-4 font-mono text-xs">2</td>
-                <td className="py-2 text-xs">Agent with active SCOPE_MEMORY grant via <code>memory::append_as_granted_agent</code></td>
+                <td className="py-2 pr-4 text-xs">granted agent</td>
+                <td className="py-2 pr-4 font-mono text-xs">content::append_version_as_granted_agent</td>
+                <td className="py-2 text-xs">Requires <code>SoulGrant</code> with <code>SCOPE_MEMORY</code> (bit 2) covering this Soul.</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-muted">
-          The <code>MemoryEntryAppended</code> event records <code>writer_kind</code>, <code>writer</code> address, <code>timestamp_key</code>, and <code>blob_object_id</code>. The DB mirrors these from the event log.
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Auto-grant on append</h2>
+        <p className="text-sm text-muted">
+          When the owner appends a new memory version, the web app issues scope-matched grants to every active agent that doesn&apos;t already cover <code>SCOPE_MEMORY</code>. Existing scopes are preserved via the <code>grant-merge-masks</code> pre-check; supersede is the on-chain mechanism. Failures surface as a yellow banner with retry — see <Link href="/resources/agent-integration" className="text-purple hover:text-foreground transition">Agent Integration</Link>.
         </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Encrypted by Default</h2>
+        <h2 className="text-lg font-semibold">Always Seal-encrypted</h2>
         <p className="text-sm text-muted">
-          All memory entries are Seal-encrypted at upload time. The document ID is bound to the <code>SoulMemory</code> object ID and the <code>timestamp_key</code>:
+          Memory slots always have <code>read_mode_mask = OWNER | GRANT</code> and never include <code>READ_PUBLIC</code> or <code>READ_PAID</code>. There is no public-memory mode. Every entry is Seal-bound to the canonical Phase 2 document ID:
         </p>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-3 text-xs leading-6 text-foreground/90">
-          <code>{`"soul-memory:" + version_byte(1) + memory_id_bytes(32) + timestamp_key_be(8) + nonce(16)`}</code>
+          <code>{`"soul-content:" + version_byte(1) + kind_be(4 = 0x00000001)
+  + content_object_id(32) + "default" + 0x00
+  + version_index_be(8) + nonce(16)`}</code>
         </pre>
-        <p className="text-sm text-muted">
-          This means only the Soul owner (or a holder of an active SCOPE_MEMORY grant) can decrypt any entry. There is no public memory mode.
+        <p className="text-xs text-muted">
+          See <Link href="/resources/walrus-seal" className="text-purple hover:text-foreground transition">Walrus &amp; Seal</Link> for the universal doc-id format and approval entries.
         </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">DB Mirror Fields</h2>
+        <h2 className="text-lg font-semibold">Soft delete &amp; hard purge</h2>
+        <ul className="text-sm text-muted space-y-2">
+          <li><strong className="text-foreground">Soft delete</strong> (<code>content::delete_version_as_owner</code> or <code>delete_version_as_granted_agent</code>) flips <code>deleted = true</code> on the slot. The Walrus blob remains; reads abort with <code>EVersionDeleted</code>. <code>version_index</code> is preserved.</li>
+          <li><strong className="text-foreground">Hard purge</strong> (<code>content::purge_deleted_version_as_owner</code>) is owner-only and only valid after soft delete. It clears the on-chain blob pointer entirely and emits <code>ContentVersionPurged</code>.</li>
+          <li>Re-deleting an already-deleted slot aborts. Re-purging an already-purged slot aborts.</li>
+        </ul>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+        <h2 className="text-lg font-semibold">DB mirror</h2>
         <p className="text-sm text-muted">
-          After a successful on-chain append, the API mirrors a <code>SoulMemoryEntry</code> row with these key fields:
+          After a successful TX, the API mirrors a <code>SoulContentVersionRecord</code> row keyed by <code>(soulId, contentId, kind, name, versionIndex)</code> with these key fields:
         </p>
         <ul className="text-sm text-muted space-y-1">
-          <li><code className="text-xs text-foreground">memoryOnChainId</code> — the <code>SoulMemory</code> shared object ID</li>
-          <li><code className="text-xs text-foreground">timestampKey</code> — the on-chain table key (bigint, stored as decimal string in JSON)</li>
-          <li><code className="text-xs text-foreground">writerAddress</code> — the address that signed the append TX</li>
-          <li><code className="text-xs text-foreground">writerKind</code> — <code>&quot;founder&quot;</code> | <code>&quot;owner&quot;</code> | <code>&quot;granted-agent&quot;</code></li>
+          <li><code className="text-xs text-foreground">contentOnChainId</code> — the <code>SoulContent</code> shared-object ID</li>
+          <li><code className="text-xs text-foreground">kind</code> — <code>1</code> for memory</li>
+          <li><code className="text-xs text-foreground">name</code> — <code>&quot;default&quot;</code></li>
+          <li><code className="text-xs text-foreground">versionIndex</code> — bigint / decimal string</li>
+          <li><code className="text-xs text-foreground">writerAddress</code> — address that signed the append TX</li>
+          <li><code className="text-xs text-foreground">writerKind</code> — <code>&quot;creator&quot;</code> | <code>&quot;owner&quot;</code> | <code>&quot;granted-agent&quot;</code></li>
           <li><code className="text-xs text-foreground">blobObjectId</code> — Sui object ID of the Walrus <code>Blob</code></li>
           <li><code className="text-xs text-foreground">blobId</code> — Walrus blob ID (used to build the download URL)</li>
           <li><code className="text-xs text-foreground">sealSidecar</code> — encrypted DEK envelope for client-side decryption</li>
+          <li><code className="text-xs text-foreground">deletedAt</code> / <code className="text-xs text-foreground">purgedAt</code> — set by mirror writes on the respective TXs</li>
         </ul>
         <p className="text-xs text-muted mt-2">
-          The entry is looked up by <code>(memoryOnChainId, timestampKey)</code> — not by a legacy entry object ID. This is the canonical addressing scheme.
+          Memory entries are looked up by the triple <code>(kind, name, versionIndex)</code>. There is no legacy <code>timestampKey</code> addressing post-phase 2.
         </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Memory Access API</h2>
-        <ul className="text-sm text-muted space-y-2">
-          <li>
-            <div className="font-mono text-xs text-foreground mb-1">GET /api/souls/[id]/memory/[entryKey]/access</div>
-            Returns a <code>MemoryAccessResponse</code> containing the Walrus blob URL, sidecar, Seal server config, and approval policy. The <code>entryKey</code> path segment is the decimal <code>timestamp_key</code>.
-          </li>
-          <li>
-            The route validates the viewer identity from the wallet session or agent API key, checks rate limits (30 req/min), and resolves the access via <code>resolveMemoryAccessPayload</code> — which fetches live <code>SoulState</code> from chain to verify ownership or active grant.
-          </li>
-          <li>
-            Credentialed Seal server configs are not permitted for browser access. Server-side agent access uses a separate code path.
-          </li>
-        </ul>
+        <h2 className="text-lg font-semibold">Memory access API</h2>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
-          <code>{`// Access response shape
+          <code>{`GET /api/souls/[id]/content/1/default/N/access
+
+// Owner / granted-agent response (memory has no public or paid path)
 {
   artifact: { walrusBlobUrl, walrusBlobId, blobObjectId },
   accessPolicy: {
-    packageId, stateObjectId, memoryObjectId, timestampKey,
-    moduleName: "seal_policy",
-    functionName: "seal_approve_memory_owner" | "seal_approve_memory_granted_agent",
+    packageId,
+    stateObjectId,
+    contentObjectId,
+    kind: 1,
+    name: "default",
+    versionIndex: N,
+    moduleName: "content",
+    functionName:
+      "seal_approve_content_owner"
+      | "seal_approve_content_granted_agent",
     soulGrantObjectId: string | null,
     documentIdHex: string,
   },
@@ -148,7 +195,7 @@ public struct MemoryBlobKey has copy, drop, store {
           ← Back to resources
         </Link>
         <Link href="/resources/skills-revisions" className="text-sm font-medium text-muted hover:text-foreground transition">
-          Next: Skills & Revisions →
+          Next: Skills &amp; Revisions →
         </Link>
       </div>
     </div>
