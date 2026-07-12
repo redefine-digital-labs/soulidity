@@ -27,7 +27,7 @@ describe('market error catalog', () => {
       32,
       33,
       35,
-      ...Array.from({ length: 15 }, (_, i) => i + 37), // 37..51
+      ...Array.from({ length: 22 }, (_, i) => i + 37), // 37..58
     ]
     for (const code of expected) {
       expect(MARKET_ERROR_CATALOG[code], `missing entry for code ${code}`).toBeDefined()
@@ -61,6 +61,14 @@ describe('market error catalog', () => {
     expect(MARKET_ERROR_CATALOG[40]?.name).toBe('EKioskOwnerMismatch')
     expect(MARKET_ERROR_CATALOG[41]?.name).toBe('EListingSellerMismatch')
     expect(MARKET_ERROR_CATALOG[42]?.name).toBe('EListingStateMismatch')
+  })
+
+  it('maps every Animacraft integration failure to a recovery message', () => {
+    expect(MARKET_ERROR_CATALOG[52]?.name).toBe('EAnimacraftProtocolVersion')
+    expect(MARKET_ERROR_CATALOG[55]?.name).toBe('EAnimacraftAuthorizationMismatch')
+    expect(MARKET_ERROR_CATALOG[56]?.name).toBe('EAnimacraftPurchasePathRequired')
+    expect(MARKET_ERROR_CATALOG[57]?.name).toBe('EAnimacraftRoyaltyTooSmall')
+    expect(MARKET_ERROR_CATALOG[58]?.name).toBe('EAnimacraftListingPathRequired')
   })
 })
 

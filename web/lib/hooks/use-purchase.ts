@@ -5,6 +5,7 @@ import type { SoulAssetDetail } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { assertObjectInputsExist } from '@soulidity/sdk'
 import { buildBuySoulTx } from '@soulidity/sdk'
+import { buildBuyAnimacraftSoulTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -69,6 +70,9 @@ export function usePurchase(soul: SoulAssetDetail | null) {
       if (accumulated < requiredAtomic) {
         throw new Error('Insufficient payment balance')
       }
+      if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
+        throw new Error('Animacraft provenance is unavailable; purchase is blocked')
+      }
       await assertObjectInputsExist(suiClient, {
         'Seller kiosk': soul.currentKioskId,
         'Soul state': soul.stateOnChainId,
@@ -76,9 +80,12 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         Collection: soul.collectionOnChainId,
         'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
         'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
+        'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
+        'Animacraft Maker': soul.animacraftProvenance?.makerId ?? null,
+        'Animacraft Maker treasury': soul.animacraftProvenance?.makerTreasuryId ?? null,
       })
 
-      const tx = buildBuySoulTx({
+      const sharedPurchaseParams = {
         sellerKioskId: soul.currentKioskId,
         stateObjectId: soul.stateOnChainId,
         listingObjectId: soul.listingObjectOnChainId,
@@ -87,7 +94,15 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         collectionObjectId: soul.collectionOnChainId,
         buyerKioskId: personalKiosk?.currentKioskId ?? null,
         buyerKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
-      })
+      }
+      const tx = soul.animacraftProvenance
+        ? buildBuyAnimacraftSoulTx({
+            ...sharedPurchaseParams,
+            provenanceObjectId: soul.animacraftProvenance.objectId,
+            makerObjectId: soul.animacraftProvenance.makerId,
+            makerTreasuryObjectId: soul.animacraftProvenance.makerTreasuryId,
+          })
+        : buildBuySoulTx(sharedPurchaseParams)
 
       setStatus('signing')
       const result = await signAndExecute(tx)

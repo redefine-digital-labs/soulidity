@@ -27,7 +27,7 @@ export interface SealEnvelopeSidecar {
 export type SoulListingStatus = 'held' | 'listed' | 'floor-violation'
 export type SoulGrantStatus = 'active' | 'revoked' | 'expired' | 'superseded' | 'invalidated'
 export type SoulGrantScope = 'seal' | 'memory' | 'skills' | 'assets'
-export type SoulProvenanceKind = 'native' | 'imported' | 'personal-join'
+export type SoulProvenanceKind = 'native' | 'imported' | 'personal-join' | 'animacraft'
 
 /**
  * Per-slot download policy. Mirrors `content.move::DOWNLOAD_POLICY_*`.
@@ -104,6 +104,29 @@ export interface SoulStateObject {
   paidAccessListId: string | null
   collectionId: string | null
   isListed: boolean
+}
+
+/**
+ * Immutable cross-package receipt created when Soulidity consumes an
+ * Animacraft `SoulMintAuthorization`. The Maker and Treasury ids are the
+ * canonical inputs for every royalty-aware secondary purchase.
+ */
+export interface AnimacraftProvenanceObject {
+  objectId: string
+  packageId: string
+  soulId: string
+  animacraftVersion: number
+  makerId: string
+  makerTreasuryId: string
+  makerCreatorAddress: string
+  payerAddress: string
+  profileJsonBlobId: string
+  imageBlobId: string
+  imageUrl: string
+  makerRoyaltyBps: number
+  mintPaymentCoinType: string
+  mintPriceAtomic: string
+  authorizedAtMs: string
 }
 
 /**
@@ -292,6 +315,10 @@ export interface SoulQuoteBreakdown {
   creatorRoyaltyAtomic: string
   collectionRoyaltyAtomic: string
   totalAtomic: string
+  /** Present for Animacraft-derived Souls; mirrors creatorRoyaltyAtomic for compatibility. */
+  makerRoyaltyAtomic?: string
+  makerRoyaltyBps?: number
+  royaltySource?: 'soul-creator' | 'animacraft-maker'
 }
 
 /**
@@ -431,6 +458,7 @@ export interface SoulAssetDetail extends SoulAssetSummary {
   isGrantedAgent: boolean
   quote: SoulQuoteBreakdown | null
   platformFeeBps: number | null
+  animacraftProvenance: AnimacraftProvenanceObject | null
 }
 
 export interface SoulsListResponse {

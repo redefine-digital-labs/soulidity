@@ -32,7 +32,7 @@
   "dependencies": {
     "@mysten/sui": "^2.16.0",
     "@prisma/adapter-pg": "^7.7.0",
-    "@prisma/client": "^7.7.0",
+    "@prisma/client": "^7.8.0",
     "@soulidity/sdk": "file:./packages/soulidity-sdk",
     "dotenv": "^17.4.2",
     "grammy": "^1.42.0",
@@ -42,7 +42,7 @@
     "p-limit": "^7.3.0",
     "pg": "^8.20.0",
     "posthog-node": "^5.30.6",
-    "prisma": "^7.7.0",
+    "prisma": "^7.8.0",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
@@ -59,7 +59,7 @@
   },
   "overrides": {
     "@hono/node-server": "1.19.14",
-    "hono": "4.12.14",
+    "hono": "4.12.29",
     "vite": "7.3.2"
   }
 }

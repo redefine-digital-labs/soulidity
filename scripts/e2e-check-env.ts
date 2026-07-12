@@ -22,6 +22,7 @@
  *  11. NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL is https URL
  *  12. Manifest .mainnet packageId / marketConfigId / kindRegistryId / paymentCoinType
  *      consistent with what `@soulidity/sdk` resolves
+ *  13. Canonical Animacraft mint gate and all three package/shared-object IDs agree
  *
  * Live runtime probes (Seal `/v1/service`, Walrus relay tip-config) are
  * intentionally out of scope here — those are Phase -1.5 / -1.8 of the
@@ -228,7 +229,31 @@ function main() {
     v.pass(`NEXT_PUBLIC_KIOSK_PACKAGE_ID = ${kioskPkg}`)
   }
 
-  // 11. Walrus relay
+  // 11. Canonical Animacraft adapter. The mainnet E2E suite exercises the
+  // real Maker -> Soul path, so a disabled gate is a hard failure here.
+  const animacraftGate = v.checkPresent(
+    'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
+    'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
+  )
+  if (animacraftGate && animacraftGate !== 'true') {
+    v.fail('NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED', 'expected "true" for mainnet E2E')
+  } else if (animacraftGate) {
+    v.pass('NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED = true')
+  }
+  for (const name of [
+    'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_FEE_CONFIG_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_TREASURY_ID',
+  ] as const) {
+    const value = v.checkPresent(name, name)
+    if (value && !/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
+      v.fail(name, `not a valid Sui object id ("${value}")`)
+    } else if (value) {
+      v.pass(`${name} = ${value}`)
+    }
+  }
+
+  // 12. Walrus relay
   const walrusRelay = v.checkPresent(
     'NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL',
     'NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL',
@@ -239,7 +264,7 @@ function main() {
     v.pass(`NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL = ${walrusRelay}`)
   }
 
-  // 12. Manifest consistency. The SDK env helper falls back to manifest
+  // 13. Manifest consistency. The SDK env helper falls back to manifest
   // when NEXT_PUBLIC_SOULIDITY_* is unset; verify that the manifest mainnet
   // segment has the canonical fields the plan depends on.
   let manifest: Record<string, string | undefined> | null = null

@@ -5,6 +5,9 @@ const SOUL_ID = `0x${'2'.repeat(64)}`
 const STATE_ID = `0x${'3'.repeat(64)}`
 const KIOSK_ID = `0x${'4'.repeat(64)}`
 const LISTING_ID = `0x${'5'.repeat(64)}`
+const PROVENANCE_ID = `0x${'6'.repeat(64)}`
+const MAKER_ID = `0x${'7'.repeat(64)}`
+const MAKER_TREASURY_ID = `0x${'8'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
 const STORED_EXPIRES_AT = new Date('2026-04-24T10:00:00.000Z')
 
@@ -15,6 +18,8 @@ const mockedSelectCoinObjectIdsForAmountAcrossPages = vi.hoisted(() => vi.fn())
 const mockedGetRequiredSoulidityEnv = vi.hoisted(() => vi.fn())
 const mockedGetMarketConfig = vi.hoisted(() => vi.fn())
 const mockedQuoteSoulPurchase = vi.hoisted(() => vi.fn())
+const mockedQuoteAnimacraftSoulPurchase = vi.hoisted(() => vi.fn())
+const mockedGetAnimacraftProvenanceForState = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
 const MockSoulidityPersonalKioskInvariantError = vi.hoisted(
   () => class MockSoulidityPersonalKioskInvariantError extends Error {
@@ -27,6 +32,7 @@ const MockSoulidityPersonalKioskInvariantError = vi.hoisted(
   },
 )
 const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
+const mockedBuildBuyAnimacraftSoulTx = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulPreparedPurchase: {
     create: vi.fn(),
@@ -62,9 +68,12 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
     getMarketConfig: mockedGetMarketConfig,
     quoteSoulPurchase: mockedQuoteSoulPurchase,
+    quoteAnimacraftSoulPurchase: mockedQuoteAnimacraftSoulPurchase,
+    getAnimacraftProvenanceForState: mockedGetAnimacraftProvenanceForState,
     resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
     SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
     buildBuySoulTx: mockedBuildBuySoulTx,
+    buildBuyAnimacraftSoulTx: mockedBuildBuyAnimacraftSoulTx,
   }
 })
 
@@ -115,6 +124,7 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     mockedResolveOwnedPersonalKiosk.mockResolvedValue({ status: 'missing' })
     tx.build.mockResolvedValue(Uint8Array.from([1, 2, 3]))
     mockedBuildBuySoulTx.mockReturnValue(tx)
+    mockedBuildBuyAnimacraftSoulTx.mockReturnValue(tx)
     mockedPrisma.soulPreparedPurchase.create.mockResolvedValue({
       id: PREPARED_PURCHASE_ID,
       expiresAt: STORED_EXPIRES_AT,
@@ -219,6 +229,53 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
           agentMemberId: 'agent-member-1',
           txBytesHash: expect.any(String),
         },
+      },
+    })
+  })
+
+  it('prepares Animacraft purchases with Maker provenance and treasury routing', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      onChainId: SOUL_ID,
+      provenanceKind: 'animacraft',
+      listingStatus: 'listed',
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '1000000',
+      creatorRoyaltyBps: 0,
+      collection: null,
+      collectionOnChainId: null,
+      currentKioskId: KIOSK_ID,
+      stateOnChainId: STATE_ID,
+    })
+    mockedGetAnimacraftProvenanceForState.mockResolvedValueOnce({
+      objectId: PROVENANCE_ID,
+      makerId: MAKER_ID,
+      makerTreasuryId: MAKER_TREASURY_ID,
+      makerRoyaltyBps: 300,
+    })
+    mockedQuoteAnimacraftSoulPurchase.mockReturnValueOnce({
+      platformFeeAtomic: '25000',
+      makerRoyaltyAtomic: '30000',
+      collectionRoyaltyAtomic: '0',
+      totalAtomic: '1055000',
+    })
+    mockedSelectCoinObjectIdsForAmountAcrossPages.mockResolvedValueOnce(['0xcoin'])
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    expect(mockedQuoteSoulPurchase).not.toHaveBeenCalled()
+    expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+    expect(mockedBuildBuyAnimacraftSoulTx).toHaveBeenCalledWith(expect.objectContaining({
+      provenanceObjectId: PROVENANCE_ID,
+      makerObjectId: MAKER_ID,
+      makerTreasuryObjectId: MAKER_TREASURY_ID,
+      totalAtomic: 1_055_000n,
+    }))
+    await expect(response.json()).resolves.toMatchObject({
+      context: {
+        totalAtomic: '1055000',
+        creatorRoyaltyAtomic: '30000',
+        royaltySource: 'animacraft-maker',
       },
     })
   })

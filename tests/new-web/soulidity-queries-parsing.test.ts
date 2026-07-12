@@ -31,6 +31,7 @@ import {
   ensureTransactionSucceeded,
   readTransactionSender,
   quoteSoulPurchase,
+  quoteAnimacraftSoulPurchase,
   quoteCollectionPurchase,
   OnChainVerificationError,
 } from '@soulidity/sdk'
@@ -403,6 +404,48 @@ describe('quoteSoulPurchase', () => {
     expect(typeof result.creatorRoyaltyAtomic).toBe('string')
     expect(typeof result.collectionRoyaltyAtomic).toBe('string')
     expect(typeof result.totalAtomic).toBe('string')
+  })
+
+  it('rounds each non-zero fee up exactly like the Move contract', () => {
+    const result = quoteSoulPurchase(config, {
+      priceAtomic: 1n,
+      creatorRoyaltyBps: 100,
+      collectionRoyaltyBps: 100,
+    })
+    expect(result.platformFeeAtomic).toBe('1')
+    expect(result.creatorRoyaltyAtomic).toBe('1')
+    expect(result.collectionRoyaltyAtomic).toBe('1')
+    expect(result.totalAtomic).toBe('4')
+  })
+})
+
+describe('quoteAnimacraftSoulPurchase', () => {
+  const config = {
+    objectId: '0x' + 'aa'.repeat(32),
+    packageId: '0x' + 'bb'.repeat(32),
+    feeRecipient: '0x' + 'cc'.repeat(32),
+    platformFeeBps: 250,
+    paused: false,
+  }
+
+  it('uses ceil for Soulidity fees and floor for the immutable Maker royalty', () => {
+    const result = quoteAnimacraftSoulPurchase(config, {
+      priceAtomic: 101n,
+      makerRoyaltyBps: 100,
+      collectionRoyaltyBps: 100,
+    })
+    expect(result.platformFeeAtomic).toBe('3')
+    expect(result.makerRoyaltyAtomic).toBe('1')
+    expect(result.collectionRoyaltyAtomic).toBe('2')
+    expect(result.totalAtomic).toBe('107')
+  })
+
+  it('rejects a non-zero Maker royalty that would round down to zero on chain', () => {
+    expect(() => quoteAnimacraftSoulPurchase(config, {
+      priceAtomic: 99n,
+      makerRoyaltyBps: 100,
+      collectionRoyaltyBps: 0,
+    })).toThrow(/rounds to zero/)
   })
 })
 

@@ -53,12 +53,16 @@ export function useListSoul(soul: SoulAssetDetail | null) {
       if (!soulKioskId || !soulKioskCapId) {
         throw new Error('Soul kiosk info is missing — the Soul may not be held in a personal kiosk')
       }
+      if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
+        throw new Error('Animacraft provenance is unavailable; listing is blocked')
+      }
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
         'Soul kiosk capability': soulKioskCapId,
         'Soul state': soul.stateOnChainId,
         Soul: soul.onChainId,
         Collection: soul.collectionOnChainId,
+        'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
       })
 
       const tx = buildListSoulTx({
@@ -67,6 +71,7 @@ export function useListSoul(soul: SoulAssetDetail | null) {
         stateObjectId: soul.stateOnChainId,
         priceAtomic,
         collectionObjectId: soul.collectionOnChainId,
+        animacraftProvenanceObjectId: soul.animacraftProvenance?.objectId,
       })
 
       setStatus('signing')

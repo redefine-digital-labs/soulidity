@@ -2,7 +2,11 @@ import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '../env'
 import { buildBuyerKioskArgs, finishBuyerKioskArgs } from './shared'
 
-function buildPaymentCoin(tx: Transaction, paymentCoinObjectIds: string[], totalAtomic: bigint) {
+export function buildExactPaymentCoin(
+  tx: Transaction,
+  paymentCoinObjectIds: string[],
+  totalAtomic: bigint,
+) {
   if (totalAtomic <= 0n) {
     throw new Error('totalAtomic must be positive')
   }
@@ -38,7 +42,7 @@ export function buildBuySoulTx(params: {
     buyerKioskId: params.buyerKioskId,
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
   })
-  const paymentCoin = buildPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
+  const paymentCoin = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
 
   tx.moveCall({
     target: params.collectionObjectId
@@ -92,7 +96,7 @@ export function buildBuyCollectionTx(params: {
     buyerKioskId: params.buyerKioskId,
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
   })
-  const paymentCoin = buildPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
+  const paymentCoin = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
 
   tx.moveCall({
     target: `${packageId}::market::buy_collection_right_fixed_price`,

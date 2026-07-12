@@ -60,6 +60,13 @@ export type MarketErrorName =
   | 'EInitialMemoryNameMismatch'
   | 'EInitialKindOpNotAllowedAtMint'
   | 'EPaidAccessKindMismatch'
+  | 'EAnimacraftProtocolVersion'
+  | 'EAnimacraftPayerMismatch'
+  | 'EAnimacraftCoinTypeMismatch'
+  | 'EAnimacraftAuthorizationMismatch'
+  | 'EAnimacraftPurchasePathRequired'
+  | 'EAnimacraftRoyaltyTooSmall'
+  | 'EAnimacraftListingPathRequired'
 
 export interface MarketErrorEntry {
   readonly name: MarketErrorName
@@ -274,6 +281,41 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
     name: 'EPaidAccessKindMismatch',
     summary: 'Paid access is not configured for this content kind.',
     recoveryHint: 'Refresh and verify the selected paid access kind.',
+  },
+  52: {
+    name: 'EAnimacraftProtocolVersion',
+    summary: 'This Animacraft authorization uses an unsupported protocol version.',
+    recoveryHint: 'Return to Animacraft and rebuild the Soul mint with the current Maker version.',
+  },
+  53: {
+    name: 'EAnimacraftPayerMismatch',
+    summary: 'The connected wallet did not create this Animacraft mint authorization.',
+    recoveryHint: 'Reconnect the wallet used in Animacraft and restart the Soul mint.',
+  },
+  54: {
+    name: 'EAnimacraftCoinTypeMismatch',
+    summary: 'The Animacraft Maker is configured for a different payment coin.',
+    recoveryHint: 'Refresh the Maker from Animacraft and retry with its configured USDC coin type.',
+  },
+  55: {
+    name: 'EAnimacraftAuthorizationMismatch',
+    summary: 'Animacraft provenance does not match this Soul, Maker, or treasury.',
+    recoveryHint: 'Refresh the Soul and use the immutable provenance objects shown on its detail page.',
+  },
+  56: {
+    name: 'EAnimacraftPurchasePathRequired',
+    summary: 'Animacraft Souls must use the Maker royalty-aware purchase path.',
+    recoveryHint: 'Refresh the listing and retry through the Soulidity marketplace.',
+  },
+  57: {
+    name: 'EAnimacraftRoyaltyTooSmall',
+    summary: 'The listing price is too small to settle the configured Maker royalty.',
+    recoveryHint: 'Increase the listing price until the Maker royalty is at least one atomic USDC unit.',
+  },
+  58: {
+    name: 'EAnimacraftListingPathRequired',
+    summary: 'Animacraft Souls must use the provenance-aware listing path.',
+    recoveryHint: 'Refresh the Soul detail page and list it again from Soulidity.',
   },
 }
 

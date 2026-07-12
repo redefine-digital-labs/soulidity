@@ -192,7 +192,9 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
             <span>{formatAtomicAmountForDisplay(soul.quote.platformFeeAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm py-2 border-b border-border">
-            <span className="text-muted">Creator royalty</span>
+            <span className="text-muted">
+              {soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}
+            </span>
             <span>{formatAtomicAmountForDisplay(soul.quote.creatorRoyaltyAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm py-2 border-b border-border">

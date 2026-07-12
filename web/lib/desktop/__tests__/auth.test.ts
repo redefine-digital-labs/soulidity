@@ -7,6 +7,7 @@ import {
 } from '../auth'
 
 const DESKTOP_TOKEN_PREFIX = 'dtk_'
+const recentlyIssuedAt = () => new Date(Date.now() - 24 * 60 * 60 * 1000)
 
 // ── Mock prisma ────────────────────────────────────────────
 const mockPetFindUnique = vi.fn()
@@ -97,7 +98,7 @@ describe('verifyDesktopAccessToken', () => {
       agentAddress: '0xagent',
       agentMemberId: 'member-9',
       desktopAccessTokenHash: hash,
-      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+      desktopAccessTokenIssuedAt: recentlyIssuedAt(),
     })
 
     const result = await verifyDesktopAccessToken(token)
@@ -122,7 +123,7 @@ describe('verifyDesktopAccessToken', () => {
       agentAddress: '0xagent',
       agentMemberId: 'member-9',
       desktopAccessTokenHash: hash,
-      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+      desktopAccessTokenIssuedAt: recentlyIssuedAt(),
     })
 
     await verifyDesktopAccessToken(token)
@@ -138,7 +139,7 @@ describe('verifyDesktopAccessToken', () => {
       agentAddress: '0xagent',
       agentMemberId: 'member-9',
       desktopAccessTokenHash: 'wrong_hash_value',
-      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+      desktopAccessTokenIssuedAt: recentlyIssuedAt(),
     })
 
     const result = await verifyDesktopAccessToken(token)
@@ -236,7 +237,7 @@ describe('token rotation', () => {
       agentAddress: '0xagent',
       agentMemberId: 'member-9',
       desktopAccessTokenHash: fresh.hash,
-      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+      desktopAccessTokenIssuedAt: recentlyIssuedAt(),
     })
 
     // Old token should fail
@@ -253,7 +254,7 @@ describe('token rotation', () => {
       agentAddress: '0xagent',
       agentMemberId: 'member-9',
       desktopAccessTokenHash: fresh.hash,
-      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+      desktopAccessTokenIssuedAt: recentlyIssuedAt(),
     })
 
     const result = await verifyDesktopAccessToken(fresh.token)

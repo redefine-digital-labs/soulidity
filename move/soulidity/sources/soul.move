@@ -2,6 +2,7 @@ module soulidity::soul;
 
 use std::string::{Self as string, String};
 use sui::display::{Self as display, Display};
+use sui::dynamic_field as df;
 use sui::event;
 use sui::package::{Self as package, Publisher};
 use sui::table::{Self as table, Table};
@@ -19,10 +20,17 @@ const EContentRootMissing: u64 = 15;
 const EContentAlreadyBound: u64 = 16;
 const EStateConfigKeyEmpty: u64 = 17;
 const EStateConfigKeyMissing: u64 = 18;
+const EAnimacraftProvenanceAlreadyBound: u64 = 19;
+const EAnimacraftProvenanceMissing: u64 = 20;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
 const PROVENANCE_PERSONAL_JOIN: u8 = 2;
+const PROVENANCE_ANIMACRAFT: u8 = 3;
+/// Protocol-reserved dynamic-field key. Using a framework primitive keeps the
+/// binding queryable after future package upgrades; a package-defined key type
+/// would remain pinned to the version that first introduced it.
+const ANIMACRAFT_PROVENANCE_KEY: u8 = 1;
 const VERSION: u64 = 1;
 
 public struct SOUL has drop {}
@@ -216,6 +224,18 @@ public fun is_listed(self: &SoulState): bool {
     self.is_listed
 }
 
+public fun has_animacraft_provenance(self: &SoulState): bool {
+    df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_PROVENANCE_KEY)
+}
+
+public fun animacraft_provenance_id(self: &SoulState): ID {
+    assert!(
+        df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_PROVENANCE_KEY),
+        EAnimacraftProvenanceMissing,
+    );
+    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_PROVENANCE_KEY)
+}
+
 public fun has_state_config(self: &SoulState, key: String): bool {
     self.config_ext.contains(key)
 }
@@ -333,6 +353,21 @@ public(package) fun provenance_imported(): u8 {
 
 public(package) fun provenance_personal_join(): u8 {
     PROVENANCE_PERSONAL_JOIN
+}
+
+public(package) fun provenance_animacraft(): u8 {
+    PROVENANCE_ANIMACRAFT
+}
+
+public(package) fun bind_animacraft_provenance(
+    state: &mut SoulState,
+    provenance_id: ID,
+) {
+    assert!(
+        !df::exists_with_type<u8, ID>(&state.id, ANIMACRAFT_PROVENANCE_KEY),
+        EAnimacraftProvenanceAlreadyBound,
+    );
+    df::add(&mut state.id, ANIMACRAFT_PROVENANCE_KEY, provenance_id);
 }
 
 public(package) fun assert_owner(state: &SoulState, owner: address) {
@@ -540,6 +575,11 @@ public fun provenance_imported_for_testing(): u8 {
 #[test_only]
 public fun provenance_personal_join_for_testing(): u8 {
     PROVENANCE_PERSONAL_JOIN
+}
+
+#[test_only]
+public fun provenance_animacraft_for_testing(): u8 {
+    PROVENANCE_ANIMACRAFT
 }
 
 #[test_only]

@@ -6,6 +6,10 @@ import { parse } from 'dotenv'
 const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_SUI_NETWORK',
   'NEXT_PUBLIC_KIOSK_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
+  'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_FEE_CONFIG_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_TREASURY_ID',
   'NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
   'SEAL_SERVER_CONFIGS',
   'NEXT_PUBLIC_SEAL_THRESHOLD',
@@ -176,6 +180,20 @@ function assertProductionEnv(env: Record<string, string>) {
   const threshold = Number.parseInt(env.NEXT_PUBLIC_SEAL_THRESHOLD ?? '', 10)
   if (!Number.isFinite(threshold) || threshold <= 0) {
     errors.push('NEXT_PUBLIC_SEAL_THRESHOLD must be a positive integer for mainnet')
+  }
+
+  const animacraftEnabled = env.NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED?.trim() === 'true'
+  if (animacraftEnabled) {
+    for (const key of [
+      'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_FEE_CONFIG_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_TREASURY_ID',
+    ] as const) {
+      const value = env[key]?.trim() ?? ''
+      if (!/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
+        errors.push(`${key} must be a valid Sui object ID when canonical Animacraft minting is enabled`)
+      }
+    }
   }
 
   if (errors.length > 0) {

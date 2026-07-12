@@ -68,6 +68,7 @@ function deriveRole(soul: SoulAssetDetail): Role {
 function formatProvenance(kind: SoulAssetDetail['provenanceKind']) {
   if (kind === 'imported') return 'Imported'
   if (kind === 'personal-join') return 'Personal Join'
+  if (kind === 'animacraft') return 'Animacraft'
   return 'Native'
 }
 
@@ -353,7 +354,8 @@ function Hero({
               {listed ? (
                 <>
                   <span className="whitespace-nowrap">
-                    Creator royalty <b className="text-foreground">{(soul.creatorRoyaltyBps / 100).toFixed(2)}%</b>
+                    {soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}{' '}
+                    <b className="text-foreground">{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</b>
                   </span>
                   {soul.collection && (
                     <>
@@ -597,7 +599,10 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
         </Subcard>
         <Subcard>
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-purple">Royalties &amp; access</div>
-          <KV k="Creator royalty" v={<span>{(soul.creatorRoyaltyBps / 100).toFixed(2)}%</span>} />
+          <KV
+            k={soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}
+            v={<span>{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</span>}
+          />
           <KV
             k="Collection royalty"
             v={<span>{soul.collection ? `${(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%` : 'None'}</span>}
@@ -1985,7 +1990,10 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
         </div>
         <KV k="Skills versions" v={<span>{activeVersions(soul.contentVersions, KIND_SKILL).length}</span>} />
         <KV k="Memory entries" v={<span>{activeVersions(soul.contentVersions, KIND_MEMORY).length}</span>} />
-        <KV k="Creator royalty" v={<span>{(soul.creatorRoyaltyBps / 100).toFixed(2)}%</span>} />
+        <KV
+          k={soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}
+          v={<span>{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</span>}
+        />
         {soul.collection && (
           <KV k="Collection royalty" v={<span>{(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%</span>} />
         )}

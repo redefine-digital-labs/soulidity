@@ -6,7 +6,9 @@ import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } fr
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   getSoulStateObject,
+  getAnimacraftProvenanceForState,
   OnChainVerificationError,
+  quoteAnimacraftSoulPurchase,
   quoteSoulPurchase,
 } from '@soulidity/sdk'
 import { getCachedMarketConfig } from '@soulidity/sdk'
@@ -110,6 +112,7 @@ export async function GET(
   let platformFeeBps: number | null = null
   let currentOwnershipEpoch: number | null = null
   let packageId: string | null = null
+  let animacraftProvenance = null
   try {
     packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
   } catch (detailError) {
@@ -129,6 +132,16 @@ export async function GET(
         console.warn('[soul-detail] Failed to fetch SoulState ownership epoch', detailError)
       }
     }
+    if (soul.provenanceKind === 'animacraft') {
+      try {
+        animacraftProvenance = await getAnimacraftProvenanceForState(
+          soul.stateOnChainId,
+          packageId,
+        )
+      } catch (detailError) {
+        console.warn('[soul-detail] Failed to resolve Animacraft provenance', detailError)
+      }
+    }
   }
 
   try {
@@ -137,11 +150,31 @@ export async function GET(
     platformFeeBps = config.platformFeeBps
     const listedPrice = soul.listedPriceAtomic != null ? BigInt(soul.listedPriceAtomic.toString()) : null
     if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
-      quote = quoteSoulPurchase(config, {
-        priceAtomic: listedPrice,
-        creatorRoyaltyBps: soul.creatorRoyaltyBps,
-        collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
-      })
+      if (soul.provenanceKind === 'animacraft') {
+        if (!animacraftProvenance) {
+          throw new OnChainVerificationError('Animacraft provenance is unavailable; checkout is disabled')
+        }
+        const makerQuote = quoteAnimacraftSoulPurchase(config, {
+          priceAtomic: listedPrice,
+          makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
+          collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+        })
+        quote = {
+          ...makerQuote,
+          creatorRoyaltyAtomic: makerQuote.makerRoyaltyAtomic,
+          makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
+          royaltySource: 'animacraft-maker' as const,
+        }
+      } else {
+        quote = {
+          ...quoteSoulPurchase(config, {
+            priceAtomic: listedPrice,
+            creatorRoyaltyBps: soul.creatorRoyaltyBps,
+            collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+          }),
+          royaltySource: 'soul-creator' as const,
+        }
+      }
     }
   } catch (detailError) {
     if (!(detailError instanceof OnChainVerificationError)) {
@@ -155,6 +188,7 @@ export async function GET(
     currentOwnershipEpoch,
     quote,
     platformFeeBps,
+    animacraftProvenance,
   })
 
   return NextResponse.json(detail)

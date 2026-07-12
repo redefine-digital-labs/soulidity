@@ -82,6 +82,9 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
       if (!soulKioskId || !soulKioskCapId) {
         throw new Error('Soul kiosk info is missing - the Soul may not be held in a personal kiosk')
       }
+      if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
+        throw new Error('Animacraft provenance is unavailable; price update is blocked')
+      }
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
         'Soul kiosk capability': soulKioskCapId,
@@ -89,6 +92,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
         Soul: soul.onChainId,
         'Soul listing': soul.listingObjectOnChainId,
         Collection: soul.collectionOnChainId,
+        'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
       })
       const tx = buildUpdateListingPriceTx({
         currentKioskId: soulKioskId,
@@ -97,6 +101,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
         listingObjectId: soul.listingObjectOnChainId,
         newPriceAtomic: priceAtomic,
         collectionObjectId: soul.collectionOnChainId,
+        animacraftProvenanceObjectId: soul.animacraftProvenance?.objectId,
       })
       const result = await signAndExecute(tx)
 

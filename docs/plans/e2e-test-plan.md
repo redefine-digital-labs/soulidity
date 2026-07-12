@@ -88,7 +88,7 @@
    - 唯一保留 `/api/souls/[id]/access`（GET，`requireHumanWalletIdentity`，仅放行 SOUL_DOC v0）和 `/api/agent/souls/[id]/access`（GET，Agent Bearer）
    - Memory / Skill / Sprite / Audio 的 Seal 访问目前**没有专用 HTTP 路由**；本计划的解密验收统一由 agent-side Node 脚本执行，脚本用 Agent Alpha 的 Bearer + 私钥构造 Seal session，不走 human owner 浏览器自解路径
 
-6. **Move 协议测试基线**：`move/soulidity/sources/protocol_tests.move`（102 项 `#[test...]` 属性，含 Phase W1.5 固化的 4 条负向 test）全绿；web vitest soulidity 套件全绿。Phase 1 测试名（`purchase_content_access_with_zero_price_fails` 等）已全部失效；正向新名字示例：`mint_with_invariant_entries_only_succeeds` / `mint_with_skill_records_version` / `mint_with_sprite_set_active_binds_active_table` / `memory_append_and_delete_succeed` / `skill_full_crud_succeeds` / `soul_doc_owner_seal_reads` / `register_kind_allocates_monotonic_custom_ids`。Phase W1.5 固化的 4 条 negative test 名分别为 `destroy_invalidated_grant_aborts_when_grant_still_active`（Test 5.8 step 5）、`purchase_paid_access_aborts_when_price_zero`（Test 7.10d）、`configure_paid_access_kind_rejects_scope_mismatch`（Test 7.10e）、`delete_soul_listing_aborts_when_active`（Test 11.0a step 4）；mainnet 测试不允许 mid-run 新增 Move test 或重新 grep 选名。
+6. **Move 协议测试基线**：`move/soulidity/sources/protocol_tests.move`（104 项 `#[test...]` 属性，含 Phase W1.5 固化的 4 条负向 test 与 Animacraft provenance/royalty 回归）全绿；web vitest soulidity 套件全绿。Phase 1 测试名（`purchase_content_access_with_zero_price_fails` 等）已全部失效；正向新名字示例：`mint_with_invariant_entries_only_succeeds` / `mint_with_skill_records_version` / `mint_with_sprite_set_active_binds_active_table` / `memory_append_and_delete_succeed` / `skill_full_crud_succeeds` / `soul_doc_owner_seal_reads` / `register_kind_allocates_monotonic_custom_ids`。Phase W1.5 固化的 4 条 negative test 名分别为 `destroy_invalidated_grant_aborts_when_grant_still_active`（Test 5.8 step 5）、`purchase_paid_access_aborts_when_price_zero`（Test 7.10d）、`configure_paid_access_kind_rejects_scope_mismatch`（Test 7.10e）、`delete_soul_listing_aborts_when_active`（Test 11.0a step 4）；mainnet 测试不允许 mid-run 新增 Move test 或重新 grep 选名。
 
 **本基线的运行时 / 协议外架构变化**
 
@@ -569,9 +569,9 @@ NODE
   - `purchase_paid_access_aborts_when_price_zero` — abort `soulidity::market::EPaidAccessNotPurchasable`（被 Test 7.10d 引用）
   - `configure_paid_access_kind_rejects_scope_mismatch` — abort `soulidity::paid_access::EKindScopeMismatch`（被 Test 7.10e 引用）
   - `delete_soul_listing_aborts_when_active` — abort `soulidity::market::EListingStillActive`（被 Test 11.0a step 4 引用）
-- 不允许在 mainnet 测试运行中途 grep 现有 test 名或新增 negative test —— 这是 Phase 2 Move 协议测试基线（行 91 注释中 102 项 `#[test...]` 属性）的硬约束之一。
+- 不允许在 mainnet 测试运行中途 grep 现有 test 名或新增 negative test —— 这是 Phase 2 Move 协议测试基线（行 91 注释中 104 项 `#[test...]` 属性）的硬约束之一。
 - 执行顺序：这 4 条 fixed negative tests 不调用 mainnet 合约，也不依赖 E2E 资产状态；必须在 Phase -1 funding / mainnet 写链 TX 之前一次性跑完并留存日志，后续 Test 5.8 / 7.10d / 7.10e / 11.0a 只引用这份 preflight 证据，不在中途重新选名或补测。Test 7.10j 的 `owner_cannot_purchase_paid_access` 也是本地 Move proof，同批前置留证；7.10j mainnet 阶段只跑 dry-run 作为运行时证据。
-- 验证：`cd move/soulidity && sui move test` 全绿（102 项）；上述 4 个 test 名分别可通过 `sui move test <name>` 单独运行并输出 `[ PASS    ]` + `Test result: OK. Total tests: 1; passed: 1; failed: 0`。
+- 验证：`cd move/soulidity && sui move test` 全绿（104 项）；上述 4 个 test 名分别可通过 `sui move test <name>` 单独运行并输出 `[ PASS    ]` + `Test result: OK. Total tests: 1; passed: 1; failed: 0`。
 
 执行命令（必须在 Phase -1 funding 前完成）：
 
