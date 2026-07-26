@@ -12,6 +12,7 @@ import {
   type TransactionObjectArgument,
 } from '@mysten/sui/transactions'
 import { downloadPolicyToU8 } from '../kinds'
+import { getRequiredSoulidityEnv } from '../env'
 import {
   type InitialContentEntryInput,
   type StateConfigEntryInput,
@@ -47,12 +48,12 @@ function buildInitialContentEntryArg(
 
 function buildInitialContentVector(
   tx: Transaction,
-  packageId: string,
+  callablePackageId: string,
   entries: ReadonlyArray<InitialContentEntryInput>,
 ): TransactionArgument {
-  const args = entries.map((entry) => buildInitialContentEntryArg(tx, packageId, entry))
+  const args = entries.map((entry) => buildInitialContentEntryArg(tx, callablePackageId, entry))
   return tx.makeMoveVec({
-    type: `${packageId}::market::InitialContentEntry`,
+    type: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')}::market::InitialContentEntry`,
     elements: args,
   })
 }
@@ -78,12 +79,12 @@ function buildStateConfigEntryArg(
 
 function buildStateConfigVector(
   tx: Transaction,
-  packageId: string,
+  callablePackageId: string,
   entries: ReadonlyArray<StateConfigEntryInput>,
 ): TransactionArgument {
-  const args = entries.map((entry) => buildStateConfigEntryArg(tx, packageId, entry))
+  const args = entries.map((entry) => buildStateConfigEntryArg(tx, callablePackageId, entry))
   return tx.makeMoveVec({
-    type: `${packageId}::market::StateConfigEntry`,
+    type: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')}::market::StateConfigEntry`,
     elements: args,
   })
 }

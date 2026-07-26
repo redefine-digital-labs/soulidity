@@ -7,8 +7,8 @@ authorize a Mainnet upgrade by itself.
 
 ## Goal
 
-Consume an Animacraft protocol-v4 `SoulMintAuthorization` and create exactly
-one canonical Soulidity Soul in the user's registered personal Kiosk. Preserve
+Consume an Animacraft protocol-v4 `CanonicalSoulMintAuthorization` and create
+exactly one canonical Soulidity Soul in the user's registered personal Kiosk. Preserve
 verified Maker provenance through later sales, keep the existing Soulidity
 platform fee at 250 bps (2.5%), and route the Maker's separate 0%-5% resale
 royalty into the matching Animacraft Maker Treasury.
@@ -32,7 +32,8 @@ royalty into the matching Animacraft Maker Treasury.
    binding uses a protocol-reserved primitive `u8` key so future package
    upgrades do not lose it through a version-specific key type identity.
 3. Add a frozen `AnimacraftProvenance` object containing the consumed
-   authorization evidence and immutable Maker royalty policy.
+   canonical authorization, Protocol Fee gate/split evidence, and immutable
+   Maker royalty policy.
 4. Add `mint_animacraft_in_personal_kiosk`, which consumes the authorization,
    enforces protocol version 4, native Sui USDC, sender/payer equality, and
    existing Soulidity Living Content invariants, then creates one Soul with
@@ -69,7 +70,9 @@ royalty into the matching Animacraft Maker Treasury.
 
 ## Acceptance
 
-1. Free and paid authorizations each create exactly one provenance-kind-3 Soul.
+1. Free and paid canonical authorizations each create exactly one
+   provenance-kind-3 Soul; the immutable original-package legacy authorization
+   type cannot enter the Soulidity mint signature.
 2. Authorization payer must equal the transaction sender and cannot be reused
    or left unconsumed.
 3. Required Soul document and founding Memory validation remains unchanged.

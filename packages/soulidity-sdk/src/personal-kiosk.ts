@@ -2,12 +2,12 @@ import { ResolvePersonalKioskResult, ResolvedPersonalKiosk } from './types'
 import { getRequiredSoulidityEnv } from './env'
 import {
   filterExistingPersonalKiosks,
+  getMarketConfigV2,
   getRegisteredPersonalKiosk,
   listOwnedPersonalKioskCaps,
   normalizeSuiValue,
   sameSuiValue,
 } from './queries'
-import { getCachedMarketConfig } from './market-config-cache'
 
 export type SoulidityPersonalKioskInvariantKind = 'conflict' | 'service'
 
@@ -65,10 +65,13 @@ export async function resolveOwnedPersonalKiosk(params: {
     await filterExistingPersonalKiosks(kiosks.flat()),
   )
 
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
-  const marketPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  await getCachedMarketConfig(marketConfigId, marketPackageId)
+  const marketPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
+  const marketConfigV2PackageId = getRequiredSoulidityEnv(
+    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
+  )
+  await getMarketConfigV2(marketConfigId, marketConfigV2PackageId)
 
   // Registry lookup runs before the missing-flattened check: a stale entry from a
   // previously-lost cap will block any future TX that tries to register a new kiosk

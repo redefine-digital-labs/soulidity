@@ -37,6 +37,10 @@ public struct AnimacraftProvenance has key {
     royalty_policy: RoyaltyPolicySnapshot,
     mint_payment_coin_type: String,
     mint_price_atomic: u64,
+    protocol_fee_config_id: ID,
+    protocol_treasury_id: ID,
+    primary_protocol_fee_bps: u16,
+    primary_protocol_fee_atomic: u64,
     recipe: vector<RecipeSlot>,
     authorized_at_ms: u64,
 }
@@ -49,6 +53,10 @@ public struct AnimacraftProvenanceCreated has copy, drop {
     maker_treasury_id: ID,
     payer: address,
     royalty_bps: u16,
+    protocol_fee_config_id: ID,
+    protocol_treasury_id: ID,
+    primary_protocol_fee_bps: u16,
+    primary_protocol_fee_atomic: u64,
 }
 
 public(package) fun new(
@@ -66,6 +74,10 @@ public(package) fun new(
     royalty_policy: RoyaltyPolicySnapshot,
     mint_payment_coin_type: String,
     mint_price_atomic: u64,
+    protocol_fee_config_id: ID,
+    protocol_treasury_id: ID,
+    primary_protocol_fee_bps: u16,
+    primary_protocol_fee_atomic: u64,
     recipe: vector<RecipeSlot>,
     authorized_at_ms: u64,
     ctx: &mut TxContext,
@@ -87,6 +99,10 @@ public(package) fun new(
         royalty_policy,
         mint_payment_coin_type,
         mint_price_atomic,
+        protocol_fee_config_id,
+        protocol_treasury_id,
+        primary_protocol_fee_bps,
+        primary_protocol_fee_atomic,
         recipe,
         authorized_at_ms,
     }
@@ -107,6 +123,10 @@ public(package) fun bind_and_freeze(
         maker_treasury_id: provenance.maker_treasury_id,
         payer: provenance.payer,
         royalty_bps: animacraft::royalty_policy_bps(&provenance.royalty_policy),
+        protocol_fee_config_id: provenance.protocol_fee_config_id,
+        protocol_treasury_id: provenance.protocol_treasury_id,
+        primary_protocol_fee_bps: provenance.primary_protocol_fee_bps,
+        primary_protocol_fee_atomic: provenance.primary_protocol_fee_atomic,
     });
     transfer::freeze_object(provenance);
 }
@@ -200,6 +220,22 @@ public fun mint_payment_coin_type(self: &AnimacraftProvenance): &String {
 
 public fun mint_price_atomic(self: &AnimacraftProvenance): u64 {
     self.mint_price_atomic
+}
+
+public fun protocol_fee_config_id(self: &AnimacraftProvenance): ID {
+    self.protocol_fee_config_id
+}
+
+public fun protocol_treasury_id(self: &AnimacraftProvenance): ID {
+    self.protocol_treasury_id
+}
+
+public fun primary_protocol_fee_bps(self: &AnimacraftProvenance): u16 {
+    self.primary_protocol_fee_bps
+}
+
+public fun primary_protocol_fee_atomic(self: &AnimacraftProvenance): u64 {
+    self.primary_protocol_fee_atomic
 }
 
 public fun recipe(self: &AnimacraftProvenance): &vector<RecipeSlot> {

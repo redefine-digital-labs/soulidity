@@ -6,6 +6,11 @@ import { parse } from 'dotenv'
 const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_SUI_NETWORK',
   'NEXT_PUBLIC_KIOSK_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
   'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
   'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
   'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_FEE_CONFIG_ID',
@@ -59,6 +64,7 @@ const PRODUCTION_ENV_ALLOWLIST = [
 
 const FORBIDDEN_ENV_KEYS = new Set([
   'MAINNET_DEPLOYER_PRIV_KEY',
+  'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID',
 ])
 
 const REQUIRED_PRODUCTION_KEYS = [
@@ -133,6 +139,28 @@ function assertProductionEnv(env: Record<string, string>) {
 
   if (env.NEXT_PUBLIC_SUI_NETWORK?.trim() !== 'mainnet') {
     errors.push('NEXT_PUBLIC_SUI_NETWORK must be mainnet before syncing Vercel Production env')
+  }
+
+  const soulidityRoutingKeys = [
+    'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID',
+    'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
+    'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID',
+    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
+  ] as const
+  const configuredSoulidityRouting = soulidityRoutingKeys
+    .filter((key) => Boolean(env[key]?.trim()))
+  if (
+    configuredSoulidityRouting.length > 0
+    && configuredSoulidityRouting.length !== soulidityRoutingKeys.length
+  ) {
+    errors.push(
+      `Soulidity package routing overrides must set all of: ${soulidityRoutingKeys.join(', ')}`,
+    )
+  }
+  for (const key of configuredSoulidityRouting) {
+    if (!/^0x[0-9a-fA-F]{1,64}$/.test(env[key]!.trim())) {
+      errors.push(`${key} must be a valid Sui package ID`)
+    }
   }
 
   const hasUpstashRateLimit = Boolean(env.UPSTASH_REDIS_REST_URL?.trim())

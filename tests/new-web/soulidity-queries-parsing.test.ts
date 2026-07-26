@@ -417,15 +417,28 @@ describe('quoteSoulPurchase', () => {
     expect(result.collectionRoyaltyAtomic).toBe('1')
     expect(result.totalAtomic).toBe('4')
   })
+
+  it('refuses to quote unified-v2 listings while secondary trading is disabled', () => {
+    expect(() => quoteSoulPurchase({
+      ...config,
+      secondaryEnabled: false,
+    }, {
+      priceAtomic: 10_000n,
+      creatorRoyaltyBps: 500,
+      collectionRoyaltyBps: 0,
+    })).toThrow(/Secondary market is disabled/)
+  })
 })
 
 describe('quoteAnimacraftSoulPurchase', () => {
   const config = {
     objectId: '0x' + 'aa'.repeat(32),
     packageId: '0x' + 'bb'.repeat(32),
+    legacyConfigId: '0x' + 'dd'.repeat(32),
     feeRecipient: '0x' + 'cc'.repeat(32),
     platformFeeBps: 250,
-    paused: false,
+    primaryEnabled: true,
+    secondaryEnabled: true,
   }
 
   it('uses ceil for Soulidity fees and floor for the immutable Maker royalty', () => {
@@ -446,6 +459,17 @@ describe('quoteAnimacraftSoulPurchase', () => {
       makerRoyaltyBps: 100,
       collectionRoyaltyBps: 0,
     })).toThrow(/rounds to zero/)
+  })
+
+  it('refuses to quote while the successor secondary market is disabled', () => {
+    expect(() => quoteAnimacraftSoulPurchase({
+      ...config,
+      secondaryEnabled: false,
+    }, {
+      priceAtomic: 1_000_000n,
+      makerRoyaltyBps: 300,
+      collectionRoyaltyBps: 0,
+    })).toThrow(/secondary market is disabled/)
   })
 })
 
@@ -481,6 +505,13 @@ describe('quoteCollectionPurchase', () => {
     const result = quoteCollectionPurchase(config, { priceAtomic: 0n })
     expect(result.platformFeeAtomic).toBe('0')
     expect(result.totalAtomic).toBe('0')
+  })
+
+  it('refuses to quote unified-v2 collection listings while secondary trading is disabled', () => {
+    expect(() => quoteCollectionPurchase({
+      ...config,
+      secondaryEnabled: false,
+    }, { priceAtomic: 20_000n })).toThrow(/Secondary market is disabled/)
   })
 })
 

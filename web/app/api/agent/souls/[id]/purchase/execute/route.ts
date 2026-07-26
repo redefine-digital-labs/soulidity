@@ -91,7 +91,7 @@ export async function POST(
     return NextResponse.json({ error: 'TX bytes integrity check failed' }, { status: 422 })
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   let onChainPurchaseVerified = false
 
   const persistPreparedResultBestEffort = async (params: {

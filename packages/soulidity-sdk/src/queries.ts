@@ -20,6 +20,7 @@ import type {
   SoulProvenanceKind,
   SoulStateObject,
   SoulidityMarketConfig,
+  SoulidityMarketConfigV2,
 } from './types'
 
 export { getPersonalKioskCapTypePackageAddress } from './kiosk'
@@ -658,6 +659,40 @@ export async function getMarketConfig(configId: string, packageId: string): Prom
   }
 }
 
+export async function getMarketConfigV2(
+  configId: string,
+  packageId: string,
+): Promise<SoulidityMarketConfigV2> {
+  const response = await suiClient.getObject({
+    id: configId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = `${normalizePackageId(packageId)}::market::MarketConfigV2`
+  const { fields, packageId: resolvedPackageId } =
+    expectMoveObject(response, configId, expectedTypePrefix)
+  return {
+    objectId: configId,
+    packageId: resolvedPackageId,
+    legacyConfigId: readObjectId(
+      fields.legacy_config_id,
+      'MarketConfigV2 legacy_config_id',
+    ),
+    feeRecipient: readAddress(
+      fields.fee_recipient,
+      'MarketConfigV2 fee_recipient',
+    ),
+    platformFeeBps: readNumber(
+      fields.platform_fee_bps,
+      'MarketConfigV2 platform_fee_bps',
+    ),
+    primaryEnabled: Boolean(fields.primary_enabled),
+    secondaryEnabled: Boolean(fields.secondary_enabled),
+  }
+}
+
 function ceilBpsAmount(price: bigint, bps: bigint) {
   const numerator = price * bps
   return numerator === 0n ? 0n : (numerator + MAX_BPS - 1n) / MAX_BPS
@@ -667,11 +702,21 @@ function floorBpsAmount(price: bigint, bps: bigint) {
   return (price * bps) / MAX_BPS
 }
 
-export function quoteSoulPurchase(config: SoulidityMarketConfig, params: {
+type SecondaryMarketQuoteConfig = Pick<SoulidityMarketConfig, 'platformFeeBps'>
+  & Partial<Pick<SoulidityMarketConfigV2, 'secondaryEnabled'>>
+
+function assertSecondaryMarketQuoteEnabled(config: SecondaryMarketQuoteConfig) {
+  if (config.secondaryEnabled === false) {
+    throw new OnChainVerificationError('Secondary market is disabled')
+  }
+}
+
+export function quoteSoulPurchase(config: SecondaryMarketQuoteConfig, params: {
   priceAtomic: bigint
   creatorRoyaltyBps: number
   collectionRoyaltyBps: number
 }) {
+  assertSecondaryMarketQuoteEnabled(config)
   const platformFee = ceilBpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
   const creatorRoyalty = ceilBpsAmount(params.priceAtomic, BigInt(params.creatorRoyaltyBps))
   const collectionRoyalty = ceilBpsAmount(params.priceAtomic, BigInt(params.collectionRoyaltyBps))
@@ -689,9 +734,10 @@ export function quoteSoulPurchase(config: SoulidityMarketConfig, params: {
   }
 }
 
-export function quoteCollectionPurchase(config: SoulidityMarketConfig, params: {
+export function quoteCollectionPurchase(config: SecondaryMarketQuoteConfig, params: {
   priceAtomic: bigint
 }) {
+  assertSecondaryMarketQuoteEnabled(config)
   const platformFee = ceilBpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
   const total = params.priceAtomic + platformFee
   if (total > MAX_U64) {
@@ -705,11 +751,14 @@ export function quoteCollectionPurchase(config: SoulidityMarketConfig, params: {
   }
 }
 
-export function quoteAnimacraftSoulPurchase(config: SoulidityMarketConfig, params: {
+export function quoteAnimacraftSoulPurchase(config: SoulidityMarketConfigV2, params: {
   priceAtomic: bigint
   makerRoyaltyBps: number
   collectionRoyaltyBps: number
 }) {
+  if (!config.secondaryEnabled) {
+    throw new OnChainVerificationError('Animacraft secondary market is disabled')
+  }
   const combinedBps = config.platformFeeBps + params.makerRoyaltyBps + params.collectionRoyaltyBps
   if (params.priceAtomic <= 0n) {
     throw new OnChainVerificationError('Animacraft Soul listing price must be positive')
@@ -858,9 +907,13 @@ export async function getAnimacraftProvenanceId(
   }
 }
 
+export function getAnimacraftProvenanceStructType(definingPackageId: string): string {
+  return `${normalizePackageId(definingPackageId)}::animacraft_provenance::AnimacraftProvenance`
+}
+
 export async function getAnimacraftProvenanceObject(
   objectId: string,
-  packageId: string,
+  definingPackageId: string,
 ): Promise<AnimacraftProvenanceObject> {
   const response = await suiClient.getObject({
     id: objectId,
@@ -869,7 +922,7 @@ export async function getAnimacraftProvenanceObject(
       showType: true,
     },
   })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::animacraft_provenance::AnimacraftProvenance`
+  const expectedTypePrefix = getAnimacraftProvenanceStructType(definingPackageId)
   const { fields, packageId: resolvedPackageId } = expectMoveObject(
     response,
     objectId,
@@ -916,6 +969,22 @@ export async function getAnimacraftProvenanceObject(
       fields.mint_price_atomic,
       'AnimacraftProvenance mint_price_atomic',
     ).toString(),
+    protocolFeeConfigId: readObjectId(
+      fields.protocol_fee_config_id,
+      'AnimacraftProvenance protocol_fee_config_id',
+    ),
+    protocolTreasuryId: readObjectId(
+      fields.protocol_treasury_id,
+      'AnimacraftProvenance protocol_treasury_id',
+    ),
+    primaryProtocolFeeBps: readNumber(
+      fields.primary_protocol_fee_bps,
+      'AnimacraftProvenance primary_protocol_fee_bps',
+    ),
+    primaryProtocolFeeAtomic: readBigInt(
+      fields.primary_protocol_fee_atomic,
+      'AnimacraftProvenance primary_protocol_fee_atomic',
+    ).toString(),
     authorizedAtMs: readBigInt(
       fields.authorized_at_ms,
       'AnimacraftProvenance authorized_at_ms',
@@ -925,10 +994,12 @@ export async function getAnimacraftProvenanceObject(
 
 export async function getAnimacraftProvenanceForState(
   stateObjectId: string,
-  packageId: string,
+  definingPackageId: string,
 ): Promise<AnimacraftProvenanceObject | null> {
   const provenanceId = await getAnimacraftProvenanceId(stateObjectId)
-  return provenanceId ? getAnimacraftProvenanceObject(provenanceId, packageId) : null
+  return provenanceId
+    ? getAnimacraftProvenanceObject(provenanceId, definingPackageId)
+    : null
 }
 
 function readVectorU8AsUtf8(value: unknown, fieldName: string): string {

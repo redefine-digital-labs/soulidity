@@ -31,13 +31,13 @@ export function buildRebindPrimaryKioskTx(params: {
     throw new Error('oldKioskId and newKioskCapOnChainId must differ')
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
 
   const tx = new Transaction()
   tx.moveCall({
-    target: `${packageId}::market::rebind_primary_kiosk`,
+    target: `${packageId}::market::rebind_primary_kiosk_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

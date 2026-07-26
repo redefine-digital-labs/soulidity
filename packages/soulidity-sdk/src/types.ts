@@ -62,6 +62,16 @@ export interface SoulidityMarketConfig {
   paused: boolean
 }
 
+export interface SoulidityMarketConfigV2 {
+  objectId: string
+  packageId: string
+  legacyConfigId: string
+  feeRecipient: string
+  platformFeeBps: number
+  primaryEnabled: boolean
+  secondaryEnabled: boolean
+}
+
 export interface SoulObject {
   objectId: string
   packageId: string
@@ -108,7 +118,7 @@ export interface SoulStateObject {
 
 /**
  * Immutable cross-package receipt created when Soulidity consumes an
- * Animacraft `SoulMintAuthorization`. The Maker and Treasury ids are the
+ * Animacraft `CanonicalSoulMintAuthorization`. The Maker and Treasury ids are the
  * canonical inputs for every royalty-aware secondary purchase.
  */
 export interface AnimacraftProvenanceObject {
@@ -126,6 +136,10 @@ export interface AnimacraftProvenanceObject {
   makerRoyaltyBps: number
   mintPaymentCoinType: string
   mintPriceAtomic: string
+  protocolFeeConfigId: string
+  protocolTreasuryId: string
+  primaryProtocolFeeBps: number
+  primaryProtocolFeeAtomic: string
   authorizedAtMs: string
 }
 

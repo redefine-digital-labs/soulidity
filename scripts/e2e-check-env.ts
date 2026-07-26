@@ -275,6 +275,9 @@ function main() {
   }
   if (manifest) {
     const required = [
+      'callablePackageId',
+      'originalPackageId',
+      'animacraftProvenancePackageId',
       'packageId',
       'marketConfigId',
       'kioskRegistryId',
@@ -284,6 +287,9 @@ function main() {
       'paymentCoinType',
       'kindAdminCapId',
       'marketAdminCapId',
+      'marketConfigV2PackageId',
+      'marketConfigV2Id',
+      'marketAdminCapV2Id',
     ] as const
     for (const key of required) {
       const value = manifest[key]
@@ -296,12 +302,31 @@ function main() {
     if (manifest.paymentCoinType && !manifest.paymentCoinType.includes('::usdc::USDC')) {
       v.fail('Manifest mainnet paymentCoinType', `expected "...::usdc::USDC", got "${manifest.paymentCoinType}"`)
     }
+    if (process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID?.trim()) {
+      v.fail(
+        'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID',
+        'legacy package alias is ambiguous after upgrades; configure callable/original package IDs explicitly',
+      )
+    }
     // Cross-check: if any NEXT_PUBLIC_SOULIDITY_* env var is set, it must
     // match the manifest. Drift here would silently bypass the manifest
     // and is the exact failure mode this gate is designed to catch.
     const overrides: Array<[string, keyof typeof manifest]> = [
-      ['NEXT_PUBLIC_SOULIDITY_PACKAGE_ID', 'packageId'],
+      ['NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', 'callablePackageId'],
+      ['NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID', 'originalPackageId'],
+      [
+        'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID',
+        'animacraftProvenancePackageId',
+      ],
+      [
+        'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
+        'marketConfigV2PackageId',
+      ],
       ['NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID', 'marketConfigId'],
+      [
+        'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+        'marketConfigV2Id',
+      ],
       ['NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID', 'kioskRegistryId'],
       ['NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', 'kindRegistryId'],
       ['NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE', 'paymentCoinType'],
@@ -316,7 +341,9 @@ function main() {
       }
     }
     if (v.failures.length === 0) {
-      v.pass(`Manifest mainnet OK (packageId=${manifest.packageId})`)
+      v.pass(
+        `Manifest mainnet OK (callable=${manifest.callablePackageId}, original=${manifest.originalPackageId})`,
+      )
     }
   }
 

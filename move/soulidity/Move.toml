@@ -3,7 +3,7 @@ name = "soulidity"
 edition = "2024.beta"
 
 [dependencies]
-animacraft = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft", rev = "5a14f97374d211f88dc142e69514cca8011930c5" }
+animacraft = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft", rev = "3f596268d1daf05310b037e24994b9b2670548f8" }
 usdc = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/usdc", rev = "d0904aec1bbe46b38f811654070032363a5a2966", addr_subst = { "usdc" = "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7", "stablecoin" = "0xecf47609d7da919ea98e7fd04f6e0648a0a79b337aaad373fa37aac8febf19c8", "sui_extensions" = "0xe0917b74a5912e4ad186ac634e29c922ab83903f71af7500969f9411706f9b9a" } }
 stablecoin = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/stablecoin", rev = "d0904aec1bbe46b38f811654070032363a5a2966", override = true, addr_subst = { "stablecoin" = "0xecf47609d7da919ea98e7fd04f6e0648a0a79b337aaad373fa37aac8febf19c8", "sui_extensions" = "0xe0917b74a5912e4ad186ac634e29c922ab83903f71af7500969f9411706f9b9a" } }
 sui_extensions = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/sui_extensions", rev = "d0904aec1bbe46b38f811654070032363a5a2966", override = true, addr_subst = { "sui_extensions" = "0xe0917b74a5912e4ad186ac634e29c922ab83903f71af7500969f9411706f9b9a" } }

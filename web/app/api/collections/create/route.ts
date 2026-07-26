@@ -65,7 +65,7 @@ export async function POST(request: Request) {
 
   try {
     await waitForTransactionBestEffort(txDigest)
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
     const transaction = await getSuccessfulTransactionBlock(txDigest)
     const senderError = assertTransactionSender(readTransactionSender(transaction), auth.walletAddresses)
     if (senderError) {

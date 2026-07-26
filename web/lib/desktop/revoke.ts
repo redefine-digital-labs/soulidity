@@ -171,7 +171,7 @@ export async function findActiveAssetGrantsForPet(params: {
     }
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const surviving: ActiveAssetGrantSummary[] = []
   const invalidatedGrantIds: string[] = []
   let hadRpcFailure = false
@@ -357,7 +357,7 @@ export async function findActiveAssetGrantsForPetOnChain(params: {
     ? ownedSouls.slice(0, MAX_ONCHAIN_RECHECK_SOULS)
     : ownedSouls
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const summaries: ActiveAssetGrantSummary[] = []
   let hadRpcFailure = false
 

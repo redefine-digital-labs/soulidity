@@ -99,7 +99,7 @@ export async function GET(
       },
       version: contentVersion,
       viewerAddresses: auth.walletAddresses,
-      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
     })
     return NextResponse.json(payload)
   } catch (error: unknown) {

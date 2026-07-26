@@ -89,6 +89,30 @@ describe('Vercel production env sync guardrails', () => {
     expect(result.stdout).not.toContain('NEXT_PUBLIC_POSTHOG_SESSION_REPLAY')
   })
 
+  it('syncs only complete explicit Soulidity package routing and rejects the legacy alias', () => {
+    const routed = runSync(writeEnvFile({
+      ...productionSupportEnv,
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
+      NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: '0x111',
+      NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: '0x222',
+      NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: '0x333',
+      NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: '0x444',
+    }))
+    expect(routed.status).toBe(0)
+    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
+    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID')
+    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID')
+
+    const legacy = runSync(writeEnvFile({
+      ...productionSupportEnv,
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
+      NEXT_PUBLIC_SOULIDITY_PACKAGE_ID: '0x111',
+    }))
+    expect(legacy.status).toBe(1)
+    expect(legacy.stderr).toContain('Refusing to sync forbidden production env keys')
+  })
+
   it('allows managed Walrus production env with the managed domain and token secret', () => {
     const envFile = writeEnvFile({
       ...productionSupportEnv,

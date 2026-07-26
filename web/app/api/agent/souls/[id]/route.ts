@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
+  getMarketConfigV2,
   getAnimacraftProvenanceForState,
   getRequiredSoulidityEnv,
   quoteAnimacraftSoulPurchase,
@@ -8,7 +9,6 @@ import {
 } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
-import { getCachedMarketConfig } from '@soulidity/sdk'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,16 +43,21 @@ export async function GET(
   let animacraftProvenance = null
   const listedPrice = soul.listedPriceAtomic != null ? BigInt(soul.listedPriceAtomic.toString()) : null
   try {
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
     if (soul.provenanceKind === 'animacraft') {
-      animacraftProvenance = await getAnimacraftProvenanceForState(soul.stateOnChainId, packageId)
+      animacraftProvenance = await getAnimacraftProvenanceForState(
+        soul.stateOnChainId,
+        getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'),
+      )
     }
     if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
-      const configId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
-      const config = await getCachedMarketConfig(configId, packageId)
-      platformFeeBps = config.platformFeeBps
       if (soul.provenanceKind === 'animacraft') {
         if (!animacraftProvenance) throw new Error('Animacraft provenance is unavailable')
+        const config = await getMarketConfigV2(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+        )
+        platformFeeBps = config.platformFeeBps
         const makerQuote = quoteAnimacraftSoulPurchase(config, {
           priceAtomic: listedPrice,
           makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
@@ -65,6 +70,11 @@ export async function GET(
           royaltySource: 'animacraft-maker' as const,
         }
       } else {
+        const config = await getMarketConfigV2(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+        )
+        platformFeeBps = config.platformFeeBps
         quote = {
           ...quoteSoulPurchase(config, {
             priceAtomic: listedPrice,

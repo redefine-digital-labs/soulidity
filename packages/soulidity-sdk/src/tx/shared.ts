@@ -242,8 +242,8 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
   buyerKioskId?: string | null
   buyerKioskCapOnChainId?: string | null
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const kioskPackageId = getKioskPackageAddress()
   const buyerKioskId = params.buyerKioskId?.trim()
@@ -255,7 +255,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
 
   if (buyerKioskId && buyerKioskCapOnChainId) {
     tx.moveCall({
-      target: `${packageId}::market::ensure_personal_kiosk_registered`,
+      target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
       arguments: [
         tx.object(marketConfigId),
         tx.object(kioskRegistryId),
@@ -281,7 +281,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
   })
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

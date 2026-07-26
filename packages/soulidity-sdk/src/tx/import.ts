@@ -49,8 +49,8 @@ export async function buildImportSoulTx(params: ImportSoulTxParams): Promise<Tra
     throw new Error('originRef is required for imported Souls')
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kindRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
@@ -69,7 +69,7 @@ export async function buildImportSoulTx(params: ImportSoulTxParams): Promise<Tra
   })
 
   const soulState = tx.moveCall({
-    target: `${packageId}::market::mint_imported_in_personal_kiosk`,
+    target: `${packageId}::market::mint_imported_in_personal_kiosk_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kindRegistryId),

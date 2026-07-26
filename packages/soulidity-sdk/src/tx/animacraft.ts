@@ -30,8 +30,10 @@ export interface MintAnimacraftSoulTxParams extends MintPtbInputs {
   currentKioskCapOnChainId?: string | null
   description: string
   /**
-   * Appends the Animacraft authorization call to this exact PTB. The returned
-   * non-droppable `SoulMintAuthorization` is consumed by Soulidity below, so
+   * Appends the Animacraft canonical authorization call to this exact PTB. The
+   * returned non-droppable `CanonicalSoulMintAuthorization` is consumed by
+   * Soulidity below, so legacy original-package authorizations cannot enter
+   * this mint boundary and
    * an Animacraft recipe can never produce a second, parallel OC token.
    */
   createAuthorization: AnimacraftAuthorizationFactory
@@ -65,9 +67,15 @@ export interface AnimacraftRecipeSlotInput {
 
 export interface AppendAnimacraftAuthorizationParams {
   animacraftPackageId: string
+  animacraftOriginalPackageId: string
   makerObjectId: string
   makerTreasuryObjectId: string
-  protocolFeeConfigId?: string | null
+  /**
+   * Animacraft's chain-owned integration gate. The free and paid authorize
+   * entries both require this object so canonical minting can be disabled
+   * without redeploying either frontend.
+   */
+  protocolFeeConfigId: string
   protocolTreasuryId?: string | null
   paymentCoinType: string
   paymentCoinObjectIds?: string[]
@@ -95,16 +103,19 @@ function asTransactionObjectArgument(
 
 /**
  * Append the Animacraft half of a canonical mint PTB and return its
- * non-droppable authorization. Paid Makers use the v4 protocol-fee entry;
- * the deprecated paid entry is intentionally never reachable here.
+ * non-droppable canonical authorization. Paid Makers use the v4 protocol-fee
+ * entry; legacy original-package authorization values have a different Move
+ * type and are intentionally unusable by Soulidity.
  */
 export function appendAnimacraftSoulMintAuthorization(
   tx: Transaction,
   params: AppendAnimacraftAuthorizationParams,
 ): TransactionArgument {
   requireNonEmpty(params.animacraftPackageId, 'animacraftPackageId')
+  requireNonEmpty(params.animacraftOriginalPackageId, 'animacraftOriginalPackageId')
   requireNonEmpty(params.makerObjectId, 'makerObjectId')
   requireNonEmpty(params.makerTreasuryObjectId, 'makerTreasuryObjectId')
+  requireNonEmpty(params.protocolFeeConfigId, 'protocolFeeConfigId')
   requireNonEmpty(params.paymentCoinType, 'paymentCoinType')
   requireNonEmpty(params.name, 'name')
   requireNonEmpty(params.profileJsonBlobId, 'profileJsonBlobId')
@@ -142,7 +153,7 @@ export function appendAnimacraftSoulMintAuthorization(
     }))
   })
   const recipe = tx.makeMoveVec({
-    type: `${params.animacraftPackageId}::animacraft::RecipeSlot`,
+    type: `${params.animacraftOriginalPackageId}::animacraft::RecipeSlot`,
     elements: recipeElements,
   })
   const commonArguments = [
@@ -157,12 +168,15 @@ export function appendAnimacraftSoulMintAuthorization(
 
   if (!params.mintFeeEnabled) {
     return tx.moveCall({
-      target: `${params.animacraftPackageId}::animacraft::authorize_soul_mint`,
-      arguments: [tx.object(params.makerObjectId), ...commonArguments],
+      target: `${params.animacraftPackageId}::animacraft::authorize_soul_mint_with_protocol_gate`,
+      arguments: [
+        tx.object(params.makerObjectId),
+        tx.object(params.protocolFeeConfigId),
+        ...commonArguments,
+      ],
     }) as unknown as TransactionArgument
   }
 
-  requireNonEmpty(params.protocolFeeConfigId ?? '', 'protocolFeeConfigId')
   requireNonEmpty(params.protocolTreasuryId ?? '', 'protocolTreasuryId')
   const paymentCoin = buildExactPaymentCoin(
     tx,
@@ -175,7 +189,7 @@ export function appendAnimacraftSoulMintAuthorization(
     arguments: [
       tx.object(params.makerObjectId),
       tx.object(params.makerTreasuryObjectId),
-      tx.object(params.protocolFeeConfigId!),
+      tx.object(params.protocolFeeConfigId),
       tx.object(params.protocolTreasuryId!),
       paymentCoin,
       ...commonArguments,
@@ -203,8 +217,10 @@ export async function buildMintAnimacraftSoulTx(
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv(
+    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+  )
   const kindRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
@@ -219,7 +235,7 @@ export async function buildMintAnimacraftSoulTx(
   }
   const authorization = await params.createAuthorization(tx)
   if (!authorization) {
-    throw new Error('createAuthorization did not return a SoulMintAuthorization')
+    throw new Error('createAuthorization did not return a CanonicalSoulMintAuthorization')
   }
 
   const { initialContentVec, initialStateConfigVec } = buildInitialContentArgs(tx, packageId, {
@@ -227,7 +243,7 @@ export async function buildMintAnimacraftSoulTx(
     initialStateConfig: params.initialStateConfig,
   })
   const soulState = tx.moveCall({
-    target: `${packageId}::market::mint_animacraft_in_personal_kiosk`,
+    target: `${packageId}::market::mint_animacraft_in_personal_kiosk_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kindRegistryId),
@@ -261,8 +277,10 @@ export function buildBuyAnimacraftSoulTx(params: BuyAnimacraftSoulTxParams): Tra
   requireNonEmpty(params.makerObjectId, 'makerObjectId')
   requireNonEmpty(params.makerTreasuryObjectId, 'makerTreasuryObjectId')
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv(
+    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+  )
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
@@ -278,8 +296,8 @@ export function buildBuyAnimacraftSoulTx(params: BuyAnimacraftSoulTxParams): Tra
 
   tx.moveCall({
     target: params.collectionObjectId
-      ? `${packageId}::market::buy_animacraft_soul_fixed_price_with_collection`
-      : `${packageId}::market::buy_animacraft_soul_fixed_price`,
+      ? `${packageId}::market::buy_animacraft_soul_fixed_price_with_collection_v2`
+      : `${packageId}::market::buy_animacraft_soul_fixed_price_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

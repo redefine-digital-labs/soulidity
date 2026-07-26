@@ -20,8 +20,10 @@ import {
 
 const id = (character: string) => `0x${character.repeat(64)}`
 const PACKAGE_ID = id('1')
+const ORIGINAL_PACKAGE_ID = id('0')
 const ANIMACRAFT_PACKAGE_ID = id('2')
 const MARKET_CONFIG_ID = id('3')
+const MARKET_CONFIG_V2_ID = id('9')
 const KIND_REGISTRY_ID = id('4')
 const KIOSK_REGISTRY_ID = id('5')
 const TRANSFER_POLICY_ID = id('6')
@@ -55,8 +57,13 @@ function moveCalls(tx: Awaited<ReturnType<typeof buildMintAnimacraftSoulTx>>) {
 }
 
 beforeEach(() => {
-  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID', PACKAGE_ID)
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', PACKAGE_ID)
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID', ORIGINAL_PACKAGE_ID)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID', MARKET_CONFIG_ID)
+  vi.stubEnv(
+    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+    MARKET_CONFIG_V2_ID,
+  )
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', KIND_REGISTRY_ID)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID', KIOSK_REGISTRY_ID)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID', TRANSFER_POLICY_ID)
@@ -77,7 +84,7 @@ describe('buildMintAnimacraftSoulTx', () => {
       initialStateConfig: [],
       createAuthorization(transaction) {
         return transaction.moveCall({
-          target: `${ANIMACRAFT_PACKAGE_ID}::animacraft::authorize_soul_mint_free`,
+          target: `${ANIMACRAFT_PACKAGE_ID}::animacraft::authorize_soul_mint_with_protocol_gate`,
           arguments: [],
         })
       },
@@ -85,14 +92,23 @@ describe('buildMintAnimacraftSoulTx', () => {
 
     const calls = moveCalls(tx)
     const functions = calls.map((call) => call.function)
-    const authorizationIndex = functions.indexOf('authorize_soul_mint_free')
-    const mintIndex = functions.indexOf('mint_animacraft_in_personal_kiosk')
+    const authorizationIndex = functions.indexOf('authorize_soul_mint_with_protocol_gate')
+    const mintIndex = functions.indexOf('mint_animacraft_in_personal_kiosk_v2')
 
     expect(authorizationIndex).toBeGreaterThanOrEqual(0)
     expect(mintIndex).toBeGreaterThan(authorizationIndex)
     expect(functions.filter((name) => name === 'new_initial_content_entry')).toHaveLength(2)
-    expect(functions.filter((name) => name === 'mint_animacraft_in_personal_kiosk')).toHaveLength(1)
+    expect(functions.filter((name) => name === 'mint_animacraft_in_personal_kiosk_v2'))
+      .toHaveLength(1)
+    expect(functions).toContain('ensure_personal_kiosk_registered_v2')
+    expect(JSON.stringify(tx.getData())).toContain(MARKET_CONFIG_V2_ID.slice(2))
+    expect(JSON.stringify(tx.getData())).not.toContain(MARKET_CONFIG_ID.slice(2))
     expect(functions.filter((name) => name === 'finalize_soul_state')).toHaveLength(1)
+    expect(calls.filter((call) => call.module === 'market').every((call) => call.package === PACKAGE_ID))
+      .toBe(true)
+    expect(JSON.stringify(tx.getData())).toContain(
+      `${ORIGINAL_PACKAGE_ID}::market::InitialContentEntry`,
+    )
   })
 
   it('rejects a missing authorization factory before a wallet signature', async () => {
@@ -108,8 +124,10 @@ describe('buildMintAnimacraftSoulTx', () => {
 describe('appendAnimacraftSoulMintAuthorization', () => {
   const authorizationBase = {
     animacraftPackageId: ANIMACRAFT_PACKAGE_ID,
+    animacraftOriginalPackageId: id('b'),
     makerObjectId: id('c'),
     makerTreasuryObjectId: id('d'),
+    protocolFeeConfigId: id('f'),
     paymentCoinType: `${id('e')}::usdc::USDC`,
     mintFeeEnabled: false,
     mintPriceAtomic: 0n,
@@ -129,7 +147,11 @@ describe('appendAnimacraftSoulMintAuthorization', () => {
     appendAnimacraftSoulMintAuthorization(tx, authorizationBase)
     const calls = moveCalls(tx)
     expect(calls.filter((call) => call.function === 'new_recipe_slot')).toHaveLength(2)
-    expect(calls.at(-1)?.function).toBe('authorize_soul_mint')
+    expect(calls.at(-1)?.function).toBe('authorize_soul_mint_with_protocol_gate')
+    expect(calls.at(-1)?.arguments).toHaveLength(9)
+    expect(JSON.stringify(tx.getData())).toContain(
+      `${authorizationBase.animacraftOriginalPackageId}::animacraft::RecipeSlot`,
+    )
   })
 
   it('uses only the non-bypassable v4 paid authorization entry', () => {
@@ -138,7 +160,6 @@ describe('appendAnimacraftSoulMintAuthorization', () => {
       ...authorizationBase,
       mintFeeEnabled: true,
       mintPriceAtomic: 1_000_000n,
-      protocolFeeConfigId: id('f'),
       protocolTreasuryId: id('9'),
       paymentCoinObjectIds: [id('a')],
     })
@@ -185,7 +206,9 @@ describe('buildBuyAnimacraftSoulTx', () => {
 
   it('uses the dedicated royalty-aware solo purchase entry', () => {
     const calls = moveCalls(buildBuyAnimacraftSoulTx(base))
-    const purchase = calls.find((call) => call.function === 'buy_animacraft_soul_fixed_price')
+    const purchase = calls.find(
+      (call) => call.function === 'buy_animacraft_soul_fixed_price_v2',
+    )
     expect(purchase).toBeDefined()
     expect(purchase?.arguments).toHaveLength(12)
   })
@@ -196,7 +219,7 @@ describe('buildBuyAnimacraftSoulTx', () => {
       collectionObjectId: id('b'),
     }))
     const purchase = calls.find(
-      (call) => call.function === 'buy_animacraft_soul_fixed_price_with_collection',
+      (call) => call.function === 'buy_animacraft_soul_fixed_price_with_collection_v2',
     )
     expect(purchase).toBeDefined()
     expect(purchase?.arguments).toHaveLength(13)
@@ -221,7 +244,10 @@ describe('Animacraft listing builders', () => {
 
   it('uses the provenance-aware solo listing entry', () => {
     const calls = moveCalls(buildListSoulTx(base))
-    expect(calls.map((call) => call.function)).toContain('list_animacraft_soul_fixed_price')
+    expect(calls.map((call) => call.function))
+      .toContain('list_animacraft_soul_fixed_price_v2')
+    expect(calls.map((call) => call.function))
+      .toContain('ensure_personal_kiosk_registered_v2')
     expect(calls.map((call) => call.function)).not.toContain('list_soul_fixed_price')
   })
 
@@ -231,16 +257,19 @@ describe('Animacraft listing builders', () => {
       collectionObjectId: id('e'),
     }))
     expect(calls.map((call) => call.function)).toContain(
-      'list_animacraft_soul_fixed_price_with_collection',
+      'list_animacraft_soul_fixed_price_with_collection_v2',
     )
   })
 
-  it('keeps native Souls on the existing listing ABI', () => {
+  it('routes native Souls through the unified v2 listing ABI', () => {
     const calls = moveCalls(buildListSoulTx({
       ...base,
       animacraftProvenanceObjectId: null,
     }))
-    expect(calls.map((call) => call.function)).toContain('list_soul_fixed_price')
+    expect(calls.map((call) => call.function)).toContain('list_soul_fixed_price_v2')
+    expect(calls.map((call) => call.function)).toContain('ensure_personal_kiosk_registered_v2')
+    expect(calls.map((call) => call.function))
+      .not.toContain('ensure_personal_kiosk_registered')
   })
 
   it('uses the provenance-aware entry when updating an Animacraft listing', () => {
@@ -254,6 +283,6 @@ describe('Animacraft listing builders', () => {
     }))
     const functions = calls.map((call) => call.function)
     expect(functions).toContain('cancel_soul_listing')
-    expect(functions).toContain('list_animacraft_soul_fixed_price')
+    expect(functions).toContain('list_animacraft_soul_fixed_price_v2')
   })
 })

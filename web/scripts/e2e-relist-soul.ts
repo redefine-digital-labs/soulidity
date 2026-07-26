@@ -12,8 +12,9 @@
  * never hand-roll the moveCall.
  *
  * Reads env (NEXT_PUBLIC_SOULIDITY_* aliases accepted so a `.env.local` works):
- *   PACKAGE_ID                 — Soulidity package ID
- *   MARKET_CONFIG_ID           — MarketConfig shared object
+ *   CALLABLE_PACKAGE_ID        — latest Soulidity transaction target
+ *   ORIGINAL_PACKAGE_ID        — original Soulidity object/event package
+ *   MARKET_CONFIG_V2_ID        — unified MarketConfigV2 shared object
  *   KIOSK_REGISTRY_OBJ         — KioskRegistry shared object
  *   SOUL_STATE_OBJECT_ID       — The SoulState shared object
  *   SOUL_KIOSK_ID              — Personal kiosk holding the Soul (current owner)
@@ -25,7 +26,7 @@
  *
  * Usage:
  *   OWNER_PRIVATE_KEY="$E2E_AGENT_ALPHA_PRIVATE_KEY" \
- *   PACKAGE_ID="$PACKAGE_ID" MARKET_CONFIG_ID="$MARKET_CONFIG_ID" \
+ *   CALLABLE_PACKAGE_ID="$CALLABLE_PACKAGE_ID" ORIGINAL_PACKAGE_ID="$ORIGINAL_PACKAGE_ID" \
  *   KIOSK_REGISTRY_OBJ="$KIOSK_REGISTRY_OBJ" \
  *   SOUL_STATE_OBJECT_ID="$SOUL_B_STATE_OBJ" \
  *   SOUL_KIOSK_ID="$SOUL_B_AGENT_KIOSK_ID" \
@@ -61,11 +62,28 @@ function requireEnv(name: string, ...aliases: string[]): string {
 async function main() {
   // SDK's buildListSoulTx pulls package / market-config / kiosk-registry IDs
   // from NEXT_PUBLIC_SOULIDITY_* env, so bridge whichever name the caller used.
-  const packageId = requireEnv('PACKAGE_ID', 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = requireEnv('MARKET_CONFIG_ID', 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  if (
+    readEnv('PACKAGE_ID', 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    && !readEnv('CALLABLE_PACKAGE_ID', 'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+    && !readEnv('ORIGINAL_PACKAGE_ID', 'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
+  ) {
+    throw new Error(
+      'PACKAGE_ID is ambiguous after upgrades; set CALLABLE_PACKAGE_ID and ORIGINAL_PACKAGE_ID',
+    )
+  }
+  const callablePackageId = requireEnv(
+    'CALLABLE_PACKAGE_ID',
+    'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID',
+  )
+  const originalPackageId = requireEnv(
+    'ORIGINAL_PACKAGE_ID',
+    'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
+  )
+  const marketConfigId = requireEnv('MARKET_CONFIG_V2_ID', 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = requireEnv('KIOSK_REGISTRY_OBJ', 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
-  process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = packageId
-  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID = marketConfigId
+  process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID = callablePackageId
+  process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID = originalPackageId
+  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID = marketConfigId
   process.env.NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID = kioskRegistryId
 
   const stateObjectId = requireEnv('SOUL_STATE_OBJECT_ID')
@@ -129,7 +147,7 @@ async function main() {
   }
   console.log(`SoulListed event:\n${JSON.stringify(listedEvent.parsedJson, null, 2)}`)
 
-  const listed = extractSoulListedEvent(result, packageId)
+  const listed = extractSoulListedEvent(result, originalPackageId)
   const existing = await prisma.soulAsset.findUnique({
     where: { onChainId: listed.soulId },
     select: {
@@ -151,7 +169,7 @@ async function main() {
   }
 
   const mirrored = await syncSoulProjectionFromChain({
-    packageId,
+    packageId: originalPackageId,
     soulObjectId: listed.soulId,
     stateObjectId,
     currentKioskCapOnChainId,

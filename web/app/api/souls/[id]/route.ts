@@ -5,13 +5,13 @@ import { resolveIdentity } from '@/lib/auth/identity'
 import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
+  getMarketConfigV2,
   getSoulStateObject,
   getAnimacraftProvenanceForState,
   OnChainVerificationError,
   quoteAnimacraftSoulPurchase,
   quoteSoulPurchase,
 } from '@soulidity/sdk'
-import { getCachedMarketConfig } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 
 const SOUL_DETAIL_RATE_LIMIT = {
@@ -114,7 +114,7 @@ export async function GET(
   let packageId: string | null = null
   let animacraftProvenance = null
   try {
-    packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   } catch (detailError) {
     if (!(detailError instanceof OnChainVerificationError)) {
       console.warn('[soul-detail] Failed to resolve Soulidity package id', detailError)
@@ -136,7 +136,7 @@ export async function GET(
       try {
         animacraftProvenance = await getAnimacraftProvenanceForState(
           soul.stateOnChainId,
-          packageId,
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'),
         )
       } catch (detailError) {
         console.warn('[soul-detail] Failed to resolve Animacraft provenance', detailError)
@@ -145,15 +145,17 @@ export async function GET(
   }
 
   try {
-    const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
-    const config = await getCachedMarketConfig(marketConfigId, packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'))
-    platformFeeBps = config.platformFeeBps
     const listedPrice = soul.listedPriceAtomic != null ? BigInt(soul.listedPriceAtomic.toString()) : null
     if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
       if (soul.provenanceKind === 'animacraft') {
         if (!animacraftProvenance) {
           throw new OnChainVerificationError('Animacraft provenance is unavailable; checkout is disabled')
         }
+        const config = await getMarketConfigV2(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+        )
+        platformFeeBps = config.platformFeeBps
         const makerQuote = quoteAnimacraftSoulPurchase(config, {
           priceAtomic: listedPrice,
           makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
@@ -166,6 +168,11 @@ export async function GET(
           royaltySource: 'animacraft-maker' as const,
         }
       } else {
+        const config = await getMarketConfigV2(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+        )
+        platformFeeBps = config.platformFeeBps
         quote = {
           ...quoteSoulPurchase(config, {
             priceAtomic: listedPrice,

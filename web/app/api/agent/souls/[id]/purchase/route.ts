@@ -8,7 +8,7 @@ import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import {
   getAnimacraftProvenanceForState,
-  getMarketConfig,
+  getMarketConfigV2,
   quoteAnimacraftSoulPurchase,
   quoteSoulPurchase,
 } from '@soulidity/sdk'
@@ -54,13 +54,14 @@ export async function POST(
   }
 
   const agentAddress = auth.walletAddresses[0]!
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const configId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
 
   try {
-    const config = await getMarketConfig(configId, packageId)
     const animacraftProvenance = soul.provenanceKind === 'animacraft'
-      ? await getAnimacraftProvenanceForState(soul.stateOnChainId, packageId)
+      ? await getAnimacraftProvenanceForState(
+        soul.stateOnChainId,
+        getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'),
+      )
       : null
     if (soul.provenanceKind === 'animacraft' && !animacraftProvenance) {
       return NextResponse.json(
@@ -69,7 +70,11 @@ export async function POST(
       )
     }
     const quote = animacraftProvenance
-      ? (() => {
+      ? await (async () => {
+          const config = await getMarketConfigV2(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          )
           const makerQuote = quoteAnimacraftSoulPurchase(config, {
             priceAtomic: listedPriceAtomic,
             makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
@@ -81,14 +86,20 @@ export async function POST(
             royaltySource: 'animacraft-maker' as const,
           }
         })()
-      : {
-          ...quoteSoulPurchase(config, {
+      : await (async () => {
+          const config = await getMarketConfigV2(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          )
+          return {
+            ...quoteSoulPurchase(config, {
             priceAtomic: listedPriceAtomic,
             creatorRoyaltyBps: soul.creatorRoyaltyBps,
             collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
           }),
           royaltySource: 'soul-creator' as const,
-        }
+          }
+        })()
     const totalRequired = BigInt(quote.totalAtomic)
 
     const kioskResult = await resolveOwnedPersonalKiosk({ ownerAddresses: auth.walletAddresses })

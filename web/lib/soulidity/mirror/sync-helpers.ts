@@ -111,8 +111,8 @@ export async function syncSoulProjectionFromChain(params: {
 
     for (let attempt = 1; attempt <= MAX_CAP_RESOLVE_ATTEMPTS; attempt++) {
       const registered = await getRegisteredPersonalKiosk({
-        marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
-        marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+        marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+        marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
         ownerAddress: state.currentOwnerAddress,
         kioskRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'),
       })

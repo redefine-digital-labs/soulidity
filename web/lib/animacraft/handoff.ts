@@ -46,6 +46,7 @@ export interface AnimacraftIntegrationConfig {
   enabled: boolean
   ready: boolean
   packageId: string
+  originalPackageId: string
   protocolFeeConfigId: string
   protocolTreasuryId: string
   missing: string[]
@@ -75,6 +76,7 @@ export function getAnimacraftIntegrationConfig(): AnimacraftIntegrationConfig {
     enabled,
     ready: missing.length === 0,
     packageId,
+    originalPackageId: ANIMACRAFT_MAINNET_ORIGINAL_PACKAGE_ID,
     protocolFeeConfigId,
     protocolTreasuryId,
     missing,

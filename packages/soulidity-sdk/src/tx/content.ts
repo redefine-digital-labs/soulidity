@@ -22,8 +22,8 @@ interface ContentRoots {
 
 function loadContentEnv(): ContentRoots & { packageId: string; marketConfigId: string } {
   return {
-    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
-    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
     contentObjectId: '', // overridden by callers per-tx
     stateObjectId: '',
     kindRegistryObjectId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'),
@@ -227,7 +227,7 @@ export function addSetActiveContentCalls(
     ? tx.pure.u64(BigInt(params.versionIndex))
     : params.versionIndex
   tx.moveCall({
-    target: `${packageId}::market::set_active_content`,
+    target: `${packageId}::market::set_active_content_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(params.kindRegistryObjectId),
@@ -256,7 +256,7 @@ export function addClearActiveContentCalls(
 ): void {
   const { packageId, marketConfigId } = loadContentEnv()
   tx.moveCall({
-    target: `${packageId}::market::clear_active_content`,
+    target: `${packageId}::market::clear_active_content_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(params.kindRegistryObjectId),
@@ -292,7 +292,7 @@ export function addSetStateConfigCalls(
 ): void {
   const { packageId, marketConfigId } = loadContentEnv()
   tx.moveCall({
-    target: `${packageId}::market::set_state_config`,
+    target: `${packageId}::market::set_state_config_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(params.stateObjectId),
@@ -319,7 +319,7 @@ export function addDeleteStateConfigCalls(
 ): void {
   const { packageId, marketConfigId } = loadContentEnv()
   tx.moveCall({
-    target: `${packageId}::market::delete_state_config`,
+    target: `${packageId}::market::delete_state_config_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(params.stateObjectId),

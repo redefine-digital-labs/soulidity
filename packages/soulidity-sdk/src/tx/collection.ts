@@ -53,7 +53,7 @@ function appendCreateCollectionPrimitive(
     ? tx.pure.option('u64', null)
     : tx.pure.option('u64', params.maxSupply)
   return tx.moveCall({
-    target: `${packageId}::market::create_collection_in_personal_kiosk`,
+    target: `${packageId}::market::create_collection_in_personal_kiosk_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -102,7 +102,7 @@ function appendListCollectionRightCall(
   priceAtomic: bigint | number,
 ): MoveCallResult {
   return tx.moveCall({
-    target: `${packageId}::market::list_collection_right_fixed_price`,
+    target: `${packageId}::market::list_collection_right_fixed_price_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -116,8 +116,8 @@ function appendListCollectionRightCall(
 
 function loadCreateCollectionEnv() {
   return {
-    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
-    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
     kioskRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'),
     collectionPolicyId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID'),
   }
@@ -250,7 +250,7 @@ export async function buildCollectionCoverCertifyTx(params: {
 }
 
 export function buildAddSoulToCollectionTx(params: AddSoulToCollectionTxParams) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::collection::add_soul`,
@@ -274,7 +274,7 @@ export function buildBatchAddSoulToCollectionTx(params: BatchAddSoulToCollection
   if (params.binds.length === 0) {
     throw new Error('buildBatchAddSoulToCollectionTx requires at least one bind')
   }
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   for (const bind of params.binds) {
     tx.moveCall({

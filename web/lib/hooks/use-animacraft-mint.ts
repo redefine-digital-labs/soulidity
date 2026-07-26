@@ -145,7 +145,7 @@ async function buildSyncBody(params: {
   pendingSync: AnimacraftPendingSync
   suiClient: unknown
 }): Promise<AnimacraftSyncBody> {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const minted = extractAllSoulMintedToKioskEvents(params.txResult as never, packageId)
     .find((event) => event.soulId === params.soulOnChainId)
   if (!minted) throw new Error('Canonical mint transaction is missing the expected Soul event')
@@ -154,7 +154,7 @@ async function buildSyncBody(params: {
   if (versions.length === 0) throw new Error('Canonical mint transaction is missing Living Content events')
   const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
     suiClient: params.suiClient as never,
-    packageId,
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
     contentObjectId: minted.contentId,
     pendingByKindName: buildPendingMintSlots({
       soulMaterial: params.pendingSync.soulMaterial,
@@ -419,6 +419,7 @@ export function useAnimacraftMint() {
           authorizationTx,
           {
             animacraftPackageId: input.config.packageId,
+            animacraftOriginalPackageId: input.config.originalPackageId,
             makerObjectId: input.maker.objectId,
             makerTreasuryObjectId: input.maker.treasuryId,
             protocolFeeConfigId: input.config.protocolFeeConfigId,
@@ -441,7 +442,7 @@ export function useAnimacraftMint() {
       const txResult = await signAndExecute(tx)
       assertSoulidityTxSucceeded(txResult, 'Animacraft canonical Soul mint')
 
-      const soulidityPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      const soulidityPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
       const minted = extractAllSoulMintedToKioskEvents(txResult as never, soulidityPackageId)[0]
       if (!minted) throw new Error('Canonical mint transaction is missing SoulMintedToKiosk')
       const pendingSync: AnimacraftPendingSync = {

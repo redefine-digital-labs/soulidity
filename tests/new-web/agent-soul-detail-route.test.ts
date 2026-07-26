@@ -12,6 +12,7 @@ const mockedFindSoul = vi.hoisted(() => vi.fn())
 const mockedToDetail = vi.hoisted(() => vi.fn())
 const mockedGetEnv = vi.hoisted(() => vi.fn())
 const mockedGetConfig = vi.hoisted(() => vi.fn())
+const mockedGetAnimacraftConfig = vi.hoisted(() => vi.fn())
 const mockedGetProvenance = vi.hoisted(() => vi.fn())
 const mockedQuoteAnimacraft = vi.hoisted(() => vi.fn())
 const mockedQuoteSoul = vi.hoisted(() => vi.fn())
@@ -30,6 +31,7 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     ...actual,
     getRequiredSoulidityEnv: mockedGetEnv,
     getCachedMarketConfig: mockedGetConfig,
+    getMarketConfigV2: mockedGetAnimacraftConfig,
     getAnimacraftProvenanceForState: mockedGetProvenance,
     quoteAnimacraftSoulPurchase: mockedQuoteAnimacraft,
     quoteSoulPurchase: mockedQuoteSoul,
@@ -45,10 +47,22 @@ describe('GET /api/agent/souls/[id]', () => {
       walletAddresses: [`0x${'9'.repeat(64)}`],
     })
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
-    mockedGetEnv.mockImplementation((name: string) => name.includes('MARKET_CONFIG')
-      ? `0x${'8'.repeat(64)}`
-      : `0x${'7'.repeat(64)}`)
+    mockedGetEnv.mockImplementation((name: string) => {
+      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID') {
+        return `0x${'6'.repeat(64)}`
+      }
+      if (name.includes('MARKET_CONFIG')) return `0x${'8'.repeat(64)}`
+      if (name === 'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID') {
+        return `0x${'6'.repeat(64)}`
+      }
+      return `0x${'7'.repeat(64)}`
+    })
     mockedGetConfig.mockResolvedValue({ platformFeeBps: 250 })
+    mockedGetAnimacraftConfig.mockResolvedValue({
+      platformFeeBps: 250,
+      primaryEnabled: true,
+      secondaryEnabled: true,
+    })
     mockedToDetail.mockImplementation((_soul, params) => params)
   })
 
@@ -85,8 +99,15 @@ describe('GET /api/agent/souls/[id]', () => {
 
     expect(response.status).toBe(200)
     expect(mockedQuoteSoul).not.toHaveBeenCalled()
+    expect(mockedGetAnimacraftConfig).toHaveBeenCalledWith(
+      `0x${'8'.repeat(64)}`,
+      `0x${'6'.repeat(64)}`,
+    )
     expect(mockedQuoteAnimacraft).toHaveBeenCalledWith(
-      { platformFeeBps: 250 },
+      expect.objectContaining({
+        platformFeeBps: 250,
+        secondaryEnabled: true,
+      }),
       { priceAtomic: 1_000_000n, makerRoyaltyBps: 300, collectionRoyaltyBps: 0 },
     )
     expect(mockedToDetail).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
