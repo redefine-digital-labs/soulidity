@@ -10,7 +10,7 @@
     "prisma:migrate:deploy": "cd .. && prisma migrate deploy --schema=prisma/schema.prisma",
     "typegen": "next typegen",
     "typecheck": "npm run prisma:generate && npm run typegen && tsc -p tsconfig.json --noEmit",
-    "build:vercel": "npm run prisma:migrate:deploy && npm run build",
+    "build:vercel": "node scripts/vercel-build.mjs",
     "build": "npm run prisma:generate && next build --webpack",
     "prebuild": "npm run copy-walrus-wasm",
     "start": "next start",

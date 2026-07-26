@@ -187,7 +187,11 @@ export function parseAnimacraftOcPackage(
   expectedMakerId: string,
 ): ParsedAnimacraftHandoff {
   const root = asRecord(value, 'Animacraft OC package')
-  if (root.schemaVersion !== 'animacraft.oc-package.v1') {
+  const schemaVersion = root.schemaVersion
+  if (
+    schemaVersion !== 'animacraft.oc-package.v1'
+    && schemaVersion !== 'animacraft.oc-package.v2'
+  ) {
     throw new Error('Animacraft OC package uses an unsupported schema version')
   }
   const profile = asRecord(root.profile, 'Animacraft profile')
@@ -214,14 +218,29 @@ export function parseAnimacraftOcPackage(
   const skillMd = requiredText(content.skillMd, 'Skills & Docs', MAX_LIVING_FILE_BYTES)
   const skillName = parseSkillName(skillMd)
 
-  if (!Array.isArray(root.recipe) || root.recipe.length === 0 || root.recipe.length > MAX_RECIPE_SLOTS) {
+  const rawRecipe = schemaVersion === 'animacraft.oc-package.v2'
+    ? asRecord(root.suiSummary, 'Animacraft Sui summary').recipe
+    : root.recipe
+  if (!Array.isArray(rawRecipe) || rawRecipe.length === 0 || rawRecipe.length > MAX_RECIPE_SLOTS) {
     throw new Error(`Animacraft recipe must contain 1 to ${MAX_RECIPE_SLOTS} slots`)
   }
-  const recipe = root.recipe.map((rawSlot, index) => {
+  const recipe = rawRecipe.map((rawSlot, index) => {
     const slot = asRecord(rawSlot, `Animacraft recipe slot ${index + 1}`)
-    const partKey = requiredText(slot.slot, `Recipe slot ${index + 1} part`, 128)
-    const itemKey = requiredText(slot.part, `Recipe slot ${index + 1} item`, 128)
-    const colorHex = requiredText(slot.color, `Recipe slot ${index + 1} color`, 16)
+    const partKey = requiredText(
+      schemaVersion === 'animacraft.oc-package.v2' ? slot.partKey : slot.slot,
+      `Recipe slot ${index + 1} part`,
+      128,
+    )
+    const itemKey = requiredText(
+      schemaVersion === 'animacraft.oc-package.v2' ? slot.itemKey : slot.part,
+      `Recipe slot ${index + 1} item`,
+      128,
+    )
+    const colorHex = requiredText(
+      schemaVersion === 'animacraft.oc-package.v2' ? slot.colorHex : slot.color,
+      `Recipe slot ${index + 1} color`,
+      16,
+    )
     const renderOrder = Number(parseU64(slot.renderOrder, `Recipe slot ${index + 1} render order`))
     if (!SAFE_KEY.test(partKey) || !SAFE_KEY.test(itemKey)) {
       throw new Error(`Animacraft recipe slot ${index + 1} contains an unsafe key`)

@@ -37,6 +37,33 @@ function ocPackage() {
   }
 }
 
+function ocPackageV2() {
+  const legacy = ocPackage()
+  return {
+    schemaVersion: 'animacraft.oc-package.v2',
+    maker: {
+      makerObjectId: MAKER_ID,
+      versionId: 'mira-maker-v2',
+    },
+    profile: legacy.profile,
+    livingContent: legacy.livingContent,
+    recipe: {
+      selections: [
+        { partId: 'eyes', itemId: 'bright', styleId: 'starlit' },
+      ],
+      colors: [
+        { channelId: 'eyes-color', swatchId: 'teal' },
+      ],
+    },
+    suiSummary: {
+      recipeEncoding: 'BCS vector<RecipeSlot>',
+      recipe: [
+        { partKey: 'eyes', itemKey: 'bright--starlit', colorHex: '#2DB7A3', renderOrder: 7 },
+      ],
+    },
+  }
+}
+
 describe('Animacraft handoff parser', () => {
   it('binds each Walrus URL to the certified quilt patch id', () => {
     expect(assertAnimacraftWalrusPatchUrl(
@@ -58,6 +85,51 @@ describe('Animacraft handoff parser', () => {
     expect(parsed.recipe).toEqual([
       { partKey: 'eyes', itemKey: 'bright', colorHex: '#2db7a3', renderOrder: 0 },
     ])
+  })
+
+  it('normalizes the signed Sui summary from an Animacraft OC package v2', () => {
+    const parsed = parseAnimacraftOcPackage(ocPackageV2(), MAKER_ID)
+    expect(parsed.name).toBe('Mira')
+    expect(parsed.skillName).toBe('character-companion')
+    expect(parsed.recipe).toEqual([
+      {
+        partKey: 'eyes',
+        itemKey: 'bright--starlit',
+        colorHex: '#2db7a3',
+        renderOrder: 7,
+      },
+    ])
+  })
+
+  it('does not reinterpret the full v5 recipe as a v2 on-chain recipe', () => {
+    const value = ocPackageV2()
+    delete (value as { suiSummary?: unknown }).suiSummary
+    expect(() => parseAnimacraftOcPackage(value, MAKER_ID))
+      .toThrow(/Sui summary/)
+  })
+
+  it('rejects unsafe keys and colors in the v2 Sui summary', () => {
+    const unsafeKey = ocPackageV2()
+    unsafeKey.suiSummary.recipe[0].partKey = '../eyes'
+    expect(() => parseAnimacraftOcPackage(unsafeKey, MAKER_ID))
+      .toThrow(/unsafe key/)
+
+    const unsafeColor = ocPackageV2()
+    unsafeColor.suiSummary.recipe[0].colorHex = 'red'
+    expect(() => parseAnimacraftOcPackage(unsafeColor, MAKER_ID))
+      .toThrow(/invalid color/)
+  })
+
+  it('applies Maker binding and Living Content limits to v2 packages', () => {
+    const makerMismatch = ocPackageV2()
+    makerMismatch.livingContent.makerId = `0x${'3'.repeat(64)}`
+    expect(() => parseAnimacraftOcPackage(makerMismatch, MAKER_ID))
+      .toThrow(/does not match/)
+
+    const oversizedSoul = ocPackageV2()
+    oversizedSoul.livingContent.content.soulMd = 'x'.repeat(64 * 1024 + 1)
+    expect(() => parseAnimacraftOcPackage(oversizedSoul, MAKER_ID))
+      .toThrow(/exceeds/)
   })
 
   it('rejects a Maker mismatch before any Walrus registration', () => {
