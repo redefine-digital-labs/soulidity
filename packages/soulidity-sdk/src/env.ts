@@ -1,8 +1,20 @@
-import { getSoulidityDeployment } from './deployment'
+import {
+  getSoulidityCallablePackageId,
+  getSoulidityAnimacraftProvenancePackageId,
+  getSoulidityDeployment,
+  getSoulidityMarketConfigV2PackageId,
+  getSoulidityOriginalPackageId,
+} from './deployment'
 
 export type SoulidityPublicEnvName =
+  | 'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'
+  /** @deprecated Use an explicit callable/original package env key. */
   | 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'
   | 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID'
@@ -24,10 +36,21 @@ function readPublicEnv(name: SoulidityPublicEnvName): string | undefined {
 
   const deployment = getSoulidityDeployment()
   switch (name) {
+    case 'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID':
+      return getSoulidityCallablePackageId()
+    case 'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID':
+      return getSoulidityOriginalPackageId()
+    case 'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID':
+      return getSoulidityAnimacraftProvenancePackageId()
     case 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID':
-      return deployment.packageId
+      return process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID?.trim()
+        || getSoulidityOriginalPackageId()
     case 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID':
       return deployment.marketConfigId
+    case 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID':
+      return deployment.marketConfigV2Id
+    case 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID':
+      return getSoulidityMarketConfigV2PackageId()
     case 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID':
       return deployment.kioskRegistryId
     case 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID':

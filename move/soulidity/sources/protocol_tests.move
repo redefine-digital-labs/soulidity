@@ -1,16 +1,22 @@
 #[test_only]
 module soulidity::protocol_tests;
 
+use animacraft::animacraft::{Self as animacraft, MakerTreasury, OCMaker};
 use std::string::{Self as string, String};
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
+use soulidity::animacraft_provenance::{Self as animacraft_provenance, AnimacraftProvenance};
 use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant::{Self as grant, SoulGrant};
 use soulidity::kind_registry::{Self as kind_registry, KindAdminCap, KindRegistry};
 use soulidity::market::{
     Self as market,
+    MarketAdminCapV2,
+    MarketConfigV2,
     InitialContentEntry,
+    CollectionListing,
     KioskRegistry,
+    MarketAdminCap,
     MarketConfig,
     SoulListing,
     StateConfigEntry,
@@ -236,6 +242,16 @@ fun init_personal_kiosk_for_sender(scenario: &mut ts::Scenario, sender: address)
     kiosk_id
 }
 
+fun init_personal_kiosk_v2_for_sender(scenario: &mut ts::Scenario, sender: address): ID {
+    scenario.next_tx(sender);
+    let config = ts::take_shared<MarketConfigV2>(scenario);
+    let mut registry = ts::take_shared<KioskRegistry>(scenario);
+    let kiosk_id = market::init_personal_kiosk_v2(&config, &mut registry, scenario.ctx());
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    kiosk_id
+}
+
 fun mint_usdc_to(recipient: address, amount: u64, scenario: &mut ts::Scenario) {
     let usdc_coin = coin::mint_for_testing<USDC>(amount, scenario.ctx());
     transfer::public_transfer(usdc_coin, recipient);
@@ -401,6 +417,199 @@ fun setup_and_mint_native(
     mint_test_blobs_then_advance(scenario, reqs, minter);
     let entries = build_initial_content_from_address(minter, scenario, spec);
     mint_native_with_entries(scenario, minter, minter_kiosk_id, entries, initial_state_config)
+}
+
+fun setup_and_mint_native_v2(
+    scenario: &mut ts::Scenario,
+    minter: address,
+    minter_kiosk_id: ID,
+    spec: MintBlobSpec,
+    initial_state_config: vector<StateConfigEntry>,
+): ID {
+    let reqs = spec_blob_requests(spec, minter);
+    mint_test_blobs_then_advance(scenario, reqs, minter);
+    let initial_content = build_initial_content_from_address(minter, scenario, spec);
+    let config = ts::take_shared<MarketConfigV2>(scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(scenario);
+    let registry = ts::take_shared<KioskRegistry>(scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(scenario, minter_kiosk_id);
+    let kiosk_cap = ts::take_from_address<PersonalKioskCap>(scenario, minter);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+
+    let state = market::mint_native_in_personal_kiosk_v2(
+        &config,
+        &kind_registry_obj,
+        &registry,
+        &soul_policy,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        b"Test Soul V2".to_string(),
+        b"Description".to_string(),
+        b"https://example.com".to_string(),
+        initial_content,
+        initial_state_config,
+        CREATOR_ROYALTY_BPS,
+        &test_clock,
+        scenario.ctx(),
+    );
+    let state_id = object::id(&state);
+    market::finalize_soul_state(state);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(minter, kiosk_cap);
+    state_id
+}
+
+fun setup_and_mint_animacraft(
+    scenario: &mut ts::Scenario,
+    minter: address,
+    minter_kiosk_id: ID,
+): ID {
+    let reqs = spec_blob_requests(spec_invariant_only(), minter);
+    mint_test_blobs_then_advance(scenario, reqs, minter);
+    let initial_content = build_initial_content_from_address(
+        minter,
+        scenario,
+        spec_invariant_only(),
+    );
+    let test_clock = clock::create_for_testing(scenario.ctx());
+
+    let mut creator_profile = animacraft::new_creator_profile(
+        b"Animacraft Creator".to_string(),
+        b"".to_string(),
+        b"".to_string(),
+        minter,
+        scenario.ctx(),
+    );
+    let (mut maker, treasury, admin_cap) = animacraft::new_managed_oc_maker<USDC>(
+        &mut creator_profile,
+        b"Integration Maker".to_string(),
+        b"Soulidity integration fixture".to_string(),
+        b"https://example.com/cover.png".to_string(),
+        b"maker-manifest".to_string(),
+        animacraft::license_personal(),
+        300,
+        false,
+        false,
+        true,
+        true,
+        false,
+        0,
+        &test_clock,
+        scenario.ctx(),
+    );
+    animacraft::admin_add_part(
+        &admin_cap,
+        &mut maker,
+        b"eyes".to_string(),
+        b"Eyes".to_string(),
+        animacraft::part_standard(),
+        0,
+        true,
+        true,
+        &test_clock,
+        scenario.ctx(),
+    );
+    animacraft::admin_add_color(
+        &admin_cap,
+        &mut maker,
+        b"eyes".to_string(),
+        b"#2db7a3".to_string(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    animacraft::admin_add_item(
+        &admin_cap,
+        &mut maker,
+        b"eyes".to_string(),
+        b"bright".to_string(),
+        b"Bright".to_string(),
+        b"item-blob".to_string(),
+        b"".to_string(),
+        animacraft::item_included(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    animacraft::admin_publish_maker(
+        &admin_cap,
+        &mut maker,
+        b"maker-manifest".to_string(),
+        &test_clock,
+        scenario.ctx(),
+    );
+
+    let recipe = vector[animacraft::new_recipe_slot(
+        b"eyes".to_string(),
+        b"bright".to_string(),
+        b"#2db7a3".to_string(),
+        0,
+    )];
+    let recipe_hash = animacraft::hash_recipe_slots(&recipe);
+    let (protocol_config, protocol_treasury, protocol_admin_cap) =
+        animacraft::new_protocol_fee_objects_for_testing<USDC>(
+            true,
+            scenario.ctx(),
+        );
+    let authorization = animacraft::authorize_soul_mint_with_protocol_gate(
+        &maker,
+        &protocol_config,
+        b"Animacraft Soul".to_string(),
+        b"profile-patch".to_string(),
+        b"image-patch".to_string(),
+        b"https://example.com/soul.png".to_string(),
+        recipe_hash,
+        recipe,
+        &test_clock,
+        scenario.ctx(),
+    );
+
+    let config = ts::take_shared<MarketConfig>(scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(scenario);
+    let registry = ts::take_shared<KioskRegistry>(scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(scenario, minter_kiosk_id);
+    let kiosk_cap = ts::take_from_address<PersonalKioskCap>(scenario, minter);
+    let state = market::mint_animacraft_in_personal_kiosk(
+        &config,
+        &kind_registry_obj,
+        &registry,
+        &soul_policy,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        authorization,
+        b"Verified Animacraft Soul".to_string(),
+        initial_content,
+        vector::empty(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    let state_id = object::id(&state);
+    assert!(soul::has_animacraft_provenance(&state), 0);
+    assert!(soul::creator_royalty_bps(&state) == 0, 1);
+    market::finalize_soul_state(state);
+
+    let admin_cap = animacraft::share_managed_maker(maker, treasury, admin_cap);
+    animacraft::destroy_protocol_fee_objects_for_testing(
+        protocol_config,
+        protocol_treasury,
+        protocol_admin_cap,
+    );
+    animacraft::keep_creator_profile(creator_profile, scenario.ctx());
+    transfer::public_transfer(admin_cap, minter);
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(minter, kiosk_cap);
+    state_id
 }
 
 /// Mint with the bare invariant set (SOUL_DOC + MEMORY) and additionally
@@ -3639,6 +3848,576 @@ fun non_owner_cannot_set_state_config() {
 // ─────────────────────────────────────────────────────────────────────
 // List / buy soul flow
 // ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fun legacy_market_retirement_is_one_way_and_secondary_defaults_closed() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_config_id = object::id(&legacy_config);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    assert!(market::paused(&legacy_config), 0);
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let successor = ts::take_shared<MarketConfigV2>(&scenario);
+    let successor_admin = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    assert!(market::config_v2_version(&successor) == 2, 1);
+    assert!(market::config_v2_legacy_config_id(&successor) == legacy_config_id, 2);
+    assert!(market::admin_cap_v2_config_id(&successor_admin) == object::id(&successor), 3);
+    assert!(market::config_v2_primary_enabled(&successor), 4);
+    assert!(!market::config_v2_secondary_enabled(&successor), 5);
+    ts::return_shared(successor);
+    ts::return_to_address(ADMIN, successor_admin);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::market::ELegacyMarketMustBePaused)]
+fun legacy_market_cannot_retire_before_pause() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::ESecondaryPausedV2)]
+fun successor_secondary_market_is_fail_closed_after_retirement() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let successor = ts::take_shared<MarketConfigV2>(&scenario);
+    let (_, _, _, _, _) =
+        market::quote_animacraft_soul_purchase_v2(&successor, SOUL_PRICE, 300, 0);
+    abort 42
+}
+
+#[test]
+fun pre_retirement_soul_listing_settles_through_unified_v2() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, BUYER);
+    let _ = setup_and_mint_native(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        spec_invariant_only(),
+        vector[],
+    );
+
+    // A live listing created by v1 remains a valid shared object. Retirement
+    // must not strand it: sellers can still cancel without any config, while
+    // buyers can settle it through the unified v2 fee policy.
+    scenario.next_tx(MINTER);
+    let legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let seller_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let listing = market::list_soul_fixed_price(
+        &legacy_config,
+        &registry,
+        &mut seller_kiosk,
+        &seller_cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    market::finalize_soul_listing(listing);
+    ts::return_shared(legacy_config);
+    ts::return_shared(registry);
+    ts::return_shared(seller_kiosk);
+    ts::return_to_address(MINTER, seller_cap);
+    ts::return_shared(state);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let mut config = ts::take_shared<MarketConfigV2>(&scenario);
+    let admin_cap = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    market::update_config_v2_secondary_enabled(&mut config, &admin_cap, true);
+    ts::return_shared(config);
+    ts::return_to_address(ADMIN, admin_cap);
+
+    let total = soul_purchase_total(SOUL_PRICE, CREATOR_ROYALTY_BPS, 0);
+    mint_usdc_to(BUYER, total, &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
+    let buyer_cap = ts::take_from_address<PersonalKioskCap>(&scenario, BUYER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut listing = ts::take_shared<SoulListing>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    market::buy_soul_fixed_price_v2(
+        &config,
+        &registry,
+        &soul_policy,
+        &mut seller_kiosk,
+        &mut buyer_kiosk,
+        &buyer_cap,
+        &mut state,
+        &mut listing,
+        payment,
+        scenario.ctx(),
+    );
+    assert!(soul::current_owner(&state) == BUYER, 0);
+    assert!(soul::ownership_epoch(&state) == 1, 1);
+
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_shared(seller_kiosk);
+    ts::return_shared(buyer_kiosk);
+    ts::return_to_address(BUYER, buyer_cap);
+    ts::return_shared(state);
+    ts::return_shared(listing);
+    ts::end(scenario);
+}
+
+#[test]
+fun pre_retirement_collection_listing_settles_through_unified_v2() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, BUYER);
+
+    scenario.next_tx(MINTER);
+    let legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let collection_policy =
+        ts::take_shared<TransferPolicy<SoulCollectionRight>>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let seller_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let collection_obj = market::create_collection_in_personal_kiosk(
+        &legacy_config,
+        &registry,
+        &collection_policy,
+        &mut seller_kiosk,
+        &seller_cap,
+        b"Pre-retirement Collection".to_string(),
+        b"Migration fixture".to_string(),
+        b"https://example.com/collection.png".to_string(),
+        COLLECTION_ROYALTY_BPS,
+        true,
+        option::none(),
+        scenario.ctx(),
+    );
+    let listing = market::list_collection_right_fixed_price(
+        &legacy_config,
+        &registry,
+        &collection_obj,
+        &mut seller_kiosk,
+        &seller_cap,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    market::finalize_collection(collection_obj);
+    market::finalize_collection_listing(listing);
+    ts::return_shared(legacy_config);
+    ts::return_shared(registry);
+    ts::return_shared(collection_policy);
+    ts::return_shared(seller_kiosk);
+    ts::return_to_address(MINTER, seller_cap);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let mut config = ts::take_shared<MarketConfigV2>(&scenario);
+    let admin_cap = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    market::update_config_v2_secondary_enabled(&mut config, &admin_cap, true);
+    ts::return_shared(config);
+    ts::return_to_address(ADMIN, admin_cap);
+
+    let total = SOUL_PRICE + default_platform_fee(SOUL_PRICE);
+    mint_usdc_to(BUYER, total, &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let collection_policy =
+        ts::take_shared<TransferPolicy<SoulCollectionRight>>(&scenario);
+    let mut collection_obj = ts::take_shared<SoulCollection>(&scenario);
+    let mut listing = ts::take_shared<CollectionListing>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
+    let buyer_cap = ts::take_from_address<PersonalKioskCap>(&scenario, BUYER);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    market::buy_collection_right_fixed_price_v2(
+        &config,
+        &registry,
+        &collection_policy,
+        &mut collection_obj,
+        &mut seller_kiosk,
+        &mut buyer_kiosk,
+        &buyer_cap,
+        &mut listing,
+        payment,
+        scenario.ctx(),
+    );
+    assert!(collection::current_holder(&collection_obj) == BUYER, 0);
+    assert!(collection::current_holder_kiosk_id(&collection_obj) == buyer_kiosk_id, 1);
+
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(collection_policy);
+    ts::return_shared(collection_obj);
+    ts::return_shared(listing);
+    ts::return_shared(seller_kiosk);
+    ts::return_shared(buyer_kiosk);
+    ts::return_to_address(BUYER, buyer_cap);
+    ts::end(scenario);
+}
+
+#[test]
+fun ordinary_soul_full_lifecycle_works_after_legacy_retirement() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let mut config = ts::take_shared<MarketConfigV2>(&scenario);
+    let admin_cap = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    market::update_config_v2_secondary_enabled(&mut config, &admin_cap, true);
+    ts::return_shared(config);
+    ts::return_to_address(ADMIN, admin_cap);
+
+    // Kiosk creation, ordinary mint, list, quote and buy all run exclusively
+    // against successor state after the v1 admin capability has been deleted.
+    let minter_kiosk_id = init_personal_kiosk_v2_for_sender(&mut scenario, MINTER);
+    let buyer_kiosk_id = init_personal_kiosk_v2_for_sender(&mut scenario, BUYER);
+    let _ = setup_and_mint_native_v2(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        spec_invariant_only(),
+        vector[],
+    );
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let seller_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let listing = market::list_soul_fixed_price_v2(
+        &config,
+        &registry,
+        &mut seller_kiosk,
+        &seller_cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    market::finalize_soul_listing(listing);
+    let (_, _, _, _, total) =
+        market::quote_soul_purchase_v2(&config, SOUL_PRICE, CREATOR_ROYALTY_BPS, 0);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(seller_kiosk);
+    ts::return_to_address(MINTER, seller_cap);
+    ts::return_shared(state);
+
+    mint_usdc_to(BUYER, total, &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
+    let buyer_cap = ts::take_from_address<PersonalKioskCap>(&scenario, BUYER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut listing = ts::take_shared<SoulListing>(&scenario);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    market::buy_soul_fixed_price_v2(
+        &config,
+        &registry,
+        &soul_policy,
+        &mut seller_kiosk,
+        &mut buyer_kiosk,
+        &buyer_cap,
+        &mut state,
+        &mut listing,
+        payment,
+        scenario.ctx(),
+    );
+    assert!(soul::current_owner(&state) == BUYER, 0);
+    assert!(soul::ownership_epoch(&state) == 1, 1);
+
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_shared(seller_kiosk);
+    ts::return_shared(buyer_kiosk);
+    ts::return_to_address(BUYER, buyer_cap);
+    ts::return_shared(state);
+    ts::return_shared(listing);
+    ts::end(scenario);
+}
+
+#[test]
+fun animacraft_soul_mints_and_routes_maker_royalty() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, BUYER);
+    let _state_id = setup_and_mint_animacraft(&mut scenario, MINTER, minter_kiosk_id);
+
+    // Retire the immutable v1 entrypoints before any Animacraft secondary
+    // operation. Explicitly enable only the audited successor path.
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let mut config = ts::take_shared<MarketConfigV2>(&scenario);
+    let successor_admin = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    market::update_config_v2_secondary_enabled(&mut config, &successor_admin, true);
+    ts::return_shared(config);
+    ts::return_to_address(ADMIN, successor_admin);
+
+    // Listing and purchase both require immutable Animacraft provenance so
+    // the Maker royalty is validated before the listing becomes public.
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let provenance_for_listing = ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let seller_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state_for_listing = ts::take_shared<SoulState>(&scenario);
+    let listing = market::list_animacraft_soul_fixed_price_v2(
+        &config,
+        &registry,
+        &provenance_for_listing,
+        &mut seller_kiosk,
+        &seller_cap,
+        &mut state_for_listing,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    market::finalize_soul_listing(listing);
+    let (platform_fee, _, maker_royalty, _, total) =
+        market::quote_animacraft_soul_purchase_v2(&config, SOUL_PRICE, 300, 0);
+    assert!(platform_fee == 25_000, 2);
+    assert!(maker_royalty == 30_000, 3);
+    assert!(total == 1_055_000, 4);
+    ts::return_shared(state_for_listing);
+    ts::return_to_address(MINTER, seller_cap);
+    ts::return_shared(seller_kiosk);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_immutable(provenance_for_listing);
+
+    mint_usdc_to(BUYER, total, &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let provenance = ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let maker = ts::take_shared<OCMaker>(&scenario);
+    let mut maker_treasury = ts::take_shared<MakerTreasury<USDC>>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut listing = ts::take_shared<SoulListing>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let mut buyer_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
+    let buyer_cap = ts::take_from_address<PersonalKioskCap>(&scenario, BUYER);
+    let payment = ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+
+    assert!(animacraft_provenance::animacraft_version(&provenance) == 4, 5);
+    assert!(animacraft_provenance::payer(&provenance) == MINTER, 6);
+    assert!(animacraft_provenance::royalty_bps(&provenance) == 300, 7);
+    assert!(animacraft_provenance::primary_protocol_fee_bps(&provenance) == 5_000, 8);
+    assert!(animacraft_provenance::primary_protocol_fee_atomic(&provenance) == 0, 9);
+    assert!(animacraft::treasury_balance(&maker_treasury) == 0, 10);
+    market::buy_animacraft_soul_fixed_price_v2(
+        &config,
+        &registry,
+        &soul_policy,
+        &provenance,
+        &maker,
+        &mut maker_treasury,
+        &mut seller_kiosk,
+        &mut buyer_kiosk,
+        &buyer_cap,
+        &mut state,
+        &mut listing,
+        payment,
+        scenario.ctx(),
+    );
+
+    assert!(soul::current_owner(&state) == BUYER, 9);
+    assert!(soul::ownership_epoch(&state) == 1, 10);
+    assert!(animacraft::treasury_balance(&maker_treasury) == maker_royalty, 11);
+    assert!(animacraft::treasury_total_royalty_collected(&maker_treasury) == maker_royalty, 12);
+
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_immutable(provenance);
+    ts::return_shared(maker);
+    ts::return_shared(maker_treasury);
+    ts::return_shared(state);
+    ts::return_shared(listing);
+    ts::return_shared(seller_kiosk);
+    ts::return_shared(buyer_kiosk);
+    ts::return_to_address(BUYER, buyer_cap);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftListingPathRequired)]
+fun generic_listing_cannot_bypass_animacraft_royalty() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_animacraft(&mut scenario, MINTER, minter_kiosk_id);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let mut config = ts::take_shared<MarketConfigV2>(&scenario);
+    let admin_cap = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    market::update_config_v2_secondary_enabled(&mut config, &admin_cap, true);
+    ts::return_shared(config);
+    ts::return_to_address(ADMIN, admin_cap);
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let mut seller_kiosk = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let seller_cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let _listing = market::list_soul_fixed_price_v2(
+        &config,
+        &registry,
+        &mut seller_kiosk,
+        &seller_cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::ECombinedFeesTooHigh)]
+fun animacraft_collection_listing_rejects_unfillable_fee_stack() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+
+    // 95% collection + 3% Maker + 2.5% protocol exceeds 100%. The old generic
+    // listing check saw only collection + protocol and created a dead listing.
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let collection_policy = ts::take_shared<TransferPolicy<SoulCollectionRight>>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let collection_obj = market::create_collection_in_personal_kiosk(
+        &config,
+        &registry,
+        &collection_policy,
+        &mut kiosk_obj,
+        &cap,
+        b"Unfillable".to_string(),
+        b"fee stack regression".to_string(),
+        b"https://img".to_string(),
+        9_500,
+        true,
+        option::some(2),
+        scenario.ctx(),
+    );
+    market::finalize_collection(collection_obj);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(collection_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(MINTER, cap);
+
+    let _ = setup_and_mint_animacraft(&mut scenario, MINTER, minter_kiosk_id);
+
+    scenario.next_tx(MINTER);
+    let mut collection_obj = ts::take_shared<SoulCollection>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    collection::add_soul(&mut collection_obj, &mut state, scenario.ctx());
+    ts::return_shared(collection_obj);
+    ts::return_shared(state);
+
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(&scenario);
+    let legacy_admin = ts::take_from_address<MarketAdminCap>(&scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(&mut legacy_config, legacy_admin, scenario.ctx());
+    ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let mut config = ts::take_shared<MarketConfigV2>(&scenario);
+    let admin_cap = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    market::update_config_v2_secondary_enabled(&mut config, &admin_cap, true);
+    ts::return_shared(config);
+    ts::return_to_address(ADMIN, admin_cap);
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let provenance = ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let collection_obj = ts::take_shared<SoulCollection>(&scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let _listing = market::list_animacraft_soul_fixed_price_with_collection_v2(
+        &config,
+        &registry,
+        &provenance,
+        &collection_obj,
+        &mut kiosk_obj,
+        &cap,
+        &mut state,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    abort 42
+}
 
 #[test]
 fun list_and_buy_soul_rotates_owner_and_invalidates_grants() {

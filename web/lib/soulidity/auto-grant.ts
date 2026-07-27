@@ -166,7 +166,7 @@ async function readChainMasksForMirrorMisses(params: {
   const out = new Map<string, number>()
   if (params.granteeAddresses.length === 0) return out
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   // includeActiveGrants=false: each grantee is then resolved through the
   // table's per-grantee dynamic-field path, which is cheaper than
   // materializing the whole slot list when many slots exist.

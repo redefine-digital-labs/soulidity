@@ -52,12 +52,12 @@ export function NotificationBell({ className }: NotificationBellProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-translucent)] shadow-[var(--ui-shadow-sm)] backdrop-blur-xl">
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
             <span className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Notifications</span>
             <button
               type="button"
-              className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition hover:text-purple"
+              className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition hover:text-action-label"
               onClick={() => setOpen(false)}
             >
               Close

@@ -162,7 +162,7 @@ async function buildImportSyncBody(params: {
   importParams: ImportSyncMaterial
   suiClient: unknown
 }): Promise<ImportSyncBody> {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const versions = extractAllContentVersionAppendedEvents(params.txResult as never, packageId)
   const contentObjectId = versions.length > 0 ? versions[0].contentId : null
   if (!contentObjectId) {
@@ -178,7 +178,7 @@ async function buildImportSyncBody(params: {
 
   const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
     suiClient: params.suiClient as never,
-    packageId,
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
     contentObjectId,
     pendingByKindName,
     versions: versions.map((v) => ({

@@ -77,6 +77,7 @@ function asListingStatus(value: string): SoulListingStatus {
 function asProvenanceKind(value: string): SoulProvenanceKind {
   if (value === 'imported') return 'imported'
   if (value === 'personal-join') return 'personal-join'
+  if (value === 'animacraft') return 'animacraft'
   return 'native'
 }
 
@@ -633,6 +634,7 @@ export function toSoulAssetDetail(
     currentOwnershipEpoch?: number | null
     quote?: SoulQuoteBreakdown | null
     platformFeeBps?: number | null
+    animacraftProvenance?: SoulAssetDetail['animacraftProvenance']
   },
 ): SoulAssetDetail {
   const viewerAddresses = new Set(
@@ -679,6 +681,7 @@ export function toSoulAssetDetail(
     isGrantedAgent,
     quote: params.quote ?? null,
     platformFeeBps: params.platformFeeBps ?? null,
+    animacraftProvenance: params.animacraftProvenance ?? null,
   }
 }
 

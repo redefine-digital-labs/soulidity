@@ -334,7 +334,7 @@ export async function GET(
       },
       version,
       viewerAddresses: effectiveViewerAddresses,
-      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
     })
 
     if (access.visibility !== 'sealed') {

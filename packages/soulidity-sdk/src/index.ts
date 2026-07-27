@@ -54,6 +54,7 @@ export * from './persona-sprite'
 
 // ── Misc utilities ───────────────────────────────────────────────────────
 export * from './client-session'
+export * from './animacraft-recipe'
 export * from './coin-selection'
 export * from './collection-bind-preflight'
 export * from './format'
@@ -67,6 +68,7 @@ export * from './upload-validation'
 
 // ── Transaction builders (PTB factories) ─────────────────────────────────
 export * from './tx/buy'
+export * from './tx/animacraft'
 export * from './tx/collection'
 export * from './tx/content'
 export * from './tx/delist'

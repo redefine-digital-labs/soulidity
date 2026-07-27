@@ -308,9 +308,9 @@ function CropModal({
       role="dialog"
       aria-modal="true"
       aria-label="Crop cover image"
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-[rgba(5,3,15,0.72)] p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--ui-overlay)] p-4 backdrop-blur-sm"
     >
-      <div className="w-full max-w-[min(480px,calc(100vw-2rem))] rounded-2xl border border-border bg-card shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
+      <div className="w-full max-w-[min(480px,calc(100vw-2rem))] rounded-[var(--ui-radius-lg)] border border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-md)]">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="text-sm font-bold tracking-[-0.01em] text-foreground">Crop cover</div>
           <button
@@ -351,7 +351,7 @@ function CropModal({
               }}
             />
             {/* Crop frame ring — the entire square IS the crop, so the ring is just a visual guide. */}
-            <div className="pointer-events-none absolute inset-0 rounded-xl border border-purple/70 shadow-[inset_0_0_0_1px_rgba(13,10,30,0.7)]" />
+            <div className="pointer-events-none absolute inset-0 rounded-xl border border-purple/70 shadow-[inset_0_0_0_1px_var(--ui-border-strong)]" />
             {/* Grid thirds */}
             <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3">
               {Array.from({ length: 9 }).map((_, i) => (
@@ -397,7 +397,7 @@ function CropModal({
             type="button"
             disabled={busy || !imgSize || !frameSize}
             onClick={handleConfirm}
-            className="rounded-lg bg-purple px-4 py-2 text-xs font-bold tracking-[0.02em] text-white transition hover:bg-purple-deep disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg bg-[var(--ui-action)] px-4 py-2 text-xs font-bold tracking-[0.02em] text-[var(--ui-action-text)] transition hover:bg-[var(--ui-action-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? '⟳ Cropping…' : 'Use this crop'}
           </button>

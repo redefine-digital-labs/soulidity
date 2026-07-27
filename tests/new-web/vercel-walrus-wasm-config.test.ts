@@ -9,12 +9,12 @@ function readJson<T>(relativePath: string): T {
 }
 
 describe('Vercel Walrus WASM deployment config', () => {
-  it('runs Prisma migrations before the Vercel web build and still copies the Walrus WASM asset', () => {
+  it('uses the environment-aware Vercel build gate and still copies the Walrus WASM asset', () => {
     const vercel = readJson<{ buildCommand?: string }>('web/vercel.json')
     const webPackage = readJson<{ scripts?: Record<string, string> }>('web/package.json')
 
     expect(vercel.buildCommand).toBe('npm run build:vercel')
-    expect(webPackage.scripts?.['build:vercel']).toBe('npm run prisma:migrate:deploy && npm run build')
+    expect(webPackage.scripts?.['build:vercel']).toBe('node scripts/vercel-build.mjs')
     expect(webPackage.scripts?.['prisma:migrate:deploy']).toBe(
       'cd .. && prisma migrate deploy --schema=prisma/schema.prisma',
     )

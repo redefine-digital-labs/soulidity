@@ -136,7 +136,11 @@ export function AgentGrantRecommendations({
   }, [getAuthHeaders, kindScopeMask, role, soul.onChainId])
 
   useEffect(() => {
-    void refresh()
+    let active = true
+    Promise.resolve().then(() => {
+      if (active) void refresh()
+    })
+    return () => { active = false }
   }, [refresh])
 
   // Re-check the moment an append finishes. `pendingAction` is the

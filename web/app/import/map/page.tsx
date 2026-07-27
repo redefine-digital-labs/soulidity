@@ -180,9 +180,9 @@ export default function ImportMapPage() {
 
         {/* Manual input for unmapped required fields */}
         {(!ctx.nameMapped || !ctx.descriptionMapped) && (
-          <div className="space-y-4 rounded-2xl border border-[#f59e0b]/30 bg-[#f59e0b]/5 px-4 py-4">
+          <div className="space-y-4 rounded-2xl border border-[var(--ui-value)] bg-[var(--ui-soft-value)] px-4 py-4">
             <div className="flex items-center gap-2">
-              <span className="text-[#f59e0b]">✏️</span>
+              <span className="text-[var(--ui-value-text)]">✏️</span>
               <span className="text-[12px] font-semibold text-foreground">Required fields not detected — fill in manually</span>
             </div>
 
@@ -197,7 +197,7 @@ export default function ImportMapPage() {
                   placeholder="e.g. AlphaScout, Kaze no Akira..."
                   value={ctx.manualName}
                   onChange={(e) => ctx.setManualName(e.target.value)}
-                  className="h-10 rounded-xl border-[#f59e0b]/30 bg-card2/90 px-3 placeholder:text-[#5f4f90] focus:border-[#f59e0b]"
+                  className="h-10 rounded-xl border-[var(--ui-value)] bg-[var(--ui-control-bg)] px-3 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-value)]"
                 />
               </div>
             )}
@@ -214,7 +214,7 @@ export default function ImportMapPage() {
                   value={ctx.manualDescription}
                   onChange={(e) => ctx.setManualDescription(e.target.value)}
                   maxLength={6000}
-                  className="min-h-[120px] resize-y rounded-xl border-[#f59e0b]/30 bg-card2/90 px-3 py-2.5 placeholder:text-[#5f4f90] focus:border-[#f59e0b]"
+                  className="min-h-[120px] resize-y rounded-xl border-[var(--ui-value)] bg-[var(--ui-control-bg)] px-3 py-2.5 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-value)]"
                 />
                 <div className="flex items-center justify-between text-[10.5px] text-muted">
                   <span>Autosaves as you type · recommended 400–2000 characters</span>
@@ -229,14 +229,14 @@ export default function ImportMapPage() {
 
         {/* Info note */}
         <div className="rounded-xl border border-purple/20 bg-purple/6 px-4 py-3 text-[11px] leading-5 text-muted">
-          <span className="mr-1.5 text-purple">💡</span>
+          <span className="mr-1.5 text-action-label">💡</span>
           Finish the mint-required layers here: Soul Character and founding memory are required. Skills & Docs stay optional and can be added or revised later.
         </div>
 
         {/* Soul Character section */}
-        <section className="rounded-[18px] border border-[#7b5a1e] bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_36%),linear-gradient(180deg,rgba(31,18,58,0.97),rgba(18,10,37,0.98))] px-3.5 py-3.5 shadow-[0_16px_44px_rgba(6,2,17,0.32)] sm:px-4 sm:py-4">
+        <section className="rounded-[var(--ui-radius-lg)] border border-[var(--ui-value)] bg-[var(--ui-surface)] px-3.5 py-3.5 shadow-[var(--ui-shadow-sm)] sm:px-4 sm:py-4">
           <div className="flex items-center gap-2">
-            <span className="text-[#ddae5a]">
+            <span className="text-[var(--ui-value-text)]">
               <svg viewBox="0 0 20 20" fill="none" className="h-4.5 w-4.5" aria-hidden="true">
                 <path d="M5.25 2.75h6.25l4.25 4.25v9.25a1.5 1.5 0 0 1-1.5 1.5h-9a1.5 1.5 0 0 1-1.5-1.5v-12a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
                 <path d="M11.5 2.75v4.25h4.25" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
@@ -244,14 +244,14 @@ export default function ImportMapPage() {
               </svg>
             </span>
             <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-foreground">Soul Character</h3>
-            <span className="rounded-full border border-[#8a6326] bg-[rgba(107,69,18,0.52)] px-2 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] text-[#ffcb74]">
+            <span className="rounded-full border border-[var(--ui-value)] bg-[var(--ui-soft-value)] px-2 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--ui-value-text)]">
               Required
             </span>
           </div>
 
           <p className="mt-3 text-[11px] leading-5 text-muted">
             The foundational identity file for this Soul — personality, backstory, traits, tone, and world-rules.
-            Required before minting. Upload a <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#f4c36c]">soul.md</code> file using the shared template.
+            Required before minting. Upload a <code className="rounded bg-[var(--ui-control-bg)] px-1 font-mono text-[10px] text-[var(--ui-value-text)]">soul.md</code> file using the shared template.
           </p>
 
           <div className="mt-3">
@@ -263,7 +263,7 @@ export default function ImportMapPage() {
                   sublabel=".md format only · use the shared soul.md template"
                   accept=".md,text/markdown"
                   onFileSelect={ctx.setCharFile}
-                  className="rounded-[14px] border-[#8b6324] bg-[rgba(18,11,35,0.72)] px-5 py-8 hover:border-[#d89d42] hover:bg-[rgba(33,19,58,0.82)]"
+                  className="rounded-[14px] border-[var(--ui-value)] bg-[var(--ui-control-bg)] px-5 py-8 hover:bg-[var(--ui-soft-value)]"
                 />
 
                 {errors.charFile && (
@@ -273,7 +273,7 @@ export default function ImportMapPage() {
                 <button
                   type="button"
                   onClick={downloadCharacterTemplate}
-                  className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#f1b85b] transition hover:text-[#ffd08a]"
+                  className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--ui-value-text)] transition hover:text-[var(--ui-value)]"
                 >
                   <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                     <path d="M8 2.5v6m0 0 2.25-2.25M8 8.5 5.75 6.25M3 10.75v1.25c0 .69.56 1.25 1.25 1.25h7.5c.69 0 1.25-.56 1.25-1.25v-1.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
@@ -284,14 +284,14 @@ export default function ImportMapPage() {
                 </button>
               </>
             ) : (
-              <div className="flex items-start gap-3 rounded-[14px] border border-[#8a6326] bg-[linear-gradient(180deg,rgba(38,24,63,0.96),rgba(25,15,43,0.98))] px-3.5 py-3 sm:px-4">
+              <div className="flex items-start gap-3 rounded-[14px] border border-[var(--ui-value)] bg-[var(--ui-soft-value)] px-3.5 py-3 sm:px-4">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/18 text-success">
                   <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                     <path d="m3.5 8.25 2.5 2.5L12.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-[#f4c36c]">
+                  <div className="text-[13px] font-semibold text-[var(--ui-value-text)]">
                     {ctx.charFile.name} ready for encrypted mint
                   </div>
                   <div className="mt-1 text-[10px] leading-4 text-muted">
@@ -301,7 +301,7 @@ export default function ImportMapPage() {
                 <button
                   type="button"
                   onClick={() => ctx.setCharFile(null)}
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-[var(--ui-surface-muted)] hover:text-foreground"
                   aria-label="Remove file"
                 >
                   <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3" aria-hidden="true">
@@ -314,21 +314,21 @@ export default function ImportMapPage() {
         </section>
 
         {/* Memory section */}
-        <section className="rounded-[18px] border border-[#4f2d84] bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.16),transparent_38%),linear-gradient(180deg,rgba(28,17,63,0.97),rgba(18,10,41,0.98))] px-3.5 py-3.5 shadow-[0_16px_44px_rgba(6,2,17,0.32)] sm:px-4 sm:py-4">
+        <section className="rounded-[var(--ui-radius-lg)] border border-[var(--ui-action)] bg-[var(--ui-surface)] px-3.5 py-3.5 shadow-[var(--ui-shadow-sm)] sm:px-4 sm:py-4">
           <div className="flex items-center gap-2">
-            <span className="text-[#b889ff]">
+            <span className="text-[var(--ui-action)]">
               <svg viewBox="0 0 20 20" fill="none" className="h-4.5 w-4.5" aria-hidden="true">
                 <path d="M9.75 17.25V11m0 0c0-2.75 1.9-5.25 5.5-5.5 0 3.95-2.3 5.5-5.5 5.5Zm0 0c0-2.5-1.3-4.65-4.75-5.25 0 3.55 1.95 5.25 4.75 5.25Z" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </span>
             <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-foreground">Memory</h3>
-            <span className="rounded-full border border-[#633796] bg-[rgba(92,47,162,0.38)] px-2 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] text-[#d1b4ff]">
+            <span className="rounded-full border border-[var(--ui-action)] bg-[var(--ui-soft-action)] px-2 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--ui-action)]">
               Required
             </span>
           </div>
           <p className="mt-3 text-[11px] leading-5 text-muted">
             The founding memory of this Soul — origin context, initial directives, or backstory.
-            Locked after mint. Upload as <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#cfb0ff]">memory.md</code> using the founding memory template.
+            Locked after mint. Upload as <code className="rounded bg-[var(--ui-control-bg)] px-1 font-mono text-[10px] text-[var(--ui-action)]">memory.md</code> using the founding memory template.
           </p>
           <div className="mt-3">
             {!ctx.memoryFile ? (
@@ -339,21 +339,21 @@ export default function ImportMapPage() {
                   sublabel=".md format only · immutable after mint"
                   accept=".md,text/markdown"
                   onFileSelect={ctx.setMemoryFile}
-                  className="rounded-[14px] border-[#613892] bg-[rgba(18,11,35,0.72)] px-5 py-8 hover:border-[#a966ff] hover:bg-[rgba(33,19,58,0.82)]"
+                  className="rounded-[14px] border-[var(--ui-action)] bg-[var(--ui-control-bg)] px-5 py-8 hover:bg-[var(--ui-soft-action)]"
                 />
                 {errors.memoryFile && (
                   <p className="mt-2 text-[11px] font-medium text-danger">{errors.memoryFile}</p>
                 )}
               </>
             ) : (
-              <div className="flex items-start gap-3 rounded-[14px] border border-[#5f3794] bg-[linear-gradient(180deg,rgba(39,22,72,0.96),rgba(25,15,43,0.98))] px-3.5 py-3 sm:px-4">
+              <div className="flex items-start gap-3 rounded-[14px] border border-[var(--ui-action)] bg-[var(--ui-soft-action)] px-3.5 py-3 sm:px-4">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/18 text-success">
                   <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                     <path d="m3.5 8.25 2.5 2.5L12.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-[#cfb0ff]">
+                  <div className="text-[13px] font-semibold text-[var(--ui-action)]">
                     {ctx.memoryFile.name} ready as founding memory
                   </div>
                   <div className="mt-1 text-[10px] leading-4 text-muted">
@@ -363,7 +363,7 @@ export default function ImportMapPage() {
                 <button
                   type="button"
                   onClick={() => ctx.setMemoryFile(null)}
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-[var(--ui-surface-muted)] hover:text-foreground"
                   aria-label="Remove file"
                 >
                   <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3" aria-hidden="true">
@@ -376,22 +376,22 @@ export default function ImportMapPage() {
         </section>
 
         {/* Skills & Docs section */}
-        <section className="rounded-[18px] border border-[#165c65] bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_38%),linear-gradient(180deg,rgba(18,25,52,0.97),rgba(12,15,35,0.98))] px-3.5 py-3.5 shadow-[0_16px_44px_rgba(6,2,17,0.32)] sm:px-4 sm:py-4">
+        <section className="rounded-[var(--ui-radius-lg)] border border-[var(--ui-tech)] bg-[var(--ui-surface)] px-3.5 py-3.5 shadow-[var(--ui-shadow-sm)] sm:px-4 sm:py-4">
           <div className="flex items-center gap-2">
-            <span className="text-[#58d3c7]">
+            <span className="text-[var(--ui-tech-text)]">
               <svg viewBox="0 0 20 20" fill="none" className="h-4.5 w-4.5" aria-hidden="true">
                 <path d="M10 2.75 16 6v8L10 17.25 4 14V6l6-3.25Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
                 <path d="M4 6 10 9.25 16 6M10 9.25v8" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
               </svg>
             </span>
             <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-foreground">Skills & Docs</h3>
-            <span className="rounded-full border border-[#1e666f] bg-[rgba(19,102,108,0.32)] px-2 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] text-[#8ceae0]">
+            <span className="rounded-full border border-[var(--ui-tech)] bg-[var(--ui-soft-tech)] px-2 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--ui-tech-text)]">
               Optional
             </span>
           </div>
           <p className="mt-3 text-[11px] leading-5 text-muted">
             Knowledge docs, skill definitions, system prompts, and behavioral configs.
-            Use a ZIP bundle with <code className="rounded bg-black/20 px-1 font-mono text-[10px] text-[#8ceae0]">SKILL.md</code> frontmatter. Private bundles are encrypted by default and can be revised later.
+            Use a ZIP bundle with <code className="rounded bg-[var(--ui-control-bg)] px-1 font-mono text-[10px] text-[var(--ui-tech-text)]">SKILL.md</code> frontmatter. Private bundles are encrypted by default and can be revised later.
           </p>
           <div className="mt-3">
             {!ctx.skillsFile ? (
@@ -404,19 +404,19 @@ export default function ImportMapPage() {
                   onFileSelect={(file) => {
                     void handleSkillsFileSelect(file)
                   }}
-                  className="rounded-[14px] border-[#1b636d] bg-[rgba(14,18,40,0.76)] px-5 py-8 hover:border-[#42c9bd] hover:bg-[rgba(18,24,52,0.84)]"
+                  className="rounded-[14px] border-[var(--ui-tech)] bg-[var(--ui-control-bg)] px-5 py-8 hover:bg-[var(--ui-soft-tech)]"
                 />
                 <SkillBundleFormatHint error={skillBundleError} className="mt-3" />
               </>
             ) : (
-              <div className="flex items-start gap-3 rounded-[14px] border border-[#1d6f78] bg-[linear-gradient(180deg,rgba(10,56,61,0.96),rgba(9,34,38,0.98))] px-3.5 py-3 sm:px-4">
+              <div className="flex items-start gap-3 rounded-[14px] border border-[var(--ui-tech)] bg-[var(--ui-soft-tech)] px-3.5 py-3 sm:px-4">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/18 text-success">
                   <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                     <path d="m3.5 8.25 2.5 2.5L12.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-[#8ceae0]">
+                  <div className="text-[13px] font-semibold text-[var(--ui-tech-text)]">
                     Skills & Docs bundle ready
                   </div>
                   <div className="mt-1 text-[10px] leading-4 text-muted">
@@ -430,7 +430,7 @@ export default function ImportMapPage() {
                     setSkillBundleName(null)
                     setSkillBundleError(null)
                   }}
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-[var(--ui-surface-muted)] hover:text-foreground"
                   aria-label="Remove file"
                 >
                   <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3" aria-hidden="true">
@@ -453,7 +453,7 @@ export default function ImportMapPage() {
             file={ctx.coverImageFile}
             previewUrl={ctx.coverImagePreviewUrl}
             onChange={(file) => ctx.setCoverImage(file)}
-            className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
+            className="rounded-[var(--ui-radius-lg)] border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-6 py-10 text-center hover:border-[var(--ui-action)] hover:bg-[var(--ui-soft-action)]"
           />
         </div>
 
@@ -466,7 +466,7 @@ export default function ImportMapPage() {
             placeholder="e.g. ai, trading, signals"
             value={ctx.tags}
             onChange={(e) => ctx.setTags(e.target.value)}
-            className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple"
+            className="h-11 rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)]"
           />
         </div>
 
@@ -485,12 +485,12 @@ export default function ImportMapPage() {
                 onClick={() => ctx.setRoyalty(opt.value)}
                 className={`relative flex min-h-[72px] min-w-0 flex-col items-center justify-center rounded-2xl border px-2 pb-3 pt-3 text-center transition ${
                   ctx.royalty === opt.value
-                    ? 'border-purple bg-purple/12 shadow-[0_10px_24px_rgba(124,58,237,0.18)]'
-                    : 'border-border bg-card2/40 hover:border-purple/40 hover:bg-purple/6'
+                    ? 'border-[var(--ui-action)] bg-[var(--ui-soft-action)] shadow-[var(--ui-shadow-action)]'
+                    : 'border-[var(--ui-border)] bg-[var(--ui-surface-muted)] hover:border-[var(--ui-action)] hover:bg-[var(--ui-soft-action)]'
                 }`}
               >
                 {'recommended' in opt && opt.recommended ? (
-                  <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal px-2 py-0.5 text-[10px] font-semibold text-[#081615] shadow-[0_8px_20px_rgba(20,184,166,0.28)]">
+                  <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--ui-tech)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ui-tech-action-text)] shadow-[var(--ui-shadow-sm)]">
                     Recommended
                   </span>
                 ) : null}
@@ -525,7 +525,7 @@ export default function ImportMapPage() {
               variant: 'landing',
               size: 'lg',
               full: true,
-              className: 'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
+              className: 'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[var(--ui-shadow-action)]',
             })}
           >
             Next: Preview <span aria-hidden="true">→</span>

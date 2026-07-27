@@ -106,7 +106,7 @@ export default function SellSuccessPage({ params }: { params: Promise<{ id: stri
 
         <Link
           href="/community"
-          className="text-purple text-sm hover:text-purple-deep transition"
+          className="text-action-label text-sm transition hover:opacity-80"
         >
           📣 Announce Listing to Community →
         </Link>

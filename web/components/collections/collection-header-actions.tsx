@@ -85,7 +85,7 @@ export function CollectionHeaderActions({ collection, variant, onAction, onBuy, 
     case 'not-for-sale':
       return (
         <div className="rounded-xl border border-border bg-card2 px-5 py-4 max-w-xs">
-          <p className="text-[10px] font-bold text-purple uppercase tracking-[0.1em] mb-1">
+          <p className="text-[10px] font-bold text-action-label uppercase tracking-[0.1em] mb-1">
             Soul Collection
           </p>
           <p className="text-sm font-bold text-foreground mb-1">Not for sale</p>
@@ -98,7 +98,7 @@ export function CollectionHeaderActions({ collection, variant, onAction, onBuy, 
     case 'owner-held':
       return (
         <div className="rounded-xl border border-purple/30 bg-card2 px-5 py-4 max-w-xs">
-          <p className="text-[10px] font-bold text-purple uppercase tracking-[0.1em] mb-2">
+          <p className="text-[10px] font-bold text-action-label uppercase tracking-[0.1em] mb-2">
             Your Collection
           </p>
           <button

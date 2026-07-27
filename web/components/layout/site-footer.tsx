@@ -4,7 +4,7 @@ const YEAR = new Date().getFullYear()
 
 export function SiteFooter() {
   return (
-    <footer className="relative z-10 border-t border-border bg-[rgba(13,10,30,0.45)]">
+    <footer className="relative z-10 border-t border-[var(--ui-border)] bg-[var(--ui-panel-translucent)]">
       <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-3 px-4 py-5 text-[11px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-foreground">Soulidity</span>

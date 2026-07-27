@@ -214,7 +214,7 @@ async function buildPublishSyncBody(params: {
   publishParams: PublishSyncMaterial
   suiClient: unknown
 }): Promise<PublishSyncBody> {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   // The PTB may bundle multiple events when bind/list are co-signed; pick
   // by route soulId when known (single-soul publish always emits exactly one
   // SoulMintedToKiosk in the new ABI but we still filter for safety).
@@ -234,7 +234,7 @@ async function buildPublishSyncBody(params: {
 
   const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
     suiClient: params.suiClient as never,
-    packageId,
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
     contentObjectId: minted.contentId,
     pendingByKindName: buildPendingMintSlots({
       soulMaterial: params.publishParams.sealMaterial ?? null,

@@ -176,7 +176,7 @@ export async function POST(request: Request) {
     return mirrorMask === 0
   })
   if (itemsNeedingChainCheck.length > 0) {
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
     const soulsToVerify = Array.from(new Set(itemsNeedingChainCheck.map((i) => i.soulOnChainId)))
     try {
       const stateBySoul = new Map<string, SoulStateObject>()

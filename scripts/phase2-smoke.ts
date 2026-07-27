@@ -62,8 +62,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const manifestPath = resolve(repoRoot, 'packages/soulidity-sdk/src/deployment-manifest.json')
 
 interface DeploymentEntry {
-  packageId: string
+  callablePackageId: string
+  originalPackageId: string
   marketConfigId: string
+  marketConfigV2Id?: string
   kioskRegistryId: string
   kindRegistryId?: string
   soulTransferPolicyId: string
@@ -76,8 +78,9 @@ function loadManifestEntry(network: string): DeploymentEntry {
   const entry = all[network]
   if (!entry) throw new Error(`No deployment-manifest entry for "${network}"`)
   for (const required of [
-    'packageId',
-    'marketConfigId',
+    'callablePackageId',
+    'originalPackageId',
+    'marketConfigV2Id',
     'kioskRegistryId',
     'kindRegistryId',
     'soulTransferPolicyId',
@@ -92,8 +95,9 @@ function loadManifestEntry(network: string): DeploymentEntry {
 }
 
 function applyManifestToProcessEnv(entry: DeploymentEntry) {
-  process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = entry.packageId
-  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID = entry.marketConfigId
+  process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID = entry.callablePackageId
+  process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID = entry.originalPackageId
+  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID = entry.marketConfigV2Id
   process.env.NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID = entry.kioskRegistryId
   process.env.NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID = entry.kindRegistryId!
   process.env.NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID = entry.soulTransferPolicyId
@@ -1089,7 +1093,8 @@ async function scenario_12_10() {
 async function main() {
   console.log('━━━ Phase 2 Soulidity smoke ━━━')
   console.log(`network         : ${network}`)
-  console.log(`packageId       : ${manifestEntry.packageId}`)
+  console.log(`callablePackage : ${manifestEntry.callablePackageId}`)
+  console.log(`originalPackage : ${manifestEntry.originalPackageId}`)
   console.log(`kindRegistry    : ${manifestEntry.kindRegistryId}`)
   console.log(`publisher       : ${publisherAddress}`)
   console.log(`buyer           : ${buyerAddress ?? '(not set)'}`)
@@ -1123,7 +1128,8 @@ async function main() {
   lines.push(`# Phase 2 Soulidity smoke (${network})`)
   lines.push('')
   lines.push(`Generated: ${new Date().toISOString()}`)
-  lines.push(`Package: \`${manifestEntry.packageId}\``)
+  lines.push(`Callable package: \`${manifestEntry.callablePackageId}\``)
+  lines.push(`Original package: \`${manifestEntry.originalPackageId}\``)
   lines.push(`Mode: ${cli.execute ? 'execute' : 'dryRun-only'}`)
   lines.push('')
   lines.push('| Scenario | Expected | Outcome | Detail |')

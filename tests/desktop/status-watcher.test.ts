@@ -5,6 +5,10 @@ const { broadcastSend } = vi.hoisted(() => ({
   broadcastSend: vi.fn(),
 }))
 
+vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: () => [] },
+}))
+
 function buildStatus(lastUpdated: number, sessionOverrides: Partial<AgentStatusFile['sessions'][string]> = {}): AgentStatusFile {
   return {
     version: 1,

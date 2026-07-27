@@ -80,7 +80,7 @@ function FollowButton({ targetMemberId }: { targetMemberId: string }) {
       size="sm"
       onClick={handleClick}
       disabled={toggleFollow.isPending}
-      className={isFollowing ? '' : 'border-purple text-purple hover:bg-purple hover:text-white'}
+      className={isFollowing ? '' : 'border-purple text-action-label hover:bg-purple hover:text-white'}
     >
       {isFollowing ? 'Following' : '+ Follow'}
     </Button>
@@ -251,7 +251,7 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
                   ) : (
                     <>
                       Wallet not linked ·{' '}
-                      <Link href="/profile#wallet" className="text-purple hover:underline">
+                      <Link href="/profile#wallet" className="text-action-label hover:underline">
                         Link wallet →
                       </Link>
                     </>
@@ -289,7 +289,7 @@ export default function SpaceProfilePage({ params }: { params: Promise<{ spaceId
             ) : isOwner ? (
               <>
                 No bio yet.{' '}
-                <Link href="/profile" className="text-purple hover:underline">
+                <Link href="/profile" className="text-action-label hover:underline">
                   Add one →
                 </Link>
               </>

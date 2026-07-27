@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   buildCapTransferPtb,
+  assertMainnetFreshPublishAllowed,
   extractDeploymentFromPublishResult,
   parseArgs,
   readPublishedTomlSections,
@@ -44,7 +45,10 @@ describe('extractDeploymentFromPublishResult', () => {
       paymentCoinType: '0x2::coin::COIN',
     })
 
-    expect(deployment).toEqual({
+    expect(deployment).toMatchObject({
+      callablePackageId: '0xpackage',
+      originalPackageId: '0xpackage',
+      animacraftProvenancePackageId: '0xpackage',
       packageId: '0xpackage',
       marketConfigId: '0xconfig',
       kioskRegistryId: '0xregistry',
@@ -181,6 +185,8 @@ describe('parseArgs', () => {
       paymentCoinType: null,
       transferCapsTo: null,
       privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
+      breakGlassAllowMainnetFreshPublish: false,
+      breakGlassConfirm: null,
     })
   })
 
@@ -202,6 +208,62 @@ describe('parseArgs', () => {
 
   it('honors --mainnet-priv-key-env override', () => {
     expect(parseArgs(['--mainnet-priv-key-env=CUSTOM_KEY']).privKeyEnv).toBe('CUSTOM_KEY')
+  })
+
+  it('parses the explicitly named mainnet fresh-publish break glass', () => {
+    expect(parseArgs([
+      '--break-glass-allow-mainnet-fresh-publish',
+      '--break-glass-confirm=CREATE_NEW_SOULIDITY_MAINNET_PACKAGE_FAMILY',
+    ])).toMatchObject({
+      breakGlassAllowMainnetFreshPublish: true,
+      breakGlassConfirm: 'CREATE_NEW_SOULIDITY_MAINNET_PACKAGE_FAMILY',
+    })
+  })
+
+  it('rejects unknown flags and missing option values instead of silently publishing', () => {
+    expect(() => parseArgs(['--exectue'])).toThrow(/Unknown argument/)
+    expect(() => parseArgs(['--gas-budget'])).toThrow(/requires a value/)
+    expect(() => parseArgs(['--break-glass-confirm', '--dry-run'])).toThrow(
+      /requires a value/,
+    )
+  })
+})
+
+describe('mainnet fresh-publish guard', () => {
+  const existing = {
+    packageId: '0xexisting',
+    originalPackageId: '0xexisting',
+    callablePackageId: '0xexisting',
+  }
+
+  it('fails closed when a mainnet deployment already exists', () => {
+    expect(() => assertMainnetFreshPublishAllowed('mainnet', {
+      breakGlassAllowMainnetFreshPublish: false,
+      breakGlassConfirm: null,
+    }, existing)).toThrow(/mainnet already has a Soulidity package family/)
+  })
+
+  it('requires both the named flag and exact confirmation', () => {
+    expect(() => assertMainnetFreshPublishAllowed('mainnet', {
+      breakGlassAllowMainnetFreshPublish: true,
+      breakGlassConfirm: 'wrong',
+    }, existing)).toThrow(/CREATE_NEW_SOULIDITY_MAINNET_PACKAGE_FAMILY/)
+
+    expect(() => assertMainnetFreshPublishAllowed('mainnet', {
+      breakGlassAllowMainnetFreshPublish: true,
+      breakGlassConfirm: 'CREATE_NEW_SOULIDITY_MAINNET_PACKAGE_FAMILY',
+    }, existing)).not.toThrow()
+  })
+
+  it('does not block non-mainnet or an empty deployment slot', () => {
+    expect(() => assertMainnetFreshPublishAllowed('testnet', {
+      breakGlassAllowMainnetFreshPublish: false,
+      breakGlassConfirm: null,
+    }, existing)).not.toThrow()
+    expect(() => assertMainnetFreshPublishAllowed('mainnet', {
+      breakGlassAllowMainnetFreshPublish: false,
+      breakGlassConfirm: null,
+    }, undefined)).not.toThrow()
   })
 })
 

@@ -48,16 +48,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="relative min-h-screen">
       <PendingActionReplay />
-      {/* Background orbs matching prototype */}
+      {/* Theme ambient color; opacity drops behind Animacraft's paper grid. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed -right-[100px] -top-[100px] z-0 h-[500px] w-[500px] rounded-full opacity-20 blur-[80px]"
-        style={{ background: 'var(--purple-deep)' }}
+        className="pointer-events-none fixed -right-[100px] -top-[100px] z-0 h-[500px] w-[500px] rounded-full blur-[80px]"
+        style={{ background: 'var(--ui-action-hover)', opacity: 'var(--ui-ambient-opacity)' }}
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed -bottom-[50px] -left-[50px] z-0 h-[300px] w-[300px] rounded-full opacity-20 blur-[80px]"
-        style={{ background: 'var(--gold)' }}
+        className="pointer-events-none fixed -bottom-[50px] -left-[50px] z-0 h-[300px] w-[300px] rounded-full blur-[80px]"
+        style={{ background: 'var(--ui-value)', opacity: 'var(--ui-ambient-opacity)' }}
       />
       <Navbar
         connected={!!user}

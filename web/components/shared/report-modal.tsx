@@ -76,13 +76,13 @@ export function ReportModal({ open, onClose, subjectType, subjectId, subjectLabe
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--ui-overlay)] px-4 py-6 backdrop-blur-sm"
       onClick={onClose}
     >
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[480px] overflow-hidden rounded-2xl border border-border bg-card shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+        className="w-full max-w-[480px] overflow-hidden rounded-[var(--ui-radius-lg)] border border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-md)]"
       >
         <div className="flex items-start justify-between border-b border-border px-5 py-4">
           <div>
@@ -121,7 +121,7 @@ export function ReportModal({ open, onClose, subjectType, subjectId, subjectLabe
                     value={opt.value}
                     checked={category === opt.value}
                     onChange={() => setCategory(opt.value)}
-                    className="mt-0.5 accent-[#A855F7]"
+                    className="mt-0.5 accent-[var(--ui-action)]"
                   />
                   <span className="flex-1">
                     <span className="block text-[13px] font-semibold text-foreground">{opt.label}</span>

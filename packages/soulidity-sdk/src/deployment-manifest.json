@@ -1,7 +1,13 @@
 {
   "testnet": {
+    "callablePackageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "originalPackageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "animacraftProvenancePackageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
     "packageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
     "marketConfigId": "0x252255abd42007f0a2b3fad596c7b0705f19979436ed043fb24f2047050827fe",
+    "marketConfigV2PackageId": "",
+    "marketConfigV2Id": "",
+    "marketAdminCapV2Id": "",
     "kioskRegistryId": "0xec8c87496f40c640411f8b4b0ee76d5b171de4fcf5aa49062ba7db4c1a15e30c",
     "soulTransferPolicyId": "0x5e5711e21db5e445c03a59154bcb1fd889efc111cd42180f28c7a3adbe9ae92f",
     "collectionTransferPolicyId": "0x97bf30a371ab12bd3184357cb69dd0ec8c1503ab730390166c4279173a8851db",
@@ -10,8 +16,14 @@
     "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b"
   },
   "mainnet": {
+    "callablePackageId": "0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0",
+    "originalPackageId": "0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0",
+    "animacraftProvenancePackageId": "0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0",
     "packageId": "0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0",
     "marketConfigId": "0xe6214eaba8afa4c9191a602b78bfc0658ce1e188625f986dc6768d40f4d7dbb5",
+    "marketConfigV2PackageId": "",
+    "marketConfigV2Id": "",
+    "marketAdminCapV2Id": "",
     "kioskRegistryId": "0x8063dbb7cc35b136355a329a7d54ae3258ee8b30473d86a925d3390f7b9a32e4",
     "kindRegistryId": "0x27f249c5fe0ff056f4d5bc1473e10621966e646faf29de89200d9b612e6b9880",
     "soulTransferPolicyId": "0xaf28f957b4f30bfd73c00bff61cc3cb8d54be25ca1a0f03aa8aad15e06e476c4",

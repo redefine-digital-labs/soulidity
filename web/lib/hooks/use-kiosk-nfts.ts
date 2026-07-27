@@ -13,7 +13,7 @@ export interface KioskNft {
 }
 
 // Sui package ID for soulidity — objects of this package type are Souls, not external NFTs
-const SOULIDITY_PACKAGE = getOptionalSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID') ?? ''
+const SOULIDITY_PACKAGE = getOptionalSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID') ?? ''
 
 function isSoulidityObject(objectType: string): boolean {
   if (!SOULIDITY_PACKAGE) return false

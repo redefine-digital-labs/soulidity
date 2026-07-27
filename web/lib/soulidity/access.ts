@@ -20,7 +20,7 @@
  * fetch the plaintext URL directly.
  */
 import { prisma } from '@/lib/prisma'
-import { getBlobUrl } from '@soulidity/sdk'
+import { getBlobUrl, getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { getSealRuntimeConfig, getSealSessionTtlMinutes } from '@/lib/services/seal'
 import {
   CANONICAL_MEMORY_NAME,
@@ -115,8 +115,6 @@ function buildSealedResponse(params: {
   contentObjectId: string
   stateObjectId: string
   version: SoulContentVersionRecord
-  packageId: string
-  resolvedPackageId: string
   moduleName: 'content' | 'paid_access'
   functionName:
     | 'seal_approve_content_owner'
@@ -136,7 +134,7 @@ function buildSealedResponse(params: {
     slot: buildSlotDescriptor(params.version),
     artifact: blobArtifact(params.version),
     accessPolicy: {
-      packageId: params.resolvedPackageId,
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
       stateObjectId: params.stateObjectId,
       contentObjectId: params.contentObjectId,
       kind: params.version.kind,
@@ -228,8 +226,6 @@ export async function resolveContentAccessPayload(
         contentObjectId: soul.contentOnChainId,
         stateObjectId: soul.stateOnChainId,
         version,
-        packageId,
-        resolvedPackageId,
         moduleName: 'content',
         functionName: 'seal_approve_content_owner',
         soulGrantObjectId: null,
@@ -267,8 +263,6 @@ export async function resolveContentAccessPayload(
             contentObjectId: soul.contentOnChainId,
             stateObjectId: soul.stateOnChainId,
             version,
-            packageId,
-            resolvedPackageId,
             moduleName: 'content',
             functionName: 'seal_approve_content_granted_agent',
             soulGrantObjectId: grant.objectId,
@@ -301,8 +295,6 @@ export async function resolveContentAccessPayload(
           contentObjectId: soul.contentOnChainId,
           stateObjectId: soul.stateOnChainId,
           version,
-          packageId,
-          resolvedPackageId,
           moduleName: 'paid_access',
           functionName: 'seal_approve_content_paid_access',
           soulGrantObjectId: null,
@@ -324,8 +316,6 @@ export async function resolveContentAccessPayload(
         contentObjectId: soul.contentOnChainId,
         stateObjectId: soul.stateOnChainId,
         version,
-        packageId,
-        resolvedPackageId,
         moduleName: 'content',
         functionName: 'seal_approve_content_public',
         soulGrantObjectId: null,

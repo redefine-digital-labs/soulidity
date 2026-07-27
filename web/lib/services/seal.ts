@@ -9,7 +9,7 @@ import {
 } from '@mysten/seal'
 import type { Signer } from '@mysten/sui/cryptography'
 import { suiClient } from '@soulidity/sdk'
-import { getSoulidityDeployment } from '@soulidity/sdk'
+import { getSoulidityCallablePackageId } from '@soulidity/sdk'
 
 const DEFAULT_TESTNET_SEAL_SERVER_CONFIGS: KeyServerConfig[] = [
   {
@@ -170,7 +170,7 @@ function getVerifyKeyServers() {
 }
 
 function getSoulObjectPackageId() {
-  return getSoulidityDeployment().packageId
+  return getSoulidityCallablePackageId()
 }
 
 function sanitizeKeyServerConfig(config: KeyServerConfig): PublicKeyServerConfig {

@@ -70,13 +70,13 @@ export function NavCreateMenu({ className }: NavCreateMenuProps) {
         onClick={() => setOpen((v) => !v)}
         className={cn(
           'flex h-9 items-center overflow-hidden rounded-lg border transition-colors duration-150',
-          'border-transparent bg-purple text-white hover:bg-purple-deep',
+          'border-transparent bg-[var(--ui-action)] text-[var(--ui-action-text)] hover:bg-[var(--ui-action-hover)]',
         )}
       >
         <span className="px-3.5 text-[13px] font-semibold tracking-[-0.01em]">+ New</span>
         <span className={cn(
           'flex h-full items-center border-l px-2.5',
-          'border-white/20 text-white/80',
+          'border-[var(--ui-border)] text-[var(--ui-action-text)] opacity-80',
         )}>
           <svg
             width="12"
@@ -91,7 +91,7 @@ export function NavCreateMenu({ className }: NavCreateMenuProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 min-w-[160px] rounded-xl border border-border bg-card2 p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <div className="absolute right-0 top-full z-50 mt-2 min-w-[160px] rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-translucent)] p-1.5 shadow-[var(--ui-shadow-sm)] backdrop-blur-xl">
           {menuItems.map((item, i) => {
             if (item === 'separator') {
               return <div key={i} className="surface-divider my-1.5" />

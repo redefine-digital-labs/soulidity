@@ -4,12 +4,25 @@ import deploymentManifest from '@soulidity/sdk/deployment-manifest.json'
 import {
   MissingSoulidityDeploymentError,
   getConfiguredSoulidityNetwork,
+  getSoulidityAnimacraftProvenancePackageId,
+  getSoulidityCallablePackageId,
   getSoulidityDeployment,
+  getSoulidityMarketConfigV2PackageId,
+  getSoulidityOriginalPackageId,
+  getAnimacraftProvenanceStructType,
 } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 
 const ORIGINAL_NETWORK = process.env.NEXT_PUBLIC_SUI_NETWORK
 const ORIGINAL_PACKAGE_ID = process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID
+const ORIGINAL_CALLABLE_PACKAGE_ID = process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID
+const ORIGINAL_ORIGINAL_PACKAGE_ID = process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID
+const ORIGINAL_PROVENANCE_PACKAGE_ID =
+  process.env.NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID
+const ORIGINAL_MARKET_CONFIG_V2_ID =
+  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID
+const ORIGINAL_MARKET_CONFIG_V2_PACKAGE_ID =
+  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID
 
 function restoreEnv(name: string, value: string | undefined) {
   if (value === undefined) {
@@ -23,6 +36,20 @@ describe('Soulidity deployment manifest', () => {
   afterEach(() => {
     restoreEnv('NEXT_PUBLIC_SUI_NETWORK', ORIGINAL_NETWORK)
     restoreEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID', ORIGINAL_PACKAGE_ID)
+    restoreEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', ORIGINAL_CALLABLE_PACKAGE_ID)
+    restoreEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID', ORIGINAL_ORIGINAL_PACKAGE_ID)
+    restoreEnv(
+      'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID',
+      ORIGINAL_PROVENANCE_PACKAGE_ID,
+    )
+    restoreEnv(
+      'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+      ORIGINAL_MARKET_CONFIG_V2_ID,
+    )
+    restoreEnv(
+      'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
+      ORIGINAL_MARKET_CONFIG_V2_PACKAGE_ID,
+    )
   })
 
   it('resolves the active network deployment from the manifest', () => {
@@ -30,6 +57,15 @@ describe('Soulidity deployment manifest', () => {
 
     expect(getConfiguredSoulidityNetwork()).toBe('testnet')
     expect(getSoulidityDeployment()).toEqual(deploymentManifest.testnet)
+    expect(getSoulidityCallablePackageId()).toBe(deploymentManifest.testnet.callablePackageId)
+    expect(getSoulidityOriginalPackageId()).toBe(deploymentManifest.testnet.originalPackageId)
+    expect(getSoulidityAnimacraftProvenancePackageId()).toBe(
+      deploymentManifest.testnet.animacraftProvenancePackageId,
+    )
+    expect(getSoulidityMarketConfigV2PackageId()).toBe(
+      deploymentManifest.testnet.marketConfigV2PackageId
+        || deploymentManifest.testnet.callablePackageId,
+    )
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')).toBe(deploymentManifest.testnet.packageId)
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')).toBe(deploymentManifest.testnet.marketConfigId)
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')).toBe(deploymentManifest.testnet.soulTransferPolicyId)
@@ -42,6 +78,16 @@ describe('Soulidity deployment manifest', () => {
 
     expect(getConfiguredSoulidityNetwork()).toBe('mainnet')
     expect(getSoulidityDeployment()).toEqual(deploymentManifest.mainnet)
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')).toBe(
+      deploymentManifest.mainnet.callablePackageId,
+    )
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')).toBe(
+      deploymentManifest.mainnet.originalPackageId,
+    )
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID')).toBe(
+      deploymentManifest.mainnet.marketConfigV2PackageId
+        || deploymentManifest.mainnet.callablePackageId,
+    )
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')).toBe(deploymentManifest.mainnet.packageId)
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')).toBe(deploymentManifest.mainnet.marketConfigId)
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')).toBe(deploymentManifest.mainnet.soulTransferPolicyId)
@@ -57,6 +103,39 @@ describe('Soulidity deployment manifest', () => {
 
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')).toBe('0x111')
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')).toBe(deploymentManifest.mainnet.marketConfigId)
+  })
+
+  it('fails closed until the irreversible Animacraft market retirement publishes its config id', () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+    delete process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID
+
+    expect(() => getRequiredSoulidityEnv(
+      'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+    )).toThrow('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+
+    process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID = '0x900d'
+    expect(getRequiredSoulidityEnv(
+      'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+    )).toBe('0x900d')
+  })
+
+  it('keeps callable, original, and upgraded-type defining packages independent', () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+    process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID = '0xcafe'
+    process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID = '0xfeed'
+    process.env.NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID = '0xbeef'
+
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')).toBe('0xcafe')
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')).toBe('0xfeed')
+    expect(
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'),
+    ).toBe('0xbeef')
+    expect(getAnimacraftProvenanceStructType('0xbeef')).toBe(
+      `0x${'0'.repeat(60)}beef::animacraft_provenance::AnimacraftProvenance`,
+    )
+    // The legacy key is intentionally an original-package compatibility alias.
+    delete process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')).toBe('0xfeed')
   })
 
   it('throws a targeted error for unsupported networks', () => {

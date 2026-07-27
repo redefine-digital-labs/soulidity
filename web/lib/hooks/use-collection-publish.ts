@@ -647,7 +647,7 @@ async function buildSoulPublishSyncBody(params: {
   mintEvent: { soulId: string; contentId: string }
   suiClient: unknown
 }): Promise<PublishSyncBody> {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const versionsForSoul = extractAllContentVersionAppendedEvents(params.txResult as never, packageId)
     .filter((version) => version.soulId === params.mintEvent.soulId)
   if (versionsForSoul.length === 0) {
@@ -659,7 +659,7 @@ async function buildSoulPublishSyncBody(params: {
 
   const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
     suiClient: params.suiClient as never,
-    packageId,
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
     contentObjectId: params.mintEvent.contentId,
     pendingByKindName: buildPendingMintSlots({
       soulMaterial: params.uploads.sealMaterial,
@@ -707,7 +707,7 @@ async function mirrorFastPathPtb2(args: {
     persistRecovery,
     updateProgress,
   } = args
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const mintEvents = extractAllSoulMintedToKioskEvents(txResultForMirror as never, packageId)
   if (mintEvents.length !== recovery.souls.length) {
     throw new FastPathMirrorFailed(
@@ -1026,9 +1026,9 @@ export function useCollectionPublish(draftSignature?: string | null) {
         })
         if (collectionRightListingPriceAtomic != null) {
           const listing = tx.moveCall({
-            target: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')}::market::list_collection_right_fixed_price`,
+            target: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')}::market::list_collection_right_fixed_price_v2`,
             arguments: [
-              tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')),
+              tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')),
               tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')),
               created.collection,
               created.personalKiosk.buyerKiosk,
@@ -1037,7 +1037,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
             ],
           })
           tx.moveCall({
-            target: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')}::market::finalize_collection_listing`,
+            target: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')}::market::finalize_collection_listing`,
             arguments: [listing],
           })
         }
@@ -1321,7 +1321,7 @@ export function useCollectionPublish(draftSignature?: string | null) {
           if (!chunkTxResult) {
             chunkTxResult = await getCollectionPublishTransactionBlock(suiClient, chunkDigest, 'Chunked mint transaction')
           }
-          const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+          const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
           const mintEvents = extractAllSoulMintedToKioskEvents(chunkTxResult as never, packageId)
           if (mintEvents.length !== chunk.soulIndices.length) {
             throw new Error(

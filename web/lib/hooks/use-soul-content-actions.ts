@@ -355,12 +355,12 @@ export function useSoulContentSyncReplay({
   } = useSoulContentSyncRuntime({ soul, detailQueryId, viewerId })
 
   const replayPendingSync = useCallback(async (rec: ContentSyncPendingRecord) => {
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
     let sealSidecar: SealEnvelopeSidecar | null = null
     if (rec.sealMaterial) {
       const sidecars = await buildContentSidecarsForVersionsWithSuiClient({
         suiClient,
-        packageId,
+        packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
         contentObjectId: rec.contentOnChainId,
         pendingByKindName: [{
           kind: rec.kind,
@@ -755,7 +755,7 @@ export function useSoulContentActions({
         },
       })
 
-      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+      const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
       if (!upload.certifyTxResult) {
         throw new Error('Certify TX result missing — append moveCall was not spliced into the upload PTB')
       }
@@ -794,7 +794,7 @@ export function useSoulContentActions({
 
       const sidecars = await buildContentSidecarsForVersionsWithSuiClient({
         suiClient,
-        packageId,
+        packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
         contentObjectId: event.contentId,
         pendingByKindName: [{
           kind: event.kind,

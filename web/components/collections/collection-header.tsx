@@ -31,7 +31,7 @@ export function CollectionHeader({ collection, actions }: CollectionHeaderProps)
         </div>
 
         <div className="min-w-0">
-          <p className="text-[10px] font-bold text-purple uppercase tracking-[0.1em] mb-1">
+          <p className="text-[10px] font-bold text-action-label uppercase tracking-[0.1em] mb-1">
             Soul Collection
           </p>
           <h1 className="font-display text-2xl font-bold lg:text-3xl">{collection.name}</h1>

@@ -16,10 +16,11 @@
  *   inspect-config — devInspect kind config accessors (no signing)
  *   inspect-access — devInspect paid_access::has_access (no signing)
  *
- * Env (PACKAGE / market / kindRegistry / paymentCoinType bridge to
+ * Env (package routing / market / kindRegistry / paymentCoinType bridge to
  * NEXT_PUBLIC_SOULIDITY_* aliases for the SDK):
- *   PACKAGE_ID                            — Soulidity package
- *   MARKET_CONFIG_ID
+ *   CALLABLE_PACKAGE_ID                   — latest Soulidity transaction target
+ *   ORIGINAL_PACKAGE_ID                   — original Soulidity type/event package
+ *   MARKET_CONFIG_V2_ID
  *   KIOSK_REGISTRY_ID                     — (optional)
  *   KIND_REGISTRY_ID
  *   PAYMENT_COIN_TYPE                     — defaults to manifest.mainnet.paymentCoinType
@@ -38,7 +39,7 @@
  *   GRANTEE_ADDRESS                       — add-access / revoke
  *   EXPIRES_AT_MS                         — add-access (Option<u64>; empty = lifetime)
  *
- *   PLATFORM_FEE_BPS                      — purchase (default 250)
+ *   PLATFORM_FEE_BPS                      — optional assertion against on-chain v2 config
  *   TOTAL_ATOMIC                          — purchase (computed from PRICE_ATOMIC + fee if absent)
  *
  *   CLEANUP_ADDRESSES                     — cleanup (comma-separated 0x…)
@@ -78,6 +79,8 @@ import {
   extractSoulPaidAccessKindDeletedEvent,
   extractSoulPaidAccessKindUpdatedEvent,
   extractSoulPaidAccessRevokedEvent,
+  getMarketConfigV2,
+  getRequiredSoulidityEnv,
   selectCoinObjectIdsForAmountAcrossPages,
 } from '@soulidity/sdk'
 
@@ -105,26 +108,49 @@ function readManifestField(network: Network, key: string): string | undefined {
 }
 
 function bridgeSdkEnv(): {
-  packageId: string
+  callablePackageId: string
+  originalPackageId: string
   marketConfigId: string
   kindRegistryId: string
   paymentCoinType: string
 } {
-  // The SDK builders read NEXT_PUBLIC_SOULIDITY_* env keys (with manifest
-  // fallback). Bridge whichever name the operator used so a `.env.e2e`
-  // shell that exports `PACKAGE_ID=…` works the same as one that uses the
-  // canonical `NEXT_PUBLIC_SOULIDITY_PACKAGE_ID=…`.
-  const pkg =
-    process.env.PACKAGE_ID?.trim() ||
-    process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID?.trim() ||
-    readManifestField(SUI_NETWORK, 'packageId')
-  if (!pkg) throw new Error(`PACKAGE_ID not set and manifest.${SUI_NETWORK}.packageId missing`)
+  // A single PACKAGE_ID is unsafe after an in-place upgrade: using the
+  // original id for calls silently exercises deprecated code, while using the
+  // callable id for event filters misses events whose types retain their
+  // original defining package.
+  if (
+    process.env.PACKAGE_ID?.trim()
+    && !process.env.CALLABLE_PACKAGE_ID?.trim()
+    && !process.env.ORIGINAL_PACKAGE_ID?.trim()
+  ) {
+    throw new Error(
+      'PACKAGE_ID is ambiguous after upgrades; set CALLABLE_PACKAGE_ID and ORIGINAL_PACKAGE_ID',
+    )
+  }
+  const callablePackageId =
+    process.env.CALLABLE_PACKAGE_ID?.trim()
+    || process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID?.trim()
+    || readManifestField(SUI_NETWORK, 'callablePackageId')
+  if (!callablePackageId) {
+    throw new Error(
+      `CALLABLE_PACKAGE_ID not set and manifest.${SUI_NETWORK}.callablePackageId missing`,
+    )
+  }
+  const originalPackageId =
+    process.env.ORIGINAL_PACKAGE_ID?.trim()
+    || process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID?.trim()
+    || readManifestField(SUI_NETWORK, 'originalPackageId')
+  if (!originalPackageId) {
+    throw new Error(
+      `ORIGINAL_PACKAGE_ID not set and manifest.${SUI_NETWORK}.originalPackageId missing`,
+    )
+  }
 
   const market =
-    process.env.MARKET_CONFIG_ID?.trim() ||
-    process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID?.trim() ||
-    readManifestField(SUI_NETWORK, 'marketConfigId')
-  if (!market) throw new Error('MARKET_CONFIG_ID not set and manifest fallback missing')
+    process.env.MARKET_CONFIG_V2_ID?.trim() ||
+    process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID?.trim() ||
+    readManifestField(SUI_NETWORK, 'marketConfigV2Id')
+  if (!market) throw new Error('MARKET_CONFIG_V2_ID not set and manifest fallback missing')
 
   const kindReg =
     process.env.KIND_REGISTRY_ID?.trim() ||
@@ -138,11 +164,18 @@ function bridgeSdkEnv(): {
     readManifestField(SUI_NETWORK, 'paymentCoinType')
   if (!paymentCoinType) throw new Error('PAYMENT_COIN_TYPE not set and manifest fallback missing')
 
-  process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = pkg
-  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID = market
+  process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID = callablePackageId
+  process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID = originalPackageId
+  process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID = market
   process.env.NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID = kindReg
   process.env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE = paymentCoinType
-  return { packageId: pkg, marketConfigId: market, kindRegistryId: kindReg, paymentCoinType }
+  return {
+    callablePackageId,
+    originalPackageId,
+    marketConfigId: market,
+    kindRegistryId: kindReg,
+    paymentCoinType,
+  }
 }
 
 function requireEnv(name: string): string {
@@ -346,7 +379,7 @@ async function setConfig(client: SuiClient) {
     durationMs: parseUintEnv('DURATION_MS', 'optional'),
   })
   const result = await signAndExecute(tx, loadKeypair('OWNER_PRIVATE_KEY'), client, 'set-config')
-  await mirrorPaidAccessTx({ action: 'set-config', packageId: env.packageId, result })
+  await mirrorPaidAccessTx({ action: 'set-config', packageId: env.originalPackageId, result })
 }
 
 async function updateConfig(client: SuiClient) {
@@ -361,7 +394,7 @@ async function updateConfig(client: SuiClient) {
     durationMs: parseUintEnv('DURATION_MS', 'optional'),
   })
   const result = await signAndExecute(tx, loadKeypair('OWNER_PRIVATE_KEY'), client, 'update-config')
-  await mirrorPaidAccessTx({ action: 'update-config', packageId: env.packageId, result })
+  await mirrorPaidAccessTx({ action: 'update-config', packageId: env.originalPackageId, result })
 }
 
 async function deleteConfig(client: SuiClient) {
@@ -372,7 +405,7 @@ async function deleteConfig(client: SuiClient) {
     kind: parseKind(),
   })
   const result = await signAndExecute(tx, loadKeypair('OWNER_PRIVATE_KEY'), client, 'delete-config')
-  await mirrorPaidAccessTx({ action: 'delete-config', packageId: env.packageId, result })
+  await mirrorPaidAccessTx({ action: 'delete-config', packageId: env.originalPackageId, result })
 }
 
 async function addAccess(client: SuiClient) {
@@ -387,7 +420,7 @@ async function addAccess(client: SuiClient) {
     expiresAtMs: parseUintEnv('EXPIRES_AT_MS', 'optional'),
   })
   const result = await signAndExecute(tx, loadKeypair('OWNER_PRIVATE_KEY'), client, 'add-access')
-  await mirrorPaidAccessTx({ action: 'add-access', packageId: env.packageId, result })
+  await mirrorPaidAccessTx({ action: 'add-access', packageId: env.originalPackageId, result })
 }
 
 async function revoke(client: SuiClient) {
@@ -399,7 +432,7 @@ async function revoke(client: SuiClient) {
     kind: parseKind(),
   })
   const result = await signAndExecute(tx, loadKeypair('OWNER_PRIVATE_KEY'), client, 'revoke')
-  await mirrorPaidAccessTx({ action: 'revoke', packageId: env.packageId, result })
+  await mirrorPaidAccessTx({ action: 'revoke', packageId: env.originalPackageId, result })
 }
 
 async function cleanup(client: SuiClient) {
@@ -435,12 +468,33 @@ async function purchase(client: SuiClient) {
   const buyerAddress = normalizeSuiAddress(buyer.toSuiAddress())
   const kind = parseKind()
   const priceAtomic = parseUintEnv('PRICE_ATOMIC') as bigint
-  const platformFeeBps = optionalEnv('PLATFORM_FEE_BPS') ? Number(optionalEnv('PLATFORM_FEE_BPS')) : 250
+  const marketConfig = await getMarketConfigV2(
+    env.marketConfigId,
+    getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+  )
+  if (!marketConfig.primaryEnabled) {
+    throw new Error('Unified v2 primary market is disabled')
+  }
+  const expectedFeeBps = optionalEnv('PLATFORM_FEE_BPS')
+  if (expectedFeeBps && Number(expectedFeeBps) !== marketConfig.platformFeeBps) {
+    throw new Error(
+      `PLATFORM_FEE_BPS=${expectedFeeBps} does not match on-chain v2 fee ${marketConfig.platformFeeBps}`,
+    )
+  }
+  const feeNumerator = priceAtomic * BigInt(marketConfig.platformFeeBps)
+  const platformFeeAtomic = feeNumerator === 0n
+    ? 0n
+    : (feeNumerator + 9_999n) / 10_000n
 
-  // Total = price + platform fee (bps applied to price, rounded down).
-  const totalAtomic =
-    parseUintEnv('TOTAL_ATOMIC', 'optional') ??
-    priceAtomic + (priceAtomic * BigInt(platformFeeBps)) / 10_000n
+  // The on-chain truth is MarketConfigV2; Move rounds non-zero bps fees up.
+  const quotedTotalAtomic = priceAtomic + platformFeeAtomic
+  const explicitTotalAtomic = parseUintEnv('TOTAL_ATOMIC', 'optional')
+  if (explicitTotalAtomic != null && explicitTotalAtomic !== quotedTotalAtomic) {
+    throw new Error(
+      `TOTAL_ATOMIC=${explicitTotalAtomic} does not match on-chain v2 quote ${quotedTotalAtomic}`,
+    )
+  }
+  const totalAtomic = explicitTotalAtomic ?? quotedTotalAtomic
 
   const explicit = optionalEnv('PAYMENT_COIN_OBJECT_IDS')
   let paymentCoinObjectIds: string[] | null = explicit ? explicit.split(',').map((s) => s.trim()) : null
@@ -464,7 +518,7 @@ async function purchase(client: SuiClient) {
     totalAtomic,
   })
   const result = await signAndExecute(tx, buyer, client, 'purchase')
-  await mirrorPaidAccessTx({ action: 'purchase', packageId: env.packageId, result })
+  await mirrorPaidAccessTx({ action: 'purchase', packageId: env.originalPackageId, result })
 }
 
 // ── DevInspect (read-only) ───────────────────────────────────────────────
@@ -546,7 +600,11 @@ async function inspectConfig(client: SuiClient) {
   const paidAccessListId = requireEnv('PAID_ACCESS_LIST_ID')
   const kind = parseKind()
   const sender = optionalEnv('INSPECT_SENDER') || normalizeSuiAddress('0x0')
-  const tx = buildInspectConfigTx({ packageId: env.packageId, paidAccessListObjectId: paidAccessListId, kind })
+  const tx = buildInspectConfigTx({
+    packageId: env.callablePackageId,
+    paidAccessListObjectId: paidAccessListId,
+    kind,
+  })
   const result = await client.devInspectTransactionBlock({ sender, transactionBlock: tx })
   const exists = parseDevInspectBool({ results: [(result.results ?? [])[0]] })
   const price = parseDevInspectU64(result, 1)
@@ -602,7 +660,7 @@ async function inspectAccess(client: SuiClient) {
   const requiredScope = parseUintEnv('REQUIRED_SCOPE') as bigint
   const sender = optionalEnv('INSPECT_SENDER') || granteeAddress
   const tx = buildInspectAccessTx({
-    packageId: env.packageId,
+    packageId: env.callablePackageId,
     paidAccessListObjectId: paidAccessListId,
     stateObjectId: stateId,
     granteeAddress,

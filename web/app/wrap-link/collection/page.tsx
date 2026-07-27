@@ -34,7 +34,7 @@ export default function CollectionSelectPage() {
       <FlowBar steps={['Collection Info', 'Configure', 'Preview', 'Gas', 'Success']} current={0} />
 
       <div className="max-w-[540px] mx-auto px-6 py-8">
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Collection Expand</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Collection Expand</p>
         <h1 className="font-display text-2xl font-bold mb-1">Step 1 — Collection Info</h1>
         <p className="text-muted text-sm mb-6">Provide the NFT contract address and collection name to attach a shared Soul layer.</p>
 

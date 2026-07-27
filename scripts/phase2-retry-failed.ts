@@ -17,8 +17,12 @@ import { decodeEd25519SecretKey } from './lib/keypair'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const m = JSON.parse(readFileSync(resolve(repoRoot, 'packages/soulidity-sdk/src/deployment-manifest.json'), 'utf8'))['mainnet']
 
-process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = m.packageId
-process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID = m.marketConfigId
+if (!m.callablePackageId || !m.originalPackageId) {
+  throw new Error('mainnet manifest is missing explicit callable/original package routing')
+}
+process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID = m.callablePackageId
+process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID = m.originalPackageId
+process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID = m.marketConfigV2Id
 process.env.NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID = m.kioskRegistryId
 process.env.NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID = m.kindRegistryId
 process.env.NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID = m.soulTransferPolicyId

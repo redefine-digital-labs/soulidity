@@ -15,8 +15,13 @@
     "typecheck": "npm run typecheck:root && npm run typecheck:web",
     "build:web:production-env": "CLAWNEWS_LOAD_ENV_LOCAL=false npm --prefix web run build",
     "publish:soulidity": "tsx scripts/publish-soulidity-and-sync.ts",
+    "pause:soulidity-legacy-market": "tsx scripts/retire-soulidity-legacy-market.ts --pause-only",
+    "upgrade:soulidity-mainnet": "tsx scripts/upgrade-soulidity-mainnet.ts",
+    "retire:soulidity-legacy-market": "tsx scripts/retire-soulidity-legacy-market.ts",
     "smoke:soulidity": "tsx scripts/smoke-soulidity.ts",
     "smoke:phase2": "tsx scripts/phase2-smoke.ts",
+    "preflight:animacraft-market-retirement": "tsx scripts/preflight-animacraft-market-retirement.ts",
+    "postflight:animacraft-market-retirement": "tsx scripts/preflight-animacraft-market-retirement.ts",
     "phase2:prepare": "tsx scripts/phase2-mainnet-prepare.ts",
     "phase2:fund": "tsx scripts/phase2-mainnet-fund.ts",
     "collect": "tsx src/collector/run.ts",
@@ -32,7 +37,7 @@
   "dependencies": {
     "@mysten/sui": "^2.16.0",
     "@prisma/adapter-pg": "^7.7.0",
-    "@prisma/client": "^7.7.0",
+    "@prisma/client": "^7.8.0",
     "@soulidity/sdk": "file:./packages/soulidity-sdk",
     "dotenv": "^17.4.2",
     "grammy": "^1.42.0",
@@ -42,7 +47,6 @@
     "p-limit": "^7.3.0",
     "pg": "^8.20.0",
     "posthog-node": "^5.30.6",
-    "prisma": "^7.7.0",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
@@ -53,13 +57,20 @@
     "@types/xml2js": "^0.4.14",
     "jsdom": "^29.0.2",
     "knip": "^6.11.0",
-    "tsx": "^4.19.0",
+    "prisma": "^7.8.0",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.0",
     "vitest": "^4.1.5"
   },
   "overrides": {
-    "@hono/node-server": "1.19.14",
-    "hono": "4.12.14",
-    "vite": "7.3.2"
+    "@hono/node-server": "2.0.12",
+    "esbuild": "0.28.1",
+    "fast-uri": "3.1.4",
+    "form-data": "4.0.6",
+    "hono": "4.12.29",
+    "postcss": "8.5.23",
+    "undici": "7.29.0",
+    "valibot": "1.4.2",
+    "vite": "7.3.6"
   }
 }

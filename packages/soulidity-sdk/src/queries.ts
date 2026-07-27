@@ -8,6 +8,7 @@ import {
 } from './kiosk'
 import type {
   ActiveGrantSlotObject,
+  AnimacraftProvenanceObject,
   ResolvedPersonalKiosk,
   SoulCollectionObject,
   SoulCollectionRightObject,
@@ -19,6 +20,7 @@ import type {
   SoulProvenanceKind,
   SoulStateObject,
   SoulidityMarketConfig,
+  SoulidityMarketConfigV2,
 } from './types'
 
 export { getPersonalKioskCapTypePackageAddress } from './kiosk'
@@ -76,6 +78,14 @@ function isMissingObjectResponse(response: { data?: unknown; error?: { code?: st
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
+}
+
+function readMoveStructFields(value: unknown, fieldName: string): Record<string, unknown> {
+  const record = asRecord(value)
+  if (!record) {
+    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
+  }
+  return asRecord(record.fields) ?? record
 }
 
 export function normalizeSuiValue(value: string): string | null {
@@ -649,18 +659,67 @@ export async function getMarketConfig(configId: string, packageId: string): Prom
   }
 }
 
-function bpsAmount(price: bigint, bps: bigint) {
+export async function getMarketConfigV2(
+  configId: string,
+  packageId: string,
+): Promise<SoulidityMarketConfigV2> {
+  const response = await suiClient.getObject({
+    id: configId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = `${normalizePackageId(packageId)}::market::MarketConfigV2`
+  const { fields, packageId: resolvedPackageId } =
+    expectMoveObject(response, configId, expectedTypePrefix)
+  return {
+    objectId: configId,
+    packageId: resolvedPackageId,
+    legacyConfigId: readObjectId(
+      fields.legacy_config_id,
+      'MarketConfigV2 legacy_config_id',
+    ),
+    feeRecipient: readAddress(
+      fields.fee_recipient,
+      'MarketConfigV2 fee_recipient',
+    ),
+    platformFeeBps: readNumber(
+      fields.platform_fee_bps,
+      'MarketConfigV2 platform_fee_bps',
+    ),
+    primaryEnabled: Boolean(fields.primary_enabled),
+    secondaryEnabled: Boolean(fields.secondary_enabled),
+  }
+}
+
+function ceilBpsAmount(price: bigint, bps: bigint) {
+  const numerator = price * bps
+  return numerator === 0n ? 0n : (numerator + MAX_BPS - 1n) / MAX_BPS
+}
+
+function floorBpsAmount(price: bigint, bps: bigint) {
   return (price * bps) / MAX_BPS
 }
 
-export function quoteSoulPurchase(config: SoulidityMarketConfig, params: {
+type SecondaryMarketQuoteConfig = Pick<SoulidityMarketConfig, 'platformFeeBps'>
+  & Partial<Pick<SoulidityMarketConfigV2, 'secondaryEnabled'>>
+
+function assertSecondaryMarketQuoteEnabled(config: SecondaryMarketQuoteConfig) {
+  if (config.secondaryEnabled === false) {
+    throw new OnChainVerificationError('Secondary market is disabled')
+  }
+}
+
+export function quoteSoulPurchase(config: SecondaryMarketQuoteConfig, params: {
   priceAtomic: bigint
   creatorRoyaltyBps: number
   collectionRoyaltyBps: number
 }) {
-  const platformFee = bpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
-  const creatorRoyalty = bpsAmount(params.priceAtomic, BigInt(params.creatorRoyaltyBps))
-  const collectionRoyalty = bpsAmount(params.priceAtomic, BigInt(params.collectionRoyaltyBps))
+  assertSecondaryMarketQuoteEnabled(config)
+  const platformFee = ceilBpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
+  const creatorRoyalty = ceilBpsAmount(params.priceAtomic, BigInt(params.creatorRoyaltyBps))
+  const collectionRoyalty = ceilBpsAmount(params.priceAtomic, BigInt(params.collectionRoyaltyBps))
   const total = params.priceAtomic + platformFee + creatorRoyalty + collectionRoyalty
   if (total > MAX_U64) {
     throw new OnChainVerificationError('Soul purchase quote exceeds the supported range')
@@ -675,10 +734,11 @@ export function quoteSoulPurchase(config: SoulidityMarketConfig, params: {
   }
 }
 
-export function quoteCollectionPurchase(config: SoulidityMarketConfig, params: {
+export function quoteCollectionPurchase(config: SecondaryMarketQuoteConfig, params: {
   priceAtomic: bigint
 }) {
-  const platformFee = bpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
+  assertSecondaryMarketQuoteEnabled(config)
+  const platformFee = ceilBpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
   const total = params.priceAtomic + platformFee
   if (total > MAX_U64) {
     throw new OnChainVerificationError('Collection purchase quote exceeds the supported range')
@@ -691,10 +751,56 @@ export function quoteCollectionPurchase(config: SoulidityMarketConfig, params: {
   }
 }
 
+export function quoteAnimacraftSoulPurchase(config: SoulidityMarketConfigV2, params: {
+  priceAtomic: bigint
+  makerRoyaltyBps: number
+  collectionRoyaltyBps: number
+}) {
+  if (!config.secondaryEnabled) {
+    throw new OnChainVerificationError('Animacraft secondary market is disabled')
+  }
+  const combinedBps = config.platformFeeBps + params.makerRoyaltyBps + params.collectionRoyaltyBps
+  if (params.priceAtomic <= 0n) {
+    throw new OnChainVerificationError('Animacraft Soul listing price must be positive')
+  }
+  if (
+    !Number.isInteger(params.makerRoyaltyBps)
+    || !Number.isInteger(params.collectionRoyaltyBps)
+    || params.makerRoyaltyBps < 0
+    || params.collectionRoyaltyBps < 0
+    || combinedBps > Number(MAX_BPS)
+  ) {
+    throw new OnChainVerificationError('Animacraft Soul purchase fee policy is invalid')
+  }
+
+  const platformFee = ceilBpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
+  const makerRoyalty = floorBpsAmount(params.priceAtomic, BigInt(params.makerRoyaltyBps))
+  if (params.makerRoyaltyBps > 0 && makerRoyalty === 0n) {
+    throw new OnChainVerificationError('Animacraft Maker royalty rounds to zero at this listing price')
+  }
+  const collectionRoyalty = ceilBpsAmount(
+    params.priceAtomic,
+    BigInt(params.collectionRoyaltyBps),
+  )
+  const total = params.priceAtomic + platformFee + makerRoyalty + collectionRoyalty
+  if (total > MAX_U64) {
+    throw new OnChainVerificationError('Animacraft Soul purchase quote exceeds the supported range')
+  }
+
+  return {
+    platformFeeAtomic: platformFee.toString(),
+    priceAtomic: params.priceAtomic.toString(),
+    makerRoyaltyAtomic: makerRoyalty.toString(),
+    collectionRoyaltyAtomic: collectionRoyalty.toString(),
+    totalAtomic: total.toString(),
+  }
+}
+
 function readSoulProvenanceKind(value: unknown, fieldName: string): SoulProvenanceKind {
   const rawValue = readNumber(value, fieldName)
   if (rawValue === 1) return 'imported'
   if (rawValue === 2) return 'personal-join'
+  if (rawValue === 3) return 'animacraft'
   return 'native'
 }
 
@@ -771,6 +877,129 @@ export async function getSoulStateObject(
     collectionId: readNestedObjectId(fields.collection_id, 'SoulState collection_id'),
     isListed: Boolean(fields.is_listed),
   }
+}
+
+export async function getAnimacraftProvenanceId(
+  stateObjectId: string,
+): Promise<string | null> {
+  try {
+    const response = await suiClient.getDynamicFieldObject({
+      parentId: stateObjectId,
+      name: {
+        type: 'u8',
+        value: 1,
+      },
+    })
+    if (!response.data) {
+      const message = JSON.stringify(response.error ?? '')
+      if (/not.?found|not.?exist|dynamic field/i.test(message)) return null
+      throw new OnChainVerificationError('Animacraft provenance binding is missing on chain')
+    }
+    const content = response.data.content
+    if (!content || !('fields' in content)) {
+      throw new OnChainVerificationError('Animacraft provenance binding is malformed on chain')
+    }
+    const fields = readMoveStructFields(content.fields, 'Animacraft provenance dynamic field')
+    return readObjectId(fields.value, 'Animacraft provenance id')
+  } catch (error) {
+    if (isDynamicFieldNotFound(error)) return null
+    throw error
+  }
+}
+
+export function getAnimacraftProvenanceStructType(definingPackageId: string): string {
+  return `${normalizePackageId(definingPackageId)}::animacraft_provenance::AnimacraftProvenance`
+}
+
+export async function getAnimacraftProvenanceObject(
+  objectId: string,
+  definingPackageId: string,
+): Promise<AnimacraftProvenanceObject> {
+  const response = await suiClient.getObject({
+    id: objectId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = getAnimacraftProvenanceStructType(definingPackageId)
+  const { fields, packageId: resolvedPackageId } = expectMoveObject(
+    response,
+    objectId,
+    expectedTypePrefix,
+  )
+  const royaltyPolicy = readMoveStructFields(
+    fields.royalty_policy,
+    'AnimacraftProvenance royalty_policy',
+  )
+
+  return {
+    objectId,
+    packageId: resolvedPackageId,
+    soulId: readObjectId(fields.soul_id, 'AnimacraftProvenance soul_id'),
+    animacraftVersion: readNumber(
+      fields.animacraft_version,
+      'AnimacraftProvenance animacraft_version',
+    ),
+    makerId: readObjectId(fields.maker_id, 'AnimacraftProvenance maker_id'),
+    makerTreasuryId: readObjectId(
+      fields.maker_treasury_id,
+      'AnimacraftProvenance maker_treasury_id',
+    ),
+    makerCreatorAddress: readAddress(
+      fields.maker_creator,
+      'AnimacraftProvenance maker_creator',
+    ),
+    payerAddress: readAddress(fields.payer, 'AnimacraftProvenance payer'),
+    profileJsonBlobId: readString(
+      fields.profile_json_blob_id,
+      'AnimacraftProvenance profile_json_blob_id',
+    ),
+    imageBlobId: readString(fields.image_blob_id, 'AnimacraftProvenance image_blob_id'),
+    imageUrl: readString(fields.image_url, 'AnimacraftProvenance image_url'),
+    makerRoyaltyBps: readNumber(
+      royaltyPolicy.royalty_bps,
+      'AnimacraftProvenance royalty_policy.royalty_bps',
+    ),
+    mintPaymentCoinType: readString(
+      fields.mint_payment_coin_type,
+      'AnimacraftProvenance mint_payment_coin_type',
+    ),
+    mintPriceAtomic: readBigInt(
+      fields.mint_price_atomic,
+      'AnimacraftProvenance mint_price_atomic',
+    ).toString(),
+    protocolFeeConfigId: readObjectId(
+      fields.protocol_fee_config_id,
+      'AnimacraftProvenance protocol_fee_config_id',
+    ),
+    protocolTreasuryId: readObjectId(
+      fields.protocol_treasury_id,
+      'AnimacraftProvenance protocol_treasury_id',
+    ),
+    primaryProtocolFeeBps: readNumber(
+      fields.primary_protocol_fee_bps,
+      'AnimacraftProvenance primary_protocol_fee_bps',
+    ),
+    primaryProtocolFeeAtomic: readBigInt(
+      fields.primary_protocol_fee_atomic,
+      'AnimacraftProvenance primary_protocol_fee_atomic',
+    ).toString(),
+    authorizedAtMs: readBigInt(
+      fields.authorized_at_ms,
+      'AnimacraftProvenance authorized_at_ms',
+    ).toString(),
+  }
+}
+
+export async function getAnimacraftProvenanceForState(
+  stateObjectId: string,
+  definingPackageId: string,
+): Promise<AnimacraftProvenanceObject | null> {
+  const provenanceId = await getAnimacraftProvenanceId(stateObjectId)
+  return provenanceId
+    ? getAnimacraftProvenanceObject(provenanceId, definingPackageId)
+    : null
 }
 
 function readVectorU8AsUtf8(value: unknown, fieldName: string): string {
@@ -1016,7 +1245,9 @@ function readRegisteredPersonalKiosk(value: unknown): { kioskId: string; kioskCa
 }
 
 function isDynamicFieldNotFound(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : ''
+  const message = error instanceof Error
+    ? error.message.toLowerCase()
+    : JSON.stringify(error ?? '').toLowerCase()
   return (message.includes('dynamic field') && message.includes('not found'))
     || message.includes('no dynamic field found')
 }

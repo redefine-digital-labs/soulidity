@@ -117,7 +117,7 @@ export default function PreviewSignPage() {
           {isRecoveryMode ? (
             <div className="rounded-2xl border border-purple/40 bg-card2/55 p-5 space-y-4">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-purple">Pending Recovery</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-action-label">Pending Recovery</p>
                 <h3 className="mt-1 text-lg font-bold text-foreground">Resume sync for the already-minted Soul</h3>
                 <p className="mt-2 text-sm text-muted">
                   This wrap transaction already succeeded on-chain. Retrying here will only resume the mirror step and will not mint again.
@@ -137,7 +137,7 @@ export default function PreviewSignPage() {
                 {ctx.selectedNft!.imageUrl ? (
                   <Image src={ctx.selectedNft!.imageUrl} alt={ctx.selectedNft!.name} width={64} height={64} unoptimized className="h-16 w-16 shrink-0 rounded-xl border border-purple/30 object-cover" />
                 ) : (
-                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-purple/20 text-2xl font-bold text-purple">
+                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-purple/20 text-2xl font-bold text-action-label">
                     {ctx.selectedNft!.name.slice(0, 2).toUpperCase()}
                   </span>
                 )}

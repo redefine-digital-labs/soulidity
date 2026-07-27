@@ -13,7 +13,7 @@ describe('wrap Personal Join batched Walrus contract', () => {
     expect(source).toContain('attachBeforeMint?: (tx: Transaction) => void | Promise<void>')
 
     const attachIdx = source.indexOf('await params.attachBeforeMint(tx)')
-    const mintIdx = source.indexOf('target: `${packageId}::market::mint_joined_in_personal_kiosk`')
+    const mintIdx = source.indexOf('target: `${packageId}::market::mint_joined_in_personal_kiosk_v2`')
 
     expect(attachIdx).toBeGreaterThanOrEqual(0)
     expect(mintIdx).toBeGreaterThan(attachIdx)

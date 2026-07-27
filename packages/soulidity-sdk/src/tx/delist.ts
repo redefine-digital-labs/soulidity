@@ -7,7 +7,7 @@ export function buildDelistSoulTx(params: {
   stateObjectId: string
   listingObjectId: string
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::market::cancel_soul_listing`,
@@ -26,7 +26,7 @@ export function buildDelistCollectionTx(params: {
   currentKioskCapOnChainId: string
   listingObjectId: string
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::market::cancel_collection_listing`,
@@ -42,7 +42,7 @@ export function buildDelistCollectionTx(params: {
 export function buildDeleteSoulListingTx(params: {
   listingObjectId: string
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::market::delete_soul_listing`,
@@ -56,7 +56,7 @@ export function buildDeleteSoulListingTx(params: {
 export function buildDeleteCollectionListingTx(params: {
   listingObjectId: string
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::market::delete_collection_listing`,
@@ -66,4 +66,3 @@ export function buildDeleteCollectionListingTx(params: {
   })
   return tx
 }
-

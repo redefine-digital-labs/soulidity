@@ -1,7 +1,7 @@
 import './lib/dotenv'
 
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,12 +12,23 @@ import { normalizeSuiAddress } from '@mysten/sui/utils'
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 
 import { loadKeypairFromEnv } from './lib/keypair'
+import {
+  atomicWriteJson,
+  atomicWriteText,
+} from './lib/soulidity-mainnet-migration'
 
 // ── Types ──────────────────────────────────────────────────
 
 interface SoulidityDeployment {
+  callablePackageId: string
+  originalPackageId: string
+  animacraftProvenancePackageId: string
+  /** @deprecated Compatibility alias for the original package id. */
   packageId: string
   marketConfigId: string
+  marketConfigV2PackageId?: string
+  marketConfigV2Id?: string
+  marketAdminCapV2Id?: string
   kioskRegistryId: string
   kindRegistryId?: string
   soulTransferPolicyId: string
@@ -76,10 +87,19 @@ const moveRoot = join(repoRoot, 'move')
 const sourcePackageDir = join(repoRoot, 'move', 'soulidity')
 const sourcePublishedTomlPath = join(sourcePackageDir, 'Published.toml')
 const manifestPath = join(repoRoot, 'packages', 'soulidity-sdk', 'src', 'deployment-manifest.json')
+const deploymentHistoryPath = join(
+  repoRoot,
+  'packages',
+  'soulidity-sdk',
+  'src',
+  'deployment-manifest-history.json',
+)
 
 const DEFAULT_PUBLISH_GAS_BUDGET = 1_500_000_000n
 const DEFAULT_TRANSFER_GAS_BUDGET = 200_000_000n
 const MIN_DEPLOYER_BALANCE_MIST = 1_500_000_000n // 1.5 SUI
+const MAINNET_FRESH_PUBLISH_CONFIRMATION =
+  'CREATE_NEW_SOULIDITY_MAINNET_PACKAGE_FAMILY'
 
 const EXIT_PUBLISH_FAILED = 1
 const EXIT_TRANSFER_FAILED = 2
@@ -97,7 +117,7 @@ function readJsonFile<T>(path: string): T {
 }
 
 function writeJsonFile(path: string, value: unknown) {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  atomicWriteJson(path, value)
 }
 
 function requireString(value: unknown, fieldName: string): string {
@@ -165,6 +185,8 @@ interface ParsedArgs {
   paymentCoinType: string | null
   transferCapsTo: string | null
   privKeyEnv: string
+  breakGlassAllowMainnetFreshPublish: boolean
+  breakGlassConfirm: string | null
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -178,6 +200,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     paymentCoinType: null,
     transferCapsTo: null,
     privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
+    breakGlassAllowMainnetFreshPublish: false,
+    breakGlassConfirm: null,
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -188,10 +212,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
     if (arg === '--resume-cap-transfer-from-manifest') { result.resumeCapTransferFromManifest = true; continue }
     if (arg === '--use-env-key') { result.useEnvKey = true; continue }
     if (arg === '--mainnet-e2e') { result.mainnetE2e = true; continue }
+    if (arg === '--break-glass-allow-mainnet-fresh-publish') {
+      result.breakGlassAllowMainnetFreshPublish = true
+      continue
+    }
 
     const valueFor = (flag: string): string | null | undefined => {
       if (arg === flag) {
-        const v = argv[i + 1] ?? null
+        const v = argv[i + 1]
+        if (!v || v.startsWith('--')) {
+          throw new Error(`${flag} requires a value`)
+        }
         i += 1
         return v
       }
@@ -206,6 +237,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     if ((v = valueFor('--payment-coin-type')) !== undefined) { result.paymentCoinType = v; continue }
     if ((v = valueFor('--transfer-caps-to')) !== undefined) { result.transferCapsTo = v; continue }
     if ((v = valueFor('--mainnet-priv-key-env')) !== undefined) { result.privKeyEnv = v ?? result.privKeyEnv; continue }
+    if ((v = valueFor('--break-glass-confirm')) !== undefined) { result.breakGlassConfirm = v; continue }
+    throw new Error(`Unknown argument: ${arg}`)
   }
 
   return result
@@ -260,7 +293,7 @@ export function writePublishedTomlSection(path: string, env: string, section: Pu
   sections[env] = formatPublishedSection(env, section)
   const ordered = Object.keys(sections).sort().map((k) => sections[k])
   const content = `${PUBLISHED_TOML_HEADER}\n${ordered.join('\n\n')}\n`
-  writeFileSync(path, content, 'utf8')
+  atomicWriteText(path, content)
 }
 
 function copyPublishedTomlSectionFromTemp(tempPath: string, sourcePath: string, env: string) {
@@ -273,7 +306,67 @@ function copyPublishedTomlSectionFromTemp(tempPath: string, sourcePath: string, 
   sourceSections[env] = tempSectionText
   const ordered = Object.keys(sourceSections).sort().map((k) => sourceSections[k])
   const content = `${PUBLISHED_TOML_HEADER}\n${ordered.join('\n\n')}\n`
-  writeFileSync(sourcePath, content, 'utf8')
+  atomicWriteText(sourcePath, content)
+}
+
+export function hasExistingDeployment(
+  deployment: Partial<SoulidityDeployment> | null | undefined,
+): boolean {
+  return Boolean(
+    deployment?.originalPackageId?.trim()
+      || deployment?.callablePackageId?.trim()
+      || deployment?.packageId?.trim(),
+  )
+}
+
+export function assertMainnetFreshPublishAllowed(
+  network: string,
+  args: Pick<
+    ParsedArgs,
+    'breakGlassAllowMainnetFreshPublish' | 'breakGlassConfirm'
+  >,
+  previousDeployment: Partial<SoulidityDeployment> | null | undefined,
+): void {
+  if (network !== 'mainnet' || !hasExistingDeployment(previousDeployment)) return
+  if (!args.breakGlassAllowMainnetFreshPublish) {
+    throw new Error(
+      'Pre-flight: mainnet already has a Soulidity package family. Fresh publish is disabled; '
+        + 'use npm run upgrade:soulidity-mainnet instead. The break-glass path is only for an '
+        + 'intentional new package family.',
+    )
+  }
+  if (args.breakGlassConfirm !== MAINNET_FRESH_PUBLISH_CONFIRMATION) {
+    throw new Error(
+      'Pre-flight: break-glass fresh publish requires '
+        + `--break-glass-confirm=${MAINNET_FRESH_PUBLISH_CONFIRMATION}`,
+    )
+  }
+}
+
+function archiveDeploymentBeforeOverwrite(
+  network: string,
+  deployment: SoulidityDeployment,
+): void {
+  let history: Array<{
+    archivedAt: string
+    network: string
+    reason: string
+    deployment: SoulidityDeployment
+  }> = []
+  if (existsSync(deploymentHistoryPath)) {
+    const parsed = readJsonFile<unknown>(deploymentHistoryPath)
+    if (!Array.isArray(parsed)) {
+      throw new Error(`${deploymentHistoryPath} must contain a JSON array`)
+    }
+    history = parsed as typeof history
+  }
+  history.push({
+    archivedAt: new Date().toISOString(),
+    network,
+    reason: 'break-glass fresh publish before deployment-manifest overwrite',
+    deployment,
+  })
+  atomicWriteJson(deploymentHistoryPath, history)
 }
 
 // ── Deployment extraction ──────────────────────────────────
@@ -321,6 +414,9 @@ export function extractDeploymentFromPublishResult(
   const publishTxDigest = result.digest?.trim() || result.effects?.transactionDigest?.trim()
 
   return {
+    callablePackageId: packageId,
+    originalPackageId: packageId,
+    animacraftProvenancePackageId: packageId,
     packageId,
     marketConfigId,
     kioskRegistryId,
@@ -479,6 +575,19 @@ function runCliPublishFlow(args: ParsedArgs) {
 
   const manifest = readJsonFile<SoulidityDeploymentManifest>(manifestPath)
   const previousDeployment = manifest[network]
+  try {
+    assertMainnetFreshPublishAllowed(network, args, previousDeployment)
+  } catch (error) {
+    exitWithError(EXIT_PREFLIGHT_FAILED, (error as Error).message)
+  }
+  if (network === 'mainnet'
+    && hasExistingDeployment(previousDeployment)
+    && !args.dryRun) {
+    archiveDeploymentBeforeOverwrite(network, previousDeployment)
+    console.warn(
+      `BREAK_GLASS_MAINNET_FRESH_PUBLISH: preserved the prior deployment in ${deploymentHistoryPath}`,
+    )
+  }
 
   const tempPackageDir = mkdtempSync(join(moveRoot, '.soulidity-publish-'))
   try {
@@ -527,16 +636,8 @@ function runCliPublishFlow(args: ParsedArgs) {
 // ── Mainnet TS SDK flow ────────────────────────────────────
 
 async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testnet') {
-  // Pre-flight 1: priv key
-  let keypair: Ed25519Keypair
-  try {
-    keypair = loadKeypairFromEnv(args.privKeyEnv)
-  } catch (e) {
-    exitWithError(EXIT_PREFLIGHT_FAILED, `Pre-flight: ${(e as Error).message}`)
-  }
-  const deployerAddr = keypair.toSuiAddress()
-
-  // Pre-flight 2: required flags for mainnet
+  // Pre-flight 1: validate intent and immutable source records before touching
+  // private-key material.
   if (args.mainnetE2e && args.transferCapsTo) {
     exitWithError(
       EXIT_PREFLIGHT_FAILED,
@@ -562,15 +663,38 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
 
   const manifest = readJsonFile<SoulidityDeploymentManifest>(manifestPath)
   const previousDeployment = manifest[network]
+  try {
+    assertMainnetFreshPublishAllowed(network, args, previousDeployment)
+  } catch (error) {
+    exitWithError(EXIT_PREFLIGHT_FAILED, (error as Error).message)
+  }
   if (!args.paymentCoinType && !previousDeployment?.paymentCoinType) {
     exitWithError(EXIT_PREFLIGHT_FAILED, `Pre-flight: --payment-coin-type required (or seed manifest.${network}.paymentCoinType first)`)
   }
 
-  // Pre-flight 3: balance
+  // Pre-flight 2: bind the RPC to the requested chain, even though the SDK URL
+  // is network-specific. This is a final defense against endpoint drift.
   const client = new SuiJsonRpcClient({
     url: getJsonRpcFullnodeUrl(network),
     network,
   })
+  const chainIdentifier = (await client.getChainIdentifier()).trim().toLowerCase()
+  if (network === 'mainnet' && chainIdentifier !== '35834a8a') {
+    exitWithError(
+      EXIT_PREFLIGHT_FAILED,
+      `Pre-flight: RPC chain ${chainIdentifier} is not Sui mainnet 35834a8a`,
+    )
+  }
+
+  // Pre-flight 3: signer and balance. Dry-runs need a real sender/gas coin but
+  // never call a signing API.
+  let keypair: Ed25519Keypair
+  try {
+    keypair = loadKeypairFromEnv(args.privKeyEnv)
+  } catch (e) {
+    exitWithError(EXIT_PREFLIGHT_FAILED, `Pre-flight: ${(e as Error).message}`)
+  }
+  const deployerAddr = keypair.toSuiAddress()
   const balance = await client.getBalance({ owner: deployerAddr })
   const totalBalance = BigInt(balance.totalBalance)
   if (totalBalance < MIN_DEPLOYER_BALANCE_MIST) {
@@ -618,12 +742,17 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
     publishTx.setSender(deployerAddr)
     publishTx.setGasBudget(gasBudget)
 
+    // devInspect doesn't support `publish`; every mainnet/testnet SDK publish
+    // path therefore simulates the exact transaction before any signature.
+    const txBytes = await publishTx.build({ client })
+    const dryRun = await client.dryRunTransactionBlock({ transactionBlock: txBytes })
+    if (dryRun.effects?.status?.status !== 'success') {
+      exitWithError(
+        EXIT_PREFLIGHT_FAILED,
+        `Pre-flight: publish dry-run failed: ${JSON.stringify(dryRun.effects?.status)}`,
+      )
+    }
     if (args.dryRun) {
-      // devInspect doesn't support `publish`; use dryRunTransactionBlock,
-      // which simulates a real signed TX (including publish dispatch and
-      // verifier) without committing on-chain.
-      const txBytes = await publishTx.build({ client })
-      const dryRun = await client.dryRunTransactionBlock({ transactionBlock: txBytes })
       console.log(JSON.stringify({
         network,
         dryRun: true,
@@ -658,6 +787,13 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
       previousDeployment,
       args.paymentCoinType,
     )
+
+    if (network === 'mainnet' && hasExistingDeployment(previousDeployment)) {
+      archiveDeploymentBeforeOverwrite(network, previousDeployment)
+      console.warn(
+        `BREAK_GLASS_MAINNET_FRESH_PUBLISH: preserved the prior deployment in ${deploymentHistoryPath}`,
+      )
+    }
 
     // Persist publish results immediately
     manifest[network] = deployment

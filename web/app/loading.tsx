@@ -3,7 +3,7 @@ export default function Loading() {
     <div className="min-h-[calc(100vh-56px)] flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
         <svg
-          className="w-8 h-8 text-purple animate-spin"
+          className="w-8 h-8 text-action-label animate-spin"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

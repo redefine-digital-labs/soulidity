@@ -9,7 +9,7 @@ import {
   toSoulCollectionDetail,
 } from '@/lib/soulidity/repository'
 import { quoteCollectionPurchase } from '@soulidity/sdk'
-import { getCachedMarketConfig } from '@soulidity/sdk'
+import { getMarketConfigV2 } from '@soulidity/sdk'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,9 +74,9 @@ export async function GET(
 
   const quote = collection.listingStatus === 'listed' && collection.listedPriceAtomic != null
     ? quoteCollectionPurchase(
-        await getCachedMarketConfig(
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+        await getMarketConfigV2(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
         ),
         { priceAtomic: BigInt(collection.listedPriceAtomic.toString()) },
       )

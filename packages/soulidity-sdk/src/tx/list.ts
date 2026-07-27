@@ -15,18 +15,20 @@ export function buildListSoulTx(params: {
   stateObjectId: string
   priceAtomic: bigint
   collectionObjectId?: string | null
+  animacraftProvenanceObjectId?: string | null
 }) {
   if (params.priceAtomic <= 0n) {
     throw new Error('priceAtomic must be positive')
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const isAnimacraft = Boolean(params.animacraftProvenanceObjectId)
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -34,30 +36,60 @@ export function buildListSoulTx(params: {
     ],
   })
 
-  const listing = params.collectionObjectId
-    ? tx.moveCall({
-        target: `${packageId}::market::list_soul_fixed_price_with_collection`,
-        arguments: [
-          tx.object(marketConfigId),
-          tx.object(kioskRegistryId),
-          tx.object(params.collectionObjectId),
-          tx.object(params.currentKioskId),
-          tx.object(params.currentKioskCapOnChainId),
-          tx.object(params.stateObjectId),
-          tx.pure.u64(params.priceAtomic),
-        ],
-      })
-    : tx.moveCall({
-        target: `${packageId}::market::list_soul_fixed_price`,
-        arguments: [
-          tx.object(marketConfigId),
-          tx.object(kioskRegistryId),
-          tx.object(params.currentKioskId),
-          tx.object(params.currentKioskCapOnChainId),
-          tx.object(params.stateObjectId),
-          tx.pure.u64(params.priceAtomic),
-        ],
-      })
+  let listing: ReturnType<Transaction['moveCall']>
+  if (params.animacraftProvenanceObjectId) {
+    listing = params.collectionObjectId
+      ? tx.moveCall({
+          target: `${packageId}::market::list_animacraft_soul_fixed_price_with_collection_v2`,
+          arguments: [
+            tx.object(marketConfigId),
+            tx.object(kioskRegistryId),
+            tx.object(params.animacraftProvenanceObjectId),
+            tx.object(params.collectionObjectId),
+            tx.object(params.currentKioskId),
+            tx.object(params.currentKioskCapOnChainId),
+            tx.object(params.stateObjectId),
+            tx.pure.u64(params.priceAtomic),
+          ],
+        })
+      : tx.moveCall({
+          target: `${packageId}::market::list_animacraft_soul_fixed_price_v2`,
+          arguments: [
+            tx.object(marketConfigId),
+            tx.object(kioskRegistryId),
+            tx.object(params.animacraftProvenanceObjectId),
+            tx.object(params.currentKioskId),
+            tx.object(params.currentKioskCapOnChainId),
+            tx.object(params.stateObjectId),
+            tx.pure.u64(params.priceAtomic),
+          ],
+        })
+  } else {
+    listing = params.collectionObjectId
+      ? tx.moveCall({
+          target: `${packageId}::market::list_soul_fixed_price_with_collection_v2`,
+          arguments: [
+            tx.object(marketConfigId),
+            tx.object(kioskRegistryId),
+            tx.object(params.collectionObjectId),
+            tx.object(params.currentKioskId),
+            tx.object(params.currentKioskCapOnChainId),
+            tx.object(params.stateObjectId),
+            tx.pure.u64(params.priceAtomic),
+          ],
+        })
+      : tx.moveCall({
+          target: `${packageId}::market::list_soul_fixed_price_v2`,
+          arguments: [
+            tx.object(marketConfigId),
+            tx.object(kioskRegistryId),
+            tx.object(params.currentKioskId),
+            tx.object(params.currentKioskCapOnChainId),
+            tx.object(params.stateObjectId),
+            tx.pure.u64(params.priceAtomic),
+          ],
+        })
+  }
 
   tx.moveCall({
     target: `${packageId}::market::finalize_soul_listing`,
@@ -83,13 +115,13 @@ export function buildListCollectionTx(params: {
     throw new Error('priceAtomic must be positive')
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -97,7 +129,7 @@ export function buildListCollectionTx(params: {
     ],
   })
   const listing = tx.moveCall({
-    target: `${packageId}::market::list_collection_right_fixed_price`,
+    target: `${packageId}::market::list_collection_right_fixed_price_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

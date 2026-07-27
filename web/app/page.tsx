@@ -25,9 +25,9 @@ export const metadata: Metadata = {
 }
 
 const stats = [
-  { value: '2,418', label: 'Souls on-chain', color: 'text-purple' },
-  { value: '1.24M USDC', label: 'Total volume', color: 'text-teal' },
-  { value: '847', label: 'Active creators', color: 'text-gold' },
+  { value: '2,418', label: 'Souls on-chain', color: 'text-action-label' },
+  { value: '1.24M USDC', label: 'Total volume', color: 'text-tech-text' },
+  { value: '847', label: 'Active creators', color: 'text-value-text' },
   { value: '312', label: 'SoulGrants active', color: 'text-foreground' },
 ]
 
@@ -94,7 +94,7 @@ export default function LandingPage() {
       />
 
       <section className="mx-auto flex min-h-[calc(100vh-56px)] max-w-[1100px] flex-col items-center justify-center px-4 pb-16 pt-16 text-center sm:px-6 sm:pb-24 sm:pt-20 lg:px-8">
-        <p className="mb-5 text-[11px] font-bold uppercase tracking-[0.24em] text-teal sm:mb-6">
+        <p className="mb-5 text-[11px] font-bold uppercase tracking-[0.24em] text-tech-text sm:mb-6">
           Built on Sui · Powered by Walrus &amp; Seal
         </p>
 
@@ -150,7 +150,7 @@ export default function LandingPage() {
                     →
                   </span>
                 )}
-                <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.1em] text-purple">
+                <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.1em] text-action-label">
                   {step.num}
                 </div>
                 <div className="mb-2.5 text-[28px]">{step.icon}</div>

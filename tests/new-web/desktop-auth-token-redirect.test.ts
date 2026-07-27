@@ -36,7 +36,7 @@ describe('verifyDesktopAccessToken regression: never reads desktop_profiles', ()
       agentAddress: '0xagent',
       agentMemberId: 'member-9',
       desktopAccessTokenHash: hash,
-      desktopAccessTokenIssuedAt: new Date('2026-04-12T10:00:00Z'),
+      desktopAccessTokenIssuedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
     })
 
     const result = await verifyDesktopAccessToken(token)

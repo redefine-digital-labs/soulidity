@@ -12,7 +12,7 @@ const SECOND_KIOSK_ID = `0x${'8'.repeat(64)}`
 const SECOND_CAP_ID = `0x${'9'.repeat(64)}`
 const LOWEST_KIOSK_ID = `0x${'0'.repeat(63)}a`
 
-const mockedGetMarketConfig = vi.hoisted(() => vi.fn())
+const mockedGetMarketConfigV2 = vi.hoisted(() => vi.fn())
 const mockedGetRegisteredPersonalKiosk = vi.hoisted(() => vi.fn())
 const mockedListOwnedPersonalKioskCaps = vi.hoisted(() => vi.fn())
 const mockedFilterExistingPersonalKiosks = vi.hoisted(() => vi.fn())
@@ -40,15 +40,17 @@ const mockedSameSuiValue = vi.hoisted(
 
 vi.mock('@soulidity/sdk/env', () => ({
   getRequiredSoulidityEnv: vi.fn((key: string) => {
-    if (key === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID') return MARKET_CONFIG_ID
-    if (key === 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID') return MARKET_PACKAGE_ID
+    if (key === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID') return MARKET_CONFIG_ID
+    if (key === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID') return MARKET_PACKAGE_ID
+    if (key === 'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID') return MARKET_PACKAGE_ID
+    if (key === 'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID') return MARKET_PACKAGE_ID
     if (key === 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID') return KIOSK_REGISTRY_ID
     throw new Error(`Unexpected env key: ${key}`)
   }),
 }))
 
 vi.mock('@soulidity/sdk/queries', () => ({
-  getMarketConfig: mockedGetMarketConfig,
+  getMarketConfigV2: mockedGetMarketConfigV2,
   getRegisteredPersonalKiosk: mockedGetRegisteredPersonalKiosk,
   listOwnedPersonalKioskCaps: mockedListOwnedPersonalKioskCaps,
   filterExistingPersonalKiosks: mockedFilterExistingPersonalKiosks,
@@ -59,7 +61,7 @@ vi.mock('@soulidity/sdk/queries', () => ({
 describe('web personal kiosk resolution', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    mockedGetMarketConfig.mockResolvedValue({
+    mockedGetMarketConfigV2.mockResolvedValue({
       objectId: MARKET_CONFIG_ID,
       packageId: MARKET_PACKAGE_ID,
     })

@@ -27,8 +27,8 @@ interface PaidAccessKindRoots extends PaidAccessRoots {
 
 function loadPaidAccessEnv() {
   return {
-    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
-    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
     kindRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'),
     paymentCoinType: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE'),
   }
@@ -54,7 +54,7 @@ export function buildConfigurePaidAccessKindTx(
   const env = loadPaidAccessEnv()
   const tx = new Transaction()
   tx.moveCall({
-    target: `${env.packageId}::market::configure_paid_access_kind`,
+    target: `${env.packageId}::market::configure_paid_access_kind_v2`,
     arguments: [
       tx.object(env.marketConfigId),
       tx.object(params.kindRegistryObjectId),
@@ -75,7 +75,7 @@ export function buildUpdatePaidAccessKindTx(params: UpdatePaidAccessKindParams):
   const env = loadPaidAccessEnv()
   const tx = new Transaction()
   tx.moveCall({
-    target: `${env.packageId}::market::update_paid_access_kind`,
+    target: `${env.packageId}::market::update_paid_access_kind_v2`,
     arguments: [
       tx.object(env.marketConfigId),
       tx.object(params.kindRegistryObjectId),
@@ -98,7 +98,7 @@ export function buildDeletePaidAccessKindTx(params: DeletePaidAccessKindParams):
   const env = loadPaidAccessEnv()
   const tx = new Transaction()
   tx.moveCall({
-    target: `${env.packageId}::market::delete_paid_access_kind`,
+    target: `${env.packageId}::market::delete_paid_access_kind_v2`,
     arguments: [
       tx.object(env.marketConfigId),
       tx.object(params.paidAccessListObjectId),
@@ -151,7 +151,7 @@ export function buildPurchasePaidAccessTx(params: PurchasePaidAccessParams): Tra
   const tx = new Transaction()
   const payment = buildPaymentCoin(tx, params, env.paymentCoinType)
   tx.moveCall({
-    target: `${env.packageId}::market::purchase_paid_access`,
+    target: `${env.packageId}::market::purchase_paid_access_v2`,
     arguments: [
       tx.object(env.marketConfigId),
       tx.object(params.paidAccessListObjectId),

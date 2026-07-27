@@ -68,7 +68,7 @@ export async function GET(
     return NextResponse.json({ error: 'Content version not found' }, { status: 404 })
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const soulRef = {
     onChainId: soul.onChainId,
     stateOnChainId: soul.stateOnChainId,

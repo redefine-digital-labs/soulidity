@@ -62,8 +62,8 @@ interface PublishEnv {
 
 function loadPublishEnv(): PublishEnv {
   return {
-    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
-    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'),
+    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
     kindRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'),
     kioskRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'),
     transferPolicyId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID'),
@@ -91,7 +91,7 @@ function appendMintNativeMoveCall(
     initialStateConfig: soul.initialStateConfig,
   })
   return tx.moveCall({
-    target: `${env.packageId}::market::mint_native_in_personal_kiosk`,
+    target: `${env.packageId}::market::mint_native_in_personal_kiosk_v2`,
     arguments: [
       tx.object(env.marketConfigId),
       tx.object(env.kindRegistryId),
@@ -118,7 +118,7 @@ function appendListSoulFixedPriceCall(
   priceAtomic: bigint | number,
 ) {
   return tx.moveCall({
-    target: `${env.packageId}::market::list_soul_fixed_price`,
+    target: `${env.packageId}::market::list_soul_fixed_price_v2`,
     arguments: [
       tx.object(env.marketConfigId),
       tx.object(env.kioskRegistryId),
@@ -139,7 +139,7 @@ function appendListSoulFixedPriceWithCollectionCall(
   priceAtomic: bigint | number,
 ) {
   return tx.moveCall({
-    target: `${env.packageId}::market::list_soul_fixed_price_with_collection`,
+    target: `${env.packageId}::market::list_soul_fixed_price_with_collection_v2`,
     arguments: [
       tx.object(env.marketConfigId),
       tx.object(env.kioskRegistryId),

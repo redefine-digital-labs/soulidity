@@ -6,9 +6,14 @@ import { takeRateLimitToken } from '@/lib/rate-limit'
 import { selectCoinObjectIdsForAmountAcrossPages } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
-import { getMarketConfig, quoteSoulPurchase } from '@soulidity/sdk'
+import {
+  getAnimacraftProvenanceForState,
+  getMarketConfigV2,
+  quoteAnimacraftSoulPurchase,
+  quoteSoulPurchase,
+} from '@soulidity/sdk'
 import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@soulidity/sdk'
-import { buildBuySoulTx } from '@soulidity/sdk'
+import { buildBuyAnimacraftSoulTx, buildBuySoulTx } from '@soulidity/sdk'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
 export const dynamic = 'force-dynamic'
@@ -49,16 +54,52 @@ export async function POST(
   }
 
   const agentAddress = auth.walletAddresses[0]!
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const configId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
 
   try {
-    const config = await getMarketConfig(configId, packageId)
-    const quote = quoteSoulPurchase(config, {
-      priceAtomic: listedPriceAtomic,
-      creatorRoyaltyBps: soul.creatorRoyaltyBps,
-      collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
-    })
+    const animacraftProvenance = soul.provenanceKind === 'animacraft'
+      ? await getAnimacraftProvenanceForState(
+        soul.stateOnChainId,
+        getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'),
+      )
+      : null
+    if (soul.provenanceKind === 'animacraft' && !animacraftProvenance) {
+      return NextResponse.json(
+        { error: 'Animacraft provenance is unavailable; purchase is blocked' },
+        { status: 409 },
+      )
+    }
+    const quote = animacraftProvenance
+      ? await (async () => {
+          const config = await getMarketConfigV2(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          )
+          const makerQuote = quoteAnimacraftSoulPurchase(config, {
+            priceAtomic: listedPriceAtomic,
+            makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
+            collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+          })
+          return {
+            ...makerQuote,
+            creatorRoyaltyAtomic: makerQuote.makerRoyaltyAtomic,
+            royaltySource: 'animacraft-maker' as const,
+          }
+        })()
+      : await (async () => {
+          const config = await getMarketConfigV2(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          )
+          return {
+            ...quoteSoulPurchase(config, {
+            priceAtomic: listedPriceAtomic,
+            creatorRoyaltyBps: soul.creatorRoyaltyBps,
+            collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+          }),
+          royaltySource: 'soul-creator' as const,
+          }
+        })()
     const totalRequired = BigInt(quote.totalAtomic)
 
     const kioskResult = await resolveOwnedPersonalKiosk({ ownerAddresses: auth.walletAddresses })
@@ -78,7 +119,7 @@ export async function POST(
       coinIds = selectedCoinIds
     }
 
-    const tx = buildBuySoulTx({
+    const sharedPurchaseParams = {
       sellerKioskId: soul.currentKioskId,
       stateObjectId: soul.stateOnChainId,
       listingObjectId: soul.listingObjectOnChainId,
@@ -87,7 +128,15 @@ export async function POST(
       collectionObjectId: soul.collectionOnChainId ?? null,
       buyerKioskId,
       buyerKioskCapOnChainId,
-    })
+    }
+    const tx = animacraftProvenance
+      ? buildBuyAnimacraftSoulTx({
+          ...sharedPurchaseParams,
+          provenanceObjectId: animacraftProvenance.objectId,
+          makerObjectId: animacraftProvenance.makerId,
+          makerTreasuryObjectId: animacraftProvenance.makerTreasuryId,
+        })
+      : buildBuySoulTx(sharedPurchaseParams)
     tx.setSender(agentAddress)
 
     // Cross-package @mysten/sui type mismatch in the merged web runtime.
@@ -165,6 +214,7 @@ export async function POST(
         priceAtomic: soul.listedPriceAtomic.toString(),
         platformFeeAtomic: quote.platformFeeAtomic.toString(),
         creatorRoyaltyAtomic: quote.creatorRoyaltyAtomic.toString(),
+        royaltySource: quote.royaltySource,
         totalAtomic: quote.totalAtomic.toString(),
         agentAddress,
         expiresAt: prepared.expiresAt.toISOString(),

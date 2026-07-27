@@ -22,8 +22,20 @@ export function getSoulidityDeploymentSignature() {
   const deployment = getSoulidityDeployment()
   return [
     getConfiguredSoulidityNetwork(),
-    deployment.packageId.trim().toLowerCase(),
+    (deployment.callablePackageId ?? deployment.packageId).trim().toLowerCase(),
+    (deployment.originalPackageId ?? deployment.packageId).trim().toLowerCase(),
+    (
+      deployment.animacraftProvenancePackageId
+      ?? deployment.callablePackageId
+      ?? deployment.packageId
+    ).trim().toLowerCase(),
+    (
+      deployment.marketConfigV2PackageId
+      ?? deployment.callablePackageId
+      ?? deployment.packageId
+    ).trim().toLowerCase(),
     deployment.marketConfigId.trim().toLowerCase(),
+    (deployment.marketConfigV2Id ?? '').trim().toLowerCase(),
     deployment.soulTransferPolicyId.trim().toLowerCase(),
     deployment.collectionTransferPolicyId.trim().toLowerCase(),
   ].join('|')

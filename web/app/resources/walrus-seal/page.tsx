@@ -26,7 +26,7 @@ export default function WalrusSealPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Walrus &amp; Seal Integration</h1>
         <p className="text-sm text-muted">
           Soulidity stores every content blob — soul.md, memory entries, skill versions, sprites, audio — on <strong>Walrus</strong>, a decentralized blob storage network on Sui. Access is gated by <strong>Seal</strong>, which uses threshold-encrypted key shares released only after on-chain approval. This page documents the Phase 2 unified content encryption model.
@@ -136,7 +136,7 @@ export default function WalrusSealPage() {
           <li>KIND_AUDIO (4) → SCOPE_ASSETS (8)</li>
         </ul>
         <p className="text-xs text-muted">
-          The bit map is enforced by <code>kind_registry::assert_valid_default_grant_scope</code> at descriptor registration. Combined masks for a single kind are rejected. See <Link href="/resources/kind-registry" className="text-purple hover:text-foreground transition">Kind Registry</Link>.
+          The bit map is enforced by <code>kind_registry::assert_valid_default_grant_scope</code> at descriptor registration. Combined masks for a single kind are rejected. See <Link href="/resources/kind-registry" className="text-action-label hover:text-foreground transition">Kind Registry</Link>.
         </p>
       </div>
 
@@ -187,7 +187,7 @@ export default function WalrusSealPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/memory-architecture" className="text-sm font-medium text-muted hover:text-foreground transition">

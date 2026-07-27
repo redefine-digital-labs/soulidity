@@ -101,7 +101,7 @@ export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams)
   assertScopeMask(params.scopeMask)
   assertFutureExpiry(params.expiresAtMs)
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   tx.moveCall({
     target: `${packageId}::grant::issue_to_grantee`,
     arguments: [
@@ -141,7 +141,7 @@ export function buildBatchIssueGrantsTx(params: {
     assertCapacityBump(item.setCapacityTo)
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   for (const item of params.items) {
     // Splice the capacity bump in the same PTB BEFORE the issue. The chain
@@ -177,7 +177,7 @@ export function buildRevokeGrantTx(params: {
   granteeAddress: string
 }) {
   assertGranteeAddress(params.granteeAddress)
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::revoke`,
@@ -202,7 +202,7 @@ export function buildBatchRevokeGrantsTx(params: {
     assertGranteeAddress(item.granteeAddress)
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   for (const item of params.items) {
     tx.moveCall({
@@ -221,7 +221,7 @@ export function buildDestroyInvalidatedGrantTx(params: {
   stateObjectId: string
   grantObjectId: string
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::destroy_invalidated_grant`,
@@ -247,7 +247,7 @@ export function buildCleanupInactiveGrantsTx(params: {
     }
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::cleanup_inactive_grants`,
@@ -280,7 +280,7 @@ export function addSetGrantCapacityCalls(
   if (params.capacity > MAX_GRANT_CAPACITY) {
     throw new Error(`capacity must be ≤ MAX_GRANT_CAPACITY (${MAX_GRANT_CAPACITY})`)
   }
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   tx.moveCall({
     target: `${packageId}::grant::set_grant_capacity`,
     arguments: [
@@ -309,7 +309,7 @@ export function buildRevokeGrantScopeTx(params: {
     throw new Error('revokedScopeMask must be a positive integer')
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::revoke_scope_to_grantee`,

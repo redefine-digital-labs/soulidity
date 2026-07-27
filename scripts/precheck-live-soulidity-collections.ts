@@ -11,8 +11,7 @@ import { PrismaClient } from '../src/db/prisma-client.js'
 // SoulCollection state already exists for the supplied package:
 //
 //   1. Production DB has any `SoulCollectionAsset` rows (the mirror).
-//   2. Sui has emitted any `${packageId}::collection::SoulCollectionCreated`
-//      or `${packageId}::market::CollectionMintedToKiosk` events.
+//   2. Sui has emitted any original-package collection events.
 //   3. (Optional) Any of the supplied owner addresses holds a
 //      `SoulCollectionRight` object — useful as a side-channel signal but
 //      NOT a sole authority because `SoulCollection` is a shared object.
@@ -25,27 +24,30 @@ import { PrismaClient } from '../src/db/prisma-client.js'
 // Usage:
 //   NEXT_PUBLIC_SUI_NETWORK=mainnet \
 //     npx tsx scripts/precheck-live-soulidity-collections.ts \
-//       --package-id=<current-mainnet-package-id> \
+//       --original-package-id=<original-mainnet-package-id> \
 //       --database-url=$DATABASE_URL \
 //       --owner=<deployer> --owner=<multisig>
 
 interface CliOptions {
-  packageId: string
+  originalPackageId: string
   databaseUrl: string
   owners: string[]
   network: 'mainnet' | 'testnet' | 'devnet' | 'localnet'
 }
 
 function parseArgs(argv: string[]): CliOptions {
-  let packageId = ''
+  let originalPackageId = ''
   let databaseUrl = process.env.DATABASE_URL ?? ''
   const owners: string[] = []
   let network: CliOptions['network'] =
     (process.env.NEXT_PUBLIC_SUI_NETWORK as CliOptions['network']) ?? 'mainnet'
 
   for (const arg of argv.slice(2)) {
-    if (arg.startsWith('--package-id=')) {
-      packageId = arg.slice('--package-id='.length)
+    if (arg.startsWith('--original-package-id=')) {
+      originalPackageId = arg.slice('--original-package-id='.length)
+    } else if (arg.startsWith('--package-id=')) {
+      console.error('--package-id is ambiguous after upgrades; use --original-package-id')
+      process.exit(1)
     } else if (arg.startsWith('--database-url=')) {
       databaseUrl = arg.slice('--database-url='.length)
     } else if (arg.startsWith('--owner=')) {
@@ -62,8 +64,8 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
 
-  if (!packageId) {
-    console.error('Missing required --package-id')
+  if (!originalPackageId) {
+    console.error('Missing required --original-package-id')
     printUsage()
     process.exit(1)
   }
@@ -73,14 +75,15 @@ function parseArgs(argv: string[]): CliOptions {
     process.exit(1)
   }
 
-  return { packageId, databaseUrl, owners, network }
+  return { originalPackageId, databaseUrl, owners, network }
 }
 
 function printUsage() {
   console.log(`Usage: npx tsx scripts/precheck-live-soulidity-collections.ts [options]
 
 Required:
-  --package-id=<id>       Current on-chain Soulidity package ID
+  --original-package-id=<id>
+                          Original Soulidity package defining collection types/events
   --database-url=<url>    Production DB URL (defaults to DATABASE_URL env var)
 
 Optional:
@@ -180,12 +183,12 @@ async function main() {
     network: opts.network,
   })
 
-  console.error(`[precheck] network=${opts.network} package=${opts.packageId}`)
+  console.error(`[precheck] network=${opts.network} originalPackage=${opts.originalPackageId}`)
 
   const [db, events, owned] = await Promise.all([
     checkDatabase(opts.databaseUrl),
-    checkSuiEvents(client, opts.packageId),
-    checkOwnedRights(client, opts.packageId, opts.owners),
+    checkSuiEvents(client, opts.originalPackageId),
+    checkOwnedRights(client, opts.originalPackageId, opts.owners),
   ])
 
   const dbBlocking = db.count > 0

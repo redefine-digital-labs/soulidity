@@ -48,8 +48,8 @@ export async function buildPersonalJoinSoulTx(params: PersonalJoinTxParams): Pro
     throw new Error('sourceObjectType is required for Personal Join')
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kindRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
@@ -90,7 +90,7 @@ export async function buildPersonalJoinSoulTx(params: PersonalJoinTxParams): Pro
   })
 
   const soulState = tx.moveCall({
-    target: `${packageId}::market::mint_joined_in_personal_kiosk`,
+    target: `${packageId}::market::mint_joined_in_personal_kiosk_v2`,
     typeArguments: [params.sourceObjectType],
     arguments: [
       tx.object(marketConfigId),

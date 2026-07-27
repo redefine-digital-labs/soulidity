@@ -76,7 +76,7 @@ function PetsPanel() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-10 relative z-10">
       <div className="mb-6">
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">
           Account
         </p>
         <h1 className="font-display text-2xl font-bold mb-2">My Desktop Pets</h1>

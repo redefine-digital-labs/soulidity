@@ -26,7 +26,7 @@ export default function SmartContractsPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Smart Contract Reference</h1>
         <p className="text-sm text-muted">
           Soulidity is a set of Sui Move modules deployed under a single package. All state lives in shared objects. The DB is a mirror — on-chain is the source of truth. Phase 2 (mainnet 2026-05-04) collapsed the legacy <code>metadata</code> / <code>memory</code> / <code>skills</code> / <code>seal_policy</code> / <code>content_access</code> modules into the unified <code>content</code> + <code>kind_registry</code> + <code>paid_access</code> trio.
@@ -72,7 +72,7 @@ export default function SmartContractsPage() {
           </table>
         </div>
         <p className="text-xs text-muted">
-          See <Link href="/resources/kind-registry" className="text-purple hover:text-foreground transition">Kind Registry</Link> for the descriptor schema and <Link href="/resources/paid-access" className="text-purple hover:text-foreground transition">Paid Access</Link> for purchase / revoke / cleanup details.
+          See <Link href="/resources/kind-registry" className="text-action-label hover:text-foreground transition">Kind Registry</Link> for the descriptor schema and <Link href="/resources/paid-access" className="text-action-label hover:text-foreground transition">Paid Access</Link> for purchase / revoke / cleanup details.
         </p>
       </div>
 
@@ -171,7 +171,7 @@ public struct SoulContent has key {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">KindRegistry</h2>
         <p className="text-sm text-muted">
-          A single shared <code>KindRegistry</code> object holds the active kind table. Pre-registered ids <code>0..=4</code> are the five built-ins; <code>5..=15</code> are reserved; custom kinds are allocated from <code>FIRST_CUSTOM_KIND = 16</code> by the <code>KindAdminCap</code> holder. See <Link href="/resources/kind-registry" className="text-purple hover:text-foreground transition">Kind Registry Reference</Link> for the full schema.
+          A single shared <code>KindRegistry</code> object holds the active kind table. Pre-registered ids <code>0..=4</code> are the five built-ins; <code>5..=15</code> are reserved; custom kinds are allocated from <code>FIRST_CUSTOM_KIND = 16</code> by the <code>KindAdminCap</code> holder. See <Link href="/resources/kind-registry" className="text-action-label hover:text-foreground transition">Kind Registry Reference</Link> for the full schema.
         </p>
       </div>
 
@@ -203,7 +203,7 @@ public struct SoulPaidAccessList has key {
 }`}</code>
         </pre>
         <p className="text-xs text-muted">
-          One <code>SoulPaidAccessList</code> per Soul, bound via <code>SoulState.access_list_id</code>. Entries are reaped via <code>paid_access::cleanup_stale_entries</code> (any caller). See <Link href="/resources/paid-access" className="text-purple hover:text-foreground transition">Paid Access</Link>.
+          One <code>SoulPaidAccessList</code> per Soul, bound via <code>SoulState.access_list_id</code>. Entries are reaped via <code>paid_access::cleanup_stale_entries</code> (any caller). See <Link href="/resources/paid-access" className="text-action-label hover:text-foreground transition">Paid Access</Link>.
         </p>
       </div>
 
@@ -222,7 +222,7 @@ public struct SoulPaidAccessList has key {
 }`}</code>
         </pre>
         <p className="text-xs text-muted">
-          One grant per (Soul, grantee). Issuing a second grant to the same grantee <strong>supersedes</strong> the first — new <code>scope_mask</code> fully replaces the old one. Storage rebate on invalidated grants can be reclaimed by anyone via <code>grant::destroy_invalidated_grant</code>. See <Link href="/resources/soulgrant-api" className="text-purple hover:text-foreground transition">SoulGrant API</Link>.
+          One grant per (Soul, grantee). Issuing a second grant to the same grantee <strong>supersedes</strong> the first — new <code>scope_mask</code> fully replaces the old one. Storage rebate on invalidated grants can be reclaimed by anyone via <code>grant::destroy_invalidated_grant</code>. See <Link href="/resources/soulgrant-api" className="text-action-label hover:text-foreground transition">SoulGrant API</Link>.
         </p>
       </div>
 
@@ -272,12 +272,12 @@ public struct SoulCollectionRight has key, store { ... }`}</code>
         <ul className="text-sm text-muted space-y-1">
           <li><code className="text-xs text-foreground">0 — native:</code> Fresh-deploy via <code>market::mint_native_in_personal_kiosk</code>. No prior NFT.</li>
           <li><code className="text-xs text-foreground">1 — imported:</code> Existing Walrus blob imported via <code>market::mint_imported_in_personal_kiosk</code>. <code>origin_ref</code> is an off-chain claim — surfaces must label it as unverified.</li>
-          <li><code className="text-xs text-foreground">2 — personal-join:</code> An existing Sui NFT wrapped via <code>market::mint_joined_in_personal_kiosk</code>. The source NFT is placed into the personal kiosk first; <code>origin_ref</code> records the source type and object ID. See <Link href="/resources/wrap-link" className="text-purple hover:text-foreground transition">Wrap + Link</Link>.</li>
+          <li><code className="text-xs text-foreground">2 — personal-join:</code> An existing Sui NFT wrapped via <code>market::mint_joined_in_personal_kiosk</code>. The source NFT is placed into the personal kiosk first; <code>origin_ref</code> records the source type and object ID. See <Link href="/resources/wrap-link" className="text-action-label hover:text-foreground transition">Wrap + Link</Link>.</li>
         </ul>
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/soulgrant-api" className="text-sm font-medium text-muted hover:text-foreground transition">

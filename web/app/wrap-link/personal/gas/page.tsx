@@ -41,12 +41,12 @@ export default function PersonalGasPage() {
       <FlowBar steps={['Select NFT', 'Configure', 'Preview', 'Gas', 'Success']} current={3} />
 
       <div className="max-w-[540px] mx-auto px-6 py-8">
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Personal Join</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Personal Join</p>
         <h1 className="font-display text-2xl font-bold mb-1">Step 4 — Gas</h1>
         <p className="text-muted text-sm mb-6">Review the transaction before signing.</p>
 
         <div className="bg-card2 border border-purple rounded-xl p-5 mb-4">
-          <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-4">Wallet Request</p>
+          <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-4">Wallet Request</p>
 
           <div className="flex justify-between text-sm py-2.5 border-b border-border">
             <span className="text-muted">Contract</span>

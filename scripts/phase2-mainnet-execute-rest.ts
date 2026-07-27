@@ -39,8 +39,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const manifestPath = resolve(repoRoot, 'packages/soulidity-sdk/src/deployment-manifest.json')
 
 interface Manifest {
-  packageId: string
+  callablePackageId: string
+  originalPackageId: string
   marketConfigId: string
+  marketConfigV2Id: string
   kioskRegistryId: string
   kindRegistryId?: string
   soulTransferPolicyId: string
@@ -52,8 +54,9 @@ const all = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, Man
 const network = (process.env.NEXT_PUBLIC_SUI_NETWORK?.trim() || 'mainnet') as 'mainnet' | 'testnet'
 const m = all[network]!
 
-process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = m.packageId
-process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID = m.marketConfigId
+process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID = m.callablePackageId
+process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID = m.originalPackageId
+process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID = m.marketConfigV2Id
 process.env.NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID = m.kioskRegistryId
 process.env.NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID = m.kindRegistryId!
 process.env.NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID = m.soulTransferPolicyId
@@ -179,7 +182,8 @@ async function findCreatedObjectId(
 // ── Sequence ──────────────────────────────────────────────────────────
 
 console.log('━━━ Phase 2 mainnet execute-rest ━━━')
-console.log(`packageId      : ${m.packageId}`)
+console.log(`callablePackage: ${m.callablePackageId}`)
+console.log(`originalPackage: ${m.originalPackageId}`)
 console.log(`owner          : ${ownerAddr}`)
 console.log(`buyer          : ${buyerAddr}`)
 console.log(`agent          : ${agentAddr}`)

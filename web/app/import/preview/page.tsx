@@ -33,7 +33,7 @@ const toneStyles: Record<ReviewTone, { border: string; header: string }> = {
   teal: { border: 'border-[#165c65]', header: 'text-teal' },
   green: { border: 'border-[#1b6040]', header: 'text-success' },
   orange: { border: 'border-[#7b4a1e]', header: 'text-[#F97316]' },
-  purple: { border: 'border-purple/30', header: 'text-purple' },
+  purple: { border: 'border-purple/30', header: 'text-action-label' },
   muted: { border: 'border-border', header: 'text-muted' },
 }
 
@@ -116,7 +116,7 @@ export default function ImportPreviewPage() {
           <ReviewCard tone="purple" icon="📥" label="Import Source">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-foreground">{ctx.rawFile?.name ?? 'Unknown'}</span>
-              <span className="rounded-full border border-purple/30 bg-purple/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-purple">
+              <span className="rounded-full border border-purple/30 bg-purple/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-action-label">
                 Imported
               </span>
             </div>
@@ -130,7 +130,7 @@ export default function ImportPreviewPage() {
                 <span className="font-semibold text-success">{ctx.parseStats.parsingScore}%</span>
               </div>
             )}
-            <div className="flex items-center gap-1.5 text-[10px] text-purple/80">
+            <div className="flex items-center gap-1.5 text-[10px] text-action-label">
               <span>📦</span>
               <span>Provenance: imported · tracked on-chain</span>
             </div>
@@ -187,7 +187,7 @@ export default function ImportPreviewPage() {
 
         {/* Content & Memory Policy */}
         <div className="rounded-2xl border border-purple/30 bg-purple/6 p-5">
-          <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-purple">
+          <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-action-label">
             Content & Memory Policy
           </div>
           <p className="mb-4 text-xs leading-relaxed text-muted">

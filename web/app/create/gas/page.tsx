@@ -426,8 +426,8 @@ export default function CreateGasPage() {
         assertListingPriceAtomic(ctx.listingPriceAtomic)
       }
       // Surface a missing env ahead of the paid PTB rather than after.
-      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
-      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
       getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
       getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
 
@@ -687,8 +687,8 @@ export default function CreateGasPage() {
         />
 
         {inRecovery ? (
-          <div className="rounded-2xl border border-[#F59E0B]/40 bg-[#F59E0B]/8 p-5 space-y-3">
-            <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#F59E0B]">
+          <div className="space-y-3 rounded-2xl border border-[var(--ui-value)] bg-[var(--ui-soft-value)] p-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-value-text)]">
               Pending Soul Mint
             </div>
             <p className="text-sm text-muted leading-relaxed">
@@ -696,9 +696,9 @@ export default function CreateGasPage() {
               Resume to complete the process, or start over to create a new Soul.
             </p>
             {txDigest && (
-              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-black/20 px-3 py-2">
+              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-[var(--ui-surface-muted)] px-3 py-2">
                 <span className="text-[10px] text-muted">TX Digest</span>
-                <span className="font-mono text-xs text-teal">{txDigest.slice(0, 16)}…</span>
+                <span className="font-mono text-xs text-tech-text">{txDigest.slice(0, 16)}…</span>
               </div>
             )}
           </div>
@@ -706,13 +706,13 @@ export default function CreateGasPage() {
           <>
         {/* Transaction Preview card */}
         <div className="rounded-2xl border border-purple/30 bg-card p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#F59E0B] mb-4">
+          <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-value-text)]">
             Transaction Preview
           </div>
 
           <div className="divide-y divide-border/50">
             <TxRow label="Contract">
-              <span className="font-mono text-teal">market::mint_native_in_personal_kiosk</span>
+              <span className="font-mono text-tech-text">market::mint_native_in_personal_kiosk</span>
             </TxRow>
             <TxRow label="Network">
               <span className="font-semibold text-foreground">{networkLabel}</span>
@@ -735,7 +735,7 @@ export default function CreateGasPage() {
               </TxRow>
             )}
             <TxRow label="Creator Royalty">
-              <span className="font-semibold text-[#F59E0B]">
+              <span className="font-semibold text-[var(--ui-value-text)]">
                 {royaltyLabels[ctx.royalty] ?? `${ctx.royalty / 100}% (locked on-chain)`}
               </span>
             </TxRow>
@@ -766,7 +766,7 @@ export default function CreateGasPage() {
               </p>
             )}
             {suiWallet && (
-              <div className="flex items-center gap-2 rounded-lg border border-danger/20 bg-black/20 px-3 py-2">
+              <div className="flex items-center gap-2 rounded-lg border border-danger/20 bg-[var(--ui-surface-muted)] px-3 py-2">
                 <span className="text-[10px] text-muted shrink-0">Your address:</span>
                 <code className="min-w-0 text-[11px] font-mono text-foreground">{suiWallet.address.slice(0, 20)}…{suiWallet.address.slice(-20)}</code>
                 <button
@@ -822,7 +822,7 @@ export default function CreateGasPage() {
               <span className="text-sm text-muted">Status</span>
               <span className={`text-sm font-semibold ${
                 status === 'done' ? 'text-success' :
-                status === 'error' || combinedError ? 'text-danger' : 'text-purple'
+                status === 'error' || combinedError ? 'text-danger' : 'text-action-label'
               }`}>
                 {uploadPhase !== 'idle' && uploadPhase !== 'done' && uploadPhaseLabels[uploadPhase]}
                 {uploadPhase === 'done' && status === 'building' && '⟳ Building TX…'}
@@ -844,10 +844,10 @@ export default function CreateGasPage() {
               </div>
             )}
             {walrusOrphanRecovery && (
-              <div className="space-y-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/8 px-4 py-3">
+              <div className="space-y-3 rounded-lg border border-[var(--ui-value)] bg-[var(--ui-soft-value)] px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#F59E0B]">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-value-text)]">
                       Walrus Orphan Recovery
                     </div>
                     <p className="mt-1 text-xs leading-relaxed text-muted">
@@ -863,7 +863,7 @@ export default function CreateGasPage() {
                       variant: 'outline',
                       size: 'sm',
                       className:
-                        `shrink-0 rounded-[10px] border-[#F59E0B]/40 px-3 py-1.5 text-[12px] text-[#F59E0B] hover:border-[#F59E0B]/70 ${walletActionState.disabled || reclaimingOrphans ? 'opacity-50 cursor-not-allowed' : ''}`,
+                        `shrink-0 rounded-[10px] border-[var(--ui-value)] px-3 py-1.5 text-[12px] text-[var(--ui-value-text)] hover:border-[var(--ui-value-hover)] ${walletActionState.disabled || reclaimingOrphans ? 'opacity-50 cursor-not-allowed' : ''}`,
                     })}
                   >
                     {reclaimingOrphans ? 'Reclaiming…' : 'Reclaim'}
@@ -880,8 +880,8 @@ export default function CreateGasPage() {
 
         {/* Deploying overlay */}
         {isBusy && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="rounded-2xl border border-purple/30 bg-card2 p-10 text-center max-w-sm mx-4 shadow-[0_24px_60px_rgba(124,58,237,0.25)]">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ui-overlay)]">
+            <div className="mx-4 max-w-sm rounded-[var(--ui-radius-lg)] border border-[var(--ui-action)] bg-[var(--ui-surface)] p-10 text-center shadow-[var(--ui-shadow-md)]">
               <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-2 border-purple/30 border-t-purple" />
               <h2 className="text-lg font-bold mb-2">
                 {uploadPhase !== 'idle' && uploadPhase !== 'done'

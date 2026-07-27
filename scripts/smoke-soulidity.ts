@@ -339,7 +339,7 @@ function assertSmokeEvents(
   const assertions = step.assertEvents
   if (!assertions) return
   if (assertions.contentVersions?.length) {
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')
+    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
     const contentVersionEvents = extractAllContentVersionAppendedEvents(transaction, packageId)
     for (const assertion of assertions.contentVersions) {
       const actual = contentVersionEvents.filter((event) => (

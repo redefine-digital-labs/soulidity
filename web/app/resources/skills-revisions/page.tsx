@@ -26,7 +26,7 @@ export default function SkillsRevisionsPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Skills &amp; Docs Revisions</h1>
         <p className="text-sm text-muted">
           Skills under Phase 2 live as <code>(kind=KIND_SKILL, name=&lt;skillName&gt;, version_index=N)</code> slots in the unified <code>SoulContent</code> object. Each skill name has its own independent version vector, with public vs private visibility chosen per version.
@@ -127,7 +127,7 @@ description: |
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Auto-grant on append (private versions)</h2>
         <p className="text-sm text-muted">
-          When the owner appends a private skill version, Soulidity auto-issues scope-matched grants to every active agent that doesn&apos;t already cover <code>SCOPE_SKILLS</code>. Existing scopes are preserved via the <code>grant-merge-masks</code> pre-check. Failures surface on the My Souls page for retry — see <Link href="/resources/agent-integration" className="text-purple hover:text-foreground transition">Agent Integration</Link>.
+          When the owner appends a private skill version, Soulidity auto-issues scope-matched grants to every active agent that doesn&apos;t already cover <code>SCOPE_SKILLS</code>. Existing scopes are preserved via the <code>grant-merge-masks</code> pre-check. Failures surface on the My Souls page for retry — see <Link href="/resources/agent-integration" className="text-action-label hover:text-foreground transition">Agent Integration</Link>.
         </p>
         <p className="text-xs text-muted">
           Public versions are not auto-granted — they require no grant to read.
@@ -183,7 +183,7 @@ description: |
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/wrap-link" className="text-sm font-medium text-muted hover:text-foreground transition">

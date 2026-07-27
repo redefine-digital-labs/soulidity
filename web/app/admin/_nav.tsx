@@ -34,7 +34,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   className={cn(
                     'shrink-0 px-4 py-3 text-[13px] font-medium border-b-2 -mb-px transition-all duration-150',
                     isActive
-                      ? 'text-purple border-purple'
+                      ? 'text-action-label border-purple'
                       : 'text-muted border-transparent hover:text-foreground',
                   )}
                 >

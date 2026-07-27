@@ -190,7 +190,7 @@ export async function GET(
       },
       version,
       viewerAddresses: walletAddresses,
-      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID'),
+      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
     })
 
     return NextResponse.json({

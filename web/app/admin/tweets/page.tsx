@@ -153,7 +153,7 @@ export default function TweetsReviewPage() {
               >
                 {/* Header */}
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm font-medium text-purple">
+                  <span className="text-sm font-medium text-action-label">
                     {meta?.author ?? '未知'}
                   </span>
                   {meta?.display_name && (
@@ -180,7 +180,7 @@ export default function TweetsReviewPage() {
                     href={item.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-purple hover:underline ml-auto"
+                    className="text-action-label hover:underline ml-auto"
                   >
                     原文 ↗
                   </a>

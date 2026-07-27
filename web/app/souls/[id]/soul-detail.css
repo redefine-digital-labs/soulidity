@@ -2,16 +2,10 @@
    Pseudo-element rules and gradients that don't map cleanly to Tailwind utilities. */
 
 .sd-page {
-  --text-faint: #6B5E94;
-  --border-soft: rgba(168, 85, 247, 0.18);
-  --purple-soft: rgba(168, 85, 247, 0.12);
-  --bg-2: #0A0818;
-  --card-3: #2B1A6B;
-
   position: relative;
   background:
-    radial-gradient(900px 600px at 88% -10%, rgba(124, 58, 237, 0.18), transparent 60%),
-    radial-gradient(700px 500px at -10% 110%, rgba(245, 158, 11, 0.06), transparent 55%);
+    radial-gradient(900px 600px at 88% -10%, var(--ui-soft-action), transparent 60%),
+    radial-gradient(700px 500px at -10% 110%, var(--ui-soft-value), transparent 55%);
 }
 
 /* ── Cover overlay live pulse ───────────────────────────────────── */
@@ -21,7 +15,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--success);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 0 3px var(--ui-soft-success);
   animation: sd-pulse 1.6s ease-in-out infinite;
   display: inline-block;
   margin-right: 6px;
@@ -33,14 +27,14 @@
 /* ── Sprite thumb gradient/stripes ──────────────────────────────── */
 .sd-sprite-thumb {
   background:
-    linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(124, 58, 237, 0.45)),
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0 4px, transparent 4px 8px);
+    linear-gradient(135deg, var(--ui-soft-action), color-mix(in srgb, var(--ui-action-hover) 44%, transparent)),
+    repeating-linear-gradient(45deg, color-mix(in srgb, var(--ui-text) 4%, transparent) 0 4px, transparent 4px 8px);
 }
 
 /* ── Listing card gold gradient overlay ─────────────────────────── */
 .sd-listing-listed {
   background:
-    linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.02)),
+    linear-gradient(180deg, var(--ui-soft-value), transparent),
     var(--card2);
 }
 
@@ -103,7 +97,7 @@
 .sd-scope-card[data-selected="true"],
 .sd-scope-card[aria-checked="true"] {
   border-color: var(--purple);
-  background: rgba(168, 85, 247, 0.10);
+  background: var(--ui-soft-action);
   box-shadow: 0 0 0 1px var(--purple) inset;
 }
 
@@ -140,7 +134,7 @@
   border: 0;
   border-radius: 7px;
   background: var(--purple);
-  color: #fff;
+  color: var(--ui-action-text);
   padding: 6px 10px;
   font-size: 12px;
   font-weight: 700;
@@ -181,11 +175,11 @@
 }
 .sd-visibility-toggle button.on {
   background: var(--gold);
-  color: #1A1040;
+  color: var(--ui-value-action-text);
 }
 .sd-visibility-toggle button.on.private {
   background: var(--purple);
-  color: #fff;
+  color: var(--ui-action-text);
 }
 
 /* ── Responsive ─────────────────────────────────────────────────── */

@@ -166,13 +166,13 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
             </div>
           </div>
         )}
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1">Sell Soul</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1">Sell Soul</p>
         <h2 className="font-display text-xl font-bold mb-1">Step 2 — Authorize Listing</h2>
         <p className="text-muted text-sm mb-6">Sign to authorize the marketplace contract to hold your Soul in escrow.</p>
 
         <div className="bg-card2 border border-purple rounded-xl overflow-hidden mb-5">
           <div className="px-4 py-2.5 border-b border-border">
-            <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em]">Wallet Request</p>
+            <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em]">Wallet Request</p>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
             <span className="text-muted">Soul</span>
