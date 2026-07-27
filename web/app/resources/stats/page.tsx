@@ -51,7 +51,7 @@ export default function ResourcesStatsPage() {
     {
       label: 'Total Souls on-chain',
       value: data ? formatCount(data.totalSouls) : '—',
-      color: 'text-purple',
+      color: 'text-action-label',
     },
     {
       label: 'Est. trade volume',
@@ -71,7 +71,7 @@ export default function ResourcesStatsPage() {
     {
       label: 'Creator count',
       value: data ? formatCount(data.creatorCount) : '—',
-      color: 'text-purple',
+      color: 'text-action-label',
     },
     {
       label: 'Avg listing price',
@@ -93,7 +93,7 @@ export default function ResourcesStatsPage() {
 
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10">
-      <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+      <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
       <h1 className="font-display text-2xl font-bold mb-0">Protocol Stats</h1>
 
       {/* Tab strip */}

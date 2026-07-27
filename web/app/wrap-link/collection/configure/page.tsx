@@ -44,7 +44,7 @@ export default function CollectionConfigurePage() {
       <FlowBar steps={['Collection Info', 'Configure', 'Preview', 'Gas', 'Success']} current={1} />
 
       <div className="max-w-[540px] mx-auto px-6 py-8">
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Collection Expand</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Collection Expand</p>
         <h1 className="font-display text-2xl font-bold mb-1">Step 2 — Configure</h1>
         <p className="text-muted text-sm mb-6">Set the collection-level Soul template and shared activation rules.</p>
 
@@ -58,7 +58,7 @@ export default function CollectionConfigurePage() {
             <div className="text-2xl mb-2">📦</div>
             {fileName ? (
               <div>
-                <div className="font-semibold text-sm text-purple">{fileName}</div>
+                <div className="font-semibold text-sm text-action-label">{fileName}</div>
                 <div className="text-muted text-xs mt-1">Click to replace</div>
               </div>
             ) : (

@@ -26,7 +26,7 @@ export default function PaidAccessPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Paid Access</h1>
         <p className="text-sm text-muted">
           Paid access lets viewers buy time-bound (or lifetime) USDC access to specific Soul content kinds. This page documents the on-chain model and the owner / buyer / cleanup paths.
@@ -46,7 +46,7 @@ export default function PaidAccessPage() {
       <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-5 space-y-2">
         <h2 className="text-base font-semibold text-amber-300">Read this first: paid access is owner-revocable, non-refundable</h2>
         <p className="text-sm text-foreground">
-          The Soul owner may revoke a buyer&apos;s access at any time by calling <code>paid_access::revoke_access</code>. No on-chain refund is issued. Entries also auto-invalidate when the Soul changes hands. Any UI taking payment for a kind <strong>must</strong> disclose this revocability and non-refundability — see <Link href="/terms" className="text-purple hover:text-foreground transition">Terms</Link>.
+          The Soul owner may revoke a buyer&apos;s access at any time by calling <code>paid_access::revoke_access</code>. No on-chain refund is issued. Entries also auto-invalidate when the Soul changes hands. Any UI taking payment for a kind <strong>must</strong> disclose this revocability and non-refundability — see <Link href="/terms" className="text-action-label hover:text-foreground transition">Terms</Link>.
         </p>
       </div>
 
@@ -121,7 +121,7 @@ public struct KindPaidEntry has copy, drop, store {
           </table>
         </div>
         <p className="text-xs text-muted">
-          Custom kinds registered through <code>kind_registry::register_kind</code> may opt into <code>READ_PAID</code> (admin-only registration). See <Link href="/resources/kind-registry" className="text-purple hover:text-foreground transition">Kind Registry</Link>.
+          Custom kinds registered through <code>kind_registry::register_kind</code> may opt into <code>READ_PAID</code> (admin-only registration). See <Link href="/resources/kind-registry" className="text-action-label hover:text-foreground transition">Kind Registry</Link>.
         </p>
       </div>
 
@@ -229,7 +229,7 @@ public struct KindPaidEntry has copy, drop, store {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/soulgrant-api" className="text-sm font-medium text-muted hover:text-foreground transition">

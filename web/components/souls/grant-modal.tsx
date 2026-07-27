@@ -128,10 +128,10 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm">
             <span>{'\uD83C\uDFDB\uFE0F'}</span>
-            <span className="font-semibold text-purple">Memory</span>
+            <span className="font-semibold text-action-label">Memory</span>
             <span className="text-muted">&middot; read + append</span>
           </div>
-          <span className="rounded-full border border-purple bg-purple/10 px-2 py-0.5 text-[10px] font-semibold text-purple">
+          <span className="rounded-full border border-purple bg-purple/10 px-2 py-0.5 text-[10px] font-semibold text-action-label">
             immutable
           </span>
         </div>

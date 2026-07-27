@@ -26,10 +26,10 @@ export default function UserGuidePage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">User Guide</h1>
         <p className="text-sm text-muted">
-          The full Soulidity user journey, end to end. Each section is also linked from the in-app surfaces it describes — bookmark or skim. For a five-minute quick start, see <Link href="/resources/getting-started" className="text-purple hover:text-foreground transition">Getting Started</Link>.
+          The full Soulidity user journey, end to end. Each section is also linked from the in-app surfaces it describes — bookmark or skim. For a five-minute quick start, see <Link href="/resources/getting-started" className="text-action-label hover:text-foreground transition">Getting Started</Link>.
         </p>
       </div>
 
@@ -46,16 +46,16 @@ export default function UserGuidePage() {
       <nav aria-label="On this page" className="rounded-2xl border border-border bg-card p-5">
         <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted mb-2">On this page</div>
         <ol className="text-sm text-foreground/90 space-y-1 list-decimal ml-5">
-          <li><a href="#wallet" className="hover:text-purple transition">Wallet connect &amp; USDC setup</a></li>
-          <li><a href="#browse" className="hover:text-purple transition">Browsing the market</a></li>
-          <li><a href="#buy" className="hover:text-purple transition">Buying your first Soul</a></li>
-          <li><a href="#create" className="hover:text-purple transition">Creating a Soul</a></li>
-          <li><a href="#append" className="hover:text-purple transition">Append-only updates &amp; auto-grant</a></li>
-          <li><a href="#grants" className="hover:text-purple transition">Managing agent grants</a></li>
-          <li><a href="#paid" className="hover:text-purple transition">Paid access</a></li>
-          <li><a href="#desktop" className="hover:text-purple transition">Desktop companion</a></li>
-          <li><a href="#sell" className="hover:text-purple transition">Selling &amp; transferring</a></li>
-          <li><a href="#faq" className="hover:text-purple transition">FAQ &amp; troubleshooting</a></li>
+          <li><a href="#wallet" className="hover:text-action-label transition">Wallet connect &amp; USDC setup</a></li>
+          <li><a href="#browse" className="hover:text-action-label transition">Browsing the market</a></li>
+          <li><a href="#buy" className="hover:text-action-label transition">Buying your first Soul</a></li>
+          <li><a href="#create" className="hover:text-action-label transition">Creating a Soul</a></li>
+          <li><a href="#append" className="hover:text-action-label transition">Append-only updates &amp; auto-grant</a></li>
+          <li><a href="#grants" className="hover:text-action-label transition">Managing agent grants</a></li>
+          <li><a href="#paid" className="hover:text-action-label transition">Paid access</a></li>
+          <li><a href="#desktop" className="hover:text-action-label transition">Desktop companion</a></li>
+          <li><a href="#sell" className="hover:text-action-label transition">Selling &amp; transferring</a></li>
+          <li><a href="#faq" className="hover:text-action-label transition">FAQ &amp; troubleshooting</a></li>
         </ol>
       </nav>
 
@@ -72,12 +72,12 @@ export default function UserGuidePage() {
 
       <Section id="browse" title="2. Browsing the market">
         <p>
-          Listed Souls appear on the <Link href="/market" className="text-purple hover:text-foreground transition">market</Link>. Each card shows the cover image, name, creator, USDC price, and tag chips. Unlisted (held) Souls are private to the owner.
+          Listed Souls appear on the <Link href="/market" className="text-action-label hover:text-foreground transition">market</Link>. Each card shows the cover image, name, creator, USDC price, and tag chips. Unlisted (held) Souls are private to the owner.
         </p>
         <ul className="space-y-1.5 ml-5 list-disc">
           <li>Use the tag filter and search to narrow listings.</li>
           <li>Click any card to open the Soul detail page — description, full preview, current owner, creator royalty rate, collection membership, and any active grants.</li>
-          <li>If the Soul belongs to a <Link href="/collections" className="text-purple hover:text-foreground transition">Collection</Link>, the collection page also shows its peers, an extra collection royalty rate, and the on-chain supply cap.</li>
+          <li>If the Soul belongs to a <Link href="/collections" className="text-action-label hover:text-foreground transition">Collection</Link>, the collection page also shows its peers, an extra collection royalty rate, and the on-chain supply cap.</li>
         </ul>
       </Section>
 
@@ -87,16 +87,16 @@ export default function UserGuidePage() {
           <li>Review the fee split — platform fee + creator royalty (+ optional collection royalty). All splits are applied atomically by the market module; the price you pay is the final amount.</li>
           <li>Approve the transaction in your wallet. The TX calls <code>market::buy_from_personal_kiosk</code>, which moves the Soul from the seller&apos;s personal kiosk into yours in a single step.</li>
           <li>The app then mirrors the new owner in the database. <strong className="text-foreground">All active SoulGrants and paid-access entries on this Soul are invalidated immediately</strong> via the <code>ownership_epoch</code> bump — anything the previous owner authorized stops working before you take possession.</li>
-          <li>The Soul appears in <Link href="/my-souls" className="text-purple hover:text-foreground transition">My Souls</Link>. From there you can list it, transfer it into a collection, grant agents access, or bind it to the desktop companion.</li>
+          <li>The Soul appears in <Link href="/my-souls" className="text-action-label hover:text-foreground transition">My Souls</Link>. From there you can list it, transfer it into a collection, grant agents access, or bind it to the desktop companion.</li>
         </ol>
       </Section>
 
       <Section id="create" title="4. Creating a Soul">
         <p>
-          Go to <Link href="/create" className="text-purple hover:text-foreground transition">Create</Link>. You will need the following inputs — all live as typed content slots under one unified <code>SoulContent</code> object (see <Link href="/resources/kind-registry" className="text-purple hover:text-foreground transition">Kind Registry</Link>).
+          Go to <Link href="/create" className="text-action-label hover:text-foreground transition">Create</Link>. You will need the following inputs — all live as typed content slots under one unified <code>SoulContent</code> object (see <Link href="/resources/kind-registry" className="text-action-label hover:text-foreground transition">Kind Registry</Link>).
         </p>
         <ul className="space-y-2 ml-5 list-disc">
-          <li><strong className="text-foreground">soul.md</strong> (<code>KIND_SOUL_DOC</code>) — the five-section character document. Appended once at mint and forever immutable. See <Link href="/resources/content-format" className="text-purple hover:text-foreground transition">Content Format</Link> for the template.</li>
+          <li><strong className="text-foreground">soul.md</strong> (<code>KIND_SOUL_DOC</code>) — the five-section character document. Appended once at mint and forever immutable. See <Link href="/resources/content-format" className="text-action-label hover:text-foreground transition">Content Format</Link> for the template.</li>
           <li><strong className="text-foreground">memory.md</strong> (<code>KIND_MEMORY</code>, optional) — the founding memory entry. Append-only timeline you (or granted agents) can extend later.</li>
           <li><strong className="text-foreground">skills.zip</strong> (<code>KIND_SKILL</code>, optional) — an initial skills bundle. The ZIP must contain a <code>SKILL.md</code> with a <code>name</code> front-matter field.</li>
           <li><strong className="text-foreground">Sprite</strong> (<code>KIND_SPRITE</code>, optional) — persona art for the desktop companion. Can be made public, paid-gated, or grant-gated.</li>
@@ -123,7 +123,7 @@ export default function UserGuidePage() {
           When you append a <em>non-public</em> version, Soulidity automatically issues scope-matched SoulGrants to every active agent on your account that doesn&apos;t already hold the required scope. This lets your agents (e.g. OpenClaw, Hermes) keep reading newly added content without manual re-authorization. If the auto-grant call fails — for example during a deploy window — the My Souls page surfaces a <span className="text-amber-300">yellow banner</span> telling you exactly which agents are missing which scopes, and you can retry from there.
         </p>
         <p>
-          See <Link href="/resources/agent-integration" className="text-purple hover:text-foreground transition">Agent Integration</Link> for the full auto-grant rules.
+          See <Link href="/resources/agent-integration" className="text-action-label hover:text-foreground transition">Agent Integration</Link> for the full auto-grant rules.
         </p>
       </Section>
 
@@ -144,7 +144,7 @@ export default function UserGuidePage() {
           <strong className="text-foreground">All grants are invalidated automatically when the Soul changes hands</strong> via the <code>ownership_epoch</code> snapshot on each grant. You never need to revoke before selling — the rotation is implicit.
         </p>
         <p>
-          See <Link href="/resources/soulgrant-api" className="text-purple hover:text-foreground transition">SoulGrant API</Link> for the full lifecycle (issue / supersede / revoke / expire).
+          See <Link href="/resources/soulgrant-api" className="text-action-label hover:text-foreground transition">SoulGrant API</Link> for the full lifecycle (issue / supersede / revoke / expire).
         </p>
       </Section>
 
@@ -159,13 +159,13 @@ export default function UserGuidePage() {
           <strong className="text-amber-300">Important:</strong> paid access is an <em>owner-revocable subscription</em>, not a permanent purchase. You may call <code>paid_access::revoke_access</code> at any time and <strong className="text-foreground">no on-chain refund is issued</strong>. Entries also auto-invalidate when the Soul changes ownership. Anyone purchasing access should treat this as a recurring subscription on your goodwill, not a sale.
         </p>
         <p>
-          See <Link href="/resources/paid-access" className="text-purple hover:text-foreground transition">Paid Access</Link> for the full revocation, renewal, and stale-entry-cleanup model.
+          See <Link href="/resources/paid-access" className="text-action-label hover:text-foreground transition">Paid Access</Link> for the full revocation, renewal, and stale-entry-cleanup model.
         </p>
       </Section>
 
       <Section id="desktop" title="8. Desktop companion">
         <p>
-          The <Link href="/download" className="text-purple hover:text-foreground transition">Soulidity desktop app</Link> renders any Soul you own (or hold a grant for) as a live persona on your desktop — sprite animation, voice, memory-aware chat. The web → desktop handoff is:
+          The <Link href="/download" className="text-action-label hover:text-foreground transition">Soulidity desktop app</Link> renders any Soul you own (or hold a grant for) as a live persona on your desktop — sprite animation, voice, memory-aware chat. The web → desktop handoff is:
         </p>
         <ol className="space-y-1.5 ml-5 list-decimal">
           <li>Mint By Web can notify the desktop app with <code>soulidity://mint-completed?token=...</code> so the desktop clears its local extract draft and returns to the scan step. The current desktop handler does not deep-link a Soul ID or purchase directly into the persona library.</li>
@@ -173,7 +173,7 @@ export default function UserGuidePage() {
           <li>Protected sprite decryption happens locally through the <code>soul:decrypt-protected-sprite</code> IPC. The main process decrypts the Walrus blob and returns sprite bytes to the renderer, which immediately passes them back to <code>soul:cache-persona</code> for the local desktop cache.</li>
         </ol>
         <p>
-          See <Link href="/resources/desktop-companion" className="text-purple hover:text-foreground transition">Desktop Companion</Link> for installation, upgrade, and IPC protocol details.
+          See <Link href="/resources/desktop-companion" className="text-action-label hover:text-foreground transition">Desktop Companion</Link> for installation, upgrade, and IPC protocol details.
         </p>
       </Section>
 
@@ -203,7 +203,7 @@ export default function UserGuidePage() {
           You cannot. <code>KIND_SOUL_DOC</code> is mint-only and forever immutable — its <code>op_mask</code> on-chain has no append, delete, or purge bits set. The soul.md you ship at mint is the soul.md forever.
         </Faq>
         <Faq q="Where is my data stored?">
-          Encrypted blobs live on <Link href="/resources/walrus-seal" className="text-purple hover:text-foreground transition">Walrus</Link>. Access control is enforced by <Link href="/resources/walrus-seal" className="text-purple hover:text-foreground transition">Seal</Link> policy objects derived from the on-chain Soul state. Soulidity&apos;s database mirrors on-chain state but is never authoritative — the chain wins.
+          Encrypted blobs live on <Link href="/resources/walrus-seal" className="text-action-label hover:text-foreground transition">Walrus</Link>. Access control is enforced by <Link href="/resources/walrus-seal" className="text-action-label hover:text-foreground transition">Seal</Link> policy objects derived from the on-chain Soul state. Soulidity&apos;s database mirrors on-chain state but is never authoritative — the chain wins.
         </Faq>
       </Section>
 
@@ -233,7 +233,7 @@ export default function UserGuidePage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
       </div>

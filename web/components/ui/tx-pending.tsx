@@ -21,7 +21,7 @@ function TxPending({ message = 'Transaction pending…', visible, className }: T
         'fixed bottom-20 left-1/2 -translate-x-1/2 z-[250]',
         'flex items-center gap-3 px-5 py-3',
         'rounded-[12px] border border-purple/40 bg-card2',
-        'shadow-[0_8px_32px_rgba(168,85,247,0.18)]',
+        'shadow-[var(--ui-shadow-action)]',
         className,
       )}
     >

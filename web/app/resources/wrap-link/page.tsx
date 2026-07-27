@@ -26,7 +26,7 @@ export default function WrapLinkPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Wrap + Link Guide</h1>
         <p className="text-sm text-muted">
           Personal Join lets you add a Soul layer on top of any existing Sui NFT. Your original NFT stays unchanged — you gain Soul identity, encrypted content, memory, and skills without a new token contract.
@@ -70,7 +70,7 @@ export default function WrapLinkPage() {
             <strong className="text-foreground">Sign the transaction.</strong> The client calls <code>buildPersonalJoinSoulTx</code> which assembles the full PTB: borrow the kiosk cap, place the source NFT, call <code>market::mint_joined_in_personal_kiosk</code>, return the kiosk cap.
           </li>
           <li>
-            <strong className="text-foreground">Post-TX sync.</strong> After the TX succeeds, the app calls the publish API which mirrors the <code>SoulAsset</code>, <code>SoulState</code>, and the unified <code>SoulContent</code> slots (soul.md, founding memory, initial skills, optional sprite) into the DB. See <Link href="/resources/content-format" className="text-purple hover:text-foreground transition">Content Format</Link>.
+            <strong className="text-foreground">Post-TX sync.</strong> After the TX succeeds, the app calls the publish API which mirrors the <code>SoulAsset</code>, <code>SoulState</code>, and the unified <code>SoulContent</code> slots (soul.md, founding memory, initial skills, optional sprite) into the DB. See <Link href="/resources/content-format" className="text-action-label hover:text-foreground transition">Content Format</Link>.
           </li>
         </ol>
       </div>
@@ -135,7 +135,7 @@ export default function WrapLinkPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/api-sdk" className="text-sm font-medium text-muted hover:text-foreground transition">

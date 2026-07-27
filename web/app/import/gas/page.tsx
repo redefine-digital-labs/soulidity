@@ -452,7 +452,7 @@ export default function ImportGasPage() {
                   <span className="font-mono text-xs text-teal">{truncateHash(ctx.originRef)}</span>
                 </TxRow>
                 <TxRow label="Provenance">
-                  <span className="rounded-full border border-purple/30 bg-purple/15 px-2 py-0.5 text-[10px] font-bold text-purple">
+                  <span className="rounded-full border border-purple/30 bg-purple/15 px-2 py-0.5 text-[10px] font-bold text-action-label">
                     imported
                   </span>
                 </TxRow>
@@ -559,7 +559,7 @@ export default function ImportGasPage() {
               <span className={`text-sm font-semibold ${
                 status === 'done' ? 'text-success'
                   : status === 'error' || combinedError ? 'text-danger'
-                    : 'text-purple'
+                    : 'text-action-label'
               }`}>
                 {uploadPhase !== 'idle' && uploadPhase !== 'done' && uploadPhaseLabels[uploadPhase]}
                 {uploadPhase === 'done' && status === 'building' && '⟳ Building TX…'}

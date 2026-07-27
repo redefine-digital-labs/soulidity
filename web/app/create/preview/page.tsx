@@ -38,11 +38,11 @@ const royaltyLabels: Record<number, string> = {
 type ReviewTone = 'gold' | 'teal' | 'green' | 'orange' | 'purple' | 'muted'
 
 const toneStyles: Record<ReviewTone, { border: string; header: string }> = {
-  gold: { border: 'border-[#7b5a1e]', header: 'text-[#F59E0B]' },
-  teal: { border: 'border-[#165c65]', header: 'text-teal' },
-  green: { border: 'border-[#1b6040]', header: 'text-success' },
-  orange: { border: 'border-[#7b4a1e]', header: 'text-[#F97316]' },
-  purple: { border: 'border-purple/30', header: 'text-purple' },
+  gold: { border: 'border-[var(--ui-value)]', header: 'text-[var(--ui-value-text)]' },
+  teal: { border: 'border-[var(--ui-tech)]', header: 'text-[var(--ui-tech-text)]' },
+  green: { border: 'border-[var(--ui-success)]', header: 'text-success' },
+  orange: { border: 'border-[var(--ui-warning)]', header: 'text-[var(--ui-value-text)]' },
+  purple: { border: 'border-purple/30', header: 'text-action-label' },
   muted: { border: 'border-border', header: 'text-muted' },
 }
 
@@ -180,11 +180,11 @@ export default function CreatePreviewPage() {
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted">Creator Royalty</span>
-              <span className="text-[#F59E0B] font-semibold">
+              <span className="font-semibold text-[var(--ui-value-text)]">
                 {royaltyLabels[ctx.royalty] ?? `${ctx.royalty / 100}%`}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-[#c89a4a]">
+            <div className="flex items-center gap-1.5 text-[10px] text-[var(--ui-value-text)]">
               <span>🔒</span>
               <span>Locked after mint</span>
             </div>
@@ -261,7 +261,7 @@ export default function CreatePreviewPage() {
 
         {/* Content & Memory Policy */}
         <div className="rounded-2xl border border-purple/30 bg-purple/6 p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-purple mb-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-action-label mb-3">
             Content & Memory Policy
           </div>
           <p className="text-xs text-muted leading-relaxed mb-4">
@@ -293,7 +293,7 @@ export default function CreatePreviewPage() {
 
         {/* Marketplace settings (listing/bind) — applied in the same PTB as mint */}
         <div className="rounded-2xl border border-purple/30 bg-purple/6 p-5 space-y-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-purple">
+          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-action-label">
             Marketplace settings
           </div>
           <p className="text-xs text-muted leading-relaxed">
@@ -374,7 +374,7 @@ export default function CreatePreviewPage() {
                 size: 'lg',
                 full: true,
                 className:
-                  'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
+                  'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[var(--ui-shadow-action)]',
               })}
             >
               Next: Pay Gas <span aria-hidden="true">→</span>

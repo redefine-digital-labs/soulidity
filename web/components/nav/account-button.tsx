@@ -203,10 +203,10 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] min-w-0 overflow-hidden rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-translucent)] shadow-[var(--ui-shadow-sm)] backdrop-blur-xl">
           <div className="flex items-center justify-between gap-2 px-3 pt-3">
             <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-teal/50 bg-teal/10 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-teal"
+              className="inline-flex items-center gap-1.5 rounded-full border border-teal/50 bg-teal/10 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-tech-text"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-teal animate-pulse" />
               {networkLabel}
@@ -216,7 +216,7 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
                 href={explorerUrl(walletAddress, suiNetwork)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted transition hover:text-purple"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted transition hover:text-action-label"
                 title="View on SuiVision"
               >
                 Explorer
@@ -233,7 +233,7 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
                     <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted">
                       Your address
                     </div>
-                    <div className="select-all break-all font-mono text-[11px] leading-relaxed text-teal">
+                    <div className="select-all break-all font-mono text-[11px] leading-relaxed text-tech-text">
                       {walletAddress}
                     </div>
                     <div className="mt-1 text-[10.5px] text-muted">
@@ -246,11 +246,11 @@ export function AccountButton({ emoji, userName, walletAddress, profileHref, sui
                     className="flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left transition hover:bg-purple/10 group"
                     title={walletAddress}
                   >
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-teal">
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-tech-text">
                       {formatAddress(walletAddress)}
                     </span>
                     {copied ? (
-                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-teal" />
+                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-tech-text" />
                     ) : (
                       <CopyIcon className="h-3.5 w-3.5 shrink-0 text-muted group-hover:text-foreground transition-colors" />
                     )}

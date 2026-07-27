@@ -200,7 +200,7 @@ export default function AddSoulsPage() {
               <button
                 type="button"
                 onClick={() => downloadTemplate('csv')}
-                className="text-[13px] text-muted transition-colors hover:text-purple"
+                className="text-[13px] text-muted transition-colors hover:text-action-label"
               >
                 or .csv
               </button>
@@ -325,7 +325,7 @@ export default function AddSoulsPage() {
                 <button
                   type="button"
                   onClick={handleSkip}
-                  className="text-[13px] text-muted transition-colors hover:text-purple"
+                  className="text-[13px] text-muted transition-colors hover:text-action-label"
                 >
                   Skip for now and launch empty
                 </button>
@@ -372,7 +372,7 @@ export default function AddSoulsPage() {
                         <span className={folder?.memoryFile ? 'text-teal' : 'text-danger'}>
                           {folder?.memoryFile ? '✓' : '✗'} mem
                         </span>
-                        <span className={folder?.imageFile ? 'text-purple' : 'text-muted/40'}>
+                        <span className={folder?.imageFile ? 'text-action-label' : 'text-muted/40'}>
                           {folder?.imageFile ? '✓' : '—'} img
                         </span>
                       </div>

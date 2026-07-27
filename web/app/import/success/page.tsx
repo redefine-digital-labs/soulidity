@@ -69,7 +69,7 @@ export default function ImportSuccessPage() {
             <span className="text-muted">Source</span>
             <div className="flex items-center gap-2">
               <span className="text-xs text-foreground">{ctx.rawFile?.name ?? 'External file'}</span>
-              <span className="rounded-full border border-purple/30 bg-purple/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-purple">
+              <span className="rounded-full border border-purple/30 bg-purple/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-action-label">
                 Imported
               </span>
             </div>
@@ -112,7 +112,7 @@ export default function ImportSuccessPage() {
             <p className="mt-1.5 text-xs leading-relaxed text-muted">
               Go to your dashboard to authorize an AI agent, manage versions, or list later.
             </p>
-            <span className="mt-3 block text-xs font-semibold text-muted group-hover:text-purple">
+            <span className="mt-3 block text-xs font-semibold text-muted group-hover:text-action-label">
               Go to My Souls →
             </span>
           </Link>
@@ -120,7 +120,7 @@ export default function ImportSuccessPage() {
 
         <Link
           href="/market"
-          className="text-sm text-muted underline underline-offset-4 transition hover:text-purple"
+          className="text-sm text-muted underline underline-offset-4 transition hover:text-action-label"
         >
           View in Market
         </Link>

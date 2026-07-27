@@ -41,7 +41,7 @@ export default function ContentFormatPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Soul Content Format</h1>
         <p className="text-sm text-muted">
           Soul content lives as typed slots under a single <code>SoulContent</code> object — one per Soul, bound once at mint. This page covers the three artifacts uploaded at mint time (<code>soul.md</code>, <code>memory.md</code>, <code>skills.zip</code>) plus persona assets (sprite / audio), how they map to <code>KindRegistry</code> kinds, and the addressing rules for every slot.
@@ -105,7 +105,7 @@ export default function ContentFormatPage() {
           </table>
         </div>
         <p className="text-xs text-muted">
-          See <Link href="/resources/kind-registry" className="text-purple hover:text-foreground transition">Kind Registry</Link> for the op-mask / read-mode-mask cells per kind and the rules for admin-registered custom kinds.
+          See <Link href="/resources/kind-registry" className="text-action-label hover:text-foreground transition">Kind Registry</Link> for the op-mask / read-mode-mask cells per kind and the rules for admin-registered custom kinds.
         </p>
       </div>
 
@@ -166,7 +166,7 @@ description: |
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/kind-registry" className="text-sm font-medium text-muted hover:text-foreground transition">

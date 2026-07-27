@@ -87,7 +87,7 @@ function SoulCard({ soul, onGrantClick }: { soul: MySoulEntry; onGrantClick: () 
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
               {soul.provenanceKind === 'native' && (
-                <span className="text-purple">{'\u2726'} Created from scratch</span>
+                <span className="text-action-label">{'\u2726'} Created from scratch</span>
               )}
               {soul.provenanceKind === 'imported' && (
                 <>
@@ -168,7 +168,7 @@ function SoulCard({ soul, onGrantClick }: { soul: MySoulEntry; onGrantClick: () 
       ) : (
         <div className="flex flex-col gap-1 rounded-b-xl border border-t-0 border-purple/20 bg-purple/[0.06] px-4 py-2 text-[11px] sm:flex-row sm:items-center sm:gap-2">
           <span className="text-muted">No agent authorized yet.</span>
-          <button onClick={onGrantClick} className="font-semibold text-purple hover:text-foreground cursor-pointer text-left">
+          <button onClick={onGrantClick} className="font-semibold text-action-label hover:text-foreground cursor-pointer text-left">
             Authorize an agent to access this Soul&apos;s data {'\u2192'}
           </button>
         </div>
@@ -331,7 +331,7 @@ function PortfolioStrip({ data }: { data: NonNullable<ReturnType<typeof useMySou
     {
       label: 'Active grants',
       value: activeGrants.toLocaleString(),
-      color: 'text-purple',
+      color: 'text-action-label',
       hint: `${data.owned.length} Souls`,
     },
     {
@@ -506,8 +506,8 @@ export default function MySoulsPage() {
                 className={
                   'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ' +
                   (activeGrantsOnly
-                    ? 'border-purple bg-purple/12 text-purple'
-                    : 'border-border bg-transparent text-muted hover:border-purple hover:text-purple')
+                    ? 'border-purple bg-purple/12 text-action-label'
+                    : 'border-border bg-transparent text-muted hover:border-purple hover:text-action-label')
                 }
               >
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
@@ -597,8 +597,8 @@ export default function MySoulsPage() {
                       className={
                         'rounded-full border px-3 py-1 text-[11px] font-semibold capitalize transition-colors ' +
                         (grantStatusFilter === status
-                          ? 'border-purple bg-purple/12 text-purple'
-                          : 'border-border bg-transparent text-muted hover:border-purple hover:text-purple')
+                          ? 'border-purple bg-purple/12 text-action-label'
+                          : 'border-border bg-transparent text-muted hover:border-purple hover:text-action-label')
                       }
                     >
                       {status} <span className="ml-0.5 font-mono opacity-70">{count}</span>
@@ -609,7 +609,7 @@ export default function MySoulsPage() {
               <button
                 type="button"
                 onClick={() => downloadGrantsCsv(filteredGrants)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-transparent px-3 py-1.5 text-[11px] font-semibold text-muted transition-colors hover:border-purple hover:text-purple"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-transparent px-3 py-1.5 text-[11px] font-semibold text-muted transition-colors hover:border-purple hover:text-action-label"
                 title="Download CSV of filtered grants"
               >
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">

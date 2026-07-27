@@ -177,7 +177,7 @@ export default function ImportUploadPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <span className="text-sm font-semibold text-foreground">{ctx.rawFile!.name}</span>
-                <span className="rounded-full border border-purple/30 bg-purple/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-purple">
+                <span className="rounded-full border border-purple/30 bg-purple/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-action-label">
                   {formatBadge(ctx.rawFile!.name)}
                 </span>
               </div>
@@ -212,7 +212,7 @@ export default function ImportUploadPage() {
         {/* Soul Explorer info card */}
         <div className="rounded-2xl border border-purple/20 bg-card2/55 px-4 py-4">
           <div className="flex items-start gap-3">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple/15 text-sm text-purple">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple/15 text-sm text-action-label">
               🔍
             </span>
             <div>
@@ -242,7 +242,7 @@ export default function ImportUploadPage() {
                 { field: 'config', label: 'Config', desc: 'System prompt or settings', required: false },
               ].map((item) => (
                 <div key={item.field} className="flex items-start gap-2 rounded-lg bg-black/15 px-2.5 py-2">
-                  <code className="shrink-0 rounded bg-purple/10 px-1.5 py-0.5 font-mono text-[10px] text-purple">
+                  <code className="shrink-0 rounded bg-purple/10 px-1.5 py-0.5 font-mono text-[10px] text-action-label">
                     {item.field}
                   </code>
                   <div className="min-w-0">
@@ -254,7 +254,7 @@ export default function ImportUploadPage() {
               ))}
             </div>
             <p className="mt-2.5 text-[10px] leading-4 text-muted">
-              Fields are matched by keyword — e.g. <code className="rounded bg-black/20 px-1 font-mono text-[9px] text-purple">bio</code>, <code className="rounded bg-black/20 px-1 font-mono text-[9px] text-purple">system_prompt</code>, <code className="rounded bg-black/20 px-1 font-mono text-[9px] text-purple">personality</code> will also be detected.
+              Fields are matched by keyword — e.g. <code className="rounded bg-black/20 px-1 font-mono text-[9px] text-action-label">bio</code>, <code className="rounded bg-black/20 px-1 font-mono text-[9px] text-action-label">system_prompt</code>, <code className="rounded bg-black/20 px-1 font-mono text-[9px] text-action-label">personality</code> will also be detected.
               Unrecognized fields can be manually mapped in the next step.
             </p>
           </div>

@@ -31,8 +31,8 @@ export function FilterTabs({ tabs, activeId, onChange, className }: FilterTabsPr
             className={cn(
               'inline-flex items-center rounded-[20px] border px-3.5 py-1.5 text-xs font-semibold cursor-pointer select-none transition-colors duration-150',
               isActive
-                ? 'border-purple bg-purple text-white'
-                : 'border-border bg-transparent text-muted hover:border-purple hover:text-purple',
+                ? 'border-[var(--ui-action)] bg-[var(--ui-action)] text-[var(--ui-action-text)]'
+                : 'border-border bg-transparent text-muted hover:border-purple hover:text-action-label',
             )}
           >
             {tab.label}

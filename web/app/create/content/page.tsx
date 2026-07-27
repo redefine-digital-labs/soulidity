@@ -37,43 +37,34 @@ const toneStyles: Record<
   }
 > = {
   amber: {
-    card:
-      'border-[#7b5a1e] bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_36%),linear-gradient(180deg,rgba(31,18,58,0.97),rgba(18,10,37,0.98))]',
-    meta: 'text-[#ddae5a]',
-    badge: 'border-[#8a6326] bg-[rgba(107,69,18,0.52)] text-[#ffcb74]',
-    upload:
-      'border-[#8b6324] bg-[rgba(18,11,35,0.72)] hover:border-[#d89d42] hover:bg-[rgba(33,19,58,0.82)]',
-    uploadIcon: 'text-[#ffe2b0]',
-    uploadSubtitle: 'text-[#b79864]',
-    success:
-      'border-[#8a6326] bg-[linear-gradient(180deg,rgba(38,24,63,0.96),rgba(25,15,43,0.98))]',
-    successAccent: 'text-[#f4c36c]',
+    card: 'border-[var(--ui-value)] bg-[var(--ui-surface)]',
+    meta: 'text-[var(--ui-value-text)]',
+    badge: 'border-[var(--ui-value)] bg-[var(--ui-soft-value)] text-[var(--ui-value-text)]',
+    upload: 'border-[var(--ui-value)] bg-[var(--ui-control-bg)] hover:bg-[var(--ui-soft-value)]',
+    uploadIcon: 'text-[var(--ui-value-text)]',
+    uploadSubtitle: 'text-[var(--ui-muted)]',
+    success: 'border-[var(--ui-value)] bg-[var(--ui-soft-value)]',
+    successAccent: 'text-[var(--ui-value-text)]',
   },
   violet: {
-    card:
-      'border-[#4f2d84] bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.16),transparent_38%),linear-gradient(180deg,rgba(28,17,63,0.97),rgba(18,10,41,0.98))]',
-    meta: 'text-[#b889ff]',
-    badge: 'border-[#633796] bg-[rgba(92,47,162,0.38)] text-[#d1b4ff]',
-    upload:
-      'border-[#613892] bg-[rgba(18,11,35,0.72)] hover:border-[#a966ff] hover:bg-[rgba(33,19,58,0.82)]',
-    uploadIcon: 'text-[#d6bbff]',
-    uploadSubtitle: 'text-[#9f7bdc]',
-    success:
-      'border-[#5f3794] bg-[linear-gradient(180deg,rgba(39,22,72,0.96),rgba(25,15,43,0.98))]',
-    successAccent: 'text-[#cfb0ff]',
+    card: 'border-[var(--ui-action)] bg-[var(--ui-surface)]',
+    meta: 'text-[var(--ui-action)]',
+    badge: 'border-[var(--ui-action)] bg-[var(--ui-soft-action)] text-[var(--ui-action)]',
+    upload: 'border-[var(--ui-action)] bg-[var(--ui-control-bg)] hover:bg-[var(--ui-soft-action)]',
+    uploadIcon: 'text-[var(--ui-action)]',
+    uploadSubtitle: 'text-[var(--ui-muted)]',
+    success: 'border-[var(--ui-action)] bg-[var(--ui-soft-action)]',
+    successAccent: 'text-[var(--ui-action)]',
   },
   teal: {
-    card:
-      'border-[#165c65] bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_38%),linear-gradient(180deg,rgba(18,25,52,0.97),rgba(12,15,35,0.98))]',
-    meta: 'text-[#58d3c7]',
-    badge: 'border-[#1e666f] bg-[rgba(19,102,108,0.32)] text-[#8ceae0]',
-    upload:
-      'border-[#1b636d] bg-[rgba(14,18,40,0.76)] hover:border-[#42c9bd] hover:bg-[rgba(18,24,52,0.84)]',
-    uploadIcon: 'text-[#9aece3]',
-    uploadSubtitle: 'text-[#63c9bf]',
-    success:
-      'border-[#1d6f78] bg-[linear-gradient(180deg,rgba(10,56,61,0.96),rgba(9,34,38,0.98))]',
-    successAccent: 'text-[#8ceae0]',
+    card: 'border-[var(--ui-tech)] bg-[var(--ui-surface)]',
+    meta: 'text-[var(--ui-tech-text)]',
+    badge: 'border-[var(--ui-tech)] bg-[var(--ui-soft-tech)] text-[var(--ui-tech-text)]',
+    upload: 'border-[var(--ui-tech)] bg-[var(--ui-control-bg)] hover:bg-[var(--ui-soft-tech)]',
+    uploadIcon: 'text-[var(--ui-tech-text)]',
+    uploadSubtitle: 'text-[var(--ui-muted)]',
+    success: 'border-[var(--ui-tech)] bg-[var(--ui-soft-tech)]',
+    successAccent: 'text-[var(--ui-tech-text)]',
   },
 }
 
@@ -247,7 +238,7 @@ function ContentCard({
   return (
     <section
       className={cn(
-        'rounded-[18px] border px-3.5 py-3.5 shadow-[0_16px_44px_rgba(6,2,17,0.32)] sm:px-4 sm:py-4',
+        'rounded-[var(--ui-radius-lg)] border px-3.5 py-3.5 shadow-[var(--ui-shadow-sm)] sm:px-4 sm:py-4',
         toneStyles[tone].card,
       )}
     >
@@ -372,7 +363,7 @@ function UploadStatus({
         <button
           type="button"
           onClick={onClear}
-          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted/60 transition-colors hover:bg-[var(--ui-surface-muted)] hover:text-foreground"
           aria-label="Remove file"
         >
           <CloseIcon className="h-3 w-3" />
@@ -462,7 +453,7 @@ export default function CreateContentPage() {
                 <button
                   type="button"
                   onClick={downloadCharacterTemplate}
-                  className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#f1b85b] transition hover:text-[#ffd08a]"
+                  className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--ui-value-text)] transition hover:text-[var(--ui-value)]"
                 >
                   <DownloadIcon className="h-3.5 w-3.5" />
                   <span className="text-muted">Don&apos;t have one yet?</span>
@@ -571,8 +562,8 @@ export default function CreateContentPage() {
         </div>
 
         <div className="rounded-[12px] border border-purple/30 bg-purple/10 px-4 py-3">
-          <div className="flex items-start gap-2.5 text-[11px] leading-5 text-[#b9a4df]">
-            <LockIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#d4b5ff]" />
+          <div className="flex items-start gap-2.5 text-[11px] leading-5 text-[var(--ui-muted)]">
+            <LockIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--ui-action)]" />
             <p>
               Mint creates one locked character layer, one encrypted founding memory entry, and an optional private skills bundle.
               Later SoulGrant sessions can add new memory entries or new skill revisions without rewriting the originals.
@@ -600,7 +591,7 @@ export default function CreateContentPage() {
               size: 'lg',
               full: true,
               className:
-                'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[0_14px_34px_rgba(124,58,237,0.34)]',
+                'rounded-[10px] px-4 py-2.5 text-[13px] shadow-[var(--ui-shadow-action)]',
             })}
           >
             Next: Preview <span aria-hidden="true">→</span>

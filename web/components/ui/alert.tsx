@@ -10,9 +10,9 @@ interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const variantStyles: Record<AlertVariant, string> = {
-  info: 'bg-purple/10 border border-purple/30 text-purple',
+  info: 'bg-purple/10 border border-purple/30 text-action-label',
   success: 'bg-success/10 border border-success/30 text-success',
-  warning: 'bg-gold/10 border border-gold/30 text-gold',
+  warning: 'bg-gold/10 border border-gold/30 text-value-text',
 }
 
 const Alert = forwardRef<HTMLDivElement, AlertProps>(function Alert(

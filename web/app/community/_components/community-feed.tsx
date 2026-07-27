@@ -134,7 +134,7 @@ function PostCard({ post }: { post: CommunityPost }) {
 
         {/* Title */}
         <Link href={`/community/posts/${post.id}`} className="block">
-          <h3 className="mb-1 text-sm font-bold text-foreground leading-snug hover:text-purple transition">
+          <h3 className="mb-1 text-sm font-bold text-foreground leading-snug hover:text-action-label transition">
             {post.title}
           </h3>
           <p className="text-[13px] leading-[1.6] text-muted line-clamp-2">{post.content}</p>
@@ -271,7 +271,7 @@ export default function CommunityFeed({ activeChannel }: { activeChannel?: strin
           <section className="card px-4 py-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="text-sm font-bold text-foreground">Top Contributors</div>
-              <Link href="/community/leaderboard" className="text-[11px] font-semibold text-purple hover:text-purple/80 transition">
+              <Link href="/community/leaderboard" className="text-[11px] font-semibold text-action-label hover:text-action-label/80 transition">
                 View all →
               </Link>
             </div>

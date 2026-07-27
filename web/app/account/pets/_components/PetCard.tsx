@@ -329,7 +329,7 @@ export function PetCard({ pet, onMutate, autoOpenGrant, onAutoOpenConsumed }: Pe
               type="button"
               onClick={() => setGrantDialogMode('issue')}
               disabled={pending}
-              className="inline-flex h-8 items-center rounded-md border border-purple/40 px-3 text-xs font-semibold text-purple transition hover:bg-purple/10 disabled:opacity-50"
+              className="inline-flex h-8 items-center rounded-md border border-purple/40 px-3 text-xs font-semibold text-action-label transition hover:bg-purple/10 disabled:opacity-50"
             >
               Authorize sprite downloads
             </button>

@@ -47,7 +47,7 @@ export default function CollectionSuccessPage() {
             </div>
             <div className="flex justify-between py-2 border-b border-border">
               <span className="text-muted">Wrap Type</span>
-              <span className="text-purple text-xs font-semibold">Collection</span>
+              <span className="text-action-label text-xs font-semibold">Collection</span>
             </div>
             <div className="flex justify-between py-2 border-b border-border">
               <span className="text-muted">Eligible Holders</span>

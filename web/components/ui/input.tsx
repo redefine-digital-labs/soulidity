@@ -2,7 +2,7 @@ import { forwardRef } from 'react'
 import { cn } from '@/lib/utils/cn'
 
 const baseStyles =
-  'w-full rounded-lg border border-border bg-card2 px-3.5 py-2.5 text-[var(--text-primary)] text-sm outline-none transition-colors placeholder:text-border focus:border-purple'
+  'w-full rounded-[var(--ui-radius-sm)] border border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-3.5 py-2.5 text-[var(--ui-text)] text-sm outline-none transition-colors placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)]'
 
 // Input
 

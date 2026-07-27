@@ -163,7 +163,7 @@ export default async function DownloadPage() {
         {hasBuild ? (
           <p className="mt-3 text-xs text-muted">
             Direct link:{' '}
-            <a href={release.macArm64Url} className="break-all text-purple hover:underline">
+            <a href={release.macArm64Url} className="break-all text-action-label hover:underline">
               {release.macArm64Url}
             </a>
           </p>
@@ -180,7 +180,7 @@ export default async function DownloadPage() {
         <div className="mt-14 grid gap-4 md:grid-cols-3">
           {features.map((f) => (
             <div key={f.title} className="card rounded-xl p-5">
-              <div className="mb-3 text-[24px] text-purple">{f.icon}</div>
+              <div className="mb-3 text-[24px] text-action-label">{f.icon}</div>
               <div className="mb-2 text-sm font-bold text-foreground">{f.title}</div>
               <p className="text-xs leading-[1.5] text-muted">{f.desc}</p>
             </div>
@@ -189,7 +189,7 @@ export default async function DownloadPage() {
 
         <div className="mt-12 grid gap-6 lg:grid-cols-2">
           <div className="card rounded-xl p-6">
-            <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.1em] text-purple">
+            <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.1em] text-action-label">
               System requirements
             </p>
             <dl className="space-y-3">
@@ -230,7 +230,7 @@ export default async function DownloadPage() {
               <li>
                 <span className="mr-2 text-gold">4.</span>
                 Launch the app, then visit{' '}
-                <Link href="/desktop/link" className="text-purple hover:underline">
+                <Link href="/desktop/link" className="text-action-label hover:underline">
                   /desktop/link
                 </Link>{' '}
                 to bind your account.

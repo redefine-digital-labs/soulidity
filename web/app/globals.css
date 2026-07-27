@@ -1,34 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-/* ── Dark Theme (default) ────────────────────────── */
+/* ── Shared visual contract ───────────────────────── */
 :root {
-  /* Background scale */
-  --bg: #0D0A1E;
-  --card: #1A1040;
-  --card2: #261558;
-  --border: #3B2388;
-  --nav-bg: rgba(13, 10, 30, 0.92);
-
-  /* Brand */
-  --purple: #A855F7;
-  --purple-deep: #7C3AED;
-  --gold: #F59E0B;
-  --gold-light: #FCD34D;
-  --teal: #14B8A6;
-
-  /* Text */
-  --text-primary: #F8F5FF;
-  --text-muted: #9B8EC4;
-
-  /* Semantic */
-  --success: #10B981;
-  --danger: #EF4444;
-
   /* Typography */
-  --font-display: 'Inter', 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-body: 'Inter', 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --ui-font-display: 'Inter', 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --ui-font-body: 'Inter', 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --ui-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-display: var(--ui-font-display);
+  --font-body: var(--ui-font-body);
+  --font-mono: var(--ui-font-mono);
 
   /* Spacing base: 4px */
   --space-2xs: 2px;
@@ -47,8 +28,134 @@
   --radius-pill: 9999px;
 }
 
-/* Light theme cut per design review X7 — Soulidity is dark-only.
-   Half-shipped light tokens removed to avoid hybrid broken surface. */
+:root,
+[data-theme='soulidity'] {
+  color-scheme: dark;
+
+  --ui-bg: #0d0a1e;
+  --ui-surface: #1a1040;
+  --ui-surface-raised: #261558;
+  --ui-surface-muted: #21134d;
+  --ui-surface-selected: #321b6a;
+  --ui-text: #f8f5ff;
+  --ui-muted: #9b8ec4;
+  --ui-border: #3b2388;
+  --ui-border-strong: #6540bd;
+  --ui-action: #7c3aed;
+  --ui-action-hover: #6d28d9;
+  --ui-action-text: #ffffff;
+  --ui-action-label: #c084fc;
+  --ui-brand: #a855f7;
+  --ui-brand-text: #d8b4fe;
+  --ui-value: #f59e0b;
+  --ui-value-hover: #fcd34d;
+  --ui-value-text: #fcd34d;
+  --ui-value-action-text: #211508;
+  --ui-tech: #14b8a6;
+  --ui-tech-text: #5eead4;
+  --ui-tech-action-text: #071b18;
+  --ui-success: #10b981;
+  --ui-warning: #f59e0b;
+  --ui-danger: #ef4444;
+  --ui-overlay: rgba(5, 3, 15, 0.78);
+  --ui-focus: #7c3aed;
+  --ui-nav-bg: rgba(13, 10, 30, 0.92);
+  --ui-panel-translucent: rgba(26, 16, 64, 0.84);
+  --ui-control-bg: #261558;
+  --ui-placeholder: #6b5e94;
+  --ui-page-background: none;
+  --ui-selection: rgba(168, 85, 247, 0.3);
+  --ui-soft-action: rgba(168, 85, 247, 0.12);
+  --ui-soft-value: rgba(245, 158, 11, 0.1);
+  --ui-soft-tech: rgba(20, 184, 166, 0.1);
+  --ui-soft-success: rgba(16, 185, 129, 0.12);
+  --ui-soft-danger: rgba(239, 68, 68, 0.12);
+  --ui-shadow-sm: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --ui-shadow-md: 0 20px 60px rgba(0, 0, 0, 0.55);
+  --ui-shadow-action: 0 8px 32px rgba(168, 85, 247, 0.18);
+  --ui-outline-width: 1px;
+  --ui-ambient-opacity: 0.2;
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 12px;
+  --ui-radius-lg: 16px;
+}
+
+[data-theme='animacraft'] {
+  color-scheme: light;
+
+  --ui-bg: #f3f7f8;
+  --ui-surface: #ffffff;
+  --ui-surface-raised: #ffffff;
+  --ui-surface-muted: #edf3f3;
+  --ui-surface-selected: #fff3cd;
+  --ui-text: #25212b;
+  --ui-muted: #746f7b;
+  --ui-border: #ced9dc;
+  --ui-border-strong: #25212b;
+  --ui-action: #6d4fe8;
+  --ui-action-hover: #5638cf;
+  --ui-action-text: #ffffff;
+  --ui-action-label: #6d4fe8;
+  --ui-brand: #ed7090;
+  --ui-brand-text: #a43255;
+  --ui-value: #f0a23a;
+  --ui-value-hover: #d98820;
+  --ui-value-text: #754500;
+  --ui-value-action-text: #25212b;
+  --ui-tech: #2db7a3;
+  --ui-tech-text: #12695d;
+  --ui-tech-action-text: #152824;
+  --ui-success: #25835f;
+  --ui-warning: #ad640e;
+  --ui-danger: #c53d55;
+  --ui-overlay: rgba(37, 33, 43, 0.36);
+  --ui-focus: #6d4fe8;
+  --ui-nav-bg: rgba(255, 255, 255, 0.9);
+  --ui-panel-translucent: rgba(255, 255, 255, 0.88);
+  --ui-control-bg: #f7faf9;
+  --ui-placeholder: #8c8791;
+  --ui-page-background:
+    linear-gradient(rgba(206, 217, 220, 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(206, 217, 220, 0.45) 1px, transparent 1px);
+  --ui-selection: rgba(123, 92, 255, 0.22);
+  --ui-soft-action: rgba(123, 92, 255, 0.1);
+  --ui-soft-value: rgba(240, 162, 58, 0.14);
+  --ui-soft-tech: rgba(45, 183, 163, 0.12);
+  --ui-soft-success: rgba(37, 131, 95, 0.12);
+  --ui-soft-danger: rgba(197, 61, 85, 0.1);
+  --ui-shadow-sm: 3px 3px 0 rgba(37, 33, 43, 0.18);
+  --ui-shadow-md: 6px 6px 0 rgba(37, 33, 43, 0.16);
+  --ui-shadow-action: 3px 3px 0 rgba(240, 162, 58, 0.8);
+  --ui-outline-width: 2px;
+  --ui-ambient-opacity: 0.08;
+  --ui-radius-sm: 10px;
+  --ui-radius-md: 14px;
+  --ui-radius-lg: 18px;
+}
+
+/* Compatibility aliases. New shared components should prefer --ui-* names. */
+:root {
+  --bg: var(--ui-bg);
+  --card: var(--ui-surface);
+  --card2: var(--ui-surface-raised);
+  --border: var(--ui-border);
+  --nav-bg: var(--ui-nav-bg);
+  --purple: var(--ui-action);
+  --purple-deep: var(--ui-action-hover);
+  --gold: var(--ui-value);
+  --gold-light: var(--ui-value-hover);
+  --teal: var(--ui-tech);
+  --text-primary: var(--ui-text);
+  --text-muted: var(--ui-muted);
+  --success: var(--ui-success);
+  --warning: var(--ui-warning);
+  --danger: var(--ui-danger);
+  --text-faint: var(--ui-placeholder);
+  --border-soft: color-mix(in srgb, var(--ui-border) 64%, transparent);
+  --purple-soft: var(--ui-soft-action);
+  --bg-2: var(--ui-control-bg);
+  --card-3: var(--ui-surface-selected);
+}
 
 /* ── Tailwind v4 Theme ───────────────────────────── */
 @theme inline {
@@ -64,7 +171,15 @@
   --color-teal: var(--teal);
   --color-muted: var(--text-muted);
   --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-brand: var(--ui-brand);
+  --color-brand-text: var(--ui-brand-text);
+  --color-action-label: var(--ui-action-label);
+  --color-value-text: var(--ui-value-text);
+  --color-tech-text: var(--ui-tech-text);
+  --color-surface-muted: var(--ui-surface-muted);
+  --color-surface-selected: var(--ui-surface-selected);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
   --font-mono: var(--font-mono);
@@ -76,13 +191,15 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 html {
-  background: var(--bg);
+  background-color: var(--ui-bg);
   overflow-x: hidden;
 }
 
 body {
-  background: var(--bg);
-  color: var(--text-primary);
+  background-color: var(--ui-bg);
+  background-image: var(--ui-page-background);
+  background-size: 32px 32px;
+  color: var(--ui-text);
   font-family: var(--font-body);
   font-size: 14px;
   min-height: 100vh;
@@ -124,7 +241,7 @@ select {
   to { opacity: 1; }
 }
 
-/* ── Scrollbar (dark) ─────────────────────────────── */
+/* ── Scrollbar ────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -132,8 +249,8 @@ select {
 
 /* ── Selection ────────────────────────────────────── */
 ::selection {
-  background: rgba(168, 85, 247, 0.3);
-  color: var(--text-primary);
+  background: var(--ui-selection);
+  color: var(--ui-text);
 }
 
 /* ── Focus ring ───────────────────────────────────── */
@@ -141,29 +258,39 @@ select {
    and a bg-colored box-shadow fills the 2px gap so the purple ring stays
    high-contrast even on purple-bordered parents. */
 :focus-visible {
-  outline: 2px solid var(--purple);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
-  box-shadow: 0 0 0 2px var(--bg);
+  box-shadow: 0 0 0 2px var(--ui-bg);
 }
 
 /* ── Base component utilities ─────────────────────── */
 .card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--ui-surface);
+  border: var(--ui-outline-width) solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
 }
 
 .card-hover {
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 .card-hover:hover {
-  border-color: var(--purple);
+  border-color: var(--ui-action);
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(168, 85, 247, 0.15);
+  box-shadow: var(--ui-shadow-action);
+}
+
+[data-theme='animacraft'] .card {
+  border-color: var(--ui-border-strong);
+  box-shadow: 3px 3px 0 rgba(37, 33, 43, 0.14);
+}
+
+[data-theme='animacraft'] .ui-button {
+  border-color: var(--ui-border-strong);
+  box-shadow: 2px 2px 0 rgba(37, 33, 43, 0.16);
 }
 
 .page-kicker {
-  color: var(--purple);
+  color: var(--ui-brand-text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;

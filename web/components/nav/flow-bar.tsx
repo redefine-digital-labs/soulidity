@@ -32,8 +32,8 @@ export function FlowBar({ steps, currentStep, className }: FlowBarProps) {
                   <div
                     className={cn(
                       'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
-                      isDone && 'bg-success text-[#08110d]',
-                      isActive && 'bg-purple text-white',
+                      isDone && 'bg-success text-[var(--ui-tech-action-text)]',
+                      isActive && 'bg-[var(--ui-action)] text-[var(--ui-action-text)]',
                       isPending && 'bg-border text-muted',
                     )}
                   >

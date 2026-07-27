@@ -13,19 +13,19 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'border border-transparent bg-purple text-white hover:bg-purple-deep',
+    'border border-transparent bg-[var(--ui-action)] text-[var(--ui-action-text)] hover:bg-[var(--ui-action-hover)]',
   gold:
-    'border border-transparent bg-gold text-black hover:bg-gold-light',
+    'border border-transparent bg-[var(--ui-value)] text-[var(--ui-value-action-text)] hover:bg-[var(--ui-value-hover)]',
   teal:
-    'border border-transparent bg-teal text-black hover:opacity-85',
+    'border border-transparent bg-[var(--ui-tech)] text-[var(--ui-tech-action-text)] hover:opacity-85',
   outline:
-    'border border-border bg-transparent text-foreground hover:border-purple hover:text-purple',
+    'border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text)] hover:border-[var(--ui-action)] hover:text-[var(--ui-action)]',
   ghost:
-    'border border-transparent bg-transparent text-muted hover:text-[var(--text-primary)]',
+    'border border-transparent bg-transparent text-[var(--ui-muted)] hover:bg-[var(--ui-surface-muted)] hover:text-[var(--ui-text)]',
   danger:
-    'border border-transparent bg-danger text-white hover:opacity-85',
+    'border border-transparent bg-[var(--ui-danger)] text-white hover:opacity-85',
   landing:
-    'border border-transparent bg-[linear-gradient(135deg,var(--purple),var(--purple-deep))] text-white hover:opacity-88 hover:-translate-y-px',
+    'border border-transparent bg-[linear-gradient(135deg,var(--ui-action),var(--ui-action-hover))] text-[var(--ui-action-text)] shadow-[var(--ui-shadow-action)] hover:opacity-88 hover:-translate-y-px',
 }
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -46,7 +46,7 @@ export function buttonStyles({
   className?: string
 } = {}) {
   return cn(
-    'inline-flex items-center justify-center gap-1.5 whitespace-nowrap font-semibold cursor-pointer select-none transition-[transform,background-color,border-color,color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]',
+    'ui-button inline-flex items-center justify-center gap-1.5 whitespace-nowrap font-semibold cursor-pointer select-none transition-[transform,background-color,border-color,color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-focus)]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ui-bg)]',
     variantStyles[variant],
     sizeStyles[size],
     full && 'w-full',

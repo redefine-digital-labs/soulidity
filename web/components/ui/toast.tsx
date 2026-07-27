@@ -46,12 +46,12 @@ const iconMap: Record<ToastColor, string> = {
 }
 
 const iconColorMap: Record<ToastColor, string> = {
-  success: 'text-teal',
-  teal: 'text-teal',
-  gold: 'text-gold',
+  success: 'text-tech-text',
+  teal: 'text-tech-text',
+  gold: 'text-value-text',
   danger: 'text-danger',
-  purple: 'text-purple',
-  default: 'text-purple',
+  purple: 'text-action-label',
+  default: 'text-action-label',
 }
 
 const MAX_TOASTS = 3
@@ -109,7 +109,7 @@ function ToastRow({
       role="status"
       aria-live="polite"
       className={cn(
-        'pointer-events-auto flex min-w-[260px] max-w-[360px] items-start gap-2.5 overflow-hidden rounded-lg border border-border border-l-2 bg-card px-3.5 py-2.5 text-sm shadow-[0_10px_32px_rgba(0,0,0,0.45)] backdrop-blur-[8px] transition-all duration-200',
+        'pointer-events-auto flex min-w-[260px] max-w-[360px] items-start gap-2.5 overflow-hidden rounded-[var(--ui-radius-sm)] border border-[var(--ui-border)] border-l-2 bg-[var(--ui-panel-translucent)] px-3.5 py-2.5 text-sm shadow-[var(--ui-shadow-sm)] backdrop-blur-[8px] transition-all duration-200',
         stripeMap[item.color],
         visible ? 'translate-x-0 opacity-100' : 'translate-x-3 opacity-0',
       )}

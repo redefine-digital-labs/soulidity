@@ -26,7 +26,7 @@ export default function DesktopCompanionPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Desktop Companion</h1>
         <p className="text-sm text-muted">
           The Soulidity desktop app renders Souls you own (or hold an asset-scope grant for) as live personas — animated sprite, voice, memory-aware chat. This guide covers the web ↔ desktop bridge, sprite grant flow, the protected-sprite IPC, the post-mint deep-link callback, and install / upgrade.
@@ -64,7 +64,7 @@ export default function DesktopCompanionPage() {
           <li>Desktop reads the Soul state and asks: do I already hold a <code>SoulGrant</code> for this Soul with at least <code>SCOPE_ASSETS</code> (bit <code>8</code>)?</li>
           <li>If not, it prompts the user (the Soul owner) to sign <code>grant::issue_to_grantee</code> with the desktop wallet address as grantee. Default expiry is <code>null</code> (no TTL) — termination is by explicit revoke.</li>
           <li>After confirmation, the desktop app records the grant in its local cache and fetches the active sprite + audio versions.</li>
-          <li>If you later add a sprite/audio version, <strong className="text-foreground">auto-grant on append</strong> tops up any agent (including this desktop agent) whose existing scopes don&apos;t cover the new content. See <Link href="/resources/agent-integration" className="text-purple hover:text-foreground transition">Agent Integration</Link>.</li>
+          <li>If you later add a sprite/audio version, <strong className="text-foreground">auto-grant on append</strong> tops up any agent (including this desktop agent) whose existing scopes don&apos;t cover the new content. See <Link href="/resources/agent-integration" className="text-action-label hover:text-foreground transition">Agent Integration</Link>.</li>
         </ol>
       </div>
 
@@ -110,7 +110,7 @@ ipcRenderer.invoke('soul:cache-persona', {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Install &amp; upgrade</h2>
         <ul className="text-sm text-muted space-y-2">
-          <li><strong className="text-foreground">Install.</strong> Download the latest release from the <Link href="/download" className="text-purple hover:text-foreground transition">download page</Link>. macOS and Windows builds are signed; Linux is a tarball.</li>
+          <li><strong className="text-foreground">Install.</strong> Download the latest release from the <Link href="/download" className="text-action-label hover:text-foreground transition">download page</Link>. macOS and Windows builds are signed; Linux is a tarball.</li>
           <li><strong className="text-foreground">Channel.</strong> The web app ships fresh on every release. The desktop app fetches its update manifest from Vercel Blob with ISR caching (the web app does not redeploy when desktop releases) — set the channel (<code>stable</code> / <code>beta</code>) in the desktop settings.</li>
           <li><strong className="text-foreground">Auto-update.</strong> On launch, the app checks the manifest, downloads the delta if newer, and prompts to restart. Manual download from the same release page always works as a fallback.</li>
         </ul>
@@ -127,7 +127,7 @@ ipcRenderer.invoke('soul:cache-persona', {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/agent-integration" className="text-sm font-medium text-muted hover:text-foreground transition">

@@ -51,7 +51,7 @@ function StatCard({
 }) {
   const textColors: Record<TagColor, string> = {
     gold: 'text-gold',
-    purple: 'text-purple',
+    purple: 'text-action-label',
     danger: 'text-danger',
     teal: 'text-teal',
     muted: 'text-muted',

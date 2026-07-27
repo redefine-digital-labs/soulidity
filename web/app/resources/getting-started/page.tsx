@@ -4,10 +4,10 @@ export default function GettingStartedPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Getting Started</h1>
         <p className="text-sm text-muted">
-          A quick start: connect your wallet, browse Souls, make your first purchase, and understand the ownership model. For the full journey — creating, managing grants, paid access, desktop binding, selling — see the <Link href="/resources/user-guide" className="text-purple hover:text-foreground transition">User Guide</Link>.
+          A quick start: connect your wallet, browse Souls, make your first purchase, and understand the ownership model. For the full journey — creating, managing grants, paid access, desktop binding, selling — see the <Link href="/resources/user-guide" className="text-action-label hover:text-foreground transition">User Guide</Link>.
         </p>
       </div>
 
@@ -29,7 +29,7 @@ export default function GettingStartedPage() {
           <div className="text-sm font-semibold text-foreground">📖 Looking for the full User Guide?</div>
           <div className="text-xs text-muted mt-0.5">Creating Souls, managing agent grants, paid access, desktop companion, selling — all in one place.</div>
         </div>
-        <span className="text-purple text-sm font-medium">→</span>
+        <span className="text-action-label text-sm font-medium">→</span>
       </Link>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
@@ -48,7 +48,7 @@ export default function GettingStartedPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">2. Browse Souls</h2>
         <p className="text-sm text-muted">
-          All listed Souls are visible on the <Link href="/market" className="text-purple hover:text-foreground transition">marketplace</Link>. Each card shows the Soul name, creator, listed price in USDC, and tags.
+          All listed Souls are visible on the <Link href="/market" className="text-action-label hover:text-foreground transition">marketplace</Link>. Each card shows the Soul name, creator, listed price in USDC, and tags.
         </p>
         <ul className="text-sm text-muted space-y-1.5">
           <li>Use the tag filter and search to narrow results.</li>
@@ -65,7 +65,7 @@ export default function GettingStartedPage() {
           <li>Review the fee breakdown — platform fee + creator royalty (+ optional collection royalty). Fees are deducted from the purchase amount on-chain atomically.</li>
           <li>Approve the transaction in your connected wallet. The TX calls <code>market::buy_from_personal_kiosk</code> which moves the Soul from the seller&apos;s kiosk to your personal kiosk in a single atomic step.</li>
           <li>After the TX confirms, the app calls the post-TX API to mirror the new owner in the DB. All active grants on the Soul are invalidated automatically at this point.</li>
-          <li>The Soul now appears in your <Link href="/my-souls" className="text-purple hover:text-foreground transition">My Souls</Link> page.</li>
+          <li>The Soul now appears in your <Link href="/my-souls" className="text-action-label hover:text-foreground transition">My Souls</Link> page.</li>
         </ol>
       </div>
 
@@ -93,10 +93,10 @@ export default function GettingStartedPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">5. Publish Your First Soul</h2>
         <p className="text-sm text-muted">
-          To publish a Soul, go to <Link href="/create" className="text-purple hover:text-foreground transition">Create</Link>. You will need:
+          To publish a Soul, go to <Link href="/create" className="text-action-label hover:text-foreground transition">Create</Link>. You will need:
         </p>
         <ul className="text-sm text-muted space-y-1.5">
-          <li><strong className="text-foreground">soul.md</strong> — a five-section character document. See the <Link href="/resources/content-format" className="text-purple hover:text-foreground transition">Content Format guide</Link> for the template.</li>
+          <li><strong className="text-foreground">soul.md</strong> — a five-section character document. See the <Link href="/resources/content-format" className="text-action-label hover:text-foreground transition">Content Format guide</Link> for the template.</li>
           <li><strong className="text-foreground">memory.md (optional)</strong> — a founding memory entry. Encrypted at upload.</li>
           <li><strong className="text-foreground">skills.zip (optional)</strong> — an initial skills bundle. The ZIP must contain a <code>SKILL.md</code> with a <code>name</code> frontmatter field.</li>
           <li>A cover image URL and description for the marketplace listing.</li>
@@ -132,7 +132,7 @@ export default function GettingStartedPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
       </div>

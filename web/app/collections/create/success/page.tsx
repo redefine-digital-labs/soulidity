@@ -92,7 +92,7 @@ export default function LaunchedPage() {
 
           {/* Title */}
           <div>
-            <p className="page-kicker mb-2 text-purple">Soul Collection</p>
+            <p className="page-kicker mb-2 text-action-label">Soul Collection</p>
             <h2 className="page-title mb-3">Collection Born</h2>
             <p className="page-copy mx-auto max-w-md">
               {isEmpty
