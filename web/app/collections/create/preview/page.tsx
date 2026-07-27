@@ -54,7 +54,7 @@ function SoulThumb({ name, imageFile }: { name: string; imageFile?: File }) {
 
   if (!blobUrl || erroredSrc === blobUrl) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-xs font-bold text-purple">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-xs font-bold text-action-label">
         {name.slice(0, 2).toUpperCase()}
       </span>
     )
@@ -109,7 +109,7 @@ function SoulRow({
             <path d="M8 13V9m0 0c0-2.2 1.5-4.2 4.4-4.4 0 3.2-1.8 4.4-4.4 4.4Zm0 0c0-2-1-3.7-3.8-4.2 0 2.8 1.5 4.2 3.8 4.2Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </span>
-        <span title="Image" className={folder?.imageFile ? 'text-purple' : 'text-muted/40'}>
+        <span title="Image" className={folder?.imageFile ? 'text-action-label' : 'text-muted/40'}>
           <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4">
             <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
             <circle cx="5.5" cy="5.5" r="1.25" stroke="currentColor" strokeWidth="1" />
@@ -471,7 +471,7 @@ export default function PreviewPage() {
           {/* ── Optional collection-right listing on launch ── */}
           {ctx.tradeable && (
             <div className="rounded-2xl border border-purple/30 bg-purple/6 p-5 space-y-3">
-              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-purple">
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-action-label">
                 List collection-right on launch
               </div>
               <p className="text-xs text-muted leading-relaxed">

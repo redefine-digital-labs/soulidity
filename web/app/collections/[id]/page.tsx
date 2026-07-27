@@ -133,7 +133,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
                 return (
                   <Link
                     href={`/create?collectionId=${encodeURIComponent(collection.onChainId)}`}
-                    className="rounded-full border border-purple/40 bg-purple/12 px-3 py-1 text-[11px] font-semibold text-purple hover:bg-purple/20"
+                    className="rounded-full border border-purple/40 bg-purple/12 px-3 py-1 text-[11px] font-semibold text-action-label hover:bg-purple/20"
                   >
                     + Add Soul
                   </Link>

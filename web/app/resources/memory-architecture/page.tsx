@@ -26,7 +26,7 @@ export default function MemoryArchitecturePage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Soul Memory Architecture</h1>
         <p className="text-sm text-muted">
           Soul memory under Phase 2 is the <code>(kind=KIND_MEMORY, name=&quot;default&quot;, version_index=N)</code> column of the unified <code>SoulContent</code> object. Each entry is a Seal-encrypted blob on Walrus, with an immutable on-chain pointer and a strict append + soft-delete + hard-purge lifecycle.
@@ -109,7 +109,7 @@ ContentSlot {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Auto-grant on append</h2>
         <p className="text-sm text-muted">
-          When the owner appends a new memory version, the web app issues scope-matched grants to every active agent that doesn&apos;t already cover <code>SCOPE_MEMORY</code>. Existing scopes are preserved via the <code>grant-merge-masks</code> pre-check; supersede is the on-chain mechanism. Failures surface as a yellow banner with retry — see <Link href="/resources/agent-integration" className="text-purple hover:text-foreground transition">Agent Integration</Link>.
+          When the owner appends a new memory version, the web app issues scope-matched grants to every active agent that doesn&apos;t already cover <code>SCOPE_MEMORY</code>. Existing scopes are preserved via the <code>grant-merge-masks</code> pre-check; supersede is the on-chain mechanism. Failures surface as a yellow banner with retry — see <Link href="/resources/agent-integration" className="text-action-label hover:text-foreground transition">Agent Integration</Link>.
         </p>
       </div>
 
@@ -124,7 +124,7 @@ ContentSlot {
   + version_index_be(8) + nonce(16)`}</code>
         </pre>
         <p className="text-xs text-muted">
-          See <Link href="/resources/walrus-seal" className="text-purple hover:text-foreground transition">Walrus &amp; Seal</Link> for the universal doc-id format and approval entries.
+          See <Link href="/resources/walrus-seal" className="text-action-label hover:text-foreground transition">Walrus &amp; Seal</Link> for the universal doc-id format and approval entries.
         </p>
       </div>
 
@@ -191,7 +191,7 @@ ContentSlot {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/skills-revisions" className="text-sm font-medium text-muted hover:text-foreground transition">

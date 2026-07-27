@@ -56,7 +56,7 @@ export default function ApiSdkPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">API &amp; SDK Reference</h1>
         <p className="text-sm text-muted">
           Soulidity exposes REST endpoints for post-TX mirroring, soul browsing, content access, and paid access — plus a TypeScript SDK packaged as <code>@soulidity/sdk</code> for transaction building, on-chain queries, and client-side decryption.
@@ -81,7 +81,7 @@ export default function ApiSdkPage() {
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">REST API — Agent routes</h2>
-        <p className="text-sm text-muted">Agent routes are under <code>/api/agent/</code>. Authentication uses an API key in the <code>Authorization: Bearer &lt;key&gt;</code> header. See <Link href="/resources/agent-integration" className="text-purple hover:text-foreground transition">Agent Integration</Link>.</p>
+        <p className="text-sm text-muted">Agent routes are under <code>/api/agent/</code>. Authentication uses an API key in the <code>Authorization: Bearer &lt;key&gt;</code> header. See <Link href="/resources/agent-integration" className="text-action-label hover:text-foreground transition">Agent Integration</Link>.</p>
         <RouteList rows={agentRoutes} />
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-3 text-xs leading-6 text-foreground/90">
           <code>{`// Use the desktop-issued agent key as a bearer token
@@ -195,7 +195,7 @@ interface ActiveGrantSlotObject {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/agent-integration" className="text-sm font-medium text-muted hover:text-foreground transition">
@@ -212,7 +212,7 @@ function RouteList({ rows }: { rows: RouteRow[] }) {
       {rows.map(([method, path, desc]) => (
         <div key={`${method}-${path}`} className="text-sm">
           <div className="flex items-start gap-2 mb-0.5">
-            <span className={`font-mono text-xs px-1.5 py-0.5 rounded font-bold ${method === 'GET' ? 'bg-teal/15 text-teal' : 'bg-purple/15 text-purple'}`}>{method}</span>
+            <span className={`font-mono text-xs px-1.5 py-0.5 rounded font-bold ${method === 'GET' ? 'bg-teal/15 text-teal' : 'bg-purple/15 text-action-label'}`}>{method}</span>
             <code className="text-xs text-foreground">{path}</code>
           </div>
           <p className="text-xs text-muted ml-14">{desc}</p>

@@ -15,6 +15,8 @@ import { E2EWalletStub } from './e2e-wallet-stub'
 import { ToastProvider } from '@/components/ui/toast'
 import { UploadCostReviewProvider } from '@/components/upload/upload-cost-review'
 import { syncSoulidityDeploymentSession } from '@soulidity/sdk'
+import { VisualThemeProvider } from './visual-theme-provider'
+import { SOULIDITY_DAPP_KIT_THEME } from '@/lib/theme/dapp-kit-theme'
 
 // SuiJsonRpcClientOptions requires both `url` and `network` in dapp-kit v1 / @mysten/sui v2
 const suiNetworks = {
@@ -36,27 +38,29 @@ export function AppProviders({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <PostHogProvider client={posthog}>
-      <QueryProvider>
-        {process.env.NODE_ENV === 'development' &&
-        process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1' ? (
-          <E2EWalletStub />
-        ) : null}
-        <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
-          <WalletProvider autoConnect>
-            <AuthProvider>
-              <WalletAuthBridge />
-              <ToastProvider>
-                <UploadCostReviewProvider>
-                  <E2EWalletHelpers />
-                  <WalletLoginModal />
-                  {children}
-                </UploadCostReviewProvider>
-              </ToastProvider>
-            </AuthProvider>
-          </WalletProvider>
-        </SuiClientProvider>
-      </QueryProvider>
-    </PostHogProvider>
+    <VisualThemeProvider>
+      <PostHogProvider client={posthog}>
+        <QueryProvider>
+          {process.env.NODE_ENV === 'development' &&
+          process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1' ? (
+            <E2EWalletStub />
+          ) : null}
+          <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
+            <WalletProvider autoConnect theme={SOULIDITY_DAPP_KIT_THEME}>
+              <AuthProvider>
+                <WalletAuthBridge />
+                <ToastProvider>
+                  <UploadCostReviewProvider>
+                    <E2EWalletHelpers />
+                    <WalletLoginModal />
+                    {children}
+                  </UploadCostReviewProvider>
+                </ToastProvider>
+              </AuthProvider>
+            </WalletProvider>
+          </SuiClientProvider>
+        </QueryProvider>
+      </PostHogProvider>
+    </VisualThemeProvider>
   )
 }

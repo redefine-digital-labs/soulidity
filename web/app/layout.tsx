@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from 'next'
+import type { Metadata } from 'next'
 import { AppProviders } from '@/components/providers/app-providers'
 import { AppShell } from '@/components/layout/app-shell'
 import './globals.css'
@@ -49,18 +49,25 @@ export const metadata: Metadata = {
   category: 'technology',
 }
 
-export const viewport: Viewport = {
-  themeColor: '#0F111A',
-  colorScheme: 'dark',
-}
-
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
+    <html
+      lang="en"
+      data-theme="soulidity"
+      data-theme-preference="auto"
+      suppressHydrationWarning
+    >
+      <head>
+        <meta name="theme-color" content="#0d0a1e" />
+        <meta name="color-scheme" content="dark" />
+        {/* A blocking, same-origin script applies the saved palette before first paint. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/theme-bootstrap.js" />
+      </head>
       <body className="overflow-x-hidden">
         <AppProviders>
           <AppShell>

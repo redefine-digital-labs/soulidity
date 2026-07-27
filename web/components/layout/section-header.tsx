@@ -13,7 +13,7 @@ export function SectionHeader({ label, title, subtitle, action, className }: Sec
     <div className={cn('mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-start sm:justify-between', className)}>
       <div className="min-w-0">
         {label && (
-          <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-purple mb-1.5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-action-label mb-1.5">
             {label}
           </div>
         )}

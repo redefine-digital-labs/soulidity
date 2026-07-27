@@ -199,7 +199,7 @@ export default function ArticleEditorPage() {
             href={article.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[13px] text-purple hover:underline"
+            className="text-[13px] text-action-label hover:underline"
           >
             原文链接 ↗
           </a>

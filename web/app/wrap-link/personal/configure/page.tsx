@@ -144,7 +144,7 @@ export default function ConfigurePage() {
             {ctx.selectedNft.imageUrl ? (
               <Image src={ctx.selectedNft.imageUrl} alt={ctx.selectedNft.name} width={40} height={40} unoptimized className="h-10 w-10 shrink-0 rounded-lg border border-border/50 object-cover" />
             ) : (
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-sm font-bold text-purple">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-sm font-bold text-action-label">
                 {ctx.selectedNft.name.slice(0, 2).toUpperCase()}
               </span>
             )}

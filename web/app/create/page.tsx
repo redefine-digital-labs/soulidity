@@ -249,7 +249,7 @@ export default function CreateSoulPage() {
               placeholder="e.g. AlphaScout, Kaze no Akira..."
               value={ctx.name}
               onChange={(e) => ctx.setName(e.target.value)}
-              className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple"
+              className="h-11 rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)]"
             />
           </div>
 
@@ -259,7 +259,7 @@ export default function CreateSoulPage() {
               placeholder="Describe your Soul — what it does, who it's for, what makes it unique..."
               value={ctx.description}
               onChange={(e) => ctx.setDescription(e.target.value)}
-              className="min-h-[104px] resize-none rounded-xl border-purple/35 bg-card2/90 px-4 py-3 placeholder:text-[#5f4f90] focus:border-purple"
+              className="min-h-[104px] resize-none rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 py-3 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)]"
             />
           </div>
 
@@ -269,7 +269,7 @@ export default function CreateSoulPage() {
               placeholder="e.g. ai, trading, signals"
               value={ctx.tags}
               onChange={(e) => ctx.setTags(e.target.value)}
-              className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple"
+              className="h-11 rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)]"
             />
           </div>
 
@@ -279,7 +279,7 @@ export default function CreateSoulPage() {
               file={ctx.coverImageFile}
               previewUrl={ctx.coverImagePreviewUrl}
               onChange={(file) => ctx.setCoverImage(file)}
-              className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
+              className="rounded-[var(--ui-radius-lg)] border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-6 py-10 text-center hover:border-[var(--ui-action)] hover:bg-[var(--ui-soft-action)]"
             />
           </div>
 
@@ -294,12 +294,12 @@ export default function CreateSoulPage() {
                   onClick={() => ctx.setRoyalty(opt.value)}
                   className={`relative flex min-h-[72px] min-w-0 flex-col items-center justify-center rounded-2xl border px-2 pb-3 pt-3 text-center transition ${
                     ctx.royalty === opt.value
-                      ? 'border-purple bg-purple/12 shadow-[0_10px_24px_rgba(124,58,237,0.18)]'
-                      : 'border-border bg-card2/40 hover:border-purple/40 hover:bg-purple/6'
+                      ? 'border-[var(--ui-action)] bg-[var(--ui-soft-action)] shadow-[var(--ui-shadow-action)]'
+                      : 'border-[var(--ui-border)] bg-[var(--ui-surface-muted)] hover:border-[var(--ui-action)] hover:bg-[var(--ui-soft-action)]'
                   }`}
                 >
                   {'recommended' in opt && opt.recommended ? (
-                    <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal px-2 py-0.5 text-[10px] font-semibold text-[#081615] shadow-[0_8px_20px_rgba(20,184,166,0.28)]">
+                    <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--ui-tech)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ui-tech-action-text)] shadow-[var(--ui-shadow-sm)]">
                       Recommended
                     </span>
                   ) : null}
@@ -319,7 +319,7 @@ export default function CreateSoulPage() {
         <div className="card flex items-start gap-3 rounded-2xl border-purple/20 bg-card2/55 px-4 py-4">
           <span
             aria-hidden="true"
-            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple/15 text-purple"
+            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple/15 text-action-label"
           >
             <svg width="12" height="14" viewBox="0 0 12 14" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M3.25 5.5V4.25C3.25 2.73122 4.48122 1.5 6 1.5C7.51878 1.5 8.75 2.73122 8.75 4.25V5.5M2.83333 5.5H9.16667C9.99509 5.5 10.6667 6.17157 10.6667 7V10.6667C10.6667 11.4951 9.99509 12.1667 9.16667 12.1667H2.83333C2.00491 12.1667 1.33333 11.4951 1.33333 10.6667V7C1.33333 6.17157 2.00491 5.5 2.83333 5.5Z" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />

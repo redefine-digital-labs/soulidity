@@ -146,7 +146,7 @@ function canSetActiveContent(role: Role) {
 // ── CopyChip ─────────────────────────────────────────────────────────
 function CopyChip({ value, label, tone = 'teal' }: { value: string | null | undefined; label?: string; tone?: 'teal' | 'muted' }) {
   const [copied, setCopied] = useState(false)
-  const toneClass = tone === 'teal' ? 'text-teal' : 'text-muted'
+  const toneClass = tone === 'teal' ? 'text-tech-text' : 'text-muted'
   const display = label ?? (value ? `${value.slice(0, 6)}…${value.slice(-4)}` : '—')
 
   return (
@@ -155,7 +155,7 @@ function CopyChip({ value, label, tone = 'teal' }: { value: string | null | unde
       {value && (
         <button
           type="button"
-          className="rounded px-1 py-0.5 text-[11px] text-[var(--text-faint)] transition hover:bg-white/5 hover:text-foreground cursor-pointer"
+          className="cursor-pointer rounded px-1 py-0.5 text-[11px] text-[var(--text-faint)] transition hover:bg-[var(--ui-surface-muted)] hover:text-foreground"
           onClick={(e) => {
             e.stopPropagation()
             navigator.clipboard?.writeText(value)
@@ -175,7 +175,7 @@ function CopyChip({ value, label, tone = 'teal' }: { value: string | null | unde
 // ── KV row ───────────────────────────────────────────────────────────
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-2.5 border-t border-white/[0.04] py-[9px] text-[13px] first:border-t-0">
+    <div className="flex items-center justify-between gap-2.5 border-t border-[var(--border-soft)] py-[9px] text-[13px] first:border-t-0">
       <span className="whitespace-nowrap text-muted">{k}</span>
       <span className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap text-foreground">{v}</span>
     </div>
@@ -212,14 +212,14 @@ function Hero({
 
           {/* Overlay tags + actions */}
           <div className="absolute inset-x-3.5 top-3.5 z-[2] flex items-center gap-1.5">
-            <span className="inline-flex flex-shrink-0 items-center whitespace-nowrap rounded-full border border-white/10 bg-[rgba(13,10,30,0.65)] px-2.5 py-[5px] text-[11px] font-semibold text-foreground backdrop-blur-md">
+            <span className="inline-flex flex-shrink-0 items-center whitespace-nowrap rounded-full border border-white/10 bg-[rgba(13,10,30,0.65)] px-2.5 py-[5px] text-[11px] font-semibold text-white backdrop-blur-md">
               {formatProvenance(soul.provenanceKind)}
             </span>
-            <span className="inline-flex flex-shrink-0 items-center whitespace-nowrap rounded-full border border-white/10 bg-[rgba(13,10,30,0.65)] px-2.5 py-[5px] text-[11px] font-semibold text-foreground backdrop-blur-md">
+            <span className="inline-flex flex-shrink-0 items-center whitespace-nowrap rounded-full border border-white/10 bg-[rgba(13,10,30,0.65)] px-2.5 py-[5px] text-[11px] font-semibold text-white backdrop-blur-md">
               {listed ? 'Listed' : 'Held'}
             </span>
             {soul.activeSpriteVersionIndex != null && (
-              <span className="sd-pill-live inline-flex flex-shrink-0 items-center whitespace-nowrap rounded-full border border-white/10 bg-[rgba(13,10,30,0.65)] px-2.5 py-[5px] text-[11px] font-semibold text-foreground backdrop-blur-md">
+              <span className="sd-pill-live inline-flex flex-shrink-0 items-center whitespace-nowrap rounded-full border border-white/10 bg-[rgba(13,10,30,0.65)] px-2.5 py-[5px] text-[11px] font-semibold text-white backdrop-blur-md">
                 Sprite v{soul.activeSpriteVersionIndex} live
               </span>
             )}
@@ -229,7 +229,7 @@ function Hero({
                 type="button"
                 title="Open image"
                 onClick={() => soul.imageUrl && window.open(soul.imageUrl, '_blank')}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-white/10 bg-[rgba(13,10,30,0.65)] text-[13px] text-foreground backdrop-blur-md transition hover:bg-[rgba(13,10,30,0.9)] cursor-pointer"
+                className="inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-[rgba(13,10,30,0.65)] text-[13px] text-white backdrop-blur-md transition hover:bg-[rgba(13,10,30,0.9)]"
               >
                 ⛶
               </button>
@@ -240,7 +240,7 @@ function Hero({
                   const url = typeof window !== 'undefined' ? window.location.href : ''
                   navigator.clipboard?.writeText(url)
                 }}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-white/10 bg-[rgba(13,10,30,0.65)] text-[13px] text-foreground backdrop-blur-md transition hover:bg-[rgba(13,10,30,0.9)] cursor-pointer"
+                className="inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-[rgba(13,10,30,0.65)] text-[13px] text-white backdrop-blur-md transition hover:bg-[rgba(13,10,30,0.9)]"
               >
                 ↗
               </button>
@@ -249,7 +249,7 @@ function Hero({
                   type="button"
                   title="Report"
                   onClick={onReport}
-                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-white/10 bg-[rgba(13,10,30,0.65)] text-[13px] text-foreground backdrop-blur-md transition hover:bg-[rgba(13,10,30,0.9)] cursor-pointer"
+                  className="inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-[rgba(13,10,30,0.65)] text-[13px] text-white backdrop-blur-md transition hover:bg-[rgba(13,10,30,0.9)]"
                 >
                   ⚑
                 </button>
@@ -260,7 +260,7 @@ function Hero({
 
         {/* Sprite strip */}
         {sprites.length > 0 && (
-          <div className="flex items-center gap-2.5 border-t border-[var(--border-soft)] bg-gradient-to-b from-[rgba(13,10,30,0.92)] to-[rgba(13,10,30,0.98)] px-4 py-3.5">
+          <div className="flex items-center gap-2.5 border-t border-[var(--border-soft)] bg-[linear-gradient(180deg,var(--ui-panel-translucent),var(--ui-surface))] px-4 py-3.5">
             <div className="flex flex-1 items-center gap-1.5">
               {sprites.slice(0, 5).map((v) => {
                 const isActive = v.versionIndex === soul.activeSpriteVersionIndex && v.name === soul.activeSpriteName
@@ -268,7 +268,7 @@ function Hero({
                   <div
                     key={v.id}
                     className={`sd-sprite-thumb relative h-11 w-11 overflow-hidden rounded-lg border ${
-                      isActive ? 'border-gold shadow-[0_0_0_2px_rgba(245,158,11,0.18)]' : 'border-[var(--border-soft)]'
+                      isActive ? 'border-gold shadow-[0_0_0_2px_var(--ui-soft-value)]' : 'border-[var(--border-soft)]'
                     }`}
                   >
                     <span className="absolute bottom-0.5 right-1 font-mono text-[9px] text-white/85">v{v.versionIndex}</span>
@@ -320,10 +320,10 @@ function Hero({
               <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-faint)]">Owner</span>
               <span className="font-mono text-[12px] font-medium text-foreground">{formatAddress(soul.currentOwnerAddress)}</span>
               {role === 'owner' && (
-                <span className="rounded bg-teal/20 px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.04em] text-teal">YOU</span>
+                <span className="rounded bg-teal/20 px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.04em] text-tech-text">YOU</span>
               )}
               {role === 'grantee' && (
-                <span className="rounded bg-purple/20 px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.04em] text-purple">GRANTEE</span>
+                <span className="rounded bg-purple/20 px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.04em] text-action-label">GRANTEE</span>
               )}
             </span>
           </div>
@@ -344,7 +344,7 @@ function Hero({
             </div>
             <div
               className={`mt-1.5 flex flex-wrap items-baseline gap-2.5 font-display font-extrabold leading-[1.1] tracking-[-0.02em] ${
-                listed ? 'text-gold' : 'text-foreground'
+                listed ? 'text-value-text' : 'text-foreground'
               }`}
               style={{ fontSize: 32 }}
             >
@@ -537,7 +537,7 @@ function Workspace({
               {t.count != null && (
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                    selected ? 'bg-[var(--purple-soft)] text-purple' : 'bg-card2 text-muted'
+                    selected ? 'bg-[var(--purple-soft)] text-action-label' : 'bg-card2 text-muted'
                   }`}
                 >
                   {t.count}
@@ -571,7 +571,7 @@ function PanelHead({ title, copy, tags }: { title: string; copy?: string; tags?:
 
 function Subcard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-[var(--border-soft)] bg-white/[0.015] p-4 ${className}`}>
+    <div className={`rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface)] p-4 ${className}`}>
       {children}
     </div>
   )
@@ -588,7 +588,7 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
       />
       <div className="grid gap-3 lg:grid-cols-2">
         <Subcard>
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-purple">Object graph</div>
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-action-label">Object graph</div>
           <KV k="Soul object" v={<CopyChip value={soul.onChainId} />} />
           <KV k="State object" v={<CopyChip value={soul.stateOnChainId} />} />
           <KV k="Content root" v={<CopyChip value={soul.contentOnChainId} />} />
@@ -598,7 +598,7 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
           {soul.collection && <KV k="Collection" v={<CopyChip value={soul.collection.onChainId} />} />}
         </Subcard>
         <Subcard>
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-purple">Royalties &amp; access</div>
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-action-label">Royalties &amp; access</div>
           <KV
             k={soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}
             v={<span>{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</span>}
@@ -710,9 +710,9 @@ function ContentPanel({
               return (
                 <div
                   key={v.id}
-                  className="flex flex-wrap items-center gap-3.5 rounded-xl border border-[var(--border-soft)] bg-white/[0.015] px-3.5 py-3"
+                  className="flex flex-wrap items-center gap-3.5 rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface)] px-3.5 py-3"
                 >
-                  <div className="flex-shrink-0 rounded-md bg-teal/10 px-2 py-1 font-mono text-[13px] font-bold text-teal">
+                  <div className="flex-shrink-0 rounded-md bg-teal/10 px-2 py-1 font-mono text-[13px] font-bold text-tech-text">
                     v{v.versionIndex}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -724,7 +724,7 @@ function ContentPanel({
                       {v.sealEncrypted && <Tag color="purple">sealed</Tag>}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted">
-                      <span className="whitespace-nowrap">blob <span className="font-mono text-teal">{formatAddress(v.blobObjectId)}</span></span>
+                      <span className="whitespace-nowrap">blob <span className="font-mono text-tech-text">{formatAddress(v.blobObjectId)}</span></span>
                       <span className="opacity-50">·</span>
                       <span className="whitespace-nowrap">{formatRelative(v.createdAtMs)}</span>
                       <span className="opacity-50">·</span>
@@ -1268,10 +1268,10 @@ function MemoryRow({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--border-soft)] bg-white/[0.015]">
+    <div className="overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface)]">
       <button
         type="button"
-        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left transition hover:bg-white/[0.025] cursor-pointer"
+        className="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2.5 text-left transition hover:bg-[var(--ui-surface-muted)]"
         onClick={() => setOpen((v) => !v)}
       >
         <Tag color="teal">v{entry.versionIndex}</Tag>
@@ -1284,15 +1284,15 @@ function MemoryRow({
         <span className="text-[11px] text-[var(--text-faint)]">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div className="border-t border-[var(--border-soft)] bg-black/[0.15] px-3.5 pb-3 pt-2">
-          <KV k="Slot name" v={<span className="font-mono text-[12px] text-teal">{entry.name}</span>} />
+        <div className="border-t border-[var(--border-soft)] bg-[var(--ui-surface-muted)] px-3.5 pb-3 pt-2">
+          <KV k="Slot name" v={<span className="font-mono text-[12px] text-tech-text">{entry.name}</span>} />
           <KV k="Blob object" v={<CopyChip value={entry.blobObjectId} />} />
           {entry.blobId && <KV k="Walrus blob" v={<CopyChip value={entry.blobId} />} />}
           <KV k="Download policy" v={<span className="font-mono text-[12px]">{entry.downloadPolicy}</span>} />
           <KV k="Created" v={<span>{formatDate(entry.createdAt)}</span>} />
           {rowError && <div className="mt-2 text-[12px] text-danger">{rowError}</div>}
           {plaintext && (
-            <pre className="mt-2 max-h-[240px] overflow-auto rounded-lg border border-[var(--border-soft)] bg-black/[0.22] p-3 text-[12px] leading-5 text-foreground whitespace-pre-wrap">
+            <pre className="mt-2 max-h-[240px] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border-soft)] bg-[var(--ui-control-bg)] p-3 text-[12px] leading-5 text-foreground">
               {plaintext}
             </pre>
           )}
@@ -1568,7 +1568,7 @@ function GrantsPanel({
                 <div className="flex items-center justify-between">
                   <span
                     className={`font-mono text-[13px] font-semibold ${
-                      s.color === 'teal' ? 'text-teal' : s.color === 'purple' ? 'text-purple' : 'text-gold'
+                      s.color === 'teal' ? 'text-tech-text' : s.color === 'purple' ? 'text-action-label' : 'text-value-text'
                     }`}
                   >
                     {s.title}
@@ -1596,7 +1596,7 @@ function GrantsPanel({
           />
           {error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
           {preflightError && <div className="mt-2 text-[12px] text-danger">{preflightError}</div>}
-          {reassignmentNotice && <div className="mt-2 text-[12px] text-gold/90">{reassignmentNotice}</div>}
+          {reassignmentNotice && <div className="mt-2 text-[12px] text-value-text">{reassignmentNotice}</div>}
           {scopeMask === 0 && <div className="mt-2 text-[12px] text-muted">Select at least one scope.</div>}
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <Button
@@ -1960,7 +1960,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
     <aside className="flex flex-col gap-4">
       <div className="rounded-2xl border border-[var(--border-soft)] bg-card p-[18px]">
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-purple">Provenance</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-action-label">Provenance</div>
         </div>
         <KV k="Creator" v={<CopyChip value={soul.creatorAddress} />} />
         <KV k="Current owner" v={<CopyChip value={soul.currentOwnerAddress} />} />
@@ -1969,7 +1969,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
           <KV
             k="Collection"
             v={
-              <Link href={`/collections/${encodeURIComponent(soul.collection.onChainId)}`} className="text-teal hover:underline">
+              <Link href={`/collections/${encodeURIComponent(soul.collection.onChainId)}`} className="text-tech-text hover:underline">
                 {soul.collection.name}
               </Link>
             }
@@ -1980,7 +1980,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
 
       <div className="rounded-2xl border border-[var(--border-soft)] bg-card p-[18px]">
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-purple">Access</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-action-label">Access</div>
           <Tag color="success">Active</Tag>
         </div>
         <KV k="Owner access" v={<span className="text-success">● Active</span>} />
@@ -2015,7 +2015,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
 
       <div className="rounded-2xl border border-[var(--border-soft)] bg-card p-[18px]">
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-purple">Activity</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-action-label">Activity</div>
         </div>
         <div className="sd-activity">
           {activity.map((a, i) => (
@@ -2033,7 +2033,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
       {soul.collection && (
         <div className="rounded-2xl border border-[var(--border-soft)] bg-card p-[18px]">
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-purple">Collection</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-action-label">Collection</div>
             <Link
               href={`/collections/${encodeURIComponent(soul.collection.onChainId)}`}
               className="text-[11px] text-muted transition hover:text-foreground"
@@ -2044,7 +2044,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
           <div className="flex items-center gap-3">
             <div
               className="h-12 w-12 flex-shrink-0 rounded-[10px]"
-              style={{ background: 'linear-gradient(135deg, var(--teal), #0E7C70)' }}
+              style={{ background: 'linear-gradient(135deg, var(--ui-tech), var(--ui-tech-text))' }}
             />
             <div className="min-w-0">
               <div className="truncate text-[14px] font-semibold text-foreground">{soul.collection.name}</div>

@@ -56,7 +56,7 @@ export default function CreateSuccessPage() {
         {/* Success icon */}
         <div
           className="mx-auto mb-6 flex h-[72px] w-[72px] items-center justify-center rounded-full text-4xl"
-          style={{ background: 'rgba(16, 185, 129, 0.15)', border: '2px solid var(--success)' }}
+          style={{ background: 'var(--ui-soft-success)', border: '2px solid var(--success)' }}
         >
           🚀
         </div>
@@ -76,28 +76,28 @@ export default function CreateSuccessPage() {
         <div className="mb-8 rounded-xl border border-border bg-card2 p-5 text-left">
           <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
             <span className="text-muted">Soul Object ID</span>
-            <span className="font-mono text-xs text-teal">{truncateId(soulOnChainId)}</span>
+            <span className="font-mono text-xs text-tech-text">{truncateId(soulOnChainId)}</span>
           </div>
           <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
             <span className="text-muted">Tx Hash</span>
-            <span className="font-mono text-xs text-teal">{truncateId(txDigest)}</span>
+            <span className="font-mono text-xs text-tech-text">{truncateId(txDigest)}</span>
           </div>
           {collectionOnChainId ? (
             <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
               <span className="text-muted">Collection</span>
-              <span className="font-mono text-xs text-teal">{truncateId(collectionOnChainId)}</span>
+              <span className="font-mono text-xs text-tech-text">{truncateId(collectionOnChainId)}</span>
             </div>
           ) : null}
           {isListed && listingObjectOnChainId ? (
             <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
               <span className="text-muted">Listing</span>
-              <span className="font-mono text-xs text-teal">{truncateId(listingObjectOnChainId)}</span>
+              <span className="font-mono text-xs text-tech-text">{truncateId(listingObjectOnChainId)}</span>
             </div>
           ) : null}
           {isListed && listedPriceAtomic ? (
             <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
               <span className="text-muted">Listed Price</span>
-              <span className="font-mono text-xs text-teal">{formatAtomicAmountForDisplay(listedPriceAtomic)}</span>
+              <span className="font-mono text-xs text-tech-text">{formatAtomicAmountForDisplay(listedPriceAtomic)}</span>
             </div>
           ) : null}
           <div className="flex items-center justify-between py-2.5 text-sm">
@@ -121,7 +121,7 @@ export default function CreateSuccessPage() {
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
                 Set a price and list your Soul in the marketplace immediately. Buyers can discover and purchase it right away.
               </p>
-              <span className="mt-3 block text-xs font-semibold text-teal">
+              <span className="mt-3 block text-xs font-semibold text-tech-text">
                 Set Price → List →
               </span>
             </Link>
@@ -135,7 +135,7 @@ export default function CreateSuccessPage() {
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
                 Buyers can discover this Soul from the marketplace. Open the Soul page to manage or delist it.
               </p>
-              <span className="mt-3 block text-xs font-semibold text-teal">
+              <span className="mt-3 block text-xs font-semibold text-tech-text">
                 Manage Listing →
               </span>
             </Link>
@@ -152,7 +152,7 @@ export default function CreateSuccessPage() {
                 ? 'Return to the collection detail page and confirm the new Soul appears under its supply count.'
                 : 'Go to your dashboard to authorize an AI agent, manage versions, or list for sale later.'}
             </p>
-            <span className="mt-3 block text-xs font-semibold text-muted group-hover:text-purple">
+            <span className="mt-3 block text-xs font-semibold text-muted group-hover:text-action-label">
               {collectionHref ? 'View Collection →' : 'Go to My Souls →'}
             </span>
           </Link>
@@ -160,14 +160,14 @@ export default function CreateSuccessPage() {
 
         {!isListed && (
           <p className="mb-3 text-xs text-muted">
-            Unlisted Souls live in <Link href="/my-souls" className="font-semibold text-foreground underline underline-offset-4 hover:text-purple">My Souls</Link> — you can list them any time.
+            Unlisted Souls live in <Link href="/my-souls" className="font-semibold text-foreground underline underline-offset-4 hover:text-action-label">My Souls</Link> — you can list them any time.
           </p>
         )}
 
         {/* Ghost link */}
         <Link
           href="/market"
-          className="text-sm text-muted underline underline-offset-4 transition hover:text-purple"
+          className="text-sm text-muted underline underline-offset-4 transition hover:text-action-label"
         >
           View in Market
         </Link>

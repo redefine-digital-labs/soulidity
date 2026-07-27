@@ -26,7 +26,7 @@ export function TabStrip({ tabs, activeId, onChange, className }: TabStripProps)
             className={cn(
               'px-5 py-3 text-sm font-semibold cursor-pointer border-b-2 -mb-px transition-all duration-150 select-none',
               isActive
-                ? 'text-purple border-purple'
+                ? 'text-action-label border-purple'
                 : 'text-muted border-transparent hover:text-foreground',
             )}
           >

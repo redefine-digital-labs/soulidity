@@ -26,7 +26,7 @@ export default function SoulGrantApiPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">SoulGrant — Authorization API</h1>
         <p className="text-sm text-muted">
           SoulGrant is the on-chain access delegation system. It lets the Soul owner authorize AI agents or other wallets to decrypt the Soul bundle, read or append memory entries, publish skill versions, or manage private sprite / audio versions — without transferring ownership.
@@ -150,7 +150,7 @@ export default function SoulGrantApiPage() {
           <li>On failure (deploy window race, RPC flake, wallet timeout), the Soul detail page surfaces a <span className="text-amber-300">yellow banner</span> enumerating missing scopes; the owner clicks <em>Retry</em>.</li>
         </ol>
         <p className="text-xs text-muted">
-          Public slots are not auto-granted because they require no grant to read. See <Link href="/resources/agent-integration" className="text-purple hover:text-foreground transition">Agent Integration</Link> for the full rules.
+          Public slots are not auto-granted because they require no grant to read. See <Link href="/resources/agent-integration" className="text-action-label hover:text-foreground transition">Agent Integration</Link> for the full rules.
         </p>
       </div>
 
@@ -211,7 +211,7 @@ export default function SoulGrantApiPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/walrus-seal" className="text-sm font-medium text-muted hover:text-foreground transition">

@@ -26,7 +26,7 @@ export default function KindRegistryPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Kind Registry Reference</h1>
         <p className="text-sm text-muted">
           Phase 2 collapsed six legacy Move modules (memory, skills, assets, metadata, content_access, seal_policy) into a single typed-content matrix on the <code>SoulContent</code> root. Every content slot belongs to a <strong>kind</strong>, and the on-chain <code>KindRegistry</code> is the source of truth for what each kind can do.
@@ -224,7 +224,7 @@ export default function KindRegistryPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/content-format" className="text-sm font-medium text-muted hover:text-foreground transition">

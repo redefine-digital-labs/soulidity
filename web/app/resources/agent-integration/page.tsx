@@ -26,7 +26,7 @@ export default function AgentIntegrationPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10 space-y-6">
       <div>
-        <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+        <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">Agent Integration Guide</h1>
         <p className="text-sm text-muted">
           This guide is for AI agent runtimes (OpenClaw, Hermes, custom desktop agents, and any third-party integration) that consume Soulidity Souls on a human user&apos;s behalf. It covers API key auth, the search / access endpoints, the pre-check pattern for issuing or extending SoulGrants, and the auto-grant rules that fire when an owner appends content.
@@ -50,7 +50,7 @@ export default function AgentIntegrationPage() {
         </p>
         <ul className="text-sm text-muted space-y-2">
           <li><strong className="text-foreground">Web agents</strong> (e.g. OpenClaw, Hermes web mode) typically share a wallet with the user&apos;s primary account.</li>
-          <li><strong className="text-foreground">Desktop agents</strong> hold their own per-installation wallet and request grants explicitly when first opening a Soul. See <Link href="/resources/desktop-companion" className="text-purple hover:text-foreground transition">Desktop Companion</Link>.</li>
+          <li><strong className="text-foreground">Desktop agents</strong> hold their own per-installation wallet and request grants explicitly when first opening a Soul. See <Link href="/resources/desktop-companion" className="text-action-label hover:text-foreground transition">Desktop Companion</Link>.</li>
           <li>An account&apos;s <strong>active set</strong> is the list of currently-enabled agents under that human user. Auto-grant on append iterates only over the active set.</li>
         </ul>
       </div>
@@ -184,12 +184,12 @@ Authorization: Bearer dtk_...
         </p>
         <ul className="text-sm text-muted space-y-2">
           <li><strong className="text-foreground">Web-hosted agent.</strong> Shares the user&apos;s primary wallet via the session cookie. Auto-grant on append covers it transparently because the user is also the grantor. Best for hosted SaaS agent products.</li>
-          <li><strong className="text-foreground">Desktop / sovereign agent.</strong> Holds its own wallet and API key. The user authorizes once via a grant TX, then the desktop agent operates independently. Best for local-first persona apps. See <Link href="/resources/desktop-companion" className="text-purple hover:text-foreground transition">Desktop Companion</Link>.</li>
+          <li><strong className="text-foreground">Desktop / sovereign agent.</strong> Holds its own wallet and API key. The user authorizes once via a grant TX, then the desktop agent operates independently. Best for local-first persona apps. See <Link href="/resources/desktop-companion" className="text-action-label hover:text-foreground transition">Desktop Companion</Link>.</li>
         </ul>
       </div>
 
       <div className="flex items-center gap-3">
-        <Link href="/resources" className="text-sm font-medium text-purple hover:text-foreground transition">
+        <Link href="/resources" className="text-sm font-medium text-action-label hover:text-foreground transition">
           ← Back to resources
         </Link>
         <Link href="/resources/soulgrant-api" className="text-sm font-medium text-muted hover:text-foreground transition">

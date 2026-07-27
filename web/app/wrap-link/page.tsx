@@ -27,11 +27,11 @@ export default function WrapLinkPage() {
           className="bg-card border border-border rounded-xl p-6 hover:border-purple hover:-translate-y-0.5 transition block group text-left"
         >
           <div className="text-3xl mb-4">🔗</div>
-          <h2 className="font-display font-bold text-lg mb-2 group-hover:text-purple transition">Personal Join</h2>
+          <h2 className="font-display font-bold text-lg mb-2 group-hover:text-action-label transition">Personal Join</h2>
           <p className="text-muted text-sm leading-relaxed mb-4">
             You hold an NFT and want to add a Soul layer. Your NFT contract and token ID are unchanged — you gain Soul-layer capabilities.
           </p>
-          <div className="flex items-center gap-1.5 text-purple text-sm font-semibold">
+          <div className="flex items-center gap-1.5 text-action-label text-sm font-semibold">
             <span>Start →</span>
           </div>
         </button>

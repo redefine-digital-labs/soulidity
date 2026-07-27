@@ -197,7 +197,7 @@ export function AnimacraftIntegrationClient({ handoff }: { handoff: AnimacraftHa
         ) : walletMismatch ? (
           <>The signed-in Soulidity wallet does not match the Animacraft wallet hint. The URL hint never grants authority; reconnect the wallet that prepared this character.</>
         ) : user ? (
-          <>Wallet session verified for <span className="font-mono text-xs text-teal">{short(connectedAddress)}</span>.</>
+          <>Wallet session verified for <span className="font-mono text-xs text-tech-text">{short(connectedAddress)}</span>.</>
         ) : (
           'Connect and sign with the same Sui wallet used in Animacraft. A query-string wallet address is context only, never authentication.'
         )}
@@ -217,14 +217,14 @@ export function AnimacraftIntegrationClient({ handoff }: { handoff: AnimacraftHa
                 : 'The profile and on-chain Maker must pass validation before minting.'}
             </p>
             {!integrationConfig.ready && (
-              <p className="mt-2 text-xs text-gold">
+              <p className="mt-2 text-xs text-value-text">
                 Activation pending: {integrationConfig.missing.join(', ')}.
               </p>
             )}
             {loadError && <p className="mt-2 text-xs text-danger">{loadError}</p>}
             {mintFlow.error && <p className="mt-2 text-xs text-danger">{mintFlow.error}</p>}
             {mintFlow.hasRecovery && mintFlow.status !== 'done' && (
-              <p className="mt-2 text-xs text-teal">
+              <p className="mt-2 text-xs text-tech-text">
                 The Soul already exists on-chain. Continue only the recoverable Soulidity index sync; no second mint will be signed.
               </p>
             )}

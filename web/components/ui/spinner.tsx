@@ -21,7 +21,7 @@ function Spinner({ size = 'md', className }: SpinnerProps) {
       viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('text-purple animate-spin', sizeStyles[size], className)}
+      className={cn('text-action-label animate-spin', sizeStyles[size], className)}
     >
       <circle
         cx="12"

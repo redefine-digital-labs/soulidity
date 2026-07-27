@@ -10,17 +10,17 @@ interface TagProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const colorStyles: Record<TagColor, { text: string; border: string; bg: string }> = {
   purple: {
-    text: 'text-purple',
+    text: 'text-action-label',
     border: 'border-purple',
     bg: 'bg-purple/10',
   },
   gold: {
-    text: 'text-gold',
+    text: 'text-value-text',
     border: 'border-gold',
     bg: 'bg-gold/10',
   },
   teal: {
-    text: 'text-teal',
+    text: 'text-tech-text',
     border: 'border-teal',
     bg: 'bg-teal/10',
   },

@@ -9,6 +9,7 @@ import { NavCreateMenu } from './nav-create-menu'
 import { AccountButton } from './account-button'
 import { NotificationBell } from './notification-bell'
 import { AgentModeBadge } from './agent-mode-badge'
+import { ThemeSwitcher } from './theme-switcher'
 
 interface NavbarProps {
   connected: boolean
@@ -78,7 +79,7 @@ function SoulidityLogo() {
         />
       </svg>
       <span className="font-display text-base font-extrabold tracking-[-0.02em] text-foreground sm:text-lg">
-        Soul<span className="text-purple">idity</span>
+        Soul<span className="text-action-label">idity</span>
       </span>
     </Link>
   )
@@ -131,6 +132,7 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
         <div className="flex items-center justify-end gap-2.5">
           {connected && userKind === 'agent' && <AgentModeBadge />}
           {connected && <NotificationBell className="hidden md:block" />}
+          <ThemeSwitcher />
           {connected ? (
             <AccountButton
               emoji={userEmoji ?? '🌟'}
@@ -172,9 +174,9 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
       </div>
 
       {mobileOpen && (
-        <div className="border-t border-border bg-[rgba(13,10,30,0.96)] px-4 py-4 md:hidden">
+        <div className="border-t border-border bg-[var(--ui-nav-bg)] px-4 py-4 backdrop-blur-xl md:hidden">
           <div className="mx-auto max-w-[1100px]">
-            <div className="max-h-[calc(100dvh-56px)] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+            <div className="max-h-[calc(100dvh-56px)] overflow-y-auto rounded-[var(--ui-radius-md)] border border-border bg-card p-3 shadow-[var(--ui-shadow-sm)]">
               <div className="flex flex-col gap-2">
                 {navLinks.map(({ label, href, auth }) => {
                   if (auth && !connected) return null
@@ -187,8 +189,8 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
                       className={cn(
                         'rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors',
                         isActive
-                          ? 'bg-purple/12 text-white'
-                          : 'text-muted hover:bg-white/[0.05] hover:text-foreground',
+                          ? 'bg-[var(--ui-soft-action)] text-foreground'
+                          : 'text-muted hover:bg-[var(--ui-surface-muted)] hover:text-foreground',
                       )}
                     >
                       {label}
@@ -213,8 +215,8 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
                     className={cn(
                       'rounded-xl px-3.5 py-2.5 text-sm font-medium transition',
                       isActive
-                        ? 'bg-purple/12 text-white'
-                        : 'text-muted hover:bg-white/[0.05] hover:text-foreground',
+                        ? 'bg-[var(--ui-soft-action)] text-foreground'
+                        : 'text-muted hover:bg-[var(--ui-surface-muted)] hover:text-foreground',
                     )}
                   >
                     {item.label}
@@ -228,8 +230,8 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
                   className={cn(
                     'rounded-xl px-3.5 py-2.5 text-sm font-medium transition',
                     pathname === docsLink.href || pathname.startsWith(docsLink.href + '/')
-                      ? 'bg-purple/12 text-white'
-                      : 'text-muted hover:bg-white/[0.05] hover:text-foreground',
+                      ? 'bg-[var(--ui-soft-action)] text-foreground'
+                      : 'text-muted hover:bg-[var(--ui-surface-muted)] hover:text-foreground',
                   )}
                 >
                   {docsLink.label}
@@ -244,8 +246,8 @@ export function Navbar({ connected, onConnectClick, onDisconnect, userEmoji, use
                       className={cn(
                         'rounded-xl px-3.5 py-2.5 text-sm font-medium transition',
                         pathname.startsWith('/admin')
-                          ? 'bg-purple/12 text-white'
-                          : 'text-muted hover:bg-white/[0.05] hover:text-foreground',
+                          ? 'bg-[var(--ui-soft-action)] text-foreground'
+                          : 'text-muted hover:bg-[var(--ui-surface-muted)] hover:text-foreground',
                       )}
                     >
                       Admin

@@ -21,7 +21,7 @@ function Overlay({ onClick, children, className }: OverlayProps) {
   return (
     <div
       className={cn(
-        'fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4',
+        'fixed inset-0 bg-[var(--ui-overlay)] backdrop-blur-sm z-[200] flex items-center justify-center p-4',
         className,
       )}
       onClick={onClick}
@@ -72,7 +72,7 @@ function Modal({
         aria-labelledby={title ? 'modal-title' : undefined}
         style={{ maxWidth: maxWidthMap[maxWidth] }}
         className={cn(
-          'relative w-full bg-card border border-border rounded-2xl p-8',
+          'relative w-full rounded-[var(--ui-radius-lg)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-8 shadow-[var(--ui-shadow-md)]',
           className,
         )}
         onClick={(e) => e.stopPropagation()}
@@ -81,7 +81,7 @@ function Modal({
         <button
           onClick={onClose}
           aria-label="Close modal"
-          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-[var(--text-primary)] hover:bg-white/10 transition-all"
+          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-[var(--ui-text)] hover:bg-[var(--ui-surface-muted)] transition-all"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
@@ -97,7 +97,7 @@ function Modal({
         {(title || subtitle) && (
           <div className="mb-6">
             {title && (
-              <h2 id="modal-title" className="text-lg font-semibold text-[var(--text-primary)]">
+              <h2 id="modal-title" className="text-lg font-semibold text-[var(--ui-text)]">
                 {title}
               </h2>
             )}

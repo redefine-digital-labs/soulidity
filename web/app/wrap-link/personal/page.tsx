@@ -29,7 +29,7 @@ function NftCard({ nft, selected, onSelect }: { nft: KioskNft; selected: boolean
       {nft.imageUrl ? (
         <Image src={nft.imageUrl} alt={nft.name} width={48} height={48} unoptimized className="h-12 w-12 shrink-0 rounded-lg border border-border/50 object-cover" />
       ) : (
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-lg font-bold text-purple">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-purple/20 text-lg font-bold text-action-label">
           {nft.name.slice(0, 2).toUpperCase()}
         </span>
       )}

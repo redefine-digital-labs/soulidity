@@ -160,7 +160,7 @@ export default function LeaderboardPage() {
             onClick={() => setDimension(tab.id)}
             className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
               dimension === tab.id
-                ? 'bg-purple/20 text-purple'
+                ? 'bg-purple/20 text-action-label'
                 : 'text-muted hover:text-foreground'
             }`}
           >

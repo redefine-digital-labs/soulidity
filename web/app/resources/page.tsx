@@ -47,7 +47,7 @@ const builderDocs: Doc[] = [
 export default function ResourcesDocsPage() {
   return (
     <div className="max-w-[760px] mx-auto px-6 py-8 relative z-10">
-      <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Resources</p>
+      <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
       <h1 className="font-display text-2xl font-bold mb-0">Documentation</h1>
 
       {/* Tab strip */}

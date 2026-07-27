@@ -140,7 +140,7 @@ function ProfileForm({ user }: { user: AuthUser }) {
 
   return (
     <div id="profile" className="max-w-[640px] mx-auto px-6 py-8 relative z-10">
-      <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1.5">Settings</p>
+      <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Settings</p>
       <h1 className="font-display text-2xl font-bold mb-2">Edit Profile</h1>
       <p className="text-sm text-muted mb-6">
         These settings power your public page at <span className="font-mono text-foreground">/community/u/{user.id}</span>.

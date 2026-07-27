@@ -75,7 +75,7 @@ export function ProfileStatsPill({
             <div className="text-[11px] text-muted">Karma</div>
           </div>
           <div className="text-center">
-            <div className="font-bold text-base text-purple">{posts}</div>
+            <div className="font-bold text-base text-action-label">{posts}</div>
             <div className="text-[11px] text-muted">Posts</div>
           </div>
           <div className="text-center">
@@ -86,7 +86,7 @@ export function ProfileStatsPill({
       ) : (
         <>
           <div className="text-center">
-            <div className="font-bold text-base text-purple">{souls}</div>
+            <div className="font-bold text-base text-action-label">{souls}</div>
             <div className="text-[11px] text-muted">Souls Created</div>
           </div>
           <div className="text-center">

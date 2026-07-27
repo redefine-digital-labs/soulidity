@@ -99,7 +99,7 @@ export default function CreateCollectionPage() {
               <Input
                 value={ctx.name}
                 placeholder="e.g. Cyber Sentinels, Wild Fern Spirits..."
-                className="h-11 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple"
+                className="h-11 rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)]"
                 onChange={(e) => ctx.setName(e.target.value)}
               />
               {errors.name && <p className="text-[11px] font-medium text-danger">{errors.name}</p>}
@@ -113,7 +113,7 @@ export default function CreateCollectionPage() {
                 previewUrl={ctx.coverImagePreviewUrl}
                 onChange={(file) => ctx.setCoverImage(file)}
                 label="Upload cover image"
-                className="rounded-[20px] border-purple/40 bg-[rgba(20,11,44,0.72)] px-6 py-10 text-center hover:border-purple hover:bg-purple/6"
+                className="rounded-[var(--ui-radius-lg)] border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-6 py-10 text-center hover:border-[var(--ui-action)] hover:bg-[var(--ui-soft-action)]"
               />
               {errors.coverImage && <p className="text-[11px] font-medium text-danger">{errors.coverImage}</p>}
             </div>
@@ -124,7 +124,7 @@ export default function CreateCollectionPage() {
               <Textarea
                 value={ctx.description}
                 placeholder="What is this Collection about? Why does it exist?"
-                className="min-h-[104px] resize-none rounded-xl border-purple/35 bg-card2/90 px-4 py-3 placeholder:text-[#5f4f90] focus:border-purple"
+                className="min-h-[104px] resize-none rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 py-3 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)]"
                 onChange={(e) => ctx.setDescription(e.target.value)}
               />
               {errors.description && <p className="text-[11px] font-medium text-danger">{errors.description}</p>}
@@ -142,7 +142,7 @@ export default function CreateCollectionPage() {
                   value={ctx.unlimitedSupply ? '' : ctx.supplyCap}
                   placeholder="10000"
                   disabled={ctx.unlimitedSupply}
-                  className={`h-11 w-32 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                  className={`h-11 w-32 rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
                     ctx.unlimitedSupply ? 'opacity-50' : ''
                   }`}
                   onChange={(e) => ctx.setSupplyCap(e.target.value)}
@@ -152,7 +152,7 @@ export default function CreateCollectionPage() {
                     type="checkbox"
                     checked={ctx.unlimitedSupply}
                     onChange={(e) => ctx.setUnlimitedSupply(e.target.checked)}
-                    className="h-4 w-4 rounded border-purple/40 bg-card2/80 text-purple focus:ring-purple"
+                    className="h-4 w-4 rounded border-purple/40 bg-card2/80 text-action-label focus:ring-purple"
                   />
                   Unlimited (no on-chain cap)
                 </label>
@@ -170,7 +170,7 @@ export default function CreateCollectionPage() {
                 step="any"
                 value={ctx.floorPrice}
                 placeholder="e.g. 10"
-                className="h-11 w-40 rounded-xl border-purple/35 bg-card2/90 px-4 placeholder:text-[#5f4f90] focus:border-purple [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="h-11 w-40 rounded-xl border-[var(--ui-border)] bg-[var(--ui-control-bg)] px-4 placeholder:text-[var(--ui-placeholder)] focus:border-[var(--ui-action)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 onChange={(e) => ctx.setFloorPrice(e.target.value)}
               />
               <p className="text-xs text-muted">App-enforced minimum — listings below this price are blocked in the marketplace UI and mirror API.</p>
@@ -188,8 +188,8 @@ export default function CreateCollectionPage() {
                     onClick={() => ctx.setExtraRoyaltyBps(opt.value)}
                     className={`relative flex min-h-[72px] min-w-0 flex-col items-center justify-center rounded-2xl border px-2 pb-3 pt-3 text-center transition ${
                       ctx.extraRoyaltyBps === opt.value
-                        ? 'border-purple bg-purple/12 shadow-[0_10px_24px_rgba(124,58,237,0.18)]'
-                        : 'border-border bg-card2/40 hover:border-purple/40 hover:bg-purple/6'
+                        ? 'border-[var(--ui-action)] bg-[var(--ui-soft-action)] shadow-[var(--ui-shadow-action)]'
+                        : 'border-[var(--ui-border)] bg-[var(--ui-surface-muted)] hover:border-[var(--ui-action)] hover:bg-[var(--ui-soft-action)]'
                     }`}
                   >
                     <div className="font-display text-[13px] font-bold tracking-[-0.02em] text-foreground">
@@ -230,7 +230,7 @@ export default function CreateCollectionPage() {
                 {ctx.tradeable && (
                   <div className="mt-4 space-y-2 rounded-xl border border-purple/20 bg-card2/60 px-4 py-3 text-[13px] leading-6 text-muted">
                     <p>
-                      <span className="mr-1.5 text-purple">✦</span>
+                      <span className="mr-1.5 text-action-label">✦</span>
                       After Launch you can list the Soul Collection on the open market — buyers acquire the royalty stream.
                     </p>
                     <p>
@@ -252,7 +252,7 @@ export default function CreateCollectionPage() {
                 <div className="mt-4 space-y-3">
                   {memoryPolicyRules.map((rule) => (
                     <div key={rule.label} className="flex items-start gap-2.5">
-                      <span className="mt-0.5 shrink-0 text-sm text-purple">✓</span>
+                      <span className="mt-0.5 shrink-0 text-sm text-action-label">✓</span>
                       <p className="text-[13px] leading-5 text-muted">
                         <span className="font-semibold text-foreground">{rule.label}</span>
                         {'  '}— {rule.desc}

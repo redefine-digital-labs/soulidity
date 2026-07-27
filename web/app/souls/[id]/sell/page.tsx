@@ -136,7 +136,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
       <div className="bg-card border border-border border-t-0 rounded-b-xl p-6 space-y-5">
         {/* Title */}
         <div>
-          <p className="text-[11px] font-bold text-purple uppercase tracking-[0.1em] mb-1">Sell Soul</p>
+          <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1">Sell Soul</p>
           <h2 className="font-display text-xl font-bold">Step 1 — Set Your Price</h2>
         </div>
 
@@ -221,8 +221,8 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
         </div>}
 
         {/* Info: escrow notice */}
-        <div className="rounded-xl border border-purple/30 bg-purple/5 px-4 py-3 text-sm text-purple/80 leading-relaxed">
-          Your Soul will be <span className="font-semibold text-purple">escrowed</span> in the contract during the listing.
+        <div className="rounded-xl border border-purple/30 bg-purple/5 px-4 py-3 text-sm leading-relaxed text-action-label">
+          Your Soul will be <span className="font-semibold text-action-label">escrowed</span> in the contract during the listing.
           You can delist and reclaim it anytime before a sale.
         </div>
 
