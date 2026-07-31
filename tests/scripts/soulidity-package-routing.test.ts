@@ -81,6 +81,35 @@ describe('Soulidity operational script package routing', () => {
     expect(text).toContain("'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',")
   })
 
+  it('routes commerce-v5 production env and accepts only an HTTPS Animacraft origin', () => {
+    const sync = source('scripts/sync-vercel-production-env.ts')
+    const e2e = source('scripts/e2e-check-env.ts')
+    for (const key of [
+      'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
+      'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+      'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PACKAGE_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_TYPE_ORIGIN_PACKAGE_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_CONFIG_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_TREASURY_ID',
+    ]) {
+      expect(sync).toContain(`'${key}',`)
+      expect(e2e).toContain(`'${key}'`)
+    }
+    expect(sync).toContain("url.protocol === 'https:'")
+    expect(sync).toContain('value.replace(/\\/+$/, \'\') === url.origin')
+    expect(sync).toContain('Commerce v5 requires NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED=true')
+    expect(sync).toContain('function isNonZeroSuiId(value: string)')
+    expect(sync).toContain('&& /[1-9a-fA-F]/.test(value.slice(2))')
+    expect(sync).toContain('if (value && !isNonZeroSuiId(value))')
+    expect(sync).toContain('else if (animacraftEnabled && !value)')
+    expect(sync).toContain('else if (animacraftCommerceV5Enabled && !value)')
+    expect(e2e).toContain("url.protocol === 'https:'")
+    expect(e2e).toContain('expected "true" for mainnet E2E')
+    expect(e2e).toContain('function isNonZeroSuiId(value: string)')
+    expect(e2e).toContain('&& /[1-9a-fA-F]/.test(value.slice(2))')
+    expect(e2e).toContain('if (value && !isNonZeroSuiId(value))')
+  })
+
   it('verifies successor objects against their stable defining-package TypeOrigin', () => {
     const text = source('scripts/preflight-animacraft-market-retirement.ts')
     expect(text).toContain('`${marketConfigV2PackageId}::market::MarketConfigV2`')
@@ -89,11 +118,21 @@ describe('Soulidity operational script package routing', () => {
     expect(text).not.toContain("module: 'soul',\n      struct: 'AnimacraftProvenance'")
   })
 
-  it('accepts only the v4-only canonical Animacraft authorization type', () => {
+  it('keeps v4 canonical mint compatible and requires authenticated commerce-v5 royalty', () => {
     const market = source('move/soulidity/sources/market.move')
     expect(market).toContain('CanonicalSoulMintAuthorization')
+    expect(market).toContain('CommerceV5SoulMintAuthorization')
     expect(market).toContain(
       'animacraft::consume_canonical_soul_mint_authorization(authorization)',
+    )
+    expect(market).toContain(
+      'animacraft_commerce_v5::consume_commerce_v5_soul_mint_authorization',
+    )
+    expect(market).toMatch(
+      /public fun mint_animacraft_v5_in_personal_kiosk_v2\([\s\S]*?authorization:\s*CommerceV5SoulMintAuthorization,[\s\S]*?\): SoulState/,
+    )
+    expect(market).not.toContain(
+      'public fun mint_animacraft_v5_in_personal_kiosk_with_creator_royalty_v2',
     )
     expect(market).not.toMatch(/^\s*SoulMintAuthorization,\s*$/m)
     expect(market).not.toMatch(/authorization:\s*SoulMintAuthorization/)

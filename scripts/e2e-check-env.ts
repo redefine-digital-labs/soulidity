@@ -108,6 +108,30 @@ function validatePostgresUrl(value: string): boolean {
   return /^postgres(ql)?:\/\/[^\s]+/.test(value)
 }
 
+function validateHttpsOrigin(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:'
+      && !url.username
+      && !url.password
+      && url.pathname === '/'
+      && !url.search
+      && !url.hash
+      && value.replace(/\/+$/, '') === url.origin
+    )
+  } catch {
+    return false
+  }
+}
+
+function isNonZeroSuiId(value: string): boolean {
+  return (
+    /^0x[0-9a-fA-F]{1,64}$/.test(value)
+    && /[1-9a-fA-F]/.test(value.slice(2))
+  )
+}
+
 function main() {
   const v = new Validator()
 
@@ -231,6 +255,18 @@ function main() {
 
   // 11. Canonical Animacraft adapter. The mainnet E2E suite exercises the
   // real Maker -> Soul path, so a disabled gate is a hard failure here.
+  const animacraftAppUrl = v.checkPresent(
+    'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
+    'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
+  )
+  if (animacraftAppUrl && !validateHttpsOrigin(animacraftAppUrl)) {
+    v.fail(
+      'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
+      `must be an HTTPS origin without credentials, path, query, or fragment ("${animacraftAppUrl}")`,
+    )
+  } else if (animacraftAppUrl) {
+    v.pass(`NEXT_PUBLIC_ANIMACRAFT_APP_URL = ${animacraftAppUrl}`)
+  }
   const animacraftGate = v.checkPresent(
     'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
     'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
@@ -246,8 +282,30 @@ function main() {
     'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_TREASURY_ID',
   ] as const) {
     const value = v.checkPresent(name, name)
-    if (value && !/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
-      v.fail(name, `not a valid Sui object id ("${value}")`)
+    if (value && !isNonZeroSuiId(value)) {
+      v.fail(name, `not a valid non-zero Sui object id ("${value}")`)
+    } else if (value) {
+      v.pass(`${name} = ${value}`)
+    }
+  }
+  const commerceV5Gate = v.checkPresent(
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+  )
+  if (commerceV5Gate && commerceV5Gate !== 'true') {
+    v.fail('NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED', 'expected "true" for mainnet E2E')
+  } else if (commerceV5Gate) {
+    v.pass('NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED = true')
+  }
+  for (const name of [
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_TYPE_ORIGIN_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_CONFIG_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_TREASURY_ID',
+  ] as const) {
+    const value = v.checkPresent(name, name)
+    if (value && !isNonZeroSuiId(value)) {
+      v.fail(name, `not a valid non-zero Sui object id ("${value}")`)
     } else if (value) {
       v.pass(`${name} = ${value}`)
     }

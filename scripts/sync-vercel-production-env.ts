@@ -12,9 +12,15 @@ const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
   'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
+  'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
   'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
   'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_FEE_CONFIG_ID',
   'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_TREASURY_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+  'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_TYPE_ORIGIN_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_CONFIG_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_TREASURY_ID',
   'NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
   'SEAL_SERVER_CONFIGS',
   'NEXT_PUBLIC_SEAL_THRESHOLD',
@@ -122,6 +128,30 @@ function normalizeBaseUrl(value: string | undefined) {
   return value?.trim().replace(/\/+$/, '') ?? ''
 }
 
+function isHttpsOrigin(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:'
+      && !url.username
+      && !url.password
+      && url.pathname === '/'
+      && !url.search
+      && !url.hash
+      && value.replace(/\/+$/, '') === url.origin
+    )
+  } catch {
+    return false
+  }
+}
+
+function isNonZeroSuiId(value: string): boolean {
+  return (
+    /^0x[0-9a-fA-F]{1,64}$/.test(value)
+    && /[1-9a-fA-F]/.test(value.slice(2))
+  )
+}
+
 function assertProductionEnv(env: Record<string, string>) {
   const errors: string[] = []
 
@@ -211,16 +241,45 @@ function assertProductionEnv(env: Record<string, string>) {
   }
 
   const animacraftEnabled = env.NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED?.trim() === 'true'
-  if (animacraftEnabled) {
-    for (const key of [
-      'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
-      'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_FEE_CONFIG_ID',
-      'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_TREASURY_ID',
-    ] as const) {
-      const value = env[key]?.trim() ?? ''
-      if (!/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
-        errors.push(`${key} must be a valid Sui object ID when canonical Animacraft minting is enabled`)
-      }
+  const animacraftAppUrl = env.NEXT_PUBLIC_ANIMACRAFT_APP_URL?.trim() ?? ''
+  if (animacraftAppUrl && !isHttpsOrigin(animacraftAppUrl)) {
+    errors.push(
+      'NEXT_PUBLIC_ANIMACRAFT_APP_URL must be an HTTPS origin without credentials, path, query, or fragment',
+    )
+  }
+  for (const key of [
+    'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_FEE_CONFIG_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PROTOCOL_TREASURY_ID',
+  ] as const) {
+    const value = env[key]?.trim() ?? ''
+    if (value && !isNonZeroSuiId(value)) {
+      errors.push(`${key} must be a valid non-zero Sui object ID when configured`)
+    } else if (animacraftEnabled && !value) {
+      errors.push(`${key} is required when canonical Animacraft minting is enabled`)
+    }
+  }
+  const animacraftCommerceV5Enabled =
+    env.NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED?.trim() === 'true'
+  if (animacraftCommerceV5Enabled) {
+    if (!animacraftEnabled) {
+      errors.push('Commerce v5 requires NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED=true')
+    }
+    if (!animacraftAppUrl) {
+      errors.push('Commerce v5 requires NEXT_PUBLIC_ANIMACRAFT_APP_URL')
+    }
+  }
+  for (const key of [
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_TYPE_ORIGIN_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_CONFIG_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_TREASURY_ID',
+  ] as const) {
+    const value = env[key]?.trim() ?? ''
+    if (value && !isNonZeroSuiId(value)) {
+      errors.push(`${key} must be a valid non-zero Sui object ID when configured`)
+    } else if (animacraftCommerceV5Enabled && !value) {
+      errors.push(`${key} is required when Animacraft commerce v5 is enabled`)
     }
   }
 
