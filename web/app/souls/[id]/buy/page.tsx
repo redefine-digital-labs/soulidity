@@ -83,6 +83,8 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
     )
   }
 
+  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+
   if (status === 'done') {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
@@ -131,6 +133,22 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
     )
   }
 
+  if (isAnimacraftV5 && soul.collectionOnChainId) {
+    return (
+      <div className="max-w-[560px] mx-auto px-6 py-10">
+        <EmptyState
+          icon="🔒"
+          label="Animacraft v5 purchase blocked"
+          sublabel="This Soul is still bound to a collection. Animacraft v5 secondary sales cannot combine their frozen Soul-creator and Maker-source royalties with a collection royalty."
+          actionLabel="Back to Soul"
+          onAction={() => {
+            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
+          }}
+        />
+      </div>
+    )
+  }
+
   if (soul.listingStatus !== 'listed' || !soul.quote || !soul.listingObjectOnChainId) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
@@ -138,6 +156,30 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
           icon="🚫"
           label="Soul is not listed"
           sublabel="Only listed Soulidity assets can be purchased from this route."
+          actionLabel="Back to Soul"
+          onAction={() => {
+            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (
+    isAnimacraftV5
+    && (
+      soul.quote.totalAtomic !== soul.quote.priceAtomic
+      || soul.quote.collectionRoyaltyAtomic !== '0'
+      || soul.quote.makerRoyaltyAtomic == null
+      || soul.quote.soulCreatorRoyaltyBps == null
+    )
+  ) {
+    return (
+      <div className="max-w-[560px] mx-auto px-6 py-10">
+        <EmptyState
+          icon="🧾"
+          label="Verified v5 quote unavailable"
+          sublabel="The listing is missing its complete gross-price royalty breakdown. Refresh after the on-chain projection catches up; checkout remains blocked until every v5 term is verified."
           actionLabel="Back to Soul"
           onAction={() => {
             window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
@@ -184,23 +226,34 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
           </div>
 
           <div className="flex justify-between text-sm py-2 border-b border-border">
-            <span className="text-muted">List price</span>
+            <span className="text-muted">{isAnimacraftV5 ? 'Gross sale price' : 'List price'}</span>
             <span className="font-semibold">{formatAtomicAmountForDisplay(soul.quote.priceAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm py-2 border-b border-border">
-            <span className="text-muted">Protocol fee</span>
+            <span className="text-muted">Protocol fee{isAnimacraftV5 ? ' · included' : ''}</span>
             <span>{formatAtomicAmountForDisplay(soul.quote.platformFeeAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm py-2 border-b border-border">
             <span className="text-muted">
-              {soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}
+              {isAnimacraftV5
+                ? 'Soul creator royalty · included'
+                : soul.provenanceKind === 'animacraft'
+                  ? 'Maker royalty'
+                  : 'Creator royalty'}
             </span>
             <span>{formatAtomicAmountForDisplay(soul.quote.creatorRoyaltyAtomic)}</span>
           </div>
-          <div className="flex justify-between text-sm py-2 border-b border-border">
-            <span className="text-muted">Collection royalty</span>
-            <span>{formatAtomicAmountForDisplay(soul.quote.collectionRoyaltyAtomic)}</span>
-          </div>
+          {isAnimacraftV5 ? (
+            <div className="flex justify-between text-sm py-2 border-b border-border">
+              <span className="text-muted">Maker-source royalty · included</span>
+              <span>{formatAtomicAmountForDisplay(soul.quote.makerRoyaltyAtomic)}</span>
+            </div>
+          ) : (
+            <div className="flex justify-between text-sm py-2 border-b border-border">
+              <span className="text-muted">Collection royalty</span>
+              <span>{formatAtomicAmountForDisplay(soul.quote.collectionRoyaltyAtomic)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm py-2 font-bold">
             <span>Total</span>
             <span className="text-gold">{formatAtomicAmountForDisplay(soul.quote.totalAtomic)}</span>

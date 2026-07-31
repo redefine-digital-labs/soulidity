@@ -10,9 +10,20 @@ export function buildUpdateListingPriceTx(params: {
   newPriceAtomic: bigint
   collectionObjectId?: string | null
   animacraftProvenanceObjectId?: string | null
+  animacraftVersion?: number | null
 }) {
   if (params.newPriceAtomic <= 0n) {
     throw new Error('newPriceAtomic must be positive')
+  }
+  const isAnimacraftV5 = params.animacraftVersion === 5
+  if (params.animacraftVersion != null && params.animacraftVersion !== 4 && !isAnimacraftV5) {
+    throw new Error(`Unsupported Animacraft protocol version ${params.animacraftVersion}`)
+  }
+  if (isAnimacraftV5 && !params.animacraftProvenanceObjectId) {
+    throw new Error('Animacraft v5 price update requires provenance')
+  }
+  if (isAnimacraftV5 && params.collectionObjectId) {
+    throw new Error('Collection-bound Animacraft v5 Souls cannot update their listing price')
   }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
@@ -44,7 +55,20 @@ export function buildUpdateListingPriceTx(params: {
 
   // Step 3: Relist at new price and share the returned listing object.
   let listing: ReturnType<Transaction['moveCall']>
-  if (params.animacraftProvenanceObjectId) {
+  if (isAnimacraftV5) {
+    listing = tx.moveCall({
+      target: `${packageId}::market::list_animacraft_v5_soul_fixed_price_v2`,
+      arguments: [
+        tx.object(marketConfigId),
+        tx.object(kioskRegistryId),
+        tx.object(params.animacraftProvenanceObjectId!),
+        tx.object(params.currentKioskId),
+        tx.object(params.currentKioskCapOnChainId),
+        tx.object(params.stateObjectId),
+        tx.pure.u64(params.newPriceAtomic),
+      ],
+    })
+  } else if (params.animacraftProvenanceObjectId) {
     listing = params.collectionObjectId
       ? tx.moveCall({
           target: `${packageId}::market::list_animacraft_soul_fixed_price_with_collection_v2`,

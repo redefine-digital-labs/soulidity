@@ -27,7 +27,7 @@ describe('market error catalog', () => {
       32,
       33,
       35,
-      ...Array.from({ length: 22 }, (_, i) => i + 37), // 37..58
+      ...Array.from({ length: 31 }, (_, i) => i + 37), // 37..67
     ]
     for (const code of expected) {
       expect(MARKET_ERROR_CATALOG[code], `missing entry for code ${code}`).toBeDefined()
@@ -37,7 +37,7 @@ describe('market error catalog', () => {
 
   it('leaves removed or reserved codes unmapped', () => {
     expect(MARKET_ERROR_CATALOG[17]).toBeUndefined()
-    for (const code of [18, 20, 21, 22, 23, 24, 26, 27, 34, 36]) {
+    for (const code of [18, 20, 21, 22, 23, 24, 26, 27, 34, 36, 68]) {
       expect(MARKET_ERROR_CATALOG[code], `unexpected entry for code ${code}`).toBeUndefined()
     }
   })
@@ -69,6 +69,19 @@ describe('market error catalog', () => {
     expect(MARKET_ERROR_CATALOG[56]?.name).toBe('EAnimacraftPurchasePathRequired')
     expect(MARKET_ERROR_CATALOG[57]?.name).toBe('EAnimacraftRoyaltyTooSmall')
     expect(MARKET_ERROR_CATALOG[58]?.name).toBe('EAnimacraftListingPathRequired')
+    expect(MARKET_ERROR_CATALOG[62]?.name).toBe('EAnimacraftV5CommercePathRequired')
+    expect(MARKET_ERROR_CATALOG[63]?.name).toBe('EAnimacraftV5ProtocolFeeMismatch')
+    expect(MARKET_ERROR_CATALOG[64]?.name).toBe('EAnimacraftV5MakerRoyaltyMismatch')
+    expect(MARKET_ERROR_CATALOG[65]?.name).toBe('EAnimacraftV5CreatorRoyaltyTooHigh')
+    expect(MARKET_ERROR_CATALOG[66]?.name).toBe('EAnimacraftV5ListingMismatch')
+    expect(MARKET_ERROR_CATALOG[67]?.name).toBe('EAnimacraftV5CreatorRoyaltyMismatch')
+  })
+
+  it('maps successor market lifecycle gates without importing collection errors', () => {
+    expect(MARKET_ERROR_CATALOG[59]?.name).toBe('ELegacyMarketMustBePaused')
+    expect(MARKET_ERROR_CATALOG[60]?.name).toBe('EPrimaryPausedV2')
+    expect(MARKET_ERROR_CATALOG[61]?.name).toBe('ESecondaryPausedV2')
+    expect(MARKET_ERROR_CATALOG[68]).toBeUndefined()
   })
 })
 

@@ -293,6 +293,36 @@ describe('Animacraft listing builders', () => {
     expect(functions).toContain('cancel_soul_listing')
     expect(functions).toContain('list_animacraft_soul_fixed_price_v2')
   })
+
+  it('keeps an Animacraft v5 price update on the dedicated gross-price route', () => {
+    const calls = moveCalls(buildUpdateListingPriceTx({
+      currentKioskId: base.currentKioskId,
+      currentKioskCapOnChainId: base.currentKioskCapOnChainId,
+      stateObjectId: base.stateObjectId,
+      listingObjectId: id('f'),
+      newPriceAtomic: 2_000_000n,
+      animacraftProvenanceObjectId: base.animacraftProvenanceObjectId,
+      animacraftVersion: 5,
+    }))
+    const functions = calls.map((call) => call.function)
+    expect(functions).toContain('cancel_soul_listing')
+    expect(functions).toContain('list_animacraft_v5_soul_fixed_price_v2')
+    expect(functions).not.toContain('list_animacraft_soul_fixed_price_v2')
+    expect(functions).not.toContain('list_soul_fixed_price_v2')
+  })
+
+  it('fails closed when a v5 price update is collection-bound', () => {
+    expect(() => buildUpdateListingPriceTx({
+      currentKioskId: base.currentKioskId,
+      currentKioskCapOnChainId: base.currentKioskCapOnChainId,
+      stateObjectId: base.stateObjectId,
+      listingObjectId: id('f'),
+      newPriceAtomic: 2_000_000n,
+      collectionObjectId: id('e'),
+      animacraftProvenanceObjectId: base.animacraftProvenanceObjectId,
+      animacraftVersion: 5,
+    })).toThrow('Collection-bound Animacraft v5 Souls cannot update their listing price')
+  })
 })
 
 describe('Animacraft v5 commerce builders', () => {

@@ -6,11 +6,15 @@ import { getAnonymousRateLimitFingerprint, getRequestIp, takeRateLimitToken } fr
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   getMarketConfigV2,
+  getSoulListingObject,
   getSoulStateObject,
   getAnimacraftProvenanceForState,
+  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
   OnChainVerificationError,
   quoteAnimacraftSoulPurchase,
+  quoteAnimacraftV5SoulSale,
   quoteSoulPurchase,
+  sameSuiValue,
 } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 
@@ -156,16 +160,54 @@ export async function GET(
           getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
         )
         platformFeeBps = config.platformFeeBps
-        const makerQuote = quoteAnimacraftSoulPurchase(config, {
-          priceAtomic: listedPrice,
-          makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
-          collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
-        })
-        quote = {
-          ...makerQuote,
-          creatorRoyaltyAtomic: makerQuote.makerRoyaltyAtomic,
-          makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
-          royaltySource: 'animacraft-maker' as const,
+        if (animacraftProvenance.animacraftVersion === 5) {
+          if (!config.secondaryEnabled || config.platformFeeBps !== ANIMACRAFT_V5_PROTOCOL_FEE_BPS) {
+            throw new OnChainVerificationError('Animacraft v5 secondary trading is not enabled')
+          }
+          if (!soul.listingObjectOnChainId) {
+            throw new OnChainVerificationError('Animacraft v5 listing object is unavailable')
+          }
+          const listing = await getSoulListingObject(
+            soul.listingObjectOnChainId,
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
+          )
+          if (
+            listing.version !== 5
+            || !listing.active
+            || !sameSuiValue(listing.soulId, soul.onChainId)
+            || !sameSuiValue(listing.stateId, soul.stateOnChainId)
+            || listing.priceAtomic !== listedPrice
+            || listing.collectionId !== null
+          ) {
+            throw new OnChainVerificationError('Animacraft v5 listing does not match the Soul')
+          }
+          const makerQuote = quoteAnimacraftV5SoulSale(listedPrice, {
+            makerSourceRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
+            soulCreatorRoyaltyBps: listing.creatorRoyaltyBps,
+          })
+          quote = {
+            priceAtomic: makerQuote.priceAtomic.toString(),
+            platformFeeAtomic: makerQuote.protocolFeeAtomic.toString(),
+            creatorRoyaltyAtomic: makerQuote.soulCreatorRoyaltyAtomic.toString(),
+            collectionRoyaltyAtomic: '0',
+            totalAtomic: makerQuote.priceAtomic.toString(),
+            makerRoyaltyAtomic: makerQuote.makerSourceRoyaltyAtomic.toString(),
+            makerRoyaltyBps: makerQuote.makerSourceRoyaltyBps,
+            soulCreatorRoyaltyBps: makerQuote.soulCreatorRoyaltyBps,
+            royaltySource: 'animacraft-maker' as const,
+          }
+        } else {
+          const makerQuote = quoteAnimacraftSoulPurchase(config, {
+            priceAtomic: listedPrice,
+            makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
+            collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+          })
+          quote = {
+            ...makerQuote,
+            creatorRoyaltyAtomic: makerQuote.makerRoyaltyAtomic,
+            makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
+            royaltySource: 'animacraft-maker' as const,
+          }
         }
       } else {
         const config = await getMarketConfigV2(

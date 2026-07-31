@@ -20,7 +20,9 @@ const mockedGetMarketConfig = vi.hoisted(() => vi.fn())
 const mockedGetMarketConfigV2 = vi.hoisted(() => vi.fn())
 const mockedQuoteSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedQuoteAnimacraftSoulPurchase = vi.hoisted(() => vi.fn())
+const mockedQuoteAnimacraftV5SoulSale = vi.hoisted(() => vi.fn())
 const mockedGetAnimacraftProvenanceForState = vi.hoisted(() => vi.fn())
+const mockedGetSoulListingObject = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
 const MockSoulidityPersonalKioskInvariantError = vi.hoisted(
   () => class MockSoulidityPersonalKioskInvariantError extends Error {
@@ -34,6 +36,7 @@ const MockSoulidityPersonalKioskInvariantError = vi.hoisted(
 )
 const mockedBuildBuySoulTx = vi.hoisted(() => vi.fn())
 const mockedBuildBuyAnimacraftSoulTx = vi.hoisted(() => vi.fn())
+const mockedBuildBuyAnimacraftV5SoulTx = vi.hoisted(() => vi.fn())
 const mockedPrisma = vi.hoisted(() => ({
   soulPreparedPurchase: {
     create: vi.fn(),
@@ -71,11 +74,14 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     getMarketConfigV2: mockedGetMarketConfigV2,
     quoteSoulPurchase: mockedQuoteSoulPurchase,
     quoteAnimacraftSoulPurchase: mockedQuoteAnimacraftSoulPurchase,
+    quoteAnimacraftV5SoulSale: mockedQuoteAnimacraftV5SoulSale,
     getAnimacraftProvenanceForState: mockedGetAnimacraftProvenanceForState,
+    getSoulListingObject: mockedGetSoulListingObject,
     resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
     SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
     buildBuySoulTx: mockedBuildBuySoulTx,
     buildBuyAnimacraftSoulTx: mockedBuildBuyAnimacraftSoulTx,
+    buildBuyAnimacraftV5SoulTx: mockedBuildBuyAnimacraftV5SoulTx,
   }
 })
 
@@ -144,6 +150,7 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
     tx.build.mockResolvedValue(Uint8Array.from([1, 2, 3]))
     mockedBuildBuySoulTx.mockReturnValue(tx)
     mockedBuildBuyAnimacraftSoulTx.mockReturnValue(tx)
+    mockedBuildBuyAnimacraftV5SoulTx.mockReturnValue(tx)
     mockedPrisma.soulPreparedPurchase.create.mockResolvedValue({
       id: PREPARED_PURCHASE_ID,
       expiresAt: STORED_EXPIRES_AT,
@@ -298,6 +305,77 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
       context: {
         totalAtomic: '1055000',
         creatorRoyaltyAtomic: '30000',
+        royaltySource: 'animacraft-maker',
+      },
+    })
+  })
+
+  it('prepares v5 purchases from the canonical gross listing quote', async () => {
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
+      onChainId: SOUL_ID,
+      provenanceKind: 'animacraft',
+      listingStatus: 'listed',
+      listingObjectOnChainId: LISTING_ID,
+      listedPriceAtomic: '1000000',
+      creatorRoyaltyBps: 0,
+      collection: null,
+      collectionOnChainId: null,
+      currentKioskId: KIOSK_ID,
+      stateOnChainId: STATE_ID,
+    })
+    mockedGetMarketConfigV2.mockResolvedValueOnce({
+      platformFeeBps: 250,
+      primaryEnabled: true,
+      secondaryEnabled: true,
+    })
+    mockedGetAnimacraftProvenanceForState.mockResolvedValueOnce({
+      objectId: PROVENANCE_ID,
+      animacraftVersion: 5,
+      makerId: MAKER_ID,
+      makerTreasuryId: MAKER_TREASURY_ID,
+      makerRoyaltyBps: 250,
+    })
+    mockedGetSoulListingObject.mockResolvedValueOnce({
+      version: 5,
+      active: true,
+      soulId: SOUL_ID,
+      stateId: STATE_ID,
+      priceAtomic: 1_000_000n,
+      creatorRoyaltyBps: 250,
+      collectionId: null,
+    })
+    mockedQuoteAnimacraftV5SoulSale.mockReturnValueOnce({
+      priceAtomic: 1_000_000n,
+      sellerPayoutAtomic: 925_000n,
+      protocolFeeAtomic: 25_000n,
+      soulCreatorRoyaltyBps: 250,
+      soulCreatorRoyaltyAtomic: 25_000n,
+      makerSourceRoyaltyBps: 250,
+      makerSourceRoyaltyAtomic: 25_000n,
+    })
+    mockedSelectCoinObjectIdsForAmountAcrossPages.mockResolvedValueOnce(['0xcoin'])
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    expect(mockedQuoteAnimacraftSoulPurchase).not.toHaveBeenCalled()
+    expect(mockedBuildBuyAnimacraftSoulTx).not.toHaveBeenCalled()
+    expect(mockedBuildBuyAnimacraftV5SoulTx).toHaveBeenCalledWith(expect.objectContaining({
+      provenanceObjectId: PROVENANCE_ID,
+      priceAtomic: 1_000_000n,
+    }))
+    expect(mockedBuildBuyAnimacraftV5SoulTx).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        makerObjectId: expect.anything(),
+        makerTreasuryObjectId: expect.anything(),
+      }),
+    )
+    await expect(response.json()).resolves.toMatchObject({
+      context: {
+        priceAtomic: '1000000',
+        platformFeeAtomic: '25000',
+        creatorRoyaltyAtomic: '25000',
+        totalAtomic: '1000000',
         royaltySource: 'animacraft-maker',
       },
     })

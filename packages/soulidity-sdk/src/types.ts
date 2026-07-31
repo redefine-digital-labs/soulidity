@@ -117,9 +117,11 @@ export interface SoulStateObject {
 }
 
 /**
- * Immutable cross-package receipt created when Soulidity consumes an
- * Animacraft `CanonicalSoulMintAuthorization`. The Maker and Treasury ids are the
- * canonical inputs for every royalty-aware secondary purchase.
+ * Immutable cross-package receipt created when Soulidity consumes Animacraft's
+ * version-matched authorization. v4 uses `CanonicalSoulMintAuthorization`;
+ * commerce v5 wraps it in `CommerceV5SoulMintAuthorization` together with the
+ * authenticated MakerRoot creator royalty. v5 purchases pay the source share
+ * directly to the original `makerCreatorAddress` frozen in this receipt.
  */
 export interface AnimacraftProvenanceObject {
   objectId: string
@@ -169,6 +171,8 @@ export interface SoulContentObject {
 export interface SoulListingObject {
   objectId: string
   packageId: string
+  /** 1/2 use the additive legacy/v2 quote; 5 uses the Animacraft gross-price path. */
+  version: number
   soulId: string
   stateId: string
   sellerAddress: string
@@ -332,6 +336,8 @@ export interface SoulQuoteBreakdown {
   /** Present for Animacraft-derived Souls; mirrors creatorRoyaltyAtomic for compatibility. */
   makerRoyaltyAtomic?: string
   makerRoyaltyBps?: number
+  /** Present for Animacraft v5 gross-price listings; frozen at canonical mint. */
+  soulCreatorRoyaltyBps?: number
   royaltySource?: 'soul-creator' | 'animacraft-maker'
 }
 

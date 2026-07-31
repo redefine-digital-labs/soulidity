@@ -5,7 +5,10 @@ import { prisma } from '@/lib/prisma'
 import { suiClient } from '@soulidity/sdk'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
-import { extractSoulPurchasedEvent } from '@soulidity/sdk'
+import {
+  extractSoulPurchasedEvent,
+  tryExtractAnimacraftV5SoulPurchasedEvent,
+} from '@soulidity/sdk'
 import {
   endActiveSoulGrantProjectionsFromChain,
   syncSoulProjectionFromChain,
@@ -157,7 +160,9 @@ export async function POST(
       return NextResponse.json(responseBody, { status: 422 })
     }
 
-    const purchased = extractSoulPurchasedEvent(executedTransaction, packageId)
+    const purchased =
+      tryExtractAnimacraftV5SoulPurchasedEvent(executedTransaction, packageId)
+      ?? extractSoulPurchasedEvent(executedTransaction, packageId)
     if (!sameSuiValue(purchased.soulId, soul.onChainId)) {
       const responseBody = { error: 'Transaction purchased a different Soul' }
       await persistPreparedResultBestEffort({

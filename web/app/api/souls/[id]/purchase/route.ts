@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { extractSoulPurchasedEvent } from '@soulidity/sdk'
+import {
+  extractSoulPurchasedEvent,
+  tryExtractAnimacraftV5SoulPurchasedEvent,
+} from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   endActiveSoulGrantProjectionsFromChain,
@@ -67,8 +70,10 @@ export async function POST(
       return senderError
     }
 
-    const purchased = extractSoulPurchasedEvent(transaction, packageId)
-    if (purchased.soulId !== soul.onChainId) {
+    const v5Purchased = tryExtractAnimacraftV5SoulPurchasedEvent(transaction, packageId)
+    const legacyPurchased = v5Purchased ? null : extractSoulPurchasedEvent(transaction, packageId)
+    const purchasedSoulId = v5Purchased?.soulId ?? legacyPurchased!.soulId
+    if (purchasedSoulId !== soul.onChainId) {
       return NextResponse.json({ error: 'Transaction purchased a different Soulidity object' }, { status: 422 })
     }
 
@@ -96,13 +101,15 @@ export async function POST(
       soulOnChainId: mirrored.onChainId,
       currentOwnerAddress: mirrored.currentOwnerAddress,
       listingStatus: mirrored.listingStatus,
-      paidAtomic: purchased.priceAtomic.toString(),
-      totalAtomic: (
-        purchased.priceAtomic
-        + purchased.platformFeeAtomic
-        + purchased.creatorRoyaltyAtomic
-        + purchased.collectionRoyaltyAtomic
-      ).toString(),
+      paidAtomic: (v5Purchased?.priceAtomic ?? legacyPurchased!.priceAtomic).toString(),
+      totalAtomic: v5Purchased
+        ? v5Purchased.priceAtomic.toString()
+        : (
+            legacyPurchased!.priceAtomic
+            + legacyPurchased!.platformFeeAtomic
+            + legacyPurchased!.creatorRoyaltyAtomic
+            + legacyPurchased!.collectionRoyaltyAtomic
+          ).toString(),
     }
 
     await storeSoulidityTxSync({

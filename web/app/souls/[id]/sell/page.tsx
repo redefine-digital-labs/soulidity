@@ -7,7 +7,12 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
+import {
+  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
+  formatAtomicAmountForDisplay,
+  parseDisplayAmountToAtomic,
+  sameSuiValue,
+} from '@soulidity/sdk'
 
 export default function SellPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -70,6 +75,23 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
+  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+  if (isAnimacraftV5 && soul.collectionOnChainId) {
+    return (
+      <div className="max-w-[560px] mx-auto px-6 py-10">
+        <EmptyState
+          icon="🔒"
+          label="Collection-bound v5 Soul cannot be listed"
+          sublabel="Animacraft v5 secondary sales use frozen Soul-creator and Maker-source royalties and cannot include a collection royalty. This release has no on-chain collection-removal path, so listing is blocked without changing the Soul."
+          actionLabel="Back to Soul"
+          onAction={() => {
+            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
+          }}
+        />
+      </div>
+    )
+  }
+
   if ((soul.listingStatus === 'listed' || soul.listingStatus === 'floor-violation') && soul.listedPriceAtomic) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
@@ -90,10 +112,26 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
-  const platformFeePct = soul.platformFeeBps != null ? soul.platformFeeBps / 100 : null
+  const makerSourceRoyaltyBps = isAnimacraftV5
+    ? soul.animacraftProvenance!.makerRoyaltyBps
+    : 0
+  const platformFeeBps = isAnimacraftV5
+    ? ANIMACRAFT_V5_PROTOCOL_FEE_BPS
+    : soul.platformFeeBps
+  const platformFeePct = platformFeeBps != null ? platformFeeBps / 100 : null
   const creatorRoyaltyPct = soul.creatorRoyaltyBps / 100
-  const collectionRoyaltyPct = soul.collection ? soul.collection.extraRoyaltyBps / 100 : 0
+  const makerSourceRoyaltyPct = makerSourceRoyaltyBps / 100
+  const collectionRoyaltyPct = !isAnimacraftV5 && soul.collection
+    ? soul.collection.extraRoyaltyBps / 100
+    : 0
   const creatorRoyaltyReturnsToSeller = soul.isCreator && creatorRoyaltyPct > 0
+  const makerSourceRoyaltyReturnsToSeller =
+    makerSourceRoyaltyPct > 0
+    && soul.animacraftProvenance != null
+    && sameSuiValue(
+      soul.animacraftProvenance.makerCreatorAddress,
+      soul.currentOwnerAddress,
+    )
   // Mirrors `market::buy_soul_impl`: collection royalty is paid only when the
   // collection holder differs from the seller. If the seller IS the current
   // collection holder, the royalty stays with them.
@@ -105,6 +143,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     ? (
         100
         - platformFeePct
+        - (makerSourceRoyaltyReturnsToSeller ? 0 : makerSourceRoyaltyPct)
         - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct)
         - (collectionRoyaltyReturnsToSeller ? 0 : collectionRoyaltyPct)
       ).toFixed(1)
@@ -178,6 +217,17 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           )}
         </div>
 
+        {isAnimacraftV5 && (
+          <div className="rounded-xl border border-purple/30 bg-purple/5 px-4 py-3 text-sm">
+            <p className="font-semibold text-action-label">Animacraft v5 gross-price resale</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              The buyer pays exactly the price you enter. The 2.5% protocol fee,
+              frozen Soul-creator royalty and immutable Maker-source royalty are
+              distributed from that gross amount on-chain.
+            </p>
+          </div>
+        )}
+
         {/* Fee breakdown */}
         <div className="rounded-xl border border-border bg-card2 overflow-hidden">
           {soul.listedPriceAtomic && (
@@ -192,10 +242,19 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
             <span className="text-muted">
-              Creator royalty <span className="text-[10px] text-teal ml-1">on-chain enforced</span>
+              {isAnimacraftV5 ? 'Soul creator royalty' : 'Creator royalty'}{' '}
+              <span className="text-[10px] text-teal ml-1">on-chain enforced</span>
             </span>
             <span>{creatorRoyaltyPct}%{creatorRoyaltyReturnsToSeller ? ' (returns to you)' : ''}</span>
           </div>
+          {isAnimacraftV5 && (
+            <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+              <span className="text-muted">Maker-source royalty</span>
+              <span>
+                {makerSourceRoyaltyPct}%{makerSourceRoyaltyReturnsToSeller ? ' (returns to you)' : ''}
+              </span>
+            </div>
+          )}
           {collectionRoyaltyPct > 0 && (
             <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
               <span className="text-muted">Collection royalty</span>

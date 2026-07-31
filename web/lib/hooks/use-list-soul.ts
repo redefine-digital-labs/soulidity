@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { SoulAssetDetail } from '@soulidity/sdk'
 import { assertObjectInputsExist } from '@soulidity/sdk'
-import { buildListSoulTx } from '@soulidity/sdk'
+import { buildListAnimacraftV5SoulTx, buildListSoulTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -56,6 +56,21 @@ export function useListSoul(soul: SoulAssetDetail | null) {
       if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
         throw new Error('Animacraft provenance is unavailable; listing is blocked')
       }
+      const animacraftVersion = soul.animacraftProvenance?.animacraftVersion
+      const isAnimacraftV5 = animacraftVersion === 5
+      if (
+        soul.provenanceKind === 'animacraft'
+        && animacraftVersion !== 4
+        && !isAnimacraftV5
+      ) {
+        throw new Error('This Animacraft provenance version is not supported for secondary listing')
+      }
+      if (isAnimacraftV5 && soul.collectionOnChainId) {
+        throw new Error(
+          'Animacraft v5 Souls cannot be listed while bound to a collection. '
+          + 'No collection-removal transaction is available in this release.',
+        )
+      }
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
         'Soul kiosk capability': soulKioskCapId,
@@ -65,14 +80,24 @@ export function useListSoul(soul: SoulAssetDetail | null) {
         'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
       })
 
-      const tx = buildListSoulTx({
-        currentKioskId: soulKioskId,
-        currentKioskCapOnChainId: soulKioskCapId,
-        stateObjectId: soul.stateOnChainId,
-        priceAtomic,
-        collectionObjectId: soul.collectionOnChainId,
-        animacraftProvenanceObjectId: soul.animacraftProvenance?.objectId,
-      })
+      const tx = isAnimacraftV5
+        ? buildListAnimacraftV5SoulTx({
+            currentKioskId: soulKioskId,
+            currentKioskCapOnChainId: soulKioskCapId,
+            stateObjectId: soul.stateOnChainId,
+            provenanceObjectId: soul.animacraftProvenance!.objectId,
+            priceAtomic,
+            makerSourceRoyaltyBps: soul.animacraftProvenance!.makerRoyaltyBps,
+            frozenSoulCreatorRoyaltyBps: soul.creatorRoyaltyBps,
+          })
+        : buildListSoulTx({
+            currentKioskId: soulKioskId,
+            currentKioskCapOnChainId: soulKioskCapId,
+            stateObjectId: soul.stateOnChainId,
+            priceAtomic,
+            collectionObjectId: soul.collectionOnChainId,
+            animacraftProvenanceObjectId: soul.animacraftProvenance?.objectId,
+          })
 
       setStatus('signing')
       const result = await signAndExecute(tx)
