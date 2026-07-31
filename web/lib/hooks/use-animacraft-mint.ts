@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { strToU8, zipSync } from 'fflate'
 import { normalizeStructTag, normalizeSuiAddress } from '@mysten/sui/utils'
 import {
@@ -338,11 +338,10 @@ export function useAnimacraftMint(
   const { suiWallet, suiClient, signAndExecute } = useWalletSign()
   const { requestUploadCostApproval } = useUploadCostReview()
   const recoveryRef = useRef<AnimacraftMintRecovery | null>(null)
-  const normalizedCurrentRecoveryContext =
-    normalizeAnimacraftMintRecoveryContext(currentRecoveryContext)
-  const currentRecoveryContextKey = normalizedCurrentRecoveryContext
-    ? JSON.stringify(normalizedCurrentRecoveryContext)
-    : ''
+  const normalizedCurrentRecoveryContext = useMemo(
+    () => normalizeAnimacraftMintRecoveryContext(currentRecoveryContext),
+    [currentRecoveryContext],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -391,7 +390,7 @@ export function useAnimacraftMint(
       }
     })
     return () => { cancelled = true }
-  }, [currentRecoveryContextKey, user?.id])
+  }, [normalizedCurrentRecoveryContext, user?.id])
 
   async function resume(): Promise<void> {
     if (!user || !suiWallet) {
@@ -918,14 +917,7 @@ export function useAnimacraftMint(
     error,
     result,
     completeQuoteV5,
-    hasRecovery: Boolean(
-      recoveryDigest
-      && recoveryRef.current?.userId === user?.id
-      && animacraftMintRecoveryContextsMatch(
-        recoveryRef.current?.recoveryContext,
-        normalizedCurrentRecoveryContext,
-      ),
-    ),
+    hasRecovery: Boolean(recoveryDigest),
     mint,
     resume,
   }
